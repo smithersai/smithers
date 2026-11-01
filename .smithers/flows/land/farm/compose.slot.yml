@@ -1,0 +1,32 @@
+# Per-slot consumers of a private database in the existing farm Postgres cluster.
+# remote.sh selects the slot's database and compose project; no shared run tables.
+services:
+  electric:
+    image: electricsql/electric:1.8.1
+    environment:
+      DATABASE_URL: postgresql://smithers:smithers@postgres:5432/smithers_farm_slot${FARM_SLOT:?}?sslmode=disable
+      ELECTRIC_INSECURE: "true"
+      # Replication slots are cluster-wide even though publications are per database.
+      ELECTRIC_REPLICATION_STREAM_ID: farm_slot${FARM_SLOT:?}
+    ports: ["127.0.0.1:${FARM_ELECTRIC_PORT:?}:3000"]
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0@sha256:7d7a27d9e90985cab5cf42256f5c13a3120baa4b055b69df37beb272b89b2340
+    environment:
+      DATABASE_URL: postgres://smithers:smithers@postgres:5432/smithers_farm_slot${FARM_SLOT:?}
+      POOL_MODE: transaction
+      SERVER_RESET_QUERY: RESET ALL
+      SERVER_RESET_QUERY_ALWAYS: "1"
+      AUTH_TYPE: scram-sha-256
+      MAX_PREPARED_STATEMENTS: "200"
+      DEFAULT_POOL_SIZE: "4"
+      MAX_CLIENT_CONN: "500"
+    ports: ["127.0.0.1:${FARM_POOL_PORT:?}:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U smithers -d smithers_farm_slot${FARM_SLOT:?}"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+networks:
+  default:
+    external: true
+    name: smithers-mvp_default

@@ -1,0 +1,204 @@
+#!/bin/bash
+# Mac mini farm client. Bash 3.2 compatible; the existing remote.sh owns
+# installs, compose, model-free dev-server setup, and command process groups.
+set -uo pipefail
+BASE=$(cd "$(dirname "$0")" && pwd)
+HOST=${MINI_RUN_HOST:-$(node -e 'const fs=require("fs"); const p=process.argv[1]; console.log(fs.existsSync(p)?(JSON.parse(fs.readFileSync(p)).miniHost??"mini"):"mini")' "$BASE/farm-config.json")}
+# Independent connections avoid one saturated/stale multiplex socket wedging every lane.
+ssh() { command ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -o ControlMaster=no -o ControlPath=none "$@"; }
+STATE=$BASE/mini-farm
+WAIT_SECONDS=${MINI_RUN_WAIT_SECONDS:-120}
+RUN_SECONDS=${MINI_RUN_TIMEOUT_SECONDS:-2400}
+ARTIFACTS=${MINI_RUN_ARTIFACTS:-0}
+case "$ARTIFACTS" in 0|1) ;; *) echo '[mini-run] invalid artifact selection' >&2; exit 2;; esac
+[[ "$WAIT_SECONDS" =~ ^[0-9]+$ && "$RUN_SECONDS" =~ ^[1-9][0-9]*$ ]] || { echo '[mini-run] invalid timeout' >&2; exit 2; }
+RUN_ID="$(date +%s)-$$"
+START=$SECONDS
+TIMER=
+REMOTE_OWNER="$(hostname) $$ $RUN_ID"
+SRC=${MINI_RUN_SRC:-$HOME/smithers}
+PASS=(); E2E=0; SLOT=; CHILD=; ELOCK=0; KEEPER=0
+usage() { echo 'usage: mini-run [-e NAME=VALUE]... <package dir> -- <command...>' >&2; exit 2; }
+while [ "${1:-}" = -e ]; do
+  [ $# -ge 2 ] || usage
+  pair=$2; name=${pair%%=*}
+  [[ "$pair" = *=* && "$name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || usage
+  upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+  case "$upper" in *KEY*|*TOKEN*|*SECRET*|*AUTH*|*PASSWORD*|*CREDENTIAL*|*COOKIE*|*PRIVATE*|PATH|HOME|BASH_ENV|ENV|*PRELOAD*|*DYLD*)
+    echo '[mini-run] refused credential or shell-control variable' >&2; exit 2;; esac
+  PASS+=("$pair"); shift 2
+done
+[ $# -ge 3 ] || usage
+CWD=$1; shift
+[ "$1" = -- ] || usage; shift
+case "$CWD" in /*|..|../*|*/../*|*/..) usage;; esac
+[ -d "$SRC/$CWD" ] || { echo '[mini-run] source/package directory missing' >&2; exit 2; }
+SOURCE_ROOT=$(cd "$SRC" && pwd -P) || exit 2
+PACKAGE_ROOT=$(cd "$SRC/$CWD" && pwd -P) || exit 2
+case "$PACKAGE_ROOT/" in "$SOURCE_ROOT/"*) ;; *) echo '[mini-run] package resolves outside source' >&2; exit 2;; esac
+case "$*" in *e2e*|*playwright*) E2E=1;; esac
+NODE_VERSION=$(node -v) || exit 3
+# Quote each argv independently for the remote login shell; never eval locally.
+quote() { printf '%q ' "$@"; }
+# Fail before reserving or syncing an unhealthy host.
+ssh "$HOST" 'bash -s -- "$HOME"' < "$BASE/health.sh" || exit $?
+mkdir -p "$STATE"
+export RSYNC_RSH='ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -o ControlMaster=no -o ControlPath=none'
+reserve_remote() {
+  ssh "$HOST" "bash -s -- $(quote "$1" "$REMOTE_OWNER")" <<'RESERVE'
+lock="$HOME/smithers-mirror/.farm/slot$1.lock"
+mkdir "$lock" || exit 75
+for group in $(cat "$HOME/smithers-mirror/.farm/slot$1.groups" 2>/dev/null); do
+  if kill -0 -- -"$group" 2>/dev/null; then rmdir "$lock"; exit 75; fi
+done
+printf '%s\n' "$2" > "$lock/owner"
+RESERVE
+}
+release_remote() {
+  ssh "$HOST" "bash -s -- $(quote "$1" "$REMOTE_OWNER" "${SLOT:-0}")" <<'CLEAN'
+lock="$HOME/smithers-mirror/.farm/$1"
+[ "$(cat "$lock/owner" 2>/dev/null)" = "$2" ] || exit 75
+for group in $(cat "$HOME/smithers-mirror/.farm/slot$3.groups" 2>/dev/null); do
+  if kill -0 -- -"$group" 2>/dev/null; then echo '[mini-run] cleanup incomplete; reservation retained' >&2; exit 75; fi
+done
+rm -f "$lock/owner" && rmdir "$lock"
+CLEAN
+}
+cleanup() {
+  rc=$?
+  cleanup_error=0
+  trap - EXIT INT TERM HUP
+  [ -z "$TIMER" ] || kill "$TIMER" 2>/dev/null || :
+  if [ "$KEEPER" = 1 ]; then exec 3>&-; fi
+  # EOF lets the existing remote watcher terminate only this run's groups.
+  if [ -n "$CHILD" ]; then
+    for _ in 1 2 3 4 5; do kill -0 "$CHILD" 2>/dev/null || break; sleep 1; done
+    kill -TERM "$CHILD" 2>/dev/null || :
+    for _ in 1 2; do kill -0 "$CHILD" 2>/dev/null || break; sleep 1; done
+    kill -KILL "$CHILD" 2>/dev/null || :
+    wait "$CHILD" 2>/dev/null || :
+  fi
+  if [ "$ELOCK" = 1 ]; then release_remote e2e.lock || cleanup_error=1; fi
+  if [ -n "$SLOT" ]; then
+    release_remote "slot$SLOT.lock" || cleanup_error=1
+    rm -f "$STATE/slot$SLOT.lock/owner"; rmdir "$STATE/slot$SLOT.lock" 2>/dev/null || :
+  fi
+  [ -z "${FILTER:-}" ] || rm -f "$FILTER"
+  [ -z "${FIFO:-}" ] || rm -f "$FIFO"
+  if [ -n "${REMOTE_HELPER:-}" ]; then ssh "$HOST" "rm -f ~/smithers-mirror/.farm/$REMOTE_HELPER" </dev/null >/dev/null 2>&1 || :; fi
+  rm -f "$STATE/timeout.$RUN_ID"
+  if [ "$cleanup_error" = 1 ]; then
+    echo '[mini-run] CLEANUP_INCOMPLETE: owned reservation retained; inspect the remote run' >&2
+    [ "$rc" != 0 ] || rc=74
+  fi
+  exit "$rc"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap '[ ! -e "$STATE/timeout.$RUN_ID" ] || exit 124; exit 143' TERM
+trap 'exit 129' HUP
+# Preserve the original local mkdir/PID lock convention. A remote companion
+# lock prevents another client machine from syncing an occupied slot.
+while [ -z "$SLOT" ]; do
+  if [ $((SECONDS - START)) -ge "$WAIT_SECONDS" ]; then
+    echo "[mini-run] CAPACITY_TIMEOUT after ${WAIT_SECONDS}s; all four slots reserved (including remote or ownerless locks); no lock was stolen" >&2
+    ssh "$HOST" 'for n in 1 2 3 4; do printf "slot%s: " "$n"; cat ~/smithers-mirror/.farm/slot$n.lock/owner 2>/dev/null || echo ownerless; done' </dev/null >&2 || :
+    exit 75
+  fi
+  for n in 1 2 3 4; do
+    lock=$STATE/slot$n.lock
+    if [ -f "$lock/owner" ]; then
+      read -r owner < "$lock/owner"
+      if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+        rm -f "$lock/owner"; rmdir "$lock" 2>/dev/null || :
+      fi
+    fi
+    if mkdir "$lock" 2>/dev/null; then
+      echo $$ > "$lock/owner"
+      reserve_remote "$n" 2>/dev/null
+      result=$?
+      if [ "$result" = 0 ]; then SLOT=$n; break; fi
+      rm -f "$lock/owner"; rmdir "$lock"
+      [ "$result" != 255 ] || exit 255
+    fi
+  done
+  [ -n "$SLOT" ] || sleep 3
+done
+printf '[mini-run] slot %s; source %s\n' "$SLOT" "$SRC" >&2
+ssh "$HOST" "printf '%s\\n' '$REMOTE_OWNER' > ~/smithers-mirror/.farm/slot$SLOT.lock/owner" </dev/null || exit 3
+node -e 'setTimeout(()=>{require("fs").writeFileSync(process.argv[2],"timeout"); console.error("[mini-run] RUN_TIMEOUT after "+process.argv[3]+"s"); process.kill(Number(process.argv[1]),"SIGTERM")},Number(process.argv[3])*1000)' "$$" "$STATE/timeout.$RUN_ID" "$RUN_SECONDS" &
+TIMER=$!
+if [ "$E2E" = 1 ]; then
+  until ssh "$HOST" "mkdir ~/smithers-mirror/.farm/e2e.lock && printf '%s\\n' '$REMOTE_OWNER' > ~/smithers-mirror/.farm/e2e.lock/owner" </dev/null 2>/dev/null; do
+    result=$?
+    [ $((SECONDS - START)) -lt "$WAIT_SECONDS" ] || { echo '[mini-run] E2E_CAPACITY_TIMEOUT; no lock was stolen' >&2; exit 75; }
+    [ "$result" != 255 ] || exit 255
+    sleep 3
+  done
+  ELOCK=1
+  ssh "$HOST" "printf '%s\\n' '$REMOTE_OWNER' > ~/smithers-mirror/.farm/e2e.lock/owner" </dev/null || exit 3
+fi
+# Perishable exclusions protect installed/generated paths but permit removing
+# a deleted source package. Never send credentials or VCS storage to the mini.
+FILTER=$STATE/filter.$$
+cat > "$FILTER" <<'FILTERS'
+-,p .jj/
+-,p .git/
+-,p node_modules/
+-,p dist/
+-,p target/
+-,p .alchemy/
+-,p .wrangler/
+-,p .cache/
+-,p .env*
+-,p .dev.vars*
+-,p .ssh/
+-,p .aws/
+-,p .npmrc
+-,p *.pem
+-,p *.key
+-,p *.p12
+-,p *.tfstate*
+-,p /data/
+-,p test-results/
+-,p playwright-report/
+FILTERS
+SYNC=1
+for _attempt in 1 2 3; do
+  rsync -a --timeout=60 --delete --filter="merge $FILTER" "$SRC/" "$HOST:smithers-mirror/slot$SLOT/"
+  SYNC=$?
+  [ "$SYNC" != 23 ] && [ "$SYNC" != 24 ] && break
+  sleep 1
+done
+rm -f "$FILTER"
+[ "$SYNC" = 0 ] || exit "$SYNC"
+# Hold stdin open without a heartbeat subprocess. On client termination the
+# FIFO closes; remote.sh's EOF watcher kills its command and dev-server groups.
+FIFO=$STATE/stdin.$$
+mkfifo "$FIFO" || exit 3
+exec 3<>"$FIFO"; KEEPER=1
+REMOTE_HELPER=remote-$RUN_ID.sh
+ssh "$HOST" "cat > ~/smithers-mirror/.farm/$REMOTE_HELPER" < "$BASE/mini-remote.sh" || exit 3
+REMOTE="bash \"\$HOME/smithers-mirror/.farm/$REMOTE_HELPER\" $(quote "$SLOT" "$NODE_VERSION" "$CWD" "$E2E" "${#PASS[@]}" "${PASS[@]+"${PASS[@]}"}" -- "$@")"
+ssh "$HOST" "$REMOTE" <"$FIFO" 3>&- &
+CHILD=$!
+wait "$CHILD"; RC=$?; CHILD=
+exec 3>&-; KEEPER=0
+# Fetch receipts without allowing a transfer error to mask the command exit.
+if [ "$ARTIFACTS" = 1 ]; then
+DEST=$STATE/results/slot$SLOT
+mkdir -p "$DEST"
+rsync -a --timeout=60 "$HOST:smithers-mirror/slot$SLOT/$CWD/test-results/" "$DEST/test-results/" 2>/dev/null || :
+rsync -a --timeout=60 "$HOST:smithers-mirror/.farm/slot$SLOT.media" "$DEST/media.list" 2>/dev/null || :
+if [ -s "$DEST/media.list" ]; then
+  MEDIA=$DEST/media
+  [ "$RC" != 0 ] || MEDIA=$HOME/Desktop/smithers-mvp
+  mkdir -p "$MEDIA"
+  rsync -a --timeout=60 --files-from="$DEST/media.list" "$HOST:Desktop/smithers-mvp/" "$MEDIA/" || :
+fi
+else
+  printf '[mini-run] artifacts retained in remote slot %s until reuse; set MINI_RUN_ARTIFACTS=1 to fetch them
+' "$SLOT" >&2
+fi
+printf '[mini-run] command exit %s\n' "$RC" >&2
+exit "$RC"

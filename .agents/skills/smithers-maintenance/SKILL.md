@@ -88,3 +88,15 @@ invented on the MacBook. Existing manual landings continue to work.
 This is bootstrap automation, like `commit.mjs`: it must recover a source-only
 checkout even when the installed CLI or durable host cannot load. It does not
 introduce a workflow engine, background retry service, or product action.
+
+## Farm bootstrap clients
+
+Versioned sources: `.smithers/flows/land/farm/`. Install with
+`node .smithers/flows/land/farm/install.mjs`; it atomically replaces the seven
+client/helper files beside existing state and preserves private
+`farm-config.json`. Use `MINI_RUN_SRC=$PWD` or `LAT_RUN_SRC=$PWD` for your own
+source workspace. Private host aliases/endpoints stay outside the repository.
+See the [farm README](../../../.smithers/flows/land/farm/README.md) for admission,
+execution and cleanup contracts. Disk preflight failures require ownership and
+capacity investigation; never prune another lane's data or reset its runtime.
+Mini artifacts download only with `MINI_RUN_ARTIFACTS=1`.

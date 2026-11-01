@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
 import { jj, migrations } from "./numbering.mjs"
-import { captureGenerated, repairGenerated, mergeHistory, checkHistory, databaseTemplate, migrationManifest, checkManifest, databasePath, schemaPath, manifestPath } from "./generated.mjs"
+import { captureGenerated, repairGenerated, mergeHistory, checkHistory, canonicalHistory, databaseTemplate, migrationManifest, checkManifest, databasePath, schemaPath, manifestPath } from "./generated.mjs"
 
 const db = (id) => `import x from "./migrations/${id}_test.ts"\nimport { Effect } from "effect"\n\n/** Every migration in \`db/migrations\`, by \`<id>_<name>\`. */\nexport const migrations = {\n  "${id}_test": x,\n}\n\nexport const migrate = Effect.succeed(migrations)\n`
 const lock = (stores, epoch = 100) => JSON.stringify({ epoch, stores, payloads: {}, mutations: ["ask"] })
@@ -41,7 +41,7 @@ test("rebasing two real lanes repairs only generated database/lock conflicts", (
   jj(root, ["new", base])
   writeFileSync(join(root, migrations, "0003_test.ts"), "export default 3\n")
   writeFileSync(join(root, databasePath), db("0003"))
-  writeFileSync(join(root, schemaPath), lock({ a: entry("a"), lane: entry("l") }, 101))
+  writeFileSync(join(root, schemaPath), JSON.stringify({ ...JSON.parse(lock({ a: entry("a"), lane: entry("l") }, 101)), mutations: ["save", "ask"] }))
   const context = captureGenerated(root, "published")
   jj(root, ["rebase", "-r", "@", "-d", "published"])
   assert.ok(jj(root, ["log", "-r", "@ & conflicts()", "--no-graph", "-T", "commit_id"]))
@@ -49,6 +49,7 @@ test("rebasing two real lanes repairs only generated database/lock conflicts", (
   assert.equal(jj(root, ["log", "-r", "@ & conflicts()", "--no-graph", "-T", "commit_id"]), "")
   assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(root, schemaPath), "utf8")).stores), ["a", "lane", "remote"])
   assert.equal("epoch" in JSON.parse(readFileSync(join(root, schemaPath), "utf8")), false)
+  assert.deepEqual(JSON.parse(readFileSync(join(root, schemaPath), "utf8")).mutations, ["ask", "save"])
   const source = readFileSync(join(root, manifestPath), "utf8")
   assert.ok(source.indexOf('"0001_test":') < source.indexOf('"0002_test":'))
   assert.ok(source.indexOf('"0002_test":') < source.indexOf('"0003_test":'))
@@ -79,4 +80,11 @@ test("history rejects a one-sided fingerprint edit, removal or kind change befor
   assert.throws(() => checkHistory(base, { stores: { a: entry("changed") } }), /versions.1/)
   assert.throws(() => checkHistory(base, { stores: {} }), /stores.a/)
   assert.throws(() => checkHistory(base, { stores: { a: { kind: "local", versions: { 1: "original" } } } }), /stores.a/)
+})
+
+
+test("old lock writers normalize with the SDK's code-unit ordering and no duplicate mutations", () => {
+  const value = canonicalHistory({ stores: { z: entry("z"), A: entry("A"), a: entry("a") }, payloads: {}, mutations: ["z", "A", "a", "z"] })
+  assert.deepEqual(Object.keys(value.stores), ["A", "a", "z"])
+  assert.deepEqual(value.mutations, ["A", "a", "z"])
 })

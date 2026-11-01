@@ -59,6 +59,15 @@ export function checkHistory(base, next) {
   }
 }
 
+/** Normalize old in-flight lock writers without importing the installed SDK into bootstrap tooling. */
+export function canonicalHistory(history) {
+  const ordered = (entries) => Object.fromEntries(Object.keys(entries ?? {}).sort().map((id) => [id, {
+    ...entries[id],
+    versions: Object.fromEntries(Object.entries(entries[id].versions).sort(([a], [b]) => Number(a) - Number(b)))
+  }]))
+  return { ...history, stores: ordered(history.stores), payloads: ordered(history.payloads), mutations: [...new Set(history.mutations ?? [])].sort() }
+}
+
 /** Capture each side before rebase so conflict markers are never parsed as source or JSON. */
 export function captureGenerated(root, target) {
   jj(root, ["status"])
@@ -113,7 +122,7 @@ export function repairGenerated(root, context) {
     checkHistory(base, remote)
     const merged = mergeHistory(base, local, remote)
     if (merged === undefined) throw new Error("Refusing to remove device schema history")
-    writes.push([schemaPath, `${JSON.stringify(merged, null, 2)}\n`])
+    writes.push([schemaPath, `${JSON.stringify(canonicalHistory(merged), null, 2)}\n`])
   }
   // Validate every merge before writing any result.
   for (const [path, contents] of writes) writeFileSync(join(root, path), contents)

@@ -114,3 +114,51 @@ The tool supports file/content readiness predicates on fetched main, with no
 polling for mutable commit ids. Tests use real jj repositories and local remotes:
 concurrent CLI pushes, interrupted child execution, failed network paths,
 readiness, unsafe ancestry, stale edits, deletions, and removal ownership.
+
+## Implemented: bounded farm clients and disk
+
+The versioned clients and installer live under `.smithers/flows/land/farm/` so
+all their source files and tests are included by the existing landing target's
+input glob. Installation atomically replaces client files beside the existing
+state, preserving private host configuration and in-flight script instances.
+The mini uploads a unique helper per run; Latitude holds its host reservation
+through setup, execution and cleanup. Neither client treats launch as completion.
+
+The mini previously admitted four independent Vitest runs with each runner's
+unbounded default worker count. The new helper caps each run at two workers;
+this prevents that particular oversubscription. No claim of a faster full app
+suite is made: the full app performance run has not been executed. Pure metadata
+commands no longer require app database services. Admission and execution have
+separate deadlines; a busy or ownerless reservation produces its actual owner
+instead of an endless wait. A reused slot must have no live old process group.
+Both clients use bounded independent SSH connections instead of a shared
+multiplex socket. Their exit paths stop only registered process groups and
+remove their private temporary directory; normal completion and cancellation
+are covered by a tiny real mini-host fixture. Mac artifact downloads now require
+an explicit request. Normal runs keep bounded slot outputs on the mini, rather
+than copying video/media onto the nearly full Mac. No local install or cache
+prune is introduced.
+
+Read-only Latitude diagnostics found different user-namespace identities for a
+current Podman client and existing containers, with the containers' runtime
+paths inside already-removed per-test temporary directories. The new services
+use a stable mode-0700 XDG runtime and separate farm graph/runroot. Their names
+and labels identify the invoking run; cleanup removes only that run's containers
+and its database volume. The old shared graph and live containers are untouched.
+Namespace entry fails immediately with a stage-specific reason, instead of
+waiting 90 seconds for an impossible health check. Detached launches are refused
+because they release the host reservation before the remote work completes.
+
+Disk checks run before sync/install and refuse a host below 20 GiB free or above
+95% use. During diagnosis one Latitude host filled while the other was already above
+the admission limit; measurements are retained in the private STATUS file. The new client correctly refused a live
+Latitude smoke run before mutation. No safely attributable stale data was found,
+so nothing was pruned. A host operator must resolve disk ownership/capacity
+before the new Latitude integration services can be validated live. Source-only workspaces, removal and opt-in media
+prevent these tools adding installs or automatic downloads.
+
+The real mini server fixture verified success, failure exit 23, cancellation
+exit 143, worker cap 2 and removal of the invocation's temporary files. The
+normal client also demonstrated bounded refusal at both 120 and 600 seconds
+when all four shared slots stayed reserved. A stale legacy slot remained owned
+by a live client; it was not stolen or terminated.

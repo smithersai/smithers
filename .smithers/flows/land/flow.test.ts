@@ -1,3 +1,4 @@
+import "./farm/farm.test.mjs"
 import "./workspace.test.mjs"
 import "./process.test.mjs"
 import "./projection.test.mjs"

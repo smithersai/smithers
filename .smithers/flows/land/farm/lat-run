@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Latitude unit/integration test farm. See the versioned farm README."""
+import os, sys, re, time, subprocess as sp, pathlib, shlex, signal, json, select
+BASE=pathlib.Path(__file__).resolve().parent
+STATE=pathlib.Path(os.environ.get('LAT_RUN_STATE', str(BASE/'lat-farm')))
+SRC=pathlib.Path(os.environ.get('LAT_RUN_SRC',os.environ.get('MINI_RUN_SRC',str(pathlib.Path.home()/'smithers')))).resolve()
+args=sys.argv[1:]; passed=[]
+def fail(s): print('[lat-run] '+s,file=sys.stderr); sys.exit(2)
+while args and args[0]=='-e':
+ if len(args)<2 or not re.match(r'^[A-Za-z_][A-Za-z_0-9]*=',args[1]): fail('expected -e NAME=VALUE')
+ name=args[1].split('=',1)[0]
+ if re.search(r'key|token|secret|auth|password|credential|cookie|private|^path$|^home$|^bash_env$|^env$|^node_options$|preload|dyld|^ld_|database_url',name,re.I): fail('credential variables are refused')
+ passed.append(args[1]); args=args[2:]
+if len(args)<3 or args[1]!='--': fail('usage: lat-run [-e NAME=VALUE]... <package dir> -- <command...>')
+cwd=args[0]; command=args[2:]
+if re.search(r'playwright|(^|[^a-z])e2e([^a-z]|$)', ' '.join(command), re.I): fail('e2e/Playwright belongs on mini-run')
+try: (SRC/cwd).resolve().relative_to(SRC)
+except ValueError: fail('package must be inside source')
+if not (SRC/cwd).is_dir(): fail('package directory does not exist')
+try: first=int(os.environ.get('LAT_RUN_SLOT_FIRST','1')); last=int(os.environ.get('LAT_RUN_SLOT_LAST','8'))
+except ValueError: fail('slot bounds must be integers')
+if not 1<=first<=last<=64: fail('invalid slot range')
+try:
+ config=json.loads((BASE/'farm-config.json').read_text()) if (BASE/'farm-config.json').exists() else {}
+ ips=json.loads(os.environ.get('LAT_RUN_ENDPOINTS',json.dumps(config.get('latEndpoints',{}))))
+except (ValueError, OSError): fail('invalid private farm host configuration')
+if not isinstance(ips,dict): fail('LAT_RUN_ENDPOINTS must be a host map')
+hosts=os.environ.get('LAT_RUN_HOSTS',' '.join(ips)).split()
+if not hosts or any(h not in ips for h in hosts): fail('configure latEndpoints in private farm-config.json or LAT_RUN_ENDPOINTS')
+if any(not re.fullmatch(r'[A-Za-z0-9_.@:-]+',str(ips[h])) for h in hosts): fail('invalid SSH endpoint')
+if os.environ.get('LAT_RUN_DETACH','0')!='0': fail('detached mode has no lifetime reservation; use attached mode (existing running jobs are unaffected)')
+try:
+ wait_seconds=int(os.environ.get('LAT_RUN_WAIT_SECONDS','120'))
+ run_seconds=int(os.environ.get('LAT_RUN_TIMEOUT_SECONDS','2400'))
+except ValueError: fail('timeouts must be integers')
+if wait_seconds<0 or run_seconds<1: fail('invalid timeout')
+STATE.mkdir(parents=True,exist_ok=True);
+cooldown=STATE/'ssh-failed'
+if cooldown.exists() and time.time()-cooldown.stat().st_mtime<600: fail('SSH cooldown active; wait 10 minutes after the failure')
+ssh=['ssh','-i',str(pathlib.Path.home()/'.ssh/smithers-linux'),'-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','ConnectTimeout=10','-o','ControlMaster=no','-o','ControlPath=none','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=2']
+lock=None; keeper=None; job=None; transfer=None; start=time.monotonic()
+def cleanup():
+ global keeper,job
+ if transfer is not None and transfer.poll() is None:
+  transfer.terminate()
+  try: transfer.wait(timeout=5)
+  except sp.TimeoutExpired: transfer.kill(); transfer.wait()
+ for proc in [job,keeper]:
+  if proc is not None:
+   if proc.stdin: proc.stdin.close()
+   try: proc.wait(timeout=12)
+   except sp.TimeoutExpired:
+    proc.terminate()
+    try: proc.wait(timeout=5)
+    except sp.TimeoutExpired: proc.kill(); proc.wait()
+ if lock:
+  (lock/'owner').unlink(missing_ok=True)
+  try: lock.rmdir()
+  except FileNotFoundError: pass
+def interrupted(signum,frame): raise SystemExit(128+signum)
+signal.signal(signal.SIGTERM,interrupted); signal.signal(signal.SIGINT,interrupted)
+try:
+ # Read-only disk checks happen before reservations, source transfer or installation.
+ healthy=[]
+ for host in hosts:
+  with (BASE/'health.sh').open('rb') as health:
+   probe=sp.run(ssh+[ips[host],'bash -s -- "$HOME"'],stdin=health,timeout=30)
+  if probe.returncode==0: healthy.append(host)
+  else: print(f'[lat-run] HOST_UNAVAILABLE {host}: preflight exit {probe.returncode}',file=sys.stderr)
+ if not healthy: fail('all hosts failed preflight; no sync or install attempted')
+ hosts=healthy
+ while keeper is None:
+  if time.monotonic()-start>=wait_seconds: fail(f'CAPACITY_TIMEOUT after {wait_seconds}s; reservations retained by their owners')
+  for host in hosts:
+   for slot in range(first,last+1):
+    candidate=STATE/f'{host}-slot{slot}.lock'
+    try: candidate.mkdir()
+    except FileExistsError:
+     try:
+      pid=int((candidate/'owner').read_text().split()[0]); os.kill(pid,0)
+     except ProcessLookupError:
+      (candidate/'owner').unlink(missing_ok=True)
+      try: candidate.rmdir()
+      except OSError: pass
+     except (ValueError,FileNotFoundError,PermissionError): pass
+     continue
+    lock=candidate; (lock/'owner').write_text(f'{os.getpid()} {time.time()}\n')
+    # Host flock spans sync and execution. Refuse process groups from pre-reboot runs.
+    reserve=f'flock -n ~/lat-mirror/.farm/reserve-slot{slot}.lock bash -c '+shlex.quote(f'for g in $(cat ~/lat-mirror/.farm/slot{slot}.groups 2>/dev/null); do kill -0 -- -"$g" 2>/dev/null && exit 75; done; echo reserved; cat >/dev/null')
+    proc=sp.Popen(ssh+[ips[host],reserve],stdin=sp.PIPE,stdout=sp.PIPE,text=True)
+    if not select.select([proc.stdout],[],[],15)[0]:
+     proc.terminate()
+     try: proc.wait(timeout=5)
+     except sp.TimeoutExpired: proc.kill(); proc.wait()
+     proc.stdin.close(); (lock/'owner').unlink(missing_ok=True); lock.rmdir(); lock=None
+     fail('RESERVATION_TIMEOUT waiting for host acknowledgement')
+    if proc.stdout.readline().strip()=='reserved': keeper=proc; break
+    proc.stdin.close()
+    try: rc=proc.wait(timeout=5)
+    except sp.TimeoutExpired:
+     proc.terminate()
+     try: rc=proc.wait(timeout=5)
+     except sp.TimeoutExpired: proc.kill(); rc=proc.wait()
+    (lock/'owner').unlink(); lock.rmdir(); lock=None
+    if rc==255:
+     cooldown.touch(); fail('SSH failed; stop. Do not retry for at least 10 minutes.')
+   if keeper: break
+  if keeper is None: time.sleep(2)
+ print(f'[lat-run] {host} slot {slot}',file=sys.stderr)
+ target=ips[host]
+ excludes=['/apps/maintainer-site/queue/before/','/evals/swebench/logs/','*.mp4','*.webm','/.specs/design/mock/','/apps/app/build/','/apps/app/artifacts/','.native/','/packages/smithers/out/','/apps/backend/backend','.flows/','.native-ffi/','.artifacts/','.backend-go-modcache/','.backend-sqlc/','.playwright-mcp/','target/','.cache/','.venv/','.jj/','.git/','node_modules/','dist/','dist-chrome/','dist-firefox/','.env*','*.pem','*.key','.alchemy/','.wrangler/','test-results/','playwright-report/']
+ sync=['rsync','-a','--timeout=60','--delete','-e',shlex.join(ssh)]
+ for item in excludes: sync+=['--exclude='+item]
+ t=time.monotonic()
+ transfer=sp.Popen(sync+[str(SRC)+'/',target+f':lat-mirror/slot{slot}/'])
+ sync_rc=transfer.wait(timeout=300)
+ if sync_rc:
+  if sync_rc in (12,255): cooldown.touch()
+  sys.exit(sync_rc)
+ print(f'[lat-run] sync: {time.monotonic()-t:.1f}s',file=sys.stderr)
+ if cwd == 'packages/smithers':
+  inventory=sp.run(['jj','file','list','--ignore-working-copy','.smithers'],cwd=SRC,capture_output=True,check=True)
+  sp.run(ssh+[target,'cat > '+shlex.quote(f'lat-mirror/.farm/slot{slot}.tracked-source.txt')],input=inventory.stdout,check=True,timeout=30)
+ for helper,remote in [('lat-remote.sh',f'remote-slot{slot}.sh'),('lat-services.sh',f'services-slot{slot}.sh')]:
+  with (BASE/helper).open('rb') as source:
+   sp.run(ssh+[target,'cat > '+shlex.quote('lat-mirror/.farm/'+remote)],stdin=source,check=True,timeout=30)
+ remote=['bash',f'lat-mirror/.farm/remote-slot{slot}.sh',str(slot),'auto',cwd,'0',str(len(passed))]+passed+['--']+command
+ job=sp.Popen(ssh+[target,shlex.join(remote)],stdin=sp.PIPE)
+ try: rc=job.wait(timeout=run_seconds)
+ except sp.TimeoutExpired:
+  print(f'[lat-run] RUN_TIMEOUT after {run_seconds}s; closing only this run',file=sys.stderr)
+  rc=124
+ if rc==255: cooldown.touch()
+ print(f'[lat-run] {host} slot {slot}: exit {rc}, {time.monotonic()-start:.1f}s total',file=sys.stderr)
+ sys.exit(rc if rc>=0 else 128-rc)
+except sp.TimeoutExpired:
+ print('[lat-run] OPERATION_TIMEOUT during preflight or transfer; invocation cleaned up',file=sys.stderr)
+ sys.exit(124)
+except sp.CalledProcessError as error:
+ if error.returncode==255: cooldown.touch()
+ sys.exit(error.returncode)
+finally: cleanup()
