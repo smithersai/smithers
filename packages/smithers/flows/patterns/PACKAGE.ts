@@ -72,7 +72,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Escalation.ts",
         "src/Supervisor.ts",
         "src/ScanFixVerify.ts",
-        "src/DriftDetector.ts"
+        "src/DriftDetector.vibe"
       ]
     },
     {
@@ -146,7 +146,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A pattern that captures caller options by reference so a later edit changes key material or bypasses validation (DriftDetector, Kanban, MergeQueue snapshots)."
       ],
-      paths: ["src/DriftDetector.ts", "src/Kanban.ts", "src/MergeQueue.ts"]
+      paths: ["src/DriftDetector.vibe", "src/Kanban.ts", "src/MergeQueue.ts"]
     }
   ]
 })

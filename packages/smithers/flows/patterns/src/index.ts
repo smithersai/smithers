@@ -94,7 +94,7 @@ export * as CheckSuite from "./CheckSuite.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as DriftDetector from "./DriftDetector.ts"
+export * as DriftDetector from "./DriftDetector.vibe"
 
 /**
  * @category patterns
