@@ -21,7 +21,7 @@ import * as Effect from "effect/Effect"
 import { existsSync } from "node:fs"
 import * as Constructs from "../src/Constructs.ts"
 import * as Detect from "../src/Detect.ts"
-import * as Inventory from "../src/Inventory.ts"
+import * as Inventory from "../src/Inventory.vibe"
 import * as Mapping from "../src/Mapping.ts"
 import { nodeLayer } from "./fixtures/helpers.ts"
 

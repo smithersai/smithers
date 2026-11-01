@@ -52,7 +52,10 @@
     "./Checks": "./src/Checks.ts",
     "./Constructs": "./src/Constructs.ts",
     "./Detect": "./src/Detect.ts",
-    "./Inventory": "./src/Inventory.ts",
+    "./Inventory": {
+      "types": "./src/Inventory.d.vibe.ts",
+      "default": "./src/Inventory.vibe"
+    },
     "./Mapping": "./src/Mapping.ts",
     "./MigrateError": "./src/MigrateError.ts",
     "./PromptHints": "./src/PromptHints.ts",

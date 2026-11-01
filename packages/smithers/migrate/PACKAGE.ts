@@ -135,7 +135,7 @@ const securityReview = Smithers.SecurityReview({
         "A recursion with no depth cap or no visited-set on real paths.",
         "A run-state reader in `RunState.ts` that opens a database or file outside the project without the operator's acknowledgement."
       ],
-      paths: ["src/internal/Fs.ts", "src/Scan.ts", "src/flow/Checkpoint.ts", "src/RunState.ts", "src/Inventory.ts"]
+      paths: ["src/internal/Fs.ts", "src/Scan.ts", "src/flow/Checkpoint.ts", "src/RunState.ts", "src/Inventory.vibe"]
     },
     {
       id: "operator-gates",
