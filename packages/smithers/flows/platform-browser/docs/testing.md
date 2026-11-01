@@ -247,3 +247,8 @@ those is testing this package rather than your program.
   degrades when one omits an optional member.
 - [Troubleshooting](./troubleshooting.md): the failures a stub can reproduce,
   with the cause and the fix for each.
+
+`BrowserFileSystemSnapshot.test.ts` checks Date-range and numeric-mode validation
+and runs directory creation, removal, rename and timestamp updates on a real
+filesystem after caller options or optional backend methods change. Effects
+retain the operation requested at construction, including the backend receiver.

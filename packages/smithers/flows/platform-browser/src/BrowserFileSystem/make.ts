@@ -195,16 +195,20 @@ export const make = (fs: ZenFsPromisesLike): FileSystem.FileSystem =>
     truncate: () => unsupported("truncate"),
     sink: () => Sink.fail(unsupportedError("sink")),
     watch: () => Stream.fail(unsupportedError("watch")),
-    rename: (from, to) =>
-      fs.rename === undefined ? unsupported("rename") : Effect.tryPromise({
-        try: () => fs.rename!(from, to),
+    rename: (from, to) => {
+      const rename = fs.rename
+      return rename === undefined ? unsupported("rename") : Effect.tryPromise({
+        try: () => rename.call(fs, from, to),
         catch: platformError("rename", from)
-      }).pipe(Effect.uninterruptible),
-    utimes: (path, atime, mtime) =>
-      fs.utimes === undefined ? unsupported("utimes") : Effect.tryPromise({
-        try: () => fs.utimes!(path, atime, mtime),
+      }).pipe(Effect.uninterruptible)
+    },
+    utimes: (path, atime, mtime) => {
+      const utimes = fs.utimes
+      return utimes === undefined ? unsupported("utimes") : Effect.tryPromise({
+        try: () => utimes.call(fs, path, atime, mtime),
         catch: platformError("utimes", path)
-      }).pipe(Effect.uninterruptible),
+      }).pipe(Effect.uninterruptible)
+    },
     makeTempDirectory: () => unsupported("makeTempDirectory"),
     makeTempDirectoryScoped: () => unsupported("makeTempDirectoryScoped"),
     makeTempFile: () => unsupported("makeTempFile"),
@@ -236,17 +240,20 @@ export const make = (fs: ZenFsPromisesLike): FileSystem.FileSystem =>
      * creating a directory 0755 when the caller asked for 0700 is a silent
      * permission widening, not a missing feature.
      */
-    makeDirectory: (path, options) =>
-      Effect.asVoid(
+    makeDirectory: (path, options) => {
+      const recursive = options?.recursive ?? false
+      const mode = options?.mode
+      return Effect.asVoid(
         Effect.tryPromise({
           try: () =>
             fs.mkdir(path, {
-              recursive: options?.recursive ?? false,
-              ...(options?.mode === undefined ? {} : { mode: options.mode })
+              recursive,
+              ...(mode === undefined ? {} : { mode })
             }),
           catch: platformError("makeDirectory", path)
         }).pipe(Effect.uninterruptible)
-      ),
+      )
+    },
     readDirectory: (path, options) => readDirectory(fs, path, options),
     stat: (path) =>
       Effect.flatMap(
@@ -254,15 +261,18 @@ export const make = (fs: ZenFsPromisesLike): FileSystem.FileSystem =>
         (stats) => fileInfo(stats, path)
       ),
     realPath: (path) => realPath(fs, path),
-    remove: (path, options) =>
-      Effect.tryPromise({
+    remove: (path, options) => {
+      const recursive = options?.recursive ?? false
+      const force = options?.force ?? false
+      return Effect.tryPromise({
         try: () =>
           fs.rm(path, {
-            recursive: options?.recursive ?? false,
-            force: options?.force ?? false
+            recursive,
+            force
           }),
         catch: platformError("remove", path)
-      }).pipe(Effect.uninterruptible),
+      }).pipe(Effect.uninterruptible)
+    },
     /**
      * `readable` and `writable` are answered from the reported `mode` rather
      * than dropped: a `writable` check that succeeds on a read-only file is a
