@@ -26,7 +26,7 @@ import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { PatternError } from "../PatternError.ts"
-import * as Compose from "./Compose.ts"
+import * as Compose from "./Compose.vibe"
 import type { Member } from "./Member.ts"
 import { call as callMember } from "./Member.ts"
 

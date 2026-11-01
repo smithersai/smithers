@@ -66,7 +66,7 @@ const securityReview = Smithers.SecurityReview({
         "A stop verdict (Supervisor allDone, ScanFixVerify resolved, DriftDetector drifted) read with the `in` operator, which admits an inherited property, instead of Object.hasOwn plus strict equality to true."
       ],
       paths: [
-        "src/internal/Compose.ts",
+        "src/internal/Compose.vibe",
         "src/ReviewLoop.ts",
         "src/DelegationChain.ts",
         "src/Escalation.ts",
@@ -86,7 +86,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/Decorate.ts",
-        "src/internal/Compose.ts",
+        "src/internal/Compose.vibe",
         "src/Intervene.ts",
         "src/Runbook.ts"
       ]

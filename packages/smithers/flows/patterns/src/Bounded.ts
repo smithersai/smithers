@@ -17,7 +17,7 @@ import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import type * as Types from "effect/Types"
-import * as Compose from "./internal/Compose.ts"
+import * as Compose from "./internal/Compose.vibe"
 import { PatternError } from "./PatternError.ts"
 
 /**
