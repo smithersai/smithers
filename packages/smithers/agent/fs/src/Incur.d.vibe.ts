@@ -8,7 +8,7 @@ import type { Cli as IncurCli } from "incur";
 import * as FlowInvoker from "./FlowInvoker.vibe";
 import { FsError } from "./FsError.vibe";
 import * as Route from "./Route.vibe";
-export { selfSegment } from "./internal/IncurHost.js";
+export { selfSegment } from "./internal/IncurHost.ts";
 /**
  * Projects routes onto an Incur CLI while preserving metadata-only discovery.
  *

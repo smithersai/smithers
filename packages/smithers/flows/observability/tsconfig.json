@@ -30,5 +30,6 @@
       "ignoreEffectErrorsInTscExitCode": true
     }]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "vibelang": { "declarationImportStyle": ".ts" }
 }
