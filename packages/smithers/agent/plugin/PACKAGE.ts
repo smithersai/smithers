@@ -7,6 +7,7 @@ const cwd = "packages/smithers/agent/plugin"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  entry: Input.file("src/index.vibe"),
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   testData: ["test/fixtures/*.mjs", "test/fixtures/*.cjs", "test/fixtures/*.json"],
   cwd
