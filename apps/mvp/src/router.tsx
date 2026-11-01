@@ -1,6 +1,6 @@
 import { ROUTE_PATHS } from "./routePaths"
 import { openBranchPage } from "./features/branch/navigation"
-import { createRootRouteWithContext, createRoute, createRouter, notFound, redirect } from "@tanstack/react-router"
+import { createRootRouteWithContext, createRoute, createRouter, notFound, redirect, type AnyRouter, type RouterHistory } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch"
 import type { DomainsView } from "./features/domains/domains"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi"
@@ -73,6 +73,8 @@ import { ViewScreen } from "./screens/view/ViewScreen"
  * layers, from main.tsx's `RouterProvider`.
  */
 export interface RouterContext {
+  /** The router performing this navigation, supplied by createAppRouter. */
+  readonly router?: Pick<AnyRouter, "state">
   readonly repo: RepoView
   readonly home: HomeView
   readonly docs: DocsView
@@ -146,7 +148,7 @@ const enterRepo = (
     const href = canonicalRepoHref(load.location, params, canonical, fileAtTree)
     if (href !== undefined) throw redirect({ href, replace: true })
   }, () => {
-    context.repo.actions.role(params.owner, params.repo, staysInRepository(shownPath(), params))
+    context.repo.actions.role(params.owner, params.repo, staysInRepository(shownPath(context), params))
     return open()
   })
 
@@ -155,7 +157,7 @@ const enterRepo = (
  * such as a file clicked in its tree, reuses who the person is there and its home when the tab holds a good answer for
  * each (`reuse` in `repo.actions.role` and `home.actions.open`).
  */
-const shownPath = (): string | undefined => router.state.resolvedLocation?.pathname
+const shownPath = (context: RouterContext): string | undefined => context.router?.state.resolvedLocation?.pathname
 
 /** Repository feature routes share the same frame, including on a direct visit. */
 const enterRepository = (
@@ -377,7 +379,7 @@ const treeRoute = createRoute({
     enterRepo(context, params, load, () => Promise.all([context.repo.actions.warmRoute("tree", params, { L: search.L }), context.home.actions.warm(params.owner, params.repo)]), () =>
       Promise.all([
         context.repo.actions.openRoute("tree", params, { L: search.L }),
-        context.home.actions.open(params.owner, params.repo, staysInRepository(shownPath(), params)),
+        context.home.actions.open(params.owner, params.repo, staysInRepository(shownPath(context), params)),
         context.todos.actions.warm(params.owner, params.repo),
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, search),
       ])),
@@ -402,7 +404,7 @@ const blobRoute = createRoute({
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("blob", params, search), () =>
       Promise.all([
         context.repo.actions.openRoute("blob", params, search),
-        context.home.actions.open(params.owner, params.repo, staysInRepository(shownPath(), params)),
+        context.home.actions.open(params.owner, params.repo, staysInRepository(shownPath(context), params)),
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, params._splat === undefined ? {} : { file: params._splat }),
       ])),
   onLeave: ({ context, abortController }) => {
@@ -418,7 +420,7 @@ const blobRoute = createRoute({
  * `runRouteLifecycle`), so leaving here would undo what the next page just joined.
  */
 const leaveWorkspace = (context: RouterContext) => {
-  const next = router.state.matches.at(-1)?.routeId
+  const next = context.router?.state.matches.at(-1)?.routeId
   if (next === treeRoute.id || next === blobRoute.id) return
   void context.branch.presence.actions.leave()
   void context.branch.coedit.actions.hideFiles()
@@ -727,72 +729,87 @@ const actionsAliasRoute = createRoute({
   beforeLoad: ({ params }) => { throw redirect({ to: "/$owner/$repo/runs", params, replace: true }) },
 })
 
-export const router = createRouter({
-  routeTree: rootRoute.addChildren([
-    landingRoute,
-    bugRoute,
-    appRoute,
-    viewRoute,
-    flowsRoute,
-    flowsAliasRoute,
-    newFlowRoute,
-    draftRoute,
-    codeRoute,
-    runsRoute,
-    conversationsRoute,
-    runRoute,
-    settingsRoute,
-    settingsAliasRoute,
-    secretsAliasRoute,
-    actionsAliasRoute,
-    pluginIndexRoute,
-    pluginPathRoute,
-    repoPluginIndexRoute,
-    repoPluginPathRoute,
-    repoSettingsRoute,
-    repoRoute,
-    treeRoute,
-    blobRoute,
-    branchesRoute,
-    rawRoute,
-    docsRoute,
-    docsPageRoute,
-    issuesRoute,
-    newIssueRoute,
-    issueRoute,
-    pullsRoute,
-    actionsRoute,
-    actionRunRoute,
-    pluralPullRoute,
-    pullRoute,
-    pullTabRoute,
-    stackRoute,
-    todoRoute,
-    secretsRoute,
-  ]),
-  // A page that fails to load or render shows Retry in the shell; React reports the error (main.tsx).
-  defaultErrorComponent: RouteError,
-  // A link's hover or focus preloads its page: its route's `beforeLoad` warms what it shows (`enter`).
-  defaultPreload: "intent",
-  defaultPreloadDelay: PRELOAD_DELAY_MS,
-  // main.tsx's `RouterProvider` gives the real one before the first load.
-  context: {
-    repo: undefined!,
-    home: undefined!,
-    docs: undefined!,
-    views: undefined!,
-    branch: undefined!,
-    terminal: undefined!,
-    issues: undefined!,
-    pulls: undefined!,
-    todos: undefined!,
-    plugins: undefined!,
-    runs: undefined!,
-    flows: undefined!,
-    domains: undefined!,
-    secrets: undefined!,
-  },
-})
+const routeTree = rootRoute.addChildren([
+  landingRoute,
+  bugRoute,
+  appRoute,
+  viewRoute,
+  flowsRoute,
+  flowsAliasRoute,
+  newFlowRoute,
+  draftRoute,
+  codeRoute,
+  runsRoute,
+  conversationsRoute,
+  runRoute,
+  settingsRoute,
+  settingsAliasRoute,
+  secretsAliasRoute,
+  actionsAliasRoute,
+  pluginIndexRoute,
+  pluginPathRoute,
+  repoPluginIndexRoute,
+  repoPluginPathRoute,
+  repoSettingsRoute,
+  repoRoute,
+  treeRoute,
+  blobRoute,
+  branchesRoute,
+  rawRoute,
+  docsRoute,
+  docsPageRoute,
+  issuesRoute,
+  newIssueRoute,
+  issueRoute,
+  pullsRoute,
+  actionsRoute,
+  actionRunRoute,
+  pluralPullRoute,
+  pullRoute,
+  pullTabRoute,
+  stackRoute,
+  todoRoute,
+  secretsRoute,
+])
+
+/** Builds an app router whose route context always reads this instance's navigation state. */
+export const createAppRouter = (options: {
+  readonly context?: RouterContext
+  readonly history?: RouterHistory
+  readonly origin?: string
+  readonly isServer?: boolean
+} = {}) => {
+  const appRouter = createRouter({
+    routeTree,
+    // A page that fails to load or render shows Retry in the shell; React reports the error (main.tsx).
+    defaultErrorComponent: RouteError,
+    // A link's hover or focus preloads its page: its route's `beforeLoad` warms what it shows (`enter`).
+    defaultPreload: "intent",
+    defaultPreloadDelay: PRELOAD_DELAY_MS,
+    // main.tsx's `RouterProvider` gives the real one before the first load.
+    context: {
+      repo: undefined!,
+      home: undefined!,
+      docs: undefined!,
+      views: undefined!,
+      branch: undefined!,
+      terminal: undefined!,
+      issues: undefined!,
+      pulls: undefined!,
+      todos: undefined!,
+      plugins: undefined!,
+      runs: undefined!,
+      flows: undefined!,
+      domains: undefined!,
+      secrets: undefined!,
+    },
+    ...options,
+  })
+  appRouter.update({ context: { ...appRouter.options.context, router: appRouter } })
+  return appRouter
+}
+
+export const router = createAppRouter()
 
 declare module "@tanstack/react-router" {
   interface Register {

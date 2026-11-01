@@ -80,7 +80,7 @@ test.each(["empty", "mine", "watching"] as const)(
       status: "signed_in", login: "person-member", role: "member",
     })))
     const panel = () => context.terminal.queries.panel.toArray[0]
-    router.update({ history: createMemoryHistory({ initialEntries: ["/"] }), context, isServer: false, origin: api.origin })
+    router.update({ history: createMemoryHistory({ initialEntries: ["/"] }), context: { ...context, router }, isServer: false, origin: api.origin })
     await router.load()
     const params = { owner: "octo", repo: "hello", ref: "feature", _splat: "" }
     await router.navigate({ to: "/$owner/$repo/tree/$ref/$", params })

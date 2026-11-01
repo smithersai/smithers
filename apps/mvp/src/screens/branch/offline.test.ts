@@ -33,7 +33,7 @@ import { TerminalStore } from "../../features/terminal/store"
 import { Theme } from "../../features/theme/theme"
 import { Todos } from "../../features/todos/todos"
 import { Views } from "../../features/views/views"
-import { router as productionRouter } from "../../router"
+import { createAppRouter, router as productionRouter } from "../../router"
 import { openFaultyApp, TestChatApi } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
 import { dialing, roomHost } from "../../test/rooms"
@@ -69,7 +69,7 @@ const open = async (reopenRoute?: () => void) => {
   // Tracking verifies the default branch too; HEAD must resolve to a published ref.
   api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main"), work: shaOf("work") } })
   for (const query of [
-    ...Object.values(repo.queries), branch.queries.current, branch.presence.queries.room, branch.presence.queries.participants,
+    ...Object.values(repo.queries), home.queries.home, branch.queries.current, branch.presence.queries.room, branch.presence.queries.participants,
     chat.queries.connection, chat.queries.place, chat.queries.queued, intel.queries.state, terminal.queries.panel, terminal.queries.tabs,
     attention.queries.unread, attention.queries.needs, attention.queries.panel, auth.queries.session,
   ]) query.startSyncImmediate()
@@ -110,8 +110,8 @@ const open = async (reopenRoute?: () => void) => {
   }
 }
 
-const onBranch = (context: Awaited<ReturnType<typeof open>>["context"], terminal = false) => createRouter({
-  ...productionRouter.options,
+// Use the app's constructor so every router supplies its own navigation state to the shared routes.
+const onBranch = (context: Awaited<ReturnType<typeof open>>["context"], terminal = false) => createAppRouter({
   context,
   origin: "http://localhost",
   history: createMemoryHistory({ initialEntries: [`/octo/hello/tree/work${terminal ? "?terminal=me" : ""}`] }),
@@ -130,6 +130,63 @@ const pendingView = async (tab: Awaited<ReturnType<typeof open>>, terminal = fal
   await router.load()
   return () => tab.render(router)
 }
+
+test("a direct branch visit resolves without a route error", async () => {
+  const tab = await open()
+  await tab.release()
+  const router = onBranch(tab.context)
+  await router.load()
+  expect(router.state.matches.flatMap(match => match.error === undefined ? [] : [match.error])).toEqual([])
+  expect(tab.current()?.status).toBe("ready")
+}, 90_000)
+
+test("each router keeps its own branch workspace when a tree opens a file, then leaves it for chat", async () => {
+  const tab = await open()
+  await tab.release()
+  const router = createAppRouter({
+    context: tab.context,
+    origin: "http://localhost",
+    isServer: false,
+    history: createMemoryHistory({ initialEntries: ["/octo/hello/tree/work"] }),
+  })
+  // Even a context copied from another router must belong to the new instance.
+  const other = createAppRouter({ context: router.options.context,
+    history: createMemoryHistory({ initialEntries: ["/app"] }),
+  })
+  expect(other.options.context.router).toBe(other)
+  expect(router.options.context.router).toBe(router)
+  await router.load()
+  expect(router.state.matches.flatMap(match => match.error === undefined ? [] : [match.error])).toEqual([])
+  expect(tab.current()?.status).toBe("ready")
+  await vi.waitFor(() => {
+    expect(tab.context.repo.queries.roles.toArray).toHaveLength(1)
+    expect(tab.context.home.queries.home.toArray[0]?.current).toMatchObject({ answering: false, audience: "contributor" })
+  }, { timeout: 10_000 })
+  const branchId = tab.current()!.branchId
+  const states: Array<string> = []
+  const watching = tab.context.branch.queries.current.subscribeChanges(batch => {
+    for (const change of batch) states.push(change.value.status)
+  })
+  try {
+    await router.navigate({ to: "/$owner/$repo/blob/$ref/$", params: { owner: "octo", repo: "hello", ref: "work", _splat: "example.txt" } })
+    expect(router.state.matches.flatMap(match => match.error === undefined ? [] : [match.error])).toEqual([])
+    expect(tab.current()?.branchId).toBe(branchId)
+    expect(states).toEqual([])
+    expect(tab.context.branch.presence.queries.room.toArray[0]?.branchId).toBe(branchId)
+    await router.navigate({ to: "/$owner/$repo/tree/$ref/$", params: { owner: "octo", repo: "hello", ref: "work", _splat: "" } })
+    expect(states).toEqual([])
+    expect(tab.context.branch.presence.queries.room.toArray[0]?.branchId).toBe(branchId)
+  } finally {
+    watching.unsubscribe()
+  }
+  await router.navigate({ to: "/app" })
+  expect(tab.current()?.status).toBe("none")
+  await vi.waitFor(() => expect(tab.context.branch.presence.queries.room.toArray[0]?.status).toBe("idle"))
+  const records = await tab.exported()
+  for (const action of ["branch.open", "repo.role", "home.open"]) {
+    expect(records.log(action).filter(record => record.attributes.outcome === "kept")).toHaveLength(2)
+  }
+}, 90_000)
 
 test("an evicted device renders branch chrome while tracking waits, then opens the verified workspace", async () => {
   const tab = await open()
@@ -241,8 +298,7 @@ test("offline, an evicted device's branch page shows its chrome at once, and its
 
   // A ref that can't be a branch has no chrome, offline or not.
   await tab.offline()
-  const missing = createRouter({
-    ...productionRouter.options,
+  const missing = createAppRouter({
     context: tab.context,
     origin: "http://localhost",
     history: createMemoryHistory({ initialEntries: ["/octo/hello/tree/not..a-branch"] }),
