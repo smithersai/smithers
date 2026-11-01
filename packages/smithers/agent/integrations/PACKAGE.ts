@@ -122,7 +122,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/core/Connection.ts",
         "src/Environment.ts",
-        "src/*/Config.ts"
+        "src/*/Config.{ts,vibe}"
       ]
     },
     {

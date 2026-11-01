@@ -42,7 +42,7 @@ const test = Smithers.Shell.Test({
   shell: "cd packages/smithers/flows/platform-cloudflare && npx vitest run",
   data: [
     lib,
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts")

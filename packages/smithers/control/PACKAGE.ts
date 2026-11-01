@@ -69,7 +69,7 @@ const postgresInventory = Smithers.Shell.Test({
     "cd packages/smithers/control && node ../flows/database/scripts/test-matrix.mjs --maxWorkers=2 test/SqlControlRuntimePostgres.test.ts --coverage.enabled=false",
   data: [
     lib,
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.file("test/SqlControlRuntimePostgres.test.ts"),
     Smithers.file("test/DurableStack.ts"),
     Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),

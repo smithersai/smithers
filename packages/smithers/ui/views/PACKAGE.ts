@@ -42,7 +42,7 @@ const { importRules, jevRules } = SdkRules({ cwd, role: "library" })
  * views bundle the realm and the bridge from them. A glob in another package
  * cannot reach them; a label can.
  */
-const sourceFiles = Smithers.Filegroup({ srcs: [Smithers.glob("src/**/*.ts")], cwd })
+const sourceFiles = Smithers.Filegroup({ srcs: [Smithers.glob("src/**/*.{ts,vibe}")], cwd })
 
 /** Security review: `security` reviews the diff, `securityAudit` audits the package. */
 const securityReview = Smithers.SecurityReview({
