@@ -1,8 +1,9 @@
 import { AgentRunner } from "@smthrs/agent"
-import { Cause, Effect, Layer, Metric, Schema } from "effect"
+import { Cause, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
 import * as Fleet from "./Fleet.ts"
+import * as Overflow from "./Overflow.ts"
 
 // The host's job store on Postgres (decision 0136, docs/features/agent-runners.md#the-job-store): `@smthrs/agent`'s
 // `AgentRunner.AgentJobs` port, which an external agent's step (`ExternalAgent`) drives. `agent_jobs` is the external
@@ -15,6 +16,11 @@ import * as Fleet from "./Fleet.ts"
 // The store also keeps the fleet's projection, `agent_runs` (worker/runners/Fleet.ts, docs/features/fleet.md), under
 // the job's own key: `start` queues the run in its transaction, `cancel` marks it Stopping, and each `status`, the
 // step's parked probe, projects the job and starts the alerts that came due through `alerts.raise`.
+//
+// With `wake`, the probe also wakes the repository's overflow box (decision 0144, worker/runners/Overflow.ts) when a
+// queued job has waited past its overflow's `minQueuedSeconds` and the overflow runner isn't awake. The box's wake goes
+// through the sandbox admission, so the awake cap and the spend alert hold; a wake that can't happen now is logged, and
+// the next probe asks again.
 
 /** Job store operations, by `op` (`start`, `status`, `cancel`, `stop`) and `outcome`. */
 export const operations = Metric.counter("smithers_agent_jobs", {
@@ -70,7 +76,11 @@ export interface Alerts {
  * The fleet's projection is kept with `alerts`' thresholds (the defaults unless given); without `alerts.raise`, the
  * probe raises none. A projection or alert that fails is logged and never fails the operation, whose job goes on.
  */
-export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>, alerts?: Alerts) => {
+export const make = <E>(
+  database: Layer.Layer<SqlClient.SqlClient, E>,
+  alerts?: Alerts,
+  wake?: (due: Overflow.Due) => Effect.Effect<void, unknown>,
+) => {
   const settings = alerts?.settings ?? Fleet.DEFAULTS
   /** The fleet's part of an operation: its failure is a log line by code, never the operation's. */
   const projected = (op: string, key: string, effect: Effect.Effect<unknown, unknown, SqlClient.SqlClient>) =>
@@ -88,6 +98,19 @@ export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>, alerts?: 
     Effect.gen(function* () {
       // A run whose start's projection failed is queued now, so the probe still keeps it.
       const due = yield* Fleet.queue(key).pipe(Effect.andThen(Fleet.probe(key, settings)), Effect.provide(database))
+      if (wake !== undefined) {
+        const overflow = yield* Overflow.due(key).pipe(Effect.provide(database))
+        if (Option.isSome(overflow)) {
+          yield* wake(overflow.value).pipe(
+            Effect.tap(() => Effect.logInfo("agent.overflow").pipe(Effect.annotateLogs({ key, repoId: overflow.value.repoId, outcome: "woken" }))),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("agent.overflow").pipe(
+                Effect.annotateLogs({ key, repoId: overflow.value.repoId, outcome: "not_woken", errorCode: codeOf(Cause.squash(cause)) }),
+              )
+            ),
+          )
+        }
+      }
       if (alerts === undefined || due.length === 0) return
       yield* Fleet.raiseAll(key, due, alerts.raise, (mark) => Effect.provide(mark, database))
     })
@@ -207,8 +230,12 @@ export const stop = (origin: string) =>
  * `AgentRunner.AgentJobs` on Postgres through `database`, whose own requirements it captures when built, raising the
  * fleet's alerts through `alerts` when given.
  */
-export const layer = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, alerts?: Alerts) =>
+export const layer = <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  alerts?: Alerts,
+  wake?: (due: Overflow.Due) => Effect.Effect<void, unknown>,
+) =>
   Layer.effect(
     AgentRunner.AgentJobs,
-    Effect.map(Effect.context<R>(), (context) => make(Layer.provide(database, Layer.succeedContext(context)), alerts)),
+    Effect.map(Effect.context<R>(), (context) => make(Layer.provide(database, Layer.succeedContext(context)), alerts, wake)),
   )

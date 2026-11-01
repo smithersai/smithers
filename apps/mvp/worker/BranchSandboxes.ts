@@ -40,6 +40,7 @@ import * as Subscriptions from "./personal/Subscriptions.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as RegistryEgress from "./branch/RegistryEgress.ts"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
+import * as Overflow from "./runners/Overflow.ts"
 
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):
 // `SandboxObject`, one Durable Object per branch, named by the branch's id, owns that branch's container
@@ -93,6 +94,15 @@ export const sandboxStartTimeoutSeconds = Config.schema(
   "SANDBOX_START_TIMEOUT_SECONDS",
 ).pipe(Config.withDefault(150))
 
+
+/**
+ * `OVERFLOW_INSTANCE`: the instance type a repository's overflow box starts on (decision 0144), `standard-4` unless set:
+ * 4 vCPU, 12 GiB and 20 GB, the largest, since it runs an agent and its builds.
+ */
+export const overflowInstance = Config.schema(
+  Schema.Literals(["lite", "basic", "standard-1", "standard-2", "standard-3", "standard-4"]),
+  "OVERFLOW_INSTANCE",
+).pipe(Config.withDefault("standard-4" as const))
 
 /** Whether a wake failed because the container didn't finish starting in time (`SANDBOX_START_TIMEOUT_SECONDS`). */
 const startTimedOut = (cause: Cause.Cause<unknown>) => Cause.squash(cause) instanceof SandboxHost.StartTimedOut
@@ -197,7 +207,11 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
     const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
     const egressAllowHosts = yield* SandboxEgress.allowHosts.pipe(Effect.orDie)
-    const instance = yield* sandboxInstance.pipe(Effect.orDie)
+    const branchInstance = yield* sandboxInstance.pipe(Effect.orDie)
+    const boxInstance = yield* overflowInstance.pipe(Effect.orDie)
+    /** The instance type `branch`'s machine starts on: an overflow box's, or every other machine's. */
+    const instanceOf = (branch: SandboxBranch | undefined) =>
+      branch !== undefined && Overflow.isBox(branch.branchId) ? boxInstance : branchInstance
     const startTimeoutMs = (yield* sandboxStartTimeoutSeconds.pipe(Effect.orDie)) * 1000
     const sessionOn = yield* configuredSessionOn
     const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
@@ -245,7 +259,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         const outcome = yield* SandboxHost.wake(box, {
           intercepts,
           egress: own,
-          instance,
+          instance: instanceOf(yield* branchOf),
           startTimeoutMs,
         })
         const generation = (yield* state.storage.get<number>("generation")) ?? 0
@@ -269,7 +283,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
               personId: Budget.personOf(ownerId),
               kind: Budget.kindOf(branch),
               generation,
-              instance,
+              instance: instanceOf(branch),
             }).pipe(Effect.provide(database))
           }
           return generation
@@ -308,6 +322,15 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             if (!(yield* timed(admitted(branch, ownerId)))) return { _tag: "Waiting" } as const
             stage = "start"
             const generation = yield* timed(startFor(ownerId))
+            // An overflow box checks nothing out: its runner keeps its own mirror and a checkout per job.
+            if (Overflow.isBox(branch.branchId)) {
+              stage = "placeholders"
+              yield* timed(overflow(branch, generation))
+              yield* Effect.logInfo("sandbox.wake").pipe(
+                Effect.annotateLogs({ branchId: branch.branchId, outcome: "woken", generation, ...took }),
+              )
+              return { _tag: "Woken", generation } as const
+            }
             stage = "checkout"
             const exit = yield* timed(run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name), branch.namespace), SANDBOX_USER))
             if (exit !== 0) {
@@ -432,6 +455,71 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         Effect.catchCause((cause) => Effect.logWarning("sandbox.egress.setup").pipe(Effect.annotateLogs(failureFields(cause)))),
         Effect.withSpan("sandbox.egress.trust"),
       )
+
+      /**
+       * A repository's overflow box (decision 0144, worker/runners/Overflow.ts): its two placeholders in the box's
+       * environment file with the container's CA trusted (SandboxEgress.SETUP), then its runner's `runner.json` and
+       * token placeholder written as `smithers`, and `smthrs runner serve` started detached in a login shell, which reads
+       * them. The object keeps the credentials' rows for the egress (`egressOverflow`). A repository with overflow off,
+       * or whose Admin's connection is gone, gets nothing started: the box sleeps again.
+       */
+      const overflow = (branch: SandboxBranch, generation: number) =>
+        Effect.gen(function* () {
+          yield* state.storage.delete("overflow")
+          if (Option.isNone(secretKeys)) return yield* Effect.logWarning("sandbox.overflow").pipe(Effect.annotateLogs({ outcome: "off" }))
+          const repo = SandboxEgress.guestOf(branch, generation).repoId
+          const found = yield* Overflow.read(repo).pipe(Effect.provide(database))
+          if (Option.isNone(found)) return yield* Effect.logWarning("sandbox.overflow").pipe(Effect.annotateLogs({ outcome: "off" }))
+          const model = yield* Overflow.connectionOf(found.value.personId, found.value.connectionId).pipe(Effect.provide(database))
+          if (Option.isNone(model)) return yield* Effect.logWarning("sandbox.overflow").pipe(Effect.annotateLogs({ outcome: "connection" }))
+          const guest = SandboxEgress.guestOf(branch, generation)
+          const placeholders = yield* SandboxEgress.overflowPlaceholders(guest, secretKeys.value, found.value)
+          const plan = Overflow.boxPlan(found.value, placeholders, model.value, forgeRemote(branch.owner, branch.name))
+          const credentials: SandboxEgress.OverflowCredentials = {
+            repoId: repo,
+            origin: found.value.origin,
+            token: found.value.token,
+            personId: found.value.personId,
+            connectionId: found.value.connectionId,
+            baseUrl: model.value.baseUrl,
+          }
+          yield* state.storage.put("overflow", credentials)
+          const spawned = (name: string, script: string, stdin: string) =>
+            Effect.gen(function* () {
+              const session = yield* ContainerSession.make(box, { id: state.id.toString(), workdir: "/", ...(yield* asUser(name)) })
+              return yield* Effect.scoped(Effect.flatMap(
+                session.spawn(script, { stdin: new TextEncoder().encode(stdin) }),
+                (process) => process.exitCode,
+              ))
+            })
+          const runner = `${Overflow.BOX_HOME}/runner`
+          const codes = [
+            yield* spawned("root", SandboxEgress.SETUP, plan.environment),
+            yield* spawned(SANDBOX_USER, `exec >/dev/null 2>&1; umask 077; mkdir -p ${runner} && cat >${runner}/runner.json`, plan.config),
+            yield* spawned(SANDBOX_USER, `exec >/dev/null 2>&1; umask 077; cat >${runner}/runner-token`, plan.token),
+            yield* spawned(SANDBOX_USER, "exec >/dev/null 2>&1; exec bash -l -s", plan.script),
+          ]
+          yield* Effect.logInfo("sandbox.overflow").pipe(
+            Effect.annotateLogs({ branchId: branch.branchId, generation, outcome: codes[3] === 3 ? "no_runner" : codes.every((code) => code === 0) ? "started" : "failed", exitCodes: codes.join(",") }),
+          )
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("sandbox.overflow").pipe(Effect.annotateLogs(failureFields(cause)))
+          ),
+          Effect.withSpan("sandbox.overflow", { attributes: { "smithers.branch.id": branch.branchId } }),
+        )
+
+      /** A request from an overflow box: through its own two credentials' egress, for the generation running now. */
+      const egressOverflow = (credentials: SandboxEgress.OverflowCredentials) =>
+        Effect.gen(function* () {
+          const branch = yield* branchOf
+          const generation = yield* state.storage.get<number>("generation")
+          if (branch === undefined || generation === undefined) return HttpServerResponse.empty({ status: 403 })
+          return yield* SandboxEgress.forwardOverflow(SandboxEgress.guestOf(branch, generation), credentials, egressAllowHosts).pipe(
+            Effect.provideService(SecretKeys, secretKeys),
+            Effect.provide(Layer.merge(database, FetchHttpClient.layer)),
+          )
+        })
 
       /**
        * What a tool's command gets: its tools' trust of the egress's CA (`RegistryEgress.trustOf`), every box's, and
@@ -660,7 +748,10 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           if (host === FORGE_HOST) return yield* egress(request)
           // Only ChatApi holds a ticket: a socket it hands over is attached, once per ticket.
           if (tickets.delete(request.headers[TICKET_HEADER] ?? "")) return yield* attach(request)
-          // Every other request is the box's own, out through its egress: its agent's to its vendor first.
+          // Every other request is the box's own, out through its egress. An overflow box's go only through its own
+          // credentials' egress; a TODO box's agent's to its vendor first.
+          const overflowing = yield* state.storage.get<SandboxEgress.OverflowCredentials>("overflow")
+          if (overflowing !== undefined) return yield* egressOverflow(overflowing)
           const held = yield* subscriptionOf
           if (held?.subscription.hosts.includes(new URL(request.originalUrl).hostname)) {
             return yield* egressSubscription(held)

@@ -25,7 +25,7 @@ sandbox/Keep, every minute ─▶ busy ─▶ Budget.seen (renews the slot) · s
 ```
 
 - **Awake** means open and renewed within `LEASE_SECONDS` (5 minutes). A machine whose keep-awake died stops counting once its lease lapses; its branch's next admission closes the row at its last renewal.
-- **Per person** counts only a branch's own machines (terminals and tool calls) woken for that person. A TODO's machine, a pull request's check job and a CI job count toward the deployment's limit only, so a person's background work never locks them out of their own terminal. CI's own owner is no person.
+- **Per person** counts only a branch's own machines (terminals and tool calls) woken for that person. A TODO's machine, a pull request's check job, a CI job and a repository's overflow box (kind `overflow`, decision 0144) count toward the deployment's limit only, so a person's background work never locks them out of their own terminal. CI's own owner is no person.
 - **The hard cap.** Cloudflare's `durable_object` scheduling policy has no `max_instances`: "The `durable_object` policy does not support `max_instances`" ([scheduling policies](https://developers.cloudflare.com/containers/configuration/scheduling-policy/)), and Alchemy refuses the prop for it. So the admission is the cap, and it fails closed: a wake that can't ask Postgres starts no machine and is tried again. Cloudflare's account limits stay the last stop.
 - **Fails safe the other way too.** A wake that fails before its container starts gives its slot back (`Budget.release`); one that started keeps it until `sandbox/Keep` ends it.
 

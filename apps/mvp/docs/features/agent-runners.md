@@ -183,10 +183,37 @@ same for every machine and vendor: a held or full runner asks with `free: 0`, th
 and didn't list, and keeps the reason it sent on `runners.held` (migration `0085_runner_held`) for the
 [fleet](fleet.md), which shows the runner as **Held · load 31/24**. `capacity` stays the hard cap on jobs at once.
 
-**Overflow.** A runner whose `runner.json` sets `minQueuedSeconds` claims only a job that has been claimable that long:
-one no attached runner took because each was held or full. An overflow runner is plain `smthrs runner` with that
-setting and, by convention, the `cloudflare` label; running it in a Cloudflare container is not built yet (decision
-0144, "Not built").
+## Overflow
+
+A runner whose `runner.json` sets `minQueuedSeconds` claims only a job that has been claimable that long: one no
+attached runner took because each was held or full. A repository's Cloudflare overflow is that runner in a box
+([decision 0144](../decisions/0144-half-load-and-cloudflare-overflow.md)):
+
+```
+Admin ── PUT /api/repos/<owner>/<name>/overflow/cloudflare { connectionId, profile, argv, labels?, minQueuedSeconds?, capacity? }
+           │ Admin in person · their own active api_key connection · SECRETS_KEY · mint the token, seal it
+           ▼
+         admin/SetOverflow ──▶ runners `cloudflare-overflow` (its SHA-256, labels + cloudflare) + repo_overflow (sealed)
+
+agent/Session probe: queued ≥ minQueuedSeconds, pinned to none, `cloudflare-overflow` unseen 45 s
+           ▼ Sandboxes.wake(overflow-<repo>)   (sandbox admission, kind overflow, OVERFLOW_INSTANCE standard-4)
+         box: runner.json + runner-token + SMITHERS_MODEL_KEY / _BASE_URL / _PROTOCOL, placeholders only
+              smthrs runner serve ── claim, heartbeat, settle ──▶ egress: token → this deployment's host only
+              the agent's model calls ──────────────────────────▶ egress: the Admin's key → its base URL's host only
+              no job for 300 s: the runner ends, sandbox/Keep finds the box idle and stops it
+```
+
+- **Who pays.** The Admin's own BYOK `api_key` connection, named in the setting. Its key never enters the box. A
+  subscription can't be named: a plan's login stays on attached runners.
+- **The token.** The host mints it and keeps it sealed in `repo_overflow` (migration `0086_repo_overflow`). Each PUT
+  rotates it; `DELETE` retires the runner and drops the seal. No person, journal, log or answer sees it.
+- **The box.** `profile` and `argv` are what its runner runs, from the image's ACP adapters; `argv` maps
+  `SMITHERS_MODEL_KEY`, `SMITHERS_MODEL_BASE_URL` and `SMITHERS_MODEL_PROTOCOL` to what its agent reads. Its runner admits up
+  to its CPUs and keeps 5 GB free. It holds no repository secret. Without a release of `@smthrs/cli` that has `smthrs
+  runner`, a woken box logs `sandbox.overflow` `no_runner` and sleeps again.
+- **Refusals.** `401 authentication`, `403 forbidden` (not an Admin in person), `400 invalid` (a body that doesn't
+  read, or a connection that isn't the Admin's active key on a model wire), `404 not_found` (anything but
+  `cloudflare`), `503 unavailable` (no SECRETS_KEY, or the flow couldn't start).
 
 ## Postgres
 
@@ -224,6 +251,9 @@ which does, with each runner's machine facts on `runners`.
 - `smthrs runner` (`packages/smithers/src/runner/`): the runner.
 - `worker/runners/`: `Store.ts`, `AdminFlows.ts`, `Admin.ts` (Admin routes), `Jobs.ts` (the job store), `Api.ts`
   (runner routes). `worker/flows/TodoSession.ts`: `todo/Agent` and `agent/Session`.
+- Overflow: `worker/runners/Overflow.ts`, `worker/secrets/SandboxEgress.ts` `forwardOverflow`, the overflow box in
+  `worker/BranchSandboxes.ts`; tests in `worker/runners/Overflow.test.ts` and `TodoRunner.test.ts` "overflow on
+  Cloudflare".
 - Tests: `packages/smithers/agent/test/{AgentRunner,ExternalAgent,Acp}.test.ts`; `worker/runners/Runners.test.ts`
   (store, routes and Admin writes on Postgres); `worker/runners/TodoRunner.test.ts` (a TODO to a pull request through a
   real `smthrs runner` process and the deterministic ACP test agent, the runner killed mid-job and resumed);

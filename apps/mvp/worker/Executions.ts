@@ -9,6 +9,7 @@ import * as Database from "../db/Database.ts"
 import * as AlertChannels from "./AlertChannels.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
+import * as Overflow from "./runners/Overflow.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
 import * as DomainsConfig from "./domains/Config.ts"
@@ -357,9 +358,13 @@ const object = <E, R>(
             const runtime = yield* RuntimeContext
             const built = yield* githubServices(ready)
             const raise = yield* raiser
+            // A job that waited past its repository's overflow wakes that repository's overflow box (decision 0144),
+            // through the sandbox admission, which keeps the awake cap; its wake starts its `sandbox/Keep`.
+            const sandboxes = yield* BranchSandboxes.sandboxesOver(sandboxObjects, keep)
             return {
               ...built,
               fleet: { settings: fleet, raise },
+              overflow: (due: Overflow.Due) => Effect.asVoid(sandboxes.wake(Overflow.boxBranch(due.repoId))),
               cancel: (executionId: string) => executions.getByName(executionId).cancel().pipe(Effect.provideService(RuntimeContext, runtime)),
               start: Todo.admission((flow, options) =>
                 ExecutionHost.intent(flow, { executionId: options.executionId, payload: options.payload as never }).pipe(

@@ -93,12 +93,17 @@ export const agentStep = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>
 
 /**
  * `todo/Agent` and `agent/Session` over `database`: the step waits on the job store in the app's Postgres, whose probe
- * raises the fleet's alerts through `alerts` when given (docs/features/fleet.md#alerts).
+ * raises the fleet's alerts through `alerts` when given (docs/features/fleet.md#alerts) and wakes a repository's
+ * overflow box through `wake` (decision 0144).
  */
-export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, alerts?: Jobs.Alerts) =>
+export const registration = <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  alerts?: Jobs.Alerts,
+  wake?: Parameters<typeof Jobs.layer>[2],
+) =>
   Layer.mergeAll(
     Agent.toLayer(agentStep(database)),
-    Session.toLayer().pipe(Layer.provide(Jobs.layer(database, alerts))),
+    Session.toLayer().pipe(Layer.provide(Jobs.layer(database, alerts, wake))),
   )
 
 /** The run whose transcript a TODO's job writes: the attempt's `todo:<attempt>` run (decision 0141). */

@@ -10,7 +10,9 @@ import { digestSync } from "@smthrs/crypto"
 import { Agent } from "@smthrs/agent"
 import { Journal as FlowJournal, Database as FlowsDatabase } from "@smthrs/flows"
 import { Notification, NotificationEvent, NotificationQueue, SteerPayload } from "@smthrs/notifications"
-import { ConfigProvider, Effect, Exit, Layer, Redacted, Stream } from "effect"
+import { FlowRuntime, type Flow } from "@smthrs/flow"
+import { Scrub } from "@smthrs/secrets"
+import { ConfigProvider, Context, Effect, Exit, Layer, Option, Redacted, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
@@ -22,7 +24,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { CONNECTION_KINDS } from "../../src/features/personal-model/contract.ts"
+import { CONNECTION_KINDS, PROTOCOLS } from "../../src/features/personal-model/contract.ts"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import * as Todo from "../flows/Todo.ts"
 import * as TodoAgent from "../flows/TodoAgent.ts"
@@ -43,6 +45,14 @@ import * as RunnersApi from "./Api.ts"
 import * as Fleet from "./Fleet.ts"
 import type * as Jobs from "./Jobs.ts"
 import * as Store from "./Store.ts"
+import * as RunnerAdmin from "./Admin.ts"
+import * as AdminFlows from "./AdminFlows.ts"
+import * as Overflow from "./Overflow.ts"
+import * as SandboxEgress from "../secrets/SandboxEgress.ts"
+import { SecretKeys } from "../secrets/Keys.ts"
+import * as Flows from "../Flows.ts"
+import * as FlowHost from "../test/flowHost.ts"
+import { branchRoles, signedIn } from "../test/harness.ts"
 import * as FleetAlert from "../flows/FleetAlert.ts"
 import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
 import { Channels } from "@smthrs/notifications"
@@ -60,7 +70,7 @@ const agent = { name: "coder", labels: ["linux"], profile: "acp-test", maxHours:
 beforeEach(async () => {
   await reset(runtime)
   await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs")
-  await sql(runtime, "TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes RESTART IDENTITY CASCADE")
+  await sql(runtime, "TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes, repo_overflow, secret_events RESTART IDENTITY CASCADE")
   await resetModels(runtime)
   await sql(runtime, "TRUNCATE agent_runs, fleet_alerts, notifications, alert_channels, alert_deliveries, github_repo_roles")
 })
@@ -170,6 +180,7 @@ const setup = async (
     readonly fleet?: Jobs.Alerts
     readonly capacity?: number
     readonly heartbeatSeconds?: number
+    readonly overflow?: Todo.Services<unknown, never>["overflow"]
   } = {},
 ) => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
@@ -204,7 +215,7 @@ const setup = async (
     stateDir: state,
     heartbeatSeconds: options.heartbeatSeconds ?? 2,
     // The test machine's own load mustn't hold its claims (decision 0144).
-    admission: { loadPerCpu: 8, diskFloorGb: 0 },
+    admission: { loadPerCpu: 1000, diskFloorGb: 0 },
     repositories: { [REPOSITORY.id]: { mirror: path } },
     profiles: {
       "acp-test": { argv: [process.execPath, testAgent], env: { ACP_TEST_AGENT_STATE: join(state, "agent-state") } },
@@ -226,6 +237,7 @@ const setup = async (
     apiBaseUrl: services.apiBaseUrl,
     start: () => Effect.void,
     ...(options.fleet === undefined ? {} : { fleet: options.fleet }),
+    ...(options.overflow === undefined ? {} : { overflow: options.overflow }),
   }
   const registration = Todo.registration(todoServices, TodoAgent.registration(local("agent"), db, Agent.layerSandbox))
     .pipe(
@@ -252,7 +264,7 @@ const setup = async (
     }, 60_000)
     return { rows, contiguous: rows.every((row, n) => row.seq === n) }
   }
-  return { github, base, config, run, transcript, schema, state, db }
+  return { github, base, config, run, transcript, schema, state, db, origin, path }
 }
 
 const jobs = () =>
@@ -385,7 +397,7 @@ describe("half load and overflow (decision 0144)", { timeout: 240_000 }, () => {
     const ctx = await setup()
     // The attached runner: held by its own admission rule, as a host over half load or under its disk floor is.
     const attached = JSON.parse(readFileSync(ctx.config, "utf8")) as Record<string, unknown>
-    writeFileSync(ctx.config, JSON.stringify({ ...attached, admission: { loadPerCpu: 8, diskFloorGb: 100_000 } }))
+    writeFileSync(ctx.config, JSON.stringify({ ...attached, admission: { loadPerCpu: 1000, diskFloorGb: 100_000 } }))
     running.push(startRunner(ctx.config).child)
     // The overflow runner, as `smthrs runner` in a Cloudflare container would be: its own token and the `cloudflare`
     // label, taking only a job that waited 3 s.
@@ -417,6 +429,165 @@ describe("half load and overflow (decision 0144)", { timeout: 240_000 }, () => {
     expect(job).toMatchObject({ status: "done", outcome: "Done", runner: "overflow" })
     expect(job!.waited).toBeGreaterThanOrEqual(3)
     expect(await sql(runtime, `SELECT runner, state FROM agent_runs`)).toEqual([{ runner: "overflow", state: "done" }])
+  })
+})
+
+describe("overflow on Cloudflare (decision 0144)", { timeout: 240_000 }, () => {
+  test("a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done", async () => {
+    const DEPLOYMENT = "https://smithers.test"
+    const MODEL = "https://api.model.test"
+    const API_KEY = "sk-test-SENTINEL/+=key~7Qx"
+    // The Admin's own key, saved in Settings.
+    const [connectionId] = await seedKeys(runtime, "person-admin", [
+      { kind: "api_key", protocol: PROTOCOLS[1], baseUrl: MODEL, key: API_KEY },
+    ])
+    // The model: answers only with the Admin's real key.
+    const modelSaw: Array<string | null> = []
+    const model = (request: Request) => {
+      modelSaw.push(request.headers.get("x-api-key"))
+      return request.headers.get("x-api-key") === API_KEY
+        ? Response.json({ content: [{ type: "text", text: "alpha" }] })
+        : Response.json({ error: "invalid key" }, { status: 401 })
+    }
+    const woken: Array<string> = []
+    let startBox: (repoId: string) => Promise<void> = async () => {}
+    const ctx = await setup({
+      overflow: (due) => Effect.promise(async () => {
+        woken.push(due.repoId)
+        if (woken.length === 1) await startBox(due.repoId)
+      }),
+    })
+    // The attached runner: held by its own admission rule.
+    const attached = JSON.parse(readFileSync(ctx.config, "utf8")) as Record<string, unknown>
+    writeFileSync(ctx.config, JSON.stringify({ ...attached, admission: { loadPerCpu: 1000, diskFloorGb: 100_000 } }))
+    running.push(startRunner(ctx.config).child)
+
+    // An Admin in person turns overflow on: the host mints and registers the box runner's token.
+    const scope = Effect.runSync(Scope.make())
+    const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(ctx.db)), scope))
+    const flows = Context.get(built.context, FlowRuntime.FlowRuntime)
+    const starter = Flows.FlowStarter.of({
+      start: (flow: Flow.Any, { executionId, payload }) =>
+        (flows.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown, unknown>).pipe(
+          Effect.provide(built.context), Effect.orDie, Effect.asVoid),
+    })
+    const adminApi = await Effect.runPromise(RunnerAdmin.make(ctx.db))
+    const admin = { subject: { kind: "person", id: "person-admin" }, role: "admin" } as const
+    const enabled = await HttpEffect.toWebHandler(adminApi.fetch.pipe(
+      Effect.provideService(Flows.FlowStarter, starter),
+      Effect.provide(SecretKeys.layer(KEY)),
+      Effect.provide(signedIn(admin)),
+      Effect.provide(branchRoles(ctx.db, `${REPOSITORY.owner}/${REPOSITORY.name}`)),
+    ))(new Request(`${DEPLOYMENT}/api/repos/${REPOSITORY.owner}/${REPOSITORY.name}/overflow/cloudflare`, {
+      method: "PUT",
+      body: JSON.stringify({ connectionId, profile: "acp-test", argv: [process.execPath, testAgent], labels: ["linux"], minQueuedSeconds: 3 }),
+    }))
+    expect(enabled.status).toBe(202)
+    await Effect.runPromise(Scope.close(scope, Exit.void))
+
+    // The box's network: its outbound requests reach the egress (as Cloudflare's intercept hands them to the box's
+    // object), which sends them on to this deployment's runner routes and to the model.
+    const keys = Option.getOrThrow(await Effect.runPromise(Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layer(KEY)))))
+    const overflow = Option.getOrThrow(await runtime.runPromise(Overflow.read(REPOSITORY.id)))
+    const guest = { repoId: REPOSITORY.id, branchId: Overflow.boxId(REPOSITORY.id), generation: 1 }
+    const credentials: SandboxEgress.OverflowCredentials = {
+      repoId: REPOSITORY.id, origin: overflow.origin, token: overflow.token,
+      personId: overflow.personId, connectionId: overflow.connectionId, baseUrl: MODEL,
+    }
+    const upstream: typeof globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      const url = new URL(request.url)
+      if (url.origin === MODEL) return model(request)
+      const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer()
+      return globalThis.fetch(`${ctx.origin}${url.pathname}${url.search}`, { method: request.method, headers: request.headers, body })
+    }
+    const egress = HttpEffect.toWebHandler(SandboxEgress.forwardOverflow(guest, credentials).pipe(
+      Effect.provide(SecretKeys.layer(KEY)),
+      Effect.provide(ctx.db),
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(FetchHttpClient.Fetch, upstream),
+    ))
+    const intercept = async (host: string) => {
+      const server = createServer(async (incoming, outgoing) => {
+        const chunks: Array<Buffer> = []
+        for await (const chunk of incoming) chunks.push(chunk as Buffer)
+        const response = await egress(new Request(`${host}${incoming.url}`, {
+          method: incoming.method!,
+          headers: incoming.headers as Record<string, string>,
+          ...(incoming.method === "GET" ? {} : { body: Buffer.concat(chunks) }),
+        }))
+        outgoing.writeHead(response.status, Object.fromEntries(response.headers))
+        outgoing.end(Buffer.from(await response.arrayBuffer()))
+      })
+      await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
+      servers.push(server)
+      return `http://localhost:${(server.address() as AddressInfo).port}`
+    }
+    const deploymentHost = await intercept(DEPLOYMENT)
+    const modelHost = await intercept(MODEL)
+
+    // The box: what its wake writes, from the same plan, its runner started on it. Only the network differs: the
+    // runner reaches this deployment and the model through the intercepts, and its mirror is the test's.
+    const files = join(scratch, `box-${crypto.randomUUID()}`)
+    let boxText = ""
+    startBox = async (repoId) => {
+      const found = Option.getOrThrow(await runtime.runPromise(Overflow.read(repoId)))
+      const placeholders = await Effect.runPromise(SandboxEgress.overflowPlaceholders(guest, keys, found))
+      const plan = Overflow.boxPlan(found, placeholders, { protocol: PROTOCOLS[1], baseUrl: MODEL }, "unused")
+      const config = JSON.parse(plan.config) as Record<string, unknown>
+      mkdirSync(files, { recursive: true })
+      writeFileSync(join(files, "runner-token"), plan.token, { mode: 0o600 })
+      writeFileSync(join(files, "runner.json"), JSON.stringify({
+        ...config,
+        origin: deploymentHost,
+        stateDir: files,
+        repositories: { [repoId]: { mirror: ctx.path } },
+        // The test machine's own load mustn't hold its claims, as a real box's never is.
+        admission: { loadPerCpu: 1000, diskFloorGb: 0 },
+      }))
+      const environment = Object.fromEntries(plan.environment.trim().split("\n").map((line) => {
+        const at = line.indexOf("=")
+        return [line.slice(0, at), line.slice(at + 1)]
+      }))
+      boxText = `${plan.environment}\n${plan.config}\n${plan.token}`
+      const child = spawn(process.execPath, [smthrs, "runner", "serve", "--config", join(files, "runner.json")], {
+        stdio: ["ignore", "ignore", "pipe"],
+        env: {
+          ...process.env,
+          ...environment,
+          SMITHERS_MODEL_BASE_URL: modelHost,
+          SMITHERS_TELEMETRY: "off",
+          ACP_TEST_AGENT_STATE: join(files, "agent-state"),
+        },
+      })
+      child.stderr!.on("data", (chunk: Buffer) => void (boxLog += chunk.toString()))
+      running.push(child)
+    }
+    let boxLog = ""
+
+    const start = await commit("Note alpha", "add the model's answer to `NOTES.md`")
+    const ran = await ctx.run(start)
+    expect(ran.exit, boxLog).toEqual(Exit.succeed({ state: "merged" }))
+    expect(ctx.github.tree("main").get("NOTES.md")).toBe("alpha\n")
+    expect(woken[0]).toBe(REPOSITORY.id)
+    const [job] = (await sql(runtime, `SELECT j.status, j.outcome->>'_tag' AS outcome, r.name AS runner,
+      extract(epoch FROM j.claimed_at - j.created_at)::float8 AS waited
+      FROM agent_jobs j JOIN runners r ON r.id = j.runner_id`)) as Array<
+        { status: string; outcome: string; runner: string; waited: number }
+      >
+    expect(job).toMatchObject({ status: "done", outcome: "Done", runner: "cloudflare-overflow" })
+    expect(job!.waited).toBeGreaterThanOrEqual(3)
+    // The model got the real key; the box held neither the key nor the runner's token.
+    expect(modelSaw).toEqual([API_KEY])
+    const token = Redacted.value(await Effect.runPromise(keys.cipher.open(overflow.token, Overflow.tokenContext(REPOSITORY.id, overflow.token.keyVersion))))
+    for (const value of [token, API_KEY]) expect(Scrub.forms(value).filter((form) => boxText.includes(form))).toEqual([])
+    const uses = (await sql(runtime, `SELECT DISTINCT host, outcome, names FROM secret_events WHERE action = 'use'`)) as Array<
+      { host: string; outcome: string; names: Array<string> }
+    >
+    expect(uses).toEqual(expect.arrayContaining([
+      { host: "smithers.test", outcome: "forwarded", names: ["overflow:runner-token"] },
+      { host: "api.model.test", outcome: "forwarded", names: [`connection:${connectionId}`] },
+    ]))
   })
 })
 

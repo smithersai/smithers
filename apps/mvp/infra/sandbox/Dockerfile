@@ -20,6 +20,12 @@
 # /usr/local/bin, on the default PATH. Alchemy pins the built image by its own digest. Claude Code and Codex are the
 # vendors' own, unmodified, by exact version from npm: a person's subscription runs them (decision 0132,
 # worker/personal/Agents.ts), and neither ever updates itself in a box.
+#
+# A repository's overflow box (decision 0144, worker/runners/Overflow.ts) runs `smthrs runner serve` on this image: jj
+# from its GitHub release tarball for the build's architecture, checked against the sha256 GitHub publishes for it; the
+# Claude Agent ACP adapter by exact version from npm, the agent an overflow profile usually runs; and `@smthrs/cli` by
+# exact version from npm when SMTHRS_VERSION is set. No published version has `smthrs runner` yet, so it is unset and
+# an overflow box logs `sandbox.overflow` `no_runner` until a release sets it.
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 ARG TARGETARCH
 ARG NODE_VERSION=26.5.0
@@ -31,13 +37,18 @@ ARG CODEX_VERSION=0.166.0
 ARG GO_VERSION=1.27.3
 ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
+ARG JJ_VERSION=0.39.0
+ARG JJ_SHA256_AMD64=8da8d96e9c8696c21ad47847a63d533e249acb0449d9af0f0562b5ea7b024f04
+ARG JJ_SHA256_ARM64=15bbb0199adf57929d1e3cd90ae0b47356858cbe374814769815a1fb87d5ad1d
+ARG CLAUDE_AGENT_ACP_VERSION=0.23.1
+ARG SMTHRS_VERSION=
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl git less libatomic1 \
        python3 python3-pip python3-venv tini tmux \
   && rm -rf /var/lib/apt/lists/* \
   && case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
-       amd64) arch=x64; sum=$NODE_SHA256_AMD64; goarch=amd64; gosum=$GO_SHA256_AMD64 ;; \
-       arm64) arch=arm64; sum=$NODE_SHA256_ARM64; goarch=arm64; gosum=$GO_SHA256_ARM64 ;; \
+       amd64) arch=x64; sum=$NODE_SHA256_AMD64; goarch=amd64; gosum=$GO_SHA256_AMD64; jjarch=x86_64; jjsum=$JJ_SHA256_AMD64 ;; \
+       arm64) arch=arm64; sum=$NODE_SHA256_ARM64; goarch=arm64; gosum=$GO_SHA256_ARM64; jjarch=aarch64; jjsum=$JJ_SHA256_ARM64 ;; \
        *) echo "no Node or Go build for this architecture" >&2; exit 1 ;; \
      esac \
   && curl -fsSLo /tmp/node.tar.gz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$arch.tar.gz" \
@@ -49,7 +60,13 @@ RUN apt-get update \
   && tar -xzf /tmp/go.tar.gz -C /usr/local --no-same-owner \
   && rm /tmp/go.tar.gz \
   && ln -s /usr/local/go/bin/go /usr/local/go/bin/gofmt /usr/local/bin/ \
+  && curl -fsSLo /tmp/jj.tar.gz "https://github.com/jj-vcs/jj/releases/download/v$JJ_VERSION/jj-v$JJ_VERSION-$jjarch-unknown-linux-musl.tar.gz" \
+  && echo "$jjsum  /tmp/jj.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/jj.tar.gz -C /usr/local/bin --no-same-owner ./jj \
+  && rm /tmp/jj.tar.gz \
   && npm install -g "pnpm@$PNPM_VERSION" "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "@openai/codex@$CODEX_VERSION" \
+       "@zed-industries/claude-agent-acp@$CLAUDE_AGENT_ACP_VERSION" \
+  && if [ -n "$SMTHRS_VERSION" ]; then npm install -g "@smthrs/cli@$SMTHRS_VERSION"; fi \
   && npm cache clean --force \
   && groupadd --gid 2000 workspace \
   && useradd --create-home --shell /bin/bash --uid 1000 --gid workspace smithers \

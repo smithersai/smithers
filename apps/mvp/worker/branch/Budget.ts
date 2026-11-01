@@ -25,11 +25,11 @@ import type { SandboxBranch } from "./Sandboxes.ts"
 export const LEASE_SECONDS = 300
 
 /** What a machine is for: a branch's own (terminals and tools), a TODO's attempt, or a check or CI job. */
-export type Kind = "branch" | "todo" | "job"
+export type Kind = "branch" | "todo" | "job" | "overflow"
 
-/** The kind of `branch`'s machine: a job, a TODO's attempt branch on GitHub, else the branch's own. */
+/** The kind of `branch`'s machine: a job, a repository's overflow box, a TODO's attempt branch on GitHub, else the branch's own. */
 export const kindOf = (branch: SandboxBranch): Kind =>
-  branch.kind === "job" ? "job" : branch.forge === "github" ? "todo" : "branch"
+  branch.kind === "job" ? "job" : branch.branchId.startsWith("overflow-") ? "overflow" : branch.forge === "github" ? "todo" : "branch"
 
 /** The person a machine is woken for: `ownerId`, unless it is CI's own (`CI_OWNER`) or none. */
 export const personOf = (ownerId: string | undefined): string | null =>

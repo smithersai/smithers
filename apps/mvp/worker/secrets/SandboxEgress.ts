@@ -8,6 +8,7 @@ import { repoId } from "../../src/features/repo/contract.ts"
 import * as RegistryEgress from "../branch/RegistryEgress.ts"
 import * as Store_ from "../personal/Store.ts"
 import * as Subscriptions from "../personal/Subscriptions.ts"
+import * as Overflow from "../runners/Overflow.ts"
 import { type Keys, SecretKeys } from "./Keys.ts"
 import * as Store from "./Store.ts"
 
@@ -181,6 +182,70 @@ export const forwardSubscription = (
     }
     return response
   }).pipe(Effect.withSpan("secrets.egress.subscription", { attributes: { "smithers.branch.id": guest.branchId } }))
+
+/** The names a repository's overflow box's credentials go by in its policy and in `secret_events`: never a value. */
+const OVERFLOW_TOKEN = "overflow:runner-token"
+
+/** The overflow box's credentials: its runner's token and the Admin's API key, as `forwardOverflow` binds them. */
+export interface OverflowCredentials {
+  readonly repoId: string
+  /** The deployment's origin: the runner token's one host. */
+  readonly origin: string
+  readonly token: { readonly ciphertext: string; readonly nonce: string; readonly keyVersion: number }
+  /** The Admin's API-key connection, and its base URL: the key's one host. */
+  readonly personId: string
+  readonly connectionId: string
+  readonly baseUrl: string
+}
+
+/** The placeholders an overflow box at `guest` holds: one for the runner's token, one for the API key. */
+export const overflowPlaceholders = (guest: Guest, keys: Keys, overflow: Pick<OverflowCredentials, "connectionId">) =>
+  Effect.all({
+    token: keys.minter.derive(scopeOf(guest), OVERFLOW_TOKEN),
+    key: keys.minter.derive(scopeOf(guest), `connection:${overflow.connectionId}`),
+  })
+
+/**
+ * Answers one request a repository's overflow box sent (decision 0144): `Egress.forward` under a policy of the box's two
+ * credentials alone, its runner's token bound to this deployment's host and the Admin's API key bound to its base URL's
+ * host, plus `allow`. Each opens per request from its sealed row and never enters the box: the same placeholders,
+ * substitution, refusals, scrubbing and audit as a subscription's (`forwardSubscription`), for a BYOK key. The box
+ * gets no repository secret: it runs no branch's code.
+ */
+export const forwardOverflow = (guest: Guest, overflow: OverflowCredentials, allow: ReadonlyArray<string> = []) =>
+  Effect.gen(function* () {
+    const keys = yield* SecretKeys
+    if (Option.isNone(keys)) return HttpServerResponse.text("off", { status: 503 })
+    const placeholders = yield* overflowPlaceholders(guest, keys.value, overflow)
+    const keyName = `connection:${overflow.connectionId}`
+    const policy: Egress.Policy = {
+      secrets: [
+        { name: OVERFLOW_TOKEN, placeholder: placeholders.token, hosts: [new URL(overflow.origin).hostname] },
+        { name: keyName, placeholder: placeholders.key, hosts: [new URL(overflow.baseUrl).hostname] },
+      ],
+      allow,
+    }
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const sql = yield* SqlClient.SqlClient
+    const unavailable = (name: string) => () => Effect.fail(new Egress.SecretUnavailable({ name }))
+    const vault = Layer.succeed(
+      Egress.Vault,
+      Egress.Vault.of({
+        reveal: (asked) =>
+          asked === OVERFLOW_TOKEN
+            ? keys.value.cipher.open(overflow.token, Overflow.tokenContext(overflow.repoId, overflow.token.keyVersion))
+              .pipe(Effect.catch(unavailable(asked)))
+            : asked === keyName
+            ? Subscriptions.reveal(overflow.personId, overflow.connectionId, keys.value).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.flatMap(Option.match({ onNone: unavailable(asked), onSome: Effect.succeed })),
+              Effect.catch(unavailable(asked)),
+            )
+            : unavailable(asked)(),
+      }),
+    )
+    return yield* Egress.forward(request, policy).pipe(Effect.provide(Layer.merge(vault, audit(guest, sql))))
+  }).pipe(Effect.withSpan("secrets.egress.overflow", { attributes: { "smithers.branch.id": guest.branchId } }))
 
 /** Opens one of a guest's values from its sealed row, through `sql`. */
 const revealer = (guest: Guest, keys: Keys, sql: SqlClient.SqlClient) => (name: string) =>

@@ -70,6 +70,12 @@ The branch's `SandboxObject` (`worker/BranchSandboxes.ts`) routes the box's outb
 2. answers each such request with `SandboxEgress.forward({ repoId, branchId, generation })`, the guest taken from the object's own state (the branch it serves and its generation), never from the request;
 3. writes `environment(guest)` to `/run/smithers/env` as root and has every login shell source the file (`/etc/profile.d/smithers-env.sh`), then trusts the container's CA (`/etc/cloudflare/certs/cloudflare-containers-ca.crt`) when Cloudflare provides it, as a box without secrets does (`SandboxEgress.TRUST`: `update-ca-certificates`, and `NODE_EXTRA_CA_CERTS` and `DPRINT_CERT` in `/etc/profile.d/smithers-trust.sh`), all in `SandboxEgress.SETUP`, which prints nothing whatever fails (workerd reports a command's exit only once its unread output closes); the sandbox tools' commands get the same placeholders and trust as their environment.
 
+A repository's overflow box ([agent-runners.md](agent-runners.md#overflow), decision 0144) has its own egress,
+`SandboxEgress.forwardOverflow`, whatever `SANDBOX_SECRETS` says. It holds two placeholders, derived per generation
+as every placeholder is. One is for its runner's token, which the host minted and sealed in `repo_overflow`, bound to
+the deployment's own host. The other is for an Admin's BYOK `api_key` connection, bound to its base URL's host. It
+gets no repository secret. Its `secret_events` name `overflow:runner-token` and `connection:<id>`.
+
 The terminal's sockets reach the same `fetch`, so the object attaches one only with a one-use ticket ChatApi takes from it over RPC: the box can't get one. With `SANDBOX_SECRETS` off, the box reaches only the forge and the package registries (`worker/branch/RegistryEgress.ts`), and holds no placeholder.
 
 ## Keys

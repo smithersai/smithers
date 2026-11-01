@@ -1,6 +1,6 @@
 # 0144: Runners admit at half load; overflow goes to Cloudflare
 
-Date: 2026-11-01. Status: accepted for admission and the overflow claim; the container box is proposed. Builds on
+Date: 2026-11-01. Status: accepted; the box waits on a release of `@smthrs/cli` (see "Still open"). Builds on
 [0136](0136-external-agents-on-runners.md) (external agents on runners), [0143](0143-fleet-and-alerts.md) (the fleet)
 and [0103](0103-sandbox-budgets.md) (sandbox budgets). Ruling (Will, 2026-11-01): "bare metal at half load, overflow
 on Cloudflare".
@@ -44,19 +44,35 @@ job on it, and a full fleet leaves jobs Waiting with nowhere else to run.
   disk floor and an overflow runner labelled `cloudflare`, both real `smthrs runner` processes. The TODO's job waits
   3 s, the overflow runner claims it, and the job settles Done and merges.
 
-## Not built: the box itself, and why
+## The box (built 2026-11-01)
 
-The overflow runner above is a local process. Running it in a Cloudflare container needs three things that don't
-exist:
+1. **Token.** An Admin in person turns overflow on: `PUT /api/repos/<owner>/<name>/overflow/cloudflare
+   { connectionId, profile, argv, labels?, minQueuedSeconds?, capacity? }`. The route mints the runner token,
+   seals it under SECRETS_KEY, and starts `admin/SetOverflow`. That flow registers the token's SHA-256 as the runner
+   `cloudflare-overflow` and keeps the setting with the sealed token (`repo_overflow`, migration 0086). Each PUT
+   rotates the token; `DELETE` retires it. No person, journal or log sees it.
+2. **API key.** `SandboxEgress.forwardOverflow` gives the box two placeholders, derived as a subscription's are. It
+   binds the token to the deployment's host and the Admin's BYOK `api_key` connection to its base URL's host. Each value
+   opens per request; the same `Egress.forward` substitutes, refuses, scrubs and audits. The box gets no repository
+   secret.
+3. **Wake and sleep.** The job store's probe wakes `overflow-<repo>` through `Sandboxes.wake` once a queued job has
+   waited `minQueuedSeconds` and the overflow runner hasn't asked in 45 s. The wake goes through the sandbox admission,
+   kind `overflow`, so the 20-awake cap and the spend alert hold. The box starts on `OVERFLOW_INSTANCE` (`standard-4`),
+   writes the plan (`Overflow.boxPlan`) and starts `smthrs runner serve`. The runner ends after 300 s with no job;
+   `sandbox/Keep` then finds the box idle and stops it.
+4. **Image.** `infra/sandbox/Dockerfile` adds jj and the Claude Agent ACP adapter. It installs `@smthrs/cli` only when
+   `SMTHRS_VERSION` is set: no published version has `smthrs runner` yet.
 
-1. **A runner token in a box.** An Admin registers a token's SHA-256 in person, and the token never leaves its machine
-   (0136). No path gives a box a runner bearer. The candidate is a repository secret bound to the deployment's own
-   host and swapped by the egress, but that is unbuilt and untested.
-2. **An API key in a box.** The egress substitutes only `claude_subscription` and `codex_subscription` connections
-   (`worker/personal/Subscriptions.ts`). An `api_key` connection has no placeholder path. Today the only route is an
-   Admin's repository secret bound to the vendor host with `SANDBOX_SECRETS` on.
-3. **An image and a waker.** `infra/sandbox/Dockerfile` has no `smthrs`, no `jj` and no ACP adapters. Nothing wakes a
-   box when a job has waited N seconds. The job's parked probe (`Jobs.status`) is the natural place.
+Proof: `worker/runners/Overflow.test.ts` (the setting, egress and wake) and `worker/runners/TodoRunner.test.ts`
+"overflow on Cloudflare". In the second, a held attached runner leaves the job. The box's runner, started from the
+plan's files with only placeholders, claims it through the egress. Its agent asks a fake model through the egress with
+the placeholder key. The job settles Done and merges. The container's network is the test's: two local intercepts
+stand in for Cloudflare's.
 
-Will's preference that model calls egress through our Macs conflicts with the 21:10 "no subscription relay" ruling.
-It also needs a public Mac endpoint for the egress to reach. Will decides it.
+## Still open
+
+- **A release.** `@smthrs/cli` with `smthrs runner` and `idleExitSeconds` must be published, and `SMTHRS_VERSION`
+  set in the Dockerfile. Until then a woken box logs `sandbox.overflow` `no_runner` and sleeps.
+- **A real-container run.** Nothing yet runs the box under `alchemy dev` with Docker. The Mac mini has no Docker.
+- Will's preference that model calls egress through our Macs conflicts with the 21:10 "no subscription relay"
+  ruling, and needs a public Mac endpoint. Will decides it; API-key overflow doesn't need it.

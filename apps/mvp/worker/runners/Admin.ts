@@ -1,5 +1,6 @@
 import { AgentRunner } from "@smthrs/agent"
-import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
+import { digestSync } from "@smthrs/crypto"
+import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { repoId } from "../../src/features/repo/contract.ts"
@@ -14,7 +15,9 @@ import { readBounded } from "../Body.ts"
 import { installedOn, roleOn } from "../branch/Access.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
+import { SecretKeys } from "../secrets/Keys.ts"
 import * as AdminFlows from "./AdminFlows.ts"
+import * as Overflow from "./Overflow.ts"
 import * as Store from "./Store.ts"
 
 // The Admin routes for a repository's runners and agents (decision 0136, docs/features/agent-runners.md#admin):
@@ -25,6 +28,11 @@ import * as Store from "./Store.ts"
 // - `PUT /api/repos/<owner>/<name>/agents/<agent> { labels, profile, maxHours?, restarts?, coding? }` names an external
 //   agent (`admin/SetAgent`); `DELETE` removes it (`admin/RemoveAgent`). `GET` answers `{ name, coding }` once the write
 //   has landed, 404 before: a 202 means the flow started, and until it writes, TODOs read the repository's old agent.
+// - `PUT /api/repos/<owner>/<name>/overflow/cloudflare { connectionId, profile, argv, labels?, minQueuedSeconds?,
+//   capacity? }` turns the repository's Cloudflare overflow on (`admin/SetOverflow`, decision 0144) with one of the
+//   Admin's own API-key connections; `DELETE` turns it off (`admin/RemoveOverflow`). The route mints the overflow
+//   runner's token itself and seals it under SECRETS_KEY before the flow starts: no person, journal or log sees it, and
+//   each PUT rotates it. Without SECRETS_KEY it is `503 unavailable`.
 //
 // Each needs an Admin of the repository (the role they work with there, decision 0079) acting in person, never an
 // agent, flow or sandbox acting for them; the route admits the write, then starts the flow and answers 202.
@@ -52,6 +60,22 @@ const AgentBody = Schema.Struct({
   restarts: Schema.optional(Schema.Int),
   coding: Schema.optional(Schema.Boolean),
 })
+const OverflowBody = Schema.Struct({
+  connectionId: Overflow.Setting.fields.connectionId,
+  profile: Overflow.Setting.fields.profile,
+  argv: Overflow.Setting.fields.argv,
+  labels: Schema.optional(Overflow.Setting.fields.labels),
+  minQueuedSeconds: Schema.optional(Overflow.Setting.fields.minQueuedSeconds),
+  capacity: Schema.optional(Overflow.Setting.fields.capacity),
+})
+const decodeOverflow = Schema.decodeUnknownEffect(Schema.fromJsonString(OverflowBody))
+
+/** A fresh runner token: 32 random bytes as base64url, as `smthrs runner token` makes one. */
+const mintToken = () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
 const decodeRunner = Schema.decodeUnknownEffect(Schema.fromJsonString(RunnerBody))
 const decodeAgentBody = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentBody))
 const decodeAgent = Schema.decodeUnknownEffect(AgentRunner.Agent)
@@ -83,13 +107,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       }
       const actor = yield* sessions.resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
-      if (yield* refusesPersonOnly(actor.value, route.kind === "runners" ? "runner" : "agent")) {
+      if (yield* refusesPersonOnly(actor.value, route.kind === "agents" ? "agent" : "runner")) {
         return refuse(403, "forbidden")
       }
       const repo = repoId(route.owner, route.name)
       const role = yield* roleOn(actor.value, repo, yield* installedOn(repo).pipe(Effect.provide(database)))
       if (role !== "admin") return refuse(403, "forbidden")
       if (!isName(route.item)) return refuse(400, "invalid")
+      if (route.kind === "overflow" && route.item !== "cloudflare") return refuse(404, "not_found")
       fields.repoId = repo
       fields.name = route.item
       if (op === "get") {
@@ -103,7 +128,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       const start = (flow: (typeof AdminFlows.flows)[number], payload: unknown) =>
         starter.start(flow, { executionId, payload }).pipe(Effect.result)
       if (op === "delete") {
-        const flow = route.kind === "runners" ? AdminFlows.RemoveRunner : AdminFlows.RemoveAgent
+        const flow = route.kind === "runners"
+          ? AdminFlows.RemoveRunner
+          : route.kind === "agents"
+          ? AdminFlows.RemoveAgent
+          : AdminFlows.RemoveOverflow
         if ((yield* start(flow, { repoId: repo, name: route.item, actorId }))._tag === "Failure") {
           return refuse(503, "unavailable")
         }
@@ -112,7 +141,34 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       }
       const body = yield* readBounded(request, MAX_ADMIN_BODY_BYTES).pipe(Effect.result)
       if (body._tag === "Failure") return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
-      if (route.kind === "runners") {
+      if (route.kind === "overflow") {
+        const wanted = yield* decodeOverflow(body.success).pipe(Effect.option)
+        if (Option.isNone(wanted)) return refuse(400, "invalid")
+        // SECRETS_KEY seals the token; a host that provides none (or has it off) can't turn overflow on.
+        const keys = Option.flatten(yield* Effect.serviceOption(SecretKeys))
+        if (Option.isNone(keys)) return refuse(503, "unavailable")
+        // The key that pays is the Admin's own, active, on a model wire.
+        const connection = yield* Overflow.connectionOf(actorId, wanted.value.connectionId).pipe(Effect.provide(database))
+        if (Option.isNone(connection)) return refuse(400, "invalid")
+        const origin = new URL(request.originalUrl).origin
+        const token = mintToken()
+        const sealed = yield* keys.value.cipher.seal(Redacted.make(token), Overflow.tokenContext(repo, keys.value.version))
+        const payload = {
+          repoId: repo,
+          personId: actorId,
+          origin,
+          connectionId: wanted.value.connectionId,
+          profile: wanted.value.profile,
+          argv: wanted.value.argv,
+          labels: wanted.value.labels ?? [],
+          minQueuedSeconds: wanted.value.minQueuedSeconds ?? 60,
+          capacity: wanted.value.capacity ?? 2,
+          tokenSha256: digestSync(token),
+          token: { ciphertext: sealed.ciphertext, nonce: sealed.nonce, keyVersion: keys.value.version },
+          actorId,
+        }
+        if ((yield* start(AdminFlows.SetOverflow, payload))._tag === "Failure") return refuse(503, "unavailable")
+      } else if (route.kind === "runners") {
         const runner = yield* decodeRunner(body.success).pipe(Effect.option)
         if (Option.isNone(runner)) return refuse(400, "invalid")
         const payload = { repoId: repo, name: route.item, ...runner.value, actorId }

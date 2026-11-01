@@ -334,10 +334,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           return yield* runnersApi.fetch.pipe(Effect.provide(RunContent.transcriptsLayer(runContents)))
         }
         if (FleetApi.handles(path)) return yield* fleet.fetch.pipe(Effect.provide(signedIn))
-        // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>` and `.../agents/<name>`.
+        // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>`, `.../agents/<name>` and
+        // `.../overflow/cloudflare`, which mints and seals the overflow runner's token.
         if (RunnerAdmin.handles(path)) {
           return yield* runnerAdmin.fetch.pipe(
             Effect.provideService(Flows.FlowStarter, starter),
+            Effect.provideService(SecretKeys, secretKeys),
             Effect.provide(signedIn),
           )
         }

@@ -17,6 +17,9 @@
 //   refuse                          ends the turn with stop reason refusal
 //   exit                            the process exits with code 3 in the middle of the turn
 //   leak X                          sends X back as message text (for scrubbing tests)
+//   add the model's answer to `FILE` POSTs to $SMITHERS_MODEL_BASE_URL/v1/messages with the key in $SMITHERS_MODEL_KEY
+//                                   as `x-api-key`, and appends the answer's first text block and a newline to FILE; a
+//                                   refused or failed call appends nothing and says its status
 //   say env NAME                    sends the value of environment variable NAME as message text
 //   late update                     sends one more message a second after the turn ends
 //   talk for N seconds              sends a message chunk every 250 ms for N seconds, as a long answer streams
@@ -86,6 +89,7 @@ const PATTERNS = [
   [/^run `busy (\d+(?:\.\d+)?)`$/, (m) => ({ kind: "busy", seconds: Number(m[1]) })],
   [/^run `sleep (\d+)` detached$/, (m) => ({ kind: "detached", seconds: Number(m[1]) })],
   [/^run `sleep (\d+)` through a helper$/, (m) => ({ kind: "helper", seconds: Number(m[1]) })],
+  [/^add the model's answer to `([^`]+)`$/, (m) => ({ kind: "model", file: m[1] })],
   [/^say env ([A-Za-z_][A-Za-z0-9_]*)$/, (m) => ({ kind: "env", name: m[1] })],
   [/^late update$/, () => ({ kind: "late" })],
   [/^talk for (\d+(?:\.\d+)?) seconds$/, (m) => ({ kind: "talk", seconds: Number(m[1]) })],
@@ -155,6 +159,36 @@ const runTurn = async (id, sessionId, text) => {
       state.pending.shift()
       writeState(state)
       update(sessionId, { sessionUpdate: "tool_call_update", toolCallId, status: "completed" })
+      continue
+    }
+    if (step.kind === "model") {
+      const toolCallId = randomUUID()
+      update(sessionId, { sessionUpdate: "tool_call", toolCallId, title: "Ask the model", kind: "fetch", status: "in_progress" })
+      let answer
+      let status = "failed"
+      try {
+        const response = await fetch(`${process.env.SMITHERS_MODEL_BASE_URL ?? ""}/v1/messages`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": process.env.SMITHERS_MODEL_KEY ?? ""
+          },
+          body: JSON.stringify({ model: "test", max_tokens: 64, messages: [{ role: "user", content: "answer" }] })
+        })
+        status = String(response.status)
+        const body = await response.json()
+        if (response.ok && typeof body?.content?.[0]?.text === "string") answer = body.content[0].text
+      } catch {
+        // The answer stays undefined: nothing is written.
+      }
+      if (answer !== undefined) {
+        const path = resolve(state.cwd, step.file)
+        mkdirSync(dirname(path), { recursive: true })
+        appendFileSync(path, `${answer}\n`)
+      } else say(sessionId, `The model answered ${status}.`)
+      state.pending.shift()
+      writeState(state)
+      update(sessionId, { sessionUpdate: "tool_call_update", toolCallId, status: answer === undefined ? "failed" : "completed" })
       continue
     }
     if (step.kind === "sleep") {

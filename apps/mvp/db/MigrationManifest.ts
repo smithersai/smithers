@@ -83,6 +83,7 @@ import m0082 from "./migrations/0082_agent_transcripts.ts"
 import m0083 from "./migrations/0083_agent_stops.ts"
 import m0084 from "./migrations/0084_fleet.ts"
 import m0085 from "./migrations/0085_runner_held.ts"
+import m0086 from "./migrations/0086_repo_overflow.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -170,4 +171,5 @@ export const migrations = {
   "0083_agent_stops": m0083,
   "0084_fleet": m0084,
   "0085_runner_held": m0085,
+  "0086_repo_overflow": m0086,
 }

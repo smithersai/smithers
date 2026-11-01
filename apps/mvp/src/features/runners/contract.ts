@@ -14,13 +14,13 @@ export const MAX_ADMIN_BODY_BYTES = 8 * 1024
 export const SMITHERS_AGENT = "smithers"
 
 /** What an Admin's write is about: one of a repository's runners, or one of its agents. */
-export type AdminKind = "runners" | "agents"
+export type AdminKind = "runners" | "agents" | "overflow"
 
 /** The repository and the runner or agent an Admin's write route names, or undefined for any other path. */
 export const parseAdminRoute = (
   path: string,
 ): { readonly kind: AdminKind; readonly owner: string; readonly name: string; readonly item: string } | undefined => {
-  const match = /^\/api\/repos\/([^/]+)\/([^/]+)\/(runners|agents)\/([^/]+)$/.exec(path)
+  const match = /^\/api\/repos\/([^/]+)\/([^/]+)\/(runners|agents|overflow)\/([^/]+)$/.exec(path)
   if (match === null) return undefined
   try {
     return {

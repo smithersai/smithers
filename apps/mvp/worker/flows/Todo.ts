@@ -412,6 +412,8 @@ export interface Services<E, R> {
    * `ops/FleetAlert`. Without it, a run raises none.
    */
   readonly fleet?: Jobs.Alerts
+  /** Wakes a repository's overflow box when a job waited past its overflow's wait (decision 0144). None unless set. */
+  readonly overflow?: Parameters<typeof Jobs.layer>[2]
 }
 
 /** Admissions requested by TODO steps, by flow and outcome; ids are confined to logs and spans. */
@@ -995,7 +997,7 @@ export const registration = <E, R, IE, IR>(
       Wait.toLayer(implementation.wait),
       Received.toLayer(implementation.received),
       // An external agent's step waits on the agent job store in the app's Postgres (decision 0136).
-      TodoSession.registration(services.database, services.fleet),
+      TodoSession.registration(services.database, services.fleet, services.overflow),
       Publish.toLayer(implementation.publish, { implementationVersion: PUBLISH_VERSION }),
       Await.toLayer(implementation.awaitMerge),
       Settle.toLayer(implementation.settle),

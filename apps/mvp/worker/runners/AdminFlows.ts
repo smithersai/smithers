@@ -4,6 +4,7 @@ import { Node } from "@smthrs/plan"
 import { Effect, Layer, Metric, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
+import * as Overflow from "./Overflow.ts"
 import * as Store from "./Store.ts"
 
 // `admin/AddRunner`, `admin/RemoveRunner`, `admin/SetAgent` and `admin/RemoveAgent` (decision 0136,
@@ -11,6 +12,10 @@ import * as Store from "./Store.ts"
 // agents. The route admits the write (signed in; an Admin of the repository acting in person, never an agent, flow or
 // sandbox) before it starts the flow. Each flow is one durable step that writes and records its change once, under its
 // invocation key. A runner is registered by its token's SHA-256, so no token reaches a journal, a log or Postgres.
+//
+// `admin/SetOverflow` and `admin/RemoveOverflow` (decision 0144) turn a repository's Cloudflare overflow on and off. The
+// route mints the overflow runner's token and seals it before the flow starts, so the journal holds its SHA-256 and its
+// ciphertext only.
 
 /** Postgres couldn't record the write. Retried. */
 export class StoreUnavailable extends Schema.TaggedError<StoreUnavailable>()("@smthrs/mvp/runners/StoreUnavailable", {}) {}
@@ -44,6 +49,17 @@ const addPayload = {
 const removePayload = { repoId: Schema.String, name: AgentRunner.Name, actorId: Schema.String }
 const setAgentPayload = { repoId: Schema.String, agent: AgentRunner.Agent, coding: Schema.Boolean, actorId: Schema.String }
 
+const setOverflowPayload = {
+  repoId: Schema.String,
+  personId: Schema.String,
+  origin: Schema.String,
+  ...Overflow.Setting.fields,
+  tokenSha256: TokenSha256,
+  token: Schema.Struct({ ciphertext: Schema.String, nonce: Schema.String, keyVersion: Schema.Int }),
+  actorId: Schema.String,
+}
+const removeOverflowPayload = { repoId: Schema.String, actorId: Schema.String }
+
 const Changed = Schema.Struct({ change: Schema.Literals(["set", "removed", "missing", "repeat"]) })
 
 const write = <const Name extends string, P extends Schema.Struct.Fields>(name: Name, payload: P) =>
@@ -59,6 +75,8 @@ export const WriteRunner = write("admin/WriteRunner", addPayload)
 export const RetireRunner = write("admin/RetireRunner", removePayload)
 export const WriteAgent = write("admin/WriteAgent", setAgentPayload)
 export const EraseAgent = write("admin/EraseAgent", removePayload)
+export const WriteOverflow = write("admin/WriteOverflow", setOverflowPayload)
+export const EraseOverflow = write("admin/EraseOverflow", removeOverflowPayload)
 
 const flow = { capabilities: ["db:write:runners"], modelInvocable: false, success: Changed, error: StoreUnavailable } as const
 
@@ -97,8 +115,28 @@ export const RemoveAgent = Flow.make("admin/RemoveAgent", {
   body: Node.capture({ step: EraseAgent.name }, (change) => EraseAgent.call(change)),
 })
 
+/**
+ * `admin/SetOverflow`: turns a repository's Cloudflare overflow on, or changes it: registers the overflow runner by the
+ * token the route minted and keeps the setting with the sealed token.
+ */
+export const SetOverflow = Flow.make("admin/SetOverflow", {
+  ...flow,
+  description: "Turn a repository's Cloudflare overflow on with the Admin's own API-key connection: registers the " +
+    "overflow runner by a token Smithers minted; an Admin in person only.",
+  payload: setOverflowPayload,
+  body: Node.capture({ step: WriteOverflow.name }, (change) => WriteOverflow.call(change)),
+})
+
+/** `admin/RemoveOverflow`: turns a repository's Cloudflare overflow off, refusing the overflow runner's token. */
+export const RemoveOverflow = Flow.make("admin/RemoveOverflow", {
+  ...flow,
+  description: "Turn a repository's Cloudflare overflow off, refusing its runner's token; an Admin in person only.",
+  payload: removeOverflowPayload,
+  body: Node.capture({ step: EraseOverflow.name }, (change) => EraseOverflow.call(change)),
+})
+
 /** Every flow here, for a host that resolves executions by tag. */
-export const flows = [AddRunner, RemoveRunner, SetAgent, RemoveAgent] as const
+export const flows = [AddRunner, RemoveRunner, SetAgent, RemoveAgent, SetOverflow, RemoveOverflow] as const
 
 /**
  * One step's implementation: its write under the step's invocation key, recorded by flow and change, never a token. A
@@ -132,7 +170,7 @@ export const step = <P extends { readonly repoId: string; readonly actorId: stri
     return { change }
   }).pipe(Effect.withSpan("runner.admin", { attributes: { "smithers.flow": flowName, "smithers.repo.id": payload.repoId } }))
 
-/** Registers the four flows with their steps over `database`. */
+/** Registers the flows with their steps over `database`. */
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Layer.mergeAll(
     Interpreter.layerWithImplementations(
@@ -150,5 +188,13 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
     Interpreter.layerWithImplementations(
       RemoveAgent,
       EraseAgent.toLayer(step(RemoveAgent._tag, database, (p) => p.name, (p, by) => Store.removeAgent(p, by))),
+    ),
+    Interpreter.layerWithImplementations(
+      SetOverflow,
+      WriteOverflow.toLayer(step(SetOverflow._tag, database, () => Overflow.RUNNER, (p, by) => Overflow.set(p, by))),
+    ),
+    Interpreter.layerWithImplementations(
+      RemoveOverflow,
+      EraseOverflow.toLayer(step(RemoveOverflow._tag, database, () => Overflow.RUNNER, (p, by) => Overflow.remove(p, by))),
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))
