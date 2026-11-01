@@ -37,7 +37,7 @@ import * as Metric from "effect/Metric"
  * @slop
  */
 export const puts = Metric.counter("flows_artifact_puts", {
-  description: "Successful artifact puts, including deduplicated ones"
+  description: "Successful artifact puts, including deduplicated ones",
 })
 
 /**
@@ -50,7 +50,7 @@ export const puts = Metric.counter("flows_artifact_puts", {
  * @slop
  */
 export const gets = Metric.counter("flows_artifact_gets", {
-  description: "Successful artifact gets"
+  description: "Successful artifact gets",
 })
 
 /**
@@ -66,7 +66,7 @@ export const gets = Metric.counter("flows_artifact_gets", {
  * @since 1.0.0-rc.1
  */
 export const remoteFailures = Metric.counter("flows_artifact_remote_failures", {
-  description: "Dropped combined-artifact transfers by operation"
+  description: "Dropped combined-artifact transfers by operation",
 })
 
 /**
@@ -79,5 +79,5 @@ export const remoteFailure: {
   readonly [Operation in "put" | "write_back"]: Metric.Metric<number, Metric.CounterState<number>>
 } = {
   put: Metric.withAttributes(remoteFailures, { operation: "put" }),
-  write_back: Metric.withAttributes(remoteFailures, { operation: "write_back" })
+  write_back: Metric.withAttributes(remoteFailures, { operation: "write_back" }),
 }

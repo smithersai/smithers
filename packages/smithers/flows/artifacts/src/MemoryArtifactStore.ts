@@ -8,11 +8,11 @@
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import type { Service } from "./ArtifactStore.ts"
-import { ArtifactMissing } from "./ArtifactStoreError.ts"
-import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.ts"
-import { measureBytes } from "./measureBytes.ts"
-import { snapshotBytes } from "./snapshotBytes.ts"
-import { validateDigest } from "./validateDigest.ts"
+import { ArtifactMissing } from "./ArtifactStoreError.vibe"
+import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
+import { measureBytes } from "./measureBytes.vibe"
+import { snapshotBytes } from "./snapshotBytes.vibe"
+import { validateDigest } from "./validateDigest.vibe"
 
 /**
  * Builds an in-memory artifact store, for tests and for a browser host with no

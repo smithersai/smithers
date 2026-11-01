@@ -6,7 +6,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { ArtifactStoreError } from "./ArtifactStoreError.ts"
+import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
 
 /**
  * A refused byte copy is the host declining an allocation, not a crypto
@@ -27,8 +27,8 @@ const snapshotFailure = (cause: unknown): ArtifactStoreError =>
  * @category utilities
  * @since 1.0.0-rc.0
  */
-export const snapshotBytes = (bytes: Uint8Array): Effect.Effect<Uint8Array, ArtifactStoreError> =>
+export const snapshotBytes = (bytes: Uint8Array): Uint8Array!ArtifactStoreError =>
   Effect.try({
     try: () => new Uint8Array(bytes),
-    catch: (cause) => snapshotFailure(cause)
+    catch: (cause) => snapshotFailure(cause),
   })
