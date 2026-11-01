@@ -27,7 +27,7 @@ export function Landing() {
           <p className="landing-tagline">Automate maintaining your codebase</p>
           <nav className="landing-actions" aria-label="Start">
             <Button asChild variant="solid" size="lg">
-              <Link to="/app">Get started for free</Link>
+              <Link to="/app">{session?.status === "signed_in" ? "Open Smithers" : "Get started for free"}</Link>
             </Button>
           </nav>
         </main>

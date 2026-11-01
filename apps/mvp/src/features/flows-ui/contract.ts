@@ -231,3 +231,6 @@ export const COULDNT_READ_FLOW = "Couldn't read this flow"
 export const DEVICE_STORAGE_UNAVAILABLE = "Device storage unavailable"
 
 export const SESSION_STORAGE = "Not kept on this device"
+
+/** A draft's page once drafts have loaded without it. */
+export const NO_SUCH_DRAFT = "No such draft"

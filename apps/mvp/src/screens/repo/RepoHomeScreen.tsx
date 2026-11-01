@@ -11,8 +11,8 @@ import "./repo-screen.css"
 export function RepoHomeScreen() {
   return (
     <main className="repo-screen" aria-label="Repository">
-      <RepoHeader width="default" />
-      <PageBody width="default">
+      <RepoHeader />
+      <PageBody width="wide">
         <HomeTabs active="home" />
         <HomePage tree={<RepoPage />} />
       </PageBody>

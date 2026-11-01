@@ -6,9 +6,12 @@
   .flows-page td a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; max-width:100%; overflow-wrap:anywhere; }
 }
 .flows-page { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
-.flows-page td:first-child { white-space: nowrap; font-family: var(--font-mono); }
+.flows-page td:first-child { white-space: nowrap; }
 .flows-page td:last-child { white-space: nowrap; text-align: end; }
 .flows-screen .flows-loading { min-height: 12rem; }
 .flows-code [data-slot="textarea"] { width: 100%; box-sizing: border-box; }
 .flows-code-header { display: flex; align-items: center; gap: 1rem; }
 .flows-code-header > span { margin-inline-start: auto; }
+@media (max-width: 40rem) {
+  .flows-page table[aria-label="Flows"] :is(th, td):nth-child(2) { display: none; }
+}

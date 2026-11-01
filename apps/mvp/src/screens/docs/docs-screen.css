@@ -9,19 +9,13 @@
   margin-inline: -0.5rem;
   border-radius: 6px;
   overflow-wrap: anywhere;
-  color: var(--brand, #0f766e);
-  text-decoration: none;
 }
-.docs-page-links a:hover { text-decoration: underline; text-underline-offset: 0.2rem; }
 .docs-page-links a[aria-current="page"] { background: var(--brand-soft, color-mix(in srgb, var(--brand, #0f766e) 10%, var(--surface, #fffefa))); font-weight: 600; }
 @media (max-width: 60rem) {
   .docs-page-links a { display:flex; align-items:center; min-width:32px; min-height:32px; }
 }
 .docs-page-index h1 { margin: 0 0 0.5rem; }
 .docs-page-index p { margin: 0; max-width: 48rem; }
-/* Each code block keeps one quiet Copy: the docs mock has no language tag or Wrap toggle. */
-.docs-page .sui-codeblock-lang,
-.docs-page [data-slot="code-block-wrap"] { display: none; }
 .docs-page-shown { min-width: 0; }
 .docs-page-loading, .docs-page-refused { min-height: 16rem; }
 /* On a phone the index of pages collapses to a bounded strip above the page. */

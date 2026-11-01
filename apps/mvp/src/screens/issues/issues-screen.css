@@ -12,7 +12,6 @@
 .issues-screen .sui-issues-repo { display: none; }
 
 /* While the list is busy, a header with no actions is an empty bar; the skeleton rows say it. */
-.issues-screen .sui-issues-view[aria-busy] .sui-issues-header:not(:has(.sui-issues-actions)) { display: none; }
 
 /* The schedule filter reads as the tab row it is; its label sits on the row's baseline, not as a tab. */
 .issues-schedule-label { align-self: center; }

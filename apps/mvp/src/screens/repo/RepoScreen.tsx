@@ -11,7 +11,7 @@ import "./repo-screen.css"
 export function RepoScreen() {
   return (
     <main className="repo-screen" aria-label="Repository">
-      <RepoHeader width="wide" />
+      <RepoHeader />
       <PageBody width="wide">
         <HomeTabs active="code" />
         <FileTabsBar />

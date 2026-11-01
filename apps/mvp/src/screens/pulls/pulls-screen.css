@@ -12,7 +12,6 @@
 .pulls-screen .sui-issues-repo { display: none; }
 
 /* While the list is busy, a header with no actions is an empty bar; the skeleton rows say it. */
-.pulls-screen .sui-issues-view[aria-busy] .sui-issues-header:not(:has(.sui-issues-actions)) { display: none; }
 
 .pulls-status-line { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .pulls-syncing { margin: 0; }

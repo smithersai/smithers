@@ -53,7 +53,7 @@ export function StackScreen() {
   if (status === "sign_in") {
     return (
       <main className="stack-screen" aria-label="Stack"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           <Card><CardContent><EmptyState title="Members can make TODOs." action={<SignInButton />} /></CardContent></Card>
         </PageBody>
       </main>
@@ -62,7 +62,7 @@ export function StackScreen() {
   if (status === "forbidden") {
     return (
       <main className="stack-screen" aria-label="Stack"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           <Card><CardContent><EmptyState title="Members can make TODOs." /></CardContent></Card>
         </PageBody>
       </main>
@@ -72,7 +72,7 @@ export function StackScreen() {
   const may = status === "allowed" && session !== undefined && mayChange(session, confirmed, answer)
   return (
     <main className="stack-screen" aria-label="Stack"><RepoHeader />
-      <PageBody>
+      <PageBody width="wide">
         {draftsOfRepo(repoId, drafts).map((draft) => <DraftCard key={draft.id} draft={draft} />)}
         <IssuesView
           repo={`${owner}/${repo}`}
@@ -81,7 +81,7 @@ export function StackScreen() {
           ordered
           numberPrefix="T"
           emptyTitle={NO_TODOS}
-          unknown={session === undefined}
+          unknown={status === "unknown" && rows.length === 0}
           issues={withDrop(stackItemsOf(rows, todos, owner, repo), may, (number) => actions.drop(owner, repo, number))}
           filter={{
             state: stackFilterOf(search.state),

@@ -40,8 +40,7 @@
 /* The branch list: rows of links in one card. */
 .repo-branches { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .repo-branches-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; min-width: 0; padding: 0.375rem 0; }
-.repo-branches-row > a { overflow-wrap: anywhere; color: var(--brand, #0f766e); text-decoration: none; }
-.repo-branches-row > a:hover { text-decoration: underline; text-underline-offset: 0.2rem; }
+.repo-branches-row > a { overflow-wrap: anywhere; }
 
 @media (max-width: 60rem) {
   /* The title yields with a real ellipsis, so the bell stays on the first row. */

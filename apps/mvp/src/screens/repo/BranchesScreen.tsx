@@ -16,7 +16,7 @@ export function BranchesScreen() {
   const page = pageOf(current)
   return (
     <main className="repo-screen" aria-label="Repository">
-      <RepoHeader width="wide" />
+      <RepoHeader />
       <PageBody width="wide">
         {page.kind !== "files" ? <RepoPage /> : refs.state === "loading" || current === undefined ? <Skeleton className="repo-page-loading" /> : refs.state === "failed" ? <EmptyState title={refs.message} /> : (
           <Card>

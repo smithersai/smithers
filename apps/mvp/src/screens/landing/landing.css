@@ -53,5 +53,3 @@
   .landing-top { gap: 1rem; }
 }
 
-/* The landing's own top row takes its account action; the floating bell would be its only chrome here. */
-body:has(.landing) .root-bell { display: none; }

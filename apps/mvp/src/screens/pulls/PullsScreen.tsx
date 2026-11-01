@@ -33,7 +33,7 @@ export function PullsScreen() {
     const list = githubList(owner, repo, "pulls")
     return (
       <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           <Card><CardContent><p className="pulls-status-line"><a href={list.href}>{list.text}</a></p></CardContent></Card>
         </PageBody>
       </main>
@@ -42,7 +42,7 @@ export function PullsScreen() {
   if (page.refused === "sign_in") {
     return (
       <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           <Card className="pulls-sign-in"><CardContent><SignInButton /></CardContent></Card>
         </PageBody>
       </main>
@@ -51,7 +51,7 @@ export function PullsScreen() {
   if (page.refused === "forbidden") {
     return (
       <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           <Card><CardContent><EmptyState title={NOT_FOUND} /></CardContent></Card>
         </PageBody>
       </main>
@@ -61,7 +61,7 @@ export function PullsScreen() {
   const unknown = listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady).unknown || access?.installed !== true
   return (
     <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
-      <PageBody>
+      <PageBody width="wide">
         {pending ? <p role="status" data-list-sync="" className="pulls-syncing">Syncing pull requests…</p> : null}
         <div className="list-search-tools" role="search" aria-label="Search pulls">
           <Input aria-label="Search pulls" placeholder="Search pulls" value={search.q ?? ""}
@@ -73,7 +73,8 @@ export function PullsScreen() {
           repo={`${owner}/${repo}`}
           size="full"
           issues={page.pulls}
-          loading={unknown}
+          loading={page.loading || unknown}
+          unknown={unknown}
           emptyTitle="No pull requests"
           href={(pull) => ("href" in pull ? (pull.href as string) : undefined)}
           onNavigate={(_, href) => void navigate({ href })}

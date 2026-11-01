@@ -51,7 +51,9 @@ export const surfaceOf = (routeId: string | undefined): Surface =>
  * the floating bell covers the header's last button.
  */
 export const BELL_ROUTES: ReadonlySet<string> = new Set([
+  "/",
   "/app",
+  "/app/flows",
   "/$owner/$repo",
   "/$owner/$repo/tree/$ref/$",
   "/$owner/$repo/branches",
@@ -67,6 +69,7 @@ export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/$owner/$repo/runs",
   "/$owner/$repo/pulls",
   "/$owner/$repo/stack",
+  "/$owner/$repo/stack/$number",
   "/$owner/$repo/settings",
   "/$owner/$repo/settings/secrets",
   "/$owner/$repo/-/$plugin",

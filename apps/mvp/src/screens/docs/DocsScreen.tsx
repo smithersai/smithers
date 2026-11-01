@@ -10,8 +10,8 @@ import "./docs-screen.css"
 export function DocsScreen() {
   return (
     <main className="repo-screen" aria-label="Repository">
-      <RepoHeader width="default" />
-      <PageBody width="default">
+      <RepoHeader />
+      <PageBody width="wide">
         <HomeTabs active="docs" />
         <DocsPage />
       </PageBody>

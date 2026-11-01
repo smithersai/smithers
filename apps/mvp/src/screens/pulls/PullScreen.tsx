@@ -43,7 +43,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   if (page === "sign_in") {
     return (
       <main className="pulls-screen"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           {back}
           <Card className="pulls-sign-in"><CardContent><SignInButton /></CardContent></Card>
         </PageBody>
@@ -53,7 +53,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   if (page === "missing") {
     return (
       <main className="pulls-screen"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           <NotFound title="Pull request not found" back={back} />
         </PageBody>
       </main>
@@ -63,7 +63,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   if (page === "unknown") {
     return (
       <main className="pulls-screen"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           {back}
           <Card><CardContent>
             <EmptyState title="Pull request unavailable here" action={
@@ -80,7 +80,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   if (pull === undefined) {
     return (
       <main className="pulls-screen"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           {back}
           <Card><CardContent>
             <p role="status">Syncing pull request…</p>

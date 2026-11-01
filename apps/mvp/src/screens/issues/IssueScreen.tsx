@@ -59,7 +59,7 @@ export function IssueScreen() {
   if (page === "sign_in") {
     return (
       <main className="issues-screen"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           {back}
           <Card className="issues-sign-in"><CardContent><SignInButton /></CardContent></Card>
         </PageBody>
@@ -69,7 +69,7 @@ export function IssueScreen() {
   if (page === "missing") {
     return (
       <main className="issues-screen"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           <NotFound title="Issue not found" back={back} />
         </PageBody>
       </main>
@@ -79,7 +79,7 @@ export function IssueScreen() {
   if (page === "unknown") {
     return (
       <main className="issues-screen"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           {back}
           <Card><CardContent>
             <EmptyState title="Issue unavailable here" action={
@@ -96,7 +96,7 @@ export function IssueScreen() {
   if (item === undefined) {
     return (
       <main className="issues-screen"><RepoHeader />
-        <PageBody>
+        <PageBody width="wide">
           {back}
           <OfflineFallback>
             <Card><CardContent>
@@ -122,7 +122,7 @@ export function IssueScreen() {
   })
   return (
     <main className="issues-screen"><RepoHeader />
-      <PageBody>
+      <PageBody width="wide">
         {back}
 
         <ItemConversation

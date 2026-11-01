@@ -9,6 +9,7 @@ import { BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } f
 import { mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf } from "../../features/todos/view"
 import "./stack-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { RepoHeader } from "../../features/repo/components/RepoHeader"
 
 // /$owner/$repo/stack/$number (decision 0016 §4): one TODO as GitHub's issue page. Its title and T<n>, its state pill,
 // whose icon blinks while it is Working; who committed it and when; its prompt and acceptance criteria; a timeline of
@@ -36,7 +37,8 @@ export function TodoScreen() {
   if (status === "sign_in") {
     return (
       <main className="stack-screen" aria-label="TODO">
-        <PageBody>
+        <RepoHeader />
+        <PageBody width="wide">
           <Breadcrumbs
             items={[
               { key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` },
@@ -57,7 +59,8 @@ export function TodoScreen() {
   const may = session !== undefined && mayChange(session, confirmed, answer)
   return (
     <main className="stack-screen" aria-label="TODO">
-      <PageBody>
+      <RepoHeader />
+      <PageBody width="wide">
         <Breadcrumbs
           items={[
             { key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` },

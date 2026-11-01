@@ -4,6 +4,7 @@ import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { Link } from "@tanstack/react-router"
 import { NEW_FLOW, NEW_FLOW_PATH } from "../../features/flows-ui/contract"
+import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
 import { FlowsPage } from "../../features/flows-ui/components/FlowsPage"
 import "./flows-screen.css"
 
@@ -16,13 +17,18 @@ export function FlowsScreen() {
       <PageHeader
         back={<Link to="/app">Back to chat</Link>}
         title="Flows"
-        actions={signedIn
-          ? (
-            <Button asChild variant="solid">
-              <Link to={NEW_FLOW_PATH}>{NEW_FLOW}</Link>
-            </Button>
-          )
-          : undefined}
+        actions={
+          <>
+            {signedIn
+              ? (
+                <Button asChild variant="solid">
+                  <Link to={NEW_FLOW_PATH}>{NEW_FLOW}</Link>
+                </Button>
+              )
+              : null}
+            <NotificationsBell />
+          </>
+        }
       />
       <PageBody width="default">
         {session?.status === "signed_out"

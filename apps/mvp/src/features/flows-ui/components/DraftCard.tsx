@@ -1,11 +1,10 @@
 import { EmptyState, FlowDraftView, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, draftFailureWords, MINE, SAVE_REFUSALS } from "../contract"
+import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, draftFailureWords, MINE, NO_SUCH_DRAFT, SAVE_REFUSALS } from "../contract"
 import { shownRound } from "../round"
 import { useFlowsUi } from "./FlowsUiContext"
 
 /** A draft this device doesn't have: the id names none of the person's drafts. */
-const NO_SUCH_DRAFT = "No such draft"
 
 // One draft at full size (decision 0014 §5): its round's status, as its row says or, when the round's run on this
 // device ended without writing it, Failed with why; questions with the defaults it assumed, its flow.ts and checks;

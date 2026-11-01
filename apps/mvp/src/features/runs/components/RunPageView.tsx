@@ -46,7 +46,7 @@ export function RunPageView({ fromRuns = false }: { readonly fromRuns?: boolean 
       startedAtMs={Date.parse(known.createdAt)} finishedAtMs={known.status === "running" ? null : Date.parse(known.updatedAt)}
       now={view.now ?? Date.now()} />
   }
-  if (page.state !== "read") return <Card className="run-page-missing"><EmptyState title={missingOf(page, view.repo != null)} /></Card>
+  if (page.state !== "read") return <Card className="run-page-missing"><h1 className="sui-sr-only">Run</h1><EmptyState title={missingOf(page, view.repo != null)} /></Card>
   return <ReadRunPage page={page} view={view} actions={actions} fromRuns={fromRuns} />
 }
 

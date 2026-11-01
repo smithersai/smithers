@@ -72,7 +72,7 @@ export function IssuesScreen() {
     const list = githubList(owner, repo, "issues")
     return (
       <main className="issues-screen" aria-label="Issues">{header}
-        <PageBody>
+        <PageBody width="wide">
           <Card><CardContent><p className="issues-status-line"><a href={list.href}>{list.text}</a></p></CardContent></Card>
         </PageBody>
       </main>
@@ -82,7 +82,7 @@ export function IssuesScreen() {
   if (list.refused === "sign_in") {
     return (
       <main className="issues-screen" aria-label="Issues">{header}
-        <PageBody>
+        <PageBody width="wide">
           <Card className="issues-sign-in"><CardContent><SignInButton /></CardContent></Card>
         </PageBody>
       </main>
@@ -91,7 +91,7 @@ export function IssuesScreen() {
   if (list.refused === "forbidden") {
     return (
       <main className="issues-screen" aria-label="Issues">{header}
-        <PageBody>
+        <PageBody width="wide">
           <Card><CardContent><EmptyState title={NOT_FOUND} /></CardContent></Card>
         </PageBody>
       </main>
@@ -99,7 +99,7 @@ export function IssuesScreen() {
   }
   return (
     <main className="issues-screen" aria-label="Issues">{header}
-      <PageBody>
+      <PageBody width="wide">
         {failure === undefined ? null : (
           <Card><CardContent>
             <p role="status" className="issues-status-line"><span>{failure}</span>{" "}
@@ -132,7 +132,7 @@ export function IssuesScreen() {
             </CardContent></Card>
           )
           : listSync === "syncing" ? <p role="status" data-list-sync="" className="issues-syncing">Syncing issues…</p> : null}
-        {listSync === "not_synced" && failure === undefined ? null : (
+        {(
           <div className="list-search-tools" role="search" aria-label="Search issues">
             <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
               onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
@@ -140,7 +140,7 @@ export function IssuesScreen() {
               onChange={(sort) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
           </div>
         )}
-        {listSync === "not_synced" && failure === undefined ? null : (
+        {(
           <IssuesView
             repo={`${owner}/${repo}`}
             size="full"

@@ -58,8 +58,8 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
   // This person may change the branch's files: the live editor for a file, and a Markdown file in place on its page.
   const editsFiles = open && writes(access) && current?.mode === "open"
   return (
-    <main className="branch-screen" aria-label="Repository" data-workspace={open || savedConversation ? "true" : "false"}>
-      <RepoHeader width="wide" />
+    <main className="branch-screen" aria-label="Repository" data-workspace={open || denied || savedConversation ? "true" : "false"}>
+      <RepoHeader />
       {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}
       {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
       <div className="branch-screen-notices"><Toasts surface={open ? "conversation" : "page"} /></div>

@@ -1,4 +1,4 @@
-import { Button, PageHeader, type PageHeaderProps } from "@smthrs/ui"
+import { Button, PageHeader } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useLocation } from "@tanstack/react-router"
 import { NotificationsBell } from "../../attention/components/NotificationsBell"
@@ -26,7 +26,7 @@ import { useRepo, useRepoAnswer } from "./RepoContext"
 // clones (the files' place says Cloning, RepoPage); the sign-in link in Clone's place for a signed-out person; or why a
 // clone failed or was refused, with Try again only once this repository's role permits it (ruling AUTH-8). Readers see Members can clone. The person's bell is its last slot, so it never sits on
 // an action: the screens that render this header don't float it (attention/contract.ts `BELL_ROUTES`).
-export function RepoHeader({ backTarget, width }: { readonly backTarget?: Minimized; readonly width?: PageHeaderProps["width"] } = {}) {
+export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } = {}) {
   const { queries, actions } = useRepo()
   const { data } = useLiveQuery(queries.view)
   const auth = useAuth()
@@ -54,7 +54,7 @@ export function RepoHeader({ backTarget, width }: { readonly backTarget?: Minimi
     <PageHeader
       className="repo-header"
       aria-label="Repository"
-      width={width}
+      width="wide"
       back={<BackToChat target={backTarget ?? { template: "repo", props: minimizedOf(view, defaultBranch) }} />}
       title={<Link to="/$owner/$repo" params={{ owner: view.owner, repo: view.name }}>{view.owner} / {view.name}</Link>}
       nav={sections}
