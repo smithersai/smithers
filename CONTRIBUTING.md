@@ -8,8 +8,9 @@ our own work (rulings §18, settled).
 
 Development and maintenance of this repository commit and push directly to
 append-only `main` with jj; open no pull requests for it, and never rewrite
-`main`. There is no `mythical` stack now; it comes later (rulings TODO-2). Close
-issues and refresh documentation from real completion evidence.
+`main`. There is no `mythical` stack now; it comes later (rulings TODO-2).
+Update the work note and the documentation from real completion evidence. The
+landing steps are in [LAND.md](LAND.md).
 
 The factory's repository configuration lives in `.smithers/`: `FACTORY.ts` and
 its projections, `coding-project.json` (the wiki page catalog and coding host
@@ -339,7 +340,7 @@ To move `packages/<child>` under `packages/<parent>`:
 
 ## Landing changes
 
-Prepare one logical change with its issue, reviewed diff, and validation receipts.
+Prepare one logical change with its work note, reviewed diff, and validation receipts.
 Commit it with jj and push it directly to append-only `main` (AGENTS.md, "Commit
 and push to `main` with jj"). Preserve unrelated edits in a shared checkout.
 
@@ -353,7 +354,8 @@ records its reason instead. Require exit zero and `LANDED <sha>`: that receipt
 requires a post-push fetch and ancestry verification against remote main.
 
 Deployment is a separate operation against the landed revision: `apps/mvp`
-deploys with Alchemy (`pnpm deploy`, [infrastructure](apps/mvp/docs/infrastructure.md)).
+deploys with Alchemy (`pnpm run deploy`; `pnpm deploy` is pnpm's own command;
+[infrastructure](apps/mvp/docs/infrastructure.md)).
 Retain the deployment receipt before claiming production is current.
 
 ## Working with the pinned jj fork

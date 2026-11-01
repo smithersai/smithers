@@ -1,5 +1,7 @@
 # Retired chat integrations
 
+> History: a record from the old stack, kept as it was. What we build now is [`apps/mvp`](../../apps/mvp/AGENTS.md) ([rulings](../../apps/mvp/docs/rulings.md) SCOPE-1).
+
 MVP retirement: [smithers#3389](https://github.com/smithersai/smithers/issues/3389).
 
 The last source snapshot before this app/backend retirement is

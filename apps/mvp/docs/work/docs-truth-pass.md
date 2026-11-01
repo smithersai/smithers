@@ -21,6 +21,16 @@ links: [ops-vault-history-repair.md, will-decision-queue.md, decisions-for-will.
 
 Evidence: lead text replies through 11:39 PDT in session 6253ecf2, extracted by script from the latest two hours; rulings and queue answers take precedence over shared briefs, designs and older docs. Product results are reported evidence; this refresh validates the site build only. Existing implementation ownership is retained; Codex curates this note.
 
+## Current specification — 2026-10-21 11:31 PDT
+
+**What:** Will, 2026-10-21 10:53 (Telegram, SCOPE-3 addendum): "make sure all docs Smithers-Ops etc. is up to date". The legacy-removal agent deletes the old code and fixes what points at it; this pass fixes the rest.
+
+**Current state:** Repository commits in workspace `docs-truth`, queued with the lander: `f4f77c09` (apps/mvp docs: rules.md GH-9/GH-10, SDK-15, sign-in, PROC-21; infrastructure.md lists sandboxes, rooms, Code Storage and the model, Neon Launch plan, and the deployment record leaves the public repo; `todo.md` tracked; plugins in apps/mvp/AGENTS.md), `3f02584d` (LAND.md, REVIEW.md deleted, CONTRIBUTING.md), `b3f2eb8b` (maintainer-site README, libraries.md issue-claim row), `0aad6527` (docs/mvp history banners, M-55), `33d12ea7` (apps/DESIGN.md and apps/UPSTREAMS.md marked history). The lead settled rulings §18 itself. The private ops repository pushed to its `main`: `b97b1e5c` (AGENTS.md and CLAUDE.md "What is true now", Deploys.md with the production record, Areas, Org, Decisions index), `87df189f` (live skills rewritten, stopped ones retired), `0d135d07` (bin help and comments). `smithersai/smithers-infra` doesn't exist yet, so the vault's `Deploys.md` holds the record.
+
+**Next step:** Root `AGENTS.md`'s plugin section still says the design is pending (decision 0017 was approved 2026-10-20); edit it once the legacy agent's root change lands. Left for the legacy agent: `apps/README.md`, the apps/site pages generated from `apps/app`, `docs/api/`, `packages/smithers/test/faults/README.md`, `.smithers/flows/coding` and `perf/working-together`. Needs a decision: `SUPPORT.md` (Pro billing and the old backend's export and erase commands), and the ops repository's shared checkout, which the agents' installed skills read and which sits far behind its `main`.
+
+**Open questions for Will:** None.
+
 ## Earlier tracker history (retained)
 
 

@@ -531,19 +531,19 @@ Alchemy deploys and runs everything on Cloudflare, from `alchemy.run.ts`. No Wra
 - **Will:** "Ok let's use alchemy for cloudflare effect.ts for everything" (14:26).
 - **Enforced:** process only. The rule is about a configuration file's absence, which `ImportRules` cannot see.
 
-### deps.seven-day-rule
+### deps.one-day-rule
 
-Every new dependency version is at least 7 days old. Will lifted this for the app's stack on 2026-10-19.
+Add or bump a dependency whose version is at least 1 day old without asking Will; pin it exactly and say so in the change. Ask Will only about a version less than 1 day old ([rulings](rulings.md) SDK-15). This replaces the 7-day rule and its 2026-10-19 exception for the app's stack (SDK-12).
 
-- **Will:** "Yes use latest version of all of these libraries please as an exception right now permission to have everything on bleeding edge latest" (14:29).
-- **Enforced:** config, once `pnpm-workspace.yaml` sets `minimumReleaseAge`; today it sets only the `minimumReleaseAgeExclude` list, so nothing enforces the age. Will's exception is recorded here so the list is not read as a bypass.
+- **Will:** "Don't ask me to upgrade deps please unless the dep is less than 1 day old." (2026-10-21, about 00:15).
+- **Enforced:** config. pnpm 11 refuses a version younger than 24 hours; `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` lists the versions Will approved younger than that.
 
 ### auth.open-but-bounded
 
-Signed-out use is intended: add no sign-in gates; auth is designed later, once, for every feature, client and host ([todo.md](todo.md)). Every network input is still bounded: size limits, parameter allowlists, length and count limits.
+Signed-out people may browse; asking Smithers needs sign-in ([rulings](rulings.md) AUTH-1, AUTH-2). Add no one-off sign-in gate: every route reads who is asking from the one `Sessions` service. Auth beyond that is designed later, once, for every feature, client and host ([0008](decisions/0008-auth.md)). Every network input is still bounded: size limits, parameter allowlists, length and count limits.
 
 - **Will:** "we also should support unauthenticated users using the app. We want unauthenticated users to be able to ask questions and use our app freely for now we will just have alerts set up if we notice a lot of token spend happening" and "we really want to architecture our auth a bit later with high level of intention so it works for everything (please mark this down)" (19:41).
-- **Revised (Will, 2026-10-19, decision [0008](decisions/0008-auth.md) §11):** signed-out people can't ask Smithers. The model endpoint refuses a call with no actor through the injected `Sessions` service (`worker/Actor.ts`), which production provides as signed out until sign-in lands. That service is the seam sign-in plugs into, not a one-off check; reading and the rest stay open.
+- **Revised (Will, 2026-10-19, decision [0008](decisions/0008-auth.md) §11):** signed-out people can't ask Smithers. The model endpoint refuses a call with no actor through the injected `Sessions` service (`worker/Actor.ts`), which `worker/SignIn.ts` provides from the Smithers GitHub App's sign-in ([sign-in](features/sign-in.md)). Reading and the rest stay open.
 - **Scope:** `apps/mvp/worker/**` non-test.
 - **Enforced:** Jev.
 - **Jev asks:** Does this server code accept input from the network without bounding it, such as no body size limit, no allowlist of forwarded parameters, or no length or count limits, or does it add a one-off sign-in, token or IP check of its own? A file that only forwards requests to a handler that bounds them is compliant.
@@ -577,6 +577,7 @@ Iterate fast: quality comes from quick iterations with Will's feedback, not from
 `/codex` (Sol) reviews work in progress at checkpoints. When work is done, `/codex astra` reviews it first, the lead responds to and fixes its findings, and then a Fable subagent reviews the result. Reviews never block Will's own review.
 
 - **Will:** "have /codex review our code so far and also have a fable subagent review it. Wait til you are done to dispatch fable have codex do it both now and later" (14:54). "Reviews aren't blocking to me reviewing it I just want agents reviewing with me." (16:11). "remember to have /codex astra review code and then once responding to it's reviews have fable review" (2026-10-20, 01:08).
+- **Routine code review (2026-10-21, [rulings](rulings.md) PROC-21):** Astra, then Fable, review every code slice first; Will sees only flagged, security, data and public-API slices. An agent's review never approves or merges.
 - **Enforced:** process only.
 
 ### process.works-or-doesnt

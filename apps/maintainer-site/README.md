@@ -2,6 +2,8 @@
 
 A local site for maintainers: Will's decision queue, a Work board of every workstream, a gallery of every end-to-end flow GIF, and an Obsidian-like knowledge base of the repository's docs with backlinks, a graph, an outline per note and full-text search.
 
+It is the tool we dogfood, not the product. Its review queue is becoming a product feature, a plugin in `apps/mvp`, and gets evaluated heavily ([rulings](../mvp/docs/rulings.md) PLUGIN-4, PLUGIN-6). The Work board and knowledge base stay here for now; they will most likely become the app's wiki feature later (PLUGIN-5).
+
 ## Decision queue
 
 ```sh

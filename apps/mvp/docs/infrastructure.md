@@ -16,6 +16,8 @@ browser ── site Worker ── service binding ── ChatApi Worker ── H
 | Hyperdrive | `alchemy dev` passes the binding straight through to `DATABASE_URL` | the `ChatDatabase` config in front of Neon's direct host, query cache off |
 | Workers | local workerd at http://localhost:1337 (HTTP/1.1) and https://localhost:1443 (HTTP/2, [below](#https-and-http2)) | Cloudflare over HTTP/2 and HTTP/3, Workers Logs and Traces persisted |
 | Remote flows | the `FlowExecution` Durable Object in local workerd, its engine in the schema `smithers_flows` of the compose Postgres | the `FlowExecution` Durable Object, hosted by ChatApi, its engine in the schema `smithers_flows` of the Neon project through `ChatDatabase` ([remote-flows.md](features/remote-flows.md)) |
+| Branch sandboxes | the `BranchSandbox` image, run by local workerd through Docker | one Cloudflare Container per branch from the `BranchSandbox` image (`infra/BranchSandbox.ts`), started by that branch's `SandboxObject` Durable Object ([sandbox-tools.md](features/sandbox-tools.md)) |
+| Branch rooms | the `RoomObject` Durable Object in local workerd | one hibernating `RoomObject` per branch, hosted by ChatApi ([branch-workspace.md](features/branch-workspace.md)) |
 | Agent transcripts | the `RunContent` Durable Object in local workerd | the `RunContent` Durable Object, hosted by ChatApi, one per run with its own SQLite, kept 30 days after its last event ([agent-transcripts.md](features/agent-transcripts.md)) |
 
 ## Local
@@ -142,7 +144,7 @@ ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and not
 ### Postgres
 
 - `ChatPostgres` (`infra/Postgres.ts`) is a Neon project on Postgres 17 in `aws-us-east-1`, with logical replication on, which sets `wal_level=logical`. Its region and version can't change after creation.
-- It keeps six hours of restore history (`HISTORY_RETENTION_SECONDS`), the most Neon's Free plan allows. Alchemy's default, a day, fails the deploy on that plan.
+- It keeps six hours of restore history (`HISTORY_RETENTION_SECONDS`), the most Neon's Free plan allows, so the stack deploys on any plan. Alchemy's default, a day, fails the deploy on the Free plan. Our production organization is on Neon's Launch plan since 2026-10-21 ([rulings](rulings.md) ARCH-4).
 - The project's owner role has the `REPLICATION` attribute Electric needs and owns `messages`.
 - Electric works only on tables with `REPLICA IDENTITY FULL`: Electric 1.8 refuses any other ("Electric cannot function with replica identity mode set to something other than FULL"). The first migration sets it. The one table of the engine's schema a device follows, `smithers_flows.flows_run_changes` ([a run on Cloudflare](features/runs.md#a-run-on-cloudflare)), the engine makes on its first alarm, and Electric sets it there itself, since the role it connects as owns the engine's tables too.
 - `pnpm destroy` keeps the project: its removal policy is `retain`. Delete it in Neon's console.

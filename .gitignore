@@ -89,6 +89,8 @@ out.html
 pi-*.html
 collect.sh
 todo.md
+# The app's open-work list is a tracked doc that other docs link to.
+!apps/mvp/docs/todo.md
 plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/

@@ -1,5 +1,7 @@
 # Application captures
 
+> History: evidence from the old app (`apps/app`) during the September 2026 MVP, kept as it was. It is not about [`apps/mvp`](../../../apps/mvp/AGENTS.md), the app we build now ([rulings](../../../apps/mvp/docs/rulings.md) SCOPE-1, SCOPE-3).
+
 Captured on 2026-09-16 from the actual Vite application bundle in the shared MVP working copy, based on main `7bf6c1167dc4`. The pending MVP changes are included; that base revision alone does not reproduce these screens.
 
 Run from `apps/app`: `pnpm exec playwright test e2e/playwright/repository-setup.spec.ts --project=chromium --workers=1`. The recorded run passed all six scenarios in 24.6 seconds. Its raw log is [browser-results.txt](browser-results.txt).

@@ -1,34 +1,30 @@
 # Landing
 
-Reserve new tables in `packages/backend/db/ownership.csv` at Ready:
-`table,product,planned:T-XXX-00;owner:smithers-owner`. Keep target ownership
-(product/private/retired) in its existing column. Planned rows do not describe
-installed tables. Set `SMITHERS_MIGRATION_TICKET` to the implementing ticket;
-the migration gate refuses another ticket's reservation.
+Development and maintenance of this repository land on append-only `main` with
+jj, with no pull request ([AGENTS.md](AGENTS.md), "Commit and push to `main` with
+jj"). Product TODOs in customer repositories still reach `main` through a pull
+request a person merges.
 
-Fetch the landing branch, then run `node .smithers/flows/land/renumber-migration.mjs <file>`
-for each unlanded product migration. The helper requires sqlc v1.30.0 from
-`PACKAGE.ts`, assigns max(origin/main)+1, updates the registry, converts implemented reservations,
-and regenerates sqlc. It refuses files already on `origin/main` before writes,
-including renamed copies, and refuses when unlanded status cannot be established.
-Never change landed migration filenames, numbers or bytes.
+1. Make a short-lived `jj workspace` from `main@origin` for one change. Never
+   use the git CLI or a git worktree, and never edit another agent's files in a
+   shared checkout.
+2. Commit there with jj in the repository's message style.
+3. Before pushing, run the changed packages' typecheck and tests, `pnpm
+   docs:sync` and `pnpm docs:check` when docs changed, and scan the diff for
+   secrets and private paths such as `/Users/...` (rulings HOST-10).
+4. Fetch, rebase onto `main@origin`, point `main` at your commit, check that
+   `main@origin..main` lists only your commits, and push `main`. Never rewrite
+   `main`.
+5. Remove the workspace.
 
-Run after renumbering and generation, without database credentials:
+## `apps/mvp` migrations
 
-```sh
-go test -run 'TestMigrationGate|TestMigrationRegistry' ./packages/backend/db/product/
-```
+The migrator skips, for good, any migration numbered below the highest one
+already applied. So a migration takes its number when it lands, not when it is
+written: the next number above `main@origin`'s highest in
+`apps/mvp/db/migrations`. On a clash, renumber the file, its registration in
+`apps/mvp/db/Database.ts` and every reference. Never change a landed
+migration's filename, number or bytes.
 
-`node .smithers/flows/land/commit.mjs --push --test '<required check>'` runs that mandatory
-gate, sqlc drift, and the mandatory five-target drift set before either Git or jj publication. Missing or
-failed gates refuse publication, including with `--no-test`. The bootstrap
-helper publishes main; this authorized wave uses the lane's explicit Git
-fetch/rebase/push workflow to frontrun after the same checks.
-
-Execute repository tests and generators as unprivileged machine users, without
-live database or publication credentials. Both helpers refuse a home containing
-`~/.config/issue-claim`; generator and gate children receive the same filtered
-environment, including removal of PostgreSQL connection and credential variables.
-Machine dispatch remains blocked until
-the approved T-SEC-01 R1–R3, T-MCH-10 R4 and applicable T-FLW-01 R5 receipts
-and installed main-pinned runtime are available. Branch bytes never run at root.
+Deploying is separate from landing: see
+[infrastructure](apps/mvp/docs/infrastructure.md#deploy).

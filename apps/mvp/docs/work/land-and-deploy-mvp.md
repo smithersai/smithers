@@ -3,9 +3,41 @@ title: Land and deploy the new app
 status: done
 area: process
 owner: lead; deployment complete, operations follow-up tracked separately
-updated: 2026-10-21 04:15 PDT
+updated: 2026-10-21 12:05 PDT
 links: [device-ownership-and-queued-authority.md, site-deployment-test.md, land-to-main.md, app-wiring.md, ../infrastructure.md, ../../../../AGENTS.md, infrastructure-as-code.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, sign-in.md, integrations-browser-safe-root.md, gitremote-unicode-branches.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, flows-and-agent.md, cloudflare-flow-host.md, repo-checks-green.md, local-first.md, pwa.md, agent-ui-rendering.md, repo-clone-and-view.md, code-reviews.md, will-decision-queue.md, cloudflare-electric-service-binding.md, private-hosted-infrastructure.md, device-data-migrations.md]
 ---
+
+## Remote flows run in production — 2026-10-21 12:05 PDT
+
+**What:** Smoke remote flows after `931fed704f46` (the factory stack with QuickJS on workerd, the prod-flows fixes and sandboxes) went live at 18:46:56 UTC (11:47 PDT).
+
+**Current state:** Remote flows run. Read from production's Postgres and three ChatApi tails, 18:48–19:05 UTC:
+- A flow completes: `chat/Expire` completed at 18:48 UTC, first of any; by 19:01 also `terminal/Open` and `auth/RevokeGitHubToken`.
+- Webhooks sync issues: 7 `github/Apply` runs completed `applied` from stored and new deliveries; `comments` went 0 → 15 and `items` 0 → 1,035 (the current window's Reconcile walk, still `partial`, so `github_sync.complete` stays false until a later walk finishes).
+- The stale Reconcile backlog ends: 23 `github/Reconcile` runs completed `superseded` with no GitHub call; the tail logged `github.reconcile outcome=superseded`.
+- Signed-out tokens are revoked: sessions signed out but still holding a sealed GitHub token went 2 → 0.
+- Alarm logs are clean: every `cloudflare.execution.alarm` line in the tails `settled`, none `retrying`, no exception and no WebAssembly refusal; each line names `smithers.flow` and `smithers.execution.id`.
+- Still running at 19:01 UTC, none retrying: `chat/Expire` 10, `repo/Clone` 6, `github/Reconcile` 5, `ops/SpendAlert` 3, `github/Apply` 1, `auth/RevokeGitHubToken` 1, `auth/RecheckRole` 1.
+
+**Next step:** None for this workstream. The `partial` issues walk completes on later stale reads; the running flows settle on their own timers.
+
+**Open questions for Will:** None.
+
+Evidence: Neon queries and ChatApi tails (raw events in the session scratchpad), read by the deploy agent; no secret or connection string printed.
+
+## Remote flows in production — 2026-10-21 11:06 PDT
+
+**What:** Deploy `78407fce59dd` (the engine-schema fix) and prove remote flows run in production.
+
+**Current state:** Deployed at 17:57 UTC (10:57 PDT) from a clean workspace, first attempt, 56 s; ChatApi and the site Worker updated, nothing else changed. The engine's schema installed at 17:59 UTC: `smithers_flows` holds 23 tables and 25 `flows_migrations` rows (to 4003), where it held one empty table since the first deploy. The `MigrationError` is gone. Remote flows still do not run: a 6-minute tail of ChatApi (17:57–18:03 UTC) shows every `FlowExecution` alarm `retrying` with `error.type` `flows/harness/SandboxError` (github/Reconcile, github/Apply, repo/Clone, chat/Expire, ops/SpendAlert, terminal/Open), each beside `CompileError: WebAssembly.instantiate(): Wasm code generation disallowed by embedder`. `flows_runs` is empty; `items`, `comments` and `github_sync` hold 0 rows; 2 signed-out sessions still hold a sealed token.
+
+**Cause:** every execution's runtime builds the `todo/Implement` registration, whose cell sandbox is `AgentSandbox.layer` = `Agent.layerDefaults`, the single-file QuickJS build that compiles WebAssembly from bytes. workerd refuses that, so building the runtime fails for every flow, not only TODO runs. `@smthrs/harness` documents the Worker form: `Agent.layerDefaultsWithVariant` over `QuickJSSandbox.layerVariant(newVariant(base, { wasmModule }))`, with the `.wasm` imported as a module (`packages/smithers/agent/harness/test/workerd/worker.ts`). Alchemy bundles with rolldown and uploads emitted `.wasm` files as `application/wasm` modules, so the Worker needs a rolldown plugin that emits the QuickJS `.wasm` and imports it externally.
+
+**Next step:** Give the Worker the variant build (rolldown `.wasm` plugin, `Agent.layerDefaultsWithVariant` in `worker/AgentSandbox.ts`) with a workerd test that builds the deployed registration, redeploy, then smoke: a flow settles, a stored webhook delivery syncs its issue, the stale Reconcile walks end `superseded`, no `retrying` alarm lines.
+
+**Open questions for Will:** None.
+
+Evidence: deploy log `r5-deploy-1.log`, the Worker tail summary and raw events, and the Neon queries in the session scratchpad, read by the deploy agent; no secret or connection string printed.
 
 ## Tracker reconciliation — 2026-10-21 04:15 PDT
 

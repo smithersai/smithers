@@ -129,7 +129,7 @@ Every detail this overview left open is decided in [mvp.md](mvp.md):
 | Benchmark claims | M-19: none without a sealed, paired run |
 | Hosted use | M-54: hosted only now; M-09's billing and plans stay out |
 | What we build now | M-53: `apps/mvp` and Will's feature list |
-| Plugins | M-55: everything is a plugin (design pending) |
+| Plugins | M-55: everything is a plugin ([decision 0017](../../apps/mvp/docs/decisions/0017-everything-is-a-plugin.md), approved 2026-10-20) |
 | Prompt flows and code flows | M-56: one flow model; a prompt flow is a kind of code flow |
 | Stack history | M-57: order in Postgres; the `mythical` history comes later |
 | Entry routes and the launcher | M-45 |

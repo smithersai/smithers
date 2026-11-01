@@ -1,6 +1,6 @@
 # MVP engineering
 
-> Superseded (Will, 2026-10-02). This is the engineering record of the five-job MVP, which the [MVP spec](../../.specs/product/mvp.md) cuts (§8). The current engineering spec, tickets and checks are in [`.specs/engineering/`](../../.specs/engineering/README.md). The status table and release receipts below stay as history.
+> Superseded (Will, 2026-10-02). This is the engineering record of the five-job MVP, which the [MVP spec](../../.specs/product/mvp.md) cuts (§8). The later engineering spec, tickets and checks in [`.specs/engineering/`](../../.specs/engineering/README.md) are superseded too; the app we build now is `apps/mvp` ([rulings](../../apps/mvp/docs/rulings.md) ARCH-1, SCOPE-9). The status table and release receipts below stay as history.
 
 This was the implementation and verification contract for the [2026-09-16 requirements](https://github.com/smithersai/smithers/blob/d4d2eaccab9382205f4a47e789ce560fb016b388/docs/mvp/PRODUCT.md), with the interaction design in [DESIGN.md](DESIGN.md). The component table and the narrative below it are the **2026-09-17 03:40 UTC** record and have not been re-measured since. Current deployed identities, the canary results against them and the open gates with their owners are in the [release ledger](implementation/release-20260916.md#release-state-as-of-2026-09-19-1700-utc), as of 2026-09-19 00:01 UTC; read that section before this one. Concurrent source changes are not deployment evidence.
 

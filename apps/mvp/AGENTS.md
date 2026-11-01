@@ -2,6 +2,10 @@
 
 The Smithers app, hosted only, built from scratch one feature at a time (Will, 2026-10-19; SCOPE-1, SCOPE-8). Work lands on `main` before Will reviews it, and he reviews every feature (HOST-3). [The rulings](docs/rulings.md) are the source of truth. It is the base every later feature builds on, so each feature lands with its architecture, tests, observability, benchmarks and docs, never "later".
 
+## Everything is a plugin
+
+Features are plugins on the one public plugin interface; the core holds only primitives ([decision 0017](docs/decisions/0017-everything-is-a-plugin.md), approved 2026-10-20; rulings PLUGIN-1). A new feature starts as a plugin, or its change says why the core needs it. Today's features in `src/features/` move onto the interface in the order 0017's [migration](docs/decisions/0017-everything-is-a-plugin.md#migration-of-current-features-in-order) gives.
+
 ## Use the Smithers SDK; extend it, never hand-roll
 
 - When the app needs something a Smithers package should provide, add it to that package with tests and docs, then use it here. We maintain the SDK. A local copy in the app is tech debt.

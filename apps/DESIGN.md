@@ -1,5 +1,7 @@
 # Smithers App — Design Product Spec
 
+> History: the August 2026 design spec of the old app (`apps/app`), kept as it was. The app we build now is [`apps/mvp`](mvp/AGENTS.md); [the rulings](mvp/docs/rulings.md) are the source of truth (SCOPE-1, SCOPE-4), and the old CEO's decisions below carry no authority (PROC-17).
+
 Owner: design agent. Audience: will (CEO/product), engineering agent, implementation subagents.
 Scope: the desktop app in `apps/app` through the Aug 13 demo and immediately after.
 Companion docs: `AGENTS.md` (architecture rules — frames, flux, no `useEffect`), the ops vault `Now.md` / `Design.md` (product truth).
