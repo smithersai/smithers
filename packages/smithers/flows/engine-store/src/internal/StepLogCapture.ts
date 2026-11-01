@@ -23,7 +23,7 @@ import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
 import * as Queue from "effect/Queue"
 import * as EngineStoreMetrics from "../EngineStoreMetrics.ts"
-import * as StepLogs from "../StepLogs.ts"
+import * as StepLogs from "../StepLogs.vibe"
 
 /**
  * Which attempt a body's records belong to.

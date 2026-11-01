@@ -27,7 +27,7 @@ import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as JournalRecords from "../src/internal/JournalRecords.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
-import { releaseCauseOf } from "../src/RunState.ts"
+import { releaseCauseOf } from "../src/RunState.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

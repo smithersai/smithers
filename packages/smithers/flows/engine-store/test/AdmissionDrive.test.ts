@@ -12,7 +12,7 @@ import * as EngineStore from "../src/EngineStore.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WakeBus from "../src/WakeBus.ts"
+import * as WakeBus from "../src/WakeBus.vibe"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import { withCrypto } from "./Sha256.ts"
 

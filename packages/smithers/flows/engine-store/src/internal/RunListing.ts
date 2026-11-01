@@ -9,7 +9,7 @@ import { RunStatus } from "@smthrs/run-store/RunStore"
 import { Cause, Effect, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Read from "./ExecutionSnapshotRead.ts"
-import { RunCatalogError } from "./RunListingError.ts"
+import { RunCatalogError } from "./RunListingError.vibe"
 
 /**
  * Supported equality and inclusive creation-range filters.

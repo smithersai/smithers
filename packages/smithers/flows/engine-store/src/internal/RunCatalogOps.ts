@@ -28,7 +28,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as RunListing from "./RunListing.ts"
-import { RunCatalogError } from "./RunListingError.ts"
+import { RunCatalogError } from "./RunListingError.vibe"
 
 /**
  * Stable error codes returned by the catalog read.
@@ -36,7 +36,7 @@ import { RunCatalogError } from "./RunListingError.ts"
  * @category models
  * @since 0.1.0
  */
-export { RunCatalogErrorCode } from "./RunListingError.ts"
+export { RunCatalogErrorCode } from "./RunListingError.vibe"
 
 /**
  * A catalog read that could not complete.
@@ -48,7 +48,7 @@ export { RunCatalogErrorCode } from "./RunListingError.ts"
  * @category errors
  * @since 0.1.0
  */
-export { RunCatalogError } from "./RunListingError.ts"
+export { RunCatalogError } from "./RunListingError.vibe"
 
 /**
  * Options for one catalog read.
