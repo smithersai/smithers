@@ -1,7 +1,7 @@
 import * as Markdown from "@smthrs/core/Markdown"
 import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
-import * as Names from "../src/internal/Names.ts"
+import * as Names from "../src/internal/Names.vibe"
 
 describe("Names", () => {
   it("derives nested path names and omits root-level entries", () => {

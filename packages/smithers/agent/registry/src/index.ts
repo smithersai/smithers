@@ -21,7 +21,7 @@
  * @category errors
  * @since 0.1.0
  */
-export * as RegistryError from "./RegistryError.ts"
+export * as RegistryError from "./RegistryError.vibe"
 
 /**
  * @category models
@@ -39,13 +39,13 @@ export * as Discovery from "./Discovery.ts"
  * @category markdown
  * @since 0.1.0
  */
-export * as MarkdownFlow from "./MarkdownFlow.ts"
+export * as MarkdownFlow from "./MarkdownFlow.vibe"
 
 /**
  * @category modules
  * @since 1.0.0-rc.16
  */
-export * as ModuleFlow from "./ModuleFlow.ts"
+export * as ModuleFlow from "./ModuleFlow.vibe"
 
 /**
  * @category markdown

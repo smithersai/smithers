@@ -34,8 +34,8 @@ import type * as Path from "effect/Path"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { DiscoveryWarning, FlowDescriptor, Provenance, type Source } from "./Descriptor.ts"
-import type { RegistryError } from "./RegistryError.ts"
-import { registryError } from "./RegistryError.ts"
+import type { RegistryError } from "./RegistryError.vibe"
+import { registryError } from "./RegistryError.vibe"
 
 /**
  * Where a pack was installed from, and therefore which one wins a name.

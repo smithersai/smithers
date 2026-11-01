@@ -2,7 +2,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
-import * as ModuleFlow from "../src/ModuleFlow.ts"
+import * as ModuleFlow from "../src/ModuleFlow.vibe"
 
 // A module flow read from its source text alone, as Discovery reads a `flow.ts` and as a host reads source it keeps
 // outside a file system: the descriptor, the declared tag, and each warning, without importing the module.

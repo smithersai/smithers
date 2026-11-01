@@ -1,7 +1,7 @@
 import { Option } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
-import * as MarkdownFlow from "../src/MarkdownFlow.ts"
+import * as MarkdownFlow from "../src/MarkdownFlow.vibe"
 
 vi.mock("../src/internal/Frontmatter.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/internal/Frontmatter.ts")>()
