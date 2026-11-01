@@ -52,7 +52,7 @@ import * as Fiber from "effect/Fiber"
 import * as Metric from "effect/Metric"
 import * as Queue from "effect/Queue"
 import type * as Scope from "effect/Scope"
-import * as BrowserScheduler from "./BrowserScheduler.ts"
+import * as BrowserScheduler from "./BrowserScheduler.vibe"
 import type * as Protocol from "./internal/LanguageProtocol.ts"
 import * as TypeScriptWorkspace from "./internal/TypeScriptWorkspace.ts"
 
