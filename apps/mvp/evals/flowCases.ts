@@ -252,6 +252,12 @@ export const FLOW_CASES: ReadonlyArray<AgentCase> = [
       fieldSays("body", "changelog"),
     )), ...changedOnly(t, ["run/steer"])],
   },
+  {
+    name: "repo-run",
+    ask: `Run the release flow of ${REPO} by hand on main, with channel next.`,
+    checks: (t) => [answered(t), attempted(t, "repo/run", all(repo, fieldIs("flow", "release"), fieldIs("ref", "main"))),
+      ...changedOnly(t, ["repo/run"])],
+  },
   // Branches.
   {
     name: "branch-create",

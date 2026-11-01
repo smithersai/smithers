@@ -26,7 +26,12 @@ Stop ─▶ run/cancel { runId, seq, host: "cloud" } ─ step ─▶ POST /api/r
 | `GET /api/shapes/actions?repo=<owner>/<name>` | Electric's shape of the repository's runs: `id`, `repo_id`, `execution`, `flow`, `status`, `sha`, `ref`, `event`, `created_at`, `updated_at`; never who launched one |
 | `GET /api/remote-runs/<run id>` | a repository's run, or a run it started (walking at most 16 generations of parents), as [a run on Cloudflare](runs.md#routes) reads |
 | `GET /api/shapes/remote-runs?run=<run id>` | the same runs' rows of the engine's change feed |
+| `GET /api/repos/<owner>/<name>/flows` | `{ flows: [{ name, title? }], defaultBranch }`: the flows the `manual` triggers of the default branch's `.smithers/factory.json` let a person run |
+| `GET /api/repos/<owner>/<name>/flows/<flow>?ref=<branch>` | `{ inputs, sha }`: that flow's inputs at the branch's head as JSON Schema, read in the QuickJS realm (`Realm.describe`), never by the Worker |
+| `POST /api/repos/<owner>/<name>/runs` | `{ id, flow, ref, input }` starts `repo/Run` with `event: "manual"` at the branch's head; `{ id, retryOf, failed }` runs a settled run's flow again at its commit, all of it or only its jobs that didn't pass. `202 { runId }`, or `200` the same for an id it took before |
 | `POST /api/remote-runs/<run id>/stop` | `202 { outcome: "requested" }`, or `200 { outcome: "settled" }` for a run that had ended; a recorded run the engine hasn't begun is stopped before it starts |
+
+The repository runs routes (`worker/ci/RunsApi.ts`) are for a Member or above on a repository `REPO_FLOWS_REPOSITORIES` allows (decision [0079](../decisions/0079-roles-per-repository.md)), in person or through an agent acting for them. Each start is recorded as a repository run before it starts, under `<flow>:<id>`, so a request sent again starts nothing new. Their refusals are `{ code }`: `invalid` (400), `authentication` (401), `forbidden` (403), `not_found` or `not_manual` (404), `inputs` (422: the inputs don't fit the flow's form, at most 8 KiB as JSON), `nothing_failed`, `not_settled` or `conflict` (409), `rate_limited` (429), `off` or `unavailable` (503).
 
 The stop route's refusals are `{ code }`, `Cache-Control: no-store`:
 
@@ -43,6 +48,12 @@ The stop route's refusals are `{ code }`, `Cache-Control: no-store`:
 |---|---|---|
 | `run/cancel { runId, seq, host: "cloud" }` | Stop: on the run's own page (not a job's), while the run hasn't settled and no stop was asked | Asks ChatApi, which answers `settled` for a run that ended and otherwise asks the run's `FlowExecution` to stop it (`ExecutionObject.make`'s `cancel`, `@smthrs/platform-cloudflare`): a durable tombstone, then the engine's cancellation of the run and every run it started; a run the object hasn't begun never starts. The object's next alarm settles it `cancelled`. A step already running finishes first. Refused `forbidden` for who may not stop it, `not_found` for a run that isn't a repository's. On a TODO's run the same route stops its external agent instead ([runs](runs.md#stopping-a-todos-agent)) |
 
+| `run/retry { runId, version, host: "cloud", repo, failed? }` | Retry and Retry failed: on a repository's settled run's own page; Retry failed only when a job failed | Asks `POST /api/repos/<owner>/<name>/runs` with `retryOf`: a new run of the same flow at the run's commit with its inputs; with `failed`, only the jobs that didn't pass run, and a need on a job that isn't rerun is dropped since it passed. Refused `nothing_failed`, `not_settled` |
+
+### Running a flow by hand
+
+The Run form on `/$owner/$repo/actions` lists the repository's runnable flows (`GET .../flows`), and for the chosen flow and branch draws its inputs (`GET .../flows/<flow>`) with `FlowFormView` (`@smthrs/views`), defaults and choices kept. Run starts `repo/run { repo, flow, ref, input }`, a client flow the agent may call too; its step `repo/run/start` posts through the outbox to `POST .../runs`, and the new run opens on its page.
+
 The person's Stop and the agent's call run the same flow on this device's engine; its step asks ChatApi as the run that made it (decision 0017 slice 0).
 
 ## The browser
@@ -58,6 +69,8 @@ The device gates the actions shape on current repository Member authority (decis
 | `run.stop`, `smithers_run_stops` | log, span; counter (ChatApi) | `host` (`remote`), `runId`, `via`, `outcome` (`requested`, `settled`, or the refusal's code), `status`, `durationMs`, `errorCode` |
 | `cloudflare.execution.cancel`, `smithers_cloudflare_execution_cancellations` | log, span; counter (the object, [remote flows](../observability.md#remote-flow-executions)) | `outcome` |
 | `repo.run.record`, `repo.run.settle`, `smithers_repo_run_writes` | log, span; counter | `runId`, `repoId`, `flow`, `event`, `op`, `outcome` |
+| `repo.runs` (span), `repo.flow.read`, `repo.run.start` (logs), `smithers_repo_flow_reads{read,outcome}`, `smithers_repo_run_starts{kind,outcome}` | span, log; counter (ChatApi) | `read` (`flows`, `inputs`) or `kind` (`manual`, `retry`, `retry_failed`), `flow`, `outcome` (`started`, `existing`, or the refusal's code), `status`, `durationMs`, `errorCode`; never an input's value |
+| `repo.run.start` (log, span), `smithers_repo_run_requests` | log, span; counter (the device's `repo/run/start` step) | `flow`, `outcome` |
 | `run.act` | log (engine worker) | `act` (`cancel`), `host` (`remote`), `runId`, `outcome` |
 
 No record carries a value of a run.
@@ -71,6 +84,9 @@ No record carries a value of a run.
 | `worker/RemoteRuns.test.ts` "a repository's run", "stop" | a Member reads a run and its jobs with a role on its recorded repository, with role failures refused; Stop's answers and refusals |
 | `worker/github/PullsApi.test.ts` "the repository's runs" | the actions shape carries a repository's flows' runs, the Checks shape its checks |
 | `src/features/runs/remote.test.ts` "a repository's run on Cloudflare" | a device lists two repositories independently, follows live updates and deletes, reloads its SQLite store, watches the run, and stops it through `run/cancel` and ChatApi; a job's progress reads its run's page, and a job's own page, with no Stop; a Guest reads Not found |
+| `worker/ci/RunsApi.test.ts` | the flows list, a flow's inputs, a run by hand, Retry and Retry failed, each refusal, a repeated id starting nothing new |
+| `src/features/runs/actions.test.ts`, `runs.test.ts` | the Run form's flows then inputs at the branch, `repo/run` and Retry/Retry failed through the outbox, their refusals |
+| `e2e/actions.spec.ts` | a Member runs the test repository's `hand` flow from the Run form and sees it on its page |
 | `e2e/ci.spec.ts` | a real push, repository run list, run page and reload; `requires("localLogs", "repoFlows")` plus `githubAppKey` on deployments, or `githubPushToken` and `webhookSecret` locally, declare the prerequisites; its recording supplies the run-view GIF |
 
 Triggered runs are recorded by `triggers/Start` before the Durable Object start. A repeated delivery or failed start reuses the execution and its row.

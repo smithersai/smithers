@@ -3,6 +3,7 @@ import { SETTLE_RETRY } from "../agent/close"
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
+import { RUNS_REFUSALS } from "../actions/contract"
 import { ACT_REFUSALS, MAX_STEER_CHARS } from "./contract"
 
 // The acts on runs and the run reads, as flows (decision 0014 §2, docs/features/runs.md#acts): a person's button on the
@@ -11,11 +12,14 @@ import { ACT_REFUSALS, MAX_STEER_CHARS } from "./contract"
 //
 //   run/cancel { runId, seq }     Stop: the engine records the cancellation and interrupts the run; with
 //                                 host "cloud", a repository's run, which its Durable Object stops
-//   run/retry { runId, version }  Retry: a new run of the same flow with the same payload, pinned or current
+//   run/retry { runId, version }  Retry: a new run of the same flow with the same payload, pinned or current; with
+//                                 host "cloud" and repo, a repository's run again on Cloudflare (all of it, or with
+//                                 failed, only its jobs that didn't pass)
 //   run/retry/from { runId, step } Retry from here: a new run that replays the steps before `step` and runs from it
 //   run/resume { runId, seq }     Resume: the engine drives a run again that hasn't settled; a durable timer stays
 //   run/list {}                   the newest runs
 //   run/inspect { runId }         one run: its status, steps and result
+//   repo/run { repo, flow, ref }  a repository's flow by hand on Cloudflare, at a branch's head, with its inputs
 //
 // `seq` is the run's last journal sequence the page read: Resume on a run that moved since is refused `stale`, and Stop
 // on a run that settled meanwhile answers its final status (`Control`'s terminal receipt) instead of refusing. What the
@@ -75,9 +79,24 @@ export const Cancel = Flow.make("run/cancel", {
 /** Which flow a retry runs: the revision the run pinned, or the current one. */
 export const RetryVersion = Schema.Literals(["pinned", "current"])
 
+/** A repository, as `owner/name`. */
+const RepoPath = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/))
+
+/**
+ * Retry's payload: the run, which version, and for a repository's run on Cloudflare (`host: "cloud"`) its repository
+ * and whether only its jobs that didn't pass run (`failed`).
+ */
+const RetryPayload = {
+  runId: Fenced.runId,
+  version: RetryVersion,
+  host: Host,
+  repo: Schema.optionalKey(RepoPath),
+  failed: Schema.optionalKey(Schema.Boolean),
+}
+
 /** The step: start the new run. */
 export const RetryRun = Action.make("run/retry/start", {
-  payload: { runId: Fenced.runId, version: RetryVersion },
+  payload: RetryPayload,
   success: Schema.Struct({ runId: Schema.String }),
   error: RunActRefused,
   tier: "sealed",
@@ -86,12 +105,13 @@ export const RetryRun = Action.make("run/retry/start", {
 /** `run/retry`: a settled run again, as a new run. */
 export const Retry = Flow.make("run/retry", {
   description: "Run a settled run again as a new run, with the same input: version \"pinned\" runs the revision it " +
-    "ran, \"current\" the latest. Answers with the new run's id.",
+    "ran, \"current\" the latest. A repository's run on Cloudflare takes host \"cloud\" and its repo, owner/name; " +
+    "with failed, only its jobs that didn't pass run. Answers with the new run's id.",
   modelInvocable: true,
-  payload: { runId: Fenced.runId, version: RetryVersion },
+  payload: RetryPayload,
   success: Schema.Struct({ runId: Schema.String }),
   error: RunActRefused,
-  body: Node.capture({ retry: RetryRun.name }, ({ runId, version }) => RetryRun.call({ runId, version })),
+  body: Node.capture({ retry: RetryRun.name }, (payload) => RetryRun.call(payload)),
 }).annotate(Flow.Placement, Placement.client())
 
 /** The step: start the new run, seeded from the run it retries. */
@@ -223,4 +243,36 @@ export const Steer = Flow.make("run/steer", {
   success: SteerRequested,
   error: SteerStepRefused,
   body: Node.capture({ steer: QueueSteer.name }, ({ runId, body }) => QueueSteer.call({ runId, body })),
+}).annotate(Flow.Placement, Placement.client())
+
+/** Why a repository's flow didn't start by hand: the route's refusal (src/features/actions/contract.ts `RUNS_REFUSALS`). */
+export class RepoRunRefused extends Schema.TaggedError<RepoRunRefused>()("@smthrs/mvp/runs/RepoRunRefused", {
+  code: Schema.Literals(RUNS_REFUSALS),
+}) {}
+
+/** A run by hand: the repository, its flow, the branch it starts at, and the inputs its form takes. */
+const RepoRunPayload = {
+  repo: RepoPath,
+  flow: Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9_-]{0,63}$/)),
+  ref: Schema.String.check(Schema.isBetweenLength(1, 256)),
+  input: Schema.optionalKey(Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean]))),
+}
+
+/** The step: ask ChatApi to start the run. */
+export const StartRepoRun = Action.make("repo/run/start", {
+  payload: RepoRunPayload,
+  success: Schema.Struct({ runId: Schema.String }),
+  error: RepoRunRefused,
+  tier: "sealed",
+})
+
+/** `repo/run`: run a repository's flow by hand, at a branch's head, on Cloudflare (docs/features/actions.md). */
+export const RepoRun = Flow.make("repo/run", {
+  description: "Run a repository's flow by hand on Cloudflare: repo is owner/name, flow its name under " +
+    ".smithers/flows, ref the branch it starts at, input the values its form takes. Answers with the run's id.",
+  modelInvocable: true,
+  payload: RepoRunPayload,
+  success: Schema.Struct({ runId: Schema.String }),
+  error: RepoRunRefused,
+  body: Node.capture({ start: StartRepoRun.name }, (payload) => StartRepoRun.call(payload)),
 }).annotate(Flow.Placement, Placement.client())

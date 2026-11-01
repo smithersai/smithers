@@ -9,3 +9,8 @@
 
 .repo-runs-loading { display: grid; gap: 10px; }
 .repo-runs-loading [data-slot="skeleton"] { height: 18px; }
+
+/* The Run card: a repository's flows run by hand (docs/features/actions.md#running-a-flow-by-hand). */
+.actions-screen .repo-flows-content { display: flex; flex-direction: column; gap: 0.75rem; }
+.actions-screen .repo-flows-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.actions-screen .repo-flows-branch { display: flex; align-items: center; gap: 0.5rem; max-width: 24rem; }

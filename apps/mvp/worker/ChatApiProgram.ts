@@ -36,7 +36,9 @@ import * as Executions from "./Executions.ts"
 import * as Placement from "./Placement.ts"
 import * as Flows from "./Flows.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
+import * as AgentSandbox from "./AgentSandbox.ts"
 import * as Dispatch from "./ci/Dispatch.ts"
+import * as RunsApi from "./ci/RunsApi.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
 import { CiJob } from "@smthrs/sandbox"
 import * as GitHubApi from "./github/Api.ts"
@@ -276,6 +278,21 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       // A TODO run's transcript, on its own Durable Object (worker/RunContent.ts).
       transcript: (runId) => RunContent.connect(runContents, runId),
     }, roles)
+    // A repository's flows run by hand, and its runs run again (docs/features/actions.md#running-a-flow-by-hand), on the
+    // repositories REPO_FLOWS_REPOSITORIES allows, by the asker's role there, read as the App and in the QuickJS realm.
+    const repoRunsApi = yield* RunsApi.make(database, {
+      repositories,
+      app,
+      repoFlows,
+      roles,
+      engine: Layer.unwrap(
+        Effect.map(
+          hyperdrive.connectionString,
+          (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
+        ),
+      ),
+      variant: AgentSandbox.variant,
+    })
     const githubApp = yield* GitHubConfig.configured
     const runTodos = yield* Todo.enabled
     // A repository's home (docs/features/home.md): who the asker is on it, by their role there (decision 0079), and
@@ -429,6 +446,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             : stack.fetch).pipe(Effect.provide(signedIn))
         }
         if (RemoteRuns.handles(path)) return yield* remoteRuns.fetch.pipe(Effect.provide(signedIn))
+        // Before the repository routes: `/api/repos/<owner>/<name>/flows[/<flow>]` and `.../runs`
+        // (docs/features/actions.md#running-a-flow-by-hand).
+        if (RunsApi.handles(path)) {
+          return yield* repoRunsApi.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(signedIn))
+        }
         // And a home, `/api/repos/<owner>/<name>/home` (docs/features/home.md): who the asker is and the curated home.
         if (HomeApi.handles(path)) return yield* home.fetch.pipe(Effect.provide(signedIn))
         // And docs, `/api/repos/<owner>/<name>/docs[/page]`: open to everyone, like the about read.

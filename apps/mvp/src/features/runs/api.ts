@@ -3,12 +3,14 @@ import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "eff
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewed, withBearer, withoutCookie } from "../../flows/bearer"
 import { CLOUD_RUNS_LIMIT, CLOUD_RUNS_ROUTE, remoteRunRoute, steersRoute, stopRoute } from "./contract"
-import { type CloudRun, CloudRunList, type Inspection } from "./schema"
+import { flowInputsRoute, repoFlowsRoute, repoRunsRoute } from "../actions/contract"
+import { type CloudRun, CloudRunList, type Inspection, type RepoName } from "./schema"
 
 // ChatApi's remote runs route as the browser calls it (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): a run
 // Smithers runs on Cloudflare, as the engine's `RunInspection` reads it there, through Effect's HttpClient with one
 // deadline over the whole exchange, decoded with the engine's own wire shape (`BrowserEngine.Inspection`). A
-// repository's run is stopped there too (docs/features/actions.md#acts).
+// repository's run is stopped there too (docs/features/actions.md#acts), and its flows run by hand or again through its
+// runs routes (docs/features/actions.md#running-a-flow-by-hand).
 
 /**
  * ChatApi didn't answer with the run: no whole answer within the deadline, or no network (`status` absent), any status
@@ -171,6 +173,58 @@ export const postStop = (origin: string, runId: string, within: Duration.Input) 
   )
 
 /**
+ * ChatApi didn't answer a repository's runs route: no whole answer within the deadline, or no network (`status`
+ * absent), or a refusal (`status`, and its `code` when the body names one), or an answer that isn't one.
+ */
+export class RepoRunsFailed extends Data.TaggedError("RepoRunsFailed")<{
+  readonly status?: number
+  readonly code?: string
+}> {}
+
+/** A repository's flows a person runs by hand, and its default branch. */
+export const RepoFlows = Schema.Struct({
+  flows: Schema.Array(Schema.Struct({ name: Schema.String, title: Schema.optionalKey(Schema.String) })),
+  defaultBranch: Schema.String,
+})
+export type RepoFlows = typeof RepoFlows.Type
+
+/** A flow's inputs at a branch's head, and the commit. */
+export const FlowInputs = Schema.Struct({ inputs: Schema.Unknown, sha: Schema.String })
+export type FlowInputs = typeof FlowInputs.Type
+
+/** What a start answered: the run it started, or had started for that id. */
+const Started = Schema.Struct({ runId: Schema.String })
+
+/** One exchange with a repository's runs routes: `ok` statuses decode with `schema`; anything else fails. */
+const exchange = <A>(
+  request: HttpClientRequest.HttpClientRequest,
+  schema: Schema.Decoder<A>,
+  ok: ReadonlyArray<number>,
+  within: Duration.Input,
+) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    const response = yield* client.execute(request).pipe(Effect.mapError(() => new RepoRunsFailed({})))
+    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    const body = yield* response.json.pipe(Effect.option)
+    if (ok.includes(response.status)) {
+      const decoded = Option.flatMap(body, Schema.decodeUnknownOption(schema))
+      if (Option.isSome(decoded)) return decoded.value
+      return yield* new RepoRunsFailed({ status: response.status })
+    }
+    const refused = Option.flatMap(body, decodeRefusal)
+    return yield* new RepoRunsFailed({
+      status: response.status,
+      ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
+    })
+  }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new RepoRunsFailed({})) }))
+
+/** A run by hand, `{ id, flow, ref, input }`, or a run again, `{ id, retryOf, failed }`. */
+export type RepoRunStart =
+  | { readonly id: string; readonly flow: string; readonly ref: string; readonly input?: Readonly<Record<string, string | number | boolean>> }
+  | { readonly id: string; readonly retryOf: string; readonly failed: boolean }
+
+/**
  * ChatApi's remote runs routes, as a service: how this tab reads a run Smithers runs on Cloudflare, and steers its
  * agent. Tests of a route that fails provide a faulty one; every other test uses the real one.
  */
@@ -191,6 +245,12 @@ export class RemoteRunsClient extends Context.Service<
     readonly stop: (runId: string) => Effect.Effect<{ readonly outcome: "requested" | "settled" }, StopFailed>
     /** The runs on Cloudflare this person may read, newest first. */
     readonly list: Effect.Effect<ReadonlyArray<CloudRun>, RemoteReadFailed>
+    /** The repository's flows a person runs by hand (docs/features/actions.md#running-a-flow-by-hand). */
+    readonly flows: (repo: RepoName) => Effect.Effect<RepoFlows, RepoRunsFailed>
+    /** Flow `flow`'s inputs at branch `ref`'s head. */
+    readonly inputs: (repo: RepoName, flow: string, ref: string) => Effect.Effect<FlowInputs, RepoRunsFailed>
+    /** Starts a repository's run by hand, or a run again: the run's id. */
+    readonly start: (repo: RepoName, start: RepoRunStart) => Effect.Effect<{ readonly runId: string }, RepoRunsFailed>
   }
 >()("@smthrs/mvp/runs/RemoteRunsClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
@@ -208,6 +268,31 @@ export class RemoteRunsClient extends Context.Service<
           stop: (runId) =>
             postStop(options.origin, runId, options.within).pipe(Effect.provideService(HttpClient.HttpClient, client)),
           list: getCloudRuns(options.origin, options.within).pipe(Effect.provideService(HttpClient.HttpClient, client)),
+          flows: (repo) =>
+            exchange(
+              HttpClientRequest.get(`${options.origin}${repoFlowsRoute(repo.owner, repo.name)}`),
+              RepoFlows,
+              [200],
+              options.within,
+            ).pipe(Effect.provideService(HttpClient.HttpClient, client), Effect.withSpan("repo.flows.get")),
+          inputs: (repo, flow, ref) =>
+            exchange(
+              HttpClientRequest.get(
+                `${options.origin}${flowInputsRoute(repo.owner, repo.name, flow)}?${new URLSearchParams({ ref })}`,
+              ),
+              FlowInputs,
+              [200],
+              options.within,
+            ).pipe(Effect.provideService(HttpClient.HttpClient, client), Effect.withSpan("repo.flow.inputs.get")),
+          start: (repo, start) =>
+            exchange(
+              HttpClientRequest.post(`${options.origin}${repoRunsRoute(repo.owner, repo.name)}`).pipe(
+                HttpClientRequest.bodyJsonUnsafe(start),
+              ),
+              Started,
+              [200, 202],
+              options.within,
+            ).pipe(Effect.provideService(HttpClient.HttpClient, client), Effect.withSpan("repo.run.post")),
         })),
     )
 }

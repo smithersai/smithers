@@ -82,6 +82,10 @@ const open = (answers: Answers, withAuth = false) => {
     steer: () => Effect.die("unused"),
     stop: () => Effect.die("unused"),
     list: Effect.suspend(() => answers.cloud?.() ?? Effect.succeed([])),
+    // The Run form's reads are ChatApi's own (worker/ci/RunsApi.test.ts); the store tests read none.
+    flows: () => Effect.die("unused"),
+    inputs: () => Effect.die("unused"),
+    start: () => Effect.die("unused"),
   }))
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
   const runtime = ManagedRuntime.make(

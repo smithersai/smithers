@@ -191,7 +191,8 @@ export const settled = (status: string): boolean => (SETTLED as ReadonlyArray<st
  * - `not_retryable`: its flow is never retried with its own payload;
  * - `not_here`: this engine doesn't run its flow, or can't retry it from a step;
  * - `step_not_run`: Retry from here named a step the run never ran, or one it never settled;
- * - `forbidden`: Cloudflare refused it: only a Member stops a repository's run.
+ * - `forbidden`: Cloudflare refused it: only a Member on the repository stops or retries a repository's run;
+ * - `nothing_failed`: Retry failed of a repository's run none of whose jobs failed.
  *
  * A store that can't be read or can't record the act fails the act's step instead; the page says the engine couldn't
  * be reached (`unavailable` in `REFUSAL_WORDS`).
@@ -205,7 +206,14 @@ export const ACT_REFUSALS = [
   "not_here",
   "step_not_run",
   "forbidden",
+  "nothing_failed",
 ] as const
+
+/**
+ * The namespace a repository run's start id is derived in (RFC 9562 version 5): from the execution id of the step that
+ * asks for it, so the step run again names the same run.
+ */
+export const REPO_RUN_ID_NAMESPACE = "1f8e5c2a-9b47-4d36-8e0a-6c3b7d2f9a51"
 
 /** The new run a retry starts for the act `actId`: one per act, so a repeated Retry starts one run. */
 export const retriedRunId = (actId: string): string => `${actId}/run`
@@ -228,10 +236,15 @@ export const RUNS_TELEMETRY = {
     "run.retry.revision",
     "runs.repo_runs.load",
     "run.steer.send",
+    "repo.run.start",
+    "repo.flows.get",
+    "repo.flow.inputs.get",
+    "repo.run.post",
     "smithers_run_acts",
     "smithers_run_reads",
     "smithers_run_steer_sends",
     "smithers_run_follow_changes",
+    "smithers_repo_run_requests",
   ],
   fields: [
     "routeAttempt",
@@ -253,6 +266,7 @@ export const RUNS_TELEMETRY = {
     "status",
     "code",
     "errorCode",
+    "flow",
   ],
 } as const
 
@@ -262,6 +276,12 @@ export const RETRY = "Retry"
 export const RETRY_LATEST = "Retry latest"
 /** The inspector's act on a step: a new run that replays the steps before it and runs from it (ruling FLOW-11). */
 export const RETRY_FROM = "Retry from here"
+/** Retry failed: a repository's run again, only its jobs that didn't pass (docs/features/actions.md#acts). */
+export const RETRY_FAILED = "Retry failed"
+/** Runs a repository's flow by hand (docs/features/actions.md#running-a-flow-by-hand). */
+export const RUN = "Run"
+/** The branch a run by hand starts at. */
+export const BRANCH = "Branch"
 export const RESUME = "Resume"
 export const ANSWER = "Answer"
 export const OPEN = "Open"
@@ -308,6 +328,13 @@ export const REFUSAL_WORDS: Readonly<Record<string, string>> = {
   step_not_run: "This step didn't run.",
   not_found: "Not on this device.",
   forbidden: "Members only.",
+  nothing_failed: "Nothing failed.",
+  inputs: "Check the inputs.",
+  not_manual: "Not runnable by hand.",
+  off: "Flows are off here.",
+  conflict: "That id ran before.",
+  rate_limited: "GitHub asked to wait. Try again soon.",
+  authentication: "Sign in.",
   invalid: "Invalid action.",
   refused: "Action refused.",
   interrupted: "Action interrupted.",

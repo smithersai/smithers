@@ -19,7 +19,7 @@ import {
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
-import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FROM, RETRY_LATEST, STOP } from "../contract"
+import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FAILED, RETRY_FROM, RETRY_LATEST, STOP } from "../contract"
 import { actsOf, agentStopOf, journalOf, missingOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
@@ -103,6 +103,9 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
             {acts.stop && agentStop === null ? <Button variant="outline" disabled={busy} onClick={actions.stop}>{STOP}</Button> : null}
             {acts.resume ? <Button variant="outline" disabled={busy} onClick={actions.resume}>{RESUME}</Button> : null}
             {acts.retry ? <Button disabled={busy} onClick={() => actions.retry("pinned")}>{RETRY}</Button> : null}
+            {acts.retryFailed
+              ? <Button variant="outline" disabled={busy} onClick={actions.retryFailed}>{RETRY_FAILED}</Button>
+              : null}
             {acts.retry && run.flowName === "flow/run"
               ? <Button variant="outline" disabled={busy} onClick={() => actions.retry("current")}>{RETRY_LATEST}</Button>
               : null}

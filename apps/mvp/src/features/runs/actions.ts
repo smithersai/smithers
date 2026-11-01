@@ -7,8 +7,9 @@ import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { isRemoteRun, MAX_STEER_CHARS, STEER_ID_NAMESPACE, RETRY_ID_SEARCH_LIMIT, retriedRunId, retryActId, runPath } from "./contract"
 import { todoRetryPayload } from "./todoRun"
 import { retriesOf } from "./page"
-import type { Inspection, RepoName, RunTab, RunView } from "./schema"
-import { VIEW } from "./schema"
+import { actionRunPath } from "../actions/contract"
+import type { Inspection, RepoName, RepoRunForm, RunTab, RunView } from "./schema"
+import { FORM, VIEW } from "./schema"
 import { readCode, RunsStore } from "./store"
 
 // What a person does on runs (decision 0014 §2 and §5, docs/features/runs.md#acts): opening the list or a run, which
@@ -204,10 +205,42 @@ const openRetried = (runId: string, current: Effect.Effect<boolean, never, RunsS
   })
 
 /**
+ * Retry and Retry failed on a repository's run (docs/features/actions.md#acts): `run/retry` with host "cloud", its
+ * repository, and whether only its failed jobs run. The new run's page opens while this view still owns the act.
+ */
+const retryCloud = (repo: RepoName, failed: boolean) =>
+  acting("retry", (inspection, current) =>
+    Effect.gen(function* () {
+      const dispatched = yield* (yield* FlowDispatch).dispatch("run/retry", {
+        runId: inspection.run.runId,
+        version: "pinned",
+        host: "cloud",
+        repo: `${repo.owner}/${repo.name}`,
+        failed,
+      }, { door: "button" })
+      if (dispatched._tag === "Failed") return refusalOf(dispatched)
+      if (yield* current) (yield* RunsNavigation).navigate(actionRunPath(repo.owner, repo.name, dispatched.value.runId))
+      return Option.none()
+    }))
+
+/** Retry failed: a repository's run again, only its jobs that didn't pass. */
+export const retryFailed = Effect.gen(function* () {
+  const view = Option.getOrThrow(yield* (yield* RunsStore).view.get(VIEW))
+  if (view.repo != null) yield* retryCloud(view.repo, true)
+})
+
+/**
  * Retry: `run/retry` as the next unused `retry:<runId>:<n>`. Its new run opens only while this view still owns the
- * originating act.
+ * originating act. A repository's run runs again on Cloudflare.
  */
 export const retry = (version: "pinned" | "current") =>
+  Effect.flatMap(RunsStore, (store) => store.view.get(VIEW)).pipe(
+    Effect.map(Option.getOrThrow),
+    Effect.flatMap((view) => view.repo != null ? retryCloud(view.repo, false) : retryLocal(version)),
+  )
+
+/** `retry` on this device's engine, or a TODO's run. */
+const retryLocal = (version: "pinned" | "current") =>
   acting("retry", (inspection, current) =>
     Effect.gen(function* () {
       const runId = inspection.run.runId
@@ -297,3 +330,67 @@ export const steer = Effect.gen(function* () {
   if (recovery === undefined) yield* (yield* FlowDispatch).dispatch("run/steer", { runId: current.runId, body }, { door: "composer", executionId })
     .pipe(Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }))
 })
+
+/**
+ * The runs page's route loader (docs/features/actions.md): syncs the repository's runs, once, and reads its flows a
+ * person runs by hand into the Run form in the background.
+ */
+export const openRepoRuns = (repo: RepoName) =>
+  Effect.gen(function* () {
+    const store = yield* RunsStore
+    // The flows are GitHub's answer through ChatApi: the page shows its runs without waiting for them.
+    yield* store.loadRepoFlows(repo).pipe(Effect.forkIn(store.scope, { startImmediately: true }))
+    yield* store.openRepoRuns(repo.owner, repo.name)
+  })
+
+/** Chooses a flow to run by hand: its form shows once read. */
+export const chooseRepoFlow = (flow: string) => Effect.flatMap(RunsStore, (store) => store.chooseRepoFlow(flow))
+
+/** The branch a run starts at, as the person types it; the form reads again once they leave the field. */
+export const setRunRef = (ref: string) => Effect.flatMap(RunsStore, (store) => store.setRunRef(ref))
+
+/** Reads the chosen flow's form at the branch the person typed. */
+export const reloadRepoFlow = Effect.gen(function* () {
+  const store = yield* RunsStore
+  const form = Option.getOrThrow(yield* store.form.get(FORM))
+  if (form.flow !== null) yield* store.chooseRepoFlow(form.flow)
+})
+
+/** The runs page's `onLeave`: a Run still answering no longer moves this tab. */
+export const closeRepoRuns = Effect.flatMap(RunsStore, (store) => store.closeRepoRuns)
+
+/**
+ * Run: `repo/run` with the form's values at its branch, door `button`. The run's page opens once ChatApi started it, if
+ * the form still holds this Run; a refusal stays on the form.
+ */
+export const runRepoFlow = (values: Readonly<Record<string, string | number | boolean>>) =>
+  Effect.gen(function* () {
+    const store = yield* RunsStore
+    const form = Option.getOrThrow(yield* store.form.get(FORM))
+    if (form.repo === null || form.flow === null || form.ref === null || form.state === "starting") return
+    const repo = form.repo
+    const token = crypto.randomUUID()
+    const setForm = (fields: Partial<Omit<RepoRunForm, "id">>) =>
+      store.form.update(FORM, (draft) => void Object.assign(draft, fields)).pipe(Effect.asVoid, Effect.orDie)
+    yield* setForm({ state: "starting", refusal: null, token })
+    const dispatched = yield* (yield* FlowDispatch).dispatch("repo/run", {
+      repo: `${repo.owner}/${repo.name}`,
+      flow: form.flow,
+      ref: form.ref,
+      input: values,
+    }, { door: "button" }).pipe(Effect.result)
+    // The page left, or a newer form took its place: this answer moves nothing.
+    if (Option.getOrThrow(yield* store.form.get(FORM)).token !== token) return
+    if (dispatched._tag === "Success" && dispatched.success._tag === "Done") {
+      yield* setForm({ state: "ready", token: null })
+      return (yield* RunsNavigation).navigate(actionRunPath(repo.owner, repo.name, dispatched.success.value.runId))
+    }
+    const failure = dispatched._tag === "Failure" ? undefined : dispatched.success
+    yield* setForm({
+      state: "ready",
+      token: null,
+      refusal: failure !== undefined && failure._tag === "Failed" && "code" in failure.error
+        ? failure.error.code
+        : "unavailable",
+    })
+  })

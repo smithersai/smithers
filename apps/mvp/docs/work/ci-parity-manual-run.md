@@ -1,6 +1,6 @@
 ---
 title: CI parity: run a repository flow by hand with inputs
-status: in-progress
+status: done
 area: sdk
 owner: ci-run-view
 updated: 2026-11-01 PST
@@ -44,3 +44,7 @@ Rebased on `eeb01ea499d0`; migration `0053_repo_runs`, generated device epoch 75
 ## Engine slice landed, 2026-11-01
 
 Landed from the stranded `~/smithers` commit `d8e24d5fbe94` (stranded-audit/home-2), re-implemented on current main: `Realm.describe` (a flow's inputs as JSON Schema), `RunRequest` with `event: "manual"`, `input` and `only` (Retry failed), `manual` trigger rows (`Triggers.manualFlows`), the e2e fixture's `hand` flow, and a run whose jobs failed settling its row `failed`. Still to build on current main: `GET /api/repos/<o>/<n>/flows[/<flow>]` and `POST /api/repos/<o>/<n>/runs` (per allowlisted repository and its role, decision 0079), the `repo/run` client flow, the Run form (`FlowFormView`) on `/$owner/$repo/actions`, and Retry and Retry failed on a repository's run. The stranded commit holds a single-repository version of all of it (`worker/ci/RunsApi.ts`, `e2e/actions.spec.ts`).
+
+## Routes, form and Retry landed, 2026-11-01
+
+The rest of `d8e24d5fbe94`, ported by stranded-audit/home-2 onto the allowlist and per-repository roles: `worker/ci/RunsApi.ts` (`GET .../flows`, `GET .../flows/<flow>`, `POST .../runs` for a run by hand and Retry/Retry failed), the `repo/run` client flow and its `repo/run/start` step, the Run form (`RepoFlowsView`, `FlowFormView`) on `/$owner/$repo/actions`, Retry and Retry failed on a repository run's page, and `e2e/actions.spec.ts`. See [actions](../features/actions.md#running-a-flow-by-hand).

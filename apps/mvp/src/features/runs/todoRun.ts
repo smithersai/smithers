@@ -47,10 +47,20 @@ export const hasDomainOutcome = (flowName: string): flowName is "flow/new" | "ch
 export const domainOutcomeOf = (flowName: "flow/new" | "chat/Answer", result: unknown): "succeeded" | "failed" | "unknown" =>
   flowName === "chat/Answer" ? answerOutcomeOf(result) : draftOutcomeOf(result)
 
-/** A completed engine run can settle the requested TODO, draft or answer as failed. */
+/**
+ * Whether a repository's run reported failure: `repo/Run` settles `{ state, jobs }` and never fails, so a run whose
+ * jobs didn't pass completes with `state: "failure"` (worker/ci/RepoFlow.ts `Reported`, docs/features/actions.md).
+ */
+export const failedRepoRun = (run: { readonly flowName: string; readonly result: unknown }): boolean => {
+  const result = decoded(run.result)
+  return run.flowName === "repo/Run" && typeof result === "object" && result !== null && "state" in result &&
+    result.state === "failure"
+}
+
+/** A completed engine run can settle the requested TODO, draft, answer or repository run as failed. */
 export const headerStatusOf = (run: {
   readonly flowName: string
   readonly status: RunStatus
   readonly result: unknown
-}): RunStatus => run.status === "completed" && (failedTodoRun(run) ||
+}): RunStatus => run.status === "completed" && (failedTodoRun(run) || failedRepoRun(run) ||
   (hasDomainOutcome(run.flowName) && domainOutcomeOf(run.flowName, run.result) === "failed")) ? "failed" : run.status

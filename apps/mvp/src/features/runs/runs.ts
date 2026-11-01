@@ -5,17 +5,24 @@ import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import {
+  chooseRepoFlow,
+  closeRepoRuns,
   closeRun,
   inspectStep,
   more,
   openList,
+  openRepoRuns,
   openRun,
+  reloadRepoFlow,
   resume,
   retry,
+  retryFailed,
   retryFrom,
+  runRepoFlow,
   RunsNavigation,
   scrub,
   select,
+  setRunRef,
   setSteerDraft,
   showInspector,
   showTab,
@@ -45,6 +52,8 @@ export interface RunsQueries {
   readonly repoRuns: Store["repoRunList"]["tanstack"]
   /** The repositories whose runs have loaded: a list of none says so only then. */
   readonly repoRunsLoaded: Store["repoRunsLoaded"]["tanstack"]
+  /** The runs page's Run form (docs/features/actions.md#running-a-flow-by-hand). */
+  readonly form: Store["formRow"]["tanstack"]
   /** This device's steers the outbox holds, and those the route answered (docs/features/runs.md#steering). */
   readonly steerSending: Effect.Success<ReturnType<typeof sendingQuery>>["tanstack"]
   readonly steerSent: Effect.Success<ReturnType<typeof sentQuery>>["tanstack"]
@@ -61,8 +70,19 @@ export interface RunsActions {
   readonly warmList: () => Promise<void>
   /** The list's route loader; `open` is the run shown opened in place. */
   readonly openList: (open?: string) => Promise<void>
-  /** A repository's list's route loader: syncs the repositories' runs, once (docs/features/actions.md). */
+  /**
+   * A repository's list's route loader: syncs the repositories' runs, once, and reads the flows a person runs by hand
+   * (docs/features/actions.md).
+   */
   readonly openRepoRuns: (owner: string, name: string) => Promise<void>
+  readonly chooseRepoFlow: (flow: string) => void
+  readonly runRepoFlow: (values: Readonly<Record<string, string | number | boolean>>) => void
+  readonly setRunRef: (ref: string) => void
+  readonly reloadRepoFlow: () => void
+  /** The runs page's `onLeave`. */
+  readonly closeRepoRuns: () => void
+  /** Retry failed on the open repository's run: only its jobs that didn't pass. */
+  readonly retryFailed: () => void
   /** Opens `runId`; a repository's run with its `repo`, read on Cloudflare. */
   readonly openRun: (runId: string, repo?: RepoName) => Promise<void>
   /** The run route's `onLeave` for `runId`. */
@@ -107,13 +127,20 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
           cloudRuns: store.cloudList.tanstack,
           repoRuns: store.repoRunList.tanstack,
           repoRunsLoaded: store.repoRunsLoaded.tanstack,
+          form: store.formRow.tanstack,
           steerSending: steerSending.tanstack,
           steerSent: steerSent.tanstack,
         },
         actions: {
           warmList: () => promise(warmList),
           openList: (open) => promise(openList(open)),
-          openRepoRuns: (owner, name) => promise(store.openRepoRuns(owner, name)),
+          openRepoRuns: (owner, name) => promise(openRepoRuns({ owner, name })),
+          chooseRepoFlow: (flow) => fork(chooseRepoFlow(flow)),
+          runRepoFlow: (values) => fork(runRepoFlow(values)),
+          setRunRef: (ref) => fork(setRunRef(ref)),
+          reloadRepoFlow: () => fork(reloadRepoFlow),
+          closeRepoRuns: () => fork(closeRepoRuns),
+          retryFailed: () => fork(retryFailed),
           openRun: (runId, repo) => promise(openRun(runId, repo ?? null)),
           rendered: (runId) => fork(store.rendered(runId)),
           closeRun: (runId) => fork(closeRun(runId)),

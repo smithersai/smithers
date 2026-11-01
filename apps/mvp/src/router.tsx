@@ -548,12 +548,17 @@ const issueRoute = createRoute({
     ),
 })
 
-/** `/$owner/$repo/actions`: the repository's runs on Cloudflare (docs/features/actions.md); Electric keeps them. */
+/**
+ * `/$owner/$repo/actions`: the repository's runs on Cloudflare (docs/features/actions.md); Electric keeps them. Its Run
+ * card runs a flow by hand.
+ */
 const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.actions,
   component: ActionsScreen,
   beforeLoad: ({ context, params, ...load }) => enterRepository(context, params, load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
+  // A Run still answering no longer moves a tab that left (docs/features/actions.md#running-a-flow-by-hand).
+  onLeave: ({ context }) => context.runs.actions.closeRepoRuns(),
 })
 
 /** `/$owner/$repo/actions/runs/$runId`: one of them, its jobs and their logs, read and followed on Cloudflare. */

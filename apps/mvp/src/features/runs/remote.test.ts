@@ -425,7 +425,7 @@ describe("a repository's run on Cloudflare", () => {
     await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
     await until(() => expect(t.inspection()?.run.status).toBe("suspended"))
     expect(hostOf(runId, true)).toBe("Cloud")
-    expect(actsOf(t.inspection()!, Date.now(), undefined, true)).toEqual({ stop: true, retry: false, resume: false })
+    expect(actsOf(t.inspection()!, Date.now(), undefined, true)).toEqual({ stop: true, retry: false, retryFailed: false, resume: false })
 
     // Stop: run/cancel on this device's engine, which asks ChatApi, whose object stops the run; the page follows it.
     t.runs.actions.stop()
@@ -433,6 +433,12 @@ describe("a repository's run on Cloudflare", () => {
     expect(await Effect.runPromise(t.api.remote.status(runId))).toBe("cancelled")
     expect(t.runs.queries.view.toArray[0]?.refusal).toBeNull()
     expect(t.api.spans.filter((span) => span.name === "run.stop")).toHaveLength(1)
+    // Stopped, it runs again whole, never only its failed jobs: it reported none.
+    expect(actsOf(t.inspection()!, Date.now(), undefined, true)).toEqual({ stop: false, retry: true, retryFailed: false, resume: false })
+
+    // This test ChatApi runs no repository flows: the Run form the list's loader read says why it shows none.
+    await until(() => expect(t.runs.queries.form.toArray[0]).toMatchObject({ repo: { owner, name }, flows: [], state: "refused" }))
+    t.runs.actions.closeRepoRuns()
 
     // A row gone from the repository's runs leaves the list; opening it again syncs nothing twice.
     await t.runs.actions.openRepoRuns(owner, name)

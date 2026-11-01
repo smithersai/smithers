@@ -259,7 +259,7 @@ describe("a steer's send", () => {
         const verdict = yield* Effect.exit(send(sent, { rows: [sending("a", "Use tabs", 5)] }))
         return { verdict, rows: (yield* sent.toArray).map((row) => [row.status, row.reason]) }
       }).pipe(
-        Effect.provideService(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => answer, stop: () => Effect.die("unused"), list: Effect.succeed([]) })),
+        Effect.provideService(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => answer, stop: () => Effect.die("unused"), list: Effect.succeed([]), flows: () => Effect.die("unused"), inputs: () => Effect.die("unused"), start: () => Effect.die("unused") })),
         Effect.provideService(Metric.MetricRegistry, new Map()),
         Effect.scoped,
       ),

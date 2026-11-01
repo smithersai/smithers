@@ -22,7 +22,7 @@ import {
 } from "./contract"
 import { branchWords } from "./words"
 import { retryable } from "./retry"
-import { failedTodoRun, hasDomainOutcome, todoRetryPayload } from "./todoRun"
+import { failedTodoRun, hasDomainOutcome, headerStatusOf, todoRetryPayload } from "./todoRun"
 import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract"
 import { isoOf } from "../pulls/view"
 import { repoId } from "../repo/contract"
@@ -68,7 +68,8 @@ export const STALLED_AFTER_MS = 60_000
 /**
  * Which acts the page offers on a run at `now`: Stop while it hasn't settled and no stop was asked; Retry once it
  * settled, when its flow is retried; Resume while it waits, or runs but has recorded nothing for `STALLED_AFTER_MS`.
- * A Cloudflare TODO offers Retry through todo/Retry, which allocates its attempt through the stack writer.
+ * A Cloudflare TODO offers Retry through todo/Retry, which allocates its attempt through the stack writer. A repository's
+ * run (`cloud`) offers Retry once settled and Retry failed once its jobs failed, both on Cloudflare.
  * Stop and Resume remain local-engine acts; a remote TODO stops when its TODO drops, or its external agent by Stop.
  */
 export const actsOf = (
@@ -80,10 +81,14 @@ export const actsOf = (
   const { run } = inspection
   // A repository's run stops on Cloudflare (docs/features/actions.md#acts), and its jobs with it; a TODO's stops when its
   // TODO is dropped.
+  // Retry runs it again whole once it settled, and Retry failed only its jobs that didn't pass.
   if (cloud) {
+    // A job stops and runs again with its run.
+    const own = run.parentRunId === null
     return {
-      stop: run.parentRunId === null && !settled(run.status) && run.cancelRequestedAtMs === null,
-      retry: false,
+      stop: own && !settled(run.status) && run.cancelRequestedAtMs === null,
+      retry: own && settled(run.status),
+      retryFailed: own && headerStatusOf(run) === "failed",
       resume: false,
     }
   }
@@ -92,6 +97,7 @@ export const actsOf = (
     return {
       stop: stoppable(run, inspection.steps),
       retry: failedTodoRun(run) && todoRetryPayload(run.input) !== undefined,
+      retryFailed: false,
       resume: false,
     }
   }
@@ -99,6 +105,7 @@ export const actsOf = (
   return {
     stop: !settled(run.status) && run.cancelRequestedAtMs === null,
     retry: settled(run.status) && retryable(run.flowName),
+    retryFailed: false,
     resume: run.status === "suspended" || (run.status === "running" && now - last >= STALLED_AFTER_MS),
   }
 }

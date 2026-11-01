@@ -288,3 +288,61 @@ describe("the runs on Cloudflare", () => {
     expect(nobody._tag === "Failure" && nobody.failure.status).toBe(undefined)
   })
 })
+
+/** The client's repository routes, against the gateway at `origin`. */
+const client = <A, E>(origin: string, use: (client: RemoteRunsClient["Service"]) => Effect.Effect<A, E>) =>
+  Effect.runPromise(
+    Effect.result(Effect.flatMap(RemoteRunsClient, use)).pipe(
+      Effect.provide(RemoteRunsClient.layer({ origin, within: "300 millis" })),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+  )
+
+describe("a repository's runs routes (worker/ci/RunsApi.test.ts runs them through ChatApi's handler)", () => {
+  const repo = { owner: "octo", name: "hello" }
+
+  test("a repository's flows, a flow's inputs and a start go to their routes and decode their answers", async () => {
+    const flows = await serve(json(200, { flows: [{ name: "release", title: "Release" }], defaultBranch: "main" }))
+    expect(await client(flows.origin, (c) => c.flows(repo))).toMatchObject({
+      _tag: "Success",
+      success: { flows: [{ name: "release", title: "Release" }], defaultBranch: "main" },
+    })
+    expect(flows.asked).toEqual(["GET /api/repos/octo/hello/flows"])
+    const inputs = await serve(json(200, { inputs: { type: "object" }, sha: "a".repeat(40) }))
+    expect(await client(inputs.origin, (c) => c.inputs(repo, "release", "feature/x"))).toMatchObject({
+      _tag: "Success",
+      success: { sha: "a".repeat(40) },
+    })
+    expect(inputs.asked).toEqual(["GET /api/repos/octo/hello/flows/release?ref=feature%2Fx"])
+    const started = await serve(json(202, { runId: "release:1" }))
+    expect(await client(started.origin, (c) => c.start(repo, { id: "x", retryOf: "ci:1", failed: true }))).toMatchObject({
+      _tag: "Success",
+      success: { runId: "release:1" },
+    })
+    expect(started.asked).toEqual(["POST /api/repos/octo/hello/runs"])
+  })
+
+  test("a refusal fails with its status and code; an answer that isn't one, with its status; a stall, with none", async () => {
+    const named = await serve(json(422, { code: "inputs" }))
+    expect(await client(named.origin, (c) => c.start(repo, { id: "x", flow: "f", ref: "main" }))).toMatchObject({
+      _tag: "Failure",
+      failure: { status: 422, code: "inputs" },
+    })
+    const bare = await serve((_, response) => {
+      response.writeHead(500)
+      response.end()
+    })
+    const refused = await client(bare.origin, (c) => c.flows(repo))
+    expect(refused).toMatchObject({ _tag: "Failure", failure: { status: 500 } })
+    expect(refused._tag === "Failure" && refused.failure.code).toBe(undefined)
+    const odd = await serve(json(200, { flows: "no" }))
+    expect(await client(odd.origin, (c) => c.flows(repo))).toMatchObject({ _tag: "Failure", failure: { status: 200 } })
+    const silent = await serve(() => undefined)
+    const late = await client(silent.origin, (c) => c.flows(repo))
+    expect(late._tag === "Failure" && late.failure.status).toBe(undefined)
+    const gone = await serve(() => undefined)
+    await servers.splice(-1)[0]!()
+    const nothing = await client(gone.origin, (c) => c.inputs(repo, "f", "main"))
+    expect(nothing._tag === "Failure" && nothing.failure.status).toBe(undefined)
+  })
+})

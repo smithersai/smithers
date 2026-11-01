@@ -15,7 +15,7 @@ import { FlowNew, FlowRun, FlowSave } from "../flows-ui/flows"
 import { roundExecutionId } from "../flows-ui/round"
 import { listed, retriedRunId, retryActId, runPath, settled } from "./contract"
 import { retryable } from "./retry"
-import { Cancel, Inspect, List, Resume, Retry, RetryFrom } from "./flows"
+import { Cancel, Inspect, List, RepoRun, Resume, Retry, RetryFrom } from "./flows"
 import { versioned } from "./steps"
 
 const runtime = testFile("runs_acts")
@@ -190,6 +190,69 @@ describe("run/cancel on Cloudflare", () => {
     answer = new Response("", { status: 503 })
     expect((await stop())._tag).toBe("Failure")
     expect(asked[0]).toBe(`POST /api/remote-runs/${encodeURIComponent("ci:delivery-1")}/stop`)
+  }, SLOW)
+})
+
+describe("repo/run and Retry on Cloudflare", () => {
+  test("each asks ChatApi's runs route once per act, under an id the act's run names; refusals and no answer", async () => {
+    const agent = await openAgent(runtime, () => Stream.empty, { actor: member })
+    // ChatApi's runs route as a gateway answers it (worker/ci/RunsApi.test.ts runs the route itself): each case one
+    // answer.
+    let answer = (_body: Record<string, unknown>) => new Response(JSON.stringify({ runId: "release:x" }), { status: 202 })
+    const bodies: Array<Record<string, unknown>> = []
+    const engine = await agent.engine(undefined, { fetch: async (input, init) => {
+      const request = new Request(input, init)
+      const url = new URL(request.url)
+      if (url.pathname === "/api/repos/octo/hello/runs") {
+        const body = await request.json() as Record<string, unknown>
+        bodies.push(body)
+        return answer(body)
+      }
+      return agent.fetch(request)
+    } })
+    opened.push(engine.kill)
+    const code = (exit: Exit.Exit<unknown, unknown>) =>
+      Exit.isFailure(exit) ? (Cause.squash(exit.cause) as { readonly code?: string }).code : undefined
+    const run = (payload: Record<string, unknown>, executionId: string = crypto.randomUUID()) =>
+      Effect.runPromise(Effect.exit(engine.flows.execute(RepoRun, { executionId, payload: payload as never })))
+    const retry = (payload: Record<string, unknown>) =>
+      Effect.runPromise(Effect.exit(engine.flows.execute(Retry, { executionId: crypto.randomUUID(), payload: payload as never })))
+
+    const input = { repo: "octo/hello", flow: "release", ref: "main", input: { tag: "v1" } }
+    expect(await run(input)).toEqual(Exit.succeed({ runId: "release:x" }))
+    expect(bodies[0]).toEqual({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), flow: "release", ref: "main", input: { tag: "v1" } })
+    // Another act asks under another id.
+    await run(input)
+    expect(bodies[1]!.id).not.toBe(bodies[0]!.id)
+    answer = () => new Response(JSON.stringify({ code: "inputs" }), { status: 422 })
+    expect(code(await run({ repo: "octo/hello", flow: "release", ref: "main" }))).toBe("inputs")
+    expect(bodies.at(-1)).not.toHaveProperty("input")
+    answer = () => new Response(JSON.stringify({ code: "something_new" }), { status: 400 })
+    expect((await run(input))._tag).toBe("Failure")
+    answer = () => new Response("", { status: 503 })
+    expect((await run(input))._tag).toBe("Failure")
+
+    const cloud = { runId: "ci:1", version: "pinned", host: "cloud", repo: "octo/hello" }
+    answer = () => new Response(JSON.stringify({ runId: "ci:2" }), { status: 202 })
+    expect(await retry({ ...cloud, failed: true })).toEqual(Exit.succeed({ runId: "ci:2" }))
+    expect(bodies.at(-1)).toEqual({ id: expect.any(String), retryOf: "ci:1", failed: true })
+    expect(await retry(cloud)).toEqual(Exit.succeed({ runId: "ci:2" }))
+    expect(bodies.at(-1)).toMatchObject({ failed: false })
+    for (const [status, body, expected] of [
+      [403, { code: "forbidden" }, "forbidden"],
+      [401, { code: "authentication" }, "forbidden"],
+      [409, { code: "nothing_failed" }, "nothing_failed"],
+      [409, { code: "not_settled" }, "not_settled"],
+      [409, { code: "conflict" }, "not_found"],
+      [404, { code: "not_found" }, "not_found"],
+    ] as const) {
+      answer = () => new Response(JSON.stringify(body), { status })
+      expect([status, expected, code(await retry(cloud))]).toEqual([status, expected, expected])
+    }
+    answer = () => new Response("", { status: 503 })
+    expect((await retry(cloud))._tag).toBe("Failure")
+    // A run on Cloudflare names its repository: without one there is no run to retry.
+    expect(code(await retry({ runId: "ci:1", version: "pinned", host: "cloud" }))).toBe("not_found")
   }, SLOW)
 })
 

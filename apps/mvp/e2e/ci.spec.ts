@@ -155,5 +155,6 @@ test("ci fixture: the test repository's flow is the one e2e/fixtures/ci-repo hol
   const manifest = JSON.parse(readFileSync(new URL("./fixtures/ci-repo/.smithers/factory.json", import.meta.url), "utf8"))
   expect(manifest.contributes.triggers).toEqual([
     { on: "github.push", flow: "ci", title: "Every push to an e2e branch", branches: ["smithers-ci-e2e-*"] },
+    { on: "manual", flow: "hand", title: "By hand" },
   ])
 })

@@ -192,3 +192,28 @@ export type RepoRunRow = typeof RepoRunRow.Type
  */
 export const RepoRunsLoaded = Schema.Struct({ id: Schema.String })
 export type RepoRunsLoaded = typeof RepoRunsLoaded.Type
+
+/**
+ * The runs page's Run form (docs/features/actions.md#running-a-flow-by-hand), this tab's only: the repository's flows a
+ * person runs by hand, the one chosen, the branch, and its form as JSON Schema at that branch. `state` says where the
+ * read of the flows, then of the chosen flow's inputs, stands; `refusal` why one couldn't be read, or why a run didn't
+ * start.
+ */
+export const RepoRunForm = Schema.Struct({
+  id: Schema.Literal("form"),
+  repo: Schema.NullOr(RepoName),
+  flows: Schema.Array(Schema.Struct({ name: Schema.String, title: Schema.optionalKey(Schema.String) })),
+  defaultBranch: Schema.NullOr(Schema.String),
+  flow: Schema.NullOr(Schema.String),
+  /** The branch the run starts at: the default branch unless the person types another. */
+  ref: Schema.NullOr(Schema.String),
+  schema: Schema.NullOr(Schema.Unknown),
+  state: Schema.Literals(["idle", "loading", "ready", "refused", "starting"]),
+  refusal: Schema.NullOr(Schema.String),
+  /** The Run in flight: its answer counts only while the form still holds it. */
+  token: Schema.NullOr(Schema.String),
+})
+export type RepoRunForm = typeof RepoRunForm.Type
+
+/** The one row of `RepoRunForm`. */
+export const FORM = "form"

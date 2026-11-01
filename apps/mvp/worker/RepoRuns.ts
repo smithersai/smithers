@@ -12,7 +12,8 @@ import {
 // (decision 0009 §2), so `/$owner/$repo/actions` lists them through Electric and the run page reads each through the
 // engine. Three things touch a row:
 //
-//   record   whoever starts the run (a trigger, a person's Run, a Retry), before the start, once per execution
+//   record   whoever starts the run (a trigger, a person's Run, a Retry), before the start, once per execution; a
+//            start sent again reads the commit it recorded (`recordedSha`)
 //   settle   the run's Durable Object, when its alarm finds the run settled: done, failed or stopped, from the
 //            engine's own status, never a step's say
 //   admit    the run routes: is this run, or a run it descends from, a recorded repository run, and whose
@@ -62,6 +63,13 @@ export const record = (run: RepoRun) =>
     )
     return rows.length === 1
   }).pipe(Effect.withSpan("repo.run.record"))
+
+/** The commit `execution`'s row recorded, when it has one: a start sent again replays the run at it. */
+export const recordedSha = (execution: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql<{ readonly sha: string | null }>`SELECT sha FROM runs WHERE execution = ${execution}`).pipe(
+      Effect.map((rows) => Option.fromNullishOr(rows[0]?.sha)),
+    )
 
 /**
  * Settles `execution`'s row, if it is a repository run still working, from the engine's status of the run in

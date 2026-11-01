@@ -126,6 +126,10 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     good: failed("run/steer", { runId: "todo:5f0c2a64-8a3e-4d1b-9a77-2f1e6c3b9d10", body: "Also update the CHANGELOG." }),
     bad: { text: "Open the run's page and send it a message." },
   },
+  "repo-run": {
+    good: failed("repo/run", { repo: REPO, flow: "release", ref: "main", input: { channel: "next" } }),
+    bad: { text: `Open ${REPO}'s runs and press Run.` },
+  },
   "branch-create": {
     good: failed("branch/create", { repo: REPO, branch: "fix-typo" }),
     bad: { calls: [call("sandbox/run", { command: "git checkout -b fix-typo" }, "failed")] },

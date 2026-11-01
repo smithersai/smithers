@@ -118,13 +118,13 @@ describe("journalOf", () => {
 
 describe("actsOf", () => {
   test("Retry once a retried flow settled; never for an act or an answer", () => {
-    expect(actsOf(inspection(), 3_000)).toEqual({ stop: false, retry: true, resume: false })
+    expect(actsOf(inspection(), 3_000)).toEqual({ stop: false, retry: true, retryFailed: false, resume: false })
     expect(actsOf(inspection({ run: run({ flowName: "chat/Answer" }) }), 3_000).retry).toBe(false)
   })
 
   test("Stop while it runs and no stop was asked; Resume while it waits, or once it recorded nothing for a minute", () => {
     const live = inspection({ run: run({ status: "running", finishedAtMs: null }) })
-    expect(actsOf(live, 1_000 + STALLED_AFTER_MS - 1)).toEqual({ stop: true, retry: false, resume: false })
+    expect(actsOf(live, 1_000 + STALLED_AFTER_MS - 1)).toEqual({ stop: true, retry: false, retryFailed: false, resume: false })
     expect(actsOf(live, 1_000 + STALLED_AFTER_MS).resume).toBe(true)
     expect(actsOf(inspection({ run: run({ status: "running", cancelRequestedAtMs: 1_500 }) }), 0).stop).toBe(false)
     expect(actsOf(inspection({ run: run({ status: "suspended" }) }), 0).resume).toBe(true)
@@ -181,7 +181,7 @@ describe("a run on Cloudflare", () => {
   test("offers no acts, whatever its state: each act runs on this device's engine", () => {
     for (const status of ["running", "suspended", "completed", "failed"] as const) {
       expect(actsOf(inspection({ run: run({ runId: TODO_RUN, status }) }), 1_000 + STALLED_AFTER_MS))
-        .toEqual({ stop: false, retry: false, resume: false })
+        .toEqual({ stop: false, retry: false, retryFailed: false, resume: false })
     }
   })
 
@@ -199,15 +199,22 @@ describe("a run on Cloudflare", () => {
 })
 
 describe("a repository's run", () => {
-  test("Stop while it runs and no stop was asked; nothing else, on Cloudflare", () => {
+  test("Stop while it runs and no stop was asked, Retry and Retry failed once it ended, on Cloudflare", () => {
     const live = inspection({ run: run({ runId: "ci:1", status: "running", finishedAtMs: null }) })
-    expect(actsOf(live, 1_000 + STALLED_AFTER_MS, undefined, true)).toEqual({ stop: true, retry: false, resume: false })
+    expect(actsOf(live, 1_000 + STALLED_AFTER_MS, undefined, true)).toEqual({ stop: true, retry: false, retryFailed: false, resume: false })
     const asked = inspection({ run: run({ runId: "ci:1", status: "running", cancelRequestedAtMs: 1_500 }) })
     expect(actsOf(asked, 0, undefined, true).stop).toBe(false)
     expect(actsOf(inspection({ run: run({ runId: "ci:1" }) }), 0, undefined, true).stop).toBe(false)
-    // A job stops with its run: its own page offers no Stop.
+    // Once it ended: Retry, and Retry failed when it failed.
+    expect(actsOf(inspection({ run: run({ runId: "ci:1", status: "failed" }) }), 0, undefined, true))
+      .toEqual({ stop: false, retry: true, retryFailed: true, resume: false })
+    expect(actsOf(inspection({ run: run({ runId: "ci:1", status: "completed" }) }), 0, undefined, true))
+      .toEqual({ stop: false, retry: true, retryFailed: false, resume: false })
+    // A job stops and runs again with its run: its own page offers neither.
     const job = inspection({ run: run({ runId: "job-1", parentRunId: "ci:1", status: "running", finishedAtMs: null }) })
     expect(actsOf(job, 0, undefined, true).stop).toBe(false)
+    const failedJob = inspection({ run: run({ runId: "job-1", parentRunId: "ci:1", status: "failed" }) })
+    expect(actsOf(failedJob, 0, undefined, true)).toEqual({ stop: false, retry: false, retryFailed: false, resume: false })
     expect(hostOf("ci:1", true)).toBe("Cloud")
     expect(missingOf({ id: "ci:1", state: "not_found" }, true)).toBe("Not found")
   })

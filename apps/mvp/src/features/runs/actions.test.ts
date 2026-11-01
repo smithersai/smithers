@@ -4,7 +4,7 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Fiber, Layer, Logger, ManagedRuntime, Option, Stream } from "effect"
 import { afterEach, expect, test } from "vitest"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
-import { RemoteRunsClient } from "./api"
+import { RemoteRunsClient, RepoRunsFailed } from "./api"
 import * as actions from "./actions"
 import { AnswersUnavailable } from "../agent/answers"
 import { CancelPending } from "./flows"
@@ -12,6 +12,8 @@ import { REFUSAL_WORDS } from "./contract"
 import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
 import { RunsStore } from "./store"
+import { actsOf } from "./page"
+import { headerStatusOf } from "./todoRun"
 
 const inspection = (runId: string): Inspection => ({
   run: { runId, flowName: "flow/run", status: "completed", createdAtMs: 0, startedAtMs: 0, finishedAtMs: 1, parentRunId: null, cancelRequestedAtMs: null, waiting: null, lastSeq: 1, origin: null, input: { text: "{}", bytes: 2, clipped: false }, result: null },
@@ -19,7 +21,8 @@ const inspection = (runId: string): Inspection => ({
 })
 const opened: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const runtime of opened.splice(0)) await runtime.dispose() })
-const setup = async (options: { dispatch?: Effect.Effect<unknown, DispatchFailed>; exists?: (id: string) => Effect.Effect<Inspection, BrowserEngine.RequestRefused | BrowserEngine.EngineUnavailable> } = {}) => {
+const unused = { inspect: () => Effect.die("unused"), steer: () => Effect.die("unused"), stop: () => Effect.die("unused"), list: Effect.succeed([]), flows: () => Effect.die("unused"), inputs: () => Effect.die("unused"), start: () => Effect.die("unused") }
+const setup = async (options: { dispatch?: Effect.Effect<unknown, DispatchFailed>; exists?: (id: string) => Effect.Effect<Inspection, BrowserEngine.RequestRefused | BrowserEngine.EngineUnavailable>; remote?: Partial<RemoteRunsClient["Service"]> } = {}) => {
   const started = Effect.runSync(Deferred.make<void>())
   const pending = Effect.runSync(Deferred.make<unknown, DispatchFailed>())
   const calls: Array<{ name: string; payload: unknown; executionId?: string }> = []
@@ -36,7 +39,7 @@ const setup = async (options: { dispatch?: Effect.Effect<unknown, DispatchFailed
     return Effect.andThen(Deferred.succeed(started, undefined), options.dispatch ?? Deferred.await(pending))
   }) as never }))
   const runtime = ManagedRuntime.make(Layer.mergeAll(
-    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(Layer.mergeAll(engine, Persistence.memory, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => Effect.die("unused"), stop: () => Effect.die("unused"), list: Effect.succeed([]) }))))),
+    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(Layer.mergeAll(engine, Persistence.memory, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ ...unused, ...options.remote } as RemoteRunsClient["Service"]))))),
     dispatch, engine, Layer.succeed(actions.RunsNavigation, { navigate: (path) => { navigated.push(path) } }),
   ))
   opened.push(runtime)
@@ -275,4 +278,214 @@ test("Retry refuses a TODO run whose stored input cannot identify its TODO", asy
   await t.runtime.runPromise(actions.retry("current"))
   expect((await t.view()).refusal).toBe("not_retryable")
   expect(t.calls).toEqual([])
+})
+
+const repo = { owner: "octo", name: "hello" }
+
+test("the Run form: the repository's flows, then the chosen one's inputs at the default branch, the branch first", async () => {
+  const asked: Array<string> = []
+  const t = await setup({
+    remote: {
+      flows: (at) => Effect.sync(() => {
+        asked.push(`flows ${at.owner}/${at.name}`)
+        return { flows: [{ name: "release", title: "Release" }, { name: "ci" }], defaultBranch: "trunk" }
+      }),
+      inputs: (_at, flow, ref) => Effect.sync(() => {
+        asked.push(`inputs ${flow}@${ref}`)
+        return { sha: "a".repeat(40), inputs: { type: "object", properties: { tag: { type: "string" } }, required: ["tag"] } }
+      }),
+    },
+  })
+  const form = () => t.runtime.runPromise(t.store.form.get("form")).then(Option.getOrThrow)
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  expect(await form()).toMatchObject({ repo, flows: [{ name: "release", title: "Release" }, { name: "ci" }], defaultBranch: "trunk", ref: "trunk", flow: null, state: "ready" })
+  await t.runtime.runPromise(actions.chooseRepoFlow("release"))
+  expect(await form()).toMatchObject({
+    flow: "release",
+    state: "ready",
+    schema: { type: "object", properties: { tag: { type: "string" } }, required: ["tag"] },
+  })
+  // Another branch: the form reads again there once the person leaves the field.
+  await t.runtime.runPromise(actions.setRunRef("feature/x"))
+  await t.runtime.runPromise(actions.reloadRepoFlow)
+  expect(asked).toEqual(["flows octo/hello", "inputs release@trunk", "inputs release@feature/x"])
+})
+
+test("the Run form says why it can't show: flows or inputs refused; a choice before the flows are read does nothing", async () => {
+  const t = await setup({
+    remote: {
+      flows: () => Effect.fail(new RepoRunsFailed({ status: 503, code: "off" })),
+      inputs: () => Effect.fail(new RepoRunsFailed({})),
+    },
+  })
+  const form = () => t.runtime.runPromise(t.store.form.get("form")).then(Option.getOrThrow)
+  await t.runtime.runPromise(actions.chooseRepoFlow("release"))
+  expect(await form()).toMatchObject({ flow: null, state: "idle" })
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  expect(await form()).toMatchObject({ state: "refused", refusal: "off" })
+  expect(REFUSAL_WORDS.off).toBe("Flows are off here.")
+  await t.runtime.runPromise(t.store.form.update("form", (draft) => { draft.ref = "main" }))
+  await t.runtime.runPromise(actions.chooseRepoFlow("release"))
+  expect(await form()).toMatchObject({ state: "refused", refusal: "unavailable" })
+})
+
+test("a slower answer for an earlier choice changes nothing", async () => {
+  const slow = Effect.runSync(Deferred.make<void>())
+  const t = await setup({
+    remote: {
+      flows: () => Effect.succeed({ flows: [{ name: "a" }, { name: "b" }], defaultBranch: "main" }),
+      inputs: (_at, flow) =>
+        Effect.andThen(flow === "a" ? Deferred.await(slow) : Effect.void, Effect.succeed({ sha: "s", inputs: { title: flow } })),
+    },
+  })
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  const first = t.runtime.runFork(actions.chooseRepoFlow("a"))
+  await t.runtime.runPromise(Effect.yieldNow)
+  await t.runtime.runPromise(actions.chooseRepoFlow("b"))
+  await t.runtime.runPromise(Deferred.succeed(slow, undefined))
+  await t.runtime.runPromise(Fiber.join(first))
+  const form = await t.runtime.runPromise(t.store.form.get("form")).then(Option.getOrThrow)
+  expect(form).toMatchObject({ flow: "b", schema: { title: "b" } })
+})
+
+test("Run dispatches repo/run with the form's values, the branch apart, and opens the run's page", async () => {
+  const t = await setup({
+    remote: {
+      flows: () => Effect.succeed({ flows: [{ name: "release" }], defaultBranch: "main" }),
+      inputs: () => Effect.succeed({ sha: "s", inputs: {} }),
+    },
+    dispatch: Effect.succeed({ _tag: "Done", value: { runId: "release:1" } }),
+  })
+  // No flow chosen: nothing runs, and nothing reads again.
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  await t.runtime.runPromise(actions.reloadRepoFlow)
+  expect(t.calls).toEqual([])
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  await t.runtime.runPromise(actions.chooseRepoFlow("release"))
+  await t.runtime.runPromise(actions.setRunRef("next"))
+  await t.runtime.runPromise(actions.runRepoFlow({ tag: "v1", dry: true }))
+  expect(t.calls).toEqual([{
+    name: "repo/run",
+    payload: { repo: "octo/hello", flow: "release", ref: "next", input: { tag: "v1", dry: true } },
+    executionId: undefined,
+  }])
+  expect(t.navigated).toEqual(["/octo/hello/actions/runs/release%3A1"])
+})
+
+test("a refused Run stays on the form with why; one that couldn't be dispatched says unavailable; one starting ignores a second", async () => {
+  const outcome = { value: Effect.succeed({ _tag: "Failed", error: { code: "inputs" } }) as Effect.Effect<unknown, DispatchFailed> }
+  const t = await setup({
+    remote: {
+      flows: () => Effect.succeed({ flows: [{ name: "release" }], defaultBranch: "main" }),
+      inputs: () => Effect.succeed({ sha: "s", inputs: {} }),
+    },
+    dispatch: Effect.suspend(() => outcome.value),
+  })
+  const form = () => t.runtime.runPromise(t.store.form.get("form")).then(Option.getOrThrow)
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  await t.runtime.runPromise(actions.chooseRepoFlow("release"))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(await form()).toMatchObject({ state: "ready", refusal: "inputs" })
+  expect(t.calls[0]!.payload).toMatchObject({ ref: "main", input: {} })
+  outcome.value = Effect.fail(new DispatchFailed({ flow: "repo/run", reason: "defect" }))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(await form()).toMatchObject({ state: "ready", refusal: "unavailable" })
+  outcome.value = Effect.succeed({ _tag: "Failed", error: { _tag: "Interrupted" } })
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(await form()).toMatchObject({ refusal: "unavailable" })
+  await t.runtime.runPromise(t.store.form.update("form", (draft) => { draft.state = "starting" }))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(t.calls).toHaveLength(3)
+  // A Run in flight keeps its form: choosing again reads nothing.
+  await t.runtime.runPromise(actions.chooseRepoFlow("release"))
+  expect(await form()).toMatchObject({ state: "starting" })
+})
+
+test("a Run whose answer comes after the page was left moves nothing", async () => {
+  const t = await setup({
+    remote: {
+      flows: () => Effect.succeed({ flows: [{ name: "release" }], defaultBranch: "main" }),
+      inputs: () => Effect.succeed({ sha: "s", inputs: {} }),
+    },
+  })
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  await t.runtime.runPromise(actions.chooseRepoFlow("release"))
+  const running = t.runtime.runPromise(actions.runRepoFlow({}))
+  await t.runtime.runPromise(Deferred.await(t.started))
+  await t.runtime.runPromise(actions.closeRepoRuns)
+  await t.runtime.runPromise(Deferred.succeed(t.pending, { _tag: "Done", value: { runId: "release:1" } }))
+  await running
+  expect(t.navigated).toEqual([])
+})
+
+test("a read that lost to a newer one changes nothing; a flow with no branch runs nothing", async () => {
+  const slow = Effect.runSync(Deferred.make<void>())
+  let first = true
+  const t = await setup({
+    remote: {
+      flows: () => Effect.suspend(() => {
+        if (!first) return Effect.fail(new RepoRunsFailed({ status: 500 }))
+        first = false
+        return Effect.andThen(Deferred.await(slow), Effect.succeed({ flows: [{ name: "late" }], defaultBranch: "main" }))
+      }),
+    },
+  })
+  const form = () => t.runtime.runPromise(t.store.form.get("form")).then(Option.getOrThrow)
+  const earlier = t.runtime.runFork(t.store.loadRepoFlows(repo))
+  await t.runtime.runPromise(Effect.yieldNow)
+  // The newer read, refused with no code, says unavailable.
+  await t.runtime.runPromise(t.store.loadRepoFlows(repo))
+  await t.runtime.runPromise(Deferred.succeed(slow, undefined))
+  await t.runtime.runPromise(Fiber.join(earlier))
+  expect(await form()).toMatchObject({ flows: [], state: "refused", refusal: "unavailable" })
+  await t.runtime.runPromise(t.store.form.update("form", (draft) => { draft.flow = "late" }))
+  await t.runtime.runPromise(actions.runRepoFlow({}))
+  expect(t.calls).toEqual([])
+})
+
+test("Retry and Retry failed on a repository's run run on Cloudflare and open the new run's page", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Done", value: { runId: "ci:2" } }) })
+  // The open run, as a repository's run's page holds it.
+  await t.runtime.runPromise(t.store.view.update(VIEW, (draft) => { draft.repo = repo }))
+  await t.runtime.runPromise(actions.retry("pinned"))
+  await t.runtime.runPromise(actions.retryFailed)
+  expect(t.calls.map((call) => [call.name, call.payload])).toEqual([
+    ["run/retry", { runId: "a", version: "pinned", host: "cloud", repo: "octo/hello", failed: false }],
+    ["run/retry", { runId: "a", version: "pinned", host: "cloud", repo: "octo/hello", failed: true }],
+  ])
+  expect(t.navigated).toEqual(["/octo/hello/actions/runs/ci%3A2", "/octo/hello/actions/runs/ci%3A2"])
+})
+
+test("Retry failed refused stays on the page; on a device's run it does nothing", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Failed", error: { code: "nothing_failed" } }) })
+  await t.runtime.runPromise(actions.retryFailed)
+  expect(t.calls).toEqual([])
+  await t.runtime.runPromise(t.store.view.update(VIEW, (draft) => { draft.repo = repo }))
+  await t.runtime.runPromise(actions.retryFailed)
+  expect(await t.view()).toMatchObject({ refusal: "nothing_failed" })
+  expect(REFUSAL_WORDS.nothing_failed).toBe("Nothing failed.")
+  expect(t.navigated).toEqual([])
+})
+
+test("a Retry on Cloudflare whose answer comes after the page moved on opens nothing", async () => {
+  const t = await setup()
+  await t.runtime.runPromise(t.store.view.update(VIEW, (draft) => { draft.repo = repo }))
+  const retried = t.runtime.runPromise(actions.retry("pinned"))
+  await t.runtime.runPromise(Deferred.await(t.started))
+  await t.runtime.runPromise(actions.openRun("b"))
+  await t.runtime.runPromise(Deferred.succeed(t.pending, { _tag: "Done", value: { runId: "ci:2" } }))
+  await retried
+  expect(t.navigated).toEqual([])
+})
+
+test("a repository's run whose jobs failed reads Failed and offers Retry failed, though the engine completed it", () => {
+  const failure = { text: '{"state":"failure","outcome":"sent","jobs":[]}', bytes: 40, clipped: false }
+  const run = { ...inspection("ci:1").run, flowName: "repo/Run", status: "completed" as const, result: failure }
+  expect(headerStatusOf(run)).toBe("failed")
+  expect(headerStatusOf({ ...run, result: null })).toBe("completed")
+  expect(headerStatusOf({ ...run, result: { ...failure, text: "not json" } })).toBe("completed")
+  expect(headerStatusOf({ ...run, result: { ...failure, clipped: true } })).toBe("completed")
+  expect(headerStatusOf({ ...run, flowName: "flow/run" })).toBe("completed")
+  expect(actsOf({ ...inspection("ci:1"), run }, 0, undefined, true)).toEqual({ stop: false, retry: true, retryFailed: true, resume: false })
+  expect(actsOf({ ...inspection("ci:1"), run: { ...run, result: null } }, 0, undefined, true).retryFailed).toBe(false)
 })

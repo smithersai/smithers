@@ -3,13 +3,14 @@
   "id": "repository",
   "version": "1.0.0",
   "title": "Smithers CI e2e",
-  "description": "The test repository's CI, which e2e/ci.spec.ts runs on Smithers.",
+  "description": "The test repository's CI, which e2e/ci.spec.ts runs on Smithers, and a flow e2e/actions.spec.ts runs by hand.",
   "requires": { "api": "^1" },
   "capabilities": ["sandbox:job"],
-  "owns": ["ci"],
+  "owns": ["ci", "hand"],
   "contributes": {
     "triggers": [
-      { "on": "github.push", "flow": "ci", "title": "Every push to an e2e branch", "branches": ["smithers-ci-e2e-*"] }
+      { "on": "github.push", "flow": "ci", "title": "Every push to an e2e branch", "branches": ["smithers-ci-e2e-*"] },
+      { "on": "manual", "flow": "hand", "title": "By hand" }
     ]
   }
 }

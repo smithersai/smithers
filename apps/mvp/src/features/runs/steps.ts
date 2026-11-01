@@ -20,6 +20,7 @@ import {
   settled,
   STEER_ID_NAMESPACE,
   STEER_QUEUE_WITHIN,
+  REPO_RUN_ID_NAMESPACE,
 } from "./contract"
 import {
   Cancel,
@@ -36,13 +37,17 @@ import {
   RetryFrom,
   RetryFromRun,
   RetryRun,
+  RepoRun,
+  RepoRunRefused,
   RunActRefused,
+  StartRepoRun,
   Steer,
   SteerStepRefused,
 } from "./flows"
 import { RemoteRunsClient } from "./api"
 import { steersQueued } from "./metrics"
-import { type RunsCall, SteerKept } from "./schema"
+import { type RepoName, type RunsCall, SteerKept } from "./schema"
+import { RUNS_REFUSALS } from "../actions/contract"
 import { retryable } from "./retry"
 import { startRoot } from "./start"
 
@@ -193,9 +198,94 @@ const ranRevision = (children: ReadonlyArray<{ readonly runId: string; readonly 
     return typeof flowId === "string" && typeof revision === "number" ? { flowId, revision } : undefined
   })
 
-/** `run/retry/start`: Retry. A settled run of a retryable flow, again, as a new run of its own. */
-export const retry = ({ runId, version }: { readonly runId: string; readonly version: "pinned" | "current" }) =>
+/** The run id a repository's run started by step `executionId` gets: the same for a step run again. */
+const startIdOf = (executionId: string) => Uuid.v5(REPO_RUN_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+
+/** `owner/name` as a repository. */
+const repoOf = (path: string): RepoName => {
+  const [owner, name] = path.split("/") as [string, string]
+  return { owner, name }
+}
+
+/**
+ * Retry on a repository's run on Cloudflare: ChatApi's runs route starts its flow again at its commit, every job or
+ * only those that didn't pass (docs/features/actions.md#acts). A refusal for who asks is `forbidden`; for the run,
+ * `not_found`, `not_settled` or `nothing_failed`; a route that couldn't answer fails the step.
+ */
+const retryCloud = (runId: string, repo: string, failed: boolean) =>
   Effect.gen(function* () {
+    const id = yield* startIdOf((yield* FlowRuntime.FlowInstance).executionId)
+    const answer = yield* Effect.result((yield* RemoteRunsClient).start(repoOf(repo), { id, retryOf: runId, failed }))
+    if (answer._tag === "Success") {
+      yield* recordAct("retry", runId, "retried", "remote")
+      return answer.success
+    }
+    const { code, status } = answer.failure
+    const refusal = status === 401 || status === 403
+      ? "forbidden" as const
+      : code === "not_settled" || code === "nothing_failed"
+      ? code
+      : status === 404 || status === 409
+      ? "not_found" as const
+      : undefined
+    yield* recordAct("retry", runId, refusal ?? "unavailable", "remote")
+    if (refusal === undefined) return yield* Effect.die(answer.failure)
+    return yield* new RunActRefused({ code: refusal })
+  })
+
+/** Starts of a repository's flow by hand from this device, by `outcome`. */
+export const repoRunStarts = Metric.counter("smithers_repo_run_requests", {
+  description: "repo/run starts of a repository's flow by hand, by outcome",
+  incremental: true,
+})
+
+/**
+ * `repo/run/start`: ChatApi starts a repository's flow by hand under an id derived from this step's run, so the step
+ * run again starts nothing new. Records `repo.run.start` with its outcome, never an input.
+ */
+export const startRepoRun = (payload: {
+  readonly repo: string
+  readonly flow: string
+  readonly ref: string
+  readonly input?: Readonly<Record<string, string | number | boolean>>
+}) =>
+  Effect.gen(function* () {
+    const id = yield* startIdOf((yield* FlowRuntime.FlowInstance).executionId)
+    const answer = yield* Effect.result((yield* RemoteRunsClient).start(repoOf(payload.repo), {
+      id,
+      flow: payload.flow,
+      ref: payload.ref,
+      ...(payload.input === undefined ? {} : { input: payload.input }),
+    }))
+    const outcome = answer._tag === "Success" ? "started" : answer.failure.code ?? "unavailable"
+    yield* Metric.update(Metric.withAttributes(repoRunStarts, { outcome }), 1)
+    yield* Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("repo.run.start").pipe(
+      Effect.annotateLogs({ feature: "runs", flow: payload.flow, outcome }),
+    )
+    if (answer._tag === "Success") return answer.success
+    const code = answer.failure.code
+    const known = code !== undefined && (RUNS_REFUSALS as ReadonlyArray<string>).includes(code)
+    // A refusal is the run's answer; no answer at all fails the step.
+    if (!known || code === "unavailable") return yield* Effect.die(answer.failure)
+    return yield* new RepoRunRefused({ code: code as RepoRunRefused["code"] })
+  }).pipe(Effect.withSpan("repo.run.start"))
+
+/**
+ * `run/retry/start`: Retry. A settled run of a retryable flow, again, as a new run of its own. A repository's run on
+ * Cloudflare (`host: "cloud"`) runs again there.
+ */
+export const retry = ({ failed, host, repo, runId, version }: {
+  readonly runId: string
+  readonly version: "pinned" | "current"
+  readonly host?: "cloud"
+  readonly repo?: string
+  readonly failed?: boolean
+}) =>
+  Effect.gen(function* () {
+    if (host === "cloud") {
+      if (repo === undefined) return yield* refuse("retry", runId, "not_found")
+      return yield* retryCloud(runId, repo, failed === true)
+    }
     const { run, children } = yield* summaryOf("retry", runId)
     if (!settled(run.status)) return yield* refuse("retry", runId, "not_settled")
     if (!retryable(run.flowName)) return yield* refuse("retry", runId, "not_retryable")
@@ -384,4 +474,5 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(Resume, ResumeRun.toLayer(resume)),
   Interpreter.layerWithImplementations(List, ListRuns.toLayer(list)),
   Interpreter.layerWithImplementations(Inspect, InspectRun.toLayer(inspect)),
+  Interpreter.layerWithImplementations(RepoRun, StartRepoRun.toLayer(startRepoRun)),
 )

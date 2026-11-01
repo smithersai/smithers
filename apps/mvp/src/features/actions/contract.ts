@@ -46,3 +46,53 @@ export const actionsPath = (owner: string, name: string): string =>
 /** `/$owner/$repo/actions/runs/$runId`: one of its runs, read from Cloudflare. */
 export const actionRunPath = (owner: string, name: string, runId: string): string =>
   `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/actions/runs/${encodeURIComponent(runId)}`
+
+/** `/api/repos/<owner>/<name>`: where a repository's routes live (src/features/repo/contract.ts `REPOS_ROUTE`). */
+const reposRoute = (owner: string, name: string): string =>
+  `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+
+/**
+ * `GET ...`: the repository's flows a person runs by hand, `{ flows: [{ name, title? }], defaultBranch }`, from the
+ * `manual` triggers of its default branch's `.smithers/factory.json`.
+ */
+export const repoFlowsRoute = (owner: string, name: string): string => `${reposRoute(owner, name)}/flows`
+
+/** `GET ...?ref=<branch>`: flow `flow`'s inputs at the branch's head, `{ inputs, sha }`, as JSON Schema. */
+export const flowInputsRoute = (owner: string, name: string, flow: string): string =>
+  `${repoFlowsRoute(owner, name)}/${encodeURIComponent(flow)}`
+
+/**
+ * `POST ...`: a run by hand, `{ id, flow, ref, input }`, or a run again, `{ id, retryOf, failed }`; `202 { runId }`, or
+ * `200` the same for an id it took before.
+ */
+export const repoRunsRoute = (owner: string, name: string): string => `${reposRoute(owner, name)}/runs`
+
+/** A run's execution id from the request's `id`: `<flow>:<id>`. */
+export const manualExecutionId = (flow: string, id: string): string => `${flow}:${id}`
+
+/** The most a run by hand's inputs may take as JSON, in UTF-8 bytes. */
+export const MAX_INPUT_BYTES = 8 * 1024
+
+/**
+ * Why the runs routes refused, as `{ code }`: `invalid` (400), `authentication` (401), `forbidden` (403: not a Member
+ * on the repository), `not_found` (404: a repository repository flows don't run for, no such flow or branch, no such
+ * run), `not_manual` (404: the flow has no `manual` trigger), `inputs` (422: the inputs don't fit the flow's form, or
+ * the flow has none a form can fill), `nothing_failed` (409: Retry failed of a run with no failed job), `not_settled`
+ * (409: Retry of a run still going), `conflict` (409: the request's id holds another run), `rate_limited` (429: GitHub
+ * asked to wait before it says the role), `off` (503: repository flows aren't on here) and `unavailable` (503).
+ */
+export const RUNS_REFUSALS = [
+  "invalid",
+  "authentication",
+  "forbidden",
+  "not_found",
+  "not_manual",
+  "inputs",
+  "nothing_failed",
+  "not_settled",
+  "conflict",
+  "rate_limited",
+  "off",
+  "unavailable",
+] as const
+export type RunsRefusal = (typeof RUNS_REFUSALS)[number]

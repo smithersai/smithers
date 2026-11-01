@@ -5,7 +5,7 @@ import { Clock, Context, Duration, Effect, Layer, Metric, Option, Ref, Scope, Se
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT, settled } from "./contract"
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
-import { CloudRun, type Inspection, type RepoName, RepoRunRow, RepoRunsLoaded, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
+import { CloudRun, FORM, type Inspection, type RepoName, RepoRunForm, RepoRunRow, RepoRunsLoaded, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
 import { routeTiming, type RouteTiming } from "./timing"
 import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 import { repoId } from "../repo/contract"
@@ -95,6 +95,10 @@ export const OUTCOME_READS = 10
 /** Every repository run the device holds: the list filters it to the repository it shows. */
 export const repoRunsQuery = (rows: Collection.Collection<RepoRunRow, string>) =>
   LiveQuery.make((q) => q.from({ run: rows.tanstack }))
+
+/** The Run form's one row. */
+export const formQuery = (form: Collection.Collection<RepoRunForm, string>) =>
+  LiveQuery.make((q) => q.from({ form: form.tanstack }))
 
 /** Every repository whose runs this tab has loaded. */
 export const repoRunsLoadedQuery = (loaded: Collection.Collection<RepoRunsLoaded, string>) =>
@@ -229,6 +233,17 @@ export class RunsStore extends Context.Service<
     readonly repoRunsLoaded: Effect.Success<ReturnType<typeof repoRunsLoadedQuery>>
     /** Starts syncing this repository's runs, once per repository. */
     readonly openRepoRuns: (owner: string, name: string) => Effect.Effect<void>
+    /** The runs page's Run form (docs/features/actions.md#running-a-flow-by-hand). */
+    readonly form: Collection.Collection<RepoRunForm, string>
+    readonly formRow: Effect.Success<ReturnType<typeof formQuery>>
+    /** Reads `repo`'s flows a person runs by hand into the form, choosing none. */
+    readonly loadRepoFlows: (repo: RepoName) => Effect.Effect<void>
+    /** Chooses `flow` and reads its form at the form's branch's head. */
+    readonly chooseRepoFlow: (flow: string) => Effect.Effect<void>
+    /** Sets the branch a run starts at; `chooseRepoFlow` reads the form there. */
+    readonly setRunRef: (ref: string) => Effect.Effect<void>
+    /** The page left: a Run still in flight no longer moves this tab. */
+    readonly closeRepoRuns: Effect.Effect<void>
     readonly loadRun: (runId: string, repo: RepoName | null) => Effect.Effect<void>
     readonly beginRoute: (runId: string) => Effect.Effect<void>
     readonly rendered: (runId: string) => Effect.Effect<void>
@@ -647,6 +662,55 @@ export class RunsStore extends Context.Service<
         schema: RepoRunsLoaded,
         getKey: (row) => row.id,
       })
+      // The runs page's Run form: the repository's flows a person runs by hand, and the chosen one's form, read from
+      // ChatApi (docs/features/actions.md#running-a-flow-by-hand). This tab's only.
+      const form = yield* Collection.local<RepoRunForm, string>({
+        id: "repo-run-form",
+        schema: RepoRunForm,
+        getKey: (row) => row.id,
+        initialData: [{
+          id: FORM,
+          repo: null,
+          flows: [],
+          defaultBranch: null,
+          flow: null,
+          ref: null,
+          schema: null,
+          state: "idle",
+          refusal: null,
+          token: null,
+        }],
+      })
+      const setForm = (fields: Partial<Omit<RepoRunForm, "id">>) =>
+        form.update(FORM, (draft) => void Object.assign(draft, fields)).pipe(Effect.asVoid, Effect.orDie)
+      // The latest read wins: a slower answer for an earlier choice changes nothing.
+      const formGeneration = yield* Ref.make(0)
+      const nextGeneration = Ref.updateAndGet(formGeneration, (n) => n + 1)
+      const isLatest = (generation: number) => Effect.map(Ref.get(formGeneration), (n) => n === generation)
+      const loadRepoFlows = (repo: RepoName) =>
+        Effect.gen(function* () {
+          const generation = yield* nextGeneration
+          yield* setForm({ repo, flows: [], defaultBranch: null, flow: null, ref: null, schema: null, state: "loading", refusal: null, token: null })
+          const read = yield* Effect.result(remote.flows(repo))
+          if (!(yield* isLatest(generation))) return
+          yield* read._tag === "Success"
+            ? setForm({ flows: read.success.flows, defaultBranch: read.success.defaultBranch, ref: read.success.defaultBranch, state: "ready" })
+            : setForm({ state: "refused", refusal: read.failure.code ?? "unavailable" })
+        })
+      const chooseRepoFlow = (flow: string) =>
+        Effect.gen(function* () {
+          const current = Option.getOrThrow(yield* form.get(FORM))
+          // A Run in flight keeps the form it was started from.
+          if (current.repo === null || current.ref === null || current.state === "starting") return
+          const generation = yield* nextGeneration
+          yield* setForm({ flow, schema: null, state: "loading", refusal: null })
+          const read = yield* Effect.result(remote.inputs(current.repo, flow, current.ref))
+          if (!(yield* isLatest(generation))) return
+          yield* read._tag === "Success"
+            ? setForm({ schema: read.success.inputs, state: "ready" })
+            : setForm({ state: "refused", refusal: read.failure.code ?? "unavailable" })
+        })
+
       const opening = yield* Semaphore.make(1)
       const opened = new Set<string>()
       const openRepoRuns = (owner: string, name: string, route?: RouteTiming) => Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
@@ -707,6 +771,12 @@ export class RunsStore extends Context.Service<
         repoRunList: yield* repoRunsQuery(shownRepoRuns),
         repoRunsLoaded: yield* repoRunsLoadedQuery(loadedRepoRuns),
         openRepoRuns,
+        form,
+        formRow: yield* formQuery(form),
+        loadRepoFlows,
+        chooseRepoFlow,
+        setRunRef: (ref) => setForm({ ref }),
+        closeRepoRuns: setForm({ token: null }),
         // Reads and live subscriptions belong to the store's scope, never the router's pending navigation.
         loadRun: (runId, repo) => Effect.gen(function* () {
           if (Option.isNone(yield* pages.get(runId))) {
