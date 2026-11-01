@@ -4,8 +4,6 @@
  * @since 1.0.0
  */
 
-import { Context, Effect } from "effect"
-
 /**
  * One open tally: the entries committed inside it so far.
  *
@@ -24,7 +22,7 @@ export interface Accumulator {
  * @since 1.0.0
  */
 export const Current = Context.Reference<ReadonlyArray<Accumulator>>("@smthrs/journal/EventTally", {
-  defaultValue: () => []
+  defaultValue: () => [],
 })
 
 /**
@@ -33,7 +31,6 @@ export const Current = Context.Reference<ReadonlyArray<Accumulator>>("@smthrs/jo
  * @category internal
  * @since 1.0.0
  */
-export const record = (events: number): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    for (const accumulator of yield* Current) accumulator.events += events
-  })
+export const record = (events: number): void!! => {
+  for (const accumulator of Current()) accumulator.events += events
+}

@@ -15,7 +15,7 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/journal"
 })
 

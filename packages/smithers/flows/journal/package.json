@@ -41,7 +41,10 @@
     "./Journal": "./src/Journal.ts",
     "./JournalEvent": "./src/JournalEvent.ts",
     "./EngineEvent": "./src/EngineEvent.ts",
-    "./JournalMetrics": "./src/JournalMetrics.ts",
+    "./JournalMetrics": {
+      "types": "./src/JournalMetrics.d.vibe.ts",
+      "default": "./src/JournalMetrics.vibe"
+    },
     "./Migrations": "./src/Migrations.ts",
     "./OwnerId": "./src/OwnerId.ts",
     "./Projection": "./src/Projection.ts",
