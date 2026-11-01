@@ -153,7 +153,7 @@ export interface Displaced {
  */
 export const revisits = (
   later: NarrowedCheck.Check,
-  earlier: NarrowedCheck.Check,
+  earlier: NarrowedCheck.Check
 ): boolean => {
   if (later.flow !== earlier.flow) return false
   if (later.signature === earlier.signature) return false

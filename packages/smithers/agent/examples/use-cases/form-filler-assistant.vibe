@@ -29,14 +29,14 @@ export const FieldEntry = Schema.Struct({
   name: Schema.String,
   value: Schema.String,
   source: Schema.Literals(["document", "user-input", "inferred"]),
-  confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
 })
 
 /** A field the sources did not fill. */
 export const MissingField = Schema.Struct({
   name: Schema.String,
   description: Schema.String,
-  required: Schema.Boolean,
+  required: Schema.Boolean
 })
 
 /** The extractor's answer. */
@@ -44,7 +44,7 @@ export const Extraction = Schema.Struct({
   knownFields: Schema.Array(FieldEntry),
   missingFields: Schema.Array(MissingField),
   documentType: Schema.String,
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** One clarification round's answer. */
@@ -52,7 +52,7 @@ export const Clarification = Schema.Struct({
   answeredFields: Schema.Array(FieldEntry),
   stillMissing: Schema.Array(MissingField),
   allRequiredCollected: Schema.Boolean,
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** The validated, normalized field set. */
@@ -62,10 +62,10 @@ export const Validation = Schema.Struct({
     name: Schema.String,
     value: Schema.String,
     valid: Schema.Boolean,
-    error: Schema.optional(Schema.String),
+    error: Schema.optional(Schema.String)
   })),
   normalizedPayload: Schema.Record(Schema.String, Schema.String),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** What the submission did. */
@@ -75,7 +75,7 @@ export const Submission = Schema.Struct({
   responseCode: Schema.optional(Schema.Number),
   confirmationId: Schema.optional(Schema.String),
   fieldCount: Schema.Number,
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** What the flow settles with. `submission` is null when validation failed. */
@@ -89,12 +89,12 @@ export const Extract = AgentAction.make("examples/FormFillerAssistant/Extract", 
   system: [
     `You are a document field extractor. Given source documents and user input,
 identify all form-relevant fields you can extract with high confidence. Flag any required
-fields that are missing or ambiguous. Be precise about confidence scores.`,
+fields that are missing or ambiguous. Be precise about confidence scores.`
   ],
   prompt: ({ documents, formSchema, userInput }) =>
     `Extract the form fields from these sources.\n\nDocuments: ${JSON.stringify(documents)}\nUser input: ${
       JSON.stringify(userInput)
-    }\nForm schema: ${JSON.stringify(formSchema)}`,
+    }\nForm schema: ${JSON.stringify(formSchema)}`
 })
 
 /** One round of collecting the missing fields. */
@@ -103,19 +103,19 @@ export const Clarify = AgentAction.make("examples/FormFillerAssistant/Clarify", 
     knownFields: Schema.Array(FieldEntry),
     missingFields: Schema.Array(MissingField),
     previousAnswers: Schema.Array(FieldEntry),
-    userResponses: Schema.Array(Schema.Json),
+    userResponses: Schema.Array(Schema.Json)
   },
   output: Clarification,
   seat,
   system: [
     `You are a form-filling assistant that asks clear, concise follow-up questions
 to collect missing required fields. When the user provides answers, validate them against
-the expected format and merge them into the known field set.`,
+the expected format and merge them into the known field set.`
   ],
   prompt: ({ knownFields, missingFields, previousAnswers, userResponses }) =>
     `Collect the missing form fields.\n\nMissing fields: ${JSON.stringify(missingFields)}\nKnown fields: ${
       JSON.stringify(knownFields)
-    }\nPrevious answers: ${JSON.stringify(previousAnswers)}\nUser responses: ${JSON.stringify(userResponses)}`,
+    }\nPrevious answers: ${JSON.stringify(previousAnswers)}\nUser responses: ${JSON.stringify(userResponses)}`
 })
 
 /** Validates and normalizes the complete field set. */
@@ -123,14 +123,14 @@ export const Validate = AgentAction.make("examples/FormFillerAssistant/Validate"
   payload: {
     knownFields: Schema.Array(FieldEntry),
     collectedFields: Schema.Array(FieldEntry),
-    formSchema: Schema.Json,
+    formSchema: Schema.Json
   },
   output: Validation,
   seat,
   prompt: ({ collectedFields, formSchema, knownFields }) =>
     `Validate and normalize the complete field set.\n\nKnown fields: ${
       JSON.stringify(knownFields)
-    }\nCollected fields: ${JSON.stringify(collectedFields)}\nForm schema: ${JSON.stringify(formSchema)}`,
+    }\nCollected fields: ${JSON.stringify(collectedFields)}\nForm schema: ${JSON.stringify(formSchema)}`
 })
 
 /** Submits a validated payload to the target. */
@@ -139,19 +139,19 @@ export const Submit = AgentAction.make("examples/FormFillerAssistant/Submit", {
     payload: Validation.fields.normalizedPayload,
     target: Schema.String,
     method: Schema.String,
-    dryRun: Schema.Boolean,
+    dryRun: Schema.Boolean
   },
   output: Submission,
   seat,
   system: [
     `You are a form submission agent. Given a validated payload and a target
 form or API endpoint, submit the data using the appropriate method. For APIs, use curl
-or equivalent. For file-based forms, write the structured output. Always confirm success.`,
+or equivalent. For file-based forms, write the structured output. Always confirm success.`
   ],
   prompt: ({ dryRun, method, payload, target }) =>
     `Submit this form payload.\n\nTarget: ${target}\nMethod: ${method}\nDry run: ${dryRun}\nPayload: ${
       JSON.stringify(payload)
-    }`,
+    }`
 })
 
 type Extraction = typeof Extraction.Type
@@ -180,13 +180,13 @@ interface Settings {
 const finish = (
   settings: Settings,
   extraction: Planned.Planned<Extraction>,
-  latest: Planned.Planned<Clarification> | undefined,
+  latest: Planned.Planned<Clarification> | undefined
 ): Step =>
   Node.branch(
     Validate.call({
       knownFields: extraction.knownFields,
       collectedFields: latest === undefined ? [] : latest.answeredFields,
-      formSchema: settings.formSchema,
+      formSchema: settings.formSchema
     }),
     {
       if: (validation) => validation.valid,
@@ -196,12 +196,12 @@ const finish = (
             payload: validation.normalizedPayload,
             target: settings.target,
             method: settings.method,
-            dryRun: settings.dryRun,
+            dryRun: settings.dryRun
           }),
-          (submission: Planned.Planned<typeof Submission.Type>) => Node.succeed({ validation, submission }),
+          (submission: Planned.Planned<typeof Submission.Type>) => Node.succeed({ validation, submission })
         ),
-      else: (validation) => Node.succeed({ validation, submission: null }),
-    },
+      else: (validation) => Node.succeed({ validation, submission: null })
+    }
   )
 
 /**
@@ -213,14 +213,14 @@ const clarify = (
   settings: Settings,
   extraction: Planned.Planned<Extraction>,
   round: number,
-  latest: Planned.Planned<Clarification> | undefined,
+  latest: Planned.Planned<Clarification> | undefined
 ): Step =>
   Node.branch(
     Clarify.call({
       knownFields: extraction.knownFields,
       missingFields: latest === undefined ? extraction.missingFields : latest.stillMissing,
       previousAnswers: latest === undefined ? [] : latest.answeredFields,
-      userResponses: settings.userResponses,
+      userResponses: settings.userResponses
     }),
     {
       if: (clarification) => clarification.allRequiredCollected,
@@ -228,8 +228,8 @@ const clarify = (
       else: (clarification) =>
         round >= settings.maxClarifications
           ? finish(settings, extraction, clarification)
-          : clarify(settings, extraction, round + 1, clarification),
-    },
+          : clarify(settings, extraction, round + 1, clarification)
+    }
   )
 
 /** The flow: extract, clarify while required fields are missing, validate, submit. */
@@ -242,7 +242,7 @@ export const FormFillerAssistant = Flow.make("examples/FormFillerAssistant", {
     maxClarifications: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
     target: Schema.optional(Schema.String),
     method: Schema.optional(Schema.String),
-    dryRun: Schema.optional(Schema.Boolean),
+    dryRun: Schema.optional(Schema.Boolean)
   },
   success: Output,
   error: AgentAction.AgentFailure,
@@ -254,16 +254,16 @@ export const FormFillerAssistant = Flow.make("examples/FormFillerAssistant", {
     method = "dry-run",
     target = "stdout",
     userInput = "",
-    userResponses = [],
+    userResponses = []
   }) => {
     const settings: Settings = { formSchema, userResponses, maxClarifications, target, method, dryRun }
     return Node.branch(Extract.call({ documents, userInput, formSchema }), {
       // 0.x's loop `until` held from the start when nothing required was missing, so no round ran.
       if: (extraction) => extraction.missingFields.every((field) => !field.required),
       then: (extraction) => finish(settings, extraction, undefined),
-      else: (extraction) => clarify(settings, extraction, 1, undefined),
+      else: (extraction) => clarify(settings, extraction, 1, undefined)
     })
-  },
+  }
 })
 
 /** Every step the flow calls. */

@@ -33,7 +33,7 @@ import * as Schema from "effect/Schema"
  */
 export const Frame = Schema.Struct({
   lineageId: Schema.NonEmptyString,
-  seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 })
 /**
  * The value form of {@link Frame}.
@@ -82,7 +82,7 @@ export const LineageEdge = Schema.Struct({
   parentSeq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   childRunId: Schema.NonEmptyString,
   kind: LineageEdgeKind,
-  attached: Schema.Boolean,
+  attached: Schema.Boolean
 })
 /**
  * The value form of {@link LineageEdge}.
@@ -117,7 +117,7 @@ export const forkCreatedEventType = "flows.time-travel.fork-created"
 export const ForkCreated = Schema.Struct({
   parentRunId: Schema.NonEmptyString,
   forkJournalOffset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  childRunId: Schema.NonEmptyString,
+  childRunId: Schema.NonEmptyString
 })
 /**
  * The value form of {@link ForkCreated}.

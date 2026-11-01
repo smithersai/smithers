@@ -115,7 +115,7 @@ export class Capture extends Schema.Class<Capture>("flows/harness/TruncatedOutpu
   /** Bytes the flow discarded, as it reported them; zero when it did not say. */
   droppedBytes: NonNegativeSafeInt,
   /** The digest of the exact string the flow returned. */
-  digest: Schema.String,
+  digest: Schema.String
 }) {}
 
 /**
@@ -148,7 +148,7 @@ const captureField = (
   flow: string,
   node: Schema.JsonObject,
   field: string,
-  into: Array<Capture>,
+  into: Array<Capture>
 ): void => {
   const text = node[field]
   if (typeof text !== "string" || byteLength(text) < minimumBytes) return
@@ -157,8 +157,8 @@ const captureField = (
       flow,
       field,
       droppedBytes: droppedBytes(node, field),
-      digest: Digest.digest(text),
-    }),
+      digest: Digest.digest(text)
+    })
   )
 }
 
@@ -200,7 +200,7 @@ export const captures = (flow: string, value: Schema.Json): ReadonlyArray<Captur
 const search = (
   value: Schema.Json,
   path: string,
-  known: ReadonlyMap<string, Capture>,
+  known: ReadonlyMap<string, Capture>
 ): Reuse | undefined => {
   if (typeof value === "string") {
     if (byteLength(value) < minimumBytes) return undefined
@@ -236,7 +236,7 @@ const search = (
  */
 export const reuse = (
   input: Schema.Json,
-  ledger: ReadonlyArray<Capture>,
+  ledger: ReadonlyArray<Capture>
 ): Reuse | undefined =>
   ledger.length === 0
     ? undefined
@@ -292,5 +292,5 @@ export const retain = (ledger: ReadonlyArray<Capture>): ReadonlyArray<Capture> =
  */
 export const Ledger = Schema.Array(Capture).pipe(
   Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Capture>>([])),
-  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Capture>>([])),
+  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Capture>>([]))
 )

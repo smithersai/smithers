@@ -32,7 +32,7 @@ import * as Schema from "effect/Schema"
 export const Job = Schema.Struct({
   path: Schema.String,
   from: Schema.String,
-  to: Schema.String,
+  to: Schema.String
 })
 
 /** The envelope `Intervene` hands its read flow. */
@@ -57,7 +57,7 @@ schema ReportCall {
 export const Report = Schema.Struct({
   path: Schema.String,
   replacements: Schema.Number,
-  dryRun: Schema.Boolean,
+  dryRun: Schema.Boolean
 })
 
 /**
@@ -69,21 +69,21 @@ const ReadAction = Action.make("read-target", {
   payload: ReadCall,
   success: Read.Output,
   capabilities: Read.capabilities,
-  effects: Read.effects,
+  effects: Read.effects
 })
 export const ReadTarget = Flow.make("read-target", {
   payload: ReadCall,
   success: Read.Output,
   capabilities: Read.capabilities,
   effects: Read.effects,
-  body: (payload) => ReadAction.call(payload),
+  body: (payload) => ReadAction.call(payload)
 })
 
 /** Turns the job into the edit the apply step performs. This step writes nothing. */
 export const ProposeEdit = Flow.make("propose-edit", {
   payload: ProposeCall,
   success: Edit.Input,
-  body: ({ input }) => Node.succeed({ path: input.path, oldString: input.from, newString: input.to }),
+  body: ({ input }) => Node.succeed({ path: input.path, oldString: input.from, newString: input.to })
 })
 
 /** Writes the proposed edit, under the std edit flow's compensable envelope. */
@@ -91,14 +91,14 @@ const EditAction = Action.make("apply-edit", {
   payload: ApplyCall,
   success: Edit.Output,
   capabilities: Edit.capabilities,
-  effects: Edit.effects,
+  effects: Edit.effects
 })
 export const ApplyEdit = Flow.make("apply-edit", {
   payload: ApplyCall,
   success: Edit.Output,
   capabilities: Edit.capabilities,
   effects: Edit.effects,
-  body: (payload) => EditAction.call(payload),
+  body: (payload) => EditAction.call(payload)
 })
 
 /** Summarizes the intervention. */
@@ -109,8 +109,8 @@ export const ReportEdit = Flow.make("report-edit", {
     Node.succeed({
       path: proposal.path,
       replacements: applied === undefined ? 0 : applied.replacements,
-      dryRun,
-    }),
+      dryRun
+    })
 })
 
 /**
@@ -127,7 +127,7 @@ const ApprovalAction = Action.make("approve-edit", { payload: ApprovalPayload, s
 export const ApproveEdit = Flow.make("approve-edit", {
   payload: Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String }),
   success: Pattern.Approved,
-  body: (payload) => ApprovalAction.call(payload),
+  body: (payload) => ApprovalAction.call(payload)
 })
 
 // Approval decorates the canonical apply flow.
@@ -137,7 +137,7 @@ const declaration = {
   apply: ApplyEdit,
   report: ReportEdit,
   approval: ApproveEdit,
-  reason: "rewrite the greeting",
+  reason: "rewrite the greeting"
 }
 
 /** The gated intervention: read, propose, approve, apply, report. */
@@ -182,10 +182,10 @@ export const intervene = (options: {
         report: ({ applied, dryRun, proposal }) => ({
           path: proposal.path,
           replacements: applied === undefined ? 0 : applied.replacements,
-          dryRun,
+          dryRun
         }),
-        approval: () => options.decision,
-      },
+        approval: () => options.decision
+      }
     )
     const content = try fileSystem.readFileString(path)
     return { report, content }

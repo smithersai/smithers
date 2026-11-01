@@ -45,6 +45,6 @@ export const layerOtel = (options: Options): Layer.Layer<never, Resource.Invalid
         spanProcessor: options.spanProcessor?.(),
         logRecordProcessor: options.logRecordProcessor?.(),
         metricReader: options.metricReader?.(),
-        loggerMergeWithExisting: options.loggerMergeWithExisting,
-      }))),
+        loggerMergeWithExisting: options.loggerMergeWithExisting
+      })))
   )

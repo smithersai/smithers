@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "moduleSuffixes": ["",".d.vibe"],
+    "moduleSuffixes": ["", ".d.vibe"],
     "allowArbitraryExtensions": true,
     "target": "ES2024",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],

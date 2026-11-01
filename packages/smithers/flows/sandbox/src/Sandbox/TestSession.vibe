@@ -60,12 +60,12 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
     files: new Map(
       Object.entries(options.files ?? {}).map(([path, content]) => [
         path,
-        typeof content === "string" ? encoder.encode(content) : content.slice(),
-      ]),
+        typeof content === "string" ? encoder.encode(content) : content.slice()
+      ])
     ),
     released: 0,
     forked: [],
-    children: new Map(),
+    children: new Map()
   }
   const resolve = (command: string): TestScript =>
     options.scripts?.[command] ?? options.script?.(command)
@@ -83,7 +83,7 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
       const process: RemoteProcess = {
         stdout: scriptedOutput(script.stdout),
         stderr: scriptedOutput(script.stderr),
-        exitCode: Effect.succeed(script.exitCode ?? 0),
+        exitCode: Effect.succeed(script.exitCode ?? 0)
       }
       return process
     },
@@ -105,7 +105,7 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
           Effect.sync(() => {
             const tree = new Map(
               Array.from(files, ([path, content]) => [path, content.slice()] as const)
-                .filter(([path]) => !credentials.has(path)),
+                .filter(([path]) => !credentials.has(path))
             )
             state.forked.push(key)
             state.children.set(key, tree)
@@ -115,9 +115,9 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
             Effect.sync(() => {
               state.children.delete(key)
               state.released += 1
-            }),
+            })
         )
-        : throw options.forkFailure,
+        : throw options.forkFailure
   })
   const session = open(options.session ?? "test-session", options.remoteId ?? "test-remote", state.files)
   return {
@@ -132,9 +132,9 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
           () =>
             Effect.sync(() => {
               state.released += 1
-            }),
+            })
         )
-        : throw options.acquireFailure,
+        : throw options.acquireFailure
   }
 }
 
@@ -148,5 +148,5 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
  * @since 0.1.0
  */
 export const TestSession = {
-  make: makeTestSession,
+  make: makeTestSession
 } as const

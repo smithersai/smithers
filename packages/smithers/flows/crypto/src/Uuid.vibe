@@ -50,7 +50,7 @@ const format = (bytes: Uint8Array): string => {
  */
 export const v5 = (
   namespace: string,
-  name: string,
+  name: string
 ): string!PlatformError.PlatformError!Crypto.Crypto => {
   if (!isUuid(namespace)) return Effect.die(new TypeError("Uuid.v5: namespace is not a UUID"))
   const nameBytes = encoder.encode(name)

@@ -48,7 +48,7 @@ const expressionKeywords: ReadonlySet<string> = new Set([
   "throw",
   "typeof",
   "void",
-  "yield",
+  "yield"
 ])
 
 /** A closing control header starts a statement, which may be a regex literal. */
@@ -218,7 +218,7 @@ const singleEscapes: Readonly<Record<string, string>> = {
   n: "\n",
   r: "\r",
   t: "\t",
-  v: "\v",
+  v: "\v"
 }
 
 /** `count` hex digits from `start`, as a `\x` or four-digit `\u` escape reads them. */

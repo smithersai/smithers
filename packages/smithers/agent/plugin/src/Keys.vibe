@@ -89,7 +89,7 @@ const named: ReadonlySet<string> = new Set([
   "/",
   "?",
   "[",
-  "]",
+  "]"
 ])
 const modifiers = ["mod", "ctrl", "alt", "shift"] as const
 

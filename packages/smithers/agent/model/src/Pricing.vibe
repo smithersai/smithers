@@ -25,7 +25,7 @@ export const Rates = Schema.Struct({
   input: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
   cacheRead: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
   cacheWrite: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
-  output: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  output: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 })
 
 /**

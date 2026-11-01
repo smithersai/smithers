@@ -82,7 +82,7 @@ export const StateInteraction = Schema.Struct({ kind: Schema.Literal("state") })
  */
 export const MessageInteraction = Schema.Struct({
   kind: Schema.Literal("message"),
-  label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maxLabelLength)),
+  label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maxLabelLength))
 })
 
 /**
@@ -109,7 +109,7 @@ export type Interaction = typeof Interaction.Type
  */
 export const Declared = Schema.Record(Schema.String, Interaction).check(
   Schema.isPropertyNames(Name),
-  Schema.isMaxProperties(maxDeclared),
+  Schema.isMaxProperties(maxDeclared)
 )
 
 /**

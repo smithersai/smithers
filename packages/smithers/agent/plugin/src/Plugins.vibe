@@ -37,14 +37,14 @@ const kindMismatch = (
   resolved: Resolved<unknown>,
   hook: string,
   kind: HookKind,
-  handlers: ReadonlyArray<HandlerRecord>,
+  handlers: ReadonlyArray<HandlerRecord>
 ): PluginError | undefined => {
   if (!Object.hasOwn(resolved.kinds, hook)) {
     if (handlers.length === 0) return undefined
     return new PluginError({
       code: "hook_kind_mismatch",
       message: `hook "${hook}" has handlers but is not declared in the runtime catalog`,
-      hook,
+      hook
     })
   }
   const declared = resolved.kinds[hook]
@@ -54,13 +54,13 @@ const kindMismatch = (
     message: `hook "${hook}" is declared ${JSON.stringify(declared)} in the runtime catalog but was dispatched as ${
       JSON.stringify(kind)
     }`,
-    hook,
+    hook
   })
 }
 
 const runHandler = (
   record: HandlerRecord,
-  args: ReadonlyArray<unknown>,
+  args: ReadonlyArray<unknown>
 ): unknown!PluginError!any => {
   const onCause = (cause: Cause<unknown>) =>
     throw new PluginError({
@@ -68,7 +68,7 @@ const runHandler = (
       message: `hook "${record.hook}" failed in plugin "${record.plugin}"`,
       plugin: record.plugin,
       hook: record.hook,
-      cause,
+      cause
     })
 
   return Effect.sync(() => record.handler(...args))
@@ -80,7 +80,7 @@ const runHandler = (
           code: "hook_failed",
           message: `hook "${record.hook}" in plugin "${record.plugin}" returned a non-Effect (${typeof result})`,
           plugin: record.plugin,
-          hook: record.hook,
+          hook: record.hook
         }))
 }
 
@@ -117,7 +117,7 @@ export interface Service<H = FlowsHooks> {
   readonly waterfall: <K extends KeysOfKind<H, "waterfall">>(
     hook: K,
     initial: ArgsOf<H[K]>[0],
-    merge: (previous: ArgsOf<H[K]>[0], patch: Exclude<SuccessOf<H[K]>, void>) => ArgsOf<H[K]>[0],
+    merge: (previous: ArgsOf<H[K]>[0], patch: Exclude<SuccessOf<H[K]>, void>) => ArgsOf<H[K]>[0]
   ) => ArgsOf<H[K]>[0]!PluginError!ContextOf<H[K]>
 }
 
@@ -148,7 +148,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
       (record) =>
         runHandler(record, args)
         |> Effect.match(%, { onFailure: (error) => [error], onSuccess: () => [] as Array<PluginError> }),
-      { concurrency: resolved.parallelConcurrency },
+      { concurrency: resolved.parallelConcurrency }
     ) |> Effect.map(%, (chunks) => chunks.flat())
   }) as Service<H>["parallel"]
 
@@ -162,7 +162,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
           code: "invalid_hook_result",
           message: `first hook "${record.hook}" in plugin "${record.plugin}" did not return an Option`,
           plugin: record.plugin,
-          hook: record.hook,
+          hook: record.hook
         })
       }
       if (Option.isSome(result)) return result
@@ -187,15 +187,15 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
                 plugin: record.plugin,
                 hook: record.hook,
                 path: cause.path,
-                cause,
+                cause
               })
               : new PluginError({
                 code: "config_invalid",
                 message: `waterfall hook "${record.hook}" in plugin "${record.plugin}" returned an invalid patch`,
                 plugin: record.plugin,
                 hook: record.hook,
-                cause,
-              }),
+                cause
+              })
         })
       }
     }
@@ -216,7 +216,7 @@ export const makeNoop = <H = FlowsHooks>(): Service<H> =>
     plugins: Object.freeze([]),
     handlers: ImmutableMap.make<string, ReadonlyArray<HandlerRecord>>(),
     kinds: engineHooks,
-    parallelConcurrency: defaultParallelConcurrency,
+    parallelConcurrency: defaultParallelConcurrency
   }))
 
 /**

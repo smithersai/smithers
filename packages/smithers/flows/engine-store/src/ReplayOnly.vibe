@@ -78,7 +78,7 @@ export class WouldExecute extends Schema.TaggedError<WouldExecute>()("@smthrs/en
   runId: Schema.String,
   stepKeyDigest: Schema.String,
   attempt: Schema.Number,
-  action: Schema.String,
+  action: Schema.String
 }) {
   override get message(): string {
     return `Action ${this.action} (step ${this.stepKeyDigest}, attempt ${this.attempt}) would execute`

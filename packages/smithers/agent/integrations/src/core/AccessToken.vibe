@@ -38,5 +38,5 @@ export interface AccessTokenSource {
  */
 export const fixed = (token: Redacted.Redacted<string>): AccessTokenSource => ({
   token: Effect.succeed(token),
-  invalidate: Effect.void,
+  invalidate: Effect.void
 })

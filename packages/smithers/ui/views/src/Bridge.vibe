@@ -134,7 +134,7 @@ export const Initialize = Schema.Struct({
   jsonrpc: Schema.Literal("2.0"),
   id: Id,
   method: Schema.Literal("ui/initialize"),
-  params: Schema.Struct({ nonce: Nonce }),
+  params: Schema.Struct({ nonce: Nonce })
 })
 
 /**
@@ -155,7 +155,7 @@ export type Initialize = typeof Initialize.Type
 export const HostContext = Schema.Struct({
   html: Schema.String,
   theme: Theme,
-  size: Size,
+  size: Size
 })
 
 /**
@@ -175,7 +175,7 @@ export type HostContext = typeof HostContext.Type
 export const InitializeResult = Schema.Struct({
   jsonrpc: Schema.Literal("2.0"),
   id: Id,
-  result: HostContext,
+  result: HostContext
 })
 
 /**
@@ -195,7 +195,7 @@ export type InitializeResult = typeof InitializeResult.Type
 export const HostContextChanged = Schema.Struct({
   jsonrpc: Schema.Literal("2.0"),
   method: Schema.Literal("ui/notifications/host-context-changed"),
-  params: Schema.Struct({ html: Schema.optionalKey(Schema.String), theme: Schema.optionalKey(Theme) }),
+  params: Schema.Struct({ html: Schema.optionalKey(Schema.String), theme: Schema.optionalKey(Theme) })
 })
 
 /**
@@ -216,8 +216,8 @@ export const SizeChanged = Schema.Struct({
   jsonrpc: Schema.Literal("2.0"),
   method: Schema.Literal("ui/notifications/size-changed"),
   params: Schema.Struct({
-    height: Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: maxReportedHeight })),
-  }),
+    height: Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: maxReportedHeight }))
+  })
 })
 
 /**
@@ -244,7 +244,7 @@ export const Value = Schema.Union([Schema.String, Schema.Number.check(Schema.isF
  */
 export const Values = Schema.Record(Schema.String, Value).check(
   Schema.isPropertyNames(Schema.String.check(Schema.isMaxLength(128))),
-  Schema.isMaxProperties(maxValues),
+  Schema.isMaxProperties(maxValues)
 )
 
 /**
@@ -267,8 +267,8 @@ export const Interaction = Schema.Struct({
   params: Schema.Struct({
     event: Interactions.Name,
     arg: Schema.optionalKey(Interactions.Arg),
-    values: Schema.optionalKey(Values),
-  }),
+    values: Schema.optionalKey(Values)
+  })
 })
 
 /**
@@ -406,7 +406,7 @@ export const acceptInitialize = (message: unknown, nonce: string): Option.Option
 export const initializeResult = (initialize: Initialize, context: HostContext): InitializeResult => ({
   jsonrpc: "2.0",
   id: initialize.id,
-  result: context,
+  result: context
 })
 
 /**
@@ -418,7 +418,7 @@ export const initializeResult = (initialize: Initialize, context: HostContext): 
 export const hostContextChanged = (params: HostContextChanged["params"]): HostContextChanged => ({
   jsonrpc: "2.0",
   method: "ui/notifications/host-context-changed",
-  params,
+  params
 })
 
 /**

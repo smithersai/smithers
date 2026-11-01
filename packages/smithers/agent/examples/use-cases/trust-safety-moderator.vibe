@@ -26,8 +26,8 @@ export const Intake = Schema.Struct({
   metadata: Schema.Struct({
     source: Schema.String,
     authorId: Schema.optional(Schema.String),
-    timestamp: Schema.optional(Schema.String),
-  }),
+    timestamp: Schema.optional(Schema.String)
+  })
 })
 
 /** The moderator's classification. */
@@ -45,16 +45,16 @@ export const Moderation = Schema.Struct({
     "misinformation",
     "spam",
     "copyright",
-    "other",
+    "other"
   ]),
   confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
   reasoning: Schema.String,
   flaggedSegments: Schema.Array(Schema.Struct({
     text: Schema.String,
     policy: Schema.String,
-    severity: Schema.Literals(["low", "medium", "high"]),
+    severity: Schema.Literals(["low", "medium", "high"])
   })),
-  needsHumanReview: Schema.Boolean,
+  needsHumanReview: Schema.Boolean
 })
 
 /** The decision the flow settles with. */
@@ -64,7 +64,7 @@ export const Decision = Schema.Struct({
   action: Schema.String,
   moderatedContent: Schema.optional(Schema.String),
   escalationReason: Schema.optional(Schema.String),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Normalizes the content and extracts its metadata. */
@@ -75,7 +75,7 @@ export const IntakeContent = AgentAction.make("examples/TrustSafetyModerator/Int
   prompt: ({ authorId, content, source }) =>
     `Take in this content for moderation. Normalize it and extract its metadata.\n\nSource: ${source}\nAuthor: ${authorId}\nContent: ${
       JSON.stringify(content)
-    }`,
+    }`
 })
 
 /** Classifies risk and policy. */
@@ -84,19 +84,19 @@ export const Moderate = AgentAction.make("examples/TrustSafetyModerator/Moderate
     contentId: Schema.String,
     contentType: Intake.fields.contentType,
     rawText: Schema.String,
-    policies: Schema.String,
+    policies: Schema.String
   },
   output: Moderation,
   seat,
   system: [
     `You are a trust & safety content moderator. Analyze content against policy guidelines.
 Classify risk level and policy category with high precision. Flag specific segments that violate policy.
-When confidence is below 0.85 or the content is ambiguous, mark for human review.`,
+When confidence is below 0.85 or the content is ambiguous, mark for human review.`
   ],
   prompt: ({ contentId, contentType, policies, rawText }) =>
     `Moderate content ${contentId} (${contentType}) against the ${policies} policies.\n\nText: ${
       JSON.stringify(rawText)
-    }`,
+    }`
 })
 
 /** Applies the policy action or escalates. */
@@ -109,19 +109,19 @@ export const Act = AgentAction.make("examples/TrustSafetyModerator/Action", {
     reasoning: Schema.String,
     flaggedSegments: Moderation.fields.flaggedSegments,
     needsHumanReview: Schema.Boolean,
-    rawText: Schema.String,
+    rawText: Schema.String
   },
   output: Decision,
   seat,
   system: [
     `You are a trust & safety action handler. Based on moderation results, take the appropriate
 policy action: approve safe content, apply modifications for borderline cases, reject clear violations,
-or escalate edge cases with detailed context for human reviewers.`,
+or escalate edge cases with detailed context for human reviewers.`
   ],
   prompt: ({ rawText, ...moderation }) =>
     `Act on content ${moderation.contentId}.\n\nModeration: ${JSON.stringify(moderation)}\nText: ${
       JSON.stringify(rawText)
-    }`,
+    }`
 })
 
 /** The flow: intake, moderate, act. */
@@ -130,7 +130,7 @@ export const TrustSafetyModerator = Flow.make("examples/TrustSafetyModerator", {
     content: Schema.optional(Schema.String),
     source: Schema.optional(Schema.String),
     authorId: Schema.optional(Schema.String),
-    policies: Schema.optional(Schema.String),
+    policies: Schema.optional(Schema.String)
   },
   success: Decision,
   error: AgentAction.AgentFailure,
@@ -141,7 +141,7 @@ export const TrustSafetyModerator = Flow.make("examples/TrustSafetyModerator", {
           contentId: intake.contentId,
           contentType: intake.contentType,
           rawText: intake.rawText,
-          policies,
+          policies
         }),
         (moderation) =>
           Act.call({
@@ -152,9 +152,9 @@ export const TrustSafetyModerator = Flow.make("examples/TrustSafetyModerator", {
             reasoning: moderation.reasoning,
             flaggedSegments: moderation.flaggedSegments,
             needsHumanReview: moderation.needsHumanReview,
-            rawText: intake.rawText,
-          }),
-      )),
+            rawText: intake.rawText
+          })
+      ))
 })
 
 /** Every step the flow calls. */

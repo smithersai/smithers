@@ -17,7 +17,7 @@ import { ModelError } from "./ModelError.vibe"
 export interface Framing<Frame> {
   readonly id: string
   readonly frame: <E, R>(
-    stream: Stream.Stream<Uint8Array, E, R>,
+    stream: Stream.Stream<Uint8Array, E, R>
   ) => Stream.Stream<Frame, E | Sse.SseError | ModelError, R>
 }
 
@@ -64,7 +64,7 @@ const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, li
       || responseLimit <= 0
     ) {
       return Stream.fail(
-        new ModelError({ code: "invalid_request", message: "Framing limits must be positive safe integers" }),
+        new ModelError({ code: "invalid_request", message: "Framing limits must be positive safe integers" })
       )
     }
     let responseBytes = 0
@@ -76,7 +76,7 @@ const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, li
       if (responseBytes > responseLimit) {
         throw new ModelError({
           code: "invalid_provider_output",
-          message: `Model response exceeds ${responseLimit} bytes`,
+          message: `Model response exceeds ${responseLimit} bytes`
         })
       }
       for (const byte of chunk) {
@@ -95,7 +95,7 @@ const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, li
         if (recordBytes > recordLimit) {
           throw new ModelError({
             code: "invalid_provider_output",
-            message: `Model stream record exceeds ${recordLimit} bytes`,
+            message: `Model stream record exceeds ${recordLimit} bytes`
           })
         }
       }
@@ -131,9 +131,9 @@ export const makeSse = (limits: Limits = {}): Framing<string> => ({
           frames = []
           return emitted
         }),
-        Stream.flattenIterable,
+        Stream.flattenIterable
       )
-    }),
+    })
 })
 
 /**
@@ -159,8 +159,8 @@ export const makeNdjson = (limits: Limits = {}): Framing<string> => ({
     bounded(stream, false, limits).pipe(
       Stream.decodeText,
       Stream.splitLines,
-      Stream.filter((line) => line.trim() !== ""),
-    ),
+      Stream.filter((line) => line.trim() !== "")
+    )
 })
 
 /**

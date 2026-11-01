@@ -21,7 +21,7 @@ import { PluginError } from "../PluginError.vibe"
  */
 export const mergePluginLayers = <H>(
   plugins: ReadonlyArray<FlowsPlugin<H>>,
-  cacheEnvironment: Action.CacheEnvironment | undefined,
+  cacheEnvironment: Action.CacheEnvironment | undefined
 ): Layer.Layer<any, PluginError, any> => {
   const layers = plugins.flatMap((plugin) =>
     plugin.layer
@@ -33,10 +33,10 @@ export const mergePluginLayers = <H>(
                 code: "layer_failed",
                 message: `plugin "${plugin.name}" failed to build its layer`,
                 plugin: plugin.name,
-                cause,
-              }),
-            ),
-          )) as Layer.Layer<any, PluginError, any>,
+                cause
+              })
+            )
+          )) as Layer.Layer<any, PluginError, any>
       ]
       : []
   )

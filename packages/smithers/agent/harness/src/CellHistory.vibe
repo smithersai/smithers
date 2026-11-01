@@ -66,7 +66,7 @@ export const make: Service!! = Effect.sync(() => {
       Effect.sync(() => {
         recorded.push({ ordinal: recorded.length, source })
       }),
-    cells: () => Effect.sync(() => [...recorded]),
+    cells: () => Effect.sync(() => [...recorded])
   })
 })
 
@@ -83,7 +83,7 @@ export const make: Service!! = Effect.sync(() => {
 export const makeCells = (cells: ReadonlyArray<ExecutedCell>): Service =>
   CellHistory.of({
     record: () => Effect.void,
-    cells: () => cells,
+    cells: () => cells
   })
 
 /**
@@ -96,7 +96,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
   CellHistory.of({
     record: () => Effect.void,
     cells: () => [],
-    ...overrides,
+    ...overrides
   })
 
 /**

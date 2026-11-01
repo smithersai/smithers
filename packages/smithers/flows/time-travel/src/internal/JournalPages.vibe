@@ -78,7 +78,7 @@ export interface PageOptions {
 export const forEachPage = effect <E>(
   journal: Journal.Service,
   options: PageOptions,
-  onPage: (entries: ReadonlyArray<JournalEvent.Entry>) => void | Stop!E,
+  onPage: (entries: ReadonlyArray<JournalEvent.Entry>) => void | Stop!E
 ): void!E | TimeTravelError => {
   let after = options.after
   while (true) {
@@ -86,7 +86,7 @@ export const forEachPage = effect <E>(
       runId: options.runId as JournalEvent.RunId,
       ...(after === undefined ? {} : { after: after as JournalEvent.Seq }),
       ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
-      limit: options.pageSize,
+      limit: options.pageSize
     }) |> Effect.mapError(%, (cause) => error("unknown", options.readFailure, cause)))
     if ((try onPage(page.entries)) === Stop) return
     if (!page.hasMore) return

@@ -41,7 +41,7 @@ export const nativeCallEvent = <Event extends CallObservation>(event: Event): Ev
   return {
     ...event,
     kind: fact.value.phase === "invoked" ? "control.agent.cell-call-started" : "control.agent.cell-call-settled",
-    payload: JSON.parse(JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs })),
+    payload: JSON.parse(JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs }))
   }
 }
 
@@ -77,8 +77,8 @@ export const nativeStepEvent = <Event extends CallObservation>(event: Event): Ev
     payload: {
       ...fact.payload,
       step: { ...step, generation: fact.generation, frame: fact.frame, ordinal: fact.ordinal },
-      at: fact.at,
-    },
+      at: fact.at
+    }
   }
 }
 
@@ -99,7 +99,7 @@ export const callScope = (event: CallObservation): string | undefined => {
     scope.ask,
     scope.retry,
     scope.scope,
-    scope.generation,
+    scope.generation
   ])
 }
 
@@ -115,7 +115,7 @@ export const openCallIndex = (
   >,
   callId: string | undefined,
   flowName: string | undefined,
-  scope?: string,
+  scope?: string
 ): number => {
   const identified = callId === undefined
     ? -1
@@ -158,7 +158,7 @@ export const callEventKey = (event: CallObservation): string | undefined => {
  * @since 1.0.0
  */
 export const uniqueCallEvents = <Event extends CallObservation>(
-  events: ReadonlyArray<Event>,
+  events: ReadonlyArray<Event>
 ): ReadonlyArray<Event> => {
   const native = new Map<string, Event>()
   const normalized = events.map((event) => {
@@ -251,6 +251,6 @@ export const callEventFilter = <Event extends CallObservation>(): CallEventFilte
       seen.add(key)
       const preferred = native.get(key)
       return { _tag: "keep", event: preferred === undefined ? event : { ...preferred, sequence: event.sequence } }
-    },
+    }
   }
 }

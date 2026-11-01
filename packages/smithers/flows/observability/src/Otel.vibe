@@ -15,7 +15,7 @@ import {
   type Configuration as ResourceConfiguration,
   type InvalidResourceConfiguration,
   layer as resourceLayer,
-  Resource,
+  Resource
 } from "./Resource.ts"
 
 /**
@@ -80,9 +80,9 @@ export const layerOtel = (options: Options): Layer.Layer<never, InvalidResourceC
         OtelTracer.OtelTracerProvider,
         Effect.map(
           Resource,
-          (resource) => typeof tracerProvider === "function" ? tracerProvider(resource) : tracerProvider,
-        ),
-      ),
+          (resource) => typeof tracerProvider === "function" ? tracerProvider(resource) : tracerProvider
+        )
+      )
     )
   const logger = loggerProvider === undefined
     ? Layer.empty
@@ -92,9 +92,9 @@ export const layerOtel = (options: Options): Layer.Layer<never, InvalidResourceC
         OtelLogger.OtelLoggerProvider,
         Effect.map(
           Resource,
-          (resource) => typeof loggerProvider === "function" ? loggerProvider(resource) : loggerProvider,
-        ),
-      ),
+          (resource) => typeof loggerProvider === "function" ? loggerProvider(resource) : loggerProvider
+        )
+      )
     )
   const acquireMetricReader = options.metricReader
   const metrics = acquireMetricReader === undefined
@@ -102,8 +102,8 @@ export const layerOtel = (options: Options): Layer.Layer<never, InvalidResourceC
     : OtelMetrics.layer(
       () => acquireMetricReader() as unknown as MetricReader | readonly [MetricReader, ...Array<MetricReader>],
       {
-        temporality: options.metricTemporality,
-      },
+        temporality: options.metricTemporality
+      }
     )
   return Layer.mergeAll(tracer, logger, metrics).pipe(Layer.provideMerge(resource))
 }

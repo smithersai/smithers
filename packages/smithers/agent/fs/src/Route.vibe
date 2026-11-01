@@ -134,7 +134,7 @@ const invalidRoute = (path: string, description = "Route metadata violates the c
 
 const text = effect (
   value: unknown,
-  options: { path: string; maximum: number; empty?: boolean | undefined },
+  options: { path: string; maximum: number; empty?: boolean | undefined }
 ): Effect<string, FsError> => {
   if (
     typeof value !== "string" || (options.empty !== true && value.length === 0)
@@ -146,7 +146,7 @@ const text = effect (
 const fields = effect (
   value: unknown,
   required: ReadonlyArray<string>,
-  optional: ReadonlyArray<string> = [],
+  optional: ReadonlyArray<string> = []
 ): Effect<Readonly<Record<string, unknown>>, FsError> => {
   const admitted = Boundary.inspectRecord(value, required, optional)
   if (!admitted.ok) throw invalidRoute(admitted.path)
@@ -156,7 +156,7 @@ const fields = effect (
 const schemaFields = effect (
   input: unknown,
   required: ReadonlyArray<string>,
-  optional: ReadonlyArray<string> = [],
+  optional: ReadonlyArray<string> = []
 ): Effect<Readonly<Record<string, unknown>>, FsError> => {
   return try Effect.try({
     try: () =>
@@ -188,7 +188,7 @@ const schemaFields = effect (
         }
         return Object.freeze(output)
       })(input, required, optional, invalidRoute),
-    catch: (cause) => cause instanceof FsError ? cause : invalidRoute("$"),
+    catch: (cause) => cause instanceof FsError ? cause : invalidRoute("$")
   })
 }
 
@@ -201,13 +201,13 @@ const inspectOption = effect (input: unknown, path: string): Effect<Option<unkno
         // Reading the payload here also catches a hostile getter.
         return input._tag === "None" ? Option.none() : Option.some(input.value)
       })(input),
-    catch: () => invalidRoute(path),
+    catch: () => invalidRoute(path)
   })
 
 const optionText = effect (
   input: unknown,
   path: string,
-  maximum: number,
+  maximum: number
 ): Effect<Option<string>, FsError> => {
   const option = try inspectOption(input, path)
   if (option.isNone()) return Option.none()
@@ -250,11 +250,11 @@ const effectDeclaration = effect (input: unknown): Effect<Descriptor.EffectDecla
   const data = try fields(input, ["reads", "writes", "mode", "onConflict", "tier"])
   const reads = Boundary.stringArray(data.reads, {
     maxItems: maximumCapabilities,
-    maxLength: maximumPathLength,
+    maxLength: maximumPathLength
   })
   const writes = Boundary.stringArray(data.writes, {
     maxItems: maximumCapabilities,
-    maxLength: maximumPathLength,
+    maxLength: maximumPathLength
   })
   if (!reads.ok) throw invalidRoute(`$.effects.reads${reads.path.slice(1)}`)
   if (!writes.ok) throw invalidRoute(`$.effects.writes${writes.path.slice(1)}`)
@@ -266,7 +266,7 @@ const effectDeclaration = effect (input: unknown): Effect<Descriptor.EffectDecla
     writes: writes.value,
     mode: data.mode,
     onConflict: data.onConflict,
-    tier: data.tier,
+    tier: data.tier
   })
 }
 
@@ -287,11 +287,11 @@ const copyRoute = effect (input: Route): Effect<Route, FsError> => {
     "effects",
     "modelInvocable",
     "placement",
-    "ui",
+    "ui"
   ])
   const segments = Boundary.stringArray(data.segments, {
     maxItems: maximumRouteDepth,
-    maxLength: maximumSegmentLength,
+    maxLength: maximumSegmentLength
   })
   if (
     !segments.ok || segments.value.length === 0
@@ -311,7 +311,7 @@ const copyRoute = effect (input: Route): Effect<Route, FsError> => {
   if (!isAbsolutePath(sourcePath)) throw invalidRoute("$.sourcePath", "Route source paths must be absolute")
   const capabilities = Boundary.stringArray(data.capabilities, {
     maxItems: maximumCapabilities,
-    maxLength: maximumPathLength,
+    maxLength: maximumPathLength
   })
   if (!capabilities.ok) throw invalidRoute(`$.capabilities${capabilities.path.slice(1)}`)
   if (typeof data.modelInvocable !== "boolean") throw invalidRoute("$.modelInvocable")
@@ -328,7 +328,7 @@ const copyRoute = effect (input: Route): Effect<Route, FsError> => {
     effects: try effectDeclaration(data.effects),
     modelInvocable: data.modelInvocable,
     placement: try optionPlacement(data.placement),
-    ui: try optionText(data.ui, "$.ui", maximumPathLength),
+    ui: try optionText(data.ui, "$.ui", maximumPathLength)
   })
 }
 
@@ -354,7 +354,7 @@ const loadFailed = (description: string): FsError =>
   new FsError({
     code: "load_failed",
     method: "Route.load",
-    description,
+    description
   })
 
 const importFailed = (): FsError => loadFailed("The selected flow module could not be imported")
@@ -380,14 +380,14 @@ export effect function load(input: Route): Effect<Loaded, FsError, infer R> {
     throw new FsError({
       code: "unsupported_body",
       method: "Route.load",
-      description: "Only module routes are executable",
+      description: "Only module routes are executable"
     })
   }
   const specifier = fileSpecifier(route.sourcePath)
   // tryPromise's arguments are plain TypeScript, not VibeLang.
   const module = try Effect.tryPromise({
     try: () => import(/* @vite-ignore */ specifier) as Promise<{ default?: unknown }>,
-    catch: importFailed,
+    catch: importFailed
   })
   if (RuntimeFlow.isFlow(module.default)) {
     // Route metadata is caller-owned and can predate an edit that hid the
@@ -400,7 +400,7 @@ export effect function load(input: Route): Effect<Loaded, FsError, infer R> {
       name: module.default._tag,
       description: module.default.description,
       input: module.default.payloadSchema,
-      output: module.default.successSchema,
+      output: module.default.successSchema
     }
   }
   if (

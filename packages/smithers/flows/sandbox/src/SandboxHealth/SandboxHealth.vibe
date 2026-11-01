@@ -14,5 +14,5 @@ import type { Service } from "./Service.vibe"
  * @since 0.1.0
  */
 export const SandboxHealth: Context.Service<Service, Service> = Context.Service(
-  "@smthrs/sandbox/SandboxHealth",
+  "@smthrs/sandbox/SandboxHealth"
 )

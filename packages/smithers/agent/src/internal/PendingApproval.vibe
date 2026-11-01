@@ -14,7 +14,7 @@ import * as Schema from "effect/Schema"
  * a fact this version cannot read names nothing.
  */
 const approvalOf = (
-  entry: JournalEvent.Entry,
+  entry: JournalEvent.Entry
 ): { readonly requestId: string; readonly question?: string } | undefined => {
   if (entry.eventType === "control.approval.requested") {
     const fact = Schema.decodeUnknownOption(ControlFacts.ApprovalRequestFact)(entry.payload)
@@ -42,7 +42,7 @@ const approvalOf = (
  * @since 1.0.0
  */
 export const latestPendingApproval = (
-  entries: Iterable<JournalEvent.Entry>,
+  entries: Iterable<JournalEvent.Entry>
 ): { readonly requestId: string; readonly question: string } | undefined => {
   const pending = new Map<string, string>()
   for (const entry of entries) {

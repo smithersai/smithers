@@ -97,8 +97,8 @@ const Query = Schema.String.pipe(
       encoder.encode(query).byteLength <= MAX_RECALL_QUERY_BYTES
         ? undefined
         : `recall query exceeds ${MAX_RECALL_QUERY_BYTES} UTF-8 bytes`
-    ),
-  ),
+    )
+  )
 )
 
 /**
@@ -110,7 +110,7 @@ const Query = Schema.String.pipe(
  */
 export const MaxTokens = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0)),
-  Schema.check(Schema.isLessThanOrEqualTo(MAX_RECALL_TOKENS)),
+  Schema.check(Schema.isLessThanOrEqualTo(MAX_RECALL_TOKENS))
 )
 
 /**
@@ -131,10 +131,10 @@ export const Input = Schema.Struct({
   banks: Schema.Array(BankName).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANKS))),
   query: Query,
   tagGroups: Schema.optional(
-    Schema.Array(Namespace.TagGroup).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_TAG_GROUPS))),
+    Schema.Array(Namespace.TagGroup).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_TAG_GROUPS)))
   ),
   maxTokens: Schema.optional(MaxTokens),
-  budget: Schema.optional(Schema.Literals(["low", "mid", "high"])),
+  budget: Schema.optional(Schema.Literals(["low", "mid", "high"]))
 })
 
 /**
@@ -156,7 +156,7 @@ export const Result = Schema.Struct({
   key: Schema.String,
   text: Schema.String,
   score: Schema.Number,
-  updatedAtMs: Schema.optional(Schema.Number),
+  updatedAtMs: Schema.optional(Schema.Number)
 })
 
 /**
@@ -281,14 +281,14 @@ export const compareResults = (left: Result, right: Result): number =>
  * @since 0.1.0
  */
 export const layerFrom = (
-  run: (input: Input) => Output!MemoryError.MemoryError!MemoryStore.MemoryStore,
+  run: (input: Input) => Output!MemoryError.MemoryError!MemoryStore.MemoryStore
 ): Layer.Layer<Recall, never, MemoryStore.MemoryStore> =>
   Layer.effect(
     Recall,
     effect {
       const store = try MemoryStore.MemoryStore
       return Recall.of({ recall: (input) => run(input) |> Effect.provideService(%, MemoryStore.MemoryStore, store) })
-    },
+    }
   )
 
 /**
