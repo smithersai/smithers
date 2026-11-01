@@ -91,7 +91,7 @@ const securityReview = Smithers.SecurityReview({
         "TreeArtifact or Glob paths that skip the Pattern schema.",
         "A drive-relative first segment such as 'C:foo', or Windows trailing-dot/space segments, passing workspaceRelative."
       ],
-      paths: ["src/FileSet.ts"]
+      paths: ["src/FileSet.vibe"]
     },
     {
       id: "write-conflict-false-negative",
@@ -105,7 +105,7 @@ const securityReview = Smithers.SecurityReview({
         "Exact-path comparison that is case-sensitive, so 'A.txt' and 'a.txt' are disjoint although a case-insensitive filesystem (default macOS APFS) maps them to one file."
       ],
       paths: [
-        "src/FileSet.ts",
+        "src/FileSet.vibe",
         "src/internal/EffectCandidates.ts",
         "src/internal/ConflictAnnotation.ts",
         "src/Effects.ts",
@@ -122,7 +122,7 @@ const securityReview = Smithers.SecurityReview({
         "Glob matching that backtracks exponentially on repeated '*' or '**' segments.",
         "toJSON or getter evaluation during mirroring that can loop, throw arbitrary objects, or mutate input."
       ],
-      paths: ["src/internal/JsonMirror.ts", "src/FileSet.ts", "src/GraphBuildError.vibe", "src/internal/node.ts"]
+      paths: ["src/internal/JsonMirror.ts", "src/FileSet.vibe", "src/GraphBuildError.vibe", "src/internal/node.ts"]
     }
   ]
 })

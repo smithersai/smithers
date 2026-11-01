@@ -52,7 +52,10 @@
       "types": "./src/Repetition.d.vibe.ts",
       "default": "./src/Repetition.vibe"
     },
-    "./FileSet": "./src/FileSet.ts",
+    "./FileSet": {
+      "types": "./src/FileSet.d.vibe.ts",
+      "default": "./src/FileSet.vibe"
+    },
     "./KeyMaterial": {
       "types": "./src/KeyMaterial.d.vibe.ts",
       "default": "./src/KeyMaterial.vibe"

@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest"
 import * as Effects from "../src/Effects.ts"
-import * as FileSet from "../src/FileSet.ts"
+import * as FileSet from "../src/FileSet.vibe"
 import * as KeyMaterial from "../src/KeyMaterial.vibe"
 import * as Plan from "../src/Plan.ts"
 

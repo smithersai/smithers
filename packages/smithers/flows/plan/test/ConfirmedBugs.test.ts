@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
 import { describe, expect, it } from "vitest"
 import * as CachePolicy from "../src/CachePolicy.vibe"
-import * as FileSet from "../src/FileSet.ts"
+import * as FileSet from "../src/FileSet.vibe"
 import { GraphBuildError } from "../src/GraphBuildError.vibe"
 import * as Node from "../src/Node.ts"
 
@@ -49,7 +49,7 @@ describe("confirmed plan regressions", () => {
       "--input-type=module",
       "-e",
       `
-      import { matchesPattern } from ${JSON.stringify(new URL("../src/FileSet.ts", import.meta.url).href)};
+      import { matchesPattern } from ${JSON.stringify(new URL("../src/FileSet.vibe", import.meta.url).href)};
       for (let i = 0; i < 1000; i++) matchesPattern('warm' + i + '/**/*.ts', 'file');
       globalThis.gc();
       const before = process.memoryUsage().heapUsed;
