@@ -31,7 +31,7 @@ import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as CacheStore from "./CacheStore.ts"
-import * as CacheStoreMetrics from "./CacheStoreMetrics.ts"
+import * as CacheStoreMetrics from "./CacheStoreMetrics.vibe"
 import * as CacheAdmission from "./internal/CacheAdmission.ts"
 
 /**
