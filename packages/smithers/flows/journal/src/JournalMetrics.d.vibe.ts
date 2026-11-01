@@ -11,11 +11,8 @@
  *
  * @since 0.1.0
  */
-
-import * as Effect from "effect/Effect"
-import * as Metric from "effect/Metric"
-import * as EventTally from "./internal/EventTally.ts"
-
+import * as Effect from "effect/Effect";
+import * as Metric from "effect/Metric";
 /**
  * Counter over journal emissions, dimensioned by `channel` (`durable` or
  * `lossy`) and `receipt` (`accepted`, `duplicate`, or `dropped`).
@@ -31,10 +28,7 @@ import * as EventTally from "./internal/EventTally.ts"
  * @category metrics
  * @since 0.1.0
  */
-export const writes = Metric.counter("flows_journal_writes", {
-  description: "Journal emissions by channel and receipt"
-})
-
+export declare const writes: Metric.Counter<number>;
 /**
  * `writes` views for the durable channel, keyed by the receipt tag
  * `Journal.emitDurable` resolves to.
@@ -42,13 +36,9 @@ export const writes = Metric.counter("flows_journal_writes", {
  * @category metrics
  * @since 0.1.0
  */
-export const durable: {
-  readonly [Tag in "Accepted" | "Duplicate"]: Metric.Metric<number, Metric.CounterState<number>>
-} = {
-  Accepted: Metric.withAttributes(writes, { channel: "durable", receipt: "accepted" }),
-  Duplicate: Metric.withAttributes(writes, { channel: "durable", receipt: "duplicate" })
-}
-
+export declare const durable: {
+    readonly [Tag in "Accepted" | "Duplicate"]: Metric.Metric<number, Metric.CounterState<number>>;
+};
 /**
  * `writes` views for the lossy channel, keyed by the receipt tag
  * `Journal.emitLossy` resolves to.
@@ -56,14 +46,9 @@ export const durable: {
  * @category metrics
  * @since 0.1.0
  */
-export const lossy: {
-  readonly [Tag in "Accepted" | "Duplicate" | "Dropped"]: Metric.Metric<number, Metric.CounterState<number>>
-} = {
-  Accepted: Metric.withAttributes(writes, { channel: "lossy", receipt: "accepted" }),
-  Duplicate: Metric.withAttributes(writes, { channel: "lossy", receipt: "duplicate" }),
-  Dropped: Metric.withAttributes(writes, { channel: "lossy", receipt: "dropped" })
-}
-
+export declare const lossy: {
+    readonly [Tag in "Accepted" | "Duplicate" | "Dropped"]: Metric.Metric<number, Metric.CounterState<number>>;
+};
 /**
  * Counter over lossy entries the writer admitted and then failed to commit,
  * dimensioned by `channel` (always `lossy`) and the `code` of the
@@ -79,19 +64,14 @@ export const lossy: {
  * @category metrics
  * @since 1.0.0-rc.1
  */
-export const lostEntries = Metric.counter("flows_journal_lost", {
-  description: "Admitted lossy journal entries the writer failed to commit"
-})
-
+export declare const lostEntries: Metric.Counter<number>;
 /**
  * The {@link lostEntries} view for one `JournalError` code.
  *
  * @category metrics
  * @since 1.0.0-rc.1
  */
-export const lost = (code: string): Metric.Metric<number, Metric.CounterState<number>> =>
-  Metric.withAttributes(lostEntries, { channel: "lossy", code })
-
+export declare const lost: (code: string) => Metric.Metric<number, Metric.CounterState<number>>;
 /**
  * What one {@link tally} wrote to the journal.
  *
@@ -99,10 +79,9 @@ export const lost = (code: string): Metric.Metric<number, Metric.CounterState<nu
  * @since 1.0.0
  */
 export interface JournalTally {
-  /** New entries committed, counted after their transaction commits; a duplicate is not new. */
-  readonly events: number
+    /** New entries committed, counted after their transaction commits; a duplicate is not new. */
+    readonly events: number;
 }
-
 /**
  * Runs `effect` and answers how many new journal entries it committed. An
  * entry counts once its transaction commits, when the journal publishes it,
@@ -125,12 +104,4 @@ export interface JournalTally {
  * @category metrics
  * @since 1.0.0
  */
-export const tally = <A, E, R>(
-  effect: Effect.Effect<A, E, R>
-): Effect.Effect<[tally: JournalTally, result: A], E, R> =>
-  Effect.gen(function*() {
-    const accumulator: EventTally.Accumulator = { events: 0 }
-    const open = yield* EventTally.Current
-    const result = yield* Effect.provideService(effect, EventTally.Current, [...open, accumulator])
-    return [{ events: accumulator.events }, result]
-  })
+export declare const tally: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<[tally: JournalTally, result: A], E, R>;

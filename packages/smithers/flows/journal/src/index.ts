@@ -46,7 +46,7 @@ export * as CallFact from "./CallFact.ts"
 /**
  * @since 1.0.0
  */
-export * as StepFact from "./StepFact.ts"
+export * as StepFact from "./StepFact.vibe"
 
 /**
  * @category services
@@ -76,7 +76,7 @@ export * as SqlConsensus from "./SqlConsensus.ts"
  * @category metrics
  * @since 0.1.0
  */
-export * as JournalMetrics from "./JournalMetrics.ts"
+export * as JournalMetrics from "./JournalMetrics.vibe"
 
 /**
  * @category redaction

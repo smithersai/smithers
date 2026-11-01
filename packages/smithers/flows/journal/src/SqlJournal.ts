@@ -39,8 +39,8 @@ import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
 import * as Stream from "effect/Stream"
 import { Consensus, sameOwner } from "./Consensus.ts"
-import * as EventTally from "./internal/EventTally.ts"
-import { JournalInternalFault } from "./internal/JournalInternalFault.ts"
+import * as EventTally from "./internal/EventTally.vibe"
+import { JournalInternalFault } from "./internal/JournalInternalFault.vibe"
 import {
   Checkpoint,
   CheckpointOptions,
@@ -69,7 +69,7 @@ import {
   type SourceSeq
 } from "./JournalEvent.ts"
 import * as JournalGeneration from "./JournalGeneration.ts"
-import * as JournalMetrics from "./JournalMetrics.ts"
+import * as JournalMetrics from "./JournalMetrics.vibe"
 import { OwnerId } from "./OwnerId.ts"
 import type { Projection } from "./Projection.ts"
 import * as Redaction from "./Redaction.ts"
