@@ -19,7 +19,7 @@ import { concat } from "./concat.ts"
 import { elapsed } from "./deadline.ts"
 import { finalizeWithin } from "./finalizeWithin.ts"
 import { hostKillScript } from "./killScript.ts"
-import { linuxSignalNumber } from "./linuxSignals.ts"
+import { linuxSignalNumber } from "./linuxSignals.vibe"
 import { warnTeardown } from "./teardownWarning.vibe"
 
 type VendorSandbox = Awaited<ReturnType<ReturnType<Sdk["Sandbox"]["builder"]>["create"]>>
