@@ -26,6 +26,6 @@ Proof: `e2e/look.spec.ts` (computed styles) fails 8 of 10 Runs checks on the
 2026-10-31 production build and passes 8 of 8 on the deployed one. Before and
 after shots: `~/Desktop/smithers-ui-audit/index.html`.
 
-Open: issue, pull request and TODO pages were only seen in their syncing
-state (production sync for the test repository never finished);
-`CodeFileView` wraps code mid-token on a phone (`overflow: "wrap"`).
+Open: a pull request's Files tab was only seen in its syncing state; an
+unknown repository shows GitHub limit reached while the shared GitHub quota is
+spent; `CodeFileView` wraps code mid-token on a phone (`overflow: "wrap"`).
