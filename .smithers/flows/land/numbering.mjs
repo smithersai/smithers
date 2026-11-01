@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /** Allocate only incoming identities against main; published migration IDs never change. */
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, renameSync } from "node:fs"
 import { join, basename } from "node:path"
+import { sourcePath, writeSource } from "./files.mjs"
 import { pathToFileURL } from "node:url"
 
 export const decisions = "apps/mvp/docs/decisions"
@@ -75,10 +76,11 @@ const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /** Only rewrite lane-added lines; existing historical test boundaries stay byte-identical. */
 export function applyNumbers(root, plan) {
+  if (!plan.renames.length) return []
   const changed = lines(jj(root, ["diff", "--from", plan.base, "--to", "@", "--name-only"]))
   const writes = []
   for (const path of changed) {
-    const absolute = join(root, path)
+    const absolute = sourcePath(root, path)
     if (!existsSync(absolute)) continue
     const original = readFileSync(absolute)
     if (original.includes(0)) continue
@@ -116,12 +118,12 @@ export function applyNumbers(root, plan) {
       source[index] = text
     }
     const next = source.join("\n")
-    if (next !== original.toString("utf8")) writes.push([absolute, next])
+    if (next !== original.toString("utf8")) writes.push([path, next])
   }
   // Validate all destinations before touching any files.
   for (const entry of plan.renames) if (existsSync(join(root, entry.to))) throw new Error(`Rename destination exists: ${entry.to}`)
-  for (const [path, text] of writes) writeFileSync(path, text)
-  for (const entry of plan.renames) renameSync(join(root, entry.path), join(root, entry.to))
+  for (const [path, text] of writes) writeSource(root, path, text)
+  for (const entry of plan.renames) renameSync(sourcePath(root, entry.path), sourcePath(root, entry.to))
   return plan.renames
 }
 

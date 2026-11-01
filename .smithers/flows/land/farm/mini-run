@@ -68,7 +68,10 @@ cleanup() {
   rc=$?
   cleanup_error=0
   trap - EXIT INT TERM HUP
-  [ -z "$TIMER" ] || kill "$TIMER" 2>/dev/null || :
+  if [ -n "$TIMER" ]; then
+    kill "$TIMER" 2>/dev/null || :
+    wait "$TIMER" 2>/dev/null || :
+  fi
   if [ "$KEEPER" = 1 ]; then exec 3>&-; fi
   # EOF lets the existing remote watcher terminate only this run's groups.
   if [ -n "$CHILD" ]; then

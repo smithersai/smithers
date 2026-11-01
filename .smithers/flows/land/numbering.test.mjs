@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert"
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs"
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
@@ -103,4 +103,16 @@ test("historical comparison appendices and the two published 0038 records stay r
 
 test("the repository has no new duplicate numbers or unregistered migrations", () => {
   checkNumbers(resolve(import.meta.dirname, "../../.."))
+})
+
+
+test("renumbering never follows a changed symlink outside its workspace", (t) => {
+  const root = parallel(t)
+  const outside = join(root, ".jj", "other-source.txt")
+  writeFileSync(outside, "See 0076_lane\n")
+  symlinkSync(outside, join(root, "linked-reference.txt"))
+  const plan = planNumbers(root, "published")
+  assert.throws(() => applyNumbers(root, plan), /symlink/)
+  assert.equal(readFileSync(outside, "utf8"), "See 0076_lane\n")
+  assert.equal(existsSync(join(root, migrations, "0076_lane.ts")), true)
 })

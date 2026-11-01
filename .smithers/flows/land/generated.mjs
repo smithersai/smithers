@@ -1,6 +1,7 @@
 /** Rebuild generated migration registration and merge append-only schema history at landing. */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
+import { sourcePath, writeSource } from "./files.mjs"
 import { jj, migrations } from "./numbering.mjs"
 
 export const databasePath = "apps/mvp/db/Database.ts"
@@ -125,7 +126,8 @@ export function repairGenerated(root, context) {
     writes.push([schemaPath, `${JSON.stringify(canonicalHistory(merged), null, 2)}\n`])
   }
   // Validate every merge before writing any result.
-  for (const [path, contents] of writes) writeFileSync(join(root, path), contents)
+  for (const [path] of writes) sourcePath(root, path)
+  for (const [path, contents] of writes) writeSource(root, path, contents)
   return writes.map(([path]) => path)
 }
 

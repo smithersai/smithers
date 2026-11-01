@@ -7,6 +7,7 @@ import { homedir, hostname } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { pathToFileURL } from "node:url"
+import { sourcePath, writeSource } from "./files.mjs"
 import { jj, planNumbers, applyNumbers, checkNumbers } from "./numbering.mjs"
 import { captureGenerated, repairGenerated, checkManifest, indexPath } from "./generated.mjs"
 import { regenerateIndex } from "./projection.mjs"
@@ -19,7 +20,7 @@ const secret = (name) => /^\.env|^\.dev\.vars|\.(pem|key|p12)$/.test(name)
 const revision = (root, rev) => jj(root, ["log", "--ignore-working-copy", "-r", rev, "--no-graph", "-T", 'commit_id ++ "\\n"'])
 const rejectConflicts = (root) => {
   for (const path of jj(root, ["diff", "--from", "main@origin", "--to", "@", "--name-only"]).split("\n").filter(Boolean)) {
-    const bytes = diskBytes(join(root, path))
+    const bytes = diskBytes(sourcePath(root, path, true))
     if (bytes && !bytes.includes(0) && /^(?:<{7}|>{7})(?: |$)/m.test(bytes.toString("utf8"))) throw new Error(`Unresolved conflict markers: ${path}`)
   }
   if (revision(root, "main@origin..@ & conflicts()")) throw new Error("Conflicted lane commits; resolve them before landing")
@@ -60,16 +61,6 @@ const sourcePaths = (root, prefix = "") => readdirSync(join(root, prefix), { wit
   return entry.isDirectory() ? sourcePaths(root, path) : [path]
 })
 
-const assertSourcePath = (root, path) => {
-  const parts = path.split("/")
-  if (parts.some((part) => !part || part === "..") || isAbsolutePath(path)) throw new Error("Invalid preserved source path")
-  for (let i = 1; i < parts.length; i++) {
-    try { if (lstatSync(join(root, ...parts.slice(0, i))).isSymbolicLink()) throw new Error(`Source ancestor is a symlink: ${path}`) }
-    catch (error) { if (error.code !== "ENOENT") throw error }
-  }
-}
-const isAbsolutePath = (path) => path.startsWith("/") || /^[A-Za-z]:/.test(path)
-
 const storedBytes = (root, operation, path) => {
   const result = spawnSync("jj", ["--at-op", operation, "file", "show", "-r", "@", path], { cwd: root, maxBuffer: 256 * 1024 * 1024 })
   if (result.error) throw result.error
@@ -87,7 +78,7 @@ export function replayDirtyFiles(root, saved) {
   const manifest = JSON.parse(readFileSync(join(saved, "manifest.json"), "utf8"))
   const updates = [], conflicts = []
   for (const entry of [...manifest.dirty, ...manifest.deleted.map((path) => ({ path, deleted: true }))]) {
-    assertSourcePath(root, entry.path)
+    sourcePath(root, entry.path, true)
     const base = diskBytes(join(saved, "base", entry.path))
     const local = entry.deleted ? undefined : entry.symlink === undefined ? readFileSync(join(saved, "files", entry.path)) : Buffer.from(entry.symlink)
     const current = diskBytes(join(root, entry.path))
@@ -113,7 +104,7 @@ export function replayDirtyFiles(root, saved) {
       } else {
         try { if (lstatSync(join(root, entry.path)).isSymbolicLink()) throw new Error(`Recovered destination is a symlink: ${entry.path}`) }
         catch (error) { if (error.code !== "ENOENT") throw error }
-        writeFileSync(join(root, entry.path), entry.bytes, { mode: entry.mode })
+        writeSource(root, entry.path, entry.bytes)
       }
     }
   }
@@ -137,7 +128,7 @@ export function preserveDirtyFiles(root) {
   const dirty = [], deleted = []
   let bytes = 0
   for (const path of paths) {
-    assertSourcePath(root, path)
+    sourcePath(root, path, true)
     let stat
     try { stat = lstatSync(join(root, path)) } catch (error) { if (error.code !== "ENOENT") throw error; if (known.has(path)) deleted.push(path); continue }
     const old = known.get(path)

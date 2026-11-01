@@ -1,7 +1,7 @@
 /** Fetch a verified target-index projection without installing a source workspace. */
-import { writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { writeSource } from "./files.mjs"
 import { jj } from "./numbering.mjs"
 import { runProcess } from "./process.mjs"
 import { indexPath } from "./generated.mjs"
@@ -28,6 +28,6 @@ export async function regenerateIndex(root, runner = process.env.SMITHERS_MINI_R
   const source = decodeProjection(result.stdout)
   const after = jj(root, ["log", "-r", "@", "--no-graph", "-T", "commit_id"])
   if (before !== after) throw new Error("Source changed during remote generation; no target index was written")
-  writeFileSync(join(root, indexPath), source)
+  writeSource(root, indexPath, source)
   console.error("PREPARED target index (generated and checked on mini)")
 }

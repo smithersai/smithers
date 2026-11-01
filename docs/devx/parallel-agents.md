@@ -162,3 +162,9 @@ exit 143, worker cap 2 and removal of the invocation's temporary files. The
 normal client also demonstrated bounded refusal at both 120 and 600 seconds
 when all four shared slots stayed reserved. A stale legacy slot remained owned
 by a live client; it was not stolen or terminated.
+
+Bootstrap source writes use private working-copy staging and atomic replacement.
+They refuse symlink ancestors/leaves, preserve executable mode and do not mutate
+another tree through a hard link. Temporary writes stay outside jj snapshots.
+Renumbering skips source scans when no identities move. Projection logs separate
+generation from checking and record each stage's elapsed time.

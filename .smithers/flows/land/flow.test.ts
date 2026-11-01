@@ -1,3 +1,4 @@
+import "./files.test.mjs"
 import "./farm/farm.test.mjs"
 import "./workspace.test.mjs"
 import "./process.test.mjs"
