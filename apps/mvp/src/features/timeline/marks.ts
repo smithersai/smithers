@@ -1,5 +1,5 @@
 import { Option, Schema } from "effect"
-import { ARCS_FROM, MARK_LENGTH, MARK_SUMMARY_LENGTH, SEGMENT_EVERY, SEGMENT_SPANS, SEGMENT_WINDOW, TITLE_LENGTH, TITLE_WORDS } from "./contract"
+import { ARCS_FROM, MARK_LENGTH, MARK_SUMMARY_LENGTH, MOST_COVERED, SEGMENT_EVERY, SEGMENT_SPANS, SEGMENT_WINDOW, TITLE_LENGTH, TITLE_WORDS } from "./contract"
 import { isGenericSummary, revisionOf, safeTimelineText, segmentRevision } from "./identity"
 
 // Phases and arcs (ruling FE-19, decision 0138). A span is stored as a mark on the message it starts at: what it's called,
@@ -9,12 +9,12 @@ import { isGenericSummary, revisionOf, safeTimelineText, segmentRevision } from 
 export type Level = 1 | 2
 
 export const Mark = Schema.Struct({
-  title: Schema.String,
-  summary: Schema.String,
+  title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(TITLE_LENGTH)),
+  summary: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MARK_SUMMARY_LENGTH)),
   /** A closed span never changes; only the spans at the conversation's end are open. */
   closed: Schema.Boolean,
-  /** How many items (exchanges, or phases for an arc) the span holds. */
-  covered: Schema.Number,
+  /** How many items (exchanges, or phases for an arc) the span holds: the server counts them from its own items. */
+  covered: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(MOST_COVERED)),
 })
 export type Mark = typeof Mark.Type
 
@@ -89,17 +89,22 @@ export interface SegmentPlan {
 /** Exchanges a conversation has before phases are worth a call: fewer always fit level 0 at every size. */
 export const PHASES_FROM = 6
 
+/** Where the conversation's segmentation stands: its open marks, the first item still open, and how many they hold. */
+const generationOf = (units: ReadonlyArray<Unit>) => {
+  const marked = units.flatMap((unit, index) => Option.isSome(unit.mark) ? [{ index, mark: unit.mark.value }] : [])
+  const closed = marked.filter(({ mark }) => mark.closed).at(-1)
+  const closedEnd = closed === undefined ? 0 : closed.index + closed.mark.covered
+  const open = marked.filter(({ index, mark }) => !mark.closed && index >= closedEnd)
+  return { open, start: open[0]?.index ?? closedEnd, covered: open.reduce((sum, { mark }) => sum + mark.covered, 0) }
+}
+
 /**
  * Where segmentation should run next, or nothing when no call is due. It starts at the first open span, or after the
  * last closed one, and reads the items since, in steps of {@link SEGMENT_EVERY} so every device names the same call.
  */
 export const planOf = (units: ReadonlyArray<Unit>, level: Level): SegmentPlan | undefined => {
   if (units.length < (level === 1 ? PHASES_FROM : ARCS_FROM)) return undefined
-  const marked = units.flatMap((unit, index) => Option.isSome(unit.mark) ? [{ index, mark: unit.mark.value }] : [])
-  const closed = marked.filter(({ mark }) => mark.closed).at(-1)
-  const open = marked.filter(({ index, mark }) => !mark.closed && (closed === undefined || index > closed.index))
-  const start = open[0]?.index ?? (closed === undefined ? 0 : closed.index + closed.mark.covered)
-  const covered = open.reduce((sum, { mark }) => sum + mark.covered, 0)
+  const { open, start, covered } = generationOf(units)
   const waiting = units.length - start
   const every = SEGMENT_EVERY[level], window = SEGMENT_WINDOW[level]
   if (waiting - covered < every) return undefined
@@ -120,6 +125,25 @@ export const planOf = (units: ReadonlyArray<Unit>, level: Level): SegmentPlan | 
 
 }
 
+/** How many of the conversation's own items a plan reads: a rolling summary stands for all it covers. */
+export const readOf = (items: ReadonlyArray<SegmentItem>) => items.reduce((sum, item) => sum + (item.covered ?? 1), 0)
+
+/** Why the server turns a segmentation down: it starts in a closed span, or it isn't the next call on what is stored. */
+export type PlanRefusal = "closed" | "stale"
+
+/**
+ * Whether a segmentation starting at `anchorId` and reading `read` items is the next one for `units`, the server's own
+ * items: the plan's generation, checked under the record's lock. A device that read older marks is refused here, however
+ * its claim went. It answers the ids of the items the call stands for, oldest first.
+ */
+export const checkPlan = (units: ReadonlyArray<Unit>, anchorId: string, read: number): ReadonlyArray<string> | PlanRefusal => {
+  const { start, covered } = generationOf(units)
+  const anchor = units.findIndex(unit => unit.id === anchorId)
+  if (anchor !== -1 && anchor < start) return "closed"
+  if (anchor !== start || read <= covered || start + read > units.length) return "stale"
+  return units.slice(start, start + read).map(unit => unit.id)
+}
+
 const NAMELESS = /^(?:(?:the )?(?:conversation|chat|discussion|session|general|misc(?:ellaneous)?|other|various)(?: (?:topics|tasks|questions|work))?|phase \d+|arc \d+|part \d+)[.!]?$/i
 const plain = (text: unknown) => typeof text === "string" ? safeTimelineText(text).replace(/\s+/g, " ").replace(/^["'“‘]+|["'”’]+$/g, "").trim() : ""
 /** A title: at most {@link TITLE_WORDS} plain words naming the work. A longer one keeps its first words. */
@@ -136,7 +160,8 @@ export const cleanSpanSummary = (value: unknown): string | undefined => {
   const text = plain(value).replace(/[<>`]/g, "")
   if (text === "") return undefined
   if (text.length <= MARK_SUMMARY_LENGTH) return text
-  return text.slice(0, text.lastIndexOf(" ", MARK_SUMMARY_LENGTH - 1)).concat("…")
+  const space = text.lastIndexOf(" ", MARK_SUMMARY_LENGTH - 1)
+  return text.slice(0, space === -1 ? MARK_SUMMARY_LENGTH - 1 : space).concat("…")
 }
 
 const Answer = Schema.Struct({
@@ -149,15 +174,30 @@ const jsonOf = (text: string) => {
   return open === -1 || close <= open ? "" : text.slice(open, close + 1)
 }
 
-/** What to store of a span. */
-export interface StoredSpan { readonly id: string; readonly mark: string }
+/** What a device says of a span: where it starts and what it's called. How far it runs and whether it closed is the server's. */
+export interface StoredSpan { readonly id: string; readonly title: string; readonly summary: string }
 
 /**
- * What of a model's `text` may be stored for `plan`: spans in order, the first starting at the first item, each with a
- * real title. A span closes once at least {@link CLOSES_AFTER} items follow it, which is what shows its boundary was
- * real. Input capacity never closes a span. Anything unusable is `undefined`.
+ * The stored marks of `spans` over `ids`, the items the call stands for: `undefined` unless they run in order from the
+ * first item with clean words. A span covers the items up to the next. It closes once at least {@link CLOSES_AFTER}
+ * items follow it, which is what shows its boundary was real; input capacity never closes a span.
  */
-export const cleanSpans = (text: string, plan: Pick<SegmentPlan, "items" | "full">): ReadonlyArray<StoredSpan> | undefined => {
+export const sealSpans = (spans: ReadonlyArray<StoredSpan>, ids: ReadonlyArray<string>): ReadonlyArray<{ readonly id: string; readonly mark: string }> | undefined => {
+  const froms = spans.map(span => ids.indexOf(span.id))
+  const ordered = froms[0] === 0 && froms.every((from, index) => from !== -1 && (index === 0 || from > froms[index - 1]!))
+  if (!ordered || spans.some(span => cleanTitle(span.title) !== span.title || cleanSpanSummary(span.summary) !== span.summary)) return undefined
+  return spans.map((span, index) => {
+    const from = froms[index]!, next = froms[index + 1] ?? ids.length
+    const mark: Mark = { title: span.title, summary: span.summary, closed: index < spans.length - 1 && ids.length - next >= CLOSES_AFTER, covered: next - from }
+    return { id: span.id, mark: JSON.stringify(mark) }
+  })
+}
+
+/**
+ * What of a model's `text` may be sent for `plan`: spans in order, the first starting at the first item, each with a
+ * real title. Anything unusable is `undefined`.
+ */
+export const cleanSpans = (text: string, plan: Pick<SegmentPlan, "items">): ReadonlyArray<StoredSpan> | undefined => {
   const answer = decodeAnswer(jsonOf(text))
   if (Option.isNone(answer) || answer.value.spans.length === 0 || answer.value.spans.length > SEGMENT_SPANS) return undefined
   const spans = answer.value.spans
@@ -171,10 +211,5 @@ export const cleanSpans = (text: string, plan: Pick<SegmentPlan, "items" | "full
   })
   const first = usable[0]
   if (first === undefined || first.from !== 1) return undefined
-  return usable.map(({ from, title, summary }, index) => {
-    const next = usable[index + 1]?.from ?? count + 1
-    const coverage = (start: number, end: number) => plan.items.slice(start - 1, end - 1).reduce((sum, item) => sum + (item.covered ?? 1), 0)
-    const mark: Mark = { title, summary, closed: index < usable.length - 1 && coverage(next, count + 1) >= CLOSES_AFTER, covered: coverage(from, next) }
-    return { id: plan.items[from - 1]!.id, mark: JSON.stringify(mark) }
-  })
+  return usable.map(({ from, title, summary }) => ({ id: plan.items[from - 1]!.id, title, summary }))
 }

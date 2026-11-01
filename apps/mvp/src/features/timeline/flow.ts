@@ -1,5 +1,5 @@
 import { Action, Flow } from "@smthrs/flow"
-import { Node, Placement } from "@smthrs/plan"
+import { Node, Placement, type Planned } from "@smthrs/plan"
 import { Schema } from "effect"
 import { MARK_LENGTH, PHASES_FLOW, SEGMENT_SPANS, SEGMENT_WINDOW, SUMMARIZE_FLOW, SUMMARY_REASONS } from "./contract"
 
@@ -27,14 +27,21 @@ export const SummaryValue = Schema.Union([
   Schema.Struct({ summary: Schema.String }),
   Schema.Struct({ outcome: Schema.Literal("taken") }),
 ])
+/**
+ * The run's identity on the server: a fresh id, journaled, so the run keeps it through a crash and a retry while a
+ * run of the same revision on another device has its own. The server gives a claim to this id and no other
+ * (worker/TimelineSummaries.ts). Execution ids can't do it: every device names a revision's run alike.
+ */
+export const ClaimOwner = Action.make("timeline/ClaimOwner", { payload: {}, success: Schema.String, tier: "sealed" })
 export const SummarizeEntry = Action.make("timeline/SummarizeEntry", {
-  payload: SummaryPayload, success: SummaryValue, error: SummaryFailed, tier: "sealed",
+  payload: { request: Schema.Struct(SummaryPayload), owner: Schema.String }, success: SummaryValue, error: SummaryFailed, tier: "sealed",
 })
 export const Summarize = Flow.make(SUMMARIZE_FLOW, {
   description: "Summarize one settled message, once for every device.",
   modelInvocable: false,
   payload: SummaryPayload, success: SummaryValue, error: SummaryFailed,
-  body: Node.capture({ step: SummarizeEntry.name }, (payload: SummaryPayload) => SummarizeEntry.call(payload)),
+  body: Node.capture({ owner: ClaimOwner.name, step: SummarizeEntry.name }, (request) =>
+    ClaimOwner.call({}).pipe(Node.bindPlanned(Node.capture({ step: SummarizeEntry.name }, (owner: Planned.Planned<string>) => SummarizeEntry.call({ request, owner }))))),
 }).annotate(Flow.Placement, Placement.client())
 
 export const SegmentPayload = {
@@ -52,11 +59,12 @@ export const SegmentValue = Schema.Union([
   Schema.Struct({ outcome: Schema.Literal("taken") }),
 ])
 export const SegmentSpans = Action.make("timeline/SegmentSpans", {
-  payload: SegmentPayload, success: SegmentValue, error: SummaryFailed, tier: "sealed",
+  payload: { request: Schema.Struct(SegmentPayload), owner: Schema.String }, success: SegmentValue, error: SummaryFailed, tier: "sealed",
 })
 export const Phases = Flow.make(PHASES_FLOW, {
   description: "Divide a conversation's latest stretch into logical phases or arcs, once for every device.",
   modelInvocable: false,
   payload: SegmentPayload, success: SegmentValue, error: SummaryFailed,
-  body: Node.capture({ step: SegmentSpans.name }, (payload: SegmentPayload) => SegmentSpans.call(payload)),
+  body: Node.capture({ owner: ClaimOwner.name, step: SegmentSpans.name }, (request) =>
+    ClaimOwner.call({}).pipe(Node.bindPlanned(Node.capture({ step: SegmentSpans.name }, (owner: Planned.Planned<string>) => SegmentSpans.call({ request, owner }))))),
 }).annotate(Flow.Placement, Placement.client())

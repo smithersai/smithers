@@ -1739,6 +1739,29 @@ describe("0079_timeline_phases", () => {
   }))
 })
 
+describe("0080_timeline_attempts", () => {
+  test("turns each claim's attempts into records of its person, and claims keep an owner instead", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0079"))
+    const message = crypto.randomUUID()
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
+      yield* sql`SET session_replication_role = replica`
+      yield* sql`INSERT INTO timeline_summaries (message_id, revision, person_id, reason, attempts) VALUES (${message}, 'r', 'ada', 'answer', 3)`
+      yield* sql`INSERT INTO timeline_phase_claims (anchor_id, level, revision, person_id, attempts) VALUES (${message}, 1, 'r', 'bob', 2)`
+      yield* sql`SET session_replication_role = DEFAULT`
+    })))
+    expect((await on(through("0080"))).map(([id, name]) => `${id}_${name}`)).toEqual(["80_timeline_attempts"])
+    expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT person_id, kind, count(*)::int AS n FROM timeline_attempts GROUP BY person_id, kind ORDER BY person_id`))).toEqual([
+      { person_id: "ada", kind: "summary", n: 3 }, { person_id: "bob", kind: "spans", n: 2 },
+    ])
+    const columns = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ column_name: string }>`
+      SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name IN ('timeline_summaries', 'timeline_phase_claims') AND column_name IN ('attempts', 'owner')`))
+    expect(columns.map((row) => row.column_name)).toEqual(["owner", "owner"])
+  }))
+})
+
 describe("0074_host_sessions", () => {
   test("keys a hand-off by its code's digest and an alias session by its token's, both ending with their home session", () => emptySchema(async (url) => {
     const database = Database.layer(Effect.succeed(Redacted.make(url)))

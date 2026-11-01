@@ -182,6 +182,8 @@ const faultyEngine = Layer.effectContext(
                 Effect.andThen(lost.has(flow._tag) ? Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "unavailable" })) : Effect.void),
               )),
         result,
+        known: real.known,
+        retry: real.retry,
       }),
     ).pipe(
       Context.add(

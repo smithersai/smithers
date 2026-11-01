@@ -165,6 +165,12 @@ const flowRequest = (flows: ReadonlyMap<string, Flow.Any>, request: FlowRequest)
         yield* (request.origin === undefined ? started : RunMetrics.withOrigin(started, request.origin))
         return null
       }
+      case "Retry": {
+        // Every durable engine has it; a host without history refuses the request.
+        if (runtime.retryFrom === undefined) return yield* new UnknownFlow()
+        yield* runtime.retryFrom(flow, { source: request.source, step: request.step, executionId: request.executionId })
+        return null
+      }
       case "Poll": {
         const row = yield* (yield* RunStore.RunStore).get(request.executionId)
         // A cancelled run records no result, so its settlement is an interrupt.

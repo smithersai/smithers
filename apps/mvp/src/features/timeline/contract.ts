@@ -50,5 +50,7 @@ export const SEGMENT_EVERY = { 1: 4, 2: 6 } as const
 export const SEGMENT_WINDOW = { 1: 24, 2: 16 } as const
 /** Closed phases before the first arcs are worth making: below a column's capacity, so level 2 has them when it appears. */
 export const ARCS_FROM = 12
+/** The most items a span can claim: a stored mark past this is damage, whatever a conversation grows to. */
+export const MOST_COVERED = 100_000
 /** Spans one record may write. */
 export const SEGMENT_SPANS = 12

@@ -362,6 +362,24 @@ describe("BrowserRuntime.serve", () => {
     })))
   })
 
+  it.live("a tab retries a settled run from a step, and a run nobody holds is refused by name", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const database = yield* MemorySqlite.open
+      const steps = Engines.steps()
+      yield* Engines.leader(name, Engines.engine(name, database, steps))
+      const engine = yield* Engines.tab(name)
+      yield* engine.start(Steps, { executionId: "source", payload: { prefix: "p" } })
+      const ended = yield* engine.result(Steps, "source")
+      const { steps: ran } = yield* engine.inspect("source")
+      yield* engine.retry(Steps, { executionId: "source.retry.1", source: "source", step: ran.at(-1)!.nodeId })
+      expect(yield* engine.result(Steps, "source.retry.1")).toEqual(ended)
+      expect(steps.ran.filter((step) => step === "p:three")).toHaveLength(2)
+      expect(steps.ran.filter((step) => step === "p:one")).toHaveLength(1)
+      const refused = yield* Effect.flip(engine.inspect("nobody"))
+      expect(refused).toMatchObject({ _tag: "@smthrs/platform-browser/RequestRefused", error: "@smthrs/engine-store/RunNotFound" })
+    }).pipe(Effect.scoped))
+
   it.live("wakes each unfinished run once, counts the outcome, and carries no content", () => {
     const telemetry = Telemetry.make()
     const sentinel = "SENTINEL-7d0e"

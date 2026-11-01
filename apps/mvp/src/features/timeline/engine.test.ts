@@ -170,7 +170,7 @@ test("claims before the model, records what it wrote, and sends a bounded exchan
   const { requests, model } = answering()
   const answer = { ...payload, role: "assistant" as const, text: `${"a".repeat(2500)}`, question: `Did the release retry? ${"q".repeat(900)}`, reason: "long_answer" as const }
   expect(await executeWith(ledger.layer, model, answer, "summary-claimed")).toEqual(Exit.succeed({ summary: "Release retry check completed" }))
-  expect(ledger.recorded).toEqual([{ messageId: "entry", revision: "r1", summary: "Release retry check completed" }])
+  expect(ledger.recorded).toEqual([expect.objectContaining({ messageId: "entry", revision: "r1", summary: "Release retry check completed" })])
   expect(requests).toHaveLength(1)
   const request = requests[0]!
   expect(request.modelId).toBe("summary")
@@ -209,7 +209,7 @@ test("a summary the server couldn't record is the server's failure, not the mode
 
 const segmenting = { level: 1 as const, anchorId: "q0", revision: "seg1", items: [{ id: "q0", text: "Asked: a" }, { id: "q1", text: "Asked: b" }], full: false }
 
-/** A ledger that records what happens to one segmentation. */
+/** The order a failing segmentation touches its claim in; its happy paths run on the real ledger (worker/TimelineEngine.test.ts). */
 const spanLedger = () => {
   const events: Array<string> = []
   const records: Array<unknown> = []
@@ -241,21 +241,6 @@ const runSegment = async (ledger: Layer.Layer<SummaryLedger>, model: Model.Model
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   return Effect.runPromise(Effect.exit(runtime.execute(Phases, { executionId, payload: segmenting })).pipe(Effect.provide(context)))
 }
-
-test("a segmentation claims first, then stores the model's spans on the messages they start at", async () => {
-  const ledger = spanLedger()
-  const model = textModel(JSON.stringify({ spans: [{ from: 1, title: "Researching issue 450", summary: "Found the cause." }, { from: 2, title: "Fixing the test", summary: "It passed." }] }))
-  expect(await runSegment(ledger.layer, model, "phases-ready")).toEqual(Exit.succeed({ spans: 2 }))
-  expect(ledger.events).toEqual(["claim", "record"])
-  expect(ledger.records).toMatchObject([{ messageId: "q0", level: 1, revision: "seg1", spans: [{ id: "q0" }, { id: "q1" }] }])
-})
-
-test("a segmentation another device claimed makes no call", async () => {
-  const { requests, model } = answering()
-  const taken = Layer.succeed(SummaryLedger, SummaryLedger.of({ ...quiet, claim: () => Effect.succeed(true), record: () => Effect.void, claimSpans: () => Effect.succeed(false) }))
-  expect(await runSegment(taken, model, "phases-taken")).toEqual(Exit.succeed({ outcome: "taken" }))
-  expect(requests).toHaveLength(0)
-})
 
 test("a model's unusable answer frees its claim, so one bad reply can't freeze a conversation's phases", async () => {
   const ledger = spanLedger()

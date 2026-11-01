@@ -5,6 +5,7 @@ import { Deferred, Duration, Effect, Metric, Semaphore, Stream, SubscriptionRef 
 import { codeOf } from "../../errorCode"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { Message } from "../chat/schema"
+import { SegmentSpans, SummarizeEntry } from "./flow"
 
 export { revisionOf } from "./identity"
 
@@ -22,6 +23,20 @@ export const SUMMARIES_AT_ONCE = 2
  * (`taken`) belongs to one entry, so later entries still run.
  */
 export const STOPPING_FAILURES: ReadonlyArray<string> = ["unconfigured", "unavailable", "capped", "credit", "server"]
+
+/** Endings of a run that left its work free for a later run: its claim was released, or someone else's may have lapsed. */
+const FREED: ReadonlyArray<string> = ["unavailable", "unconfigured", "capped", "credit", "server", "taken"]
+const endedFree = (ended: { readonly _tag: "Done" | "Failed"; readonly value?: unknown; readonly error?: unknown }) =>
+  ended._tag === "Done"
+    ? (ended.value as { readonly outcome?: string }).outcome === "taken"
+    : FREED.includes((ended.error as { readonly code: string }).code)
+/** A run's retry on a later app open: never the same open, since the lane asks about each revision once. */
+export const summaryRetry = { action: SummarizeEntry.name, when: endedFree }
+/** The same for phases, where a rejected answer also frees its claim. */
+export const phaseRetry = {
+  action: SegmentSpans.name,
+  when: (ended: Parameters<typeof endedFree>[0]) => endedFree(ended) || (ended.error as { readonly code?: string } | undefined)?.code === "invalid",
+}
 
 /**
  * What every conversation the tab follows shares: the summaries' turns on the engine, the entries waiting for or
@@ -114,7 +129,7 @@ export const followSummaries = (
       const result = yield* dispatch.dispatch("timeline/summarize", {
         id: row.id, revision, role: asker ? "user" : "assistant", text: row.text.slice(0, ANSWER_EXCERPT), reason: asker ? "question" : "answer",
         ...(question === undefined ? {} : { question }),
-      }, { door: "sync", executionId: `timeline-${revision}` })
+      }, { door: "sync", executionId: `timeline-${revision}`, retry: summaryRetry })
       // A summary made here or elsewhere arrives with the message.
       if (result._tag === "Done") return
       yield* lane.report(result.error.code)
@@ -186,7 +201,7 @@ export const followPhases = (everything: Everything, dispatch: FlowDispatch["Ser
       for (const plan of plans) {
         if (plan === undefined || lane.settled.has(plan.revision)) continue
         lane.settled.add(plan.revision)
-        const result = yield* lane.permits.withPermits(1)(dispatch.dispatch("timeline/phases", plan, { door: "sync", executionId: `timeline-${plan.revision}` }))
+        const result = yield* lane.permits.withPermits(1)(dispatch.dispatch("timeline/phases", plan, { door: "sync", executionId: `timeline-${plan.revision}`, retry: phaseRetry }))
         if (result._tag === "Done") continue
         yield* lane.report(result.error.code)
         if (!STOPPING_FAILURES.includes(result.error.code)) continue

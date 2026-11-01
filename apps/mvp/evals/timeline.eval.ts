@@ -21,7 +21,7 @@ import { expect, test } from "vitest"
 import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.ts"
 import { build } from "../worker/test/flowHost.ts"
 import { Phases, type SegmentPayload, Summarize, SummaryFailed, type SummaryPayload } from "../src/features/timeline/flow.ts"
-import { exchangeUnits, parseMark, phaseUnits, planOf, type Level, type SegmentPlan, type StoredSpan } from "../src/features/timeline/marks.ts"
+import { checkPlan, exchangeUnits, parseMark, phaseUnits, planOf, readOf, sealSpans, type Level, type SegmentPlan, type StoredSpan } from "../src/features/timeline/marks.ts"
 import { registration, SummaryLedger, SummarySeat } from "../src/features/timeline/steps.ts"
 import { boundaryF1, TIMELINE_FIXTURES, type TimelineFixture } from "./timelineFixtures"
 import { gateFailures, phaseExchanges } from "./timelineGrades"
@@ -146,8 +146,11 @@ const summarizeAll = (engine: Engine, rows: ReadonlyArray<Row>) => Effect.forEac
 /** Runs segmentation as a conversation grows: every plan the device would make, in order, on summaries. */
 const segmentAll = (engine: Engine, fixture: string, rows: ReadonlyArray<Row>) => Effect.gen(function* () {
   let calls = 0, invalid = 0
-  const apply = (plan: SegmentPlan, outcome: unknown, field: "phase" | "arc") => {
-    const spans = engine.ledger.spans.get(`${plan.level}:${plan.anchorId}:${plan.revision}`)
+  const apply = (plan: SegmentPlan, outcome: unknown, field: "phase" | "arc", units: Parameters<typeof checkPlan>[0]) => {
+    const sent = engine.ledger.spans.get(`${plan.level}:${plan.anchorId}:${plan.revision}`)
+    // The server's part of a record: it seals what a device sent over the items it holds (worker/TimelineSummaries.ts).
+    const ids = checkPlan(units, plan.anchorId, readOf(plan.items))
+    const spans = sent === undefined || typeof ids === "string" ? undefined : sealSpans(sent, ids)
     if (outcome === "invalid" || spans === undefined) { invalid++; return false }
     const at = rows.findIndex(row => row.id === plan.anchorId)
     for (const row of rows.slice(at)) delete row[field]
@@ -165,7 +168,7 @@ const segmentAll = (engine: Engine, fixture: string, rows: ReadonlyArray<Row>) =
         if (plan === undefined) break
         calls++
         const outcome = yield* engine.segment(`phases/${fixture}/${plan.level}/${plan.anchorId}/${plan.revision}`, plan)
-        if (!apply(plan, outcome, level === 1 ? "phase" : "arc")) break
+        if (!apply(plan, outcome, level === 1 ? "phase" : "arc", units)) break
       }
     }
   }

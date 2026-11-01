@@ -2,7 +2,7 @@
  * The messages the engine's leader and its followers exchange over the
  * engine's `BroadcastChannel`.
  *
- * - A follower posts a request (`Start`, `Poll`, `Cancel`, `Signal`, and the
+ * - A follower posts a request (`Start`, `Retry`, `Poll`, `Cancel`, `Signal`, and the
  *   reads `Inspect` and `List`) under its own client id and a request number;
  *   only the leader answers, with `Replied` or `Refused` addressed to that
  *   client and number.
@@ -44,6 +44,19 @@ export const Start = Schema.TaggedStruct("Start", {
   ...execution,
   payload: Schema.Json,
   origin: Schema.optionalKey(Schema.Struct({ door: Schema.String, actor: Schema.String }))
+})
+
+/**
+ * Admit `executionId` as a retry of the settled run `source` from its node
+ * `step` (`FlowRuntime.retryFrom`).
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Retry = Schema.TaggedStruct("Retry", {
+  ...execution,
+  source: Schema.String,
+  step: Schema.String
 })
 
 /**
@@ -107,7 +120,7 @@ export const List = Schema.TaggedStruct("List", {
  * @category protocol
  * @since 1.0.0
  */
-export const Request = Schema.Union([Start, Poll, Cancel, Signal, Inspect, List])
+export const Request = Schema.Union([Start, Retry, Poll, Cancel, Signal, Inspect, List])
 
 /**
  * The value form of {@link Request}.
@@ -158,7 +171,7 @@ export const RunChanged = Schema.TaggedStruct("RunChanged", { executionId: Schem
  * @category protocol
  * @since 1.0.0
  */
-export const Message = Schema.Union([Start, Poll, Cancel, Signal, Inspect, List, Replied, Refused, Leader, RunChanged])
+export const Message = Schema.Union([Start, Retry, Poll, Cancel, Signal, Inspect, List, Replied, Refused, Leader, RunChanged])
 
 /**
  * The value form of {@link Message}.

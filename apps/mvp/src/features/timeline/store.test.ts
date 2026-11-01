@@ -77,7 +77,7 @@ test("summarizes a question and its answer once each on the real durable engine,
   await run(Effect.forkIn(followSummaries(messages, messages, dispatch, await run(makeLane)), scope, { startImmediately: true }))
   await run(messages.insert([question("a", "Did the release retry?"), answer("a")]))
   await vi.waitFor(() => expect(ledger.recorded).toHaveLength(2), { timeout: 15_000 })
-  expect(ledger.recorded).toContainEqual({ messageId: "a", revision: revisionOf(answer("a")), summary: "Release retry check completed" })
+  expect(ledger.recorded).toContainEqual(expect.objectContaining({ messageId: "a", revision: revisionOf(answer("a")), summary: "Release retry check completed" }))
   // The newest message first: a long conversation's latest work reads first.
   expect(ledger.claims).toEqual(expect.arrayContaining([{ messageId: "a", reason: "answer" }, { messageId: "q-a", reason: "question" }]))
   expect(calls()).toBe(2)

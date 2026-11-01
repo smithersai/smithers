@@ -153,6 +153,16 @@ export interface Service {
     options: { readonly executionId: string; readonly payload: F["payloadSchema"]["Type"] }
   ) => Effect.Effect<void, RequestRefused | Schema.SchemaError | EngineUnavailable>
   /**
+   * Admits `executionId` as a retry of the settled run `source` from its node
+   * `step`, and returns once the leader recorded it. `source` is not changed.
+   * Retrying the same `source` and `step` as the same execution again is a
+   * no-op; a host that keeps no history refuses.
+   */
+  readonly retry: (
+    flow: FlowReference,
+    options: { readonly executionId: string; readonly source: string; readonly step: string }
+  ) => Effect.Effect<void, RequestRefused | EngineUnavailable>
+  /**
    * Waits for `executionId` to settle and returns how it ended. A cancelled
    * run ends interrupted.
    */
@@ -538,6 +548,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
             }
           }
         })).pipe(Effect.raceFirst(unavailableFailure)),
+      retry: (flow, options) => Effect.asVoid(request({ _tag: "Retry", flow: flow._tag, ...options })),
       cancel: (flow, executionId) => Effect.asVoid(request({ _tag: "Cancel", flow: flow._tag, executionId })),
       signal: (flow, executionId, name, value) =>
         Effect.asVoid(request({ _tag: "Signal", flow: flow._tag, executionId, name, value })),

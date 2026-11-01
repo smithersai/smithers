@@ -63,6 +63,7 @@ afterEach(async () => {
 const open = (answers: Answers, withAuth = false) => {
   const events = Effect.runSync(PubSub.unbounded<BrowserEngine.RunEvent>())
   const engine = Layer.succeed(BrowserEngine.BrowserEngine, BrowserEngine.BrowserEngine.of({
+    retry: () => Effect.die("not reached"),
     start: () => Effect.die("unused"),
     result: () => Effect.die("unused"),
     runs: () => Stream.empty,

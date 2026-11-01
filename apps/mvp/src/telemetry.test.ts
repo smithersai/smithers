@@ -237,6 +237,7 @@ test("the relay retains real session lifecycle diagnostics and counters without 
         // In a browser the engine runs in its worker, whose exporter its own spans go to; in this process they would
         // reach the tab's, so the engine's calls run untraced. Dispatch's own span and the tab's records stay traced.
         Layer.provide(Layer.effect(ClientEngine, Effect.map(ClientEngine, (real) => ClientEngine.of({
+          known: () => Effect.succeed(false), retry: () => Effect.void,
           start: (flow, run) => real.start(flow, run).pipe(Effect.withTracerEnabled(false)),
           result: (flow, run) => real.result(flow, run).pipe(Effect.withTracerEnabled(false)),
         })))),

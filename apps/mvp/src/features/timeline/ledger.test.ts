@@ -20,7 +20,7 @@ const ledgerOver = (answer: Answer) => {
   }))
   return { seen, layer: SummaryLedger.layer("https://chat.test").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))) }
 }
-const claim = { messageId: "m", revision: "abcdef0123456789", reason: "long_answer" as const }
+const claim = { messageId: "m", revision: "abcdef0123456789", owner: "run", reason: "long_answer" as const }
 const run = <A>(answer: Answer, use: (ledger: SummaryLedger["Service"]) => Effect.Effect<A, SummaryFailed>) => {
   const { seen, layer } = ledgerOver(answer)
   return Effect.runPromise(Effect.exit(Effect.flatMap(Effect.service(SummaryLedger), use)).pipe(Effect.provide(layer))).then(exit => ({ exit, seen }))
@@ -32,9 +32,9 @@ test("claims and records through the route, and says whether this claim took the
   expect(took.exit).toEqual(Exit.succeed(true))
   expect(took.seen).toEqual([{ url: `https://chat.test${TIMELINE_SUMMARIES_ROUTE}`, body: { op: "claim", ...claim } }])
   expect((await run({ status: 200, body: { claimed: false } }, ledger => ledger.claim(claim))).exit).toEqual(Exit.succeed(false))
-  const recorded = await run({ status: 200, body: { recorded: true } }, ledger => ledger.record({ messageId: "m", revision: claim.revision, summary: "Retry check completed" }))
+  const recorded = await run({ status: 200, body: { recorded: true } }, ledger => ledger.record({ messageId: "m", revision: claim.revision, owner: "run", summary: "Retry check completed" }))
   expect(recorded.exit).toEqual(Exit.succeed(undefined))
-  expect(recorded.seen[0]!.body).toEqual({ op: "record", messageId: "m", revision: claim.revision, summary: "Retry check completed" })
+  expect(recorded.seen[0]!.body).toEqual({ op: "record", messageId: "m", revision: claim.revision, owner: "run", summary: "Retry check completed" })
 })
 
 test.each([
@@ -61,12 +61,12 @@ test("a claim the server never answers is the server's failure after its deadlin
 })
 
 test("a record the server refuses as unclaimed fails refused", async () => {
-  const exit = (await run({ status: 409, body: { code: "unclaimed" } }, ledger => ledger.record({ messageId: "m", revision: claim.revision, summary: "x" }))).exit
+  const exit = (await run({ status: 409, body: { code: "unclaimed" } }, ledger => ledger.record({ messageId: "m", revision: claim.revision, owner: "run", summary: "x" }))).exit
   expect(failed(exit)).toBe("refused")
 })
 
 test("spans go through the same route: a claim, its record, and a release that frees it", async () => {
-  const span = { messageId: "m", level: 1 as const, revision: claim.revision }
+  const span = { messageId: "m", level: 1 as const, revision: claim.revision, owner: "run", read: 4 }
   const took = await run({ status: 200, body: { claimed: true } }, ledger => ledger.claimSpans(span))
   expect(took.exit).toEqual(Exit.succeed(true))
   expect(took.seen[0]!.body).toMatchObject({ op: "claim_spans" })

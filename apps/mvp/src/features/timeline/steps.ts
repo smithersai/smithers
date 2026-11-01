@@ -4,9 +4,9 @@ import { ModelError, ModelEvent, ModelProxy, ModelRequest, type Model } from "@s
 import { Context, Effect, Layer, Metric, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { type SummaryReason, TIMELINE_SUMMARIES_ROUTE } from "./contract"
-import { cleanSpans, type StoredSpan } from "./marks"
+import { cleanSpans, readOf, type StoredSpan } from "./marks"
 import { ANSWER_EXCERPT, isGenericSummary, QUESTION_EXCERPT, safeTimelineText } from "./identity"
-import { Phases, SegmentSpans, type SegmentPayload, Summarize, SummarizeEntry, SummaryFailed, type SummaryPayload } from "./flow"
+import { ClaimOwner, Phases, SegmentSpans, type SegmentPayload, Summarize, SummarizeEntry, SummaryFailed, type SummaryPayload } from "./flow"
 
 export class SummarySeat extends Context.Service<SummarySeat, {
   readonly model: Model.Model; readonly route: FlowEngineLike.RouteResolver
@@ -20,21 +20,30 @@ export class SummarySeat extends Context.Service<SummarySeat, {
 }
 
 /** One segmentation's claim: the message it starts at, its level and its identity. */
-export interface SpanClaim { readonly messageId: string; readonly level: 1 | 2; readonly revision: string }
+export interface SpanClaim {
+  readonly messageId: string
+  readonly level: 1 | 2
+  readonly revision: string
+  /** The durable run holding the claim ({@link ClaimOwner}). */
+  readonly owner: string
+  /** How many of the conversation's items the segmentation stands for: the server counts coverage from its own. */
+  readonly read: number
+}
 
 /**
  * The server's record of each answer's one summary (worker/TimelineSummaries.ts). `claim` is true only for the one
- * request that takes the answer's revision, from any tab, device or person; `record` writes the summary onto the
+ * durable run that takes the answer's revision, from any tab, device or person, and for that run again after a crash;
+ * `record` writes the summary onto the
  * message, which every device syncs. A daily cap answers `capped`; an outage `unavailable`.
  */
 export class SummaryLedger extends Context.Service<SummaryLedger, {
-  readonly claim: (claim: { readonly messageId: string; readonly revision: string; readonly reason: SummaryReason }) => Effect.Effect<boolean, SummaryFailed>
-  readonly record: (record: { readonly messageId: string; readonly revision: string; readonly summary: string }) => Effect.Effect<void, SummaryFailed>
+  readonly claim: (claim: { readonly messageId: string; readonly revision: string; readonly owner: string; readonly reason: SummaryReason }) => Effect.Effect<boolean, SummaryFailed>
+  readonly record: (record: { readonly messageId: string; readonly revision: string; readonly owner: string; readonly summary: string }) => Effect.Effect<void, SummaryFailed>
   /** Frees a claim whose model never answered, so the message gets its summary once a model can make it. */
-  readonly release: (claim: { readonly messageId: string; readonly revision: string }) => Effect.Effect<void, SummaryFailed>
+  readonly release: (claim: { readonly messageId: string; readonly revision: string; readonly owner: string }) => Effect.Effect<void, SummaryFailed>
   readonly claimSpans: (claim: SpanClaim) => Effect.Effect<boolean, SummaryFailed>
   readonly recordSpans: (record: SpanClaim & { readonly spans: ReadonlyArray<StoredSpan> }) => Effect.Effect<void, SummaryFailed>
-  readonly releaseSpans: (claim: SpanClaim) => Effect.Effect<void, SummaryFailed>
+  readonly releaseSpans: (claim: Omit<SpanClaim, "read">) => Effect.Effect<void, SummaryFailed>
 }>()("timeline/SummaryLedger") {
   static readonly layer = (origin: string) => Layer.effect(SummaryLedger, Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient
@@ -136,21 +145,22 @@ export const segmentRequest = (payload: Pick<SegmentPayload, "level" | "items">)
  * records what it wrote on the message. A claim another tab, device or person holds completes `taken` before any call. No
  * reasoning effort is sent: a model that doesn't reason refuses the parameter, and the endpoint chooses the effort.
  */
-export const summarize = (payload: SummaryPayload) => Effect.gen(function* () {
+export const summarize = ({ request: payload, owner }: { readonly request: SummaryPayload; readonly owner: string }) => Effect.gen(function* () {
   const ledger = yield* SummaryLedger
   const reason = payload.reason ?? "answer"
-  const claimed = yield* ledger.claim({ messageId: payload.id, revision: payload.revision, reason })
+  const held = { messageId: payload.id, revision: payload.revision, owner }
+  const claimed = yield* ledger.claim({ ...held, reason })
   if (!claimed) {
     yield* Effect.logDebug("timeline.summary").pipe(Effect.annotateLogs({ outcome: "taken", reason }))
     return { outcome: "taken" as const }
   }
   const seat = yield* SummarySeat
   yield* Metric.update(summaryCalls, 1)
-  const result = yield* ModelStep.run({ name: "timeline/summary/model", ...seat, request: summaryRequest(payload) }).pipe(Effect.mapError(failure), releasing(ledger.release({ messageId: payload.id, revision: payload.revision })))
-  if (result.error) return yield* Effect.fail(failure(result.error)).pipe(releasing(ledger.release({ messageId: payload.id, revision: payload.revision })))
+  const result = yield* ModelStep.run({ name: "timeline/summary/model", ...seat, request: summaryRequest(payload) }).pipe(Effect.mapError(failure), releasing(ledger.release(held)))
+  if (result.error) return yield* Effect.fail(failure(result.error)).pipe(releasing(ledger.release(held)))
   const summary = cleanSummary(textOf(result.events))
   if (summary === undefined) return yield* new SummaryFailed({ code: "invalid" })
-  yield* ledger.record({ messageId: payload.id, revision: payload.revision, summary })
+  yield* ledger.record({ ...held, summary })
   yield* Effect.logInfo("timeline.summary").pipe(Effect.annotateLogs({ outcome: "ready", replayed: result.replayed, reason }))
   return { summary }
 }).pipe(Effect.withSpan("timeline.summary", { attributes: { role: "summary" } }))
@@ -159,21 +169,22 @@ export const summarize = (payload: SummaryPayload) => Effect.gen(function* () {
  * Claims one segmentation, asks the summary role's model for its spans and records them on the messages they start at.
  * The claim comes first, so however many tabs, devices and people follow the conversation, it costs one call.
  */
-export const segment = (payload: SegmentPayload) => Effect.gen(function* () {
+export const segment = ({ request: payload, owner }: { readonly request: SegmentPayload; readonly owner: string }) => Effect.gen(function* () {
   const ledger = yield* SummaryLedger
-  const claim = { messageId: payload.anchorId, level: payload.level, revision: payload.revision }
+  const claim = { messageId: payload.anchorId, level: payload.level, revision: payload.revision, owner, read: readOf(payload.items) }
+  const held = { messageId: claim.messageId, level: claim.level, revision: claim.revision, owner }
   if (!(yield* ledger.claimSpans(claim))) {
     yield* Effect.logDebug("timeline.phases").pipe(Effect.annotateLogs({ outcome: "taken", level: payload.level }))
     return { outcome: "taken" as const }
   }
   const seat = yield* SummarySeat
   yield* Metric.update(phaseCalls, 1)
-  const result = yield* ModelStep.run({ name: "timeline/phases/model", ...seat, request: segmentRequest(payload) }).pipe(Effect.mapError(failure), releasing(ledger.releaseSpans(claim)))
-  if (result.error) return yield* Effect.fail(failure(result.error)).pipe(releasing(ledger.releaseSpans(claim)))
+  const result = yield* ModelStep.run({ name: "timeline/phases/model", ...seat, request: segmentRequest(payload) }).pipe(Effect.mapError(failure), releasing(ledger.releaseSpans(held)))
+  if (result.error) return yield* Effect.fail(failure(result.error)).pipe(releasing(ledger.releaseSpans(held)))
   const spans = cleanSpans(textOf(result.events), payload)
   // An unusable answer is asked again next time the app opens, within the daily cap: a kept claim would freeze the
   // conversation's phases at this point for ever.
-  if (spans === undefined) return yield* Effect.fail(new SummaryFailed({ code: "invalid" })).pipe(Effect.tapError(() => Effect.ignore(ledger.releaseSpans(claim))))
+  if (spans === undefined) return yield* Effect.fail(new SummaryFailed({ code: "invalid" })).pipe(Effect.tapError(() => Effect.ignore(ledger.releaseSpans(held))))
   yield* ledger.recordSpans({ ...claim, spans })
   yield* Effect.logInfo("timeline.phases").pipe(Effect.annotateLogs({
     outcome: "ready", replayed: result.replayed, level: payload.level, items: payload.items.length, phases: spans.length,
@@ -181,7 +192,8 @@ export const segment = (payload: SegmentPayload) => Effect.gen(function* () {
   return { spans: spans.length }
 }).pipe(Effect.withSpan("timeline.phases", { attributes: { role: "summary", level: payload.level } }))
 
+const claimOwner = ClaimOwner.toLayer(() => Effect.sync(() => crypto.randomUUID()))
 export const registration = Layer.merge(
-  Interpreter.layerWithImplementations(Summarize, SummarizeEntry.toLayer(summarize)),
-  Interpreter.layerWithImplementations(Phases, SegmentSpans.toLayer(segment)),
+  Interpreter.layerWithImplementations(Summarize, Layer.merge(claimOwner, SummarizeEntry.toLayer(summarize))),
+  Interpreter.layerWithImplementations(Phases, Layer.merge(claimOwner, SegmentSpans.toLayer(segment))),
 )

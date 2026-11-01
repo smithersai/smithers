@@ -171,6 +171,7 @@ describe("a client flow", () => {
       engine: Layer.succeed(
         ClientEngine,
         ClientEngine.of({
+          known: () => Effect.succeed(false), retry: () => Effect.void,
           start: (_flow, run) => Effect.sync(() => void started.push(run.executionId)),
           result: () => Effect.succeed(Exit.succeed({ recorded: true })),
         }),
@@ -197,13 +198,14 @@ describe("a client flow", () => {
 
   test("fails as DispatchFailed when the flow dies, is interrupted, or the engine refuses it", async () => {
     const answering = (exit: Exit.Exit<unknown, unknown>) =>
-      Layer.succeed(ClientEngine, ClientEngine.of({ start: () => Effect.void, result: () => Effect.succeed(exit) }))
+      Layer.succeed(ClientEngine, ClientEngine.of({ known: () => Effect.succeed(false), retry: () => Effect.void, start: () => Effect.void, result: () => Effect.succeed(exit) }))
     const died = await open({ engine: answering(Exit.die(new Error("bug"))) })
     const interrupted = await open({ engine: answering(Exit.interrupt()) })
     const refused = await open({
       engine: Layer.succeed(
         ClientEngine,
         ClientEngine.of({
+          known: () => Effect.succeed(false), retry: () => Effect.void,
           start: (flow) => Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "refused" })),
           result: () => Effect.never,
         }),
@@ -236,7 +238,7 @@ describe("a client flow", () => {
     const d = await open({
       engine: Layer.succeed(
         ClientEngine,
-        ClientEngine.of({ start: () => Effect.void, result: () => Effect.succeed(Exit.die(refusal)) }),
+        ClientEngine.of({ known: () => Effect.succeed(false), retry: () => Effect.void, start: () => Effect.void, result: () => Effect.succeed(Exit.die(refusal)) }),
       ),
     })
 
@@ -347,6 +349,38 @@ describe("the browser's engine as ClientEngine", () => {
     expect(started).toEqual(["e"])
   })
 
+  const client = <A, E>(engine: Partial<BrowserEngine.Service>, use: (client: ClientEngine["Service"]) => Effect.Effect<A, E>) =>
+    Effect.runPromise(Effect.exit(Effect.flatMap(ClientEngine, use)).pipe(
+      Effect.provide(ClientEngine.layerBrowser),
+      Effect.provide(Layer.succeed(BrowserEngine.BrowserEngine, BrowserEngine.BrowserEngine.of(engine as BrowserEngine.Service))),
+    ))
+  const flow = registry["app/theme/set"].flow
+
+  test("knows a run its engine holds, tells one it never held from a refusal", async () => {
+    const held = { inspect: () => Effect.succeed({ steps: [] }) as never }
+    const never = { inspect: () => Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })) }
+    const refused = { inspect: () => Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "SqlError" })) }
+    expect(await client(held, (engine) => engine.known(flow, "e"))).toEqual(Exit.succeed(true))
+    expect(await client(never, (engine) => engine.known(flow, "e"))).toEqual(Exit.succeed(false))
+    expect(failure(await client(refused, (engine) => engine.known(flow, "e")))).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "refused" }))
+  })
+
+  test("retries from the node that ran the action, or refuses a run it can't read", async () => {
+    const retried: Array<unknown> = []
+    const steps = [{ action: "first", nodeId: "n1" }, { action: "second", nodeId: "n2" }]
+    const engine = {
+      inspect: () => Effect.succeed({ steps }) as never,
+      retry: (_flow: unknown, options: unknown) => Effect.sync(() => void retried.push(options)),
+    }
+    expect(await client(engine, (it) => it.retry(flow, { executionId: "e.retry.1", source: "e", action: "second" }))).toEqual(Exit.void)
+    expect(retried).toEqual([{ executionId: "e.retry.1", source: "e", step: "n2" }])
+    // A run that never reached the action: the engine refuses the step by name.
+    await client(engine, (it) => it.retry(flow, { executionId: "e.retry.2", source: "e", action: "third" }))
+    expect(retried.at(-1)).toEqual({ executionId: "e.retry.2", source: "e", step: "third" })
+    const gone = { inspect: () => Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "SqlError" })) }
+    expect(failure(await client(gone, (it) => it.retry(flow, { executionId: "e.retry.1", source: "e", action: "second" })))).toEqual(new DispatchFailed({ flow: "app/theme/set", reason: "refused" }))
+  })
+
   test("a refused request is refused, and a payload that won't encode is invalid", async () => {
     const result = () => Effect.never
     const refused = await over({
@@ -370,7 +404,7 @@ describe("the browser's engine as ClientEngine", () => {
 })
 
 describe("admitted", () => {
-  const engineWith = (engine: ClientEngine["Service"]) => open({ engine: Layer.succeed(ClientEngine, engine) })
+  const engineWith = (engine: Pick<ClientEngine["Service"], "start" | "result">) => open({ engine: Layer.succeed(ClientEngine, { known: () => Effect.succeed(false), retry: () => Effect.void, ...engine }) })
   const waiting = () => Effect.runSync(Deferred.make<void, DispatchFailed>())
 
   test("completes once the engine recorded the run, while the run goes on", async () => {
@@ -431,7 +465,7 @@ describe("the records", () => {
     const d = await open({
       engine: Layer.succeed(
         ClientEngine,
-        ClientEngine.of({ start: () => Effect.void, result: () => Effect.succeed(Exit.void) }),
+        ClientEngine.of({ known: () => Effect.succeed(false), retry: () => Effect.void, start: () => Effect.void, result: () => Effect.succeed(Exit.void) }),
       ),
     })
     const sentinel = `sentinel-${crypto.randomUUID()}`

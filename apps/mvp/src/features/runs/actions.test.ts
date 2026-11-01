@@ -26,6 +26,7 @@ const setup = async (options: { dispatch?: Effect.Effect<unknown, DispatchFailed
   const inspections: string[] = []
   const navigated: string[] = []
   const engine = Layer.succeed(BrowserEngine.BrowserEngine, BrowserEngine.BrowserEngine.of({
+    retry: () => Effect.die("not reached"),
     start: () => Effect.die("unused"), result: () => Effect.die("unused"), cancel: () => Effect.die("unused"), signal: () => Effect.die("unused"), runs: () => Stream.empty,
     inspect: (id) => { inspections.push(id); return options.exists?.(id) ?? (id.includes("retry:") ? Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })) : Effect.succeed(inspection(id))) },
     list: () => Effect.succeed({ runs: [], cursor: null }), events: Stream.never, unavailable: Effect.never,

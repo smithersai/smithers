@@ -2,6 +2,7 @@ import { admissionReceipt } from "../writeAdmission"
 import type { Flow as FlowTypes } from "@smthrs/flow"
 import { FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
+import { EngineStore } from "@smthrs/flows"
 import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Metric, Option, Result, Schema } from "effect"
 import { type DOORS, PERSON_DOORS } from "./contract"
 import { codeOfFailure, TabHistory } from "./history"
@@ -60,6 +61,16 @@ export class ClientEngine extends Context.Service<
   {
     readonly start: (flow: BrowserEngine.FlowReference, run: Run) => Effect.Effect<void, DispatchFailed>
     readonly result: (flow: BrowserEngine.FlowReference, run: Run) => Effect.Effect<Exit.Exit<unknown, unknown>, DispatchFailed>
+    /** Whether the engine holds `executionId` at all, settled or not. */
+    readonly known: (flow: BrowserEngine.FlowReference, executionId: string) => Effect.Effect<boolean, DispatchFailed>
+    /**
+     * The engine's explicit retry: admits `executionId` as a retry of the settled run `source` from the step that ran
+     * `action`. What ran before that step keeps its journaled result.
+     */
+    readonly retry: (
+      flow: BrowserEngine.FlowReference,
+      options: { readonly executionId: string; readonly source: string; readonly action: string },
+    ) => Effect.Effect<void, DispatchFailed>
   }
 >()("@smthrs/mvp/flows/ClientEngine") {
   /**
@@ -83,6 +94,17 @@ export class ClientEngine extends Context.Service<
       return ClientEngine.of({
         start: (flow, run) => engine.start(flow, run as never).pipe(Effect.mapError(failed(flow))),
         result: (flow, run) => engine.result(flow, run.executionId).pipe(Effect.mapError(failed(flow))),
+        known: (flow, executionId) => engine.inspect(executionId, { limit: 1 }).pipe(
+          Effect.as(true),
+          // expected: a run this engine never held
+          Effect.catchTag("@smthrs/platform-browser/RequestRefused", (refused) =>
+            refused.error === RUN_NOT_FOUND ? Effect.succeed(false) : Effect.fail(refused)),
+          Effect.mapError(failed(flow)),
+        ),
+        retry: (flow, { executionId, source, action }) => engine.inspect(source).pipe(
+          Effect.flatMap((inspection) => engine.retry(flow, { executionId, source, step: stepOf(inspection.steps, action) })),
+          Effect.mapError(failed(flow)),
+        ),
       })
     }),
   )
@@ -110,7 +132,24 @@ export class ClientEngine extends Context.Service<
         }
         const refused = (flow: BrowserEngine.FlowReference, error: unknown) =>
           new DispatchFailed({ flow: flow._tag, reason: "refused", ...codeOf(error) })
+        // A host with no run history holds nothing to rejoin or retry.
+        const inspection = yield* Effect.serviceOption(EngineStore.RunInspection.RunInspection)
         return ClientEngine.of({
+          known: (flow, executionId) => Option.isNone(inspection) ? Effect.succeed(false) : inspection.value.inspect(executionId, { limit: 1 }).pipe(
+            Effect.as(true),
+            // expected: a run this engine never held
+            Effect.catchTag("@smthrs/engine-store/RunNotFound", () => Effect.succeed(false)),
+            Effect.mapError((error) => refused(flow, error)),
+          ),
+          retry: (flow, { executionId, source, action }) =>
+            Effect.flatMap(declarationOf(flow), (declaration) => {
+              if (Option.isNone(inspection) || runtime.retryFrom === undefined) return Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "refused" }))
+              const retryFrom = runtime.retryFrom
+              return inspection.value.inspect(source).pipe(
+                Effect.flatMap(({ steps }) => retryFrom(declaration, { source, step: stepOf(steps, action), executionId })),
+                Effect.mapError((error) => refused(flow, error)),
+              )
+            }),
           start: (flow, run) =>
             Effect.flatMap(declarationOf(flow), (declaration) =>
               (runtime.execute(declaration as never, { ...run, discard: true } as never) as Effect.Effect<unknown, unknown>).pipe(
@@ -141,6 +180,16 @@ export class ClientEngine extends Context.Service<
     )
 }
 
+/** The refusal a tab reads for a run its engine never held. */
+const RUN_NOT_FOUND = "@smthrs/engine-store/RunNotFound"
+
+/** The node that ran `action` in a run's steps: a first attempt's, as `retryFrom` names it. */
+const stepOf = (steps: ReadonlyArray<{ readonly action: string | null; readonly nodeId: string }>, action: string) =>
+  steps.find((step) => step.action === action)?.nodeId ?? action
+
+/** The retries one dispatch walks past. Each app open adds at most one to a run's chain. */
+export const MOST_RETRIES = 64
+
 /**
  * What a dispatch is given besides the flow and its payload: the door it came through; its execution id, a new one
  * unless set; and `admitted`, which the dispatch completes once the engine has recorded the run (so a caller can wait
@@ -150,6 +199,13 @@ export interface DispatchOptions {
   readonly door: Door
   readonly executionId?: string
   readonly admitted?: Deferred.Deferred<void, DispatchFailed>
+  /**
+   * For an `executionId` that names a piece of work, not one attempt at it. A run of that id that already settled in a
+   * way `when` accepts is retried through the engine's explicit retry from the step that ran `action`, as
+   * `<executionId>.retry.<n>`, which is how work whose run ended in an earlier app open gets another go. Reusing the
+   * id alone would only answer that old ending.
+   */
+  readonly retry?: { readonly action: string; readonly when: (ended: Dispatched<never>) => boolean }
 }
 
 /**
@@ -180,6 +236,27 @@ export const makeDispatch = <Entries extends Readonly<Record<string, Entry>>>(en
     const requests = yield* TabRequests
     // What this tab ran lately, for a bug report (src/flows/history.ts); a dispatch without one keeps nothing.
     const history = yield* Effect.serviceOption(TabHistory)
+    /**
+     * The run of the work `asked` names that a dispatch should join: the last of its chain, or the next one, with the
+     * run it retries. A run still going is joined, so a chain's end is only ever read settled.
+     */
+    const latest = (
+      flow: BrowserEngine.FlowReference,
+      name: string,
+      asked: string,
+      payload: unknown,
+      retry: NonNullable<DispatchOptions["retry"]>,
+    ) => Effect.gen(function* () {
+      let executionId = asked
+      let source: string | undefined
+      for (let n = 1; n <= MOST_RETRIES && (yield* engine.known(flow, executionId)); n++) {
+        const ended = yield* Effect.flatMap(engine.result(flow, { executionId, payload }), (exit) => settled(name, exit))
+        if (!retry.when(ended)) return { executionId, source: undefined }
+        source = executionId
+        executionId = `${asked}.retry.${n}`
+      }
+      return { executionId, source }
+    })
     return (
       name: keyof Entries & string,
       payload: unknown,
@@ -194,13 +271,19 @@ export const makeDispatch = <Entries extends Readonly<Record<string, Entry>>>(en
           : Deferred.done(options.admitted, admission(name, Exit.map(exit, () => undefined)))
       return Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis
-        const executionId = options.executionId ?? crypto.randomUUID()
+        const asked = options.executionId ?? crypto.randomUUID()
+        const { executionId, source } = options.retry === undefined
+          ? { executionId: asked, source: undefined }
+          : yield* latest(entry.flow, name, asked, payload, options.retry)
         yield* requests.add(executionId, options.door)
         const fields: Record<string, string | number> = { flow: name, door: options.door, executionId }
         const run = { executionId, payload }
+        const admit_run = source === undefined || options.retry === undefined
+          ? engine.start(entry.flow, run)
+          : engine.retry(entry.flow, { executionId, source, action: options.retry.action })
         // The engine labels the run's usage metrics with the door and its actor kind, never who.
         const write = name.startsWith("issue/") || name.startsWith("todo/") || name.startsWith("triage/") || name === "run/steer"
-        const started = (write ? admissionReceipt(engine.start(entry.flow, run), executionId, name, "engine") : engine.start(entry.flow, run)).pipe(
+        const started = (write ? admissionReceipt(admit_run, executionId, name, "engine") : admit_run).pipe(
           RunMetrics.withOrigin({ door: options.door, actor: actorOf(options.door) }),
           Effect.onExit(admit),
         )

@@ -2,7 +2,7 @@ import { SEGMENT_PROMPT } from "./steps"
 import { Option, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { ARCS_FROM, SEGMENT_SPANS, SEGMENT_WINDOW } from "./contract"
-import { cleanSpans, cleanSpanSummary, cleanTitle, exchangeUnits, parseMark, PHASES_FROM, phaseUnits, planOf, type PhaseRow } from "./marks"
+import { checkPlan, cleanSpans, cleanSpanSummary, cleanTitle, exchangeUnits, parseMark, PHASES_FROM, phaseUnits, planOf, readOf, sealSpans, type PhaseRow } from "./marks"
 import { segmentRevision } from "./identity"
 import { SegmentPayload } from "./flow"
 
@@ -18,6 +18,10 @@ describe("marks", () => {
   test("a stored mark reads back; anything else is no mark", () => {
     expect(parseMark(mark("Fixing tests", true, 3))).toEqual(Option.some({ title: "Fixing tests", summary: "Fixing tests ended.", closed: true, covered: 3 }))
     for (const text of ["", null, undefined, "{", '{"title":1}', "x".repeat(513)]) expect(parseMark(text)).toEqual(Option.none())
+  })
+  test.each([-1, 0, 1.5, 100_001, 1e300, Number.MAX_SAFE_INTEGER])("a mark covering %s items is no mark, so stored rows can't break anyone's plan", covered => {
+    expect(parseMark(mark("Fixing tests", true, covered))).toEqual(Option.none())
+    expect(planOf(exchangeUnits(chat(8, { 0: mark("Fixing tests", true, covered) })), 1)?.anchorId).toBe("q0")
   })
 })
 
@@ -87,35 +91,75 @@ describe("when a segmentation is due", () => {
   })
 })
 
+describe("what the server takes of a segmentation", () => {
+  const units = (rows: ReadonlyArray<PhaseRow>) => exchangeUnits(rows)
+  test("the next call passes, and it reads the server's own items", () => {
+    expect(checkPlan(units(chat(9)), "q0", 8)).toEqual(["q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7"])
+    expect(checkPlan(units(chat(12, { 0: mark("Researching", true, 4), 4: mark("Fixing", false, 4) })), "q4", 8)).toEqual(["q4", "q5", "q6", "q7", "q8", "q9", "q10", "q11"])
+  })
+  test("a rolling plan stands for every item its summaries hold, whatever its input window", () => {
+    const rows = chat(40, { 0: mark("Researching", false, 24) })
+    const plan = planOf(units(rows), 1)!
+    expect(plan.items[0]).toMatchObject({ id: "q0", covered: 24 })
+    const ids = checkPlan(units(rows), plan.anchorId, readOf(plan.items)) as ReadonlyArray<string>
+    expect(ids).toHaveLength(readOf(plan.items))
+    expect(plan.revision).toBe(segmentRevision("q0", 1, ids.length))
+  })
+  test.each([
+    ["inside a closed span", { 0: mark("Researching", true, 4) }, "q2", 4, "closed"],
+    ["at a closed span", { 0: mark("Researching", true, 4) }, "q0", 4, "closed"],
+    ["past the next start", {}, "q2", 4, "stale"],
+    ["a stranger", {}, "gone", 4, "stale"],
+    ["past the conversation's end", {}, "q0", 16, "stale"],
+    ["no newer than what is stored", { 0: mark("Researching", false, 8) }, "q0", 8, "stale"],
+    ["older than what is stored", { 0: mark("Researching", false, 8) }, "q0", 4, "stale"],
+  ] as const)("refuses a call %s", (_, marks, anchor, read, refusal) => {
+    expect(checkPlan(units(chat(12, marks)), anchor, read)).toBe(refusal)
+  })
+  const ids = ["q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8"]
+  const span = (id: string, title = "Fixing flaky tests") => ({ id, title, summary: "It passed." })
+  test("coverage and closing come from the boundaries, never a device", () => {
+    const sealed = sealSpans([span("q0"), span("q3"), span("q6")], ids)!
+    expect(sealed.map(({ id, mark }) => [id, JSON.parse(mark).closed, JSON.parse(mark).covered])).toEqual([["q0", true, 3], ["q3", true, 3], ["q6", false, 3]])
+    expect(JSON.parse(sealSpans([span("q0")], ids)![0]!.mark)).toMatchObject({ closed: false, covered: 9 })
+  })
+  test.each([
+    ["no first item", [span("q1")]], ["a repeat", [span("q0"), span("q0")]], ["out of order", [span("q0"), span("q4"), span("q2")]],
+    ["a stranger", [span("q0"), span("nope")]], ["a generic title", [span("q0", "Conversation")]], ["markup", [{ id: "q0", title: "Fixing tests", summary: "<b>x</b>" }]],
+  ])("refuses %s", (_, spans) => {
+    expect(sealSpans(spans, ids)).toBeUndefined()
+  })
+})
+
 describe("what of a model's answer is stored", () => {
   const items = Array.from({ length: 8 }, (_, n) => ({ id: `q${n}`, text: `${n}` }))
   const answer = (spans: unknown) => JSON.stringify({ spans })
   const span = (from: number, title = "Fixing flaky tests") => ({ from, title, summary: "It passed on the second run." })
 
-  test("a span closes once enough follows it, and sizes follow the spans", () => {
-    const stored = cleanSpans(`Here you go:\n\`\`\`json\n${answer([span(1, "Researching issue 450"), span(4), span(7, "Reviewing PR 104")])}\n\`\`\``, { items: [...items, { id: "q8", text: "8" }], full: false })!
-    expect(stored.map(({ id, mark }) => [id, JSON.parse(mark)])).toEqual([
-      ["q0", { title: "Researching issue 450", summary: "It passed on the second run.", closed: true, covered: 3 }],
-      ["q3", { title: "Fixing flaky tests", summary: "It passed on the second run.", closed: true, covered: 3 }],
-      ["q6", { title: "Reviewing PR 104", summary: "It passed on the second run.", closed: false, covered: 3 }],
+  test("spans read out of a model's wrapping, with the items they start at", () => {
+    const stored = cleanSpans(`Here you go:\n\`\`\`json\n${answer([span(1, "Researching issue 450"), span(4), span(7, "Reviewing PR 104")])}\n\`\`\``, { items })!
+    expect(stored).toEqual([
+      { id: "q0", title: "Researching issue 450", summary: "It passed on the second run." },
+      { id: "q3", title: "Fixing flaky tests", summary: "It passed on the second run." },
+      { id: "q6", title: "Reviewing PR 104", summary: "It passed on the second run." },
     ])
   })
   test("a full input window leaves an uninterrupted goal open", () => {
-    expect(JSON.parse(cleanSpans(answer([span(1)]), { items, full: true })![0]!.mark).closed).toBe(false)
+    expect(JSON.parse(sealSpans(cleanSpans(answer([span(1)]), { items })!, items.map(item => item.id))![0]!.mark).closed).toBe(false)
   })
   test("the first span starts at the first item, whatever the model numbered it", () => {
-    expect(cleanSpans(answer([span(3)]), { items, full: false })![0]!.id).toBe("q0")
+    expect(cleanSpans(answer([span(3)]), { items })![0]!.id).toBe("q0")
   })
   test.each([
     ["no JSON", "Sorry, I can't."], ["a broken object", "{ spans"], ["no spans", answer([])], ["too many", answer(Array.from({ length: SEGMENT_SPANS + 1 }, (_, n) => span(n + 1)))],
     ["out of order", answer([span(1), span(5), span(4)])], ["a repeat", answer([span(1), span(1)])], ["out of range", answer([span(1), span(9)])],
     ["a fraction", answer([span(1), span(2.5)])], ["a generic first title", answer([span(1, "Conversation"), span(4)])], ["no summary", answer([{ from: 1, title: "Fixing tests", summary: "" }])],
   ])("refuses %s", (_, text) => {
-    expect(cleanSpans(text, { items, full: false })).toBeUndefined()
+    expect(cleanSpans(text, { items })).toBeUndefined()
   })
   test("a later span with no usable title joins the one before it", () => {
-    const stored = cleanSpans(answer([span(1), span(3, "Conversation"), span(5, "Reviewing PR 104")]), { items, full: false })!
-    expect(stored.map(({ id, mark }) => [id, JSON.parse(mark).covered])).toEqual([["q0", 4], ["q4", 4]])
+    const stored = cleanSpans(answer([span(1), span(3, "Conversation"), span(5, "Reviewing PR 104")]), { items })!
+    expect(stored.map(({ id }) => id)).toEqual(["q0", "q4"])
   })
   test("a summary of older text isn't read: the message's own words are", () => {
     const [unit] = exchangeUnits(exchange(0, { summary: "Find the login bug", summaryRevision: "stale" }))
@@ -131,6 +175,7 @@ describe("what of a model's answer is stored", () => {
     expect(cut.length).toBeLessThanOrEqual(181)
     expect(cut.endsWith("word…")).toBe(true)
     expect(cleanSpanSummary(3)).toBeUndefined()
+    expect(cleanSpanSummary("x".repeat(400))).toHaveLength(180)
     expect(cleanSpanSummary("It <b>passed</b>.")).toBe("It bpassed/b.")
   })
 })
@@ -160,7 +205,8 @@ describe("rolling phase input", () => {
           expect(plan.items[0]!.text).toContain("The checkout fix is still being tested")
           expect(plan.items[0]!.covered).toBeGreaterThan(1)
         }
-        stored = cleanSpans(JSON.stringify({ spans: [{ from: 1, title: "Fixing checkout validation", summary: "The checkout fix is still being tested" }] }), plan)!
+        const sent = cleanSpans(JSON.stringify({ spans: [{ from: 1, title: "Fixing checkout validation", summary: "The checkout fix is still being tested" }] }), plan)!
+        stored = sealSpans(sent, checkPlan(units(count, stored), plan.anchorId, readOf(plan.items)) as ReadonlyArray<string>)!
         expect(stored).toHaveLength(1)
         expect(JSON.parse(stored[0]!.mark).closed).toBe(false)
       }
@@ -182,10 +228,11 @@ describe("rolling phase input", () => {
     const plan = planOf(exchangeUnits(rows), 1)!
     expect(plan.items.map(item => item.id)).toEqual(["q0", "q24", "q25", "q26", "q27"])
     expect(plan.revision).toBe(segmentRevision("q0", 1, 28))
-    const spans = cleanSpans(JSON.stringify({ spans: [
+    const sent = cleanSpans(JSON.stringify({ spans: [
       { from: 1, title: "Fixing checkout validation", summary: "Validation passed" },
       { from: 2, title: "Writing release notes", summary: "Release notes drafted" },
     ] }), plan)!
+    const spans = sealSpans(sent, checkPlan(exchangeUnits(rows), plan.anchorId, readOf(plan.items)) as ReadonlyArray<string>)!
     expect(spans.map(row => [row.id, JSON.parse(row.mark).covered, JSON.parse(row.mark).closed])).toEqual([["q0", 24, true], ["q24", 4, false]])
     expect(planOf(exchangeUnits(chat(32, Object.fromEntries(spans.map(row => [Number(row.id.slice(1)), row.mark])))), 1)!.anchorId).toBe("q24")
   })
