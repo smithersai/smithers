@@ -278,6 +278,11 @@ export const scriptedGitHub = () => {
       authorizations.push(authorization)
       return faulted(key) ?? answers.get(key)?.(url)
     }
+    if (url.host === "github.com") {
+      const early = asked("web")
+      if (early !== undefined) return early
+      return new Response(null, { status: repositories.has(url.pathname.slice(1).toLowerCase()) ? 200 : 404 })
+    }
     if (url.pathname === "/graphql" && request.method === "POST") {
       const early = asked("graphql")
       if (early !== undefined) return early
@@ -328,7 +333,7 @@ export const scriptedGitHub = () => {
     fetch,
     /**
      * Every request, in order: the path after `/repos/<owner>/<name>` (`""` for the repository, `/installation` for the
-     * App's installation), `graphql`, or `access_tokens` for an installation token.
+     * App's installation), `graphql`, `access_tokens` for an installation token, or `web` for github.com's own page.
      */
     calls,
     /** Each request's `Authorization` header, or `null` for an anonymous one, in the order of `calls`. */

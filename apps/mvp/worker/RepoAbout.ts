@@ -3,10 +3,10 @@ import { Clock, Config, Duration, Effect, Function, type Layer, Metric, Option, 
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { repoId } from "../src/features/repo/contract.ts"
-import { type AboutRefused, type AboutStage, graphql, rest } from "./about/GitHubRead.ts"
+import { AboutRefused, type AboutStage, graphql, rest } from "./about/GitHubRead.ts"
 import type { AboutStore, KeptAnswer, KeptRefusal, Via } from "./about/Store.ts"
 import { codeOf } from "./ErrorCode.ts"
-import { appSlug } from "./GitHubAuth.ts"
+import { appSlug, GITHUB_WEB } from "./GitHubAuth.ts"
 import * as GitHubConfig from "./github/Config.ts"
 import * as ReadToken from "./github/ReadToken.ts"
 import { allowed as allowedRepositories } from "./github/RepoRoles.ts"
@@ -283,6 +283,22 @@ export const make = <E, R>(
         return { read, rateRemaining: yield* Ref.get(remaining) }
       })
 
+    /**
+     * Whether github.com's own page for `owner/name` is a 404, the answer the spent anonymous API quota withheld. The
+     * website spends no API quota and takes no token, so this widens nobody's access. Only an exact 404 counts:
+     * a 429, a redirect's end or a failure leaves the repository unknown. A deployment on another GitHub API has no
+     * github.com to ask.
+     */
+    const absentOnWeb = (owner: string, name: string) =>
+      options.apiBaseUrl !== GitHubConfig.DEFAULT_API_URL
+        ? Effect.succeed(false)
+        : Effect.flatMap(HttpClient.HttpClient, (client) =>
+            client.head(`${GITHUB_WEB}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`)).pipe(
+            Effect.timeout(REQUEST_TIMEOUT),
+            Effect.map((response) => response.status === 404),
+            Effect.orElseSucceed(() => false),
+          )
+
     /** A kept answer as a request's: the browser keeps a fresh one until it goes stale, a stale one briefly. */
     const answered = (kept: KeptAnswer, cache: "hit" | "miss" | "stale", nowMs: number) => ({
       _tag: "Answered" as const,
@@ -428,7 +444,11 @@ export const make = <E, R>(
           yield* store.keep(id, fresh).pipe(Effect.catch(storeDown("keep", undefined)))
           return { ...answered(fresh, "miss", nowMs), read: record, ...extra() }
         }
-        const refusal = read.failure
+        // GH-4: with the shared anonymous quota spent and nothing to serve, a rate limit says nothing of the repository,
+        // so github.com's own 404 decides. A kept answer is served as usual, and costs no extra request.
+        const absent = read.failure.code === "rate_limited" && chosen.via === "anonymous" && Option.isNone(usable) &&
+          (yield* absentOnWeb(owner, name))
+        const refusal = absent ? new AboutRefused({ code: "not_found", stage: "web", upstreamStatus: 404 }) : read.failure
         const record: GitHubRead = {
           ...facts,
           outcome: refusal.code,

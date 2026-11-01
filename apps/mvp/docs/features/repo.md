@@ -419,10 +419,15 @@ A `/tree/<ref>/<path>` URL naming a file redirects to `/blob/<ref>/<path>` once 
 ### GitHub's anonymous quota
 
 A visitor's uncached read outside installed or curated repositories uses GitHub's
-anonymous quota, shared by the Worker's egress IP. Once it is spent, **GitHub limit
-reached** and **Try again** mean the repository's existence is unknown. A 503
-`rate_limited` is never evidence of absence. The durable read retains that refusal
-through its retry window. Do not replace it with Not found or widen token access.
+anonymous quota, shared by the Worker's egress IP. Once it is spent and nothing is kept,
+the read asks `HEAD https://github.com/<owner>/<name>`, which spends no API quota and
+carries no token. An exact 404 is GitHub saying the repository isn't there (or is
+private), the same answer as the API's 404, so the page says Repository not found
+(GH-4). Any other answer leaves the rate limit standing: **GitHub limit reached** and
+**Try again** mean the repository's existence is unknown. A 503 `rate_limited` alone is
+never evidence of absence, and the durable read retains that refusal through its retry
+window. Do not widen token access. `repo.about.read` records the website's answer as
+`stage: web`. A deployment with another `GITHUB_API_URL` skips this.
 
 The repository header's bell participates in the header's wrapping flow, including
 on tablet issue and pull pages; it reserves its own space beside the actions.

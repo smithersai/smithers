@@ -27,6 +27,8 @@ import type { About, AboutCommit, AboutEntry } from "../../src/features/repo/sch
 /** The GitHub operation a refusal or a missing part names. */
 export type AboutStage =
   | "repository"
+  /** github.com's page for the repository, asked after the anonymous API quota refused (worker/RepoAbout.ts). */
+  | "web"
   | "graphql"
   | "languages"
   | "release"

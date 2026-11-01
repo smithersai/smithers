@@ -414,6 +414,29 @@ describe("kept for every data center", () => {
     expect(await one.answer("octocat", "Down")).toMatchObject({ _tag: "Refused", code: "github_unavailable", cache: "refusal" })
   })
 
+  test("with the anonymous quota spent, github.com's own 404 says the repository isn't there (GH-4), without a token", async () => {
+    const github = scriptedGitHub()
+    const one = await isolate(github)
+    github.fail("", "rate_limited")
+    expect(await one.answer("zzz-nope", "nothing")).toMatchObject({ _tag: "Refused", code: "not_found", cache: "miss" })
+    expect(github.calls).toEqual(["", "web"])
+    expect(github.authorizations).toEqual([null, null])
+    expect(one.reads()).toEqual([expect.objectContaining({ via: "anonymous", outcome: "not_found", stage: "web", upstreamStatus: 404 })])
+    expect((await row("github/zzz-nope/nothing"))?.refusal).toBe("not_found")
+  })
+
+  test("the rate limit stands when github.com shows the repository or doesn't answer with a 404: its existence is unknown", async () => {
+    const github = scriptedGitHub()
+    const one = await isolate(github)
+    github.fail("", "rate_limited")
+    github.publish("octocat", "Limited")
+    expect(await one.answer("octocat", "Limited")).toMatchObject({ _tag: "Refused", code: "rate_limited" })
+    github.fail("web", 429)
+    expect(await one.answer("zzz-nope", "throttled")).toMatchObject({ _tag: "Refused", code: "rate_limited" })
+    github.fail("web", "network")
+    expect(await one.answer("zzz-nope", "unreachable")).toMatchObject({ _tag: "Refused", code: "rate_limited" })
+  })
+
   test("a repository GitHub stops having loses its kept answer", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
