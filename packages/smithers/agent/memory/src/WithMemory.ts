@@ -20,7 +20,7 @@ import * as DurableFlow from "@smthrs/flow/Flow"
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { MemoryError } from "./MemoryError.ts"
+import { MemoryError } from "./MemoryError.vibe"
 import { BankName, MaxTokens } from "./Recall.vibe"
 
 /**

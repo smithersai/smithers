@@ -51,7 +51,10 @@
     },
     "./Flows": "./src/Flows.ts",
     "./Maintenance": "./src/Maintenance.ts",
-    "./MemoryError": "./src/MemoryError.ts",
+    "./MemoryError": {
+      "types": "./src/MemoryError.d.vibe.ts",
+      "default": "./src/MemoryError.vibe"
+    },
     "./MemoryStore": "./src/MemoryStore.ts",
     "./MemoryTrellis": "./src/MemoryTrellis.ts",
     "./Migrations": "./src/Migrations.ts",

@@ -40,7 +40,7 @@ export * as Maintenance from "./Maintenance.ts"
 /**
  * @category errors @since 0.1.0
  */
-export * as MemoryError from "./MemoryError.ts"
+export * as MemoryError from "./MemoryError.vibe"
 
 /**
  * @category services @since 0.1.0

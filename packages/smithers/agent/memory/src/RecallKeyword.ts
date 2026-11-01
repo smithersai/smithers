@@ -12,7 +12,7 @@
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import { resolveBanks } from "./internal/ResolveNamespace.vibe"
-import type * as MemoryError from "./MemoryError.ts"
+import type * as MemoryError from "./MemoryError.vibe"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
 import * as Recall from "./Recall.vibe"
