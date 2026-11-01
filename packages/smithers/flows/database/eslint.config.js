@@ -4,9 +4,9 @@ import { packageConfig } from "../../../../eslint.package.js"
 // typed through tsconfig.test.json, which is the project that includes them.
 const config = await packageConfig({ tsconfigRootDir: import.meta.dirname, bun: true })
 
-export default config.flatMap(
+export default [
   { ignores: ["**/*.d.vibe.ts"] },
-  (entry) =>
+  ...config.flatMap((entry) =>
     entry.files?.length === 1 && entry.files[0] === "src/**/*.ts"
       ? [entry, {
         ...entry,
@@ -17,4 +17,5 @@ export default config.flatMap(
         }
       }]
       : [entry]
-)
+  )
+]
