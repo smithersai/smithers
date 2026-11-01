@@ -826,6 +826,26 @@ describe("draft receipts and round races", () => {
     expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { code: "receipt_missing", status: 503 } })
   })
 
+  test("a repeated save answers the name it saved, after another draft renamed the flow", async () => {
+    const h = await open()
+    const first = await saved(h, "notes")
+    const renaming = crypto.randomUUID()
+    expect((await writeRound(h, renaming, round("digest", { flowId: first.flowId }))).status).toBe(200)
+    expect(await json(await send(h, "POST", "/api/flows/save", saving(renaming, "digest"))))
+      .toEqual([200, { flowId: first.flowId, name: "digest", revision: 2, txid: expect.any(Number) }])
+    expect(await json(await send(h, "POST", "/api/flows/save", saving(first.draftId, "notes"))))
+      .toEqual([200, { flowId: first.flowId, name: "notes", revision: 1, txid: null }])
+  })
+
+  test("a newer round still replaces a finished one", async () => {
+    const h = await open()
+    const id = crypto.randomUUID()
+    expect((await writeRound(h, id, round("notes"))).status).toBe(200)
+    expect(await json(await writeRound(h, id, round("notes", { round: 1, status: "drafting", files: [], checks: [], questions: [] }))))
+      .toEqual([200, { txid: expect.any(Number) }])
+    expect(await draftRow(id)).toMatchObject({ status: "drafting", round: 1 })
+  })
+
   test("a late write of the same round keeps the answers given to it", async () => {
     const h = await open()
     const id = crypto.randomUUID()
