@@ -49,7 +49,7 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     await expect(first).toBeVisible()
     const preview = rail.getByRole("tooltip")
     await expect(preview).toBeHidden()
-    await first.hover()
+    await first.locator(".sui-tl-mk").hover({ timeout: 10_000 })
     await expect(preview).toBeVisible()
     await expect(preview).toContainText("Person")
     expect((await preview.boundingBox())!.x).toBeGreaterThanOrEqual(0)
@@ -72,9 +72,21 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
   })
   const wheelRail = async () => {
     const viewport = a.conversation.locator('[data-slot="message-scroller-viewport"]')
-    await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
-    await expect(a.conversation.locator('[data-slot="message-scroller-button"][data-target="end"]')).toHaveAttribute("data-active", "false")
-    await expect.poll(() => viewport.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(1)
+    const latest = a.conversation.locator('[data-slot="message-scroller-button"][data-target="end"]')
+    // Use the real follow command, after earlier keyboard navigation has finished settling.
+    await expect(async () => {
+      if (await latest.getAttribute("data-active") === "true") await latest.click({ timeout: 1000 })
+      expect(await viewport.evaluate(el => new Promise<boolean>(resolve => {
+        let frames = 0
+        const check = () => {
+          if (el.scrollHeight - el.clientHeight - el.scrollTop > 1) { resolve(false); return }
+          if (++frames === 30) resolve(true)
+          else requestAnimationFrame(check)
+        }
+        requestAnimationFrame(check)
+      }))).toBe(true)
+      await expect(latest).toHaveAttribute("data-active", "false")
+    }).toPass({ timeout: 15_000 })
     const current = () => detail.locator('[aria-current="location"]').evaluateAll(rows => rows.map(row => row.getAttribute("aria-controls")))
     const before = await current()
     const top = await viewport.evaluate(el => el.scrollTop)
@@ -92,7 +104,7 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     await expect.poll(current).not.toEqual(before)
     const up = await viewport.evaluate(el => el.scrollTop)
     // Hover/focus commits the real rail preview; successive frames must not re-pin the live edge.
-    await detail.locator('[aria-current="location"]').first().hover()
+    await detail.locator('[aria-current="location"]').first().locator(".sui-tl-mk").hover({ timeout: 10_000 })
     await viewport.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBe(up)
     await expect(a.conversation.locator('[data-slot="message-scroller-button"][data-target="end"]')).toHaveAttribute("data-active", "true")
