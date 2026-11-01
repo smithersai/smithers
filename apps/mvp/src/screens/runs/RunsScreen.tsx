@@ -10,7 +10,7 @@ export function RunsScreen() {
   const search = useSearch({ from: "/app/runs" })
   return (
     <main className="runs-screen" aria-label="Runs">
-      <PageHeader back={<Link to="/app">Back to chat</Link>} title="Runs" />
+      <PageHeader width="wide" back={<Link to="/app">Back to chat</Link>} title="Runs" />
       <PageBody width="wide">
         <FlowSummaryView flow={search.flow} />
         <RunListView flow={search.flow} open={search.open} />

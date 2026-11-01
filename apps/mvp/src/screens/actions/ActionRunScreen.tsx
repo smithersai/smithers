@@ -16,6 +16,7 @@ export function ActionRunScreen() {
   return (
     <main ref={rendered} className="runs-screen" aria-label="Run">
       <PageHeader
+        width="wide"
         aria-label="Repository"
         back={<Link to="/$owner/$repo" params={{ owner, repo }}>{owner}/{repo}</Link>}
         nav={<Link to={(from === "runs" ? "/app/runs" : actionsPath(owner, repo)) as never}>Runs</Link>}

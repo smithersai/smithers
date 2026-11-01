@@ -12,7 +12,7 @@ export function RunScreen() {
   const rendered = useCallback((node: HTMLElement | null) => { if (node !== null) actions.rendered(runId) }, [actions, runId])
   return (
     <main ref={rendered} className="runs-screen" aria-label="Run">
-      <PageHeader back={<Link to="/app/runs">Runs</Link>} />
+      <PageHeader width="wide" back={<Link to="/app/runs">Runs</Link>} />
       <PageBody width="wide">
         <RunPageView />
       </PageBody>

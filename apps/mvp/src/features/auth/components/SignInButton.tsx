@@ -12,7 +12,7 @@ export function SignInButton() {
   const location = useLocation()
   if (session?.available !== true) return null
   return (
-    <Button asChild>
+    <Button asChild variant="solid">
       <a href={signInHref(`${location.pathname}${location.searchStr}`)} onClick={actions.pressSignIn}>
         {SIGN_IN}
       </a>
