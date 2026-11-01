@@ -11,7 +11,7 @@
  */
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import { Diagnostic, diagnostic } from "../src/internal/diagnostic.ts"
+import { Diagnostic, diagnostic } from "../src/internal/diagnostic.vibe"
 import { normalizeEnvironment, plainRecord, usableText } from "../src/internal/validate.ts"
 
 const nul = String.fromCharCode(0)
