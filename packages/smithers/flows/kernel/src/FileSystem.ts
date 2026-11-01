@@ -31,12 +31,12 @@ import {
   Stream
 } from "effect"
 import { Base64 } from "effect/encoding"
-import * as Batch from "./FileSystemBatch.ts"
+import * as Batch from "./FileSystemBatch.vibe"
 import { GrantStore } from "./GrantStore.ts"
 import { makeCapability } from "./internal/makeCapability.ts"
 import { Workspace } from "./Workspace.ts"
 
-export * from "./FileSystemBatch.ts"
+export * from "./FileSystemBatch.vibe"
 
 /**
  * The directory name that stands in for the host's system temporary directory

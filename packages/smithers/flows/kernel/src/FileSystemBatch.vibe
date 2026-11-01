@@ -73,7 +73,7 @@ export interface BatchResponse {
 export interface FileSystemBatch {
   readonly maxSize: number
   readonly maxResponseBytes: number
-  readonly execute: (requests: ReadonlyArray<BatchRequest>) => Effect.Effect<BatchResponse, PlatformError.PlatformError>
+  readonly execute: (requests: ReadonlyArray<BatchRequest>) => BatchResponse!PlatformError.PlatformError
 }
 
 /** Host extension identity on the guarded filesystem.
