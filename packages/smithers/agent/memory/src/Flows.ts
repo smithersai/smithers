@@ -15,11 +15,11 @@ import type * as DurableFlow from "@smthrs/flow/Flow"
 import * as Pattern from "@smthrs/patterns/Pattern"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { resolveNamespace } from "./internal/ResolveNamespace.ts"
+import { resolveNamespace } from "./internal/ResolveNamespace.vibe"
 import { MemoryError } from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
-import * as Recall from "./Recall.ts"
+import * as Recall from "./Recall.vibe"
 import * as WithMemory from "./WithMemory.ts"
 
 /**

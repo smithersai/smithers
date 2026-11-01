@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.vibe"
 import type { Service } from "../MemoryStore.ts"
 import { canonicalJson } from "./Canonical.ts"
-import { resolveNamespace } from "./ResolveNamespace.ts"
+import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {
   changed,
   decodeJson,

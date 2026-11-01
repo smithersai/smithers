@@ -17,11 +17,15 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const indexes = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`DROP INDEX IF EXISTS memory_facts_expiry_idx`
-  yield* sql`CREATE INDEX IF NOT EXISTS memory_facts_expires_at_idx
+export const indexes = effect {
+  const sql = try SqlClient.SqlClient
+  try Effect.suspend(() => sql`DROP INDEX IF EXISTS memory_facts_expiry_idx`)
+  try Effect.suspend(() =>
+    sql`CREATE INDEX IF NOT EXISTS memory_facts_expires_at_idx
     ON memory_facts ((updated_at_ms + ttl_ms)) WHERE ttl_ms IS NOT NULL`
-  yield* sql`CREATE INDEX IF NOT EXISTS memory_note_supersedes_target_idx
+  )
+  try Effect.suspend(() =>
+    sql`CREATE INDEX IF NOT EXISTS memory_note_supersedes_target_idx
     ON memory_note_supersedes (target_id, superseder_id)`
-})
+  )
+}

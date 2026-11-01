@@ -21,7 +21,7 @@ import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { MemoryError } from "./MemoryError.ts"
-import { BankName, MaxTokens } from "./Recall.ts"
+import { BankName, MaxTokens } from "./Recall.vibe"
 
 /**
  * The memory policy a flow tree inherits: which namespace its memory lives in,

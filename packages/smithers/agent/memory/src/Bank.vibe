@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { resolveNamespace } from "./internal/ResolveNamespace.ts"
+import { resolveNamespace } from "./internal/ResolveNamespace.vibe"
 import type * as MemoryError from "./MemoryError.ts"
 import type * as Namespace from "./Namespace.vibe"
 
@@ -18,5 +18,5 @@ import type * as Namespace from "./Namespace.vibe"
  * @category constructors
  * @since 0.1.0
  */
-export const parse = (bank: string): Effect.Effect<Namespace.Namespace, MemoryError.MemoryError> =>
-  resolveNamespace(bank).pipe(Effect.map(({ namespace }) => namespace))
+export const parse = (bank: string): Namespace.Namespace!MemoryError.MemoryError =>
+  resolveNamespace(bank) |> Effect.map(%, ({ namespace }) => namespace)

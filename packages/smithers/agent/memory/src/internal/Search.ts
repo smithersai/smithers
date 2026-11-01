@@ -15,7 +15,7 @@ import { compareText } from "./Canonical.ts"
 import { retainedTags, searchableText } from "./FactProjection.ts"
 import * as Fts from "./Fts.ts"
 import { ftsTerms } from "./FtsQuery.ts"
-import { resolveNamespace } from "./ResolveNamespace.ts"
+import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {
   collectUntil,
   error,

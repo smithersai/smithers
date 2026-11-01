@@ -13,7 +13,7 @@ import type * as Namespace from "../Namespace.vibe"
 import { canonicalJson } from "./Canonical.ts"
 import { searchableText } from "./FactProjection.ts"
 import * as Fts from "./Fts.ts"
-import { resolveNamespace } from "./ResolveNamespace.ts"
+import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {
   changed,
   decodeFact,

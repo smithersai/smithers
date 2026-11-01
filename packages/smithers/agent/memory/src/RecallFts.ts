@@ -12,11 +12,11 @@
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as FtsQuery from "./internal/FtsQuery.ts"
-import { resolveBanks } from "./internal/ResolveNamespace.ts"
+import { resolveBanks } from "./internal/ResolveNamespace.vibe"
 import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
-import * as Recall from "./Recall.ts"
+import * as Recall from "./Recall.vibe"
 
 /**
  * Escapes a query into a quoted, implicit-AND FTS5 expression.

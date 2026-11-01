@@ -5,7 +5,6 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
 import { MemoryError } from "../MemoryError.ts"
 import * as Namespace from "../Namespace.vibe"
 
@@ -29,7 +28,7 @@ export const bankForNamespace = (namespace: Namespace.Namespace): string => `${n
  * @since 0.1.0
  */
 export const namespaceForBank = (
-  bank: string
+  bank: string,
 ): { readonly kind: Namespace.Kind; readonly id: string } => {
   for (const kind of Namespace.Kind.literals) {
     const prefix = `${kind}-`
@@ -47,23 +46,21 @@ export const namespaceForBank = (
  * @since 0.1.0
  */
 export const resolveNamespace = (
-  input: Namespace.Namespace | string
-): Effect.Effect<{ readonly namespace: Namespace.Namespace; readonly bank: string }, MemoryError> => {
+  input: Namespace.Namespace | string,
+): { readonly namespace: Namespace.Namespace; readonly bank: string }!MemoryError => {
   if (typeof input !== "string") {
-    return Schema.decodeUnknownEffect(Namespace.Namespace)(input).pipe(
-      Effect.mapError(() =>
+    return Schema.decodeUnknownEffect(Namespace.Namespace)(input)
+      |> Effect.mapError(%, () =>
         new MemoryError({
           code: "invalid_namespace",
-          message: "memory namespace is invalid"
-        })
-      ),
-      Effect.map((namespace) => ({ namespace, bank: bankForNamespace(namespace) }))
-    )
+          message: "memory namespace is invalid",
+        }))
+      |> Effect.map(%, (namespace) => ({ namespace, bank: bankForNamespace(namespace) }))
   }
   if (input.length === 0) {
-    return Effect.fail(new MemoryError({ code: "invalid_namespace", message: "memory bank must not be empty" }))
+    throw new MemoryError({ code: "invalid_namespace", message: "memory bank must not be empty" })
   }
-  return Effect.succeed({ namespace: namespaceForBank(input), bank: input })
+  return { namespace: namespaceForBank(input), bank: input }
 }
 
 /**
@@ -74,15 +71,14 @@ export const resolveNamespace = (
  * @since 0.1.0
  */
 export const resolveBanks = (
-  banks: ReadonlyArray<string>
-): Effect.Effect<ReadonlyArray<{ readonly namespace: Namespace.Namespace; readonly bank: string }>, MemoryError> =>
-  Effect.forEach(banks, resolveNamespace).pipe(
-    Effect.map((resolved) => {
-      const unique = new Map<string, { readonly namespace: Namespace.Namespace; readonly bank: string }>()
-      for (const entry of resolved) {
-        const identity = `${entry.namespace.kind}\u0000${entry.namespace.id}`
-        if (!unique.has(identity)) unique.set(identity, entry)
-      }
-      return [...unique.values()]
-    })
-  )
+  banks: ReadonlyArray<string>,
+): ReadonlyArray<{ readonly namespace: Namespace.Namespace; readonly bank: string }>!MemoryError =>
+  Effect.forEach(banks, resolveNamespace)
+  |> Effect.map(%, (resolved) => {
+    const unique = new Map<string, { readonly namespace: Namespace.Namespace; readonly bank: string }>()
+    for (const entry of resolved) {
+      const identity = `${entry.namespace.kind}\u0000${entry.namespace.id}`
+      if (!unique.has(identity)) unique.set(identity, entry)
+    }
+    return [...unique.values()]
+  })

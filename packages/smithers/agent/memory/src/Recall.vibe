@@ -15,7 +15,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { compareText } from "./internal/Canonical.ts"
-import * as Bank from "./internal/ResolveNamespace.ts"
+import * as Bank from "./internal/ResolveNamespace.vibe"
 import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
@@ -97,8 +97,8 @@ const Query = Schema.String.pipe(
       encoder.encode(query).byteLength <= MAX_RECALL_QUERY_BYTES
         ? undefined
         : `recall query exceeds ${MAX_RECALL_QUERY_BYTES} UTF-8 bytes`
-    )
-  )
+    ),
+  ),
 )
 
 /**
@@ -110,7 +110,7 @@ const Query = Schema.String.pipe(
  */
 export const MaxTokens = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0)),
-  Schema.check(Schema.isLessThanOrEqualTo(MAX_RECALL_TOKENS))
+  Schema.check(Schema.isLessThanOrEqualTo(MAX_RECALL_TOKENS)),
 )
 
 /**
@@ -131,10 +131,10 @@ export const Input = Schema.Struct({
   banks: Schema.Array(BankName).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANKS))),
   query: Query,
   tagGroups: Schema.optional(
-    Schema.Array(Namespace.TagGroup).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_TAG_GROUPS)))
+    Schema.Array(Namespace.TagGroup).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_TAG_GROUPS))),
   ),
   maxTokens: Schema.optional(MaxTokens),
-  budget: Schema.optional(Schema.Literals(["low", "mid", "high"]))
+  budget: Schema.optional(Schema.Literals(["low", "mid", "high"])),
 })
 
 /**
@@ -156,7 +156,7 @@ export const Result = Schema.Struct({
   key: Schema.String,
   text: Schema.String,
   score: Schema.Number,
-  updatedAtMs: Schema.optional(Schema.Number)
+  updatedAtMs: Schema.optional(Schema.Number),
 })
 
 /**
@@ -198,7 +198,7 @@ export const slot = Pattern.slot({ input: Input, output: Output })
  * @since 0.1.0
  */
 export interface Service {
-  readonly recall: (input: Input) => Effect.Effect<Output, MemoryError.MemoryError>
+  readonly recall: (input: Input) => Output!MemoryError.MemoryError
 }
 
 /**
@@ -270,8 +270,8 @@ export const capRecallResults = (results: ReadonlyArray<Result>, maxTokens = DEF
  * @since 0.1.0
  */
 export const compareResults = (left: Result, right: Result): number =>
-  right.score - left.score || (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0) ||
-  compareText(left.key, right.key) || compareText(left.bank, right.bank)
+  right.score - left.score || (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0)
+  || compareText(left.key, right.key) || compareText(left.bank, right.bank)
 
 /**
  * Provides a store-backed recall binding, capturing the MemoryStore once so
@@ -281,14 +281,14 @@ export const compareResults = (left: Result, right: Result): number =>
  * @since 0.1.0
  */
 export const layerFrom = (
-  run: (input: Input) => Effect.Effect<Output, MemoryError.MemoryError, MemoryStore.MemoryStore>
+  run: (input: Input) => Output!MemoryError.MemoryError!MemoryStore.MemoryStore,
 ): Layer.Layer<Recall, never, MemoryStore.MemoryStore> =>
   Layer.effect(
     Recall,
-    Effect.gen(function*() {
-      const store = yield* MemoryStore.MemoryStore
-      return Recall.of({ recall: (input) => run(input).pipe(Effect.provideService(MemoryStore.MemoryStore, store)) })
-    })
+    effect {
+      const store = try MemoryStore.MemoryStore
+      return Recall.of({ recall: (input) => run(input) |> Effect.provideService(%, MemoryStore.MemoryStore, store) })
+    },
   )
 
 /**
@@ -305,7 +305,7 @@ export const layer = (implementation: Service): Layer.Layer<Recall> => Layer.suc
  * @category constructors
  * @since 0.1.0
  */
-export const makeNoop = (): Service => Recall.of({ recall: () => Effect.succeed([]) })
+export const makeNoop = (): Service => Recall.of({ recall: () => [] })
 
 /**
  * Provides the empty recall implementation.

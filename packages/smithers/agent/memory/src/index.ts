@@ -14,7 +14,7 @@
 /**
  * @category constructors @since 0.1.0
  */
-export * as Bank from "./Bank.ts"
+export * as Bank from "./Bank.vibe"
 
 /**
  * @category database
@@ -25,7 +25,7 @@ export * as Database from "./Database.vibe"
 /**
  * @category embeddings @since 0.1.0
  */
-export * as Embedding from "./Embedding.ts"
+export * as Embedding from "./Embedding.vibe"
 
 /**
  * @category flows @since 0.1.0
@@ -67,7 +67,7 @@ export * as Namespace from "./Namespace.vibe"
 /**
  * @category recall @since 0.1.0
  */
-export * as Recall from "./Recall.ts"
+export * as Recall from "./Recall.vibe"
 
 /**
  * @category recall @since 0.1.0
