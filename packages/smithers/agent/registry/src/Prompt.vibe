@@ -12,7 +12,6 @@
  */
 
 import type * as Mdx from "@mdx-js/mdx"
-import { Effect } from "effect"
 import type * as Cause from "effect/Cause"
 import type { Content as TextContent } from "./Prompt/jsx-runtime.ts"
 
@@ -37,7 +36,7 @@ export type Component<Props> = (props: Props) => string
  * @category constructors
  * @since 1.0.0-rc.1
  */
-export const compile = (source: string): Effect.Effect<string, Cause.UnknownError> =>
+export const compile = (source: string): string!Cause.UnknownError =>
   Effect.flatMap(
     Effect.tryPromise(() => import("@mdx-js/mdx")),
     ({ createProcessor }) => Effect.try(() => compileWith(createProcessor, source))

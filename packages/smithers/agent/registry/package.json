@@ -47,7 +47,10 @@
     "./Registry": "./src/Registry.ts",
     "./RegistryError": "./src/RegistryError.vibe",
     "./index": "./src/index.ts",
-    "./Prompt": "./src/Prompt.ts",
+    "./Prompt": {
+      "types": "./.vibe/declarations/src/Prompt.d.vibe.ts",
+      "default": "./src/Prompt.vibe"
+    },
     "./Prompt/jsx-runtime": "./src/Prompt/jsx-runtime.ts",
     "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts"
   },

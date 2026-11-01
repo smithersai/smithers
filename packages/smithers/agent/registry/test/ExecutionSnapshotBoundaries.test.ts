@@ -14,7 +14,7 @@ import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Snapshot from "../src/ExecutionSnapshot.ts"
-import * as Prompt from "../src/Prompt.ts"
+import * as Prompt from "../src/Prompt.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const platform = Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), NodeFileSystem.layer, NodePath.layer)
