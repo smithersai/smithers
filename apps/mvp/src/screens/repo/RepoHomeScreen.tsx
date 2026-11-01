@@ -1,3 +1,4 @@
+import { PageBody } from "@smthrs/ui"
 import { HomePage } from "../../features/home/components/HomePage"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
@@ -10,9 +11,11 @@ import "./repo-screen.css"
 export function RepoHomeScreen() {
   return (
     <main className="repo-screen" aria-label="Repository">
-      <RepoHeader />
-      <HomeTabs active="home" />
-      <HomePage tree={<RepoPage />} />
+      <RepoHeader width="default" />
+      <PageBody width="default">
+        <HomeTabs active="home" />
+        <HomePage tree={<RepoPage />} />
+      </PageBody>
     </main>
   )
 }

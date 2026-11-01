@@ -1,4 +1,4 @@
-import { Badge, EmptyState, Skeleton } from "@smthrs/ui"
+import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyState, PageBody, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
@@ -16,23 +16,29 @@ export function BranchesScreen() {
   const page = pageOf(current)
   return (
     <main className="repo-screen" aria-label="Repository">
-      <RepoHeader />
-      <h2>Branches</h2>
-      {page.kind !== "files" ? <RepoPage /> : refs.state === "loading" || current === undefined ? <Skeleton /> : refs.state === "failed" ? <EmptyState title={refs.message} /> : (
-        <>
-          {refs.branches.length === 0 ? <EmptyState title="No branches" /> : (
-            <ul aria-label="Branches">
-              {refs.branches.map((branch) => (
-                <li key={branch.name}>
-                  <Link to="/$owner/$repo/tree/$ref/$" params={{ owner: current.view.owner, repo: current.view.name, ref: branch.name, _splat: "" }}>{branch.name}</Link>
-                  {branch.name === current.view.defaultBranch ? <> <Badge variant="secondary">default</Badge></> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-          {refs.truncated ? <span>More not shown</span> : null}
-        </>
-      )}
+      <RepoHeader width="wide" />
+      <PageBody width="wide">
+        {page.kind !== "files" ? <RepoPage /> : refs.state === "loading" || current === undefined ? <Skeleton className="repo-page-loading" /> : refs.state === "failed" ? <EmptyState title={refs.message} /> : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Branches</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {refs.branches.length === 0 ? <EmptyState title="No branches" /> : (
+                <ul className="repo-branches" aria-label="Branches">
+                  {refs.branches.map((branch) => (
+                    <li key={branch.name} className="repo-branches-row">
+                      <Link to="/$owner/$repo/tree/$ref/$" params={{ owner: current.view.owner, repo: current.view.name, ref: branch.name, _splat: "" }}>{branch.name}</Link>
+                      {branch.name === current.view.defaultBranch ? <Badge variant="secondary">default</Badge> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {refs.truncated ? <p>More not shown</p> : null}
+            </CardContent>
+          </Card>
+        )}
+      </PageBody>
     </main>
   )
 }

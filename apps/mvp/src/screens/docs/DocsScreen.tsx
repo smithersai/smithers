@@ -1,3 +1,4 @@
+import { PageBody } from "@smthrs/ui"
 import { DocsPage } from "../../features/docs/components/DocsPage"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
@@ -9,9 +10,11 @@ import "./docs-screen.css"
 export function DocsScreen() {
   return (
     <main className="repo-screen" aria-label="Repository">
-      <RepoHeader />
-      <HomeTabs active="docs" />
-      <DocsPage />
+      <RepoHeader width="default" />
+      <PageBody width="default">
+        <HomeTabs active="docs" />
+        <DocsPage />
+      </PageBody>
     </main>
   )
 }

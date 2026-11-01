@@ -3,39 +3,70 @@
 /*
  * The workspace: the repository's header and the branch's chrome across the top, then the branch's view (Code or
  * Terminal) beside its conversation. A fixed height, so the view and the conversation each scroll inside and the
- * composer stays at the conversation's foot. A ref that isn't a workspace (a tag, a commit) is the view alone.
+ * composer stays at the conversation's foot. A ref that isn't a workspace (a tag, a commit, or a branch this person
+ * may not open) is the view alone, a centered wide column that scrolls with the page.
  */
 .branch-screen {
-  height: 100dvh;
-  max-width: 96rem;
-  margin: 0 auto;
-  padding: 1rem;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem);
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  grid-template-areas: "repo repo" "branch branch" "notices notices" "view side";
-  gap: 0.75rem 1rem;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
-.branch-screen[data-workspace="false"] {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "repo" "branch" "notices" "view";
+.branch-screen[data-workspace="true"] { height: 100dvh; }
+
+.branch-screen > .branch-header,
+.branch-screen > .branch-screen-notices,
+.branch-screen > .branch-screen-body {
+  width: 100%;
+  max-width: 80rem;
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding-inline: 1.5rem;
 }
-.branch-screen > .repo-header { grid-area: repo; }
-.branch-screen > .branch-header { grid-area: branch; }
-.branch-screen-notices { grid-area: notices; }
+.branch-screen[data-workspace="true"] > .branch-header,
+.branch-screen[data-workspace="true"] > .branch-screen-notices,
+.branch-screen[data-workspace="true"] > .branch-screen-body { max-width: none; }
+
+/* The pending view renders its view without the body's grid. */
+.branch-screen > .branch-screen-view {
+  width: 100%;
+  max-width: 80rem;
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding: 0.75rem 1.5rem 1rem;
+}
+
+.branch-screen-notices { padding-top: 0.75rem; }
 .branch-screen-notices:empty { display: none; }
 
+.branch-screen-body {
+  flex: 1;
+  min-height: 0;
+  padding-block: 0.75rem 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem 1rem;
+  align-content: start;
+}
+.branch-screen[data-workspace="true"] .branch-screen-body {
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 26rem);
+  align-content: stretch;
+}
+
+.branch-screen-view { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.branch-screen[data-workspace="true"] .branch-screen-view { overflow-y: auto; }
+
+.branch-screen-view > .home-tabs { margin-top: 0; flex-shrink: 0; }
+
+/* A branch this person may not open says so in one compact card under its files, never a full-height panel. */
+.branch-screen .branch-screen-denied { align-content: center; }
+
 /* The branch's chrome: its name and access, the people on it and Share, then the Code and Terminal tabs. */
-.branch-header { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; min-height: 2.25rem; }
+.branch-header { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; min-height: 2.25rem; padding-block: 0.75rem 0; }
 .branch-header-name { font-size: 1.125rem; font-weight: 650; overflow-wrap: anywhere; }
 .branch-header-presence { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; }
 .branch-header-views { display: flex; align-items: center; gap: 1rem; }
 .branch-header-views > a[aria-current="page"] { font-weight: 650; text-decoration-thickness: 2px; text-underline-offset: 0.4rem; }
 .branch-header-views > a:not([aria-current="page"]) { text-decoration: none; }
-
-.branch-screen-view > .home-tabs { margin-top: 0; flex-shrink: 0; }
-
-.branch-screen-view { grid-area: view; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 
 /* The terminal fills the view: its tabs and state above, its screen below. */
 .terminal-panel { flex: 1; min-height: 20rem; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -56,26 +87,44 @@
 .shared-file-editor { flex: 1; min-height: 0; overflow: auto; }
 
 /* The conversation column: the messages scroll inside it, and the composer sits at its foot. */
-.branch-screen-side { grid-area: side; min-height: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.branch-screen-side { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 .branch-screen .branch-screen-conversation { flex: 1; min-height: 0; padding: 0; display: flex; flex-direction: column; }
 .branch-screen-conversation .sui-chat-messages { padding: 1rem 0.75rem; }
-.branch-screen .branch-screen-denied { flex: 1; align-content: center; }
 .branch-screen-composer { display: flex; justify-content: center; }
 .branch-screen-composer > * { flex: 1; }
 .branch-screen-composer > button { flex: none; }
 
+/* An open file's bar stays above its code while the page scrolls; the card must not clip it. */
+.branch-screen .sui-repo-file { overflow: visible; }
+.branch-screen .sui-repo-file > .sui-repo-toolbar {
+  position: sticky;
+  top: 3.25rem;
+  z-index: 10;
+  background: var(--surface, #fffefa);
+  border-radius: 10px 10px 0 0;
+}
+.branch-screen[data-workspace="true"] .sui-repo-file > .sui-repo-toolbar { top: 0; }
+.branch-screen .sui-repo-file-actions { flex-wrap: wrap; }
+.branch-screen .sui-repo-file-actions .sui-button { white-space: nowrap; }
+
+/* On a phone the column's gutter matches the header's and PageBody's 16px. */
+@media (max-width: 40rem) {
+  .branch-screen > .branch-header,
+  .branch-screen > .branch-screen-notices,
+  .branch-screen > .branch-screen-body { padding-inline: 1rem; }
+  .branch-screen > .branch-screen-view { padding-inline: 1rem; }
+}
+
 /* Narrow windows stack the view over the conversation, and the page scrolls. */
 @media (max-width: 60rem) {
   .branch-screen,
-  .branch-screen[data-workspace="false"] {
+  .branch-screen[data-workspace="true"] {
     height: auto;
     min-height: 100dvh;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
-    grid-template-areas: "repo" "branch" "notices" "view" "side";
-    align-content: start;
   }
-  .branch-screen-view { overflow-y: visible; }
+  .branch-screen[data-workspace="true"] .branch-screen-body { grid-template-columns: minmax(0, 1fr); }
+  .branch-screen[data-workspace="true"] .branch-screen-view { overflow-y: visible; }
+  .branch-screen .sui-repo-file > .sui-repo-toolbar { position: static; }
   .terminal-panel { min-height: 24rem; }
   .branch-screen-side { min-height: 20rem; }
   .branch-screen-conversation { max-height: 60dvh; }

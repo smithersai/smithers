@@ -58,59 +58,59 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
   // This person may change the branch's files: the live editor for a file, and a Markdown file in place on its page.
   const editsFiles = open && writes(access) && current?.mode === "open"
   return (
-    <main className="branch-screen" aria-label="Repository" data-workspace={open || denied || savedConversation ? "true" : "false"}>
-      <RepoHeader />
+    <main className="branch-screen" aria-label="Repository" data-workspace={open || savedConversation ? "true" : "false"}>
+      <RepoHeader width="wide" />
       {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}
       {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
       <div className="branch-screen-notices"><Toasts surface={open ? "conversation" : "page"} /></div>
-      {unavailable && !open && search.terminal === undefined && search.edit === undefined && search.compare === undefined
-        ? <EmptyState title={BRANCH_UNAVAILABLE} /> : null}
-      <div className="branch-screen-view">
-        {homeTabs ? <HomeTabs active="code" /> : null}
-        {search.terminal !== undefined && unavailable
-          ? <section className="terminal-panel" aria-label="Terminal"><EmptyState title={TERMINAL_UNAVAILABLE} /></section>
-          : open && search.terminal !== undefined
-          ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} deploymentMember={session?.status !== "signed_in" || mayAsk(session.role)} />
-          : unavailable && search.edit !== undefined
-          ? <EmptyState title={FILE_UNAVAILABLE} />
-          : unavailable && search.compare !== undefined
-          ? <EmptyState title={COMPARE_UNAVAILABLE} />
-          : open && search.edit !== undefined && current?.conversationId != null
-          ? <SharedFile conversationId={current.conversationId} path={search.edit} readOnly={!writes(access)} />
-          : search.compare !== undefined && comparesOf(access, publication)
-          ? <BranchCompare />
-          : (
-            <>
-              <FileTabsBar />
-              <RepoPage
-                editFiles={editsFiles}
-                liveMarkdown={editsFiles && current?.conversationId != null ? { conversationId: current.conversationId } : undefined}
-              />
-            </>
-          )}
+      <div className="branch-screen-body">
+        <div className="branch-screen-view">
+          {homeTabs ? <HomeTabs active="code" /> : null}
+          {unavailable && !open && search.terminal === undefined && search.edit === undefined && search.compare === undefined
+            ? <EmptyState title={BRANCH_UNAVAILABLE} /> : null}
+          {search.terminal !== undefined && unavailable
+            ? <section className="terminal-panel" aria-label="Terminal"><EmptyState title={TERMINAL_UNAVAILABLE} /></section>
+            : open && search.terminal !== undefined
+            ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} deploymentMember={session?.status !== "signed_in" || mayAsk(session.role)} />
+            : unavailable && search.edit !== undefined
+            ? <EmptyState title={FILE_UNAVAILABLE} />
+            : unavailable && search.compare !== undefined
+            ? <EmptyState title={COMPARE_UNAVAILABLE} />
+            : open && search.edit !== undefined && current?.conversationId != null
+            ? <SharedFile conversationId={current.conversationId} path={search.edit} readOnly={!writes(access)} />
+            : search.compare !== undefined && comparesOf(access, publication)
+            ? <BranchCompare />
+            : (
+              <>
+                <FileTabsBar />
+                <RepoPage
+                  editFiles={editsFiles}
+                  liveMarkdown={editsFiles && current?.conversationId != null ? { conversationId: current.conversationId } : undefined}
+                />
+              </>
+            )}
+          {denied ? (
+            <Card className="branch-screen-denied">
+              <EmptyState title={deniedTitleOf(session?.status === "signed_in", answer)} />
+            </Card>
+          ) : null}
+        </div>
+        {open || savedConversation ? (
+          <div className="branch-screen-side">
+            <Card className="branch-screen-conversation" aria-label="Conversation">
+              <Conversation timelineTodos={todos.filter(todo => todo.branch === current?.name)} timelineRepo={current ? { owner: current.owner, name: current.repo } : undefined} readOnly={savedConversation} empty={<EmptyState title={NO_MESSAGES} />} />
+            </Card>
+            {open ? <div className="branch-screen-composer">
+              {writes(access) ? (
+                // Writing the branch means a Member or above on its repository: the gate asks only sign-in and a model.
+                <ComposerGate member>
+                  <Composer docked={false} />
+                </ComposerGate>
+              ) : <Composer docked={false} readOnly />}
+            </div> : null}
+          </div>
+        ) : null}
       </div>
-      {denied ? (
-        <div className="branch-screen-side">
-          <Card className="branch-screen-denied">
-            <EmptyState title={deniedTitleOf(session?.status === "signed_in", answer)} />
-          </Card>
-        </div>
-      ) : null}
-      {open || savedConversation ? (
-        <div className="branch-screen-side">
-          <Card className="branch-screen-conversation" aria-label="Conversation">
-            <Conversation timelineTodos={todos.filter(todo => todo.branch === current?.name)} timelineRepo={current ? { owner: current.owner, name: current.repo } : undefined} readOnly={savedConversation} empty={<EmptyState title={NO_MESSAGES} />} />
-          </Card>
-          {open ? <div className="branch-screen-composer">
-            {writes(access) ? (
-              // Writing the branch means a Member or above on its repository: the gate asks only sign-in and a model.
-              <ComposerGate member>
-                <Composer docked={false} />
-              </ComposerGate>
-            ) : <Composer docked={false} readOnly />}
-          </div> : null}
-        </div>
-      ) : null}
     </main>
   )
 }

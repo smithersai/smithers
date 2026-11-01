@@ -1,18 +1,31 @@
 /* Page layout only; components and colors come from @smthrs/ui. */
-.docs-page { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
-.docs-page-nav { display: flex; flex-direction: column; gap: 0.75rem; position: sticky; top: 1rem; max-height: calc(100dvh - 2rem); overflow-y: auto; scrollbar-gutter: stable; padding-inline-end: 1rem; }
+.docs-page { display: grid; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.docs-page-nav { display: flex; flex-direction: column; gap: 0.75rem; position: sticky; top: 4.5rem; max-height: calc(100dvh - 6rem); overflow-y: auto; scrollbar-gutter: stable; padding-inline-end: 1rem; }
 .docs-page-section-title { margin: 0.5rem 0 0.25rem; font-size: 0.8125rem; font-weight: 600; }
-.docs-page-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
-.docs-page-links a { display: block; overflow-wrap: anywhere; }
-.docs-page-links a[aria-current="page"] { font-weight: 600; }
+.docs-page-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.125rem; }
+.docs-page-links a {
+  display: block;
+  padding: 0.125rem 0.5rem;
+  margin-inline: -0.5rem;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+  color: var(--brand, #0f766e);
+  text-decoration: none;
+}
+.docs-page-links a:hover { text-decoration: underline; text-underline-offset: 0.2rem; }
+.docs-page-links a[aria-current="page"] { background: var(--brand-soft, color-mix(in srgb, var(--brand, #0f766e) 10%, var(--surface, #fffefa))); font-weight: 600; }
 @media (max-width: 60rem) {
   .docs-page-links a { display:flex; align-items:center; min-width:32px; min-height:32px; }
 }
 .docs-page-index h1 { margin: 0 0 0.5rem; }
 .docs-page-index p { margin: 0; max-width: 48rem; }
+/* Each code block keeps one quiet Copy: the docs mock has no language tag or Wrap toggle. */
+.docs-page .sui-codeblock-lang,
+.docs-page [data-slot="code-block-wrap"] { display: none; }
 .docs-page-shown { min-width: 0; }
 .docs-page-loading, .docs-page-refused { min-height: 16rem; }
+/* On a phone the index of pages collapses to a bounded strip above the page. */
 @media (max-width: 48rem) {
   .docs-page { grid-template-columns: minmax(0, 1fr); }
-  .docs-page-nav { position: static; max-height: none; }
+  .docs-page-nav { position: static; max-height: 12rem; scrollbar-gutter: auto; }
 }
