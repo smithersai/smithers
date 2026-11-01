@@ -47,7 +47,8 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   let blockWindows: (TimelineWindow | undefined)[] = [];
   const columns = () => [model.spans, model.arcs, ...(model.higher ?? [])];
   let drag: { readonly level: number; readonly grab: number } | undefined;
-  let pendingRead: { readonly fraction: number; readonly center: boolean; readonly id: string } | undefined;
+  let pendingRead: { readonly fraction: number; readonly center: boolean; readonly id: string; readonly scroll: number; readonly contentHeight: number } | undefined;
+  let readAnchor: { readonly fraction: number; readonly center: boolean; readonly id: string; readonly scroll: number } | undefined;
   let frame = 0;
   let layoutWidth = -1, layoutHeight = -1;
   let viewport: HTMLElement | null = null;
@@ -184,7 +185,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       if (blocks.length === 0) continue;
       const current = blockWindows[lvl - 1];
       const next = timelineBlockWindow({
-        count: blocks.length, levels: model.levels, level: lvl, height,
+        count: blocks.length, height,
         first: blockOf(blocks, firstEntry), last: blockOf(blocks, lastEntry),
         force: force || drag?.level === lvl + 1, ...(current === undefined ? {} : { current }),
       });
@@ -222,19 +223,39 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     drawFunnels();
   };
 
-  const restoreRead = () => {
-    if (pendingRead === undefined || viewport === null) return;
-    const row = model.ids.indexOf(pendingRead.id);
-    if (row < 0 || !boxes.some(item => item.row === row)) return;
-    viewport.scrollTop = timelineToChat(boxes, row + pendingRead.fraction) - (pendingRead.center ? viewport.clientHeight / 2 : 0);
-    pendingRead = undefined;
-    rail.removeAttribute("data-navigation");
+  const positionRead = (target: { readonly id: string; readonly fraction: number; readonly center: boolean }) => {
+    if (viewport === null) return false;
+    const row = model.ids.indexOf(target.id);
+    if (row < 0 || !boxes.some(item => item.row === row)) return false;
+    rail.dataset.readingRow = String(row + target.fraction);
+    const targetY = timelineToChat(boxes, row + target.fraction);
+    const desired = targetY - (target.center ? viewport.clientHeight / 2 : 0);
+    viewport.scrollTop = desired;
+    rail.dataset.readingY = String(targetY);
+    rail.dataset.readingScroll = String(viewport.scrollTop);
+    // Clamping at either end is a live-edge read; let the transcript keep following there.
+    readAnchor = Math.abs(viewport.scrollTop - desired) <= 1 ? { ...target, scroll: viewport.scrollTop } : undefined;
+    return true;
   };
+  const restoreRead = () => {
+    if (pendingRead !== undefined && positionRead(pendingRead)) {
+      pendingRead = undefined;
+      rail.removeAttribute("data-navigation");
+    }
+  };
+  const releaseRead = () => { readAnchor = undefined; pendingRead = undefined; rail.removeAttribute("data-navigation"); };
   const schedule = () => { if (frame === 0) frame = requestAnimationFrame(() => {
     frame = 0;
     if (pendingRead !== undefined) { measure(); restoreRead(); }
+    else if (readAnchor !== undefined) { measure(); positionRead(readAnchor); }
     update();
   }); };
+  const scrolled = () => {
+    // Programmatic navigation elsewhere also releases the rail's reading anchor.
+    if (pendingRead !== undefined && viewport !== null && viewport.scrollHeight === pendingRead.contentHeight && Math.abs(viewport.scrollTop - pendingRead.scroll) > 1) releaseRead();
+    else if (readAnchor !== undefined && viewport !== null && Math.abs(viewport.scrollTop - readAnchor.scroll) > 1) readAnchor = undefined;
+    schedule();
+  };
   const mounted = new MutationObserver(() => { measure(); schedule(); });
   /** Keeps funnel lines on the columns while they slide. */
   let following = 0;
@@ -247,11 +268,13 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   const bind = () => {
     const next = viewportOf(rail);
     if (next === viewport) return;
-    viewport?.removeEventListener("scroll", schedule);
+    viewport?.removeEventListener("scroll", scrolled);
+    for (const event of ["wheel", "touchstart", "pointerdown", "keydown"]) viewport?.removeEventListener(event, releaseRead);
     mounted.disconnect();
     viewport = next;
     if (viewport !== null) mounted.observe(viewport, { childList: true, subtree: true });
-    viewport?.addEventListener("scroll", schedule, { passive: true });
+    viewport?.addEventListener("scroll", scrolled, { passive: true });
+    for (const event of ["wheel", "touchstart", "pointerdown", "keydown"]) viewport?.addEventListener(event, releaseRead, { passive: true });
     if (viewport !== null) observer?.observe(viewport);
     const content = viewport?.firstElementChild;
     if (content) observer?.observe(content);
@@ -270,6 +293,11 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   observer?.observe(box);
   const transcript = rail.closest(".sui-chat-transcript");
   if (transcript) observer?.observe(transcript);
+  const transcriptActivity = (event: Event) => {
+    if (event.target instanceof Node && box.contains(event.target)) return;
+    releaseRead();
+  };
+  for (const event of ["pointerdown", "click", "keydown", "wheel", "touchstart"]) transcript?.addEventListener(event, transcriptActivity, { capture: true, passive: true });
   window.addEventListener("resize", remeasure);
 
   const readRow = (requested: number, center: boolean) => {
@@ -278,7 +306,8 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     const index = Math.min(model.ids.length - 1, Math.floor(row));
     const id = model.ids[index]!;
     const previous = pendingRead;
-    pendingRead = { fraction: Math.min(1, row - index), center, id };
+    pendingRead = { fraction: Math.min(1, row - index), center, id, scroll: viewport.scrollTop, contentHeight: viewport.scrollHeight };
+    rail.dataset.readingRow = String(index + pendingRead.fraction);
     measure();
     if (boxes.some(item => item.row === index)) { restoreRead(); return; }
     rail.setAttribute("data-navigation", "pending");
@@ -297,6 +326,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     return best === undefined ? undefined : best.start + best.fraction * (best.end - best.start);
   };
   const down = (event: PointerEvent) => {
+    releaseRead();
     const target = event.target as HTMLElement;
     const lens = target.dataset?.lens;
     if (target.classList?.contains("sui-tl-thumb") || target.classList?.contains("sui-tl-dot")) {
@@ -332,6 +362,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     rail.removeAttribute("data-dragging");
     update();
   };
+  box.addEventListener("keydown", releaseRead, { capture: true });
   box.addEventListener("pointerdown", down);
   box.addEventListener("pointermove", move);
   box.addEventListener("pointerup", up);
@@ -341,6 +372,8 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     sync: next => {
       const grew = next.levels !== model.levels;
       model = next;
+      if (pendingRead !== undefined && !next.ids.includes(pendingRead.id)) { pendingRead = undefined; rail.removeAttribute("data-navigation"); }
+      if (readAnchor !== undefined && !next.ids.includes(readAnchor.id)) readAnchor = undefined;
       bind();
       remeasure();
       const rowsGone = rowWindow !== undefined && rowWindow.end > next.ids.length;
@@ -355,10 +388,13 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     dispose: () => {
       observer?.disconnect();
       mounted.disconnect();
-      pendingRead = undefined;
+      pendingRead = undefined; readAnchor = undefined;
       if (frame !== 0) cancelAnimationFrame(frame);
-      viewport?.removeEventListener("scroll", schedule);
+      viewport?.removeEventListener("scroll", scrolled);
+      for (const event of ["wheel", "touchstart", "pointerdown", "keydown"]) viewport?.removeEventListener(event, releaseRead);
       window.removeEventListener("resize", remeasure);
+      for (const event of ["pointerdown", "click", "keydown", "wheel", "touchstart"]) transcript?.removeEventListener(event, transcriptActivity, { capture: true });
+      box.removeEventListener("keydown", releaseRead, { capture: true });
       box.removeEventListener("pointerdown", down);
       box.removeEventListener("pointermove", move);
       box.removeEventListener("pointerup", up);

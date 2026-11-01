@@ -28,9 +28,9 @@ test("lens navigation requests unmounted history and restores its fractional rea
     expect(rail.dataset.navigation).toBe("pending");
     const message = document.createElement("article");
     message.id = "history-10";
-    message.getBoundingClientRect = () => ({ top: 500, bottom: 700, height: 200, left: 0, right: 100, width: 100, x: 0, y: 500, toJSON: () => ({}) });
+    message.getBoundingClientRect = () => rect(500 - viewport.scrollTop, 700 - viewport.scrollTop);
     host.querySelector("#history-mount")!.append(message);
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await frame(); await frame();
     expect(viewport.scrollTop).toBe(550);
     expect(rail.dataset.navigation).toBeUndefined();
     box.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 }));
@@ -52,7 +52,7 @@ test("a newer drag request supersedes an earlier mount and disposal stops pendin
   const move = (y: number) => box.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientY: y }));
   const mount = (index: number, top: number) => {
     const article = document.createElement("article"); article.id = `race-${index}`;
-    article.getBoundingClientRect = () => rect(top, top + 200); viewport.append(article);
+    article.getBoundingClientRect = () => rect(top - viewport.scrollTop, top + 200 - viewport.scrollTop); viewport.append(article);
   };
   try {
     driver.sync({ ids: Array.from({ length: 30 }, (_, index) => `race-${index}`), asks: [], levels: 2, spans: [], arcs: [], onRequestHistory: id => { jumps.push(id); } });
@@ -62,7 +62,7 @@ test("a newer drag request supersedes an earlier mount and disposal stops pendin
     mount(10, 500); await frame();
     expect(viewport.scrollTop).toBe(0);
     expect(rail.dataset.navigation).toBe("pending");
-    mount(20, 800); await frame();
+    mount(20, 800); await frame(); await frame();
     expect(viewport.scrollTop).toBe(850);
     move(.5); driver.dispose();
     const before = viewport.scrollTop;
@@ -117,7 +117,7 @@ test("history restoration follows the requested ID when entries are inserted bef
   const ids = Array.from({ length: 30 }, (_, index) => `insert-${index}`), requests: string[] = [];
   const driver = timelineDriver(rail, box);
   const model = { ids, asks: [], levels: 2, spans: [], arcs: [], onRequestHistory: (id: string) => { requests.push(id); } };
-  const mount = (id: string, top: number) => { const article = document.createElement("article"); article.id = id; article.getBoundingClientRect = () => rect(top, top + 200); viewport.append(article); };
+  const mount = (id: string, top: number) => { const article = document.createElement("article"); article.id = id; article.getBoundingClientRect = () => rect(top - viewport.scrollTop, top + 200 - viewport.scrollTop); viewport.append(article); };
   try {
     driver.sync(model);
     box.querySelector("[data-lens]")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
@@ -127,8 +127,70 @@ test("history restoration follows the requested ID when entries are inserted bef
     mount("insert-9", 200); await frame();
     expect(rail.dataset.navigation).toBe("pending");
     expect(viewport.scrollTop).toBe(0);
-    mount("insert-10", 500); await frame();
+    mount("insert-10", 500); await frame(); await frame();
     expect(viewport.scrollTop).toBe(550);
     expect(rail.dataset.navigation).toBeUndefined();
+  } finally { driver.dispose(); host.remove(); }
+});
+
+test("a completed history read follows later layout changes until the reader scrolls", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const host = document.createElement("div"); host.className = "sui-chat-transcript";
+  host.innerHTML = `<div data-slot="message-scroller-viewport"></div><nav><div class="sui-timeline-box"><div class="sui-tl-lv" data-level="1"><div class="sui-tl-inner"><i class="sui-tl-sm" data-start="10" data-end="11"></i><div data-lens="1"></div></div></div></div></nav>`;
+  document.body.append(host);
+  const viewport = host.firstElementChild as HTMLElement, rail = host.querySelector<HTMLElement>("nav")!, box = rail.firstElementChild as HTMLElement;
+  Object.defineProperty(viewport, "clientHeight", { value: 100 });
+  const driver = timelineDriver(rail, box);
+  try {
+    driver.sync({ ids: Array.from({ length: 30 }, (_, index) => `stable-${index}`), asks: [], levels: 2, spans: [], arcs: [], onRequestHistory: () => {} });
+    box.querySelector("[data-lens]")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    box.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientY: .5 }));
+    let shift = 0;
+    const message = document.createElement("article"); message.id = "stable-10";
+    message.getBoundingClientRect = () => rect(500 + shift - viewport.scrollTop, 700 + shift - viewport.scrollTop);
+    viewport.append(message); await frame(); await frame();
+    expect(viewport.scrollTop).toBe(550);
+    shift = 8; window.dispatchEvent(new Event("resize")); await frame();
+    expect(viewport.scrollTop).toBe(558);
+    viewport.dispatchEvent(new WheelEvent("wheel"));
+    viewport.scrollTop = 600; viewport.dispatchEvent(new Event("scroll"));
+    shift = 16; window.dispatchEvent(new Event("resize")); await frame();
+    expect(viewport.scrollTop).toBe(600);
+  } finally { driver.dispose(); host.remove(); }
+});
+
+test("external navigation cancels an unmounted history request before it can snap back", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const host = document.createElement("div"); host.className = "sui-chat-transcript";
+  host.innerHTML = `<div data-slot="message-scroller-viewport"></div><button class="bottom">Bottom</button><nav><div class="sui-timeline-box"><div class="sui-tl-lv" data-level="1"><div class="sui-tl-inner"><i class="sui-tl-sm" data-start="10" data-end="11"></i><div data-lens="1"></div></div></div></div></nav>`;
+  document.body.append(host);
+  const viewport = host.firstElementChild as HTMLElement, rail = host.querySelector<HTMLElement>("nav")!, box = rail.firstElementChild as HTMLElement;
+  Object.defineProperty(viewport, "clientHeight", { value: 100 });
+  const driver = timelineDriver(rail, box);
+  try {
+    driver.sync({ ids: Array.from({ length: 30 }, (_, index) => `cancel-${index}`), asks: [], levels: 2, spans: [], arcs: [], onRequestHistory: () => {} });
+    const request = () => {
+      box.querySelector("[data-lens]")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      box.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientY: .5 }));
+      expect(rail.dataset.navigation).toBe("pending");
+    };
+    request();
+    viewport.scrollTop = 200; viewport.dispatchEvent(new Event("scroll"));
+    expect(rail.dataset.navigation).toBeUndefined();
+    request();
+    host.querySelector<HTMLButtonElement>(".bottom")!.click();
+    expect(rail.dataset.navigation).toBeUndefined();
+    const message = document.createElement("article"); message.id = "cancel-10";
+    message.getBoundingClientRect = () => rect(500 - viewport.scrollTop, 700 - viewport.scrollTop);
+    viewport.append(message); await frame(); await frame();
+    expect(viewport.scrollTop).toBe(200);
+    box.querySelector("[data-lens]")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    box.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientY: .5 }));
+    expect(viewport.scrollTop).toBe(550);
+    driver.sync({ ids: [], asks: [], levels: 0, spans: [], arcs: [] });
+    viewport.scrollTop = 300;
+    driver.sync({ ids: Array.from({ length: 30 }, (_, index) => `cancel-${index}`), asks: [], levels: 2, spans: [], arcs: [] });
+    await frame();
+    expect(viewport.scrollTop).toBe(300);
   } finally { driver.dispose(); host.remove(); }
 });
