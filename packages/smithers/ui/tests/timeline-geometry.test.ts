@@ -162,6 +162,8 @@ test("the room a host gives the rail goes to whole summaries first, then to phas
   expect(timelineWidths(2, 600)).toEqual({ widths: [200, 140], gap: 20 });
   expect(timelineWidths(3, 414)).toEqual({ widths: [190, 122, 62], gap: 20 });
   expect(timelineWidths(3, 600)).toEqual({ widths: [190, 130, 62], gap: 20 });
+  // A phone's sheet: the arcs become a strip, and level 0 keeps its words.
+  expect(timelineWidths(3, 318)).toEqual({ widths: [176, 84, 18], gap: 20 });
 });
 
 test("a phase column keeps a readable measure at every width the rail shows at", () => {

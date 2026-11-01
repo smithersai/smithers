@@ -356,7 +356,7 @@ const unreadable = (page: Page) => rail(page).evaluate(element => {
     return [...source.matchAll(/\S+/g)].map(match => {
       const range = document.createRange()
       range.setStart(text, match.index); range.setEnd(text, match.index + match[0].length)
-      return { word: match[0], rects: [...range.getClientRects()].filter(rect => rect.width > 0) }
+      return { word: match[0], rects: [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0) }
     })
   }
   const inside = (rect: DOMRect, box: DOMRect) => rect.left >= box.left - .5 && rect.right <= box.right + .5 && rect.top >= box.top - .5 && rect.bottom <= box.bottom + .5
@@ -364,7 +364,7 @@ const unreadable = (page: Page) => rail(page).evaluate(element => {
   for (const span of element.querySelectorAll<HTMLElement>('ol[data-level="0"] .sui-tl-tx')) {
     const clip = span.closest(".sui-tl-clip")!.getBoundingClientRect(), box = span.getBoundingClientRect()
     if (getComputedStyle(span).visibility === "hidden" || box.bottom <= clip.top || box.top >= clip.bottom) continue
-    const all = words(span), seen = all.findIndex(word => !word.rects.every(rect => inside(rect, box) && inside(rect, clip)))
+    const all = words(span), seen = all.findIndex(word => word.rects.length === 0 || !word.rects.every(rect => inside(rect, box) && inside(rect, clip)))
     const shown = seen === -1 ? all.length : seen
     if (shown < Math.min(4, all.length)) faults.push(`entry "${span.textContent}" shows ${shown} of ${all.length} words in ${Math.round(box.width)} px`)
   }
@@ -374,10 +374,11 @@ const unreadable = (page: Page) => rail(page).evaluate(element => {
     if (getComputedStyle(span).hyphens === "auto") faults.push(`phase "${span.textContent}" hyphenates`)
     const all = words(span)
     for (const word of all) if (new Set(word.rects.map(rect => Math.round(rect.top))).size > 1) faults.push(`phase "${span.textContent}" breaks "${word.word}"`)
-    const lines = new Set(all.flatMap(word => word.rects.map(rect => Math.round(rect.top)))).size
-    const room = span.closest("button")!.getBoundingClientRect()
-    const fits = lines * parseFloat(getComputedStyle(span).lineHeight) <= Math.min(room.height, clip.bottom - box.top) + .5
-    if (fits && !all.every(word => word.rects.every(rect => inside(rect, box)))) faults.push(`phase "${span.textContent}" is cut in a block that holds ${lines} lines`)
+    // A word the line clamp hides has no box at all; a cut title needs at least one line more than it shows.
+    const shown = all.filter(word => word.rects.length > 0 && word.rects.every(rect => inside(rect, box)))
+    const lines = new Set(shown.flatMap(word => word.rects.map(rect => Math.round(rect.top)))).size
+    const room = Math.min(span.closest("button")!.getBoundingClientRect().height, clip.bottom - box.top)
+    if (shown.length < all.length && (lines + 1) * parseFloat(getComputedStyle(span).lineHeight) <= room + .5) faults.push(`phase "${span.textContent}" is cut after ${lines} lines in ${Math.round(room)} px`)
   }
   return faults
 })
@@ -387,7 +388,7 @@ const WIDE = [["number counts and their verification", 3], ["authority attestati
 const wideTopic = (n: number) => WIDE[[0, 0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3][n % 12]!]![0]
 
 test("Timeline: every label reads at every desktop width, and the chat keeps its column", {
-  annotation: { type: "summary", description: "At 1190, 1280 and 1440 px the rail shows each summary's words and whole phase titles beside a full-width chat; the branch panel opens it as a sheet." },
+  annotation: { type: "summary", description: "From 1190 to 1600 px the rail shows each summary's words and whole phase titles beside a full-width chat; the branch panel opens it as a sheet." },
 }, async ({ devices, request }) => {
   test.setTimeout(360_000)
   const [a] = await devices.open("Timeline widths")
@@ -405,7 +406,7 @@ test("Timeline: every label reads at every desktop width, and the chat keeps its
   await expect.poll(() => rail(a.page).locator('ol[data-level="0"] [data-summary="ready"]').count(), { timeout: 120_000 }).toBeGreaterThanOrEqual(base + 24)
   await expect.poll(() => rail(a.page).locator('ol[data-level="1"] [data-summary="ready"]').count(), { timeout: 200_000 }).toBeGreaterThan(1)
   const viewport = a.page.locator('[data-slot="message-scroller-viewport"]')
-  for (const size of [{ width: 1190, height: 785 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }] as const) await test.step(`Labels at ${size.width}`, async () => {
+  for (const size of [{ width: 1190, height: 785 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }, { width: 1600, height: 1000 }] as const) await test.step(`Labels at ${size.width}`, async () => {
     await a.page.setViewportSize(size)
     await a.page.mouse.move(size.width - 10, size.height - 10)
     await expect(a.page.locator(".sui-timeline-disclosure > summary")).toBeHidden()
@@ -423,6 +424,27 @@ test("Timeline: every label reads at every desktop width, and the chat keeps its
     expect(frame.railRight, "the rail ends before the chat").toBeLessThanOrEqual(frame.chatLeft)
     expect(frame.chatRight - frame.chatLeft, "the chat keeps a reading column").toBeGreaterThanOrEqual(560)
     expect(frame.chatRight, "the chat ends inside the window").toBeLessThanOrEqual(size.width)
+    for (const theme of ["light", "dark"] as const) {
+      await a.page.emulateMedia({ colorScheme: theme })
+      await a.page.evaluate(wanted => { document.documentElement.dataset.theme = wanted }, theme)
+      await a.page.waitForTimeout(400)
+      await a.page.screenshot({ path: `test-results/timeline-look/width-${size.width}x${size.height}-${theme}.png` })
+    }
+  })
+  await test.step("A phone opens the rail as a sheet whose labels read", async () => {
+    await a.page.setViewportSize({ width: 390, height: 844 })
+    const sheet = a.page.locator(".sui-timeline-disclosure")
+    await sheet.locator("summary").click()
+    await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
+    await a.page.waitForTimeout(800)
+    await expect.poll(() => unreadable(a.page), { timeout: 10_000 }).toEqual([])
+    for (const theme of ["light", "dark"] as const) {
+      await a.page.emulateMedia({ colorScheme: theme })
+      await a.page.evaluate(wanted => { document.documentElement.dataset.theme = wanted }, theme)
+      await a.page.waitForTimeout(400)
+      await a.page.screenshot({ path: `test-results/timeline-look/width-390x844-sheet-${theme}.png` })
+    }
+    await a.page.keyboard.press("Escape")
   })
   await test.step("The branch panel opens the rail as a sheet whose labels read", async () => {
     await a.page.setViewportSize({ width: 1440, height: 900 })
@@ -435,6 +457,7 @@ test("Timeline: every label reads at every desktop width, and the chat keeps its
     await sheet.locator("summary").click()
     await expect(rail(a.page).locator('ol[data-level="0"] [data-summary="ready"]').first()).toBeVisible({ timeout: 120_000 })
     await expect.poll(() => unreadable(a.page), { timeout: 10_000 }).toEqual([])
+    await a.page.screenshot({ path: "test-results/timeline-look/width-1440x900-branch-sheet.png" })
   })
 })
 

@@ -116,7 +116,8 @@ export const timelineWidths = (levels: number, available: number): { readonly wi
     const level0 = Math.min(200, available - least - gap);
     return { widths: [level0, Math.max(least, Math.min(140, available - level0 - gap))], gap };
   }
-  const outermost = available >= 300 ? clamp(Math.round(available * .19), 46, 62) : 18;
+  // Under 340 px (a phone's sheet) the outermost column is a strip of colors, so the words go to the inner two.
+  const outermost = available >= 340 ? clamp(Math.round(available * .19), 46, 62) : 18;
   const least = clamp(Math.round(available * (available >= 300 ? .264 : .33)), 84, 90);
   const level0 = Math.min(190, available - least - outermost - 2 * gap);
   return { widths: [level0, Math.max(least, Math.min(130, available - level0 - outermost - 2 * gap)), outermost], gap };

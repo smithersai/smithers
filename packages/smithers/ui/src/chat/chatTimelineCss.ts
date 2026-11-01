@@ -19,7 +19,7 @@ export const chatTimelineCss = `
 .sui-chat-timeline:hover,.sui-chat-timeline:focus-within,.sui-timeline-disclosure[open] .sui-chat-timeline{--q-tx:var(--sui-tl-muted);--q-tx-in:var(--sui-tl-text);--q-off:1;--q-mk:48%;--q-mk-in:100%;--q-st:100%;--q-ui:62%;--q-dot:100%;--q-line:40%}
 .sui-timeline-disclosure[open]{position:absolute;top:40px;inset-inline-end:8px}
 .sui-timeline-disclosure[open]>summary{position:absolute;top:-34px;inset-inline-end:0}
-.sui-timeline-disclosure[open] .sui-chat-timeline{width:min(340px,calc(100cqi - 16px));height:min(560px,70vh);padding:14px 14px 14px 10px;background:var(--surface,#fffefa);border:1px solid var(--border-strong,rgba(33, 29, 24, 0.14));border-radius:12px;box-shadow:${t.shadow2}}
+.sui-timeline-disclosure[open] .sui-chat-timeline{width:min(380px,calc(100cqi - 16px));height:min(560px,70vh);padding:14px 14px 14px 10px;background:var(--surface,#fffefa);border:1px solid var(--border-strong,rgba(33, 29, 24, 0.14));border-radius:12px;box-shadow:${t.shadow2}}
 .sui-timeline-box{position:relative;width:100%;height:100%}
 @media(min-width:1180px){@container(min-width:600px){
 .sui-timeline-disclosure,.sui-timeline-disclosure[open]{inset-inline-end:calc(100% + 8px);top:22px;bottom:22px;width:var(--sui-timeline-room,342px);z-index:1}
