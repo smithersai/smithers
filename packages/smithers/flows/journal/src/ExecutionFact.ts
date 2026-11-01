@@ -4,7 +4,7 @@
  */
 
 import * as Schema from "effect/Schema"
-import * as Event from "./JournalEvent.ts"
+import * as Event from "./JournalEvent.vibe"
 
 /** Native semantic lifecycle fields recorded by the owning writer.
  * @category schemas

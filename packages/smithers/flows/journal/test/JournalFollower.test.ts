@@ -9,7 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Journal } from "../src/Journal.ts"
-import { type Entry, Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
+import { type Entry, Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlJournal from "../src/SqlJournal.ts"
 

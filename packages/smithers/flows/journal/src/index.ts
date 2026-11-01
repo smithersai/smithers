@@ -23,7 +23,7 @@
  * @category events
  * @since 0.1.0
  */
-export * as JournalEvent from "./JournalEvent.ts"
+export * as JournalEvent from "./JournalEvent.vibe"
 
 /**
  * @category events
@@ -100,13 +100,13 @@ export * as TelemetryLog from "./TelemetryLog.ts"
  * @category projections
  * @since 0.1.0
  */
-export * as Projection from "./Projection.ts"
+export * as Projection from "./Projection.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as OwnerId from "./OwnerId.ts"
+export * as OwnerId from "./OwnerId.vibe"
 
 /**
  * @category migrations

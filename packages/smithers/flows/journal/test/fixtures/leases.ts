@@ -8,7 +8,7 @@
  * the same fence through the strategy's public operations instead.
  */
 import type * as SqlClient from "effect/sql/SqlClient"
-import type { OwnerId } from "../../src/OwnerId.ts"
+import type { OwnerId } from "../../src/OwnerId.vibe"
 
 /** Makes `holder` the run's owner, replacing whoever held it before. */
 export const hold = (sql: SqlClient.SqlClient, runId: string, holder: OwnerId, heartbeatAtMs = 0) =>

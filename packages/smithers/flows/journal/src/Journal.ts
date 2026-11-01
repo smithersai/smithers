@@ -17,10 +17,10 @@ import * as PubSub from "effect/PubSub"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import { Entry, RunId, Seq, SourceSeq } from "./JournalEvent.ts"
-import type { Input } from "./JournalEvent.ts"
-import type { OwnerId } from "./OwnerId.ts"
-import type { Projection } from "./Projection.ts"
+import { Entry, RunId, Seq, SourceSeq } from "./JournalEvent.vibe"
+import type { Input } from "./JournalEvent.vibe"
+import type { OwnerId } from "./OwnerId.vibe"
+import type { Projection } from "./Projection.vibe"
 
 /**
  * Defers a fold/cache update until the outermost durable write commits.

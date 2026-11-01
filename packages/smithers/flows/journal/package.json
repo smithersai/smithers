@@ -39,15 +39,24 @@
     "./migrations/*": null,
     "./*/index": null,
     "./Journal": "./src/Journal.ts",
-    "./JournalEvent": "./src/JournalEvent.ts",
+    "./JournalEvent": {
+      "types": "./src/JournalEvent.d.vibe.ts",
+      "default": "./src/JournalEvent.vibe"
+    },
     "./EngineEvent": "./src/EngineEvent.ts",
     "./JournalMetrics": {
       "types": "./src/JournalMetrics.d.vibe.ts",
       "default": "./src/JournalMetrics.vibe"
     },
     "./Migrations": "./src/Migrations.ts",
-    "./OwnerId": "./src/OwnerId.ts",
-    "./Projection": "./src/Projection.ts",
+    "./OwnerId": {
+      "types": "./src/OwnerId.d.vibe.ts",
+      "default": "./src/OwnerId.vibe"
+    },
+    "./Projection": {
+      "types": "./src/Projection.d.vibe.ts",
+      "default": "./src/Projection.vibe"
+    },
     "./RedactedLogger": "./src/RedactedLogger.ts",
     "./Redaction": "./src/Redaction.ts",
     "./SqlJournal": "./src/SqlJournal.ts",

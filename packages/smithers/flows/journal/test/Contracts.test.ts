@@ -2,9 +2,9 @@ import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect, Schema, Stream } from "effect"
 import * as Consensus from "../src/Consensus.ts"
 import * as Journal from "../src/Journal.ts"
-import type { Input, RunId, Seq } from "../src/JournalEvent.ts"
-import * as OwnerId from "../src/OwnerId.ts"
-import * as Projection from "../src/Projection.ts"
+import type { Input, RunId, Seq } from "../src/JournalEvent.vibe"
+import * as OwnerId from "../src/OwnerId.vibe"
+import * as Projection from "../src/Projection.vibe"
 
 describe("service contracts", () => {
   it.effect("constructs and exercises the closed Journal service", () =>

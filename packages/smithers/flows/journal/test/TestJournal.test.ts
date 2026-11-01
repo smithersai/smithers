@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit } from "effect"
 import { Journal, type JournalError } from "../src/Journal.ts"
-import { type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
+import { type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
 import * as TestJournal from "../src/test/TestJournal.ts"
 
 describe("TestJournal", () => {

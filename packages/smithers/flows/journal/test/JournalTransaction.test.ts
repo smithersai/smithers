@@ -17,7 +17,7 @@ import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { Journal, JournalError, makeNoop } from "../src/Journal.ts"
-import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
+import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
