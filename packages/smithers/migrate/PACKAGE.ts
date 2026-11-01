@@ -9,7 +9,7 @@ import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   // The shared builder declares the private Effect adapter validator as an
   // exact lib input; the test's lib dependency already keys its identity.
   cwd: "packages/smithers/migrate"
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/flow/Transform.ts",
         "src/flow/Layers.ts",
-        "src/flow/Repair.ts",
+        "src/flow/Repair.vibe",
         "src/flow/Verify.ts",
         "src/Report.ts",
         "src/Detect.ts",

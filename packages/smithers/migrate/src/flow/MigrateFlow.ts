@@ -52,7 +52,7 @@ import * as Checkpoint from "./Checkpoint.ts"
 import * as Gate from "./Gate.ts"
 import * as Canonical from "./internal/Canonical.ts"
 import * as Options from "./Options.ts"
-import * as Repair from "./Repair.ts"
+import * as Repair from "./Repair.vibe"
 import * as Transform from "./Transform.ts"
 import * as Verify from "./Verify.ts"
 
