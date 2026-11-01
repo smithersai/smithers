@@ -2405,6 +2405,31 @@ export function App(props: AppProps) {
       flushSync(() => showTab("chat"))
       return
     }
+    // Showing Summary selects a row for display, without giving it letter keys.
+    // Tab (even with a draft), or an arrow from an empty composer, deliberately
+    // acquires its rows; dispatch that arrow below too. A panel chord acts on
+    // the selected row and leaves the composer focused, as an agent tab's does,
+    // so the typing after it never reaches a row action.
+    const summaryComposer = surface === "summary" && !panelFocus && open === undefined
+    const summaryRow = summaryComposer && completing === undefined && !key.ctrl && !key.shift
+    const summaryArrow = summaryRow && !(key.meta || key.option) && text === "" &&
+      ["up", "down", "left", "right"].includes(key.name)
+    const summaryNavigation = summaryArrow ||
+      (summaryRow && (key.meta || key.option) && Keys.bindingFor(key, "panel") !== undefined)
+    if (summaryComposer) {
+      if (key.name === "escape") {
+        key.preventDefault()
+        return flushSync(() => {
+          if (completing !== undefined) dismissMenu()
+          else showTab("chat")
+        })
+      }
+      if (key.name === "tab" && completing === undefined && !key.shift && !key.ctrl && !key.meta && !key.option) {
+        key.preventDefault()
+        return flushSync(() => setPanelFocus(true))
+      }
+      if (summaryArrow) flushSync(() => setPanelFocus(true))
+    }
     if (overviewShown && panelFocus && key.name === "tab" && !key.shift && !key.ctrl && open === undefined) {
       // The overview's tab switches between its tree and the selected branch, the review included.
       // A flow row has no cards to act on; the cards pane always shows cards, never a peek.
@@ -2446,7 +2471,7 @@ export function App(props: AppProps) {
       return flushSync(() => openAsk(soleAsk!.from, "a"))
     }
     if (
-      overviewKeys && open === undefined && !key.ctrl &&
+      (overviewKeys || (summaryNavigation && overviewShown)) && open === undefined && !key.ctrl &&
       (!(key.meta || key.option) || Keys.bindingFor(key, "panel") !== undefined)
     ) {
       const ids = [SubagentView.chat, ...inboxKeys]
@@ -2534,7 +2559,7 @@ export function App(props: AppProps) {
       })
     }
     if (
-      panelFocus && panel !== undefined && open === undefined && !key.ctrl &&
+      (panelFocus || summaryNavigation) && panel !== undefined && open === undefined && !key.ctrl &&
       (!(key.meta || key.option) || Keys.bindingFor(key, "panel") !== undefined)
     ) {
       return Dispatch.panelKey(key, panel, { surface, navigation, worker: workerTab, flow: selectedFlowActions }, {
@@ -2646,7 +2671,8 @@ export function App(props: AppProps) {
   useKeyboard(handleKey)
   usePaste(() => {
     if (
-      workerTab !== undefined && panelFocus && live.current.picker === undefined && liveForm.current === undefined &&
+      (workerTab !== undefined || surface === "summary") && panelFocus && live.current.picker === undefined &&
+      liveForm.current === undefined &&
       activeInspection === undefined && !whichKeyRef.current
     ) {
       // Global paste handlers run before native delivery. Commit focus now so

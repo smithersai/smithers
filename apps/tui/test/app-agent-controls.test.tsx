@@ -638,7 +638,7 @@ test("Summary stops unresolved discovery while Chat remains usable and cancellat
   await command("/flow review Check math.js")
   const file = Session.list(cwd)[0]!.file
   await key("s", { ctrl: true })
-  await key("DOWN")
+  await key("TAB") // Summary's rows get letter keys only after deliberate focus.
   expect(frame()).toMatch(/x.*Stop/)
   await key("x")
   expect(Session.restore(Session.load(file)).flows[0]!.status).toBe("cancelled")

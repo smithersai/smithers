@@ -232,7 +232,7 @@ test.each(["Summary", "Chat card"])("an off-screen settlement preserves Enter on
   await delegate(turns[0]!.input, { id: "other", title: "Other file", prompt: "Review another file." })
   await finish(0, { _tag: "done", answer: "" })
   await key("s", { ctrl: true })
-  await key("DOWN")
+  await key("TAB") // Summary's selected row gets keys only after deliberate focus.
   await finish(2, { _tag: "done", answer: "Other complete." })
   const deadline = Date.now() + 2_000
   while (!frame().split("\n").some((line) => /Other file ·.+enter/.test(line)) && Date.now() < deadline) {
@@ -243,9 +243,9 @@ test.each(["Summary", "Chat card"])("an off-screen settlement preserves Enter on
   }
   expect(frame().split("\n").some((line) => /Other file ·.+enter/.test(line))).toBe(true)
   if (focus === "Chat card") {
-    await key("y", { ctrl: true })
+    await key("s", { ctrl: true })
     await key("TAB")
-    await key("UP")
+    await key("ARROW_UP")
   }
   await key("RETURN")
   expect(frame()).toContain("Continue Review one file")

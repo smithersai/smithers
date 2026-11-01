@@ -120,11 +120,11 @@ export const useSurface = () => {
   // Keys in one input burst are handled before the next render: a second Ctrl+] must step from the first one's tab.
   const shown = useRef(surface)
   shown.current = surface
-  /** Agent tabs open in their composer; other views open in their rows. */
+  /** Summary and agent tabs open in their composer; other views open in their rows. */
   const showTab = (id: string) => {
     shown.current = id
     setSurface(id)
-    setPanelFocus(id !== "chat" && !id.startsWith("tab:"))
+    setPanelFocus(id !== "chat" && id !== "summary" && !id.startsWith("tab:"))
     setNavigation(Panels.initial())
   }
   /** Shows the tab after (or before) the one the last key showed. */

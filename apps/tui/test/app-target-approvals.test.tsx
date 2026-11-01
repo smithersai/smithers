@@ -92,6 +92,7 @@ const selectTarget = async () => {
   await press("s", true)
   await waitFor(() => frame().includes("//images:push 177f95506bee"))
   expect(frame()).toContain("Needs you")
+  await press("TAB") // Summary's rows get letter keys only after deliberate focus.
   for (let step = 0; step < 3 && !frame().includes("y Approve"); step++) await press("DOWN")
   expect(frame()).toContain("y Approve")
   expect(frame()).toContain("n Deny")
