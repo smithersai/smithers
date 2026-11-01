@@ -1,14 +1,18 @@
-import { Effect, Exit, Layer } from "effect"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Context, Effect, Exit, Layer, Schema } from "effect"
 import { beforeEach, expect, test } from "vitest"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
+import { build } from "../test/flowHost.ts"
 import * as Flows from "../Flows.ts"
 import * as Todo from "../flows/Todo.ts"
 import * as TodoBaseClosed from "../flows/TodoBaseClosed.ts"
 import * as TodoDrop from "../flows/TodoDrop.ts"
 import * as Stack from "./Stack.ts"
 import * as TodoRuns from "./TodoRuns.ts"
+import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { testFile } from "../test/harness.ts"
 
 const runtime = testFile("todo_admission")
@@ -121,3 +125,58 @@ test("the stopped-receipt adapter propagates an unreadable engine database inste
   expect(Exit.isFailure(exit)).toBe(true)
   expect(JSON.stringify(exit)).toContain("@smthrs/mvp/stack/RunsUnavailable")
 })))
+
+/** A step that dies, as `agent/Session`'s replay did when the engine's writer gave up (`DatabaseError` `busy`). */
+const Crash = Action.make("todo-runs-test/Crash", { payload: { fail: Schema.Boolean }, success: Schema.String })
+/** A run that dies when asked to, standing in for a TODO's `todo` run under its execution id. */
+const Dies = Flow.make("todo-runs-test/Dies", {
+  description: "A run that dies.",
+  modelInvocable: false,
+  payload: { fail: Schema.Boolean },
+  success: Schema.String,
+  body: Node.capture({}, ({ fail }) => Crash.call({ fail })),
+})
+const dying = Layer.mergeAll(
+  Crash.toLayer(({ fail }) => fail ? Effect.die(new Error("busy")) : Effect.succeed("done")),
+  Interpreter.layer(Dies, { callbackIdentity: "stable" }),
+).pipe(Layer.provideMerge(Action.layerImplementations))
+
+test("a TODO whose run died fails `crashed` and frees its lane, once; a run that ended any other way changes nothing", () =>
+  runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    // Production 2026-11-01: two TODO runs died seconds after their agents settled Done, and the TODOs stayed Working.
+    // One independent lane: the second TODO waits for the first's lane, not on its branch.
+    yield* Stack.apply({ ...change(), op: { kind: "configure", lanes: 1, maxOpen: 50, base: "independent" } }, { runs: true })
+    const committed = yield* Stack.apply(change(), { runs: true })
+    yield* Stack.apply(change(), { runs: true })
+    if (committed.kind !== "applied") throw new Error("not applied")
+    const first = committed.receipt.starts[0]!
+    const { context, engine } = yield* build(dying)
+    const engineDatabase = ExecutionHost.readDatabase((yield* TestDatabase.serverUrl).toString(), engine.schema)
+    const run = (executionId: string, fail: boolean) =>
+      Effect.exit(Context.get(context, FlowRuntime.FlowRuntime).execute(Dies, { executionId, payload: { fail } }))
+    const settled = (executionId: string) => TodoRuns.settleCrashed(executionId, engineDatabase)
+    const todos = Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly number: number; readonly state: string; readonly failure: string | null }>`
+        SELECT number, state, failure FROM todos ORDER BY number`)
+
+    yield* run(todoExecutionId(first.attemptId), true).pipe(Effect.provide(context))
+    expect(yield* engine.status(todoExecutionId(first.attemptId))).toBe("failed")
+    expect(yield* todos).toEqual([
+      { number: 1, state: "working", failure: null },
+      { number: 2, state: "queued", failure: null },
+    ])
+    const starts = yield* settled(todoExecutionId(first.attemptId))
+    expect(yield* todos).toEqual([
+      { number: 1, state: "failed", failure: "crashed" },
+      { number: 2, state: "working", failure: null },
+    ])
+    expect(starts).toHaveLength(1)
+    // The alarm that forgets the run reports again: the same starts, and nothing else changes.
+    expect(yield* settled(todoExecutionId(first.attemptId))).toEqual(starts)
+
+    // The next TODO's run completes: its TODO is the run's own to settle. Any other run is not a TODO's.
+    yield* run(todoExecutionId(starts[0]!.attemptId), false).pipe(Effect.provide(context))
+    expect(yield* settled(todoExecutionId(starts[0]!.attemptId))).toEqual([])
+    expect(yield* settled(`repo-refresh:${crypto.randomUUID()}`)).toEqual([])
+    expect((yield* todos)[1]).toEqual({ number: 2, state: "working", failure: null })
+  }))), 60_000)

@@ -39,6 +39,7 @@ import { Forge } from "./branch/Forge.ts"
 import * as SignIn from "./SignIn.ts"
 import { commandMaxSeconds } from "../src/features/sandbox/config.ts"
 import { keepExecutionId } from "../src/features/sandbox/contract.ts"
+import { todoExecutionId } from "../src/features/pulls/contract.ts"
 
 // The Durable Object that runs remote flows on Cloudflare (docs/features/remote-flows.md): one object per execution,
 // named by its execution id, hosted by ChatApi. Alchemy runs its handlers; they delegate to worker/ExecutionHost.ts,
@@ -231,18 +232,38 @@ const object = <E, R>(
             },
             afterAlarm: Effect.flatMap(flowStarter, (started) =>
               sampleLoad.pipe(Effect.provideService(Flows.FlowStarter, started))),
-            // A repository's run settles its row from the engine's status (docs/features/actions.md).
+            // A repository's run settles its row from the engine's status (docs/features/actions.md), and a `todo` run
+            // that ended in a defect fails its TODO `crashed` and starts the TODOs that frees (docs/features/todos.md).
             settled: (executionId) =>
-              RepoRuns.settle(executionId, database).pipe(
-                Effect.provide(appDatabase),
-                Effect.asVoid,
-                // The alarm that forgets the run a day later tries once more.
-                Effect.catchCause((cause) =>
-                  Effect.logWarning("repo.run.settle").pipe(
-                    Effect.annotateLogs({ runId: executionId, outcome: "failed", errorCode: codeOf(Cause.squash(cause)) }),
-                  )
+              Effect.all([
+                RepoRuns.settle(executionId, database).pipe(
+                  Effect.provide(appDatabase),
+                  Effect.asVoid,
+                  // The alarm that forgets the run a day later tries once more.
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("repo.run.settle").pipe(
+                      Effect.annotateLogs({ runId: executionId, outcome: "failed", errorCode: codeOf(Cause.squash(cause)) }),
+                    )
+                  ),
                 ),
-              ),
+                TodoRuns.settleCrashed(executionId, database).pipe(
+                  Effect.provide(appDatabase),
+                  Effect.flatMap((starts) =>
+                    Effect.flatMap(flowStarter, (started) =>
+                      Effect.forEach(starts, (start) =>
+                        started.start(Todo.Todo, { executionId: todoExecutionId(start.attemptId), payload: start }).pipe(
+                          Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.void),
+                        ), { discard: true }))
+                  ),
+                  // The alarm that forgets the run a day later reports again: the writer answers the same report with
+                  // the same starts (`repeated`), and starting one again changes nothing.
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("todo.crashed").pipe(
+                      Effect.annotateLogs({ runId: executionId, outcome: "failed", errorCode: codeOf(Cause.squash(cause)) }),
+                    )
+                  ),
+                ),
+              ], { discard: true }),
           })
         // Each wake of a branch's machine starts that generation's `sandbox/Keep` on its own object, once
         // (docs/features/sandbox-tools.md#sleep-and-wake).

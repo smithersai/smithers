@@ -1,6 +1,6 @@
 import { EngineStore } from "@smthrs/flows"
-import type { SqlClient } from "effect/sql"
-import { Cause, Effect, Layer, Option, Predicate, Schema } from "effect"
+import { SqlClient } from "effect/sql"
+import { Cause, Effect, Layer, Metric, Option, Predicate, Schema } from "effect"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type * as Flows from "../Flows.ts"
@@ -78,3 +78,38 @@ export const isStopped = <R>(
     Effect.catch((error) => Predicate.isTagged(error, "@smthrs/engine-store/RunNotFound")
       ? Effect.succeed(false) : Effect.fail(new Stack.RunsUnavailable({ errorCode: codeOf(error) }))),
   )
+
+/** TODOs settled by their run's host after the run ended in a defect, by `outcome` (`applied`, `repeated`, `stale`). */
+export const crashes = Metric.counter("smithers_todo_crashes", {
+  description: "TODOs failed `crashed` by the host that settled their run, by outcome",
+  incremental: true,
+})
+
+/**
+ * Settles the TODO of `todo` run `executionId` once the engine in `engine` holds the run `failed`: the run ended in a
+ * defect (or its Settle or Fail step gave up), so no step reported the TODO's end and it would stay Working. Its
+ * attempt fails `crashed`, through the writer as any run's report, and the answer is the TODOs that start now; the
+ * same report again answers the same starts. A TODO the run already settled, a later attempt's, or a dropped one is a
+ * stale report, which changes nothing; any other run is not a TODO's. The run page says what it died of (`flow.run.defect`, its `transitioned` decision).
+ */
+export const settleCrashed = <E, R>(executionId: string, engine: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  Effect.gen(function* () {
+    if (!executionId.startsWith(todoExecutionId(""))) return []
+    const status = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${executionId}`).pipe(
+        Effect.provide(engine),
+        Effect.map((rows) => rows[0]?.status),
+      )
+    if (status !== "failed") return []
+    const sql = yield* SqlClient.SqlClient
+    const [attempt] = yield* sql<Stack.RunAttempt>`
+      SELECT id::text AS "attemptId", todo_id::text AS "todoId", repo_id AS "repoId", ordinal
+      FROM todo_attempts WHERE id::text = ${executionId.slice(todoExecutionId("").length)}`
+    if (attempt === undefined) return []
+    const reported = yield* Stack.report(attempt, { kind: "finished", state: "failed", failure: "crashed" }, { runs: true })
+    yield* Metric.update(Metric.withAttributes(crashes, { outcome: reported.outcome }), 1)
+    yield* (reported.outcome === "applied" ? Effect.logWarning : Effect.logInfo)("todo.crashed").pipe(
+      Effect.annotateLogs({ runId: executionId, attemptId: attempt.attemptId, todoId: attempt.todoId, outcome: reported.outcome }),
+    )
+    return reported.starts
+  }).pipe(Effect.withSpan("todo.crashed", { attributes: { "smithers.execution.id": executionId } }))

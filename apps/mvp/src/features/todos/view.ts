@@ -356,6 +356,7 @@ export const TODO_FAILURE_WORDS: Readonly<Record<TodoFailure, string>> = {
   app_not_installed: "App not installed",
   budget: "Budget reached",
   base_closed: "Earlier change closed",
+  crashed: "Run crashed",
 }
 
 /**
