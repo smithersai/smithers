@@ -226,10 +226,10 @@ describe("BuildAndCheckTypeScriptPackage test data", () => {
     const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: options.cwd })
     const withData = BuildAndCheckTypeScriptPackage(options)
     expect(Target.metadata(withData.test).inputs).toEqual([
-      ...Target.metadata(standard.test).inputs.slice(0, 8),
+      ...Target.metadata(standard.test).inputs.slice(0, 10),
       Input.glob("test/fixtures/*.mjs"),
       Input.glob("test/fixtures/*.cjs"),
-      ...Target.metadata(standard.test).inputs.slice(8)
+      ...Target.metadata(standard.test).inputs.slice(10)
     ])
     expect(plannedArgv(withData.test)).toEqual(plannedArgv(standard.test))
     for (const name of ["lib", "check", "lint", "fmt", "docs", "circular", "docsFiles"] as const) {
@@ -417,6 +417,8 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.glob("src/**/*.{ts,vibe}"),
       Input.glob("spec/**/*.ts"),
       Input.file("tsconfig.json"),
+      Input.file("//packages/repo-targets/test-utils/test-schemas.ts"),
+      Input.file("//packages/smithers/flows/database/src/TestSchemas.ts"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
       Input.file("//packages/repo-targets/test-utils/vitest-root-temp.d.mts")
@@ -447,6 +449,8 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       moved,
       Input.glob("test/**/*.{ts,vibe}"),
       Input.file("tsconfig.json"),
+      Input.file("//packages/repo-targets/test-utils/test-schemas.ts"),
+      Input.file("//packages/smithers/flows/database/src/TestSchemas.ts"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
       Input.file("//packages/repo-targets/test-utils/vitest-root-temp.d.mts")
@@ -457,6 +461,8 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
       Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
       Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
+      Input.file("//packages/repo-targets/test-utils/test-schemas.ts"),
+      Input.file("//packages/smithers/flows/database/src/TestSchemas.ts"),
       Input.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"),
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts")
     ])
@@ -516,6 +522,8 @@ it("runs a package-owned test matrix with the same source and dependency boundar
   expect(attrs.srcs).toContainEqual(Input.glob("test/**/*.{ts,vibe}"))
   expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"))
   expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"))
+  expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/test-schemas.ts"))
+  expect(attrs.srcs).toContainEqual(Input.file("//packages/smithers/flows/database/src/TestSchemas.ts"))
   expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"))
 })
 

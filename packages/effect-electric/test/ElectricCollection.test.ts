@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 import { FetchError } from "@electric-sql/client"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import {
@@ -184,7 +185,7 @@ describe.skipIf(!electricUp)("make", () => {
     const Camel = Schema.Struct({ id: Schema.String, createdBy: Schema.String })
     const row = await run(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      const schema = `effect_electric_${crypto.randomUUID().replaceAll("-", "")}`
+      const schema = TestSchemas.schemaName("effect_electric")
       yield* Effect.acquireRelease(
         sql.unsafe(`create schema ${schema}`).pipe(
           Effect.andThen(sql.unsafe(`create table ${schema}.items (id text primary key, created_by text not null)`)),

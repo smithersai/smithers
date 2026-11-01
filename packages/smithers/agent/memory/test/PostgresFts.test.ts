@@ -1,9 +1,10 @@
+import { TestSchemas } from "@smthrs/database"
 import * as Pg from "@effect/sql-pg"
 import { DurableWriter, PostgresDatabase } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Crypto, Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { createHash, randomBytes, randomUUID } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Migrations from "../src/Migrations.ts"
@@ -19,7 +20,7 @@ const crypto = Layer.succeed(Crypto.Crypto)(Crypto.make({
 it.skipIf(!url)(
   "backfills PostgreSQL FTS and upgrades legacy accents without losing namespace or phrase filtering (requires SMITHERS_TEST_PG_URL)",
   async () => {
-    const schema = `test_${randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("test")
     const database = Layer.provideMerge(
       DurableWriter.layer(),
       PostgresDatabase.layer({ url: url!, driver: Pg, schema })

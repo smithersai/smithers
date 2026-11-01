@@ -15,6 +15,7 @@
     "check": "vibelang --noEmit"
   },
   "dependencies": {
+    "@effect/sql-pg": "4.0.5",
     "@smthrs/targets": "workspace:*",
     "effect": "4.0.5"
   },

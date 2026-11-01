@@ -65,7 +65,7 @@ describe("layer", () => {
         Effect.gen(function* () {
           const context = yield* Layer.build(TestDatabase.layer("probe"))
           const scratch = Context.get(context, TestDatabase.Scratch)
-          expect(scratch.name).toMatch(/^probe_[0-9a-f]{32}$/)
+          expect(scratch.name).toMatch(/^probe_[1-9][0-9]{9}_[0-9a-f]{32}$/)
           expect((yield* schemas).map((schema) => schema.name)).toContain(scratch.name)
           const [own] = yield* Effect.provide(
             Effect.flatMap(

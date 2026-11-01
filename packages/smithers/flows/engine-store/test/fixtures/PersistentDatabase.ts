@@ -1,15 +1,15 @@
+import { TestSchemas } from "@smthrs/database"
 /** Persistent identity shared by independent processes in the storage matrix. */
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 
 export const filename = (sqlitePath: string): string => {
   if (!process.env.SMITHERS_TEST_PG_URL) return sqlitePath
   const url = new URL(process.env.SMITHERS_TEST_PG_URL)
-  url.searchParams.set("schema", `test_restart_${randomUUID().replaceAll("-", "")}`)
+  url.searchParams.set("schema", TestSchemas.schemaName("test_restart"))
   return url.toString()
 }
 

@@ -12,6 +12,7 @@ const sources = Smithers.glob("src/**/*.ts")
 const testSupportFiles = [
   Smithers.glob("test/**/*.ts"),
   Smithers.glob("test-utils/**"),
+  Smithers.file("//packages/smithers/flows/database/src/TestSchemas.ts"),
   Smithers.glob("scripts/**"),
   Smithers.file("PACKAGE.ts")
 ]

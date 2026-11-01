@@ -1,3 +1,4 @@
+import * as TestSchemas from "../src/TestSchemas.ts"
 /**
  * `PostgresDatabase` behind a transaction-pooling proxy, and on a direct
  * connection, through one suite.
@@ -44,7 +45,7 @@ for (const endpoint of endpoints) {
       return
     }
 
-    const schema = () => `pooling_${randomUUID().replaceAll("-", "")}`
+    const schema = () => TestSchemas.schemaName("pooling")
     /** A client for `name`, with its own pool, whose schema is dropped when the test's scope closes. */
     const client = (
       name: string,

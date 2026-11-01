@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 import { PgClient } from "@effect/sql-pg"
 import { type Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
@@ -39,7 +40,7 @@ export type Row = { id: string; text: string; n: number }
 /** A scratch table `<schema>.notes`, dropped with its schema when the scope closes, and writes to it. */
 export const scratchTable = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
-  const schema = `effect_electric_${crypto.randomUUID().replaceAll("-", "")}`
+  const schema = TestSchemas.schemaName("effect_electric")
   yield* Effect.acquireRelease(
     sql.unsafe(`create schema ${schema}`).pipe(
       Effect.andThen(

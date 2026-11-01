@@ -1,3 +1,4 @@
+import * as TestSchemas from "../src/TestSchemas.ts"
 /**
  * Durable writes per second through PostgreSQL's writer locks
  * (docs/decisions/0001-run-writer-locks.md).
@@ -73,7 +74,7 @@ const writer = (within: Scope.Scope, url: string, schema: string, partition?: st
     return durable.write(sql`INSERT INTO writes (writer) VALUES (${name})`, { partition })
   }))
 
-const name = () => `bench_${randomUUID().replaceAll("-", "")}`
+const name = () => TestSchemas.schemaName("bench")
 
 for (const endpoint of endpoints) {
   const up = await listening(endpoint.probe)

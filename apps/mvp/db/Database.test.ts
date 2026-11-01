@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // The Postgres client layer, Hyperdrive's view of DATABASE_URL, and `pnpm db:migrate` (db/Database.ts, db/migrate.ts),
 // against the compose Postgres in schemas of this file's own.
 import { execFile } from "node:child_process"
@@ -42,7 +43,7 @@ describe("hyperdrive", () => {
 
 /** A schema of its own, empty, for as long as `use` runs, and the compose Postgres URL that connects with it. */
 const emptySchema = async <A>(use: (url: string, schema: string) => Promise<A>) => {
-  const schema = `cli_${crypto.randomUUID().replaceAll("-", "")}`
+  const schema = TestSchemas.schemaName("cli")
   await sql(`CREATE SCHEMA ${schema}`)
   try {
     const url = await runtime.runPromise(TestDatabase.serverUrl)

@@ -46,3 +46,8 @@ export * as UnsupportedBackend from "./UnsupportedBackend.ts"
  * @since 1.0.0
  */
 export * as PostgresDatabase from "./postgres/PostgresDatabase.ts"
+
+/** @category testing
+ * @since 1.0.0
+ */
+export * as TestSchemas from "./TestSchemas.ts"

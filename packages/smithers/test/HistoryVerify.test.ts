@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * `runs verify` resumes a copy of a parked run under a replay-only engine and
  * reports which recorded steps the current code replays and which it would
@@ -10,7 +11,6 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { Cli } from "incur"
-import { randomUUID } from "node:crypto"
 import {
   cpSync,
   existsSync,
@@ -304,7 +304,7 @@ it("verifies a store elsewhere against the project's flows", async () => {
 it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", async (context) => {
   // The prefix names every store's schema by its file's basename, so a
   // scratch `engine.db` would alias the original: the copy is named apart.
-  const prefix = `test_verify_${randomUUID().replaceAll("-", "").slice(0, 16)}`
+  const prefix = TestSchemas.schemaName("test_verify")
   const postgresUrl = Needs.postgres(context)
   const adminUrl = new URL(postgresUrl)
   adminUrl.searchParams.set("schema", "public")
@@ -322,20 +322,20 @@ it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", 
       Effect.flatMap(SqlClient, (sql) =>
         sql<
           { name: string }
-        >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`${prefix}%`} ORDER BY nspname`)
+        >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`} ORDER BY nspname`)
     ).then((rows) => rows.map((row) => row.name))
   const rows = () =>
     admin(Effect.flatMap(SqlClient, (sql) =>
       sql<{ count: number }>`SELECT
-        (SELECT count(*) FROM ${sql(`${prefix}_engine_db`)}.flows_journal_events)
-        + (SELECT count(*) FROM ${sql(`${prefix}_engine_db`)}.flows_attempts)
-        + (SELECT count(*) FROM ${sql(`${prefix}_control_db`)}.flows_journal_events) AS count`)).then(([row]) =>
+        (SELECT count(*) FROM ${sql(TestSchemas.forStore(prefix, "engine_db"))}.flows_journal_events)
+        + (SELECT count(*) FROM ${sql(TestSchemas.forStore(prefix, "engine_db"))}.flows_attempts)
+        + (SELECT count(*) FROM ${sql(TestSchemas.forStore(prefix, "control_db"))}.flows_journal_events) AS count`)).then(([row]) =>
         Number(row!.count)
       )
   try {
     const { root, runId } = await parkedProject(1, 0, true)
     expect(existsSync(join(root, ".flows", "engine.db"))).toBe(false)
-    expect(await schemas()).toEqual([`${prefix}_control_db`, `${prefix}_engine_db`])
+    expect(await schemas()).toEqual([TestSchemas.forStore(prefix, "control_db"), TestSchemas.forStore(prefix, "engine_db")])
     const before = await rows()
     const consistent = await Verify.verify(root, runId)
     expect(consistent.verdict).toBe("consistent")
@@ -346,22 +346,22 @@ it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", 
     expect(divergent.verdict).toBe("divergent")
     expect(divergent.executes?.action).toBe("verify/second-renamed")
     // A prefix that leaves no room for a scratch name is refused before any copy.
-    vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", `${prefix}_${"x".repeat(63 - prefix.length - 12)}`)
+    vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", `legacy_${"x".repeat(44)}`)
     await expect(Verify.verify(root, runId, {})).rejects.toMatchObject({
       code: "verify_schema_too_long"
     })
     vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
     // The originals are untouched and every scratch schema is gone.
     expect(await rows()).toBe(before)
-    expect(await schemas()).toEqual([`${prefix}_control_db`, `${prefix}_engine_db`])
+    expect(await schemas()).toEqual([TestSchemas.forStore(prefix, "control_db"), TestSchemas.forStore(prefix, "engine_db")])
     expect(recordedActions(root)).toEqual(["verify/first", "verify/second"])
     // An unsafe store copy leaves the whole verification unverified, including at the CLI boundary.
-    const external = `${prefix}_external`
+    const external = TestSchemas.forStore(prefix, "external")
     await admin(Effect.gen(function*() {
       const sql = yield* SqlClient
       yield* sql`CREATE SCHEMA ${sql(external)}`
       yield* sql`CREATE SEQUENCE ${sql(external)}.counter`
-      yield* sql.unsafe(`CREATE TABLE "${prefix}_engine_db".counted (n BIGINT DEFAULT nextval('${external}.counter'))`)
+      yield* sql.unsafe(`CREATE TABLE "${TestSchemas.forStore(prefix, "engine_db")}".counted (n BIGINT DEFAULT nextval('${external}.counter'))`)
     }))
     const summary = await Verify.verifyAll(root)
     expect(summary.verdict).toBe("unverified")
@@ -383,7 +383,7 @@ it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", 
       for (
         const name of yield* sql<
           { name: string }
-        >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`${prefix}%`}`
+        >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`}`
       ) yield* sql`DROP SCHEMA ${sql(name.name)} CASCADE`
     })).catch(() => undefined)
     vi.unstubAllEnvs()

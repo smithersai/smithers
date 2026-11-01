@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // A command as its `sandbox/Command` job (worker/flows/SandboxCommand.ts, docs/features/sandbox-tools.md#long-commands),
 // on the Durable Object's handlers (worker/ExecutionHost.ts): every execution is an object with its own in-memory
 // storage and alarm, routed to the others as Cloudflare routes them, over the compose Postgres (`pnpm db:up`). The
@@ -156,7 +157,7 @@ const withEngine = <A, E>(
     const url = (yield* TestDatabase.serverUrl).toString()
     const admin = yield* Layer.build(Pg.PgClient.layer({ url: Redacted.make(url), maxConnections: 1 }))
     const sql = Context.get(admin, SqlClient.SqlClient)
-    const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("flows")
     yield* Effect.addFinalizer(() => Effect.orDie(sql`DROP SCHEMA IF EXISTS ${sql(schema)} CASCADE`))
     const status = (executionId: string) =>
       Effect.orDie(sql<{ readonly status: string }>`

@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // Publish and Update branch (worker/branch/Publish.ts, docs/features/branch-publish.md) on the Node host against the
 // scripted GitHub and a test `Machines` over an in-memory working copy, both injected Effect services: a write admitted
 // as the writes route admits it, then `branch/Publish` takes the branch's working copy to GitHub as the person who
@@ -851,7 +852,7 @@ describe("the remote host", { timeout: 60_000 }, () => {
         const url = (yield* TestDatabase.serverUrl).toString()
         const admin = yield* Layer.build(Pg.PgClient.layer({ url: Redacted.make(url), maxConnections: 1 }))
         const client = Context.get(admin, SqlClient.SqlClient)
-        const name = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+        const name = TestSchemas.schemaName("flows")
         yield* Effect.addFinalizer(() => Effect.orDie(client`DROP SCHEMA IF EXISTS ${client(name)} CASCADE`))
         const executionId = publishExecutionId(writeId)
         const host = ExecutionHost.make(storage, {

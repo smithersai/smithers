@@ -8,6 +8,7 @@ export default defineConfig({
   plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [
+      fileURLToPath(new URL("../repo-targets/test-utils/test-schemas.ts", import.meta.url)),
       fileURLToPath(new URL("../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
       fileURLToPath(new URL("../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
     ],

@@ -7,6 +7,7 @@ import type { SqlClient } from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { basename, resolve } from "node:path"
 import * as PostgresDatabase from "../postgres/PostgresDatabase.ts"
+import { forStore } from "../TestSchemas.ts"
 import { UnsupportedDatabase } from "./UnsupportedDatabase.ts"
 
 /** Recognizes PostgreSQL connection strings.
@@ -60,7 +61,7 @@ export const location = (filename: string): { readonly url: string; readonly sch
   const schema = explicit ?
     parsed.searchParams.get("schema") ?? "smithers_flows"
     : process.env.SMITHERS_POSTGRES_SCHEMA
-    ? `${process.env.SMITHERS_POSTGRES_SCHEMA}_${basename(filename).replaceAll(/[^a-zA-Z0-9_]/g, "_")}`
+    ? forStore(process.env.SMITHERS_POSTGRES_SCHEMA, basename(filename).replaceAll(/[^a-zA-Z0-9_]/g, "_"))
     : `smithers_${createHash("sha256").update(resolve(filename)).digest("hex").slice(0, 32)}`
   parsed.searchParams.delete("schema")
   return { url: parsed.toString(), schema }

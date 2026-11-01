@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * The real databases the execution suites run against, both from
  * `apps/mvp/docker-compose.yml`: Postgres itself, and PgBouncer in
@@ -10,7 +11,6 @@ import { PostgresDatabase } from "@smthrs/database"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import * as SqlClient from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 import { connect } from "node:net"
 
 /**
@@ -66,7 +66,7 @@ export const targets: ReadonlyArray<Target> = [
 export const direct: Target = targets[0]!
 
 /** A fresh schema name for one case. */
-export const freshSchema = (): string => `cf_test_${randomUUID().replaceAll("-", "")}`
+export const freshSchema = (): string => TestSchemas.schemaName("cf_test")
 
 /** The engine's `SqlClient` in `schema`, the way an app composes it. */
 export const database = (schema: string, databaseUrl = url) =>

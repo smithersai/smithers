@@ -1,5 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
@@ -16,6 +17,7 @@ const reportsDirectory = process.versions.bun ? undefined : (() => {
 export default defineConfig({
   plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
+    globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/test-schemas.ts", import.meta.url))],
     include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
     setupFiles: ["./test/BunRuntime.setup.ts"],

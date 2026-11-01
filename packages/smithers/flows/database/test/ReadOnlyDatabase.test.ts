@@ -1,8 +1,8 @@
+import * as TestSchemas from "../src/TestSchemas.ts"
 import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Duration, Effect, Exit, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -145,7 +145,7 @@ const url = process.env.SMITHERS_TEST_PG_URL
 
 describe.skipIf(!url)("read-only PostgreSQL", () => {
   it("creates no schema, takes no writer lock, and refuses writes", async () => {
-    const schema = `readonly_${randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("readonly")
     const exit = await Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
       const writer = Context.get(
         yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema })),

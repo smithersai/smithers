@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // worker/ExecutionHost.ts in local workerd: a real Durable Object (worker/test/workerd/worker.ts, run by Miniflare)
 // runs `probe/Pause` from real alarms over the compose Postgres (`pnpm db:up`) through Miniflare's local Hyperdrive.
 // Its `:after` step resets the object with `ctx.abort()`; the alarm Cloudflare retries must run in a new incarnation,
@@ -64,7 +65,7 @@ const server = Effect.gen(function* () {
 })
 
 describe("a remote execution in local workerd", () => {
-  const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+  const schema = TestSchemas.schemaName("flows")
   let url: string
   let worker: Miniflare
 

@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * The composition every ModelStep case runs on: the Node host runtime over a
  * scratch schema of the compose Postgres, one probe flow, and a scripted model
@@ -33,7 +34,7 @@ import * as ModelStep from "../../src/ModelStep.ts"
 export const postgres = { host: "localhost", port: 54321, url: "postgres://smithers:smithers@localhost:54321/smithers" }
 
 /** A schema name no other case uses. */
-export const scratchSchema = (): string => `model_step_${crypto.randomUUID().replaceAll("-", "")}`
+export const scratchSchema = (): string => TestSchemas.schemaName("model_step")
 
 /** The flow every case executes. Its handler is the case's own. */
 export const Probe = Flow.make("agent/test/model-step/Probe", {

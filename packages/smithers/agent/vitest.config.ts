@@ -16,6 +16,7 @@ export default defineConfig({
     environment: "node",
     // FlowStore exercises the real descriptor-relative host, including in a clean checkout.
     globalSetup: [
+      fileURLToPath(new URL("../../repo-targets/test-utils/test-schemas.ts", import.meta.url)),
       fileURLToPath(new URL("../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
       fileURLToPath(new URL("../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url)),
       "./test/BuildNativeHelper.ts"

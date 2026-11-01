@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * An Electric collection of todos synced from Postgres: rows decoded by a
  * schema, an `onInsert` that writes the row and waits for Electric to deliver
@@ -24,7 +25,7 @@ export type Todo = typeof Todo.Type
 /** A `todos` table in a schema of its own, dropped with the schema when the scope closes. Returns its name. */
 export const scratchTodos = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
-  const schema = `todos_example_${crypto.randomUUID().replaceAll("-", "")}`
+  const schema = TestSchemas.schemaName("todos_example")
   yield* Effect.acquireRelease(
     sql.unsafe(`create schema ${schema}`).pipe(
       Effect.andThen(

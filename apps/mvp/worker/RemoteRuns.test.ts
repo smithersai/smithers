@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // A TODO's run read from the browser (worker/RemoteRuns.ts, ruling TODO-3) through the real handler, on this file's
 // schema of the compose Postgres and Electric (`pnpm db:up`), against a real engine on a schema of its own: the Node
 // host's (worker/test/flowHost.ts), which keeps its runs, journal and change feed in the same tables the Cloudflare host
@@ -907,7 +908,7 @@ describe("POST /api/remote-runs/<runId>/steers", () => {
     const start = await attempt()
     const runId = todoExecutionId(start.attemptId)
     const server = await Effect.runPromise(TestDatabase.serverUrl)
-    const empty = `remote_runs_no_journal_${crypto.randomUUID().replaceAll("-", "")}`
+    const empty = TestSchemas.schemaName("remote_runs_no_journal")
     const noJournal = PostgresDatabase.layer({ url: server.toString(), driver: Pg, schema: empty, postgres: { maxConnections: 1 } })
       .pipe(Layer.orDie)
     const sessionsDown = Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }))

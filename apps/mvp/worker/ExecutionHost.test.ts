@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // worker/ExecutionHost.ts in Node: the Durable Object's start and alarm handlers over the compose Postgres
 // (`pnpm db:up`), with an in-memory stand-in for the object's storage, the one Cloudflare binding they take. The real
 // object runs them in local workerd in worker/ExecutionHost.workerd.test.ts.
@@ -94,7 +95,7 @@ const withSchema = <A, E>(
       const url = (yield* TestDatabase.serverUrl).toString()
       const admin = yield* Layer.build(Pg.PgClient.layer({ url: Redacted.make(url), maxConnections: 1 }))
       const sql = Context.get(admin, SqlClient.SqlClient)
-      const name = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+      const name = TestSchemas.schemaName("flows")
       yield* Effect.addFinalizer(() => Effect.orDie(sql`DROP SCHEMA IF EXISTS ${sql(name)} CASCADE`))
       return yield* use({ url, name, sql })
     })),

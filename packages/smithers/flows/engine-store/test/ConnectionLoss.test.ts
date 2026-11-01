@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * A database connection lost while a step's outcome is being recorded is an
  * infrastructure failure, not the step's outcome. The attempt must stay
@@ -158,7 +159,7 @@ const incarnation = (
 describe("a connection lost while a step's outcome is recorded", () => {
   for (const target of targets) {
     it.skipIf(!target.available)(`leaves the attempt adoptable for a later drive (${target.label})`, async () => {
-      const schema = `loss_${randomUUID().replaceAll("-", "")}`
+      const schema = TestSchemas.schemaName("loss")
       const executionId = `answer-${randomUUID()}`
       const recorded: Array<string> = []
       let cut: Promise<void> | undefined

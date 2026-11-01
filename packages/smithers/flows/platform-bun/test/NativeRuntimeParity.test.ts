@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 import * as Pg from "@effect/sql-pg"
 import { expect, it } from "@effect/vitest"
 import { PostgresDatabase } from "@smthrs/database"
@@ -5,7 +6,6 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { execFileSync, spawnSync } from "node:child_process"
-import { randomUUID } from "node:crypto"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -21,7 +21,7 @@ it.skipIf(!bunInstalled).each([["node", "bun"], ["bun", "node"]] as const)(
   async (first, second) => {
     const directory = mkdtempSync(join(tmpdir(), "flows-native-parity-"))
     const postgres = process.env.SMITHERS_TEST_PG_URL
-    const prefix = `test_runtime_${randomUUID().replaceAll("-", "")}`
+    const prefix = TestSchemas.schemaName("test_runtime")
     const run = (runtime: string, phase: string) =>
       JSON.parse(
         execFileSync(
@@ -58,7 +58,7 @@ it.skipIf(!bunInstalled).each([["node", "bun"], ["bun", "node"]] as const)(
       })
     } finally {
       if (postgres) {
-        const schema = `${prefix}_engine_sqlite`
+        const schema = TestSchemas.forStore(prefix, "engine_sqlite")
         await Effect.runPromise(
           Effect.gen(function*() {
             const sql = yield* SqlClient

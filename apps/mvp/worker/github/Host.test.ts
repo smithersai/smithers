@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 import * as GitHubCreation from "../branch/GitHubCreation.ts"
 // What a host builds to run the git loop (worker/github/{Config,Host}.ts, worker/ExecutionHost.ts `withGitHub`): the
 // App's settings from Config, the App itself, and the Durable Object's handlers running `github/Write` to the end over
@@ -145,7 +146,7 @@ describe("Host", () => {
         const url = (yield* TestDatabase.serverUrl).toString()
         const admin = yield* Layer.build(Pg.PgClient.layer({ url: Redacted.make(url), maxConnections: 1 }))
         const sql = Context.get(admin, SqlClient.SqlClient)
-        const name = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+        const name = TestSchemas.schemaName("flows")
         yield* Effect.addFinalizer(() => Effect.orDie(sql`DROP SCHEMA IF EXISTS ${sql(name)} CASCADE`))
         const executionId = writeExecutionId(writeId)
         const host = ExecutionHost.make(storage, {

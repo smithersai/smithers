@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 import { PgClient } from "@effect/sql-pg"
 import { isChangeMessage, ShapeStream } from "@electric-sql/client"
 import { ConfigProvider, Effect, Fiber, Layer, Logger, Metric, Redacted, References, Tracer } from "effect"
@@ -499,7 +500,7 @@ describe.skipIf(!electricUp)("through Electric", () => {
   })
 
   describe.skipIf(!postgresUp)("over a real table", () => {
-    const schema = `test_proxy_${crypto.randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("test_proxy")
     const table = `${schema}.items`
     const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
       Effect.runPromise(effect.pipe(Effect.provide(postgres)))

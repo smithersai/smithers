@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * Runs write their journals side by side on PostgreSQL: every durable append
  * names its run's partition
@@ -109,7 +110,7 @@ describe.skipIf(url === undefined)("SqlJournal partitions over PostgreSQL", () =
     `${runs} runs appending ${entries} entries each finish within three times one run alone`,
     () =>
       Effect.gen(function*() {
-        const schema = `journal_partitions_${randomUUID().replaceAll("-", "")}`
+        const schema = TestSchemas.schemaName("journal_partitions")
         const slow = yield* SlowNetwork.proxy(url!, { delayMs })
         // One incarnation installs the schema; each run then gets its own.
         const installer = yield* incarnation(slow, schema)
@@ -148,7 +149,7 @@ describe.skipIf(url === undefined)("SqlJournal partitions over PostgreSQL", () =
     "two incarnations of one run: the takeover waits for the stale one's open append, which then loses its fence",
     () =>
       Effect.gen(function*() {
-        const schema = `journal_incarnations_${randomUUID().replaceAll("-", "")}`
+        const schema = TestSchemas.schemaName("journal_incarnations")
         const first = yield* incarnation(url!, schema)
         yield* Effect.addFinalizer(() => TestDatabase.dropSchema(first.sql, schema).pipe(Effect.orDie))
         const [second, observer] = [yield* incarnation(url!, schema), yield* incarnation(url!, schema)]

@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { NodeRuntime } from "@smthrs/platform-node"
@@ -5,7 +6,6 @@ import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
 import { forkWorkspaceName } from "@smthrs/time-travel/TimeTravel"
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -21,7 +21,7 @@ it(
   async (context) => {
     const postgresUrl = Needs.postgres(context)
     const root = await mkdtemp(join(tmpdir(), "postgres-history-"))
-    const prefix = `test_history_${randomUUID().replaceAll("-", "")}`
+    const prefix = TestSchemas.schemaName("test_history")
     vi.stubEnv("SMITHERS_POSTGRES_URL", postgresUrl)
     vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
     vi.stubEnv("SMITHERS_BACKEND", "postgres")
@@ -93,7 +93,7 @@ it(
           kind,
           Effect.gen(function*() {
             const sql = yield* SqlClient
-            yield* sql`DROP SCHEMA ${sql(`${prefix}_${kind}_db`)} CASCADE`
+            yield* sql`DROP SCHEMA ${sql(TestSchemas.forStore(prefix, `${kind}_db`))} CASCADE`
           })
         )
       }

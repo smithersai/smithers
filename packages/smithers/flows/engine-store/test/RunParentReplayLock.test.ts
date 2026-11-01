@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * A parent that re-executes a child it already admitted records the same
  * parent edge again, inside the child's partition write (`RunDriver` `admit`).
@@ -39,7 +40,6 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 import { connect } from "node:net"
 import { describe, expect, it } from "vitest"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
@@ -151,7 +151,7 @@ describe("a parent edge recorded again", () => {
     "is answered inside the child's partition write while another run's writer shares the schema",
     () =>
       Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-        const schema = `parent_edge_${randomUUID().replaceAll("-", "")}`
+        const schema = TestSchemas.schemaName("parent_edge")
         const engineSql = yield* client(schema)
         yield* Effect.addFinalizer(() => TestDatabase.dropSchema(engineSql, schema).pipe(Effect.orDie))
         // The engine's writer replays a busy write once, so a widening that waits out its lock fails fast.
@@ -188,7 +188,7 @@ describe("a parent edge recorded again", () => {
   )
 
   it("waits out another run's writer when a parent first follows a round of its child's lineage", () => {
-    const schema = `parent_edge_${randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("parent_edge")
     return Effect.runPromise(withCrypto(Effect.scoped(Effect.gen(function*() {
       const scope = yield* Effect.scope
       const dropper = yield* client(schema)

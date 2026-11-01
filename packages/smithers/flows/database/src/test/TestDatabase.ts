@@ -8,10 +8,10 @@ import { Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
 import type { Fragment } from "effect/sql/Statement"
-import { randomUUID } from "node:crypto"
 import * as DurableWriter from "../DurableWriter.ts"
 import * as NodeDatabase from "../node/NodeDatabase.ts"
 import * as PostgresDatabase from "../postgres/PostgresDatabase.ts"
+import { schemaName } from "../TestSchemas.ts"
 
 /**
  * Provides the production Node SQLite client and durable writer over a fresh
@@ -50,7 +50,7 @@ export const layer: Layer.Layer<DurableWriter.DurableWriter | SqlClient.SqlClien
     const url = process.env.SMITHERS_TEST_PG_URL
     if (!url) return sqliteLayer
     const driver = yield* Effect.promise(() => import("@effect/sql-pg"))
-    const schema = `test_${randomUUID().replaceAll("-", "")}`
+    const schema = schemaName("test")
     const cleanup = Layer.effectDiscard(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       yield* Effect.addFinalizer(() => dropSchema(sql, schema).pipe(Effect.orDie))

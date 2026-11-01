@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // The Node host for the worker tests: the durable flow engine the Node and Bun hosts compose (`Runtime.layer` from
 // `@smthrs/flows`), over `@smthrs/platform-node`'s host services and the compose Postgres (`pnpm db:up`), in an engine
 // schema of the test's own. A flow that runs here and on the Cloudflare Durable Object (worker/Executions.ts) is
@@ -15,7 +16,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 
 /** Where a Node-host runtime keeps its engine: a fresh schema of the compose Postgres, dropped with the runtime. */
 export interface Engine {
-  /** The engine's schema, `flows_<random>`. */
+  /** The engine's schema, `flows_<epoch-seconds>_<hex>`. */
   readonly schema: string
   /** A run's status in the engine's run table (`running`, `completed`, `failed`, ...), or `undefined` if unknown. */
   readonly status: (executionId: string) => Effect.Effect<string | undefined>
@@ -82,7 +83,7 @@ const gatedDriver = (gate: Effect.Effect<void, SqlError>): PostgresDatabase.Driv
 export const build = <ROut, RE, RR>(registration: Layer.Layer<ROut, RE, RR>, options: HostOptions = {}) =>
   Effect.gen(function* () {
     const server = yield* TestDatabase.serverUrl
-    const schema = options.schema ?? `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const schema = options.schema ?? TestSchemas.schemaName("flows")
     const adminContext = yield* Layer.build(admin)
     const sql = Context.get(adminContext, SqlClient.SqlClient)
     // Registered first, so it runs last: the runtime's connections close before the schema goes.

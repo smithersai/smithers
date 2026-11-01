@@ -1,3 +1,4 @@
+import * as TestSchemas from "../src/TestSchemas.ts"
 /**
  * Partitioned writer locks on PostgreSQL (docs/decisions/0001-run-writer-locks.md):
  * writes to one partition commit one at a time, writes to two commit
@@ -11,7 +12,6 @@ import { describe, expect, it } from "@effect/vitest"
 import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import { randomUUID } from "node:crypto"
 import { DatabaseMetrics, DurableWriter, Migrations, PostgresDatabase } from "../src/index.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 import { listening, pgbouncerUrl } from "./harness/listening.ts"
@@ -39,7 +39,7 @@ for (const endpoint of endpoints) {
       return
     }
 
-    const schema = () => `partitions_${randomUUID().replaceAll("-", "")}`
+    const schema = () => TestSchemas.schemaName("partitions")
     /** A client for `name` with its own pool, whose schema is dropped when the test's scope closes. */
     const client = (name: string) =>
       Effect.gen(function*() {

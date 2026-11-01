@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // `pnpm eval`: a person's steer against the TODO it changes (ruling TODO-3, docs/features/runs.md#steering). The `todo`
 // run's real agent works with the real model (the deployment's default, `CHAT_MODEL`, metered by the model endpoint as in
 // production) on a TODO that says "Change nothing else", and while its first turn is in flight the person asks it to add
@@ -70,7 +71,7 @@ const trial = async (real: HostModel["Service"]): Promise<Trial> => {
   const { services } = await githubServices(runtime, github)
   const database = await runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
   // The engine's schema, named here so the steer is admitted to it as ChatApi admits one.
-  const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+  const schema = TestSchemas.schemaName("flows")
   const server = await runtime.runPromise(TestDatabase.serverUrl)
   const queue = NotificationQueue.layer.pipe(
     Layer.provide(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 })),

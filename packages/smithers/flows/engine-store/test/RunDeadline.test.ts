@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * A flow's `deadline` survives a restart on the durable engine: the start it
  * counts from is journaled, so the engine that resumes the run honors the
@@ -18,7 +19,6 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import { randomUUID } from "node:crypto"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -306,7 +306,7 @@ it.effect("deadline expiry cancels the persisted attached tree after reopening i
       const directory = mkdtempSync(join(tmpdir(), "run-deadline-tree-"))
       yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(directory, { recursive: true, force: true })))
       const pgUrl = process.env.SMITHERS_TEST_PG_URL
-      const schema = `deadline_tree_${randomUUID().replaceAll("-", "")}`
+      const schema = TestSchemas.schemaName("deadline_tree")
       const uri = pgUrl === undefined ? undefined : new URL(pgUrl)
       uri?.searchParams.set("schema", schema)
       const filename = uri?.toString() ?? join(directory, "engine.db")

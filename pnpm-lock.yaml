@@ -955,6 +955,9 @@ importers:
         specifier: workspace:*
         version: link:../effect-tanstack-db
     devDependencies:
+      '@smthrs/database':
+        specifier: workspace:*
+        version: link:../smithers/flows/database
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
@@ -1169,6 +1172,9 @@ importers:
 
   packages/repo-targets:
     dependencies:
+      '@effect/sql-pg':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)
       '@smthrs/targets':
         specifier: workspace:*
         version: link:../smithers/build/targets

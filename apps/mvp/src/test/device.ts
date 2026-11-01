@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 import { FlowRegistry } from "../flows/registry"
 // A device in Node, as the browser builds it (decision 0011 §4): a tab with its own `ThemeStore`, `BrowserEngine`,
 // dispatch and navigation answers (src/flows/engine.ts `tabEngine` and `tabAnswers`, src/features/navigation/tab.ts), and the leader its engine worker runs (`BrowserRuntime.serve` over every
@@ -90,7 +91,7 @@ export const openDevice = async (
 ) => {
   const scope = Effect.runSync(Scope.make())
   const name = `smithers-${crypto.randomUUID()}`
-  const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+  const schema = TestSchemas.schemaName("flows")
   const url = await Effect.runPromise(TestDatabase.serverUrl)
   const channel = new MessageChannel()
   channel.port1.start()

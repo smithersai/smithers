@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * `StoreCopy` copies a store whole: a PostgreSQL schema keeps every table,
  * index, check, foreign key, trigger and identity position of its source, and
@@ -8,7 +9,6 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -110,7 +110,7 @@ it("copies a SQLite store into a new file and leaves the source as it was", asyn
 
 it("copies a PostgreSQL schema whole, continues its identities and drops the copy", async (context) => {
   Needs.postgres(context)
-  const prefix = `test_copy_${randomUUID().replaceAll("-", "").slice(0, 16)}`
+  const prefix = TestSchemas.schemaName("test_copy")
   vi.stubEnv("SMITHERS_POSTGRES_URL", url)
   vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
   vi.stubEnv("SMITHERS_BACKEND", "postgres")
@@ -123,7 +123,7 @@ it("copies a PostgreSQL schema whole, continues its identities and drops the cop
     const before = { engine: await catalog(engine), counts: await counts(engine) }
     await Effect.runPromise(StoreCopy.copy(engine, engineCopy))
     await Effect.runPromise(StoreCopy.copy(control, controlCopy))
-    expect(StoreCopy.postgres(engineCopy)?.schema).toBe(`${prefix}_copy_engine_db`)
+    expect(StoreCopy.postgres(engineCopy)?.schema).toBe(TestSchemas.forStore(prefix, "copy_engine_db"))
     expect(await catalog(engineCopy)).toEqual(before.engine)
     expect(await catalog(controlCopy)).toEqual(await catalog(control))
     expect(new Set(before.engine.map((row) => row.kind))).toEqual(
@@ -172,10 +172,10 @@ it("copies a PostgreSQL schema whole, continues its identities and drops the cop
       Effect.flatMap(
         SqlClient,
         (sql) =>
-          sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`${prefix}%`} ORDER BY 1`
+          sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`} ORDER BY 1`
       )
     )
-    expect(left.map((row) => row.name)).toEqual([`${prefix}_control_db`, `${prefix}_engine_db`])
+    expect(left.map((row) => row.name)).toEqual([TestSchemas.forStore(prefix, "control_db"), TestSchemas.forStore(prefix, "engine_db")])
   } finally {
     await on(
       publicUrl(),
@@ -184,7 +184,7 @@ it("copies a PostgreSQL schema whole, continues its identities and drops the cop
         for (
           const row of yield* sql<
             { name: string }
-          >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`${prefix}%`}`
+          >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`}`
         ) yield* sql`DROP SCHEMA ${sql(row.name)} CASCADE`
       })
     ).catch(() => undefined)
@@ -193,7 +193,7 @@ it("copies a PostgreSQL schema whole, continues its identities and drops the cop
 
 it("refuses a PostgreSQL copy that exists already or would reach its source, and leaves no schema", async (context) => {
   Needs.postgres(context)
-  const prefix = `test_copy_${randomUUID().replaceAll("-", "").slice(0, 16)}`
+  const prefix = TestSchemas.schemaName("test_copy")
   vi.stubEnv("SMITHERS_POSTGRES_URL", url)
   vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
   vi.stubEnv("SMITHERS_BACKEND", "postgres")
@@ -203,7 +203,7 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
   const schemas = () =>
     admin(
       Effect.flatMap(SqlClient, (sql) =>
-        sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`${prefix}%`} ORDER BY 1`)
+        sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`} ORDER BY 1`)
     ).then((rows) =>
       rows.map((row) =>
         row.name
@@ -225,7 +225,7 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
     const taken = join(directory, "taken.db")
     await on(taken, Effect.flatMap(SqlClient, (sql) => sql`CREATE TABLE keep (id INTEGER)`))
     expect(await code(StoreCopy.copy(source, taken))).toBeUndefined()
-    expect(await schemas()).toEqual([`${prefix}_source_db`, `${prefix}_taken_db`])
+    expect(await schemas()).toEqual([TestSchemas.forStore(prefix, "source_db"), TestSchemas.forStore(prefix, "taken_db")])
 
     // A default drawing from a sequence the source owns would advance the source.
     await on(
@@ -251,14 +251,14 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
     )
     expect(await code(StoreCopy.copy(source, join(directory, "pinned.db")))).toBe("verify_copy_unsafe")
     // Each refused copy rolled its schema back.
-    expect(await schemas()).toEqual([`${prefix}_source_db`, `${prefix}_taken_db`])
+    expect(await schemas()).toEqual([TestSchemas.forStore(prefix, "source_db"), TestSchemas.forStore(prefix, "taken_db")])
   } finally {
     await admin(Effect.gen(function*() {
       const sql = yield* SqlClient
       for (
         const row of yield* sql<
           { name: string }
-        >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`${prefix}%`}`
+        >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`}`
       ) yield* sql`DROP SCHEMA ${sql(row.name)} CASCADE`
     })).catch(() => undefined)
   }
@@ -267,13 +267,13 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
 it.skipIf(!Needs.postgresConfigured).each(["default", "check"])(
   "refuses an external sequence in a PostgreSQL %s and rolls back the copy (needs PostgreSQL: set SMITHERS_HISTORY_TEST_PG_URL)",
   async (kind) => {
-    const prefix = `test_copy_${randomUUID().replaceAll("-", "").slice(0, 16)}`
+    const prefix = TestSchemas.schemaName("test_copy")
     vi.stubEnv("SMITHERS_POSTGRES_URL", url)
     vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
     vi.stubEnv("SMITHERS_BACKEND", "postgres")
     const directory = mkdtempSync(join(tmpdir(), "store-copy-external-"))
     roots.push(directory)
-    const external = `${prefix}_external`
+    const external = TestSchemas.forStore(prefix, "external")
     const source = join(directory, "source.db")
     const copy = join(directory, "copy.db")
     const position = () =>
@@ -326,7 +326,7 @@ it.skipIf(!Needs.postgresConfigured).each(["default", "check"])(
           for (
             const row of yield* sql<
               { name: string }
-            >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`${prefix}%`}`
+            >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`}`
           ) {
             yield* sql`DROP SCHEMA ${sql(row.name)} CASCADE`
           }

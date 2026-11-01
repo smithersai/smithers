@@ -1,3 +1,4 @@
+import * as TestSchemas from "../src/TestSchemas.ts"
 /**
  * `Dialect.readTransaction`: one snapshot for every statement in it, and no
  * writer lock, on each kind of client.
@@ -12,7 +13,6 @@ import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Fiber, Layer, Redacted } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 import * as Dialect from "../src/Dialect.ts"
 import { PostgresDatabase } from "../src/index.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
@@ -121,7 +121,7 @@ for (const endpoint of endpoints) {
         const sql = yield* SqlClient.SqlClient
         yield* Effect.addFinalizer(() => TestDatabase.dropSchema(sql, schema).pipe(Effect.orDie))
       })).pipe(Layer.provideMerge(PostgresDatabase.layer({ url, driver: Pg, schema })))
-    const schema = () => `snapshot_${randomUUID().replaceAll("-", "")}`
+    const schema = () => TestSchemas.schemaName("snapshot")
 
     it.live("a PostgresDatabase read sees one snapshot while a writer commits, and takes no writer lock", () =>
       Effect.gen(function*() {

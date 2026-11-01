@@ -1,8 +1,8 @@
+import * as TestSchemas from "../src/TestSchemas.ts"
 import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 import * as Dialect from "../src/Dialect.ts"
 import * as DurableWriter from "../src/DurableWriter.ts"
 import * as Migrations from "../src/Migrations.ts"
@@ -13,7 +13,7 @@ import * as TestDatabase from "../src/test/TestDatabase.ts"
 const url = process.env.SMITHERS_TEST_PG_URL
 const fixture = <A, E>(body: (first: SqlClient, second: SqlClient) => Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-    const schema = `adapter_${randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("adapter")
     // Build the layers in the enclosing scope so two independent pools stay open.
     const first = yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema }))
     const second = yield* Layer.build(PostgresDatabase.layer({ url: url!, driver: Pg, schema }))

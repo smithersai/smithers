@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // The coding factory's flows on the Durable Object's handlers (worker/ExecutionHost.ts `withTodos`): a head's
 // `checks/Run` registered beside the `todo` run and driven to the end over the compose Postgres (`pnpm db:up`) with an
 // in-memory object storage, as worker/github/Host.test.ts drives `github/Write`. The machine is a test `Machines`.
@@ -79,7 +80,7 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
       const url = (yield* TestDatabase.serverUrl).toString()
       const admin = yield* Layer.build(Pg.PgClient.layer({ url: Redacted.make(url), maxConnections: 1 }))
       const client = Context.get(admin, SqlClient.SqlClient)
-      const name = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+      const name = TestSchemas.schemaName("flows")
       yield* Effect.addFinalizer(() => Effect.orDie(client`DROP SCHEMA IF EXISTS ${client(name)} CASCADE`))
       const executionId = checkExecutionId(request.repoId, request.sha, "all")
       const host = ExecutionHost.make(storage, {

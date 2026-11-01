@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 /**
  * Observing verbs open existing stores read-only: they migrate nothing, start
  * no recovery, and answer while another process holds the writer.
@@ -9,7 +10,6 @@ import { NodeRuntime } from "@smthrs/platform-node"
 import { Context, Effect, Exit, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { spawn } from "node:child_process"
-import { randomUUID } from "node:crypto"
 import { mkdtemp, readdir, realpath, rm, unlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -301,7 +301,7 @@ const postgres = process.env.SMITHERS_HISTORY_TEST_PG_URL
 const postgresProject = async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smthrs-observe-pg-")))
   directories.push(root)
-  const prefix = `test_observe_${randomUUID().replaceAll("-", "")}`
+  const prefix = TestSchemas.schemaName("test_observe")
   const env = { SMITHERS_POSTGRES_URL: postgres!, SMITHERS_POSTGRES_SCHEMA: prefix, SMITHERS_BACKEND: "postgres" }
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
   const database = (kind: string) => NodeDatabase.layer({ filename: join(root, ".flows", `${kind}.db`) })
@@ -315,7 +315,7 @@ const postgresProject = async () => {
       "control",
       (sql) =>
         sql<{ name: string }>`SELECT table_schema || '.' || table_name || '.' || column_name AS name
-          FROM information_schema.columns WHERE table_schema LIKE ${`${prefix}%`} ORDER BY name`
+          FROM information_schema.columns WHERE table_schema LIKE ${`%${prefix.slice(-44)}`} ORDER BY name`
     )
   const cleanup = async () => {
     await sql(
@@ -323,7 +323,7 @@ const postgresProject = async () => {
       (sql) =>
         Effect.forEach(
           ["engine", "control"],
-          (kind) => sql`DROP SCHEMA IF EXISTS ${sql(`${prefix}_${kind}_db`)} CASCADE`
+          (kind) => sql`DROP SCHEMA IF EXISTS ${sql(TestSchemas.forStore(prefix, `${kind}_db`))} CASCADE`
         )
     )
     vi.unstubAllEnvs()

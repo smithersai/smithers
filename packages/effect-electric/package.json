@@ -68,6 +68,7 @@
     "@smthrs/effect-tanstack-db": "workspace:*"
   },
   "devDependencies": {
+    "@smthrs/database": "workspace:*",
     "@effect/language-service": "0.87.2",
     "@effect/sql-pg": "4.0.5",
     "@electric-sql/client": "1.5.28",

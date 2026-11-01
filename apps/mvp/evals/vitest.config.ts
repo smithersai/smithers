@@ -8,6 +8,7 @@ export default defineConfig({
   root: fileURLToPath(new URL("..", import.meta.url)),
   plugins: [vibelang()],
   test: {
+    globalSetup: [fileURLToPath(new URL("../../../packages/repo-targets/test-utils/test-schemas.ts", import.meta.url))],
     include: ["evals/*.eval.{ts,vibe}"],
     environment: "node",
     // A whole suite runs inside one test: up to 37 agent answers in turn, each a few model calls, and a pause of a

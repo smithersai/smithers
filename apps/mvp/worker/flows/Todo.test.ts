@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // The `todo` run (worker/flows/Todo.ts, decision 0016's factory simplified) on the Node host's engine over this file's
 // schema of the compose Postgres (`pnpm db:up`), against the scripted GitHub on the `HttpClient` seam. Two stand-ins,
 // each a seam the run takes as an Effect service: the branch's machine is a test `Machines` over an in-memory working
@@ -318,7 +319,7 @@ describe("the todo run", { timeout: 120_000 }, () => {
   test("a person's steer, admitted while the agent works, reaches its next turn and is in the change", async () => {
     // The engine's schema, named here so the steer can be admitted to it as ChatApi admits one: through a journal and a
     // queue of its own over the same tables (worker/RemoteRuns.ts), beside the run's engine.
-    const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("flows")
     const server = await runtime.runPromise(TestDatabase.serverUrl)
     const engineSchema = ExecutionHost.database(server.toString(), schema)
     const queue = NotificationQueue.layer.pipe(
@@ -1293,7 +1294,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       Todo.Await.toLayer(Todo.steps(ctx.services).awaitMerge),
     ).pipe(Layer.provideMerge(Action.layerImplementations))
     const executionId = todoExecutionId(start2.attemptId)
-    const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("flows")
     const url = (await runtime.runPromise(TestDatabase.serverUrl)).toString()
     const values = new Map<string, unknown>()
     const storage: ExecutionHost.Storage = {
@@ -1366,7 +1367,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     })
     const registration = Interpreter.layerWithImplementations(Probe, Todo.Await.toLayer(Todo.steps(ctx.services).awaitMerge))
       .pipe(Layer.provideMerge(Action.layerImplementations))
-    const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("flows")
     const url = (await runtime.runPromise(TestDatabase.serverUrl)).toString()
     const values = new Map<string, unknown>()
     const storage: ExecutionHost.Storage = {

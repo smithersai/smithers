@@ -1,3 +1,5 @@
+import { isLocalFixture } from "../../../packages/repo-targets/test-utils/test-schemas.ts"
+import { TestSchemas } from "@smthrs/database"
 import { PgClient } from "@effect/sql-pg"
 import { Config, Context, Data, Effect, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
@@ -40,8 +42,7 @@ export const electricUrl = Config.Port("TEST_ELECTRIC_PORT").pipe(
 export const serverUrl = Effect.gen(function* () {
   const expected = yield* localServer
   const url = new URL(Redacted.value(yield* Database.url))
-  if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) || url.port !== expected.port ||
-    url.searchParams.has("host") || url.searchParams.has("port")) {
+  if (!isLocalFixture(url, expected.port)) {
     return yield* new Unusable({
       message: `Tests use only the compose Postgres at ${expected.host}, and DATABASE_URL names ${url.host}. Unset it.`,
     })
@@ -78,7 +79,7 @@ export const explain = (service: string, host: string) => (error: unknown) =>
   unreachable(error) ? new Unusable({ message: `No ${service} answers at ${host}. Start it with pnpm db:up.` }) : error
 
 /**
- * A schema named `<prefix>_<random>` on the compose Postgres, migrated by db/migrations: `Scratch`, and a `SqlClient`
+ * A schema named `<prefix>_<epoch-seconds>_<hex>` on the compose Postgres, migrated by db/migrations: `Scratch`, and a `SqlClient`
  * of up to 4 connections on it. Connections name the schema as their `application_name`, so `pg_stat_activity`
  * tells them apart. The schema is dropped, with everything in it, when the layer's scope closes. Fails with
  * `Unusable` naming `pnpm db:up` when nothing answers at the compose Postgres; any other failure passes as it is.
@@ -87,7 +88,7 @@ export const layer = (prefix: string) =>
   Layer.unwrap(
     Effect.gen(function* () {
       const server = yield* serverUrl
-      const name = `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`
+      const name = TestSchemas.schemaName(prefix)
       const scoped = new URL(server)
       scoped.searchParams.set("options", `-c search_path=${name}`)
       scoped.searchParams.set("application_name", name)

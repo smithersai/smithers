@@ -1,8 +1,8 @@
+import { TestSchemas } from "@smthrs/database"
 /** Real child stores use the matrix backend, with an isolated identity per journal. */
 import { dropSchema } from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import * as TestStores from "../../src/test/TestStores.ts"
 
@@ -18,7 +18,7 @@ export const remoteTestDatabases = (directory: string) => {
       console.log(JSON.stringify({ event: "child-store", name, backend: "sqlite", filename: value }))
       return value
     }
-    const schema = `remote_${randomUUID().replaceAll("-", "")}`
+    const schema = TestSchemas.schemaName("remote")
     const value = new URL(url)
     value.searchParams.set("schema", schema)
     identities.set(name, { filename: value.toString(), schema })

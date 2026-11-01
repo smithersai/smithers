@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 // Terminal actions on real Postgres and the Durable Object host. Only remote admission is fault-injected;
 // its adapter is the production adapter, and successful starts reach the real target host's durable storage.
 import * as Pg from "@effect/sql-pg"
@@ -138,7 +139,7 @@ test.each([
     const url = (yield* TestDatabase.serverUrl).toString()
     const admin = yield* Layer.build(Pg.PgClient.layer({ url: Redacted.make(url), maxConnections: 1 }))
     const sql = Context.get(admin, SqlClient.SqlClient)
-    const name = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const name = TestSchemas.schemaName("flows")
     yield* Effect.addFinalizer(() => Effect.orDie(sql`DROP SCHEMA IF EXISTS ${sql(name)} CASCADE`))
     const object = memory()
     const targets = new Map<string, ReturnType<typeof memory>>()

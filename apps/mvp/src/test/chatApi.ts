@@ -1,3 +1,4 @@
+import { TestSchemas } from "@smthrs/database"
 import { PINS_TABLE } from "../features/pins/contract"
 import * as ViewRealm from "../../worker/ViewRealm.ts"
 import * as Pg from "@effect/sql-pg"
@@ -612,7 +613,7 @@ export class TestChatApi extends Context.Service<
         // Runs on Cloudflare (worker/RemoteRuns.ts): an engine on a schema named now and made on first use, read by the
         // routes as ChatApi reads the deployed one, read-only. Dropped with the device stores when this ChatApi closes,
         // after the engine's connections.
-        const remoteSchema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+        const remoteSchema = TestSchemas.schemaName("flows")
         stores.push(remoteSchema)
         const layerScope = yield* Effect.scope
         const remoteGates = new Map<
@@ -664,7 +665,7 @@ export class TestChatApi extends Context.Service<
         // Custom domains, as ChatApi routes them (worker/domains/Api.ts), with `domain/Verify` and `domain/Remove` run
         // for real on an engine of their own, started and not awaited as the Cloudflare host does, and the real `dns`
         // provider over a resolver that knows no record: every domain stays pending, its certificate the host's.
-        const domainsSchema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+        const domainsSchema = TestSchemas.schemaName("flows")
         stores.push(domainsSchema)
         const domainProvider = yield* DomainsConfig.provider({ dev: true }).pipe(
           Effect.provide(FetchHttpClient.layer),
@@ -1000,7 +1001,7 @@ export class TestChatApi extends Context.Service<
           reloads: () => reloads,
           reloadReasons: () => reloadReasons,
           engineStore: () => {
-            const store = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+            const store = TestSchemas.schemaName("flows")
             stores.push(store)
             return { url: server, schema: store, keep: (leader) => void leaders.push(leader) }
           },

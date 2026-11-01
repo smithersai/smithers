@@ -147,3 +147,5 @@ its own command, job, event, or locking ledger around the durable engine.
 Runtime parity must be demonstrated by the same execute, persist, restart, resume
 and cancellation scenarios, including opening a Node-created database in Bun and
 vice versa. A browser-safe import alone does not prove durable browser execution.
+
+Test fixtures can use `TestSchemas.schemaName(prefix)` from the root export for an ASCII `<prefix>_<epoch-seconds>_<32 hex>` identity, at most 63 bytes. A timestamped `SMITHERS_POSTGRES_SCHEMA` preserves that timestamp and random suffix when selecting each store, using its sanitized basename as the prefix (lowercase ASCII, at most 19 characters; other names are refused). Legacy configured prefixes keep their existing mapping. Repository Vitest bootstrap reaps only local fixtures older than two hours, skips locked relations, and bounds cleanup; scope finalizers still own normal teardown.
