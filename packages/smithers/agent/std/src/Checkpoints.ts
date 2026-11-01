@@ -586,4 +586,4 @@ export const layerContainer = (
  * @category conversions
  * @since 1.0.0
  */
-export { relocate, type Relocation } from "./Relocate.ts"
+export { relocate, type Relocation } from "./Relocate.vibe"

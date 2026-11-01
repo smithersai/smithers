@@ -14,7 +14,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
 import * as FsFailure from "./internal/FsFailure.ts"
-import * as LanguageServer from "./LanguageServer.ts"
+import * as LanguageServer from "./LanguageServer.vibe"
 import * as StdError from "./StdError.ts"
 
 /**

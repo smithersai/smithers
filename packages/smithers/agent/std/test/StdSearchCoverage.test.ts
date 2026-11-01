@@ -15,7 +15,7 @@ import * as Grep from "../src/Grep.ts"
 import * as ContractFailures from "../src/internal/SearchContract.ts"
 import * as Ls from "../src/Ls.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
-import * as Search from "../src/Search.ts"
+import * as Search from "../src/Search.vibe"
 import * as SearchContract from "../src/SearchContract.ts"
 import { fileInfo } from "./TestLayers.ts"
 

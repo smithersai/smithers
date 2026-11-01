@@ -49,7 +49,7 @@ import { Effect, Schema } from "effect"
 import { capability, envelope, rootSubtree } from "./internal/Declaration.ts"
 import { invalidInput } from "./internal/SearchContract.ts"
 import { MAX_GREP_MATCHES } from "./internal/Text.ts"
-import * as Search from "./Search.ts"
+import * as Search from "./Search.vibe"
 import * as Contract from "./SearchContract.ts"
 import * as StdError from "./StdError.ts"
 

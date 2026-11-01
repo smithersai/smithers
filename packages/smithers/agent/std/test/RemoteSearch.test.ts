@@ -22,7 +22,7 @@ import { dirname, join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as PortableSearch from "../src/PortableSearch.ts"
 import * as RemoteSearch from "../src/RemoteSearch.ts"
-import type * as Search from "../src/Search.ts"
+import type * as Search from "../src/Search.vibe"
 import * as SearchConformance from "../src/SearchConformance.ts"
 import type * as StdError from "../src/StdError.ts"
 

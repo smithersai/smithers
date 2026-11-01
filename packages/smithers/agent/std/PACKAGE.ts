@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "Checkpoint ids or config keys written with git config that could alter keys outside the checkpoint section.",
         "A scratch checkout path built from caller text that could land outside the repository root."
       ],
-      paths: ["src/Checkpoints.ts", "src/internal/GitWorktree.ts", "src/Relocate.ts"]
+      paths: ["src/Checkpoints.ts", "src/internal/GitWorktree.ts", "src/Relocate.vibe"]
     },
     {
       id: "child-env-secret-leak",
@@ -220,7 +220,7 @@ const securityReview = Smithers.SecurityReview({
         "Bash.sealed or TestRun admitting a call whose container is undefined, empty, or a different name.",
         "Relocate rewriting a containerised cwd to a host path, or a host path to a container path outside the materialized checkout."
       ],
-      paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.ts", "src/Container.ts"]
+      paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.vibe", "src/Container.ts"]
     }
   ]
 })

@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Checkpoints from "../src/Checkpoints.ts"
 import * as Container from "../src/Container.ts"
 import { GitWorktree } from "../src/internal/GitWorktree.ts"
-import * as Relocate from "../src/Relocate.ts"
+import * as Relocate from "../src/Relocate.vibe"
 
 // Effect 4.1 types a command's arguments and environment values as Word, text or
 // Redacted text; the fakes read what the process would receive.

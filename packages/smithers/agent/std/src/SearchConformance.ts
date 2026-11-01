@@ -28,7 +28,7 @@
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Path from "effect/Path"
-import type * as Search from "./Search.ts"
+import type * as Search from "./Search.vibe"
 import type * as StdError from "./StdError.ts"
 
 /**

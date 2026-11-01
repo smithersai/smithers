@@ -13,7 +13,7 @@ import * as Grouping from "../src/internal/Grouping.ts"
 import * as LinearRegex from "../src/internal/LinearRegex.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
 import * as PortableSearch from "../src/PortableSearch.ts"
-import * as Search from "../src/Search.ts"
+import * as Search from "../src/Search.vibe"
 import * as SearchConformance from "../src/SearchConformance.ts"
 import * as SearchContract from "../src/SearchContract.ts"
 

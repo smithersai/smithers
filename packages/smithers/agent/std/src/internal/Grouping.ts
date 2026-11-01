@@ -15,7 +15,7 @@
  * @since 1.0.0
  */
 
-import type * as Search from "../Search.ts"
+import type * as Search from "../Search.vibe"
 import * as Symbols from "./Symbols.ts"
 import * as Text from "./Text.ts"
 

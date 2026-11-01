@@ -35,7 +35,7 @@ import * as Prune from "./internal/Prune.ts"
 import * as RemoteTree from "./internal/RemoteTree.vibe"
 import * as Tar from "./internal/Tar.ts"
 import * as PortableSearch from "./PortableSearch.ts"
-import * as Search from "./Search.ts"
+import * as Search from "./Search.vibe"
 import * as StdError from "./StdError.ts"
 
 /**
