@@ -19,23 +19,14 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": {
-      "types": "./src/index.d.vibe.ts",
-      "default": "./src/index.vibe"
-    },
+    ".": "./src/index.vibe",
     "./internal/*": null,
     "./*/index": null,
     "./Canonical": "./src/Canonical.vibe",
-    "./index": {
-      "types": "./src/index.d.vibe.ts",
-      "default": "./src/index.vibe"
-    },
+    "./index": "./src/index.vibe",
     "./Record": "./src/Record.ts",
     "./BoundedJson": "./src/BoundedJson.ts",
-    "./IssuePath": {
-      "types": "./src/IssuePath.d.vibe.ts",
-      "default": "./src/IssuePath.vibe"
-    },
+    "./IssuePath": "./src/IssuePath.vibe",
     "./ReadonlyMap": "./src/ReadonlyMap.ts",
     "./Serializer": "./src/Serializer.ts"
   },

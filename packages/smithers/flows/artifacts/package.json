@@ -34,26 +34,17 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": {
-      "types": "./src/index.d.vibe.ts",
-      "default": "./src/index.vibe"
-    },
+    ".": "./src/index.vibe",
     "./internal/*": null,
     "./*/index": null,
     "./ArtifactBackupLease": "./src/ArtifactBackupLease.ts",
     "./ArtifactStore": "./src/ArtifactStore.ts",
-    "./ArtifactStoreMetrics": {
-      "types": "./src/ArtifactStoreMetrics.d.vibe.ts",
-      "default": "./src/ArtifactStoreMetrics.vibe"
-    },
+    "./ArtifactStoreMetrics": "./src/ArtifactStoreMetrics.vibe",
     "./ArtifactSweep": "./src/ArtifactSweep.ts",
     "./CombinedArtifacts": "./src/CombinedArtifacts.ts",
     "./FileLease": "./src/FileLease.ts",
     "./RemoteArtifacts": "./src/RemoteArtifacts.ts",
-    "./index": {
-      "types": "./src/index.d.vibe.ts",
-      "default": "./src/index.vibe"
-    }
+    "./index": "./src/index.vibe"
   },
   "files": [
     "src/**/*.ts",

@@ -40,47 +40,26 @@
     "./AnthropicMessages": "./src/AnthropicMessages.ts",
     "./Auth": "./src/Auth.ts",
     "./CanonicalJson": "./src/CanonicalJson.ts",
-    "./Classifier": {
-      "types": "./src/Classifier.d.vibe.ts",
-      "default": "./src/Classifier.vibe"
-    },
+    "./Classifier": "./src/Classifier.vibe",
     "./DeferredTools": "./src/DeferredTools.ts",
     "./Endpoint": "./src/Endpoint.ts",
     "./Evaluator": "./src/Evaluator.ts",
     "./EvaluatorBackup": "./src/EvaluatorBackup.ts",
-    "./Framing": {
-      "types": "./src/Framing.d.vibe.ts",
-      "default": "./src/Framing.vibe"
-    },
-    "./FailureCopy": {
-      "types": "./src/FailureCopy.d.vibe.ts",
-      "default": "./src/FailureCopy.vibe"
-    },
+    "./Framing": "./src/Framing.vibe",
+    "./FailureCopy": "./src/FailureCopy.vibe",
     "./Model": "./src/Model.ts",
     "./ModelCatalog": "./src/ModelCatalog.ts",
-    "./ModelError": {
-      "types": "./src/ModelError.d.vibe.ts",
-      "default": "./src/ModelError.vibe"
-    },
-    "./ModelEvent": {
-      "types": "./src/ModelEvent.d.vibe.ts",
-      "default": "./src/ModelEvent.vibe"
-    },
+    "./ModelError": "./src/ModelError.vibe",
+    "./ModelEvent": "./src/ModelEvent.vibe",
     "./ModelRequest": "./src/ModelRequest.ts",
     "./OpenAIChatCompletions": "./src/OpenAIChatCompletions.ts",
     "./OpenAIChatGPT": "./src/OpenAIChatGPT.ts",
     "./OpenAIResponses": "./src/OpenAIResponses.ts",
-    "./Pricing": {
-      "types": "./src/Pricing.d.vibe.ts",
-      "default": "./src/Pricing.vibe"
-    },
+    "./Pricing": "./src/Pricing.vibe",
     "./Protocol": "./src/Protocol.ts",
     "./RequestExecutor": "./src/RequestExecutor.ts",
     "./Route": "./src/Route.ts",
-    "./ToolStream": {
-      "types": "./src/ToolStream.d.vibe.ts",
-      "default": "./src/ToolStream.vibe"
-    },
+    "./ToolStream": "./src/ToolStream.vibe",
     "./index": "./src/index.ts",
     "./WireTrace": "./src/WireTrace.ts"
   },

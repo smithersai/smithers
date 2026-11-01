@@ -41,28 +41,16 @@
     },
     "./internal/*": null,
     "./*/index": null,
-    "./CachedModel": {
-      "types": "./src/CachedModel.d.vibe.ts",
-      "default": "./src/CachedModel.vibe"
-    },
-    "./Conformance": {
-      "types": "./src/Conformance.d.vibe.ts",
-      "default": "./src/Conformance.vibe"
-    },
+    "./CachedModel": "./src/CachedModel.vibe",
+    "./Conformance": "./src/Conformance.vibe",
     "./Divergence": "./src/Divergence.ts",
-    "./EngineSubject": {
-      "types": "./src/EngineSubject.d.vibe.ts",
-      "default": "./src/EngineSubject.vibe"
-    },
+    "./EngineSubject": "./src/EngineSubject.vibe",
     "./Faults": "./src/Faults.ts",
     "./Fixture": "./src/Fixture.ts",
     "./FixtureStore": "./src/FixtureStore.ts",
     "./FlowEngineLike": "./src/FlowEngineLike.ts",
     "./HostSuite": "./src/HostSuite.ts",
-    "./JournalAssertions": {
-      "types": "./src/JournalAssertions.d.vibe.ts",
-      "default": "./src/JournalAssertions.vibe"
-    },
+    "./JournalAssertions": "./src/JournalAssertions.vibe",
     "./MemoryEngine": "./src/MemoryEngine.ts",
     "./ModelLike": "./src/ModelLike.ts",
     "./ModelServer": "./src/ModelServer.ts",

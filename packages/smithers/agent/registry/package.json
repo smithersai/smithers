@@ -41,20 +41,11 @@
     "./Disclosure": "./src/Disclosure.ts",
     "./Discovery": "./src/Discovery.ts",
     "./Executable": "./src/Executable.ts",
-    "./MarkdownFlow": {
-      "types": "./src/MarkdownFlow.d.vibe.ts",
-      "default": "./src/MarkdownFlow.vibe"
-    },
-    "./ModuleFlow": {
-      "types": "./src/ModuleFlow.d.vibe.ts",
-      "default": "./src/ModuleFlow.vibe"
-    },
+    "./MarkdownFlow": "./src/MarkdownFlow.vibe",
+    "./ModuleFlow": "./src/ModuleFlow.vibe",
     "./Pack": "./src/Pack.ts",
     "./Registry": "./src/Registry.ts",
-    "./RegistryError": {
-      "types": "./src/RegistryError.d.vibe.ts",
-      "default": "./src/RegistryError.vibe"
-    },
+    "./RegistryError": "./src/RegistryError.vibe",
     "./index": "./src/index.ts",
     "./Prompt": "./src/Prompt.ts",
     "./Prompt/jsx-runtime": "./src/Prompt/jsx-runtime.ts",

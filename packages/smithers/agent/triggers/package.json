@@ -38,28 +38,16 @@
     "./migrations/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./CatchUp": {
-      "types": "./src/CatchUp.d.vibe.ts",
-      "default": "./src/CatchUp.vibe"
-    },
-    "./Channel": {
-      "types": "./src/Channel.d.vibe.ts",
-      "default": "./src/Channel.vibe"
-    },
+    "./CatchUp": "./src/CatchUp.vibe",
+    "./Channel": "./src/Channel.vibe",
     "./Cron": "./src/Cron.ts",
     "./DispatchReader": "./src/DispatchReader.ts",
     "./Overlap": "./src/Overlap.ts",
-    "./Schedule": {
-      "types": "./src/Schedule.d.vibe.ts",
-      "default": "./src/Schedule.vibe"
-    },
+    "./Schedule": "./src/Schedule.vibe",
     "./Scheduler": "./src/Scheduler.ts",
     "./SqlTriggerStore": "./src/SqlTriggerStore.ts",
     "./Trigger": "./src/Trigger.ts",
-    "./TriggerError": {
-      "types": "./src/TriggerError.d.vibe.ts",
-      "default": "./src/TriggerError.vibe"
-    },
+    "./TriggerError": "./src/TriggerError.vibe",
     "./TriggerStore": "./src/TriggerStore.ts",
     "./Webhook": "./src/Webhook.ts",
     "./index": "./src/index.ts",

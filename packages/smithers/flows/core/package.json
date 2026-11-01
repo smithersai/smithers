@@ -37,14 +37,8 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Annotations": {
-      "types": "./src/Annotations.d.vibe.ts",
-      "default": "./src/Annotations.vibe"
-    },
-    "./Digest": {
-      "types": "./src/Digest.d.vibe.ts",
-      "default": "./src/Digest.vibe"
-    },
+    "./Annotations": "./src/Annotations.vibe",
+    "./Digest": "./src/Digest.vibe",
     "./Effects": "./src/Effects.ts",
     "./Flow": "./src/Flow.ts",
     "./Graph": "./src/Graph.ts",

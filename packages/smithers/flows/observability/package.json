@@ -35,36 +35,15 @@
   "exports": {
     "./package.json": "./package.json",
     ".": "./src/index.ts",
-    "./BrowserOtel": {
-      "types": "./src/BrowserOtel.d.vibe.ts",
-      "default": "./src/BrowserOtel.vibe"
-    },
-    "./Endpoint": {
-      "types": "./src/Endpoint.d.vibe.ts",
-      "default": "./src/Endpoint.vibe"
-    },
+    "./BrowserOtel": "./src/BrowserOtel.vibe",
+    "./Endpoint": "./src/Endpoint.vibe",
     "./FetchFailures": "./src/FetchFailures.ts",
     "./JournalLogger": "./src/JournalLogger.ts",
-    "./LogFailures": {
-      "types": "./src/LogFailures.d.vibe.ts",
-      "default": "./src/LogFailures.vibe"
-    },
-    "./Logger": {
-      "types": "./src/Logger.d.vibe.ts",
-      "default": "./src/Logger.vibe"
-    },
-    "./Metric": {
-      "types": "./src/Metric.d.vibe.ts",
-      "default": "./src/Metric.vibe"
-    },
-    "./NodeOtel": {
-      "types": "./src/NodeOtel.d.vibe.ts",
-      "default": "./src/NodeOtel.vibe"
-    },
-    "./Otel": {
-      "types": "./src/Otel.d.vibe.ts",
-      "default": "./src/Otel.vibe"
-    },
+    "./LogFailures": "./src/LogFailures.vibe",
+    "./Logger": "./src/Logger.vibe",
+    "./Metric": "./src/Metric.vibe",
+    "./NodeOtel": "./src/NodeOtel.vibe",
+    "./Otel": "./src/Otel.vibe",
     "./Otlp": "./src/Otlp.ts",
     "./Resource": "./src/Resource.ts",
     "./index": "./src/index.ts"

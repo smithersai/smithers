@@ -43,10 +43,7 @@
     "./Migrations": "./src/Migrations.ts",
     "./Ownership": "./src/Ownership.ts",
     "./RunStore": "./src/RunStore.ts",
-    "./RunStoreMetrics": {
-      "types": "./src/RunStoreMetrics.d.vibe.ts",
-      "default": "./src/RunStoreMetrics.vibe"
-    },
+    "./RunStoreMetrics": "./src/RunStoreMetrics.vibe",
     "./index": "./src/index.ts",
     "./test/TestRunStore": "./src/test/TestRunStore.ts"
   },

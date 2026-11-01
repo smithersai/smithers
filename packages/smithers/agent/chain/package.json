@@ -38,18 +38,9 @@
   "exports": {
     "./package.json": "./package.json",
     ".": "./src/index.ts",
-    "./CallKey": {
-      "types": "./src/CallKey.d.vibe.ts",
-      "default": "./src/CallKey.vibe"
-    },
-    "./Observation": {
-      "types": "./src/Observation.d.vibe.ts",
-      "default": "./src/Observation.vibe"
-    },
-    "./internal/ChildRunError": {
-      "types": "./src/internal/ChildRunError.d.vibe.ts",
-      "default": "./src/internal/ChildRunError.vibe"
-    },
+    "./CallKey": "./src/CallKey.vibe",
+    "./Observation": "./src/Observation.vibe",
+    "./internal/ChildRunError": "./src/internal/ChildRunError.vibe",
     "./*": "./src/*.ts",
     "./internal/*": null,
     "./*/index": null
