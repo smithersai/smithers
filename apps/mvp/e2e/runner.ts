@@ -117,6 +117,8 @@ export const startRunner = async (
       capacity,
       stateDir: state,
       ...(options.heartbeatSeconds === undefined ? {} : { heartbeatSeconds: options.heartbeatSeconds }),
+      // The test machine's own load mustn't hold its claims (decision 0144).
+      admission: { loadPerCpu: 8, diskFloorGb: 0 },
       repositories: { [`github/${repo.toLowerCase()}`]: { mirror: process.env.E2E_RUNNER_MIRROR! } },
       // The runner drops its agent's stderr; the shell keeps it beside the state, for the log.
       profiles: {

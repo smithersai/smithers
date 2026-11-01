@@ -16,6 +16,7 @@ import { createHash, randomBytes } from "node:crypto"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { isAbsolute, join, resolve } from "node:path"
+import * as Admission from "./Admission.ts"
 
 const NonEmpty = Schema.String.check(Schema.isMinLength(1))
 const EnvName = Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/))
@@ -56,10 +57,26 @@ export const Profile = Schema.Struct({
 export type Profile = typeof Profile.Type
 
 /**
+ * When the runner takes another job ({@link Admission}): while its load
+ * stays under `loadPerCpu` of its CPUs (0.5 unless set), its state
+ * directory's disk has `diskFloorGb` free (40 unless set), counting each job
+ * it just claimed as `jobLoad` (1 unless set) until that job's load shows.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const AdmissionConfig = Schema.Struct({
+  loadPerCpu: Schema.optional(Schema.Number.check(Schema.isBetween({ minimum: 0.05, maximum: 8 }))),
+  diskFloorGb: Schema.optional(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100_000 }))),
+  jobLoad: Schema.optional(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 64 })))
+})
+
+/**
  * `runner.json`: the host's origin, the runner's registered name, how many
  * jobs it runs at once (4 unless set), where it keeps its state
  * (`~/.smithers/runner` unless set), how often it heartbeats a job (10 s) and
- * claims again after an empty claim (2 s), each repository's local jj mirror
+ * claims again after an empty claim (2 s), when it admits a job
+ * ({@link AdmissionConfig}), each repository's local jj mirror
  * by the host's repository id, and its profiles by name.
  *
  * @category schemas
@@ -72,6 +89,7 @@ export const Config = Schema.Struct({
   stateDir: Schema.optional(NonEmpty),
   heartbeatSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 60 }))),
   pollSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 60 }))),
+  admission: Schema.optional(AdmissionConfig),
   repositories: Schema.Record(NonEmpty, Schema.Struct({ mirror: NonEmpty })),
   profiles: Schema.Record(AgentRunner.Profile, Profile)
 })
@@ -86,16 +104,17 @@ export type Config = typeof Config.Type
 
 /**
  * A checked configuration: the origin without a trailing slash, the defaults
- * filled in, and the state directory as an absolute path.
+ * filled in (the admission policy's too), and the state directory as an absolute path.
  *
  * @category models
  * @since 1.0.0
  */
-export interface Checked extends Config {
+export interface Checked extends Omit<Config, "admission"> {
   readonly capacity: number
   readonly stateDir: string
   readonly heartbeatSeconds: number
   readonly pollSeconds: number
+  readonly admission: Admission.Policy
 }
 
 /**
@@ -161,6 +180,11 @@ export const check = (config: Config, home: string = homedir()): Effect.Effect<C
       capacity: config.capacity ?? 4,
       heartbeatSeconds: config.heartbeatSeconds ?? 10,
       pollSeconds: config.pollSeconds ?? 2,
+      admission: {
+        loadPerCpu: config.admission?.loadPerCpu ?? Admission.defaults.loadPerCpu,
+        diskFloorGb: config.admission?.diskFloorGb ?? Admission.defaults.diskFloorGb,
+        jobLoad: config.admission?.jobLoad ?? Admission.defaults.jobLoad
+      },
       stateDir: expand(config.stateDir ?? defaultStateDir(home), home)
     }
   })

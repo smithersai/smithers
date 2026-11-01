@@ -29,8 +29,9 @@ Run                      Agent  Runner  Account   Time   Last event  Usage      
 T412 drive-foldkit-ui    opus   nyc-01  claude-3  1h12m  4 s ago     812k tok         Working
 T398 migfix-t3code       sol    nyc-02  codex-a2  2h03m  14 min ago  unreported       Stalled
 T420 fuzz-findings       sol    -       -         0h03m  -           unreported       Waiting
-Machine  State   Jobs   Load  Disk  Version      Seen
-nyc-01   Online  24/26  61.0  212G  1.0.0-rc.16  3 s ago
+Machine  State              Jobs   Load   Disk  Version      Seen
+nyc-01   Held · load 31/24  14/26  31.0   212G  1.0.0-rc.16  3 s ago
+nyc-02   Online             9/26   12.4   340G  1.0.0-rc.16  1 s ago
 ```
 
 - **Runs.** Every run of the repository, one row per generation: live ones first (Stalled, Waiting, Stopping,
@@ -39,8 +40,10 @@ nyc-01   Online  24/26  61.0  212G  1.0.0-rc.16  3 s ago
   10 s; Last event ticks on `RelativeTime`. Usage the agent didn't report reads `unreported`, never `$0`.
 - **States** in product words: Waiting (for a runner), Working, Stalled, Stopping, Stopped, Failed (with its code),
   Done, Retried (a generation that ended retryable; the next generation is its own row).
-- **Machines.** Every runner the repository registered, with no run too: Online, Offline (no request for 45 s), Never
-  seen, Removed; its jobs of its capacity, load, free disk, version and last request.
+- **Machines.** Every runner the repository registered, with no run too: Online, Held (online, but its runner takes no
+  job by its own [admission](agent-runners.md#admission) rule, with its reason: `Held · load 31/24`, `Held · disk
+  31G/40G`), Offline (no request for 45 s), Never seen, Removed; its jobs of its capacity, load, free disk, version and
+  last request. The header counts Held runners as online and adds `· 1 held`.
 - **Accounts.** The account label the runner's hook chose shows to Maintainers and Admins only; the shape leaves it out
   for anyone else. Never an email, a path or a token.
 - **Phone.** At 40 rem and below the runner, account, last event, usage and the machines' facts columns hide.
@@ -54,7 +57,7 @@ never both.
 | Query | Params | Rows |
 |---|---|---|
 | `core/agent-runs` | `{ repo: "owner/name" }` | `agent_runs` of the repository, newest first: `key`, `agent`, `generation`, `runId`, `number`, `title`, `runner`, `accountLabel` (Maintainers only), `state`, `reason`, `queuedAt`, `claimedAt`, `firstEventAt`, `lastEventAt`, `activityAt`, `endedAt`, `contextTokens`, `costUsd`, `transcriptBytes` |
-| `core/machines` | `{ repo: "owner/name" }` | `runners` of the repository, by name: `id`, `name`, `labels`, `capacity`, `seenAt`, `removedAt`, `version`, `load1`, `diskFreeGb` |
+| `core/machines` | `{ repo: "owner/name" }` | `runners` of the repository, by name: `id`, `name`, `labels`, `capacity`, `seenAt`, `removedAt`, `version`, `load1`, `diskFreeGb`, `held` |
 
 Each is one Electric shape per repository, opened once a tab asks and kept while it lives (`src/features/fleet/store.ts`),
 never kept on the device. A first read answers once its first sync arrived, or after 30 s (`INDEX_FIRST_SYNC`), so rows
@@ -149,6 +152,9 @@ Migration `0084_fleet`:
 | `runners` + `version`, `load1`, `disk_free_gb` | what the last claim said; `REPLICA IDENTITY FULL` |
 | `fleet_alerts` | one row per incident: `id`, `kind`, `repo_id`, `subject`, `title`, `href`, `recipients`, `opened_at`, `closed_at` |
 | `notifications.kind` | takes `fleet` |
+
+Migration `0085_runner_held` adds `runners.held`: why the runner's last claim said it takes no job, null while it
+admits.
 
 ## Observability
 

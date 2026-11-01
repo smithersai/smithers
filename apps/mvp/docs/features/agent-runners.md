@@ -167,11 +167,21 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 | `POST /api/runners/settle` | `{ key, claim, outcome, delivered? }` | `{ recorded }`; `false` when the claim no longer holds the job. `delivered` records the steers the agent read since the last heartbeat that reported them |
 | `POST /api/runners/events` | `{ key, claim, events }` | `{ next }`: the agent's transcript ([transcripts](agent-transcripts.md#the-events-route)) |
 
-A claim's `machine` is `{ version?, load1?, diskFreeGb? }`; a heartbeat's `account` is the label the profile's hook
+A claim's `machine` is `{ version?, load1?, diskFreeGb?, held? }`, `held` saying why the runner takes no job by its
+own [admission](#admission) rule; a heartbeat's `account` is the label the profile's hook
 chose, `cpuSeconds` the agent's process tree's CPU time and `usage` what the agent reported so far, each for the
 [fleet](fleet.md). A job is `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`; its task is `{ agent, repository, base,
 system, prompt, limits }`. An outcome is `Done { changes, summary, usage }`, `Failed { reason }`, `Retryable {
 afterSeconds? }` or `Cancelled { processTreeGone }`. Usage an agent doesn't report stays absent, never zero.
+
+## Admission
+
+A runner admits jobs by its own machine, never by a host rule ([decision 0144](../decisions/0144-half-load-and-cloudflare-overflow.md)):
+it claims only while its load stays under half its CPUs and its disk keeps 40 GB free, both set in its `runner.json`
+([CLI reference](../../../../packages/smithers/docs/reference/cli/runner.md#admission)). The claim route stays the
+same for every machine and vendor: a held or full runner asks with `free: 0`, the route hands it only a job it holds
+and didn't list, and keeps the reason it sent on `runners.held` (migration `0085_runner_held`) for the
+[fleet](fleet.md), which shows the runner as **Held · load 31/24**. `capacity` stays the hard cap on jobs at once.
 
 ## Postgres
 

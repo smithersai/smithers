@@ -20,17 +20,18 @@ import * as Presentation from "../cli/Presentation.ts"
 import * as Config from "../runner/Config.ts"
 import * as Host from "../runner/Host.ts"
 import * as Job from "../runner/Job.ts"
+import type * as Machine from "../runner/Machine.ts"
 import * as Serve from "../runner/Serve.ts"
 import type * as Session from "../runner/Session.ts"
 
 /**
  * Serves the runner the configuration at `path` describes, until the process
- * is stopped.
+ * is stopped. `read` replaces how it reads its machine (a test's readings).
  *
  * @category constructors
  * @since 1.0.0
  */
-export const serve = (path: string) =>
+export const serve = (path: string, options: { readonly read?: () => Machine.Reading } = {}) =>
   Effect.gen(function*() {
     const config = yield* Config.load(path)
     const token = yield* Config.readToken(config.stateDir)
@@ -52,7 +53,7 @@ export const serve = (path: string) =>
         profiles: Object.keys(config.profiles).length
       })
     )
-    return yield* Serve.loop(config, controls).pipe(Effect.provide(Layer.merge(engine, host)))
+    return yield* Serve.loop(config, controls, options.read).pipe(Effect.provide(Layer.merge(engine, host)))
   })
 
 /**

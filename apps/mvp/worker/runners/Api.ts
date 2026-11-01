@@ -39,7 +39,8 @@ import { Transcripts } from "./RunContent.ts"
 //
 // The fleet (docs/features/fleet.md): a request marks its runner seen, at most every `SEEN_EVERY_SECONDS` so a busy
 // runner doesn't rewrite its synced row with each heartbeat, and closes its open Runner offline incident when it was
-// away; a claim keeps the machine's facts and marks the run Working; a heartbeat keeps the account label, the process
+// away; a claim keeps the machine's facts, with why the runner holds back by its own admission rule (decision 0144), and
+// marks the run Working; a heartbeat keeps the account label, the process
 // tree's CPU seconds and the usage on the job, for the job store's probe to project; a settle ends the run.
 
 /**
@@ -282,9 +283,11 @@ export const make = <E, R>(
         const disk = machine.diskFreeGb === undefined ? null : Math.round(machine.diskFreeGb)
         yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql`
-            UPDATE runners SET version = ${machine.version ?? null}, load1 = ${load1}, disk_free_gb = ${disk}
+            UPDATE runners SET version = ${machine.version ?? null}, load1 = ${load1}, disk_free_gb = ${disk},
+              held = ${machine.held ?? null}
             WHERE id = ${runner.id}::uuid
-              AND (version, load1, disk_free_gb) IS DISTINCT FROM (${machine.version ?? null}::text, ${load1}::float8, ${disk}::float8)`
+              AND (version, load1, disk_free_gb, held) IS DISTINCT FROM
+                (${machine.version ?? null}::text, ${load1}::float8, ${disk}::float8, ${machine.held ?? null}::text)`
         ).pipe(Effect.provide(database))
       }
       const held = yield* reclaim(runner, wants.value.running).pipe(Effect.provide(database))

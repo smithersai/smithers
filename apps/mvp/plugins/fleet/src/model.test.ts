@@ -37,6 +37,7 @@ const machine = (name: string, overrides: Partial<Machine> = {}): Machine => ({
   version: "1.0.0-rc.16",
   load1: 61.04,
   diskFreeGb: 212.4,
+  held: null,
   ...overrides,
 })
 
@@ -99,6 +100,20 @@ describe("machines and the counts", () => {
     ])
     expect(machines[1]).toMatchObject({ load: "61.0", disk: "212G", version: "1.0.0-rc.16" })
     expect(machines[0]).toMatchObject({ load: null, disk: null, seenMs: null })
-    expect(summaryOf(runs, machines, NOW)).toEqual({ working: 2, waiting: 1, stalled: 1, failedToday: 1, online: 1, machines: 3 })
+    expect(summaryOf(runs, machines, NOW)).toEqual({ working: 2, waiting: 1, stalled: 1, failedToday: 1, online: 1, held: 0, machines: 3 })
+  })
+
+  test("an online runner that holds back by its own rule reads Held with why; one that went away reads Offline", () => {
+    const machines = machinesOf([
+      machine("nyc-01", { load1: 31, held: "load 31/24" }),
+      machine("nyc-02", { held: "disk 31G/40G", seenAt: ago(46_000) }),
+      machine("nyc-03"),
+    ], [], NOW)
+    expect(machines.map((each) => [each.name, each.word, each.tone, each.held])).toEqual([
+      ["nyc-01", "Held", "warn", "load 31/24"],
+      ["nyc-02", "Offline", "bad", null],
+      ["nyc-03", "Online", "ok", null],
+    ])
+    expect(summaryOf([], machines, NOW)).toMatchObject({ online: 2, held: 1, machines: 3 })
   })
 })

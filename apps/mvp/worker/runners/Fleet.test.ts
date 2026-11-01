@@ -221,6 +221,26 @@ describe("project", () => {
 })
 
 describe("the projection on Postgres", () => {
+  test("a held runner's claim takes no job and keeps why on its machine row; its next admitting claim clears it", async () => {
+    const token = await register("nyc-01")
+    const attemptId = await todo("person-maya")
+    const { jobs } = await store()
+    const { call } = await routes()
+    await Effect.runPromise(jobs.start(taskOf(attemptId), "todo-run#g1"))
+    const held = await call<{ readonly job: AgentRunner.Job | null }>("claim", token, {
+      profiles: ["coder-profile"], free: 0, running: [], waitSeconds: 0,
+      machine: { version: "1.0.0", load1: 31.2, diskFreeGb: 212, held: "load 31/24" },
+    })
+    expect(held).toEqual({ status: 200, body: { job: null } })
+    expect(await run("todo-run#g1")).toMatchObject({ state: "queued" })
+    expect((await sql(`SELECT load1, held FROM runners`))[0]).toEqual({ load1: 31.2, held: "load 31/24" })
+    const admitted = await call<{ readonly job: AgentRunner.Job | null }>("claim", token, {
+      profiles: ["coder-profile"], free: 1, running: [], waitSeconds: 0, machine: { version: "1.0.0", load1: 3 },
+    })
+    expect(admitted.body.job?.key).toBe("todo-run#g1")
+    expect((await sql(`SELECT load1, held FROM runners`))[0]).toEqual({ load1: 3, held: null })
+  })
+
   test("a job's run: queued with its TODO, Working on its claim with the machine's facts, the heartbeat's account, CPU and usage, then Done", async () => {
     const token = await register("nyc-01")
     const attemptId = await todo("person-maya")

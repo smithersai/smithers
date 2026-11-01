@@ -3136,8 +3136,8 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
   `HeartbeatResponse` `{ held, cancel, leaseSeconds, steers? }` (the steers it
   hasn't, oldest first, each a `Steer` `{ id, text }`),
   `SettleRequest` `{ key, claim, outcome, delivered? }`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
-  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb? }` is
-  what a claim says about the runner's machine; a heartbeat's `account` is the
+  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb?, held? }` is
+  what a claim says about the runner's machine (`held`, why it takes no job by its own admission rule); a heartbeat's `account` is the
   opaque label the runner's hook chose (written as a profile is), `cpuSeconds`
   the agent's process tree's CPU time, and `usage` what it reported so far. A
   host reads them for its fleet view and stall alerts.

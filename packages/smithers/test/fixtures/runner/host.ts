@@ -73,6 +73,8 @@ export const start = async (token: string) => {
   let blockedUntil = 0
   /** Every claim's machine facts, in order. */
   const machines: Array<AgentRunner.Machine | undefined> = []
+  /** Every claim request, in order. */
+  const claimRequests: Array<typeof AgentRunner.ClaimRequest.Type> = []
   const server = createServer(async (request, response) => {
     const body = await read(request)
     if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { code: "authentication" })
@@ -80,6 +82,7 @@ export const start = async (token: string) => {
     if (request.url === AgentRunner.ROUTES.claim) {
       const wants = value as unknown as typeof AgentRunner.ClaimRequest.Type
       machines.push(wants.machine)
+      claimRequests.push(wants)
       const asJob = (row: Row, reclaimed: boolean): AgentRunner.Job => ({
         key: row.key,
         claim: row.claim!,
@@ -155,6 +158,7 @@ export const start = async (token: string) => {
     origin,
     rows,
     machines,
+    claimRequests,
     /** Queues generation `generation` of the step `origin` with `task`. */
     enqueue: (
       task: AgentRunner.Task,

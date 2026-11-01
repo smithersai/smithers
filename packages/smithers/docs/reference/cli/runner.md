@@ -35,6 +35,7 @@ commit. The runner settles the files the agent changed.
   "origin": "https://smithers.example",
   "name": "build-01",
   "capacity": 4,
+  "admission": { "loadPerCpu": 0.5, "diskFloorGb": 40 },
   "repositories": {
     "github/acme/app": { "mirror": "/srv/mirrors/app" }
   },
@@ -59,6 +60,7 @@ commit. The runner settles the files the agent changed.
 | `stateDir` | Token, journal (`engine.db`), checkouts (`work/`) and transcript spools (`spool/`); `~/.smithers/runner` unless set. |
 | `heartbeatSeconds` | How often a running job's claim is renewed; 10 unless set. |
 | `pollSeconds` | The wait after a claim that found nothing; 2 unless set. |
+| `admission` | When the machine takes another job (see [Admission](#admission)): `loadPerCpu` (0.5 unless set), `diskFloorGb` (40 unless set), `jobLoad` (1 unless set). |
 | `repositories` | Each repository the host may name, by the host's repository id, mapped to a local jj repository the runner checks out from. The runner fetches it when a job's base commit is missing. |
 | `profiles` | What each profile runs. The host only ever passes a profile's name. |
 
@@ -154,10 +156,37 @@ confirmed stays unconfirmed. Each hand-over logs `runner.steer` with the steer's
 id, its `mode` (`steering`, `cancel_prompt` or `prompt`) and how long it took;
 never its words.
 
+## Admission
+
+The runner, not the host, decides whether its machine takes another job. It
+claims only while both hold:
+
+- its state directory's disk has at least `diskFloorGb` free (40 GB unless set);
+- its load is under `loadPerCpu` of its CPUs (half unless set: 24 on a
+  48-core host).
+
+The load it compares is the one-minute load average smoothed over 30 seconds,
+so one spike neither holds nor frees the machine, plus `jobLoad` for each job
+it claimed in the last two minutes, fading as that job's own load has time to
+show. Ten queued jobs on a host at 0.49 of its CPUs land one at a time, not
+all at once. A fact the machine can't read holds nothing.
+
+A runner that holds back, or is full, still asks the host every
+`pollSeconds`, with no room: its machine row stays current, a job it holds but
+didn't list comes back, and the claim says why it holds back, as
+`held: "load 31/24"` or `held: "disk 31G/40G"`. Each change of reason logs
+`runner.admission`. Running jobs are never stopped for load.
+
+```
+estimate = smoothed load1 + jobLoad x (1 - age / 120 s), for each claim younger than 120 s
+claim     while estimate < loadPerCpu x CPUs  and  free disk >= diskFloorGb
+```
+
 ## What the host sees
 
 Each claim also says what the machine is like: the runner's version, the
-one-minute load average and the free disk where its checkouts live. Each
+one-minute load average, the free disk where its checkouts live, and why it
+holds back, while it does. Each
 heartbeat says how the job runs: the account label `prestart` printed, the
 CPU seconds the agent's whole process tree has used (a process that exited
 keeps the time it had used), and the usage the agent reported so far. Each is

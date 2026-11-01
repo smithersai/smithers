@@ -46,6 +46,8 @@ export const Machine = Schema.Struct({
   version: Schema.NullOr(Schema.String),
   load1: Count,
   diskFreeGb: Count,
+  /** Why the runner takes no job by its own admission rule (`load 31/24`), or null while it admits. */
+  held: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type Machine = typeof Machine.Type
 
@@ -92,6 +94,7 @@ export const MACHINE_ROW = {
     version: nullable("string"),
     load1: nullable("number"),
     diskFreeGb: nullable("number"),
+    held: nullable("string"),
   },
   required: ["id", "repoId", "name", "labels", "capacity"],
   additionalProperties: false,

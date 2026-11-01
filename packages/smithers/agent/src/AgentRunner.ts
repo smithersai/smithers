@@ -176,9 +176,10 @@ export type Job = typeof Job.Type
 
 /**
  * What a runner says about its machine with each claim, for a host's fleet
- * view: the runner's version, the one-minute load average, and the free disk
- * in gigabytes where its checkouts live. Each is optional; a host shows a
- * missing one as unknown.
+ * view: the runner's version, the one-minute load average, the free disk in
+ * gigabytes where its checkouts live, and, while the runner admits no job by
+ * its own rule, why (`load 31/24`, `disk 31G/40G`). Each is optional; a host
+ * shows a missing fact as unknown and a missing `held` as admitting.
  *
  * @category schemas
  * @since 1.0.0
@@ -186,7 +187,8 @@ export type Job = typeof Job.Type
 export const Machine = Schema.Struct({
   version: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64))),
   load1: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
-  diskFreeGb: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
+  diskFreeGb: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
+  held: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)))
 })
 
 /**

@@ -38,6 +38,8 @@ export interface Machine {
   readonly version: string | null
   readonly load1: number | null
   readonly diskFreeGb: number | null
+  /** Why the runner takes no job by its own admission rule (`load 31/24`); null or absent while it admits. */
+  readonly held?: string | null | undefined
 }
 
 /** A state's tone, as `@smthrs/ui`'s badges tint it. */
@@ -139,8 +141,11 @@ export const runsOf = (runs: ReadonlyArray<AgentRun>, nowMs: number): ReadonlyAr
       }
     })
 
-/** A machine's state: Online, Offline (unseen 45 s), Never seen, or Removed. */
-export type MachineState = "online" | "offline" | "unseen" | "removed"
+/**
+ * A machine's state: Online, Held (online, but its runner takes no job by its own admission rule, decision 0144),
+ * Offline (unseen 45 s), Never seen, or Removed.
+ */
+export type MachineState = "online" | "held" | "offline" | "unseen" | "removed"
 
 /** One machine as a row of the view. */
 export interface MachineRow {
@@ -149,6 +154,8 @@ export interface MachineRow {
   readonly state: MachineState
   readonly word: string
   readonly tone: Tone
+  /** Why a Held machine holds back, as its runner said (`load 31/24`, `disk 31G/40G`); null in any other state. */
+  readonly held: string | null
   /** Jobs it holds now, of its capacity. */
   readonly running: number
   readonly capacity: number
@@ -161,6 +168,7 @@ export interface MachineRow {
 
 const MACHINE_WORDS: Readonly<Record<MachineState, { readonly word: string; readonly tone: Tone }>> = {
   online: { word: "Online", tone: "ok" },
+  held: { word: "Held", tone: "warn" },
   offline: { word: "Offline", tone: "bad" },
   unseen: { word: "Never seen", tone: "muted" },
   removed: { word: "Removed", tone: "muted" },
@@ -180,12 +188,15 @@ export const machinesOf = (
       ? "unseen"
       : nowMs - seenMs >= UNREACHABLE_MS
       ? "offline"
+      : machine.held
+      ? "held"
       : "online"
     return {
       id: machine.id,
       name: machine.name,
       state,
       ...MACHINE_WORDS[state],
+      held: state === "held" ? machine.held ?? null : null,
       running: runs.filter((run) =>
         run.runner === machine.name && (run.state === "working" || run.state === "stalled" || run.state === "stopping")
       ).length,
@@ -205,7 +216,10 @@ export interface Summary {
   readonly stalled: number
   /** Runs that failed since the start of `nowMs`'s day, in UTC. */
   readonly failedToday: number
+  /** Machines that answer, Held ones included. */
   readonly online: number
+  /** Machines that answer but take no job by their own admission rule. */
+  readonly held: number
   /** Machines not removed. */
   readonly machines: number
 }
@@ -218,7 +232,8 @@ export const summaryOf = (runs: ReadonlyArray<AgentRun>, machines: ReadonlyArray
     waiting: runs.filter((run) => run.state === "queued").length,
     stalled: runs.filter((run) => run.state === "stalled").length,
     failedToday: runs.filter((run) => run.state === "failed" && (at(run.endedAt) ?? 0) >= day).length,
-    online: machines.filter((machine) => machine.state === "online").length,
+    online: machines.filter((machine) => machine.state === "online" || machine.state === "held").length,
+    held: machines.filter((machine) => machine.state === "held").length,
     machines: machines.filter((machine) => machine.state !== "removed").length,
   }
 }

@@ -40,7 +40,7 @@ function Shown({ tab, repository }: Required<ViewProps> & { readonly repository:
         <span data-count="waiting">{plural(summary.waiting, "waiting")}</span>
         <span data-count="stalled">{plural(summary.stalled, "stalled")}</span>
         <span data-count="failed">{plural(summary.failedToday, "failed today")}</span>
-        <span data-count="runners">runners {summary.online}/{summary.machines}</span>
+        <span data-count="runners">runners {summary.online}/{summary.machines}{summary.held === 0 ? null : ` · ${summary.held} held`}</span>
       </p>
       {runs._tag === "Ready" && rows.length === 0 ? <EmptyState title="No agent runs" /> : (
         <Table className="fleet-runs" aria-label="Agent runs">
@@ -95,7 +95,7 @@ function Shown({ tab, repository }: Required<ViewProps> & { readonly repository:
             {machineRows.map((machine) => (
               <TableRow key={machine.id} data-machine={machine.name} data-state={machine.state}>
                 <TableCell>{machine.name}</TableCell>
-                <TableCell><Pill tone={machine.tone}>{machine.word}</Pill></TableCell>
+                <TableCell><Pill tone={machine.tone}>{machine.held === null ? machine.word : `${machine.word} · ${machine.held}`}</Pill></TableCell>
                 <TableCell className="fleet-number">{machine.running}/{machine.capacity}</TableCell>
                 <TableCell className="fleet-wide fleet-number">{machine.load ?? "-"}</TableCell>
                 <TableCell className="fleet-wide fleet-number">{machine.disk ?? "-"}</TableCell>

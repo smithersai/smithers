@@ -1,36 +1,64 @@
 /**
- * What the runner says about its machine with each claim, for the host's
- * fleet view: its version, the one-minute load average, and the free disk
- * where its checkouts live ({@link AgentRunner.Machine}).
+ * What the runner reads of its machine, to admit jobs by it, and says about
+ * it with each claim, for the host's fleet view: its version, the one-minute
+ * load average, the free disk where its checkouts live, and why it holds back
+ * ({@link AgentRunner.Machine}).
  *
  * @since 1.0.0
  */
 
 import type * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { statfsSync } from "node:fs"
-import { loadavg } from "node:os"
+import { availableParallelism, loadavg } from "node:os"
 import { packageVersion } from "../Version.ts"
 import type * as Config from "./Config.ts"
 
 /**
- * The machine's facts now. A fact the machine can't read now is left out,
- * which the host shows as unknown.
+ * What the runner reads of its machine before each claim: its CPUs, the
+ * one-minute load average and the free disk in gigabytes where its checkouts
+ * live. A fact it couldn't read is left out.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Reading {
+  readonly cpus: number
+  readonly load1?: number | undefined
+  readonly diskFreeGb?: number | undefined
+}
+
+/**
+ * The machine now.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const facts = (config: Pick<Config.Checked, "stateDir">): AgentRunner.Machine => {
-  const load1 = Math.round(loadavg()[0]! * 100) / 100
+export const read = (config: Pick<Config.Checked, "stateDir">): Reading => {
+  const load1 = loadavg()[0]!
   let diskFreeGb: number | undefined
   try {
     const disk = statfsSync(config.stateDir)
-    diskFreeGb = Math.round((disk.bavail * disk.bsize) / 1e7) / 100
+    diskFreeGb = (disk.bavail * disk.bsize) / 1e9
   } catch {
     // The state directory isn't there yet: the first job makes it.
   }
   return {
-    version: packageVersion.slice(0, 64),
+    cpus: availableParallelism(),
     ...(Number.isFinite(load1) && load1 >= 0 ? { load1 } : {}),
     ...(diskFreeGb === undefined ? {} : { diskFreeGb })
   }
 }
+
+/**
+ * The facts a claim carries for `reading`, and why the runner holds back
+ * when it does (`Admission.ts`). The host shows a fact left out as unknown.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const facts = (reading: Reading, held?: string): AgentRunner.Machine => ({
+  version: packageVersion.slice(0, 64),
+  ...(reading.load1 === undefined ? {} : { load1: Math.round(reading.load1 * 100) / 100 }),
+  ...(reading.diskFreeGb === undefined ? {} : { diskFreeGb: Math.round(reading.diskFreeGb * 100) / 100 }),
+  ...(held === undefined ? {} : { held })
+})

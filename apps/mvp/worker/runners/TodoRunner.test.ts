@@ -203,6 +203,8 @@ const setup = async (
     capacity: options.capacity ?? 2,
     stateDir: state,
     heartbeatSeconds: options.heartbeatSeconds ?? 2,
+    // The test machine's own load mustn't hold its claims (decision 0144).
+    admission: { loadPerCpu: 8, diskFloorGb: 0 },
     repositories: { [REPOSITORY.id]: { mirror: path } },
     profiles: {
       "acp-test": { argv: [process.execPath, testAgent], env: { ACP_TEST_AGENT_STATE: join(state, "agent-state") } },

@@ -1,8 +1,9 @@
 /**
  * `smthrs runner serve`: the claim loop.
  *
- * The runner claims while it has room, starting each claimed job as its
- * `runner/Job` execution, and keeps every running job's claim with a
+ * The runner claims while it has room and its machine admits another job
+ * ({@link Admission}: under half load, over the disk floor), starting each
+ * claimed job as its `runner/Job` execution, and keeps every running job's claim with a
  * heartbeat. A heartbeat that says `cancel` stops the job's agent and the job
  * settles cancelled; one that says the claim no longer holds the job
  * interrupts it, which stops the agent's whole tree, and nothing is settled.
@@ -17,7 +18,8 @@
  */
 
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
-import { Cause, Deferred, Effect, type Fiber, Queue, Schema } from "effect"
+import { Cause, Clock, Deferred, Effect, type Fiber, Queue, Schema } from "effect"
+import * as Admission from "./Admission.ts"
 import type * as Config from "./Config.ts"
 import * as Host from "./Host.ts"
 import * as Job from "./Job.ts"
@@ -28,16 +30,22 @@ const isAccount = Schema.is(AgentRunner.Profile)
 
 /**
  * Runs the claim loop forever under `config`, with `controls` shared with the
- * job's registration (`Job.registration`).
+ * job's registration (`Job.registration`), reading the machine with `read`
+ * before each claim.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const loop = (config: Config.Checked, controls: Map<string, Session.Control>) =>
+export const loop = (
+  config: Config.Checked,
+  controls: Map<string, Session.Control>,
+  read: () => Machine.Reading = () => Machine.read(config)
+) =>
   Effect.gen(function*() {
     const host = yield* Host.Host
     const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
     const profiles = Object.keys(config.profiles)
+    let held: string | undefined
 
     /** Beats for one job until its claim is lost: then the job's `dropped` completes. */
     const heartbeat = (job: AgentRunner.Job, control: Session.Control) =>
@@ -135,14 +143,23 @@ export const loop = (config: Config.Checked, controls: Map<string, Session.Contr
       })
 
     let backoff = 1
+    let admission = Admission.initial
     while (true) {
-      const free = config.capacity - running.size
-      if (free <= 0) {
-        yield* Effect.sleep("1 second")
-        continue
-      }
+      const reading = read()
+      const decision = Admission.decide(config.admission, admission, reading, yield* Clock.currentTimeMillis)
+      admission = decision.state
+      const room = config.capacity - running.size
+      // A held or full runner still asks, with no room and no wait: its machine row stays current and says why, and
+      // a job it holds but doesn't list comes back.
+      const free = decision.held === undefined ? Math.max(0, room) : 0
       const claimed = yield* Effect.result(
-        host.claim({ profiles, free, running: [...running.keys()], waitSeconds: 25, machine: Machine.facts(config) })
+        host.claim({
+          profiles,
+          free,
+          running: [...running.keys()],
+          waitSeconds: free > 0 ? 25 : 0,
+          machine: Machine.facts(reading, decision.held)
+        })
       )
       if (claimed._tag === "Failure") {
         yield* Effect.logWarning("runner.claim").pipe(Effect.annotateLogs({ outcome: claimed.failure.code }))
@@ -153,9 +170,16 @@ export const loop = (config: Config.Checked, controls: Map<string, Session.Contr
       backoff = 1
       const job = claimed.success
       if (job === null || running.has(job.key)) {
+        if (decision.held !== held) {
+          held = decision.held
+          yield* Effect.logInfo("runner.admission").pipe(
+            Effect.annotateLogs({ held: held ?? "none", load1: reading.load1, cpus: reading.cpus })
+          )
+        }
         yield* Effect.sleep(`${config.pollSeconds} seconds`)
         continue
       }
+      if (!job.reclaimed) admission = Admission.claimed(admission, yield* Clock.currentTimeMillis)
       yield* start(job)
     }
   })

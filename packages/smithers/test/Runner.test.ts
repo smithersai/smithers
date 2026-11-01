@@ -77,6 +77,8 @@ const configure = (profiles: Record<string, Partial<Config.Profile>> = {}) => {
     stateDir,
     heartbeatSeconds: 1,
     pollSeconds: 1,
+    // This suite is about jobs, not the machine running it: a busy test machine mustn't hold its claims.
+    admission: { loadPerCpu: 8, diskFloorGb: 0 },
     repositories: { [REPOSITORY]: { mirror: mirror.path } },
     profiles: {
       "test-agent": agent,
@@ -620,7 +622,15 @@ describe("runner configuration", () => {
 
   test("fills the defaults and expands the state directory", async () => {
     const checked = await Effect.runPromise(Config.check({ ...base, stateDir: "~/runner" }, "/home/r"))
-    expect(checked).toMatchObject({ capacity: 4, heartbeatSeconds: 10, pollSeconds: 2, stateDir: "/home/r/runner" })
+    expect(checked).toMatchObject({
+      capacity: 4,
+      heartbeatSeconds: 10,
+      pollSeconds: 2,
+      stateDir: "/home/r/runner",
+      admission: { loadPerCpu: 0.5, diskFloorGb: 40, jobLoad: 1 }
+    })
+    const own = await Effect.runPromise(Config.check({ ...base, admission: { loadPerCpu: 0.75 } }, "/home/r"))
+    expect(own.admission).toEqual({ loadPerCpu: 0.75, diskFloorGb: 40, jobLoad: 1 })
     expect((await Effect.runPromise(Config.check(base, "/home/r"))).stateDir).toBe("/home/r/.smithers/runner")
   })
 
