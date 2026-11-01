@@ -9,7 +9,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   deps: [],
   // examples/ is type-checked, linted and formatted with the sources, and run
   // by test/examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd
 })
 
