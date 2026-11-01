@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
-import * as Prompt from "../src/Prompt.ts"
+import * as Prompt from "../src/Prompt.vibe"
 import { Fragment, jsx, render } from "../src/Prompt/jsx-runtime.ts"
 import * as Registry from "../src/Registry.ts"
 

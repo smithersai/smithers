@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema"
 import * as Descriptor from "./Descriptor.ts"
 import type { ClosureModule, Executable, VerifiedSource } from "./Executable.ts"
 import { measureLockfiles } from "./internal/Lockfiles.ts"
-import * as Prompt from "./Prompt.ts"
+import * as Prompt from "./Prompt.vibe"
 export { measureLockfiles } from "./internal/Lockfiles.ts"
 
 /** Snapshot integrity, availability, and dependency drift failures.

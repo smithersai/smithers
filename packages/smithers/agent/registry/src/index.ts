@@ -51,7 +51,7 @@ export * as ModuleFlow from "./ModuleFlow.vibe"
  * @category markdown
  * @since 1.0.0-rc.1
  */
-export * as Prompt from "./Prompt.ts"
+export * as Prompt from "./Prompt.vibe"
 
 /**
  * @category conversions
