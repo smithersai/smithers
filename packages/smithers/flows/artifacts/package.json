@@ -39,7 +39,10 @@
     "./*/index": null,
     "./ArtifactBackupLease": "./src/ArtifactBackupLease.ts",
     "./ArtifactStore": "./src/ArtifactStore.ts",
-    "./ArtifactStoreMetrics": "./src/ArtifactStoreMetrics.ts",
+    "./ArtifactStoreMetrics": {
+      "types": "./src/ArtifactStoreMetrics.d.vibe.ts",
+      "default": "./src/ArtifactStoreMetrics.vibe"
+    },
     "./ArtifactSweep": "./src/ArtifactSweep.ts",
     "./CombinedArtifacts": "./src/CombinedArtifacts.ts",
     "./FileLease": "./src/FileLease.ts",

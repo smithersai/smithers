@@ -7,7 +7,7 @@
 
 import * as Effect from "effect/Effect"
 import type { Digest } from "./ArtifactStore.ts"
-import { ArtifactStoreError } from "./ArtifactStoreError.ts"
+import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
 
 /**
  * Refuses anything other than the canonical SHA-256 address representation.
@@ -20,12 +20,10 @@ import { ArtifactStoreError } from "./ArtifactStoreError.ts"
  * @since 1.0.0-rc.0
  * @slop
  */
-export const validateDigest = (digest: string): Effect.Effect<Digest, ArtifactStoreError> =>
+export const validateDigest = (digest: string): Digest!ArtifactStoreError =>
   typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest)
-    ? Effect.succeed(digest as Digest)
-    : Effect.fail(
-      new ArtifactStoreError({
-        code: "invalid_digest",
-        message: "artifact digest must be exactly 64 lowercase hexadecimal characters"
-      })
-    )
+    ? digest as Digest
+    : throw new ArtifactStoreError({
+      code: "invalid_digest",
+      message: "artifact digest must be exactly 64 lowercase hexadecimal characters",
+    })

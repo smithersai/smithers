@@ -7,7 +7,7 @@
 
 import * as Effect from "effect/Effect"
 import type { Service } from "./ArtifactStore.ts"
-import { ArtifactStoreError } from "./ArtifactStoreError.ts"
+import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
 
 /**
  * Builds an artifact store whose every operation fails as unavailable, with

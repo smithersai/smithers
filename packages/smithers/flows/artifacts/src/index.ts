@@ -37,7 +37,7 @@ export * as ArtifactStore from "./ArtifactStore.ts"
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.ts"
+export * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
 
 /**
  * @category services

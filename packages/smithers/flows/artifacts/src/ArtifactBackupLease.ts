@@ -20,7 +20,7 @@ import * as PlatformError from "effect/PlatformError"
 import * as Random from "effect/Random"
 import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
 
-import { ArtifactStoreError } from "./ArtifactStoreError.ts"
+import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
 
 const markerName = ".backup-lease"
 const gateName = ".backup-lease-gate"

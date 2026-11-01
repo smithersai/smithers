@@ -42,7 +42,7 @@ const securityReview = Smithers.SecurityReview({
         "src/FileSystemArtifactStore.ts",
         "src/RemoteArtifacts.ts",
         "src/CombinedArtifacts.ts",
-        "src/measureBytes.ts"
+        "src/measureBytes.vibe"
       ]
     },
     {
@@ -56,7 +56,7 @@ const securityReview = Smithers.SecurityReview({
         "findMissing or remove accepting a digest list without validating each entry."
       ],
       paths: [
-        "src/validateDigest.ts",
+        "src/validateDigest.vibe",
         "src/FileSystemArtifactStore.ts",
         "src/ArtifactSweep.ts",
         "src/RemoteArtifacts.ts",
