@@ -26,7 +26,7 @@ import type { ContextOf } from "./Hooks.vibe"
 import type { FlowsHooks } from "./index.ts"
 import type { PluginInput } from "./Plugin.ts"
 import type { PluginError } from "./PluginError.vibe"
-import * as Plugins from "./Plugins.ts"
+import * as Plugins from "./Plugins.vibe"
 import * as Resolve from "./Resolve.ts"
 
 /**

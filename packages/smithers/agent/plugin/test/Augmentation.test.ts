@@ -4,7 +4,7 @@ import * as Config from "../src/Config.ts"
 import type { ParallelHook, SequentialHook } from "../src/Hooks.vibe"
 import * as Hooks from "../src/Hooks.vibe"
 import type { FlowsPlugin } from "../src/index.ts"
-import * as Plugins from "../src/Plugins.ts"
+import * as Plugins from "../src/Plugins.vibe"
 import * as Resolve from "../src/Resolve.ts"
 
 interface ToolCallContext {

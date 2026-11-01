@@ -5,7 +5,7 @@ import type { FirstHook, ParallelHook, SequentialHook } from "../src/Hooks.vibe"
 import * as Hooks from "../src/Hooks.vibe"
 import type { FlowsHooks, FlowsPlugin } from "../src/index.ts"
 import type { PluginError } from "../src/PluginError.vibe"
-import * as Plugins from "../src/Plugins.ts"
+import * as Plugins from "../src/Plugins.vibe"
 import * as Resolve from "../src/Resolve.ts"
 
 type Decision = "transient" | "permanent" | { readonly shareable: true }

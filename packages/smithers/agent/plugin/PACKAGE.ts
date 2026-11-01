@@ -67,7 +67,7 @@ const securityReview = Smithers.SecurityReview({
         "parallelConcurrency accepted outside 1..maximumParallelConcurrency or as a non-integer.",
         "A diagnostic path or message built from an unbounded caller key without diagnosticKey or boundedPath."
       ],
-      paths: ["src/Resolve.ts", "src/internal/Boundary.ts", "src/Plugins.ts"]
+      paths: ["src/Resolve.ts", "src/internal/Boundary.ts", "src/Plugins.vibe"]
     },
     {
       id: "config-json-boundary",
@@ -108,7 +108,7 @@ const securityReview = Smithers.SecurityReview({
         "Ordering that lets an enforce or order value from input override the documented pre, normal, post partition.",
         "A PluginError cause or message that embeds handler arguments or config values that may hold secrets."
       ],
-      paths: ["src/Plugins.ts", "src/Kernel.ts", "src/Hooks.vibe", "src/PluginError.vibe"]
+      paths: ["src/Plugins.vibe", "src/Kernel.ts", "src/Hooks.vibe", "src/PluginError.vibe"]
     }
   ]
 })

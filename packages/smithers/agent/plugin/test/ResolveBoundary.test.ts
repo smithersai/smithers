@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import * as Hooks from "../src/Hooks.vibe"
 import type { FlowsPlugin, PluginInput } from "../src/index.ts"
 import { PluginError } from "../src/PluginError.vibe"
-import * as Plugins from "../src/Plugins.ts"
+import * as Plugins from "../src/Plugins.vibe"
 import * as Resolve from "../src/Resolve.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
