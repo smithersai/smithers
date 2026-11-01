@@ -1,12 +1,13 @@
 /**
  * Edges of the in-memory engine the broader suites only pass through: a
  * cancellation landing between two rounds, a deferred completed twice, a
- * parent that fails without expiring, a follower's wake, and payloads that
- * only the conservative shape comparison can tell apart.
+ * parent that fails without expiring, a follower's wake and its polls of a
+ * run its own timer will wake, and payloads that only the conservative shape
+ * comparison can tell apart.
  */
 import { describe, expect } from "@effect/vitest"
 import { syncCrypto } from "@smthrs/crypto"
-import { DurableDeferred, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { DurableClock, DurableDeferred, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Crypto, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -184,6 +185,93 @@ describe("a follower's wake", () => {
         for (let turn = 0; turn < 200 && following.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
         expect(following.pollUnsafe()).toBeDefined()
         expect(yield* Fiber.join(following)).toBe("ready")
+        expect(drives).toBe(3)
+      }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
+  )
+})
+
+describe("a follower's poll of a run parked on its own timer", () => {
+  effect(
+    "leaves the run to its timer: no elapsed poll re-drives it before the timer fires",
+    () =>
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        const Cools = Flow.make("memory-edges/cools", {
+          payload: {},
+          success: Schema.String,
+          body: () => Node.succeed("inert")
+        })
+        let drives = 0
+        yield* engine.register(Cools, () =>
+          Effect.gen(function*() {
+            drives++
+            yield* DurableClock.sleep({ name: "cooldown", duration: "5 seconds", inMemoryThreshold: 1 })
+            return "cooled"
+          }))
+        // The default policy's polls (200 ms growing by 1.5x) elapse six times
+        // inside the timer's five seconds. The durable engine re-drives a
+        // parked run on a poll only for a due wake; this engine's timer is that
+        // wake, and it re-drives the run itself when it fires.
+        const following = yield* Effect.forkChild(engine.execute(Cools, {
+          executionId: "cools",
+          payload: {},
+          suspendedRetryPolicy: RetryPolicy.defaultRetryPolicy
+        }))
+        const parked = (result: Flow.Result<unknown, unknown>) => result._tag === "Suspended"
+        yield* pollUntil(pollOf(Cools.poll("cools")), parked, { turns: 200 })
+        expect(drives).toBe(1)
+
+        yield* TestClock.adjust(5000)
+        for (let turn = 0; turn < 200 && following.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
+        expect(yield* Fiber.join(following)).toBe("cooled")
+        expect(drives).toBe(2)
+      }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
+  )
+
+  effect(
+    "re-drives the run on the next poll when a resume found its round still running",
+    () =>
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        const Cools = Flow.make("memory-edges/cools-after-a-live-resume", {
+          payload: {},
+          success: Schema.String,
+          body: () => Node.succeed("inert")
+        })
+        const entered = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        let drives = 0
+        yield* engine.register(Cools, () =>
+          Effect.gen(function*() {
+            drives++
+            if (drives === 1) {
+              yield* Deferred.succeed(entered, undefined)
+              yield* Deferred.await(release)
+            }
+            yield* DurableClock.sleep({ name: "cooldown", duration: "5 seconds", inMemoryThreshold: 1 })
+            return "cooled"
+          }))
+        const following = yield* Effect.forkChild(engine.execute(Cools, {
+          executionId: "cools-after-a-live-resume",
+          payload: {},
+          suspendedRetryPolicy: RetryPolicy.defaultRetryPolicy
+        }))
+        // A resume while the round runs cannot re-drive it, and a completion
+        // recorded then may be one the round parks without reading.
+        yield* Deferred.await(entered)
+        yield* engine.resume(Cools, "cools-after-a-live-resume")
+        yield* Deferred.succeed(release, undefined)
+        const parked = (result: Flow.Result<unknown, unknown>) => result._tag === "Suspended"
+        yield* pollUntil(pollOf(Cools.poll("cools-after-a-live-resume")), parked, { turns: 200 })
+        expect(drives).toBe(1)
+
+        // So the first elapsed poll re-drives it, and the timer still wakes it.
+        yield* TestClock.adjust(200)
+        for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
+        expect(drives).toBe(2)
+        yield* TestClock.adjust(5000)
+        for (let turn = 0; turn < 200 && following.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
+        expect(yield* Fiber.join(following)).toBe("cooled")
         expect(drives).toBe(3)
       }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
   )

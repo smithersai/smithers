@@ -139,6 +139,12 @@ interface Memory {
   readonly actions: Map<string, ActionState>
   readonly deferredResults: Map<string, Exit.Exit<any, any>>
   readonly clocks: FiberMap.FiberMap<string>
+  /**
+   * Executions a resume found with a live round, since that round was driven.
+   * A completion recorded then is one the round may park without reading, so
+   * only a re-drive can deliver it; a follower's poll does that.
+   */
+  readonly missedWakes: Set<string>
 }
 
 const makeMemory = (scope: Scope.Scope, clocks: FiberMap.FiberMap<string>, engine: () => Port): Memory => ({
@@ -154,7 +160,8 @@ const makeMemory = (scope: Scope.Scope, clocks: FiberMap.FiberMap<string>, engin
   children: new Map(),
   actions: new Map(),
   deferredResults: new Map(),
-  clocks
+  clocks,
+  missedWakes: new Set()
 })
 
 const exitStatus = (exit: Exit.Exit<unknown, unknown>): Status => {
@@ -493,7 +500,10 @@ const resumeUnlocked = Effect.fnUntraced(function*(
   wake(memory, executionId)
   // Only the first drive and a suspended round are driven: a live round
   // keeps running, and every other settlement is terminal.
-  if (state.fiber !== undefined && !settledSuspended(state)) return
+  if (state.fiber !== undefined && !settledSuspended(state)) {
+    if (state.fiber.pollUnsafe() === undefined) memory.missedWakes.add(executionId)
+    return
+  }
   // The latest still-open registration serves every drive, so a re-drive
   // after an inner scoped registration of the tag closed follows the outer
   // one exactly as `make.register`'s declaration table does. With every
@@ -506,6 +516,7 @@ const resumeUnlocked = Effect.fnUntraced(function*(
   const instance = makeInstance(previous.flow, previous.executionId, previous.lineageDeadline)
   instance.interrupted = previous.interrupted
   state.instance = instance
+  memory.missedWakes.delete(executionId)
   state.fiber = yield* drive(memory, state, entry, instance)
 })
 
@@ -735,6 +746,29 @@ const resumeAuthorized = (memory: Memory, flow: Flow.Any, executionId: string) =
     return Effect.andThen(authorize(flow, state, executionId), resume(memory, executionId))
   })
 
+/** Whether a `DurableClock` timer this engine scheduled for `executionId` is still waiting to fire. */
+const hasPendingClock = (memory: Memory, executionId: string): boolean => {
+  for (const [key] of memory.clocks) {
+    if ((JSON.parse(key) as ReadonlyArray<string>)[1] === executionId) return true
+  }
+  return false
+}
+
+/**
+ * A follower's elapsed poll (`{ poll: true }`). As the durable engine does, it
+ * re-drives a parked run only when a wake may be due: it leaves a run to the
+ * timer this engine holds for it, which re-drives the run when it fires,
+ * unless a completion may have landed while a round was live. Re-driving it
+ * earlier replays the round only to park it again, once per poll.
+ */
+const pollResume = (memory: Memory, flow: Flow.Any, executionId: string) =>
+  Effect.suspend(() => {
+    const state = executionOf(memory, flow, executionId)
+    const waitsOnItsTimer = state !== undefined && settledSuspended(state) && !state.instance.interrupted &&
+      !memory.missedWakes.has(executionId) && hasPendingClock(memory, executionId)
+    return waitsOnItsTimer ? authorize(flow, state, executionId) : resumeAuthorized(memory, flow, executionId)
+  })
+
 const resumeSignal = (memory: Memory, executionId: string) =>
   Effect.suspend(() => {
     const pending = memory.wakes.get(executionId) ?? Deferred.makeUnsafe<void>()
@@ -948,7 +982,8 @@ const adapter = (memory: Memory): Encoded => ({
   execute: (flow, options) => execute(memory, flow, options),
   interrupt: (flow, executionId) => interrupt(memory, flow, executionId),
   interruptUnsafe: (flow, executionId) => interruptUnsafe(memory, flow, executionId),
-  resume: (flow, executionId) => resumeAuthorized(memory, flow, executionId),
+  resume: (flow, executionId, options) =>
+    options?.poll === true ? pollResume(memory, flow, executionId) : resumeAuthorized(memory, flow, executionId),
   resumeSignal: (_flow, executionId) => resumeSignal(memory, executionId),
   actionExecute: (options) => actionExecute(memory, options),
   poll: (flow, executionId) => poll(memory, flow, executionId),
