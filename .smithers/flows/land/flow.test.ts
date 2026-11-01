@@ -1,3 +1,4 @@
+import "./numbering.test.mjs"
 /**
  * `land` through the flow API: the real graph, the real layer and a real child
  * process running `commit.mjs`. No case pushes: the success commits in a

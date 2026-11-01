@@ -34,3 +34,15 @@ For app work, read [apps/mvp/AGENTS.md](../../../apps/mvp/AGENTS.md) and [the ru
 
 - **Repository automation:** a repository action a person or agent runs (release steps, landing, docs sync, benchmarks, checks) is a typed flow in the repository flows directory whose action runs its module through `.smithers/flows/automation/run-module.ts`; start it with `smthrs flow start <name> --data '<json>' --wait`. Code that serves one package lives with that package (`packages/repo-targets/contracts` holds repository build-graph and workflow contracts). Never add a top-level scripts folder (#4094).
 - **Bootstrap landing helper:** `pnpm commit` runs `.smithers/flows/land/commit.mjs`, the module behind the `land` flow, directly so a fix still lands when `smthrs` on `main` is broken. Every authorized `pnpm commit --push` invocation must pass repeatable `--test "<command>"` flags. Commands run before VCS mutation with Bash pipefail. For an explicit exception, use `--no-test "<reason>"`; the helper records `Landing-Tests` in the commit. Require exit zero and `LANDED <sha>`, emitted only after fetching remote main and verifying ancestry. Push output alone is not a landing receipt.
+
+## Parallel lane identities
+
+Before rebasing a lane that adds decisions or Postgres migrations, fetch main
+and, under the existing `~/smithers-builders/main-push.lock`, run
+`node .smithers/flows/land/numbering.mjs prepare main@origin`. It allocates
+colliding decisions and all incoming migrations below the published high-water
+mark, rewriting only lane-added reference lines. Never renumber a migration
+already on main. `node .smithers/flows/land/numbering.mjs check` rejects duplicate
+numbers and unregistered migrations without an install. Add new migration tests
+in separate files; existing migration tests and ledger identities stay intact.
+See [parallel agents](../../../docs/devx/parallel-agents.md).
