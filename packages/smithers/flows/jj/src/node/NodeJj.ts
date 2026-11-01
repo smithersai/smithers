@@ -47,7 +47,7 @@ import { hostname } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { stripVTControlCharacters } from "node:util"
 import { quoteGitPatchPaths } from "../internal/gitPatchPaths.ts"
-import { JjInternalFault } from "../internal/JjInternalFault.ts"
+import { JjInternalFault } from "../internal/JjInternalFault.vibe"
 import { isJjError, Jj, JjError, jjErrorCause, RepositoryMutation } from "../Jj.ts"
 import { resolveJjBinary } from "./resolveJjBinary.ts"
 
