@@ -4,10 +4,9 @@
  * @since 0.1.0
  */
 
-import * as Effect from "effect/Effect"
 import * as Sse from "effect/encoding/Sse"
 import * as Stream from "effect/Stream"
-import { ModelError } from "./ModelError.ts"
+import { ModelError } from "./ModelError.vibe"
 
 /**
  * A byte-stream framing strategy selected independently of a protocol.
@@ -18,7 +17,7 @@ import { ModelError } from "./ModelError.ts"
 export interface Framing<Frame> {
   readonly id: string
   readonly frame: <E, R>(
-    stream: Stream.Stream<Uint8Array, E, R>
+    stream: Stream.Stream<Uint8Array, E, R>,
   ) => Stream.Stream<Frame, E | Sse.SseError | ModelError, R>
 }
 
@@ -56,16 +55,16 @@ export interface Limits {
 // guard retains only counters. Upstream owns its currently supplied chunk;
 // downstream retention per record is O(maxRecordBytes), independently of byte
 // partitioning. Terminal failure stops pulls and closes the producer's scope.
-const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, limits: Limits) =>
+const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, limits: Limits): infer _ =>
   Stream.suspend(() => {
     const recordLimit = limits.maxRecordBytes ?? defaultMaxRecordBytes
     const responseLimit = limits.maxResponseBytes ?? defaultMaxResponseBytes
     if (
-      !Number.isSafeInteger(recordLimit) || recordLimit <= 0 || !Number.isSafeInteger(responseLimit) ||
-      responseLimit <= 0
+      !Number.isSafeInteger(recordLimit) || recordLimit <= 0 || !Number.isSafeInteger(responseLimit)
+      || responseLimit <= 0
     ) {
       return Stream.fail(
-        new ModelError({ code: "invalid_request", message: "Framing limits must be positive safe integers" })
+        new ModelError({ code: "invalid_request", message: "Framing limits must be positive safe integers" }),
       )
     }
     let responseBytes = 0
@@ -75,9 +74,10 @@ const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, li
     return stream.pipe(Stream.mapEffect((chunk) => {
       responseBytes += chunk.byteLength
       if (responseBytes > responseLimit) {
-        return Effect.fail(
-          new ModelError({ code: "invalid_provider_output", message: `Model response exceeds ${responseLimit} bytes` })
-        )
+        throw new ModelError({
+          code: "invalid_provider_output",
+          message: `Model response exceeds ${responseLimit} bytes`,
+        })
       }
       for (const byte of chunk) {
         if (byte === 10 && afterCr) {
@@ -93,15 +93,13 @@ const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, li
           recordBytes += 1
         }
         if (recordBytes > recordLimit) {
-          return Effect.fail(
-            new ModelError({
-              code: "invalid_provider_output",
-              message: `Model stream record exceeds ${recordLimit} bytes`
-            })
-          )
+          throw new ModelError({
+            code: "invalid_provider_output",
+            message: `Model stream record exceeds ${recordLimit} bytes`,
+          })
         }
       }
-      return Effect.succeed(chunk)
+      return chunk
     }))
   })
 
@@ -133,9 +131,9 @@ export const makeSse = (limits: Limits = {}): Framing<string> => ({
           frames = []
           return emitted
         }),
-        Stream.flattenIterable
+        Stream.flattenIterable,
       )
-    })
+    }),
 })
 
 /**
@@ -161,8 +159,8 @@ export const makeNdjson = (limits: Limits = {}): Framing<string> => ({
     bounded(stream, false, limits).pipe(
       Stream.decodeText,
       Stream.splitLines,
-      Stream.filter((line) => line.trim() !== "")
-    )
+      Stream.filter((line) => line.trim() !== ""),
+    ),
 })
 
 /**

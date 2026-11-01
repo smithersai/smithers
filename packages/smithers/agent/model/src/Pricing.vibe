@@ -12,9 +12,8 @@
  * @since 1.0.0-rc.1
  */
 
-import { Schema } from "effect"
 import { type ModelPrice, modelPrices } from "./internal/prices.generated.ts"
-import type * as ModelEvent from "./ModelEvent.ts"
+import type * as ModelEvent from "./ModelEvent.vibe"
 
 /**
  * USD per million tokens for each token class a provider reports.
@@ -26,7 +25,7 @@ export const Rates = Schema.Struct({
   input: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
   cacheRead: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
   cacheWrite: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
-  output: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+  output: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 })
 
 /**
@@ -155,8 +154,8 @@ export const weigh = (usage: ModelEvent.Usage, rates: Rates): number => {
   const write = usage.cacheWriteTokens ?? 0
   const uncached = usage.inputTokens - read - write
   if (uncached < 0) return Number.NaN
-  const weighted = uncached * rates.input + read * rates.cacheRead + write * rates.cacheWrite +
-    usage.outputTokens * rates.output
+  const weighted = uncached * rates.input + read * rates.cacheRead + write * rates.cacheWrite
+    + usage.outputTokens * rates.output
   return Number.isFinite(weighted) ? weighted : Number.NaN
 }
 
@@ -170,9 +169,9 @@ export const weigh = (usage: ModelEvent.Usage, rates: Rates): number => {
  */
 export const costUsd = (usage: ModelEvent.Usage, price: Rates | Price): number => {
   const card = price as Price
-  const rates = card.longContext !== undefined && (usage.inputTokens ?? 0) >= Number(card.longContextFrom) ?
-    card.longContext :
-    card
+  const rates = card.longContext !== undefined && (usage.inputTokens ?? 0) >= Number(card.longContextFrom)
+    ? card.longContext
+    : card
   const usd = Math.round(weigh(usage, rates) / 1_000_000 * 1e9) / 1e9
   return Number.isFinite(usd) ? usd : Number.NaN
 }

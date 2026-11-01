@@ -9,7 +9,7 @@
 import { Effect, Layer, Redacted, Result, Stream } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { describe, expect, it } from "vitest"
-import * as ModelEvent from "../src/ModelEvent.ts"
+import * as ModelEvent from "../src/ModelEvent.vibe"
 import * as ModelRequest from "../src/ModelRequest.ts"
 import * as RequestExecutor from "../src/RequestExecutor.ts"
 import * as Route from "../src/Route.ts"

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import * as Evaluator from "../src/Evaluator.ts"
 import * as EvaluatorBackup from "../src/EvaluatorBackup.ts"
 import * as Model from "../src/Model.ts"
-import { ModelError } from "../src/ModelError.ts"
+import { ModelError } from "../src/ModelError.vibe"
 import type { ModelRequest } from "../src/ModelRequest.ts"
 
 const questions: Evaluator.Request["questions"] = {

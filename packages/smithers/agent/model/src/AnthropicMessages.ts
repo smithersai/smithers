@@ -9,8 +9,8 @@ import { Chunk, Effect, Option, Result, Schema } from "effect"
 import * as DeferredTools from "./DeferredTools.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import * as ModelCatalog from "./ModelCatalog.ts"
-import { ModelError, type ModelErrorCode } from "./ModelError.ts"
-import { ModelEvent, type Usage } from "./ModelEvent.ts"
+import { ModelError, type ModelErrorCode } from "./ModelError.vibe"
+import { ModelEvent, type Usage } from "./ModelEvent.vibe"
 import {
   JsonObject,
   type Message,
@@ -20,7 +20,7 @@ import {
   type ToolDefinition
 } from "./ModelRequest.ts"
 import { jsonEvent, make as makeProtocol, type Protocol } from "./Protocol.ts"
-import * as ToolStream from "./ToolStream.ts"
+import * as ToolStream from "./ToolStream.vibe"
 
 const ID = "anthropic-messages"
 

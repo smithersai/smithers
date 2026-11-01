@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { ModelError } from "../src/ModelError.ts"
+import { ModelError } from "../src/ModelError.vibe"
 import * as Protocol from "../src/Protocol.ts"
 
 const Event = Schema.Struct({ type: Schema.String, index: Schema.optional(Schema.Number) })

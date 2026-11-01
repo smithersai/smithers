@@ -16,7 +16,7 @@
 import * as Result from "effect/Result"
 import type * as Auth from "./Auth.ts"
 import * as Endpoint from "./Endpoint.ts"
-import * as Framing from "./Framing.ts"
+import * as Framing from "./Framing.vibe"
 import * as OpenAIResponses from "./OpenAIResponses.ts"
 import * as Route from "./Route.ts"
 

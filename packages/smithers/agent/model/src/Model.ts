@@ -11,12 +11,12 @@
 import type { Permission } from "@smthrs/capability"
 import { SpanFailure } from "@smthrs/flow"
 import { Context, Effect, Layer, Stream } from "effect"
-import * as CallTiming from "./internal/CallTiming.ts"
-import type { ModelError } from "./ModelError.ts"
-import { ModelError as ModelErrorClass } from "./ModelError.ts"
-import type { ModelEvent, Usage } from "./ModelEvent.ts"
+import * as CallTiming from "./internal/CallTiming.vibe"
+import type { ModelError } from "./ModelError.vibe"
+import { ModelError as ModelErrorClass } from "./ModelError.vibe"
+import type { ModelEvent, Usage } from "./ModelEvent.vibe"
 import type { ModelRequest } from "./ModelRequest.ts"
-import * as Pricing from "./Pricing.ts"
+import * as Pricing from "./Pricing.vibe"
 
 /**
  * Provider and kernel failures surfaced by a model stream.

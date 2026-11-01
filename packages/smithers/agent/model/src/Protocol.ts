@@ -8,8 +8,8 @@
  */
 
 import { type Effect, Schema } from "effect"
-import type { ModelError } from "./ModelError.ts"
-import type { ModelEvent } from "./ModelEvent.ts"
+import type { ModelError } from "./ModelError.vibe"
+import type { ModelEvent } from "./ModelEvent.vibe"
 import type { ModelRequest } from "./ModelRequest.ts"
 
 /**
