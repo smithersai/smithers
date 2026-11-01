@@ -325,6 +325,8 @@ export const tableCss = `
 .sui-page-header-nav > a { display:inline-flex; align-items:center; min-height:${t.controlHeight}; padding:0 10px; border-radius:${t.radiusControl}; color:${t.mutedForeground}; font-size:13px; text-decoration:none; white-space:nowrap; }
 .sui-page-header-nav > a:hover { background:${t.hoverSubtle}; color:${t.foreground}; }
 .sui-page-header-nav > a[aria-current='page'] { background:${t.primarySoft}; color:${t.primary}; font-weight:650; }
+.sui-page-header-nav .sui-button { flex:none; min-height:${t.controlHeight}; padding:0 10px; border:0; border-radius:${t.radiusControl}; background:transparent; box-shadow:none; color:${t.mutedForeground}; font-size:13px; font-weight:400; text-decoration:none; white-space:nowrap; }
+.sui-page-header-nav .sui-button:hover { background:${t.hoverSubtle}; color:${t.foreground}; text-decoration:none; }
 .sui-page-header-actions { margin-inline-start:auto; display:flex; align-items:center; gap:8px; flex:none; }
 .sui-page-body { box-sizing:border-box; width:100%; max-width:1040px; margin:0 auto; padding:24px 24px 64px; display:grid; align-content:start; gap:16px; min-width:0; }
 .sui-page-body[data-width='narrow'] { max-width:760px; }
