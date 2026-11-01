@@ -39,7 +39,10 @@
       "types": "./src/BrowserOtel.d.vibe.ts",
       "default": "./src/BrowserOtel.vibe"
     },
-    "./Endpoint": "./src/Endpoint.ts",
+    "./Endpoint": {
+      "types": "./src/Endpoint.d.vibe.ts",
+      "default": "./src/Endpoint.vibe"
+    },
     "./FetchFailures": "./src/FetchFailures.ts",
     "./JournalLogger": "./src/JournalLogger.ts",
     "./LogFailures": "./src/LogFailures.ts",

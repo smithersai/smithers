@@ -68,7 +68,7 @@ const isAbsoluteHttpUrl = (value: string): boolean => {
  */
 export const Endpoint = Schema.String.check(
   Schema.isMaxLength(maximumEndpointLength),
-  Schema.makeFilter((value: string) => isAbsoluteHttpUrl(value), { title: "absoluteCollectorEndpoint" })
+  Schema.makeFilter((value: string) => isAbsoluteHttpUrl(value), { title: "absoluteCollectorEndpoint" }),
 )
 
 /**
@@ -82,8 +82,8 @@ export class InvalidExporterEndpoint extends Schema.TaggedError<InvalidExporterE
   {
     code: Schema.Literal("invalid_exporter_endpoint"),
     path: Schema.String,
-    message: Schema.String
-  }
+    message: Schema.String,
+  },
 ) {}
 
 /**
@@ -107,19 +107,17 @@ export const normalize = (endpoint: string): string => endpoint.replace(/\/+$/, 
  */
 export const decode = (
   endpoint: unknown,
-  path: string
-): Effect.Effect<string, InvalidExporterEndpoint> =>
-  Schema.decodeUnknownEffect(Endpoint)(endpoint).pipe(
-    Effect.map(normalize),
-    Effect.mapError(() =>
-      new InvalidExporterEndpoint({
-        code: "invalid_exporter_endpoint",
-        path,
-        message:
-          `OTLP collector ${path} must be an absolute http:// or https:// base URL without credentials, query, fragment, backslashes, spaces, or control characters`
-      })
-    )
-  )
+  path: string,
+): string!InvalidExporterEndpoint =>
+  Schema.decodeUnknownEffect(Endpoint)(endpoint)
+  |> Effect.map(%, normalize)
+  |> Effect.mapError(%, () =>
+    new InvalidExporterEndpoint({
+      code: "invalid_exporter_endpoint",
+      path,
+      message:
+        `OTLP collector ${path} must be an absolute http:// or https:// base URL without credentials, query, fragment, backslashes, spaces, or control characters`,
+    }))
 
 /**
  * Builds the OTLP/HTTP URL one signal is posted to below a decoded endpoint.
