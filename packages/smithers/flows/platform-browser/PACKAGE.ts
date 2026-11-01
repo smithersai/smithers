@@ -58,7 +58,7 @@ const browserTest = Smithers.Shell.Test({
   shell: "cd packages/smithers/flows/platform-browser && npx vitest run --config vitest.browser.config.ts",
   data: [
     lib,
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("vitest.browser.config.ts")

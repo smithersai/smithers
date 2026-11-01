@@ -85,7 +85,7 @@ const securityReview = Smithers.SecurityReview({
         "A static envelope declared sealed or hermetic for a flow that mutates or spawns (Fetch, WebFetch, TestRun, ShellCommand).",
         "A path normalized differently in the envelope than in the handler, so the approved name and the written name diverge."
       ],
-      paths: ["src/*.ts", "src/Manifest.ts", "src/internal/Declaration.ts"]
+      paths: ["src/*.{ts,vibe}", "src/Manifest.ts", "src/internal/Declaration.ts"]
     },
     {
       id: "symlink-write-escape",

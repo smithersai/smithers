@@ -17,7 +17,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 // the bin imports the package's TypeScript sources through its exports.
 const modelServer = Smithers.Filegroup({
   cwd,
-  srcs: [Smithers.file("package.json"), Smithers.glob("bin/**/*"), Smithers.glob("src/**/*.ts")]
+  srcs: [Smithers.file("package.json"), Smithers.glob("bin/**/*"), Smithers.glob("src/**/*.{ts,vibe}")]
 })
 
 const securityReview = Smithers.SecurityReview({

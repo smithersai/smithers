@@ -21,7 +21,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
 const bunTest = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.entrypoint(Smithers.file("scripts/run-bun-tests.mjs")),
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts"), Smithers.file("vitest.config.ts")],
+  srcs: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("test/**/*.ts"), Smithers.file("vitest.config.ts")],
   deps: [],
   cwd: "packages/smithers/flows/platform-bun"
 })

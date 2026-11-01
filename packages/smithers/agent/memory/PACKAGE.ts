@@ -67,7 +67,7 @@ const postgresFts = Smithers.Shell.Test({
     "cd packages/smithers/agent/memory && npx vitest run --maxWorkers=2 test/PostgresFts.test.ts --coverage.enabled=false",
   data: [
     lib,
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.file("test/PostgresFts.test.ts"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts")

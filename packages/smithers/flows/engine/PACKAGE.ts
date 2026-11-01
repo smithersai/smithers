@@ -37,7 +37,7 @@ const docsFiles = standard.docsFiles
 
 const dependencyPolicy = Smithers.DepsLint({
   packageJson: Smithers.file("package.json"),
-  sources: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")],
+  sources: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("test/**/*.ts")],
   deps: [lib],
   tool: "knip",
   ignoreDependencies: [
@@ -65,7 +65,7 @@ const engineCwd = "packages/smithers/flows/engine"
 
 /** Everything the reference writer may read: sources, README, package docs. */
 const docsSources = Smithers.Filegroup({
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.file("README.md"), Smithers.glob("docs/*.md")],
+  srcs: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.file("README.md"), Smithers.glob("docs/*.md")],
   cwd: engineCwd
 })
 
