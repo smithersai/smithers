@@ -824,6 +824,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       SecretFlows.Delete,
       ModelFlows.Put,
       ModelFlows.Delete,
+      ModelFlows.CodexLink,
       DomainFlows.Verify,
       DomainFlows.Remove,
     ])
