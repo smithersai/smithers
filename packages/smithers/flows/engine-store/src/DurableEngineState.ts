@@ -1962,11 +1962,33 @@ const recordRunParent = (db: Database): Service["recordRunParent"] =>
   Effect.fn(
     "DurableEngineState.recordRunParent"
   )((childId, parentId) =>
-    db.writer.write(
-      Effect.gen(function*() {
-        // MAX(seq)+1 and the insert share one write transaction, so the
-        // assigned seq is a total insertion order over the store.
-        const inserted = yield* db.sql<RunParentDatabaseRow>`
+    // An edge already recorded is answered from a read, with no write and so
+    // no writer lock. A parent that re-executes its child, as every resume of
+    // a run parked on a child does, records the same edge again inside the
+    // child's partition write (`RunDriver` `admit`); the edge's write names
+    // no partition, so on PostgreSQL it widened that transaction to the
+    // schema's lock, a wait bounded by `lock_timeout` while other partitions'
+    // writers share the schema. With ten TODO runs resuming at once the
+    // widening timed out on every replay the writer allows, and the parent
+    // died with `DatabaseError` `busy` (2026-11-01). An edge is never
+    // changed once written, so the read is as good as the insert's conflict.
+    selectRunParent(db, childId, parentId).pipe(
+      Effect.orDie,
+      Effect.flatMap((recorded) =>
+        recorded[0] === undefined
+          ? insertRunParent(db, childId, parentId)
+          : Effect.map(decodeRunParentEdge(recorded[0]), (edge) => ({ _tag: "Existing" as const, edge }))
+      )
+    )
+  )
+
+/** Inserts a new parent edge and checks it closes no cycle, in one write transaction. */
+const insertRunParent = (db: Database, childId: string, parentId: string) =>
+  db.writer.write(
+    Effect.gen(function*() {
+      // MAX(seq)+1 and the insert share one write transaction, so the
+      // assigned seq is a total insertion order over the store.
+      const inserted = yield* db.sql<RunParentDatabaseRow>`
           INSERT INTO flows_run_parents (child_id, parent_id, seq)
           SELECT ${childId}, ${parentId}, COALESCE(MAX(seq), 0) + 1
           FROM flows_run_parents
@@ -1977,39 +1999,38 @@ const recordRunParent = (db: Database): Service["recordRunParent"] =>
             parent_id AS "parentId",
             seq AS "seq"
         `
-        if (inserted[0] !== undefined) {
-          // The cycle check shares the insert's transaction: a hit fails the
-          // effect, rolling the insert back, so a rejected edge is never
-          // durable and there is no check-then-record window for another
-          // writer to slip through (issues #54/#55/#56). The insert
-          // precedes the walk, so the transaction holds the write lock
-          // while walking: under `DurableWriter.write`'s documented contract —
-          // write transactions are mutually serialized (issue #74) — of two
-          // edges that jointly close a cycle, exactly the later one fails.
-          // This is a contract requirement, not a SQLite artifact; a
-          // backend that ran writes at READ COMMITTED would break it and is
-          // excluded by the DurableWriter contract.
-          const cycle = yield* findCyclePath(childId, parentId, (id) => parentIdsOf(db, id))
-          if (cycle !== undefined) {
-            return yield* Effect.fail(new RunParentCycleError({ path: cycle }))
-          }
-          return {
-            _tag: "Recorded" as const,
-            edge: yield* decodeRunParentEdge(inserted[0])
-          }
-        }
-        const existing = yield* selectRunParent(db, childId, parentId)
-        if (existing[0] === undefined) {
-          return yield* Effect.die(new EngineStateFault({ reason: "run_parent_edge_missing" }))
+      if (inserted[0] !== undefined) {
+        // The cycle check shares the insert's transaction: a hit fails the
+        // effect, rolling the insert back, so a rejected edge is never
+        // durable and there is no check-then-record window for another
+        // writer to slip through (issues #54/#55/#56). The insert
+        // precedes the walk, so the transaction holds the write lock
+        // while walking: under `DurableWriter.write`'s documented contract —
+        // write transactions are mutually serialized (issue #74) — of two
+        // edges that jointly close a cycle, exactly the later one fails.
+        // This is a contract requirement, not a SQLite artifact; a
+        // backend that ran writes at READ COMMITTED would break it and is
+        // excluded by the DurableWriter contract.
+        const cycle = yield* findCyclePath(childId, parentId, (id) => parentIdsOf(db, id))
+        if (cycle !== undefined) {
+          return yield* Effect.fail(new RunParentCycleError({ path: cycle }))
         }
         return {
-          _tag: "Existing" as const,
-          edge: yield* decodeRunParentEdge(existing[0])
+          _tag: "Recorded" as const,
+          edge: yield* decodeRunParentEdge(inserted[0])
         }
-      })
-    ).pipe(
-      Effect.catch((error) => error instanceof RunParentCycleError ? Effect.fail(error) : Effect.die(error))
-    )
+      }
+      const existing = yield* selectRunParent(db, childId, parentId)
+      if (existing[0] === undefined) {
+        return yield* Effect.die(new EngineStateFault({ reason: "run_parent_edge_missing" }))
+      }
+      return {
+        _tag: "Existing" as const,
+        edge: yield* decodeRunParentEdge(existing[0])
+      }
+    })
+  ).pipe(
+    Effect.catch((error) => error instanceof RunParentCycleError ? Effect.fail(error) : Effect.die(error))
   )
 
 const removeRunParentsForRun = (db: Database): Service["removeRunParentsForRun"] =>

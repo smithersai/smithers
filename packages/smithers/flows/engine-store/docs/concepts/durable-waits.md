@@ -153,6 +153,15 @@ rejected edge therefore leaves no durable trace, and of two concurrent writers
 whose edges jointly close a cycle exactly one fails. The driver maps that error
 to `FlowCycleDetected`.
 
+An edge already recorded is answered `Existing` from a read, with no write. A
+parent records its edge again every time it executes its child, and every
+resume of a run parked on a child does. The write names no partition, so
+inside the child's partition write it would widen the transaction to the
+schema's lock, a wait PostgreSQL bounds by `lock_timeout`; with ten runs
+resuming at once it timed out on every replay the writer allowed and the
+parent died with `DatabaseError` `busy`. An edge never changes once written,
+so the read answers as the insert's conflict would.
+
 `transaction(effect)` runs several store operations atomically. The driver wraps
 the parent-edge record and the run-row creation it guards in one, so a crash
 between them cannot leave a durable orphan edge for a run that was never
