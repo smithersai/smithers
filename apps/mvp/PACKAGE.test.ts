@@ -2,11 +2,12 @@
  * What the app's rules read: a rule that holds the Worker's own top-level sources holds every Worker source at any
  * depth (worker/github, worker/branch, worker/flows), a rule that reads no tests reads no test support either, and a
  * rule that reads some test support reads all of it. Each glob is matched as its checker matches it: `node:path`
- * `matchesGlob` for import rules (ImportRulesCheck) and minimatch with `dot` for Jev rules (LlmLint), which agree on
- * these globs.
+ * `matchesGlob` for import rules (ImportRulesCheck) and minimatch with `dot` for Jev rules (LlmLint),
+ * including their distinct dot-file behavior.
  */
 import { readdirSync, readFileSync } from "node:fs"
 import { matchesGlob } from "node:path"
+import { minimatch } from "minimatch"
 import { describe, expect, it } from "vitest"
 import { importRules, jevRules } from "./PACKAGE.ts"
 
@@ -26,16 +27,25 @@ const nested = server.filter((path) => path.split("/").length > 2)
 const tests = workerFiles.filter(isTest)
 const support = workerFiles.filter(isTestSupport)
 
+const matchesJev = (path: string, glob: string) => minimatch(path, glob, { dot: true })
+
 const scopes = [
   ...importRules.flatMap((rule, index) =>
-    rule.files === undefined ? [] : [{ name: `import rule ${index} (${rule.kind})`, files: rule.files }]
+    rule.files === undefined ? [] : [{ name: `import rule ${index} (${rule.kind})`, files: rule.files, matches: matchesGlob }]
   ),
-  ...jevRules.map((rule) => ({ name: `Jev rule ${rule.id}`, files: rule.files }))
+  ...jevRules.map((rule) => ({ name: `Jev rule ${rule.id}`, files: rule.files, matches: matchesJev }))
 ]
 
-const reads = (files: ReadonlyArray<string>, path: string) => files.some((glob) => matchesGlob(path, glob))
+const reads = (files: ReadonlyArray<string>, path: string, matches = matchesGlob) => files.some((glob) => matches(path, glob))
 
 describe("the app's rule scopes", () => {
+  it("uses Jev's dot-file semantics while import rules keep node:path semantics", () => {
+    const jev = scopes.find((scope) => scope.name.startsWith("Jev rule"))!
+    const imports = scopes.find((scope) => scope.name.startsWith("import rule"))!
+    expect(reads(["worker/**/*.ts"], "worker/.private/Source.ts", jev.matches)).toBe(true)
+    expect(reads(["worker/**/*.ts"], "worker/.private/Source.ts", imports.matches)).toBe(false)
+  })
+
   it("allows only the built-in metadata, UI and flow registries to name plugin modules", () => {
     const rule = importRules.find((rule) => rule.because.startsWith("plugin.core-names-no-plugin:"))!
     const files = rule.files!
@@ -53,19 +63,19 @@ describe("the app's rule scopes", () => {
     expect(support.some((path) => !path.startsWith("worker/test/"))).toBe(true)
   })
 
-  it.each(scopes)("$name: reading a top-level Worker source reads every nested one", ({ files }) => {
-    if (!topLevel.some((path) => reads(files, path))) return
-    expect(nested.filter((path) => !reads(files, path))).toEqual([])
+  it.each(scopes)("$name: reading a top-level Worker source reads every nested one", ({ files, matches }) => {
+    if (!topLevel.some((path) => reads(files, path, matches))) return
+    expect(nested.filter((path) => !reads(files, path, matches))).toEqual([])
   })
 
-  it.each(scopes)("$name: reading no test reads no test support", ({ files }) => {
-    if (tests.some((path) => reads(files, path))) return
-    expect(support.filter((path) => reads(files, path))).toEqual([])
+  it.each(scopes)("$name: reading no test reads no test support", ({ files, matches }) => {
+    if (tests.some((path) => reads(files, path, matches))) return
+    expect(support.filter((path) => reads(files, path, matches))).toEqual([])
   })
 
-  it.each(scopes)("$name: reading some test support reads all of it", ({ files }) => {
-    if (!support.some((path) => reads(files, path))) return
-    expect(support.filter((path) => !reads(files, path))).toEqual([])
+  it.each(scopes)("$name: reading some test support reads all of it", ({ files, matches }) => {
+    if (!support.some((path) => reads(files, path, matches))) return
+    expect(support.filter((path) => !reads(files, path, matches))).toEqual([])
   })
 })
 
@@ -110,7 +120,7 @@ describe("github.no-actions", () => {
 
   it("finds none in the files its Jev rule reads", () => {
     const files = jevRules.find((rule) => rule.id === "github.no-actions")?.files ?? []
-    const read = appFiles.filter((path) => reads(files, path))
+    const read = appFiles.filter((path) => reads(files, path, matchesJev))
     expect(read.length).toBeGreaterThan(0)
     expect(read.filter((path) => githubActions.test(readFileSync(new URL(path, import.meta.url), "utf8")))).toEqual([])
   })

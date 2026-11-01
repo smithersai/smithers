@@ -598,6 +598,9 @@ importers:
       miniflare:
         specifier: 5.20261019.0-beta
         version: 5.20261019.0-beta(@types/node@26.4.1)
+      minimatch:
+        specifier: 10.2.6
+        version: 10.2.6
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

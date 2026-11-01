@@ -127,7 +127,7 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5190,
     strictPort: true,
-    fs: { strict: false },
+    fs: { strict: true },
     warmup: { clientFiles: ["./src/main.tsx", "./src/flows/engine.worker.ts", "./src/features/code-intel/language.worker.ts"] },
   },
   build: { target: "esnext" },

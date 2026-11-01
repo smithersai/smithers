@@ -100,6 +100,7 @@
     "esbuild": "0.28.2",
     "happy-dom": "20.13.2",
     "miniflare": "5.20261019.0-beta",
+    "minimatch": "10.2.6",
     "typescript": "^5.9.3",
     "vibelang": "0.0.8",
     "vibelang-unplugin": "0.0.8",
