@@ -14,6 +14,8 @@ export type PageHeaderProps = Omit<ComponentProps<"header">, "title"> & {
   navLabel?: string;
   /** Right-aligned controls, such as a bell or the person's menu. */
   actions?: ReactNode;
+  /** The column the bar's content lines up with: the same value as the page's {@link PageBody} `width`. */
+  width?: "narrow" | "default" | "wide";
 };
 
 /**
@@ -21,10 +23,10 @@ export type PageHeaderProps = Omit<ComponentProps<"header">, "title"> & {
  * sections and its actions, on one hairline-ruled row that wraps on a phone and
  * scrolls its sections sideways instead of breaking them.
  */
-export function PageHeader({ title, back, nav, navLabel = "Sections", actions, className, ...props }: PageHeaderProps) {
+export function PageHeader({ title, back, nav, navLabel = "Sections", actions, width = "default", className, ...props }: PageHeaderProps) {
   useInjectUiCss();
   return (
-    <header data-slot="page-header" className={cn("sui-page-header", className)} {...props}>
+    <header data-slot="page-header" data-width={width} className={cn("sui-page-header", className)} {...props}>
       <div className="sui-page-header-inner">
         {back === undefined ? null : <div className="sui-page-header-back">{back}</div>}
         {title === undefined ? null : <h1 className="sui-page-header-title">{title}</h1>}

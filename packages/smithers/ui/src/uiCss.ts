@@ -314,7 +314,9 @@ export const alertCss = `
 
 export const tableCss = `
 .sui-page-header { position:sticky; top:0; z-index:20; border-bottom:1px solid ${t.border}; background:${t.background}; }
-.sui-page-header-inner { box-sizing:border-box; max-width:1280px; margin:0 auto; min-height:52px; padding:8px 56px 8px 24px; display:flex; align-items:center; gap:16px; min-width:0; }
+.sui-page-header-inner { box-sizing:border-box; max-width:1040px; margin:0 auto; min-height:52px; padding:8px 56px 8px 24px; display:flex; align-items:center; gap:16px; min-width:0; }
+.sui-page-header[data-width='narrow'] .sui-page-header-inner { max-width:760px; }
+.sui-page-header[data-width='wide'] .sui-page-header-inner { max-width:1280px; }
 .sui-page-header-back a, .sui-page-header-back button { color:${t.mutedForeground}; font-size:13px; text-decoration:none; white-space:nowrap; }
 .sui-page-header-back a:hover { color:${t.foreground}; }
 .sui-page-header-title { margin:0; min-width:0; color:${t.foreground}; font-size:15px; font-weight:650; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

@@ -35,6 +35,17 @@ describe("PageHeader", () => {
   });
 });
 
+describe("PageHeader width", () => {
+  test("lines its content up with the PageBody of the same width", () => {
+    expect(renderToStaticMarkup(<PageHeader title="a" />)).toContain('data-width="default"');
+    expect(renderToStaticMarkup(<PageHeader title="a" width="wide" />)).toContain('data-width="wide"');
+    const css = composeSmithersUiStyles();
+    expect(css).toContain(".sui-page-header-inner { box-sizing:border-box; max-width:1040px;");
+    expect(css).toContain(".sui-page-header[data-width='narrow'] .sui-page-header-inner { max-width:760px; }");
+    expect(css).toContain(".sui-page-header[data-width='wide'] .sui-page-header-inner { max-width:1280px; }");
+  });
+});
+
 describe("PageBody", () => {
   test("defaults to the 1040px column and takes narrow and wide", () => {
     expect(renderToStaticMarkup(<PageBody />)).toContain('data-width="default"');

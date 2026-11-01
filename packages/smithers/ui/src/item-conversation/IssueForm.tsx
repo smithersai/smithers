@@ -90,7 +90,7 @@ export function IssueForm({
         </p>
       )}
       <div className="sui-issue-form-actions">
-        <Button type="submit" disabled={!canSubmit}>
+        <Button type="submit" variant="solid" disabled={!canSubmit}>
           {submitLabel}
         </Button>
       </div>
