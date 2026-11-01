@@ -7,7 +7,7 @@ const { router } = await import("../../router")
 type Enter = (load: unknown) => Promise<void>
 
 // A TODO's page shows the repository's header, whose row only exists once the repository's route opened: a direct visit
-// to /$owner/$repo/stack/$number once rendered no header and floated the bell away from the page.
+// to /$owner/$repo/stack/$number once rendered no header, and with it no bell.
 test("a direct visit to a TODO opens its repository, so the page has the repository's header", async () => {
   const openRoute = vi.fn()
   const open = vi.fn()
