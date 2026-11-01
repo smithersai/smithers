@@ -29,6 +29,7 @@ export interface Invocation {
  * @since 0.1.0
  */
 export service FlowInvoker {
+  static readonly key = "/fs/FlowInvoker"
   invoke(invocation: Invocation): Effect<unknown, FsError>
 }
 

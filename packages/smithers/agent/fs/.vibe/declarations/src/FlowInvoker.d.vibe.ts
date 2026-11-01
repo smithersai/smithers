@@ -17,7 +17,7 @@ export interface Invocation {
     flow: Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.Any, "description">>;
     input: unknown;
 }
-declare const FlowInvoker_base: Context.ServiceClass<FlowInvoker, "@smthrs/fs/src/FlowInvoker#FlowInvoker", {
+declare const FlowInvoker_base: Context.ServiceClass<FlowInvoker, "/fs/FlowInvoker", {
     invoke(invocation: Invocation): Effect.Effect<unknown, FsError>;
 }>;
 /**
