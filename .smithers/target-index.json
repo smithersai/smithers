@@ -14492,7 +14492,7 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/flows/canonical/src/Canonical.vibe"
+        "path": "packages/smithers/flows/canonical/src/Canonical.ts"
       },
       {
         "kind": "file",
@@ -20708,7 +20708,7 @@
           "packages/smithers/flows/artifacts/src/snapshotBytes.vibe",
           "packages/smithers/flows/artifacts/src/validateDigest.vibe",
           "packages/smithers/flows/canonical/src/BoundedJson.ts",
-          "packages/smithers/flows/canonical/src/Canonical.vibe",
+          "packages/smithers/flows/canonical/src/Canonical.ts",
           "packages/smithers/flows/canonical/src/IssuePath.vibe",
           "packages/smithers/flows/canonical/src/ReadonlyMap.ts",
           "packages/smithers/flows/canonical/src/Record.ts",
@@ -25642,7 +25642,7 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/flows/canonical/src/Canonical.vibe"
+        "path": "packages/smithers/flows/canonical/src/Canonical.ts"
       },
       {
         "kind": "file",
@@ -32606,7 +32606,7 @@
           "packages/smithers/flows/artifacts/src/snapshotBytes.vibe",
           "packages/smithers/flows/artifacts/src/validateDigest.vibe",
           "packages/smithers/flows/canonical/src/BoundedJson.ts",
-          "packages/smithers/flows/canonical/src/Canonical.vibe",
+          "packages/smithers/flows/canonical/src/Canonical.ts",
           "packages/smithers/flows/canonical/src/IssuePath.vibe",
           "packages/smithers/flows/canonical/src/ReadonlyMap.ts",
           "packages/smithers/flows/canonical/src/Record.ts",
@@ -37258,7 +37258,7 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/flows/canonical/src/Canonical.vibe"
+        "path": "packages/smithers/flows/canonical/src/Canonical.ts"
       },
       {
         "kind": "file",
