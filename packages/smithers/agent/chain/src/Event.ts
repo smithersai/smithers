@@ -10,8 +10,8 @@
  */
 
 import { Schema } from "effect"
-import * as CallKey from "./CallKey.ts"
-import * as Observation from "./Observation.ts"
+import * as CallKey from "./CallKey.vibe"
+import * as Observation from "./Observation.vibe"
 import * as Outcome from "./Outcome.ts"
 import * as Script from "./Script.ts"
 

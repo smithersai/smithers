@@ -15,7 +15,7 @@ import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/agent/chain"
 })
 
@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Chain.ts",
-        "src/CallKey.ts",
+        "src/CallKey.vibe",
         "src/Event.ts",
         "src/Outcome.ts",
         "src/Catalog.ts",
@@ -143,7 +143,7 @@ const securityReview = Smithers.SecurityReview({
         "SubChains maxDepth not counted from derived segments, allowing unbounded nested Chain.run.",
         "An observation, steering, or context string appended to the author prompt without the 8192/32768 truncation."
       ],
-      paths: ["src/QuickJsRunner.ts", "src/Chain.ts", "src/SubChains.ts", "src/Observation.ts"]
+      paths: ["src/QuickJsRunner.ts", "src/Chain.ts", "src/SubChains.ts", "src/Observation.vibe"]
     },
     {
       id: "prompt-catalog-injection",
@@ -193,7 +193,7 @@ const securityReview = Smithers.SecurityReview({
         "src/MemoryEntries.ts",
         "src/ModelAuthor.ts",
         "src/internal/failureCode.ts",
-        "src/Observation.ts"
+        "src/Observation.vibe"
       ]
     }
   ]

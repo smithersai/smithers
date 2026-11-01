@@ -45,7 +45,7 @@ export * as Authorize from "./Authorize.ts"
  * @since 0.1.0
  * @slop
  */
-export * as CallKey from "./CallKey.ts"
+export * as CallKey from "./CallKey.vibe"
 
 /**
  * The catalog of entries a script may call.
@@ -118,7 +118,7 @@ export * as JsonBoundary from "./JsonBoundary.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Observation from "./Observation.ts"
+export * as Observation from "./Observation.vibe"
 
 /**
  * The trampoline outcomes a link can end with.

@@ -29,7 +29,7 @@ import * as AuthorDeclaration from "./AuthorDeclaration.ts"
 import * as Catalog from "./Catalog.ts"
 import * as Chain from "./Chain.ts"
 import { childRun } from "./internal/childRun.ts"
-import { ChildRunError } from "./internal/ChildRunError.ts"
+import { ChildRunError } from "./internal/ChildRunError.vibe"
 import * as Journal from "./Journal.ts"
 import * as ScriptRunner from "./ScriptRunner.ts"
 
