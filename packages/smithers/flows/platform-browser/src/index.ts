@@ -84,7 +84,7 @@ export * as BrowserRuntime from "./BrowserRuntime.ts"
  *
  * @since 1.0.0
  */
-export * as BrowserScheduler from "./BrowserScheduler.ts"
+export * as BrowserScheduler from "./BrowserScheduler.vibe"
 
 /**
  * SQLite on the origin private file system, through Effect SQL.
