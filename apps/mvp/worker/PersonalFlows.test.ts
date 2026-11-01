@@ -776,3 +776,107 @@ describe("telemetry", () => {
     expect(recorded(h)).not.toContain(canary)
   })
 })
+
+/**
+ * Holds draft `id`'s row lock, after `change`, until the requests under test wait on it: `wait(count)` returns once
+ * `count` of them do, and `release` commits the holder.
+ */
+const lockedDraft = async (id: string, change = "SELECT 1") => {
+  const entered = Deferred.makeUnsafe<void>()
+  const release = Deferred.makeUnsafe<void>()
+  const held = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+    yield* sql`SELECT 1 FROM flow_drafts WHERE id = ${id} FOR UPDATE`
+    yield* sql.unsafe(change)
+    yield* Deferred.succeed(entered, undefined)
+    yield* Deferred.await(release)
+  }))))
+  await runtime.runPromise(Deferred.await(entered))
+  const { name } = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  return {
+    wait: (count: number) =>
+      eventually(async () => {
+        const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ n: number }>`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE application_name = ${name} AND wait_event_type = 'Lock'`))
+        return row!.n >= count
+      }, 10_000),
+    release: async () => {
+      await runtime.runPromise(Deferred.succeed(release, undefined))
+      await held
+    },
+  }
+}
+
+describe("draft receipts and round races", () => {
+  test("a repeated save answers the revision it made, not a later one", async () => {
+    const h = await open()
+    const first = await saved(h, "notes")
+    expect((await send(h, "POST", "/api/flows/write", writing("notes", 1))).status).toBe(200)
+    expect(await json(await send(h, "POST", "/api/flows/save", saving(first.draftId, "notes"))))
+      .toEqual([200, { flowId: first.flowId, name: "notes", revision: 1, txid: null }])
+  })
+
+  test("a historical saved draft without a recoverable receipt never claims a current revision", async () => {
+    const h = await open()
+    const first = await saved(h, "notes")
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      UPDATE flow_drafts SET saved_revision = NULL WHERE id = ${first.draftId}`))
+    expect(await json(await send(h, "POST", "/api/flows/save", saving(first.draftId, "notes"))))
+      .toEqual([503, { code: "unavailable" }])
+    expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { code: "receipt_missing", status: 503 } })
+  })
+
+  test("a late write of the same round keeps the answers given to it", async () => {
+    const h = await open()
+    const id = crypto.randomUUID()
+    expect((await writeRound(h, id, round("notes"))).status).toBe(200)
+    expect((await send(h, "POST", `/api/flow-drafts/${id}/answers`, { round: 0, answers: [{ id: "q1", value: "kept" }] })).status)
+      .toBe(200)
+    expect(await json(await writeRound(h, id, round("notes")))).toEqual([200, { txid: null }])
+    expect((await draftRow(id))!.questions).toMatchObject([{ id: "q1", answer: "kept" }])
+  })
+
+  test("a late drafting write of the same round can't take a ready draft back to drafting", async () => {
+    const h = await open()
+    const id = crypto.randomUUID()
+    expect((await writeRound(h, id, round("notes"))).status).toBe(200)
+    expect(await json(await writeRound(h, id, round("notes", { status: "drafting", files: [], checks: [], questions: [] }))))
+      .toEqual([200, { txid: null }])
+    expect((await draftRow(id))!.status).toBe("ready")
+    expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { existing: true, outcome: "ready" } })
+  })
+
+  test("two answers at once to different questions both land", async () => {
+    const h = await open()
+    const id = crypto.randomUUID()
+    expect((await writeRound(h, id, round("notes", { questions: [
+      { id: "q1", text: "One?", assumed: "", blocking: false },
+      { id: "q2", text: "Two?", assumed: "", blocking: false },
+    ] }))).status).toBe(200)
+    const lock = await lockedDraft(id)
+    const pending = ["q1", "q2"].map((question) =>
+      send(h, "POST", `/api/flow-drafts/${id}/answers`, { round: 0, answers: [{ id: question, value: question }] }))
+    try {
+      await lock.wait(2)
+    } finally {
+      await lock.release()
+    }
+    expect((await Promise.all(pending)).map((response) => response.status)).toEqual([200, 200])
+    expect((await draftRow(id))!.questions).toMatchObject([{ id: "q1", answer: "q1" }, { id: "q2", answer: "q2" }])
+  })
+
+  test.each(["status = 'saved'", "round = 1"])("an answer that finds %s committed once it holds the draft is refused", async (change) => {
+    const h = await open()
+    const id = crypto.randomUUID()
+    expect((await writeRound(h, id, round("notes"))).status).toBe(200)
+    const lock = await lockedDraft(id, `UPDATE flow_drafts SET ${change} WHERE id = '${id}'`)
+    const pending = send(h, "POST", `/api/flow-drafts/${id}/answers`, { round: 0, answers: [{ id: "q1", value: "late" }] })
+    try {
+      await lock.wait(1)
+    } finally {
+      await lock.release()
+    }
+    expect(await json(await pending)).toEqual([409, { code: change.startsWith("status") ? "settled" : "stale_round" }])
+    expect((await draftRow(id))!.questions).not.toMatchObject([{ answer: "late" }])
+  })
+})

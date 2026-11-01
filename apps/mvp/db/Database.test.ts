@@ -1942,3 +1942,43 @@ describe("0083_agent_stops", () => {
     expect(await on(through("0083"))).toEqual([])
   }))
 })
+
+describe("0087_flow_draft_receipts", () => {
+  test("recovers an unambiguous historical save and leaves missing or ambiguous receipts unknown", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0086"))
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        const flowId = crypto.randomUUID()
+        yield* sql`
+          INSERT INTO flows (id, owner_id, name, revision, description, placement)
+          VALUES (${flowId}, 'owner', 'renamed', 4, 'Description', 'client')`
+        for (const [revision, time] of [[1, "2026-10-01"], [2, "2026-10-02"], [3, "2026-10-03"], [4, "2026-10-03"]] as const) {
+          yield* sql`
+            INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by, created_at)
+            VALUES (${flowId}, ${revision}, ${"0".repeat(64)}, 'source', 'owner', ${time}::timestamptz)`
+        }
+        for (const [name, time] of [["original", "2026-10-01"], ["unknown", "2026-10-04"], ["ambiguous", "2026-10-03"]] as const) {
+          yield* sql`
+            INSERT INTO flow_drafts (id, actor_id, scope, name, request, status, flow_id, updated_at)
+            VALUES (${crypto.randomUUID()}, 'owner', 'person', ${name}, 'Request', 'saved', ${flowId}, ${time}::timestamptz)`
+        }
+      }))
+      expect((await on(through("0087"))).map(([id, name]) => `${id}_${name}`)).toEqual(["87_flow_draft_receipts"])
+      const rows = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT name, saved_revision FROM flow_drafts ORDER BY name`))
+      expect(rows).toEqual([
+        { name: "ambiguous", saved_revision: null },
+        { name: "original", saved_revision: 1 },
+        { name: "unknown", saved_revision: null },
+      ])
+      // A receipt names a revision of its own flow.
+      const refused = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        UPDATE flow_drafts SET saved_revision = 99 WHERE name = 'original'`).pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      expect(refused).toBe("refused")
+      expect(await on(through("0087"))).toEqual([])
+    }))
+})

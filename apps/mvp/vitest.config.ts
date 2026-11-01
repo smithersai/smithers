@@ -126,6 +126,7 @@ export default defineConfig({
         // A person's own flows (docs/features/flows.md#your-own-flows).
         "worker/PersonalFlows.ts",
         "db/migrations/0015_flows.ts",
+        "db/migrations/0087_flow_draft_receipts.ts",
         // Every stored prompt flow converted to flow source (docs/features/flows.md#your-own-flows).
         "db/migrations/0025_flow_source.ts",
         "db/migrations/0061_flow_placement_machine.ts",

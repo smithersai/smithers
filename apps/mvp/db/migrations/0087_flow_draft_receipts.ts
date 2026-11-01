@@ -1,0 +1,20 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// A saved draft's receipt (worker/PersonalFlows.ts, docs/features/flows.md#your-own-flows): `flow_drafts.saved_revision`
+// is the revision its save made, so a repeated save answers that revision even after later writes or renames of the
+// flow. Historical saves wrote their revision and marked the draft saved in one transaction, with the same now():
+// backfill only an unambiguous transaction match. A historical receipt that can't be recovered stays null, which the
+// save route answers unavailable rather than claiming the flow's current revision.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`ALTER TABLE flow_drafts ADD COLUMN saved_revision integer CHECK (saved_revision >= 1)`
+  yield* sql`
+    UPDATE flow_drafts AS d SET saved_revision = (
+      SELECT CASE WHEN count(*) = 1 THEN min(r.revision) END FROM flow_revisions r
+      WHERE r.flow_id = d.flow_id AND r.created_at = d.updated_at
+    ) WHERE d.status = 'saved'`
+  yield* sql`
+    ALTER TABLE flow_drafts ADD CONSTRAINT flow_drafts_saved_revision
+    FOREIGN KEY (flow_id, saved_revision) REFERENCES flow_revisions (flow_id, revision)`
+})

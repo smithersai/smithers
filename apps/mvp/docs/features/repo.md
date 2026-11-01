@@ -131,7 +131,7 @@ At the cap it answers `429 repository_limit`, creates nothing and starts no run.
 and the durable clone request refuses without retrying. `repo.clone.request` records the scope, count and limit;
 `repo_capacity{reason=person_repositories}` counts refusals. No person's id or content is recorded.
 
-In Inspect, after the size, one transaction holds `repo_imports`' row, so two imports can't both take the last headroom. The first rule that holds decides: imports `paused`; GitHub rate limited the size call (`size_unknown`, with `retry_at` at GitHub's reset); the size is over `REPO_MAX_SIZE_MB` (`too_large`); the stored bytes of the other `cloning` and `ready` rows plus this one are over `REPO_MAX_STORED_GB` (`storage`); this month's reads have reached `REPO_MAX_READ_GB_PER_MONTH` (`reads`); otherwise it writes `stored_bytes` and admits.
+In Inspect, after the size, one transaction holds `repo_imports`' row, so two imports can't both take the last headroom. The first rule that holds decides: imports `paused`; GitHub rate limited the size call (`size_unknown`, with `retry_at` at GitHub's reset); the size is over `REPO_MAX_SIZE_MB` (`too_large`); the stored bytes of the other `cloning` and `ready` rows plus this one are over `REPO_MAX_STORED_GB` (`storage`); this month's reads have reached `REPO_MAX_READ_GB_PER_MONTH` (`reads`); otherwise it writes `stored_bytes` and admits. The write is fenced by the attempt (`clone_id`): an attempt that finds no `cloning` row of its own fails `RepoAdmissionLost` instead of being admitted, which Inspect reports as `CloneRefused`, so a stale attempt imports nothing, isn't retried, and ends `failed` without settling the row Try again's attempt owns.
 
 ### Spend
 

@@ -32,7 +32,10 @@ export class CloneUnavailable extends Schema.TaggedError<CloneUnavailable>()("@s
   retryAfterMillis: Schema.optional(Schema.Number),
 }) {}
 
-/** Code Storage refused the clone outright, such as a name that exists with another upstream. Not retried. */
+/**
+ * The clone was refused outright, such as a name that exists in Code Storage with another upstream, or its attempt lost
+ * the repository's row before admission. Not retried.
+ */
 export class CloneRefused extends Schema.TaggedError<CloneRefused>()("@smthrs/mvp/repo/CloneRefused", {}) {}
 
 /** Code Storage's first sync is still running. Retried until the clone's deadline. */
@@ -115,7 +118,7 @@ const UNAVAILABLE: Synced = { status: "unavailable", head: null }
 export const Inspect = Action.make("repo/Inspect", {
   payload: CloneRequest,
   success: Inspection,
-  error: CloneUnavailable,
+  error: Schema.Union([CloneUnavailable, CloneRefused]),
   retryPolicy: STEP_RETRY,
 })
 
@@ -284,7 +287,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
       if ("missing" in size) return failed("not_found")
       const admission = yield* Repos.admit({ id: request.id, cloneId: request.cloneId }, size, budgets).pipe(
         Effect.provide(database),
-        Effect.mapError(() => new CloneUnavailable()),
+        // A stale attempt imports nothing: Try again's attempt owns the row.
+        Effect.mapError((error) => error instanceof Repos.AdmissionLost ? new CloneRefused() : new CloneUnavailable()),
       )
       return admission.admitted
         ? {

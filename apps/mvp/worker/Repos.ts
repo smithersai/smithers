@@ -1,4 +1,4 @@
-import { Config, Effect, Option, Schema } from "effect"
+import { Config, Data, Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { CapacityReason, Failure, Status } from "../src/features/repo/contract.ts"
 import * as CloneFeed from "./CloneFeed.ts"
@@ -164,6 +164,9 @@ export const current = (id: string) =>
 /** What GitHub said about a repository's size: its bytes, or that it is rate limiting until `retryAt` (epoch ms). */
 export type Size = { readonly bytes: number } | { readonly retryAt: number }
 
+/** The attempt no longer owns its `cloning` row (Try again started another, or the table was reset): nothing admitted. */
+export class AdmissionLost extends Data.TaggedError("RepoAdmissionLost") {}
+
 /** Admission's verdict: admitted with the size it recorded, or refused by a budget. */
 export type Admission =
   | { readonly admitted: true; readonly storedBytes: number }
@@ -181,6 +184,7 @@ export type Admission =
  * `maxStoredBytes` (`storage`); this month's reads at `maxReadBytes` (`reads`); else admitted, writing `stored_bytes`
  * and stage `fetching`, folded into the feed of the person who asked.
  * Running it again for the same attempt decides the same: the repository's own row never counts against it.
+ * An attempt whose fenced update finds no `cloning` row of its own fails with `AdmissionLost`: it is never admitted.
  */
 export const admit = (clone: Attempt, size: Size, limits: Budgets) =>
   Effect.gen(function* () {
@@ -202,7 +206,8 @@ export const admit = (clone: Attempt, size: Size, limits: Budgets) =>
         UPDATE repositories SET stored_bytes = ${size.bytes}, stage = 'fetching'
         WHERE id = ${clone.id} AND clone_id = ${clone.cloneId} AND status = 'cloning'
         RETURNING 1`
-      if (owned.length > 0) yield* CloneFeed.fold(clone.id)
+      if (owned.length === 0) return yield* new AdmissionLost()
+      yield* CloneFeed.fold(clone.id)
       return { admitted: true, storedBytes: size.bytes } satisfies Admission
     }))
   })
