@@ -36,6 +36,17 @@ function fixture(t) {
   jj(root, ["commit", "-m", "main squash"])
   write("app.ts", "export const base = 'the base line of the app'\nexport const replaced = 'second version, deliberately'\n")
   jj(root, ["commit", "-m", "main rewrite"])
+  // Lane D: an older version of a change a lander rewrote and landed (jj keeps author and author time).
+  const mainTip = jj(root, ["log", "--no-graph", "-r", "@-", "-T", "commit_id"])
+  jj(root, ["new", base])
+  write("feature.ts", "export const feature = 'the version the agent left behind'\n")
+  jj(root, ["commit", "-m", "lane d"])
+  const laneD = jj(root, ["log", "--no-graph", "-r", "@-", "-T", "commit_id"])
+  jj(root, ["duplicate", laneD, "-d", mainTip])
+  jj(root, ["edit", `${mainTip}+ & description(exact:"lane d\n")`])
+  write("feature.ts", "export const feature = 'the version the lander resolved'\n")
+  jj(root, ["describe", "-m", "lane d, as landed"])
+  jj(root, ["new"])
   jj(root, ["bookmark", "set", "main", "-r", "@-"])
   const remote = join(directory, "remote")
   jj(directory, ["git", "clone", root, remote])
@@ -46,7 +57,7 @@ function fixture(t) {
   return { root, directory }
 }
 
-test("classifies by content: landed under another subject, stranded, superseded by main", async (t) => {
+test("classifies by content: landed under another subject, stranded, superseded by main, an older version of a landed change", async (t) => {
   const { root, directory } = fixture(t)
   const report = await run({ repo: root, tree: root, exclude: [], jobs: "2", json: join(directory, "out.json"), md: join(directory, "out.md") })
   const bySubject = Object.fromEntries(report.results.map((r) => [r.subject, r]))
@@ -55,6 +66,8 @@ test("classifies by content: landed under another subject, stranded, superseded 
   assert.match(bySubject["lane b"].gaps.join(), /stranded\.ts/)
   assert.equal(bySubject["lane c"].class, "SUPERSEDED")
   assert.match(bySubject["lane c"].evidence.join(), /main rewrite/)
+  assert.equal(bySubject["lane d"].class, "SUPERSEDED")
+  assert.match(bySubject["lane d"].evidence.join(), /landed as/)
   const strandedHead = report.stacks.find((s) => s.memberIds === undefined && s.net.files.some((f) => f.startsWith("stranded.ts")))
   assert.ok(strandedHead, "the stranded head's net diff names its missing file")
 })

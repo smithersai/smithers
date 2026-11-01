@@ -27,7 +27,8 @@ export const scaffoldPattern = /\b(temporary|temp(?:orary)? (?:red|proof)|red pr
 const SEP = "\x1f"
 
 export function jjRun(repo, args, { allowFail = false } = {}) {
-  const result = spawnSync("jj", ["-R", repo, "--ignore-working-copy", "--no-pager", "--color=never", ...args], { encoding: "utf8", maxBuffer: 1 << 30 })
+  // cwd = repo: jj prints paths (diff --name-only, summaries) relative to the cwd.
+  const result = spawnSync("jj", ["-R", repo, "--ignore-working-copy", "--no-pager", "--color=never", ...args], { cwd: repo, encoding: "utf8", maxBuffer: 1 << 30 })
   if (result.status !== 0 && !allowFail) throw new Error(`jj ${args.join(" ")}: ${result.stderr}`)
   return result.status === 0 ? result.stdout : ""
 }
@@ -83,6 +84,14 @@ export class MainTree {
     } catch {}
     this.cache.set(path, value)
     return value
+  }
+  /** The package directory of a path (apps/x, packages/x, else the top directory) when main has none of it. */
+  deletedPackage(path) {
+    const parts = path.split("/")
+    if (parts.length < 2) return undefined
+    const depth = (parts[0] === "apps" || parts[0] === "packages") && parts.length > 2 ? 2 : 1
+    const dir = parts.slice(0, depth).join("/")
+    return existsSync(join(this.root, dir)) ? undefined : dir
   }
   bytesHash(path) {
     try { return createHash("sha256").update(readFileSync(join(this.root, path))).digest("hex") } catch { return null }
@@ -158,6 +167,25 @@ export class MainHistory {
       this.byPath.get(line).push(current) // newest first
     }
     this.after = new Map()
+    // The same change landed: jj keeps the author and author time through rebase, squash and duplicate.
+    this.identity = new Map()
+    for (const line of jjRun(repo, ["log", "--no-graph", "-r", `::main@origin & committer_date(after:${quote(since)})`, "-T",
+      'author.timestamp().format("%s") ++ "|" ++ author.email() ++ "|" ++ committer.timestamp().format("%s") ++ "|" ++ commit_id.short(10) ++ "\\n"']).split("\n").filter(Boolean)) {
+      const [authored, email, committed, id] = line.split("|")
+      const key = `${authored}|${email}`
+      if (!this.identity.has(key) || Number(committed) > this.identity.get(key).committed) this.identity.set(key, { id, committed: Number(committed) })
+    }
+    this.touched = new Map()
+  }
+  /** The main commit that landed this change in a version committed no earlier than the candidate. */
+  landedVersion(commit) {
+    const match = this.identity.get(`${commit.authorSeconds}|${commit.email}`)
+    return match && match.committed >= Number(commit.committedSeconds) ? match.id : undefined
+  }
+  /** Files a main commit touched (cached). */
+  filesOf(id) {
+    if (!this.touched.has(id)) this.touched.set(id, new Set(jjRun(this.repo, ["diff", "--name-only", "-r", id]).split("\n").filter(Boolean)))
+    return this.touched.get(id)
   }
   /** Main commits not in the candidate's ancestry. */
   afterFork(commit) {
@@ -206,10 +234,10 @@ const pickProbe = (lines) => [...lines].sort((a, b) => b.length - a.length).find
 
 export function listCandidates(repo, revset) {
   const template = ["commit_id", "change_id.short(12)", 'author.timestamp().format("%Y-%m-%d %H:%M")', 'committer.timestamp().format("%Y-%m-%d %H:%M")',
-    'parents.map(|p| p.commit_id()).join(",")', 'local_bookmarks.map(|b| b.name()).join(",")', 'working_copies', 'if(conflict, "conflict", "")', 'if(divergent, "divergent", "")', "description.first_line()"].join(` ++ "${SEP}" ++ `) + ' ++ "\\n"'
+    'parents.map(|p| p.commit_id()).join(",")', 'local_bookmarks.map(|b| b.name()).join(",")', 'working_copies', 'if(conflict, "conflict", "")', 'if(divergent, "divergent", "")', 'author.timestamp().format("%s")', "author.email()", 'committer.timestamp().format("%s")', "description.first_line()"].join(` ++ "${SEP}" ++ `) + ' ++ "\\n"'
   return jjRun(repo, ["log", "--no-graph", "-r", revset, "-T", template]).split("\n").filter(Boolean).map((line) => {
-    const [id, change, authored, committed, parents, bookmarks, workingCopies, conflict, divergent, subject] = line.split(SEP)
-    return { id, short: id.slice(0, 10), change, authored, committed, parents: parents.split(",").filter(Boolean), bookmarks: bookmarks.split(",").filter(Boolean), workingCopies: workingCopies.trim(), conflict: !!conflict, divergent: !!divergent, subject }
+    const [id, change, authored, committed, parents, bookmarks, workingCopies, conflict, divergent, authorSeconds, email, committedSeconds, ...rest] = line.split(SEP)
+    return { id, short: id.slice(0, 10), change, authored, committed, parents: parents.split(",").filter(Boolean), bookmarks: bookmarks.split(",").filter(Boolean), workingCopies: workingCopies.trim(), conflict: !!conflict, divergent: !!divergent, authorSeconds, email, committedSeconds, subject: rest.join(SEP) }
   })
 }
 
@@ -245,6 +273,15 @@ export function classifyCommit(repo, tree, commit, { lineage, history } = {}) {
       if (!reason && verdict.kind === "add") {
         const carrier = history.carrier(commit.id, file.path, verdict.missing)
         if (carrier) reason = `main carried then changed it: ${carrier}`
+      }
+      if (!reason && verdict.kind !== "delete" && tree.lines(file.path) === null) {
+        const dir = tree.deletedPackage(file.path)
+        if (dir) reason = `main has no ${dir} (package removed)`
+      }
+      if (!reason) {
+        // An older version of a change that landed: main's version touched this file, so the lander resolved it.
+        const landed = history.landedVersion(commit)
+        if (landed && history.filesOf(landed).has(file.path)) reason = `landed as ${landed} (same author and time, committed later)`
       }
       if (!reason && lineage) { const later = lineage.changedLater(commit, file.path, verdict.missing); if (later) reason = later }
       if (reason) { out.superseded++; out.evidence.push(`${file.path}: ${reason}`) }
@@ -305,19 +342,27 @@ export function makeLineage(repo, candidates) {
  * A stack's net change: its head against the fork point with main. Intermediate
  * edits inside the stack collapse, so this is what landing the stack must add.
  */
-export function netVerdict(repo, tree, head) {
+export function netVerdict(repo, tree, head, history) {
   const fork = jjRun(repo, ["log", "--no-graph", "-r", `heads(::${head} & ::main@origin)`, "-T", 'commit_id ++ "\\n"']).split("\n").filter(Boolean)[0]
-  if (!fork) return { on: 0, missing: 0, part: 0, gaps: [] }
+  if (!fork) return { on: 0, missing: 0, part: 0, superseded: 0, lines: 0, gaps: [], files: [], evidence: [] }
   const files = parseDiff(jjRun(repo, ["diff", "--git", "--from", fork, "--to", head]))
-  const net = { fork: fork.slice(0, 10), on: 0, missing: 0, part: 0, lines: 0, gaps: [], files: [] }
+  const net = { fork: fork.slice(0, 10), on: 0, missing: 0, part: 0, superseded: 0, lines: 0, gaps: [], files: [], evidence: [] }
   for (const file of files) {
     if (generatedPaths.has(file.path)) continue
     let fileMissing = 0
     for (const hunk of file.hunks) {
       const verdict = judgeHunk(tree, file.path, hunk)
       if (verdict.state === "trivial") continue
-      if (verdict.state === "on") net.on++
-      else { verdict.state === "part" ? net.part++ : net.missing++; fileMissing += verdict.missing.length; net.gaps.push(`${file.path}: ${verdict.missing[0]?.slice(0, 80) ?? verdict.kind}`) }
+      if (verdict.state === "on") { net.on++; continue }
+      // The same supersession evidence as for single commits, against this head's fork.
+      let reason
+      if (history && tree.lines(file.path) === null && verdict.kind !== "delete") { const last = history.lastTouch(head, file.path); if (last) reason = `main deleted it in ${last}` }
+      if (!reason && history && verdict.kind === "add") { const carrier = history.carrier(head, file.path, verdict.missing); if (carrier) reason = `main carried then changed it: ${carrier}` }
+      if (!reason && verdict.kind !== "delete" && tree.lines(file.path) === null) { const dir = tree.deletedPackage(file.path); if (dir) reason = `main has no ${dir} (package removed)` }
+      if (reason) { net.superseded++; if (net.evidence.length < 20) net.evidence.push(`${file.path}: ${reason}`); continue }
+      verdict.state === "part" ? net.part++ : net.missing++
+      fileMissing += verdict.missing.length
+      net.gaps.push(`${file.path}: ${verdict.missing[0]?.slice(0, 80) ?? verdict.kind}`)
     }
     if (fileMissing) { net.files.push(`${file.path} (${fileMissing})`); net.lines += fileMissing }
   }
@@ -326,7 +371,7 @@ export function netVerdict(repo, tree, head) {
 
 /**
  * Workspaces that are other agents' live work: a process whose cwd is inside,
- * or a file (outside .jj and node_modules) modified in the last `hours`.
+ * or a file (outside .jj, .git and node_modules) modified in the last `hours`.
  */
 export function liveWorkspaces(repo, hours = 6) {
   const cwds = spawnSync("lsof", ["-d", "cwd", "-Fn"], { encoding: "utf8", maxBuffer: 1 << 26 }).stdout.split("\n").filter((l) => l.startsWith("n")).map((l) => l.slice(1))
@@ -346,6 +391,7 @@ function parseArgs(argv) {
     const key = argv[i].replace(/^--/, "")
     if (key === "exclude") args.exclude.push(argv[++i])
     else if (key === "skip-live") args.skipLive = true
+    else if (key === "reclassify-open") args.reclassifyOpen = true
     else args[key.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = argv[++i]
   }
   return args
@@ -354,9 +400,10 @@ function parseArgs(argv) {
 export async function run(args) {
   const repo = args.repo
   if (!repo || !args.tree) throw new Error("Usage: --repo <jj repo> --tree <dir at main@origin> [--revset r] [--exclude r] [--since date] [--json f] [--md f]")
-  const treeMain = jjRun(args.tree, ["log", "--no-graph", "-r", "main@origin", "-T", "commit_id"])
-  const treeAt = jjRun(args.tree, ["diff", "--from", "main@origin", "--to", "@", "--summary"]).trim()
-  if (treeAt) throw new Error(`--tree is not at main@origin: ${treeAt.split("\n")[0]}`)
+  // The reference tree: a clean workspace whose parent is on main. Main may move on while this runs.
+  const treeMain = jjRun(args.tree, ["log", "--no-graph", "-r", "@- & ::main@origin", "-T", "commit_id"]).trim()
+  const treeAt = jjRun(args.tree, ["diff", "--from", "@-", "--to", "@", "--summary"]).trim()
+  if (!treeMain || treeAt) throw new Error(`--tree must be a clean workspace on a main commit: ${treeAt.split("\n")[0] || "@- is not on main@origin"}`)
   const repoMain = jjRun(repo, ["log", "--no-graph", "-r", "main@origin", "-T", "commit_id"])
   let revset = args.revset ?? "~::main@origin & ~empty() & ~::remote_bookmarks(remote=origin)"
   if (args.since) revset = `(${revset}) & committer_date(after:${quote(args.since)})`
@@ -366,7 +413,14 @@ export async function run(args) {
   if (args.skipLive !== undefined && !args.shard) {
     const own = new Set((args.own ?? "").split(",").filter(Boolean))
     skipped = liveWorkspaces(repo).filter((w) => w.live && !own.has(w.name))
-    if (skipped.length) revset = `(${revset}) ~ (${skipped.map((w) => `${quote(w.name)}@`).join(" | ")})`
+    // Resolve working copies to ids now: a workspace can be forgotten while this runs.
+    const ids = skipped.map((w) => jjRun(repo, ["log", "--no-graph", "-r", `${quote(w.name)}@`, "-T", "commit_id"], { allowFail: true }).trim()).filter(Boolean)
+    if (ids.length) revset = `(${revset}) ~ (${ids.join(" | ")})`
+    // Commits made in the live window are someone's work in progress too (another lane's copies, a fresh head).
+    const window = Date.now() / 1000 - 6 * 3600
+    const fresh = jjRun(repo, ["log", "--no-graph", "-r", revset, "-T", 'committer.timestamp().format("%s") ++ " " ++ commit_id ++ "\\n"'])
+      .split("\n").filter(Boolean).map((l) => l.split(" ")).filter(([t]) => Number(t) >= window).map(([, id]) => id)
+    if (fresh.length) { revset = `(${revset}) ~ (${fresh.join(" | ")})`; skipped.push({ name: `${fresh.length} commits`, root: "", reason: "committed in the last 6 hours" }) }
   }
   // Another lane's copies of a stack it owns: same subject, committed after that stack's newest commit.
   if (args.excludeCopiesOf && !args.shard) {
@@ -391,19 +445,40 @@ export async function run(args) {
     writeFileSync(args.json, JSON.stringify(results))
     return { results }
   }
+  const order = new Map(candidates.map((c, i) => [c.id, i]))
+  // --reuse <report.json>: keep its per-commit verdicts, recompute heads only (same revset expected).
+  if (args.reuse) {
+    const previous = JSON.parse(readFileSync(args.reuse, "utf8"))
+    const ids = new Set(candidates.map((c) => c.id))
+    results.push(...previous.results.filter((r) => ids.has(r.id)))
+    const have = new Set(results.map((r) => r.id))
+    const missing = candidates.filter((c) => !have.has(c.id))
+    if (missing.length && !args.reclassifyOpen) throw new Error(`--reuse lacks ${missing.length} candidates (e.g. ${missing[0].short}); add --reclassify-open or rerun without it`)
+    if (args.reclassifyOpen) {
+      // Judge the open ones again (new rules) and any new candidate; keep every settled verdict.
+      const open = [...results.filter((r) => ["PARTIAL", "STRANDED", "SCAFFOLD"].includes(r.class)).map((r) => r.id), ...missing.map((c) => c.id)]
+      const settled = results.filter((r) => !open.includes(r.id))
+      results.length = 0
+      if (open.length) await classifyAll(open.join(" | "))
+      results.push(...settled)
+      results.sort((a, b) => order.get(a.id) - order.get(b.id))
+    }
+  } else await classifyAll(revset)
+  async function classifyAll(scope) {
   // Fan out over --jobs processes (each one sequential jj calls), then merge.
   const jobs = Number(args.jobs ?? 8)
   const children = Array.from({ length: jobs }, (_, k) => {
     const out = `${args.json ?? "/tmp/stranded"}.shard${k}`
-    const forwarded = ["--repo", repo, "--tree", args.tree, "--revset", revset, "--shard", `${k}/${jobs}`, "--json", out]
+    const forwarded = ["--repo", repo, "--tree", args.tree, "--revset", scope, "--shard", `${k}/${jobs}`, "--json", out]
     const child = spawn(process.execPath, [new URL(import.meta.url).pathname, ...forwarded], { stdio: ["ignore", "inherit", "inherit"] })
     return { out, exited: new Promise((done, fail) => child.on("exit", (code) => code === 0 ? done() : fail(new Error(`shard ${k} exited ${code}`)))) }
   })
   await Promise.all(children.map((c) => c.exited))
-  const order = new Map(candidates.map((c, i) => [c.id, i]))
   for (const { out } of children) results.push(...JSON.parse(readFileSync(out, "utf8")))
   results.sort((a, b) => order.get(a.id) - order.get(b.id))
+  }
   const tree = new MainTree(args.tree)
+  const history = new MainHistory(repo, args.historySince ?? "2026-09-15")
   // Every head of the candidate set, with the bookmark that names it.
   const headIds = jjRun(repo, ["log", "--no-graph", "-r", `heads(${revset})`, "-T", 'commit_id ++ "\\n"']).split("\n").filter(Boolean)
   const byId = new Map(results.map((r) => [r.id, r]))
@@ -411,7 +486,8 @@ export async function run(args) {
     const members = jjRun(repo, ["log", "--no-graph", "-r", `(::${head}) & (${revset})`, "-T", 'commit_id ++ "\\n"']).split("\n").filter(Boolean)
     const counts = {}
     for (const id of members) { const k = byId.get(id)?.class; counts[k] = (counts[k] ?? 0) + 1 }
-    const net = netVerdict(repo, tree, head)
+    const open = members.some((id) => ["PARTIAL", "STRANDED"].includes(byId.get(id)?.class))
+    const net = open ? netVerdict(repo, tree, head, history) : { on: 0, missing: 0, part: 0, superseded: 0, lines: 0, gaps: [], files: [], evidence: [], settled: true }
     return { head, memberIds: members, short: head.slice(0, 10), bookmarks: byId.get(head)?.bookmarks ?? [], workingCopies: byId.get(head)?.workingCopies ?? "", members: members.length, counts, net }
   })
   for (const r of results) r.stacks = []
@@ -430,9 +506,9 @@ export function renderMarkdown(report, title = "Stranded commits") {
   for (const r of report.results) counts[r.class] = (counts[r.class] ?? 0) + 1
   const lines = [`## ${title}`, "", `Repository \`${report.repo}\`, main \`${report.repoMain.slice(0, 12)}\`, judged against main@origin \`${report.treeMain.slice(0, 12)}\` on ${report.generated}.`, "", `Candidates: \`${report.revset}\`.`, "",
     "| Class | Commits |", "|---|---|", ...Object.entries(counts).sort().map(([k, v]) => `| ${k} | ${v} |`), "",
-    "### Heads", "", "Net: the head against its fork point with main, hunks on main / missing / partial, and missing lines.", "",
-    "| Head | Bookmark / working copy | Commits | Classes | Net on/missing/partial (lines) | Missing files |", "|---|---|---|---|---|---|",
-    ...report.stacks.map((s) => `| \`${s.short}\` | ${cell([...s.bookmarks, s.workingCopies].filter(Boolean).join(" "))} | ${s.members} | ${cell(Object.entries(s.counts).map(([k, v]) => `${k} ${v}`).join(", "))} | ${s.net.on}/${s.net.missing}/${s.net.part} (${s.net.lines}) | ${cell(s.net.files.slice(0, 4).join(", ").slice(0, 200))} |`), "",
+    "### Heads", "", "Net: the head against its fork point with main: hunks on main / superseded / missing / partial, and missing lines.", "",
+    "| Head | Bookmark / working copy | Commits | Classes | Net on/superseded/missing/partial (lines) | Missing files |", "|---|---|---|---|---|---|",
+    ...report.stacks.map((s) => `| \`${s.short}\` | ${cell([...s.bookmarks, s.workingCopies].filter(Boolean).join(" "))} | ${s.members} | ${cell(Object.entries(s.counts).map(([k, v]) => `${k} ${v}`).join(", "))} | ${s.net.on}/${s.net.superseded}/${s.net.missing}/${s.net.part} (${s.net.lines}) | ${cell(s.net.files.slice(0, 4).join(", ").slice(0, 200))} |`), "",
     "### Live workspaces skipped", "", ...(report.skipped?.length ? ["| Workspace | Directory | Why |", "|---|---|---|", ...report.skipped.map((w) => `| ${w.name} | \`${w.root}\` | ${cell(w.reason)} |`)] : ["None."]), "",
     "### Commits", "", "| Authored | Commit | Class | Hunks on/superseded/missing/partial | Stack | Subject | Evidence or gap |", "|---|---|---|---|---|---|---|",
     ...[...report.results].sort((a, b) => a.authored.localeCompare(b.authored)).map((r) => `| ${r.authored} | \`${r.short}\` | ${r.class} | ${r.on}/${r.superseded}/${r.missing}/${r.part} | ${cell(r.stacks.slice(0, 2).join(" "))} | ${cell(r.subject)} | ${cell([...r.gaps.slice(0, 2), ...r.evidence.slice(0, 1)].join("; ").slice(0, 220))} |`)]
