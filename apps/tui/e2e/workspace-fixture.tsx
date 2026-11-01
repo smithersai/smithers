@@ -1,13 +1,18 @@
 /** Deterministic host for PTY coverage of chat while a worker remains unresolved. */
 import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
-import { Schema } from "effect"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as Cell from "@smthrs/harness/Cell"
+import * as ModelRequest from "@smthrs/model/ModelRequest"
+import { Effect, Schema } from "effect"
 import { readFileSync, writeFileSync } from "node:fs"
 import { App } from "../src/app.tsx"
 import * as Changes from "../src/changes.ts"
 import type * as Flows from "../src/flows.ts"
 import type * as Host from "../src/host.ts"
+import * as Runtime from "../src/runtime.ts"
 
+let fixFrame = 0
 const host: Host.Host = {
   cwd: process.cwd(),
   judged: false,
@@ -40,8 +45,63 @@ const host: Host.Host = {
     }
     let answer = "Still here."
     if (input.prompt === "delegate fix") {
-      input.runtime!.delegate!({ id: "fixer", title: "Fixer", prompt: "Fix math.js." })
+      const request = { id: "fixer", title: "Fixer", prompt: "Fix math.js." }
       answer = "Requested the fix."
+      // Like investigate, journal the request cell; Chat projects its worker's real outcome.
+      const cell = Cell.source(
+        `await ctx.call("agent.delegate", ${JSON.stringify(request)}); ctx.done(${JSON.stringify(answer)})`
+      )
+      const binding = Effect.runSync(Runtime.source(input.runtime!).bindings()).find((binding) =>
+        binding.descriptor.name === "agent.delegate"
+      )!
+      const identity = new Cell.CallIdentity({
+        session: "fixture:chat",
+        frame: ++fixFrame,
+        cell: cell.digest,
+        ordinal: 0,
+        declaration: Cell.declarationDigest(binding.descriptor),
+        layers: []
+      })
+      input.onEvent(
+        new AgentEvent.ModelRequested({
+          eventType: "flows.harness.model-requested.v1",
+          scope: identity.session,
+          frame: identity.frame,
+          attempt: 1,
+          purpose: "frame",
+          seat: input.seat,
+          request: new ModelRequest.ModelRequest({
+            modelId: input.seat,
+            system: [],
+            messages: [new ModelRequest.UserMessage({ role: "user", content: [{ type: "text", text: input.prompt }] })],
+            tools: [],
+            params: {}
+          })
+        })
+      )
+      input.onEvent(new AgentEvent.CellProduced({ eventType: "flows.harness.cell-produced.v1", cell }))
+      input.onEvent(
+        new AgentEvent.CellCallStarted({
+          eventType: "flows.harness.cell-call-started.v1",
+          call: Cell.callOf(binding.descriptor, { input: request, identity })
+        })
+      )
+      const receipt = input.runtime!.delegate!(request) as { id: string; status: string }
+      input.onEvent(
+        new AgentEvent.CellCallSettled({
+          eventType: "flows.harness.cell-call-settled.v1",
+          flowName: "agent.delegate",
+          identity,
+          result: new Cell.CallResult({ outcome: "success", value: receipt })
+        })
+      )
+      input.onEvent(
+        new AgentEvent.CellSettled({
+          eventType: "flows.harness.cell-settled.v1",
+          cell: cell.digest,
+          outcome: new Cell.Settled({ transition: new Cell.Complete({ output: answer }) })
+        })
+      )
     }
     if (input.prompt === "investigate") {
       const request = { id: "investigation", title: "Investigation", prompt: "Investigate the failing check." }
