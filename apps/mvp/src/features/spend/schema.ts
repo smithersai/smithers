@@ -73,10 +73,15 @@ export const AlertDelivery = Schema.Struct({
 })
 export type AlertDelivery = typeof AlertDelivery.Type
 
-/** This tab's last save of a channel: still `saving`, or `failed` and to be saved again. A save that lands is removed. */
+/**
+ * This tab's last save of a channel: still `saving`, or `failed` and to be saved again. A save that lands is removed,
+ * and so is a failed one whose channel changed since it started (`since`, the synced row's `updatedAt` then, null for
+ * no row): another device's save superseded it.
+ */
 export const ChannelSave = Schema.Struct({
   channel: AlertChannelName,
   state: Schema.Literals(["saving", "failed"]),
+  since: Schema.NullOr(Schema.String),
 })
 export type ChannelSave = typeof ChannelSave.Type
 

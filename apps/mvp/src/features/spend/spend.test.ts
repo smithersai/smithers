@@ -324,6 +324,19 @@ describe("an Admin's alert channels", { timeout: 90_000 }, () => {
     await until(() => expect(tab.saves()).toEqual([]))
   })
 
+  test("a failed save clears once another device saves the channel: the synced value is what it says now", async () => {
+    // Before, this tab kept Not saved beside the other device's newer value until it saved again itself.
+    const api = await openApi(admin)
+    const tab = await openSettingsTab(api)
+    const other = await openSettingsTab(api)
+    tab.spend.actions.setChannel("email", ["will"])
+    await until(() => expect(tab.saves()).toEqual(["email:failed"]))
+    other.spend.actions.setChannel("email", ["ops@example.com"])
+    await until(() => expect(tab.channels()).toEqual({ email: ["ops@example.com"] }))
+    await until(() => expect(tab.saves()).toEqual([]))
+    await until(() => expect(other.saves()).toEqual([]))
+  })
+
   test("a Member's save is refused, and their tab syncs no setting", async () => {
     const admins = await openApi(admin)
     const set = await openSettingsTab(admins)

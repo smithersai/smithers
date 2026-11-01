@@ -36,18 +36,25 @@ export const hide = (id: string) =>
  */
 export const setChannel = (channel: AlertChannelName, destinations: ReadonlyArray<string>) =>
   Effect.gen(function* () {
-    const { saves, scope } = yield* SpendStore
+    const { saves, channels, scope } = yield* SpendStore
     const flows = yield* FlowDispatch
+    // The channel as this save found it: a change after this is another device's save.
+    const since = Option.match(yield* channels.get(channel), { onNone: () => null, onSome: (row) => row.updatedAt })
     const held = yield* saves.get(channel)
-    if (Option.isSome(held)) yield* saves.update(channel, (draft) => void (draft.state = "saving"))
-    else yield* saves.insert({ channel, state: "saving" })
+    if (Option.isSome(held)) yield* saves.update(channel, (draft) => Object.assign(draft, { state: "saving", since }))
+    else yield* saves.insert({ channel, state: "saving", since })
     yield* flows.dispatch("alert/channel", { channel, destinations: [...destinations] }, { door: "button" }).pipe(
       Effect.exit,
-      // Done removes the save; ChatApi's refusal, or a flow that couldn't run, leaves it failed.
+      // Done removes the save; ChatApi's refusal, or a flow that couldn't run, leaves it failed, unless the channel
+      // changed while it ran: another device's save superseded it.
       Effect.flatMap((exit) =>
-        Exit.isSuccess(exit) && exit.value._tag === "Done"
-          ? saves.delete(channel)
-          : saves.update(channel, (draft) => void (draft.state = "failed"))
+        Effect.gen(function* () {
+          if (Exit.isSuccess(exit) && exit.value._tag === "Done") return yield* saves.delete(channel)
+          const now = Option.match(yield* channels.get(channel), { onNone: () => null, onSome: (row) => row.updatedAt })
+          return yield* now === since
+            ? saves.update(channel, (draft) => void (draft.state = "failed"))
+            : saves.delete(channel)
+        })
       ),
       // expected: a second save of the channel shares the row, and the first to finish may have removed it
       Effect.ignore,

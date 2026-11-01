@@ -163,6 +163,22 @@ export class SpendStore extends Context.Service<
         yield* resume(deliveries, ALERT_DELIVERIES_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
         yield* resume(limits, SANDBOX_LIMITS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
 
+        // A failed save another device's save has since superseded is no longer this tab's to show: the synced row is
+        // what the channel says now.
+        yield* channelList.rows.pipe(
+          Stream.runForEach((rows) =>
+            Effect.gen(function* () {
+              const now = new Map(rows.map((row) => [row.channel, row.updatedAt] as const))
+              for (const save of yield* saves.toArray) {
+                if (save.state === "failed" && (now.get(save.channel) ?? null) !== save.since) {
+                  yield* saves.delete(save.channel).pipe(Effect.ignore)
+                }
+              }
+            })
+          ),
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+
         // A record of each alert the tab shows, once.
         const recorded = new Set<string>()
         yield* open.rows.pipe(
