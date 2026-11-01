@@ -163,7 +163,7 @@ export * as OwnerIdentity from "./OwnerIdentity.ts"
  * @since 1.0.0
  * @category services
  */
-export * as ReplayOnly from "./ReplayOnly.ts"
+export * as ReplayOnly from "./ReplayOnly.vibe"
 
 /**
  * @since 1.0.0
