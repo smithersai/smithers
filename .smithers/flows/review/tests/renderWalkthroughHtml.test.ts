@@ -137,7 +137,8 @@ describe("renderWalkthroughHtml", () => {
 
   test("lets the resolved root theme control Pierre's color scheme", async () => {
     const html = await render()
-    const pierreSystemScheme = html.indexOf("color-scheme: light dark;")
+    // Pierre's own rule; 1.5 minifies its sheet, so the spacing after the colon varies by version.
+    const pierreSystemScheme = html.search(/color-scheme: ?light dark/)
     const inheritedScheme = html.indexOf(".pierre-diff { color-scheme: inherit; }")
 
     expect(pierreSystemScheme).toBeGreaterThan(-1)
