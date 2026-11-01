@@ -43,7 +43,10 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./BunFileSystem": "./src/BunFileSystem.ts",
+    "./BunFileSystem": {
+      "types": "./src/BunFileSystem.d.vibe.ts",
+      "default": "./src/BunFileSystem.vibe"
+    },
     "./BunHost": "./src/BunHost.ts",
     "./index": "./src/index.ts"
   },

@@ -43,7 +43,7 @@ import type * as Path from "effect/Path"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import { isAbsolute } from "node:path"
-import * as BunFileSystem from "./BunFileSystem.ts"
+import * as BunFileSystem from "./BunFileSystem.vibe"
 
 /**
  * Bun platform modules for selectively providing individual services.

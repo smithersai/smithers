@@ -28,7 +28,7 @@ import { Effect, FileSystem, Layer } from "effect"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
-import * as BunFileSystem from "../src/BunFileSystem.ts"
+import * as BunFileSystem from "../src/BunFileSystem.vibe"
 
 /** The kernel's guarded filesystem over the Bun host adapter, bounded at `root`. */
 const guarded = (root: string) =>

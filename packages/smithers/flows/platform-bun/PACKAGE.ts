@@ -65,7 +65,7 @@ const securityReview = Smithers.SecurityReview({
         "The spawner's platform layer resolving files through a non-atomic FileSystem.",
         "BunFileSystem.layer or BunFileSystem.layerWith aliasing anything other than AtomicFileSystem.layer or AtomicFileSystem.layerWith, which own the absolute-helper-path and no-PATH checks."
       ],
-      paths: ["src/BunHost.ts", "src/BunFileSystem.ts"]
+      paths: ["src/BunHost.ts", "src/BunFileSystem.vibe"]
     },
     {
       id: "repository-root-refusal",

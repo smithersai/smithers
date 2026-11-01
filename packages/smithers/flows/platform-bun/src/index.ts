@@ -18,10 +18,10 @@
  * Bun's `FileSystem`, which is `@smthrs/platform-node`'s atomic filesystem.
  * @slop
  */
-export * as BunFileSystem from "./BunFileSystem.ts"
+export * as BunFileSystem from "./BunFileSystem.vibe"
 
 /** Bun's full garbage collection, for `@smthrs/sandbox`'s Microsandbox provider. */
-export * as BunGarbageCollector from "./BunGarbageCollector.ts"
+export * as BunGarbageCollector from "./BunGarbageCollector.vibe"
 
 /**
  * The complete closed Host bundle for Bun.

@@ -7,14 +7,8 @@
  *
  * @since 1.0.0
  */
-
-import { MicrosandboxSandbox } from "@smthrs/sandbox"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-
-/** The part of Bun's global this module calls. */
-declare const Bun: { readonly gc: (force: boolean) => void }
-
+import { MicrosandboxSandbox } from "@smthrs/sandbox";
+import * as Layer from "effect/Layer";
 /**
  * The process's collector: `Bun.gc(true)`, which collects synchronously. It
  * is one value, so every Microsandbox provider in the process counts its
@@ -23,16 +17,11 @@ declare const Bun: { readonly gc: (force: boolean) => void }
  * @category constructors
  * @since 1.0.0
  */
-export const collector: MicrosandboxSandbox.GarbageCollector = {
-  collect: Effect.sync(() => Bun.gc(true))
-}
-
+export declare const collector: MicrosandboxSandbox.GarbageCollector;
 /**
  * Provides {@link collector}.
  *
  * @category layers
  * @since 1.0.0
  */
-export const layer: Layer.Layer<MicrosandboxSandbox.GarbageCollector> = Layer.succeed(
-  MicrosandboxSandbox.GarbageCollector
-)(collector)
+export declare const layer: Layer.Layer<MicrosandboxSandbox.GarbageCollector>;
