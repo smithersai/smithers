@@ -31,5 +31,5 @@
     }]
   },
   "include": ["src/**/*"],
-  "vibelang": {}
+  "vibelang": { "declarationImportStyle": ".ts" }
 }

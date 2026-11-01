@@ -19,5 +19,6 @@
     "skipLibCheck": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*", "tests/**/*", "alchemy.run.ts", "alchemy.run.vibe"]
+  "include": ["src/**/*", "tests/**/*", "alchemy.run.ts", "alchemy.run.vibe"],
+  "vibelang": { "declarationImportStyle": ".ts" }
 }

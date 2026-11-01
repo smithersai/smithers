@@ -17,5 +17,6 @@
     "skipLibCheck": true,
     "types": ["bun-types"]
   },
-  "include": ["src", "test", "e2e"]
+  "include": ["src", "test", "e2e"],
+  "vibelang": { "declarationImportStyle": ".ts" }
 }
