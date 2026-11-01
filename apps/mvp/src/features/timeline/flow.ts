@@ -42,7 +42,7 @@ export const SegmentPayload = {
   /** The message the segmentation starts at: its claim's and its record's. */
   anchorId: Schema.String,
   revision: Schema.String,
-  items: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String.check(Schema.isMaxLength(MARK_LENGTH)) }))
+  items: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String.check(Schema.isMaxLength(MARK_LENGTH)), covered: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))) }))
     .check(Schema.isMinLength(1), Schema.isMaxLength(SEGMENT_WINDOW[1])),
   full: Schema.Boolean,
 }

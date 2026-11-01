@@ -5,8 +5,8 @@ import { ownPlace, requires } from "./target"
 // Separate from timeline.spec.ts: its two scripted journeys require a dev build.
 requires("personalModel", "member", "ownConversation", "liveModel")
 
-test("Branch timeline: a real question and its reply retain their object and outcome", {
-  annotation: { type: "summary", description: "The rail names this question and its linked reply, with a successful answer and a specific question label." },
+test("Branch timeline: a real question and its reply have their own model summaries", {
+  annotation: { type: "summary", description: "Each entry has its own model summary and still links to the completed question or answer." },
 }, async ({ devices }) => {
   test.setTimeout(240_000)
   // devices.open installs recordActions and uses the signed-in account's own branch on a deployment.
@@ -17,10 +17,9 @@ test("Branch timeline: a real question and its reply retain their object and out
     await expect(a.page.getByRole("navigation", { name: "Branch", exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(a.page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0, { timeout: 60_000 })
   })
-  // Six words: the entire subject fits the recorded eight-word label, independently of either model's wording.
   const question = `Timeline check ${devices.word}: reply exactly ok`
   const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
-  const entries = rail.getByRole("list", { name: "Zoom level 0", exact: true })
+  const entries = rail.getByRole("list", { name: "Messages", exact: true })
 
   await step("Ask a question on the branch", async () => {
     await a.askAndWaitTaken(question)
@@ -28,10 +27,11 @@ test("Branch timeline: a real question and its reply retain their object and out
   const { questionId, answerId } = a.asked.find(asked => asked.text === question)!
   const asked = entries.locator(`button[aria-controls="${questionId}"]`)
   const replied = entries.locator(`button[aria-controls="${answerId}"]`)
-  await step("Find the question by its first words in the timeline", async () => {
+  await step("Find the question by its model summary in the timeline", async () => {
     if (!(await rail.isVisible())) await a.page.locator(".sui-timeline-disclosure > summary").click()
     await expect(asked).toBeVisible({ timeout: 30_000 })
-    await expect(asked).toHaveAccessibleName(new RegExp(question))
+    await expect(asked).toHaveAttribute("data-summary", "ready", { timeout: 90_000 })
+    await expect(asked.locator(".sui-tl-tx")).not.toHaveText("")
     await asked.click()
     await expect(a.question(question)).toHaveAttribute("id", questionId)
     await expect(a.question(question)).toBeInViewport()
@@ -49,9 +49,9 @@ test("Branch timeline: a real question and its reply retain their object and out
     await expect(answer).toHaveAttribute("data-state", "done", { timeout: 180_000 })
     await expect(answer.locator('[data-slot="message-response"]')).toContainText("ok")
     await expect(replied).toBeVisible()
-    await expect(replied).toHaveAccessibleName(new RegExp(`${question} · answered$`))
-    // A generated summary may paraphrase the question; its visible text must still say more than a generic outcome.
-    await expect(replied).toContainText(new RegExp(`timeline|${devices.word}`, "i"))
+    await expect(replied).toHaveAttribute("data-summary", "ready", { timeout: 90_000 })
+    const questionSummary = await asked.locator(".sui-tl-tx").textContent()
+    await expect(replied.locator(".sui-tl-tx")).not.toHaveText(questionSummary!)
     await expect(replied).not.toHaveText(/^\s*(?:(?:reply|answer|response)(?: (?:sent|received|completed|done|successfully))*|answered|done|ok)[.!]?\s*$/i)
     await expect(replied.locator("..")).toHaveAttribute("data-state", "done")
     await replied.click()

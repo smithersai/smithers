@@ -1,9 +1,10 @@
 import { SEGMENT_PROMPT } from "./steps"
-import { Option } from "effect"
+import { Option, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { ARCS_FROM, SEGMENT_SPANS, SEGMENT_WINDOW } from "./contract"
 import { cleanSpans, cleanSpanSummary, cleanTitle, exchangeUnits, parseMark, PHASES_FROM, phaseUnits, planOf, type PhaseRow } from "./marks"
 import { segmentRevision } from "./identity"
+import { SegmentPayload } from "./flow"
 
 const mark = (title: string, closed: boolean, covered: number) => JSON.stringify({ title, summary: `${title} ended.`, closed, covered })
 const exchange = (n: number, extra: Partial<PhaseRow> & { readonly arc?: string } = {}, answer: Partial<PhaseRow> = {}): ReadonlyArray<PhaseRow & { readonly arc?: string }> => [
@@ -73,7 +74,7 @@ describe("when a segmentation is due", () => {
     expect(plan(chat(12, open))!.anchorId).toBe("q4")
     expect(plan(chat(12, open))!.items).toHaveLength(8)
   })
-  test("a backlog is read one full window at a time, whose spans all close", () => {
+  test("a backlog starts with bounded input", () => {
     const backlog = plan(chat(200))!
     expect(backlog.items).toHaveLength(SEGMENT_WINDOW[1])
     expect(backlog.full).toBe(true)
@@ -99,8 +100,8 @@ describe("what of a model's answer is stored", () => {
       ["q6", { title: "Reviewing PR 104", summary: "It passed on the second run.", closed: false, covered: 3 }],
     ])
   })
-  test("a full window closes its last span too", () => {
-    expect(JSON.parse(cleanSpans(answer([span(1)]), { items, full: true })![0]!.mark).closed).toBe(true)
+  test("a full input window leaves an uninterrupted goal open", () => {
+    expect(JSON.parse(cleanSpans(answer([span(1)]), { items, full: true })![0]!.mark).closed).toBe(false)
   })
   test("the first span starts at the first item, whatever the model numbered it", () => {
     expect(cleanSpans(answer([span(3)]), { items, full: false })![0]!.id).toBe("q0")
@@ -137,4 +138,67 @@ describe("what of a model's answer is stored", () => {
 test("the prompt names what it divides: a conversation's exchanges, or a long conversation's phases", () => {
   expect(SEGMENT_PROMPT(1)).toContain("conversation between a person and a coding agent")
   expect(SEGMENT_PROMPT(2)).toContain("long conversation's phases")
+})
+
+
+describe("rolling phase input", () => {
+  test.each([1, 2] as const)("a level %s goal stays open across repeated full windows and resume", level => {
+    const size = SEGMENT_WINDOW[level]
+    const units = (count: number, stored: ReadonlyArray<{ id: string; mark: string }> = []) => Array.from({ length: count }, (_, n) => ({
+      id: `q${n}`, text: `Same checkout goal ${n}`, mark: parseMark(stored.find(row => row.id === `q${n}`)?.mark),
+    }))
+    let stored: ReadonlyArray<{ id: string; mark: string }> = []
+    const snapshots = [size, size + 12, size + 36, size + 80]
+    for (const count of snapshots) {
+      // As sync records each batch, a backlog advances using the persisted summary, never by closing the goal.
+      for (let calls = 0; calls < count; calls++) {
+        const plan = planOf(units(count, stored), level)
+        if (plan === undefined) break
+        expect(plan.anchorId).toBe("q0")
+        expect(plan.items.length).toBeLessThanOrEqual(size)
+        if (stored.length) {
+          expect(plan.items[0]!.text).toContain("The checkout fix is still being tested")
+          expect(plan.items[0]!.covered).toBeGreaterThan(1)
+        }
+        stored = cleanSpans(JSON.stringify({ spans: [{ from: 1, title: "Fixing checkout validation", summary: "The checkout fix is still being tested" }] }), plan)!
+        expect(stored).toHaveLength(1)
+        expect(JSON.parse(stored[0]!.mark).closed).toBe(false)
+      }
+      const covered = JSON.parse(stored[0]!.mark).covered
+      expect(covered).toBeGreaterThanOrEqual(count - (level === 1 ? 3 : 5))
+      expect(covered).toBeLessThanOrEqual(count)
+      // A fresh device has no in-memory accumulator: the mark is the entire rolling checkpoint.
+      expect(planOf(units(count, JSON.parse(JSON.stringify(stored))), level)).toBeUndefined()
+    }
+  })
+
+  test("a persisted closed span keeps older provisional marks out of the next rolling checkpoint", () => {
+    const rows = chat(12, { 0: mark("Earlier provisional goal", false, 2), 2: mark("Completed checkout fix", true, 4), 6: mark("Writing release notes", false, 2) })
+    expect(planOf(exchangeUnits(rows), 1)!.anchorId).toBe("q6")
+  })
+
+  test("a real transition after the rolling prefix closes only the earlier goal, at its actual exchange", () => {
+    const rows = chat(28, { 0: mark("Fixing checkout validation", false, 24) })
+    const plan = planOf(exchangeUnits(rows), 1)!
+    expect(plan.items.map(item => item.id)).toEqual(["q0", "q24", "q25", "q26", "q27"])
+    expect(plan.revision).toBe(segmentRevision("q0", 1, 28))
+    const spans = cleanSpans(JSON.stringify({ spans: [
+      { from: 1, title: "Fixing checkout validation", summary: "Validation passed" },
+      { from: 2, title: "Writing release notes", summary: "Release notes drafted" },
+    ] }), plan)!
+    expect(spans.map(row => [row.id, JSON.parse(row.mark).covered, JSON.parse(row.mark).closed])).toEqual([["q0", 24, true], ["q24", 4, false]])
+    expect(planOf(exchangeUnits(chat(32, Object.fromEntries(spans.map(row => [Number(row.id.slice(1)), row.mark])))), 1)!.anchorId).toBe("q24")
+  })
+})
+
+
+test("durable phase payloads keep rolling weights and still decode older unweighted plans", () => {
+  const decode = Schema.decodeUnknownSync(Schema.Struct(SegmentPayload))
+  const legacy = planOf(exchangeUnits(chat(8)), 1)!
+  expect(decode(legacy).items[0]).not.toHaveProperty("covered")
+  const rolling = planOf(exchangeUnits(chat(28, { 0: mark("Fixing checkout validation", false, 24) })), 1)!
+  expect(decode(rolling).items[0]?.covered).toBe(24)
+  for (const covered of [0, -1, 1.5, Infinity, NaN]) {
+    expect(() => decode({ ...rolling, items: [{ ...rolling.items[0], covered }, ...rolling.items.slice(1)] })).toThrow()
+  }
 })

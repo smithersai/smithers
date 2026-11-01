@@ -46,7 +46,7 @@ export const MARK_SUMMARY_LENGTH = 180
 export const MARK_LENGTH = 512
 /** New items, since the open span was last written, that make it worth another call. */
 export const SEGMENT_EVERY = { 1: 4, 2: 6 } as const
-/** The most items one call reads, which bounds its input; a span that fills it closes. */
+/** The most items one call reads, including persisted rolling summaries of open spans. */
 export const SEGMENT_WINDOW = { 1: 24, 2: 16 } as const
 /** Closed phases before the first arcs are worth making: below a column's capacity, so level 2 has them when it appears. */
 export const ARCS_FROM = 12

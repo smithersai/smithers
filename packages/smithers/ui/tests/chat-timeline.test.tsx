@@ -137,8 +137,8 @@ test("summary navigation retains the recorded object and outcome in its accessib
   expect(buttons[1]!.getAttribute("aria-label")).toBe("Replied briefly · Timeline check unique · answered");
   expect(buttons[0]!.textContent).toBe("Requested a short reply");
   expect(buttons[1]!.getAttribute("aria-controls")).toBe("answer");
-  expect(buttons[2]!.textContent).toBe("Couldn't answer");
-  expect(buttons[2]!.getAttribute("aria-label")).toBe("Couldn't answer · Timeline check unique · failed");
+  expect(buttons[2]!.textContent).toBe("Timeline check unique · failed");
+  expect(buttons[2]!.hasAttribute("aria-label")).toBe(false);
   for (const button of [...buttons].slice(3)) expect(button.hasAttribute("aria-label")).toBe(false);
 })
 

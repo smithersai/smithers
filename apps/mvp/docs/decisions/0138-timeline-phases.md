@@ -6,12 +6,12 @@ Status: accepted (2026-10-31, CL-timeline-fe19). Ruling [FE-19](../rulings.md) r
 
 1. **A span is a mark on the message it starts at.** `messages.phase` (level 1) and `messages.arc` (level 2) hold JSON: `title`, `summary`, `closed`, `covered`. A span runs from its mark to the next one.
 2. **The model segments, in steps.** A conversation is cut by the durable flow `timeline/phases` on the browser engine: one sealed `ModelStep` through `/api/model/summary`. It reads numbered items, each an exchange's question summary and the first 180 characters of its answer, and answers `{ spans: [{ from, title, summary }] }`.
-3. **A span closes on evidence.** A call starts at the open span, or after the last closed one, and reads up to 24 exchanges. A span closes once at least three items follow it; the rest stay open and the next call reads them again, so a boundary drawn from too little evidence can still move. A call that reads a full window closes everything, so a span is at most 24 exchanges and a backlog always moves on. The server refuses to rewrite a closed mark.
-4. **Calls come in steps of new work.** A call is due once 4 new exchanges follow what the open span covers. Its revision is `(anchor, level, items read)`, and `items read` is a multiple of 4, so every device names the same call and `timeline_phase_claims` lets one of them make it.
-5. **Arcs are the same algorithm, one level out.** The items are closed phases: from 12 of them, one call per 6 new ones, 16 at most. They exist before a third column is needed, and the rail shows that column only once phases outgrow level 1's capacity.
+3. **A span closes on evidence.** A call starts at the open span, or after the last closed one, and reads up to 24 exchanges. A span closes once at least three items follow it; the rest stay open and the next call reads them again, so a boundary drawn from too little evidence can still move. A full input window never closes a span. When the next call exceeds the window, persisted open marks supply rolling summary items, weighted by their covered exchanges; the remaining input holds new exchanges. The model can keep the same goal open for any length. A semantic transition still closes the preceding span once enough work follows it. The server refuses to rewrite a closed mark.
+4. **Calls come in steps of new work.** A call is due once 4 new exchanges follow what the open span covers. Its revision is `(anchor, level, original items covered)`, including the rolling summaries’ weights, so every device names the same call and `timeline_phase_claims` lets one of them make it.
+5. **Arcs are the same algorithm, one level out.** The items are closed phases: from 12 of them, one call per 6 new ones, 16 input items at most, including rolling summaries; an arc may cover arbitrarily many phases. They exist before a third column is needed, and the rail shows that column only once phases outgrow level 1's capacity.
 6. **Blocks are one height.** Every level-1 block in a column is the same height. Size shows in the block's strip: one mark per exchange, the strip as tall as the block is full.
 7. **A claim whose model never answered is released.** `unconfigured`, `credit`, `capped` and `unavailable` free the claim, so a chat summarized while no model was set gets its summaries once one is. So does a segmentation's unusable answer, since a kept claim would freeze the conversation's phases at that point, and a claim left by a closed tab can be taken again after ten minutes. Every attempt counts against the daily cap, released or not, so an outage can't re-claim the same messages for ever. A later span with an unusable title joins the one before it.
-8. **Stops say so.** A failure every later call would repeat stops the tab's lane, as before, and now raises one local toast per cause on the shared stack (decision 0009), and marks the rail's pending entries.
+8. **Stops say so.** A failure every later call would repeat stops the tab's lane, as before, and marks the rail's pending entries. Every preventing cause also raises one local toast per cause per session on the shared stack (decision 0009), including invalid output, policy refusals and dispatch failures that leave the lane running.
 
 ## Why
 
@@ -30,7 +30,7 @@ one conversation of E exchanges, once, for everyone
   arcs              about E/(6 × average phase size) calls
 ```
 
-A closed span is never read again, so the total stays linear in the conversation, and another tab, device or person pays nothing. The daily cap counts summaries and spans together.
+A closed span is never read again; an open span contributes only its persisted rolling summary once its input fills, so input stays bounded and the total stays linear in the conversation, and another tab, device or person pays nothing. The daily cap counts summaries and spans together.
 
 ## Consequences
 

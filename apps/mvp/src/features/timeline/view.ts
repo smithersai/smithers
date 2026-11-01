@@ -33,19 +33,13 @@ export interface RailTodo {
   readonly updatedAt: string
 }
 
-/** A short subject in the same private conversation; never log it or copy assistant output. */
-const subjectOf = (text: string): string => {
-  const words = safeTimelineText(text).trim().split(/\s+/).filter(Boolean)
-  const excerpt = words.slice(0, 8).join(" ")
-  return excerpt.length > 80 ? `${excerpt.slice(0, 79)}…` : `${excerpt}${words.length > 8 ? "…" : ""}`
-}
-const fallback = (message: RailMessage, messages: readonly RailMessage[], state: ChatTimelineEntry["state"]): string => {
-  const question = message.role === "user" ? message : messages.find(row => row.id === message.questionId && row.role === "user")
-  const subject = subjectOf(question?.text ?? "") || message.id
+/** Distinct, bounded placeholders while each message waits for its own model summary. */
+const pendingLabel = (message: RailMessage, index: number, state: ChatTimelineEntry["state"]): string => {
+  const name = `${message.role === "user" ? "Question" : "Answer"} ${index + 1}`
   const outcome = state === "failed" ? (message.status === "unsent" ? "not sent" : "failed")
     : state === "waiting" ? "needs you" : state === "queued" ? "queued"
-    : state === "working" ? "answering" : message.role === "user" ? undefined : "answered"
-  return outcome ? `${subject} · ${outcome}` : subject
+    : state === "working" ? "answering" : undefined
+  return outcome ? `${name} · ${outcome}` : `${name}…`
 }
 
 const displayTime = (value: string | undefined): string | undefined => {
@@ -55,42 +49,27 @@ const displayTime = (value: string | undefined): string | undefined => {
 
 export const railEntries = (
   messages: readonly RailMessage[], statuses: readonly RailStatus[],
-  drafts: readonly RailDraft[] = [], todos: readonly RailTodo[] = [],
+  _drafts: readonly RailDraft[] = [], _todos: readonly RailTodo[] = [],
 ): ChatTimelineEntry[] => [
-  ...messages.filter(message => message.role !== "view").flatMap(message => {
+  ...messages.filter(message => message.role === "user" || message.role === "assistant").map((message, index): ChatTimelineEntry => {
     const status = statuses.find(status => status.id === message.id)
     const state = status?.state === "needs_you" ? "waiting"
       : status?.state === "waiting" ? "queued"
       : message.status === "streaming" ? "working" : message.status === "failed" || message.status === "unsent" ? "failed"
       : message.status === "queued" ? "queued" : "done"
     const summary = message.status === "done" && message.summary && message.summaryRevision === revisionOf(message) ? message.summary.trim() : undefined
-    const entries: ChatTimelineEntry[] = [{
+    const ownSummary = summary && !isGenericSummary(summary) ? safeTimelineText(summary) : undefined
+    return {
       id: message.status === "unsent" ? `unsent:${message.id}` : message.id,
       actor: message.role === "user" ? "Person" : "Smithers",
       time: displayTime(message.createdAt),
       tokens: message.inputTokens != null && message.outputTokens != null && message.inputTokens + message.outputTokens > 0
         ? message.inputTokens + message.outputTokens : undefined,
       kind: message.role === "user" ? "ask" : "answer", state, length: message.text.length,
-      summary: summary && !isGenericSummary(summary) ? safeTimelineText(summary) : undefined,
-      label: fallback(message, messages, state),
-    }]
-    if (message.role === "assistant" && status?.flow) entries.push({
-      id: `run:${message.id}`, kind: "flow", state, actor: "Smithers", time: displayTime(message.createdAt),
-      label: `${safeTimelineText(status.flow)} · ${{ done: "completed", working: "running", waiting: "needs you", queued: "queued", failed: "failed" }[state]}`,
-    })
-    for (const draft of drafts.filter(draft => draft.answerId === message.id).sort((a, b) => a.createdAt - b.createdAt)) entries.push({
-      id: `todo:${draft.id}`, kind: "tool", state: "done", actor: "Smithers",
-      label: `${subjectOf(draft.title) || draft.id} · draft`,
-    })
-    return entries
+      summary: ownSummary,
+      label: ownSummary ?? pendingLabel(message, index, state),
+    }
   }),
-  ...todos.map((todo): ChatTimelineEntry => ({
-    id: `todo:${todo.id}`, kind: "tool", actor: "Smithers", time: displayTime(todo.updatedAt),
-    state: todo.state === "failed" ? "failed" : todo.state === "working" ? "working" : todo.state === "queued" ? "queued" : todo.state === "in_review" ? "waiting" : "done",
-    label: [subjectOf(todo.title) || `T${todo.number}`, todo.prNumber === null ? `T${todo.number}` : `PR #${todo.prNumber}`,
-      (todo.state === "failed" ? todo.failure ? `${todo.failure} failed` : "failed" : todo.state === "working" ? todo.step || "working" : todo.state).replaceAll("_", " "),
-    ].join(" · "),
-  })),
 ]
 
 /** The phases or arcs stored on `messages`, as the rail's level 1 or level 2 takes them. */

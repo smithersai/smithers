@@ -1,7 +1,7 @@
 import { ANSWER_EXCERPT, QUESTION_EXCERPT, revisionOf } from "./identity"
 import { exchangeUnits, phaseUnits, planOf, type PhaseRow } from "./marks"
 import type { Collection } from "@smthrs/effect-tanstack-db"
-import { Deferred, Duration, Effect, Metric, Semaphore, Stream } from "effect"
+import { Deferred, Duration, Effect, Metric, Semaphore, Stream, SubscriptionRef } from "effect"
 import { codeOf } from "../../errorCode"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { Message } from "../chat/schema"
@@ -34,6 +34,9 @@ export interface Lane {
   /** Revisions this tab asked about once, whatever the answer: it never asks again until the app opens again. */
   readonly settled: Set<string>
   readonly stopped: Deferred.Deferred<void>
+  /** Preventing causes, including entry-local failures, replayed for the notification follower. */
+  readonly failures: Stream.Stream<string>
+  readonly report: (code: string) => Effect.Effect<void>
   /**
    * Stops every follower on the lane for the failure `code` ({@link STOPPING_FAILURES}), recorded once however many
    * summaries fail that way: `timeline.summary.stopped` and {@link summaryStops}. Uninterruptible: stopping ends the
@@ -47,16 +50,19 @@ export interface Lane {
 /** A tab's lane: made once, shared by its home and branch conversations. */
 export const makeLane: Effect.Effect<Lane> = Effect.gen(function* () {
   const stopped = yield* Deferred.make<void>()
+  const failures = yield* SubscriptionRef.make<ReadonlyArray<string>>([])
+  const report = (code: string) => code === "taken" ? Effect.void : SubscriptionRef.update(failures, codes => codes.includes(code) ? codes : [...codes, code])
   let cause: string | undefined
   const stop = (code: string) =>
     Effect.uninterruptible(Effect.gen(function* () {
+      yield* report(code)
       // Before the stop is seen: a follower reads why as soon as it wakes.
       if (cause === undefined) cause = code
       if (!(yield* Deferred.succeed(stopped, undefined))) return
       yield* Effect.logWarning("timeline.summary.stopped").pipe(Effect.annotateLogs({ code }))
       yield* Metric.update(summaryStops, 1)
     }))
-  return { permits: yield* Semaphore.make(SUMMARIES_AT_ONCE), pending: new Set<string>(), settled: new Set<string>(), stopped, stop, stoppedFor: () => cause }
+  return { permits: yield* Semaphore.make(SUMMARIES_AT_ONCE), pending: new Set<string>(), settled: new Set<string>(), failures: SubscriptionRef.changes(failures).pipe(Stream.flattenIterable), report, stopped, stop, stoppedFor: () => cause }
 })
 
 /** A row of the conversation's window, as far as a summary reads it: chat's `latest` query gives these. */
@@ -110,7 +116,9 @@ export const followSummaries = (
         ...(question === undefined ? {} : { question }),
       }, { door: "sync", executionId: `timeline-${revision}` })
       // A summary made here or elsewhere arrives with the message.
-      if (result._tag === "Done" || !STOPPING_FAILURES.includes(result.error.code)) return
+      if (result._tag === "Done") return
+      yield* lane.report(result.error.code)
+      if (!STOPPING_FAILURES.includes(result.error.code)) return
       if (result.error.code === "unconfigured") yield* Effect.logWarning("timeline.summary.unconfigured")
       // Once per lane: the first failure stops it; a turn that was already running may fail the same way after.
       yield* lane.stop(result.error.code)
@@ -137,11 +145,13 @@ export const followSummaries = (
               errorCode: codeOf(error),
               reason: error.reason,
             }),
+            Effect.andThen(lane.report(`dispatch:${error.reason}`)),
           )
         ),
         Effect.catchDefect((defect) =>
           Effect.logWarning("timeline.summary.defect").pipe(
             Effect.annotateLogs({ feature: "timeline", errorCode: codeOf(defect) }),
+            Effect.andThen(lane.report("defect")),
           )
         ),
         Effect.forkScoped({ startImmediately: true }),
@@ -177,10 +187,17 @@ export const followPhases = (everything: Everything, dispatch: FlowDispatch["Ser
         if (plan === undefined || lane.settled.has(plan.revision)) continue
         lane.settled.add(plan.revision)
         const result = yield* lane.permits.withPermits(1)(dispatch.dispatch("timeline/phases", plan, { door: "sync", executionId: `timeline-${plan.revision}` }))
-        if (result._tag === "Done" || !STOPPING_FAILURES.includes(result.error.code)) continue
+        if (result._tag === "Done") continue
+        yield* lane.report(result.error.code)
+        if (!STOPPING_FAILURES.includes(result.error.code)) continue
         yield* lane.stop(result.error.code)
       }
     }).pipe(
-      Effect.catch(error => Effect.logWarning("timeline.summary.unavailable").pipe(Effect.annotateLogs({ feature: "timeline", errorCode: codeOf(error), reason: error.reason }))),
+      Effect.catch(error => Effect.logWarning("timeline.summary.unavailable").pipe(
+        Effect.annotateLogs({ feature: "timeline", errorCode: codeOf(error), reason: error.reason }), Effect.andThen(lane.report(`dispatch:${error.reason}`)),
+      )),
+      Effect.catchDefect(defect => Effect.logWarning("timeline.summary.defect").pipe(
+        Effect.annotateLogs({ feature: "timeline", errorCode: codeOf(defect) }), Effect.andThen(lane.report("defect")),
+      )),
     )),
   ))

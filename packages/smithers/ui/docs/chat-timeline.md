@@ -22,13 +22,13 @@ A level slides in over 240 ms, then its lens fades in and its funnel draws. It l
 
 The rail stays behind the chat: 11 px muted text (10 px in outer levels), marks at about half strength, soft thumb and lens. Hover or keyboard focus brings it to full contrast in 150 ms. Summaries are always visible; hover adds detail: an entry's actor, time, tokens and cost, and a block's sentence, message count and time span.
 
-A mark pulses teal while working. `Needs you` is gold, a failure is ember and a queued entry is hatched. In level 0 the transcript's words replace the summary: `Working`, `Needs you`, `Couldn't answer`, `Waiting`, `Queued`, `Not sent`. Outer strips show the colors.
+A mark pulses teal while working. `Needs you` is gold, a failure is ember and a queued entry is hatched. In level 0 a host-provided `label` stays visible until the model summary arrives. Without one, the transcript's words describe its state: `Working`, `Needs you`, `Couldn't answer`, `Waiting`, `Queued`, `Not sent`. Outer strips show the colors.
 
 The rail needs room beside the transcript: a viewport of at least 1,180 px and a transcript of at least 600 px. It measures the space to the page's left edge, or to an ancestor marked `data-rail-bound`. Below that it is closed behind `Timeline`, which opens the same levels in a sheet over the chat at full contrast; Escape closes it.
 
 ## Pending and unavailable
 
-`label` carries the recorded object and outcome while a summary is pending, shown in italics; a nonempty `summary` takes precedence, and the accessible name keeps both. Pass `unavailable` when summaries can't be made: entries and blocks missing one are marked, and hover shows that text.
+`label` carries a distinct short placeholder while a summary is pending, shown in italics; a nonempty `summary` takes precedence, and the accessible name keeps both. Pass `unavailable` when summaries can't be made: entries and blocks missing one are marked, and hover shows that text.
 
 ## Keys
 

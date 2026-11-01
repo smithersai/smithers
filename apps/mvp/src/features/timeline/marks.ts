@@ -36,7 +36,12 @@ export interface PhaseRow {
 }
 
 /** A thing to segment: an exchange for phases, a closed phase for arcs. */
-export interface SegmentItem { readonly id: string; readonly text: string }
+export interface SegmentItem {
+  readonly id: string
+  readonly text: string
+  /** Earlier items represented by this persisted rolling summary; fresh items represent one. */
+  readonly covered?: number
+}
 interface Unit extends SegmentItem { readonly mark: Option.Option<Mark> }
 
 const EXCERPT = 180
@@ -77,7 +82,7 @@ export interface SegmentPlan {
   readonly anchorId: string
   readonly revision: string
   readonly items: ReadonlyArray<SegmentItem>
-  /** It reads a full window, so every span it writes closes. */
+  /** Input fills its bounded window; this never establishes a semantic boundary. */
   readonly full: boolean
 }
 
@@ -92,19 +97,27 @@ export const planOf = (units: ReadonlyArray<Unit>, level: Level): SegmentPlan | 
   if (units.length < (level === 1 ? PHASES_FROM : ARCS_FROM)) return undefined
   const marked = units.flatMap((unit, index) => Option.isSome(unit.mark) ? [{ index, mark: unit.mark.value }] : [])
   const closed = marked.filter(({ mark }) => mark.closed).at(-1)
-  const open = marked.filter(({ mark }) => !mark.closed && (closed === undefined || mark !== closed.mark))
+  const open = marked.filter(({ index, mark }) => !mark.closed && (closed === undefined || index > closed.index))
   const start = open[0]?.index ?? (closed === undefined ? 0 : closed.index + closed.mark.covered)
   const covered = open.reduce((sum, { mark }) => sum + mark.covered, 0)
   const waiting = units.length - start
   const every = SEGMENT_EVERY[level], window = SEGMENT_WINDOW[level]
   if (waiting - covered < every) return undefined
-  const read = Math.min(window, Math.floor(waiting / every) * every)
   const anchorId = units[start]!.id
-  return {
-    level, anchorId, revision: segmentRevision(anchorId, level, read),
-    items: units.slice(start, start + read).map(({ id, text }) => ({ id, text })),
-    full: read >= window,
-  }
+  // A full window limits the model's input, never the length of a goal. The open marks are already persisted
+  // model summaries; carry them forward as weighted items, then add only new work. A restarted device reads the
+  // identical checkpoint and names the identical call, without an in-memory accumulator or a second ledger.
+  const rolling = waiting > window && covered > 0
+    ? open.map(({ index, mark }) => ({ id: units[index]!.id, text: `${mark.title}: ${mark.summary}`, covered: mark.covered }))
+    : []
+  const fresh = rolling.length === 0
+    ? Math.min(window, Math.floor(waiting / every) * every)
+    : Math.min(window - rolling.length, Math.max(1, Math.floor((window - rolling.length) / every)) * every, Math.floor((waiting - covered) / every) * every)
+  const read = (rolling.length === 0 ? 0 : covered) + fresh
+  const after = rolling.length === 0 ? start : start + covered
+  const items: ReadonlyArray<SegmentItem> = [...rolling, ...units.slice(after, after + fresh).map(({ id, text }) => ({ id, text }))]
+  return { level, anchorId, revision: segmentRevision(anchorId, level, read), items, full: items.length >= window }
+
 }
 
 const NAMELESS = /^(?:(?:the )?(?:conversation|chat|discussion|session|general|misc(?:ellaneous)?|other|various)(?: (?:topics|tasks|questions|work))?|phase \d+|arc \d+|part \d+)[.!]?$/i
@@ -142,7 +155,7 @@ export interface StoredSpan { readonly id: string; readonly mark: string }
 /**
  * What of a model's `text` may be stored for `plan`: spans in order, the first starting at the first item, each with a
  * real title. A span closes once at least {@link CLOSES_AFTER} items follow it, which is what shows its boundary was
- * real; a fuller window closes everything. Anything unusable is `undefined`.
+ * real. Input capacity never closes a span. Anything unusable is `undefined`.
  */
 export const cleanSpans = (text: string, plan: Pick<SegmentPlan, "items" | "full">): ReadonlyArray<StoredSpan> | undefined => {
   const answer = decodeAnswer(jsonOf(text))
@@ -160,7 +173,8 @@ export const cleanSpans = (text: string, plan: Pick<SegmentPlan, "items" | "full
   if (first === undefined || first.from !== 1) return undefined
   return usable.map(({ from, title, summary }, index) => {
     const next = usable[index + 1]?.from ?? count + 1
-    const mark: Mark = { title, summary, closed: (index < usable.length - 1 && count + 1 - next >= CLOSES_AFTER) || plan.full, covered: next - from }
+    const coverage = (start: number, end: number) => plan.items.slice(start - 1, end - 1).reduce((sum, item) => sum + (item.covered ?? 1), 0)
+    const mark: Mark = { title, summary, closed: index < usable.length - 1 && coverage(next, count + 1) >= CLOSES_AFTER, covered: coverage(from, next) }
     return { id: plan.items[from - 1]!.id, mark: JSON.stringify(mark) }
   })
 }

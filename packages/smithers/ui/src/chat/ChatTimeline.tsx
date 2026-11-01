@@ -43,7 +43,7 @@ export interface ChatTimelineProps {
   /** Explicit activation of a single entry; keyboard traversal and grouped entries only jump. */
   readonly onActivate?: (id: string) => void;
 }
-/** The transcript's own words for a message that isn't settled: they replace the summary in level 0. */
+/** Default state words when a message has neither a summary nor a host label. */
 const stateWords = (entry: ChatTimelineEntry): string | undefined => {
   if (entry.state === "done" || (entry.kind !== "ask" && entry.kind !== "answer")) return undefined;
   if (entry.kind === "ask") return { working: undefined, waiting: undefined, failed: "Not sent", queued: "Queued" }[entry.state];
@@ -237,9 +237,9 @@ export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [
           <div className="sui-tl-inner">
             <ol data-level={0} aria-label="Messages">
               {entries.map((entry, row) => {
-                const label = entry.summary ?? stateWords(entry) ?? timelineLabel(entry);
+                const label = entry.summary || entry.label || stateWords(entry) || timelineLabel(entry);
                 const name = entry.label && entry.label !== label ? `${label} · ${entry.label}` : undefined;
-                const pending = entry.summary === undefined && entry.state === "done";
+                const pending = !entry.summary && entry.state === "done";
                 const why = pending ? unavailable : undefined;
                 return <li key={entry.id} data-state={entry.state} style={{ display: "contents" }}>
                   <button type="button" className="sui-tl-row" data-row={row} data-kind={entry.kind === "ask" ? "ask" : "answer"} data-state={entry.state} tabIndex={row === 0 ? 0 : -1} aria-controls={entry.id}

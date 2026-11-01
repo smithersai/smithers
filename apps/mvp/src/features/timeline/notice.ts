@@ -1,25 +1,35 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
-import { Clock, Deferred, Effect, Schema } from "effect"
+import { Clock, Deferred, Effect, Option, Schema, Stream } from "effect"
 import { LOCAL_RECIPIENT, HOME_HREF } from "../attention/contract"
 import type { Notice } from "../attention/schema"
-import type { Lane } from "./store"
+import { STOPPING_FAILURES, type Lane } from "./store"
 
 // Saying so when summaries can't be made (ruling FE-19): "if it's falling back to this because a model is not
 // configured it should say so". One toast per cause per session, on the one stack (decision 0009), and the same words on
 // what the rail is missing.
 
-/** Why summaries stopped, in the product's words; a person reads these. */
+/** Why a summary could not be made, in the product's words. */
 export const NOTICE_TEXT: Readonly<Record<string, string>> = {
   unconfigured: "No summary model is set",
   capped: "Today's summaries are spent",
   credit: "The summary model is out of credit",
   unavailable: "The summary model isn't answering",
   server: "Summaries can't be saved right now",
+  invalid: "The summary model returned an unusable summary",
+  refused: "A summary was refused",
+  defect: "A summary failed unexpectedly",
+  "dispatch:unavailable": "The summary flow isn't available",
+  "dispatch:refused": "The summary flow was refused",
+  "dispatch:invalid": "The summary flow couldn't read its input",
+  "dispatch:defect": "The summary flow failed unexpectedly",
+  "dispatch:interrupted": "The summary flow was interrupted",
 }
 
-/** A local collection's one row: why summaries stopped. */
+/** A local collection's latest preventing cause. */
 export const TimelineNotice = Schema.Struct({ id: Schema.String, code: Schema.String, text: Schema.String })
 export type TimelineNotice = typeof TimelineNotice.Type
+
+const noticeText = (code: string): string => NOTICE_TEXT[code] ?? NOTICE_TEXT.unavailable!
 
 /**
  * The stack's row for `code`: this device's own (`LOCAL_RECIPIENT`), of the `write` kind local failures use, so the
@@ -27,20 +37,35 @@ export type TimelineNotice = typeof TimelineNotice.Type
  */
 export const noticeRow = (code: string, at: string): Notice => ({
   subject: `timeline-summaries:${code}`, recipient: LOCAL_RECIPIENT, kind: "write", state: "failed", mine: true, quiet: false,
-  runId: null, repoId: null, conversationId: null, actor: null, title: NOTICE_TEXT[code] ?? NOTICE_TEXT.unavailable!, ref: code,
+  runId: null, repoId: null, conversationId: null, actor: null, title: noticeText(code), ref: code,
   href: code === "unconfigured" || code === "credit" ? "/settings" : HOME_HREF,
   version: 1, readVersion: 0, dismissedVersion: 0, hiddenVersion: 0, occurredAt: at, createdAt: at, updatedAt: at,
 })
 
-/**
- * Once `lane` stops, says why: to the rail through `state`, and to the person through `launches`, which only one follower
- * in the app ever writes, so a cause toasts once however many conversations stopped on it.
- */
-export const followNotice = (lane: Lane, state: Collection.Collection<TimelineNotice, string>, launches: Collection.Collection<Notice, string>) =>
-  Effect.gen(function* () {
-    yield* Deferred.await(lane.stopped)
-    const code = lane.stoppedFor() ?? "unavailable"
-    yield* state.insert({ id: "notice", code, text: NOTICE_TEXT[code] ?? NOTICE_TEXT.unavailable! }).pipe(Effect.orDie)
-    yield* launches.insert(noticeRow(code, new Date(yield* Clock.currentTimeMillis).toISOString())).pipe(Effect.orDie)
+/** Every preventing cause says so, independently of lane shutdown, once per cause per session. */
+export const followNotice = (lane: Lane, state: Collection.Collection<TimelineNotice, string>, launches: Collection.Collection<Notice, string>) => {
+  // The rail's global unavailable state belongs to the stopped lane; later local refusals must not replace its cause.
+  const markRail = (code: string) => Effect.gen(function* () {
+    const notice = { id: "notice", code, text: noticeText(code) }
+    if (Option.isSome(yield* state.get("notice"))) yield* state.update("notice", draft => { Object.assign(draft, notice) }).pipe(Effect.orDie)
+    else yield* state.insert(notice).pipe(Effect.orDie)
+  })
+  const raise = (code: string) => Effect.gen(function* () {
+    // The lane replays causes for a late follower; the stack's stable subject also deduplicates follower restarts.
+    const row = noticeRow(code, new Date(yield* Clock.currentTimeMillis).toISOString())
+    if (Option.isSome(yield* launches.get(row.subject))) return
+    yield* launches.insert(row).pipe(Effect.orDie)
     yield* Effect.logWarning("timeline.summary.notice").pipe(Effect.annotateLogs({ code }))
   })
+  const failures = lane.failures.pipe(Stream.runForEach(code => Effect.gen(function* () {
+    // An entry-local failure only prevents that entry's summary; one that stops the lane marks the whole rail.
+    if (STOPPING_FAILURES.includes(code) || lane.stoppedFor() === code) yield* markRail(lane.stoppedFor() ?? code)
+    yield* raise(code)
+  })))
+  // A stopped lane always says why, even when it stopped without a named cause: never nothing (ruling FE-19).
+  const stopped = Deferred.await(lane.stopped).pipe(Effect.andThen(Effect.suspend(() => {
+    const code = lane.stoppedFor() ?? "unavailable"
+    return Effect.andThen(markRail(code), raise(code))
+  })))
+  return Effect.all([failures, stopped], { concurrency: 2, discard: true })
+}
