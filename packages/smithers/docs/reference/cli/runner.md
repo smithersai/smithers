@@ -20,7 +20,8 @@ commit. The runner settles the files the agent changed.
 1. On the runner, run `smthrs runner token`. It writes 32 random bytes as
    base64url to `<state>/runner-token` (mode `0600`; the state directory is
    `~/.smithers/runner` unless `--state` says) and prints only the token's
-   SHA-256. It refuses to replace a token unless you pass `--rotate`.
+   SHA-256, as `sha256: <hex>`, or as JSON with `--format json`. It refuses to
+   replace a token unless you pass `--rotate`.
 2. An admin registers the runner on the host by its name, that SHA-256, its
    machine labels and its capacity. The token itself never leaves the runner
    except as the bearer of its own requests.
@@ -75,6 +76,11 @@ A profile:
 
 Which agents, logins and accounts a machine has is your own configuration. The
 host knows a profile only by its name.
+
+An agent with a sandbox of its own may refuse `jj` in the checkout, because a
+workspace's store lives in the mirror, outside the checkout. The job still
+works: the runner reads the change itself. A prompt shouldn't depend on the
+agent running `jj`.
 
 ## How a job runs
 

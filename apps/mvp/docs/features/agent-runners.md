@@ -23,7 +23,18 @@ An Admin of the repository does each step in person; an agent, a flow or a sandb
 1. On the runner machine, make its token. Only its SHA-256 leaves the machine:
 
    ```sh
-   smthrs runner token            # prints the token's SHA-256; the token stays in ~/.smithers/runner/runner-token (0600)
+   smthrs runner token --format json   # {"sha256":"<64 hex>"}; the token stays in ~/.smithers/runner/runner-token (0600)
+   ```
+
+   The text form prints `sha256: <64 hex>`: copy the hex alone.
+
+   There is no Settings page yet, so steps 2 and 3 are HTTP calls in your own session, which is what "in person" means.
+   A write with a session cookie must also say whose device sent it, or it is `401`: run them from the console of a
+   signed-in tab, with this `put`:
+
+   ```js
+   const { personId } = await (await fetch("/api/auth/session")).json()
+   const put = (path, body) => fetch(path, { method: "PUT", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-smithers-device-person": personId } })
    ```
 
 2. Register the runner for the repository, with the labels it carries and how many jobs it runs at once (1 to 64):
@@ -67,6 +78,10 @@ started; each records its change once in `runner_changes` or `agent_changes`. Re
 `todo/Agent` reads the repository's coding agent once per attempt and journals it. With one set, `agent/Session` hands
 the TODO to a runner:
 
+- **One agent at a time.** `todo/Agent` reads the coding agent when the attempt starts, so a TODO keeps its agent when
+  an Admin names another. To send two TODOs to two agents today, name the first, commit, wait for its claim, then name
+  the second. The TODO's pull request body is its prompt, so a repository that asks for results in the pull request
+  gets them from the transcript.
 - **Waiting for a runner.** Until a runner claims the job, the TODO reads Waiting for a runner (`todos.waiting`,
   decision 0135): `todo/Wait` reports it before the job is queued, and the claim route clears it for every claim and
   reclaim (`TodoSession.claimed`).
