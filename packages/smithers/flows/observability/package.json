@@ -35,7 +35,10 @@
   "exports": {
     "./package.json": "./package.json",
     ".": "./src/index.ts",
-    "./BrowserOtel": "./src/BrowserOtel.ts",
+    "./BrowserOtel": {
+      "types": "./src/BrowserOtel.d.vibe.ts",
+      "default": "./src/BrowserOtel.vibe"
+    },
     "./Endpoint": "./src/Endpoint.ts",
     "./FetchFailures": "./src/FetchFailures.ts",
     "./JournalLogger": "./src/JournalLogger.ts",
