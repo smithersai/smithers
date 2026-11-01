@@ -22,7 +22,7 @@ import { make, type MigrateError } from "./MigrateError.ts"
 import * as PromptHints from "./PromptHints.ts"
 import * as Report from "./Report.ts"
 import * as RunState from "./RunState.ts"
-import * as Units from "./Units.ts"
+import * as Units from "./Units.vibe"
 import * as ZodSchemaHints from "./ZodSchemaHints.ts"
 
 /**

@@ -59,7 +59,10 @@
     "./Report": "./src/Report.ts",
     "./RunState": "./src/RunState.ts",
     "./Scan": "./src/Scan.ts",
-    "./Units": "./src/Units.ts",
+    "./Units": {
+      "types": "./.vibe/declarations/src/Units.d.vibe.ts",
+      "default": "./src/Units.vibe"
+    },
     "./ZodSchemaHints": "./src/ZodSchemaHints.ts",
     "./flow/Archive": "./src/flow/Archive.ts",
     "./flow/Checkpoint": "./src/flow/Checkpoint.ts",

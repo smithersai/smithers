@@ -39,7 +39,7 @@ import { isTsconfig } from "../internal/Tsconfig.ts"
 import * as Versions from "../internal/Versions.ts"
 import { io, make, MigrateError } from "../MigrateError.ts"
 import * as Report from "../Report.ts"
-import * as Units from "../Units.ts"
+import * as Units from "../Units.vibe"
 
 /**
  * The Effect version every migrated project ends on. One pin, repository wide.

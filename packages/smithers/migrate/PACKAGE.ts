@@ -69,7 +69,7 @@ const securityReview = Smithers.SecurityReview({
         "src/flow/Layers.ts",
         "src/flow/Verify.ts",
         "src/flow/Transform.ts",
-        "src/Units.ts",
+        "src/Units.vibe",
         "src/internal/CliScripts.ts"
       ]
     },
