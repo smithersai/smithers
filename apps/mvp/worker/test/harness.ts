@@ -24,6 +24,7 @@ import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import { reset } from "./reset.ts"
 import * as Actor from "../Actor.ts"
 import * as RunCredentials from "../RunCredentials.ts"
 import * as SessionKeys from "../SessionKeys.ts"
@@ -63,9 +64,7 @@ export const branchRoles = (database: Layer.Layer<SqlClient.SqlClient, unknown>,
 export const testFile = (prefix: string) => {
   const runtime = ManagedRuntime.make(TestDatabase.layer(prefix))
   beforeAll(() => runtime.runPromise(Effect.void))
-  beforeEach(() =>
-    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE message_pins, timeline_summaries, timeline_phase_claims, messages, views, view_moves RESTART IDENTITY`))
-  )
+  beforeEach(() => runtime.runPromise(reset))
   afterAll(() => runtime.dispose())
   return runtime
 }
