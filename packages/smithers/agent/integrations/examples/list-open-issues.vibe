@@ -1,7 +1,6 @@
 import { Core, GitHub } from "@smthrs/integrations"
-import { Effect, Schema } from "effect"
 
-const Issue = Schema.Struct({ number: Schema.Number, title: Schema.String })
+schema Issue { number: number; title: string }
 
 /**
  * Lists the titles of a repository's open issues, following GitHub's
@@ -16,20 +15,20 @@ const Issue = Schema.Struct({ number: Schema.Number, title: Schema.String })
  *   refused request, and `decode-failed` for an item that is not an issue.
  * @since 1.0.0
  */
-export const listOpenIssueTitles = (
+export const listOpenIssueTitles = effect (
   client: GitHub.GitHubClient.GitHubClient,
   owner: string,
   repo: string
-) =>
-  Effect.gen(function*() {
-    const repository = yield* GitHub.Repository.requireRepositoryPath(owner, repo)
-    const page = yield* client.paginate(`/repos/${repository}/issues?state=open`, { maxPages: 5 })
-    const issues = yield* Schema.decodeUnknownEffect(Schema.Array(Issue))(page.items).pipe(
-      Effect.mapError((cause) =>
+) => {
+  const repository = try GitHub.Repository.requireRepositoryPath(owner, repo)
+  const page = try client.paginate(`/repos/${repository}/issues?state=open`, { maxPages: 5 })
+  const issues = try (Schema.decodeUnknownEffect(Schema.Array(Issue))(page.items)
+    |> Effect.mapError(
+      %,
+      (cause) =>
         new Core.IntegrationError.IntegrationError("decode-failed", "GitHub returned an item that is not an issue.", {
           retryable: false
         }, { cause })
-      )
-    )
-    return { titles: issues.map((issue) => issue.title), truncated: page.truncated }
-  })
+    ))
+  return { titles: issues.map((issue) => issue.title), truncated: page.truncated }
+}

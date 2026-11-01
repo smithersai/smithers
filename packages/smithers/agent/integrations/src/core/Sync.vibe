@@ -24,7 +24,6 @@
  * @since 1.0.0
  */
 
-import { Effect } from "effect"
 import { IntegrationError } from "./IntegrationError.ts"
 import type { SourceRecord } from "./SourceRecord.vibe"
 import { SourceStore } from "./SourceStore.ts"
@@ -60,7 +59,7 @@ export interface SyncAdapter {
   /** The stream within the connection, such as one channel or one repository. */
   readonly stream: string
   /** The changes after `cursor`; `null` asks for the initial listing. */
-  readonly changes: (cursor: string | null) => Effect.Effect<Changes, IntegrationError>
+  readonly changes: (cursor: string | null) => Changes!IntegrationError
 }
 
 /**
@@ -131,31 +130,27 @@ export interface RunOptions {
  * @category constructors
  * @since 1.0.0
  */
-export const runSync = (options: RunOptions): Effect.Effect<Report, IntegrationError, SourceStore> =>
-  Effect.gen(function*() {
+export const runSync = (options: RunOptions): Report!IntegrationError!SourceStore =>
+  (effect {
     const { adapter } = options
     const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES
     const scope = { provider: adapter.provider, connectionId: adapter.connectionId, stream: adapter.stream }
     if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > MAX_PAGES_LIMIT) {
-      return yield* Effect.fail(
-        new IntegrationError(
-          "invalid-config",
-          `Sync maxPages must be an integer between 1 and ${MAX_PAGES_LIMIT}.`,
-          { ...scope, maxPages, retryable: false }
-        )
+      throw new IntegrationError(
+        "invalid-config",
+        `Sync maxPages must be an integer between 1 and ${MAX_PAGES_LIMIT}.`,
+        { ...scope, maxPages, retryable: false }
       )
     }
-    const store = yield* SourceStore
-    if (yield* store.isRevoked(adapter.connectionId)) {
-      return yield* Effect.fail(
-        new IntegrationError(
-          "permission-denied",
-          `Connection "${adapter.connectionId}" is revoked, so it is not synchronized.`,
-          { ...scope, retryable: false }
-        )
+    const store = try SourceStore
+    if (try store.isRevoked(adapter.connectionId)) {
+      throw new IntegrationError(
+        "permission-denied",
+        `Connection "${adapter.connectionId}" is revoked, so it is not synchronized.`,
+        { ...scope, retryable: false }
       )
     }
-    let cursor = yield* store.cursor(adapter.connectionId, adapter.stream)
+    let cursor = try store.cursor(adapter.connectionId, adapter.stream)
     let report: Report = {
       ...scope,
       pages: 0,
@@ -169,19 +164,17 @@ export const runSync = (options: RunOptions): Effect.Effect<Report, IntegrationE
       done: false
     }
     while (report.pages < maxPages && !report.done) {
-      const changes = yield* adapter.changes(cursor)
+      const changes = try adapter.changes(cursor)
       // A page that promises more but names no position would be asked for
       // again forever. Refused before anything is written.
       if (!changes.done && changes.cursor === null) {
-        return yield* Effect.fail(
-          new IntegrationError(
-            "decode-failed",
-            `Sync adapter for "${adapter.connectionId}:${adapter.stream}" reported more pages without a cursor.`,
-            { ...scope, retryable: false }
-          )
+        throw new IntegrationError(
+          "decode-failed",
+          `Sync adapter for "${adapter.connectionId}:${adapter.stream}" reported more pages without a cursor.`,
+          { ...scope, retryable: false }
         )
       }
-      const committed = yield* store.commit({ ...scope, changes })
+      const committed = try store.commit({ ...scope, changes })
       if (changes.cursor !== null) cursor = changes.cursor
       report = {
         ...report,
@@ -197,12 +190,11 @@ export const runSync = (options: RunOptions): Effect.Effect<Report, IntegrationE
       }
     }
     return report
-  }).pipe(
-    Effect.withSpan("Sync.runSync", {
-      attributes: {
-        "integration.provider": options.adapter.provider,
-        "integration.connection": options.adapter.connectionId,
-        "integration.stream": options.adapter.stream
-      }
-    })
-  )
+  })
+  |> Effect.withSpan(%, "Sync.runSync", {
+    attributes: {
+      "integration.provider": options.adapter.provider,
+      "integration.connection": options.adapter.connectionId,
+      "integration.stream": options.adapter.stream
+    }
+  })

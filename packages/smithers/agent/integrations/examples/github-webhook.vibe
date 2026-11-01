@@ -1,5 +1,4 @@
 import { Core, GitHub } from "@smthrs/integrations"
-import { Effect, Option, Schema } from "effect"
 
 /**
  * One GitHub delivery as a receiver sees it: the exact body bytes and the
@@ -39,22 +38,21 @@ const decodeIssueComment = Schema.decodeUnknownOption(GitHub.Payload.IssueCommen
  *   payload.
  * @since 1.0.0
  */
-export const readIssueComment = (delivery: Delivery, secret: string): Effect.Effect<IssueComment | undefined> =>
+export const readIssueComment = (delivery: Delivery, secret: string): IssueComment | undefined!! =>
   Core.Signature.verifySignature({
     payload: delivery.body,
     secret,
     signature: delivery.signature,
     prefix: Core.Signature.GITHUB_SIGNATURE_PREFIX
-  }).pipe(
-    Effect.map((verified) => {
-      if (!verified) return undefined
-      const event = decodeIssueComment(JSON.parse(delivery.body))
-      if (Option.isNone(event)) return undefined
-      return {
-        repository: event.value.repository.full_name,
-        issueNumber: event.value.issue.number,
-        author: event.value.comment.user?.login ?? "unknown",
-        body: event.value.comment.body ?? ""
-      }
-    })
-  )
+  })
+  |> Effect.map(%, (verified) => {
+    if (!verified) return undefined
+    const event = decodeIssueComment(JSON.parse(delivery.body))
+    if (Option.isNone(event)) return undefined
+    return {
+      repository: event.value.repository.full_name,
+      issueNumber: event.value.issue.number,
+      author: event.value.comment.user?.login ?? "unknown",
+      body: event.value.comment.body ?? ""
+    }
+  })

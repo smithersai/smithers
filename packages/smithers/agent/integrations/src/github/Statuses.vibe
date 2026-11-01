@@ -20,7 +20,6 @@
  * @since 1.0.0
  */
 
-import { Effect, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { requireRepositoryPath } from "./Repository.ts"
@@ -108,25 +107,25 @@ const invalid = (field: string, message: string, value: unknown): IntegrationErr
     retryable: false
   })
 
-const requireInput = (sha: string, input: Input): Effect.Effect<Record<string, string>, IntegrationError> => {
+const requireInput = (sha: string, input: Input): Record<string, string>!IntegrationError => {
   if (typeof sha !== "string" || !SHA.test(sha)) {
-    return Effect.fail(invalid("sha", "A commit SHA must be 40 or 64 lowercase hex digits.", sha))
+    throw invalid("sha", "A commit SHA must be 40 or 64 lowercase hex digits.", sha)
   }
   if (!(STATES as ReadonlyArray<string>).includes(input.state)) {
-    return Effect.fail(invalid("state", "A status's state must be pending, success, failure or error.", input.state))
+    throw invalid("state", "A status's state must be pending, success, failure or error.", input.state)
   }
   if (typeof input.context !== "string" || !CONTEXT_PATTERN.test(input.context)) {
-    return Effect.fail(invalid("context", "A status's context must be 1 to 255 printable characters.", input.context))
+    throw invalid("context", "A status's context must be 1 to 255 printable characters.", input.context)
   }
   if (input.targetUrl !== undefined && !isHttps(input.targetUrl)) {
-    return Effect.fail(invalid("targetUrl", "A status's target URL must be an absolute https URL.", input.targetUrl))
+    throw invalid("targetUrl", "A status's target URL must be an absolute https URL.", input.targetUrl)
   }
-  return Effect.succeed({
+  return {
     state: input.state,
     context: input.context,
     ...(input.description === undefined ? {} : { description: cut(input.description) }),
     ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl })
-  })
+  }
 }
 
 const isHttps = (url: string): boolean => {
@@ -155,17 +154,16 @@ export const create = (
   repo: string,
   sha: string,
   input: Input
-): Effect.Effect<Status, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const body = yield* requireInput(sha, input)
-    return yield* client.request("POST", `/repos/${repository}/statuses/${sha}`, body, {
+): Status!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const body = try requireInput(sha, input)
+    return try client.request("POST", `/repos/${repository}/statuses/${sha}`, body, {
       schema: Status,
       retryUnsafeWrites: true
     })
-  }).pipe(
-    Effect.withSpan("GitHub.Statuses.create", {
-      attributes: { "github.owner": owner, "github.repo": repo, "github.status.state": input.state }
-    })
-  )
+  })
+  |> Effect.withSpan(%, "GitHub.Statuses.create", {
+    attributes: { "github.owner": owner, "github.repo": repo, "github.status.state": input.state }
+  })

@@ -46,7 +46,10 @@
     "./core/ActionFailure": "./src/core/ActionFailure.ts",
     "./core/AuthorizationUrl": "./src/core/AuthorizationUrl.ts",
     "./core/Channel": "./src/core/Channel.ts",
-    "./core/Connection": "./src/core/Connection.ts",
+    "./core/Connection": {
+      "types": "./src/core/Connection.d.vibe.ts",
+      "default": "./src/core/Connection.vibe"
+    },
     "./core/CursorStore": "./src/core/CursorStore.ts",
     "./core/ExternalEvent": {
       "types": "./src/core/ExternalEvent.d.vibe.ts",
@@ -57,14 +60,20 @@
     "./core/OAuthToken": "./src/core/OAuthToken.ts",
     "./core/Pkce": "./src/core/Pkce.ts",
     "./core/SignalName": "./src/core/SignalName.ts",
-    "./core/Signature": "./src/core/Signature.ts",
+    "./core/Signature": {
+      "types": "./src/core/Signature.d.vibe.ts",
+      "default": "./src/core/Signature.vibe"
+    },
     "./core/Source": "./src/core/Source.ts",
     "./core/SourceRecord": {
       "types": "./src/core/SourceRecord.d.vibe.ts",
       "default": "./src/core/SourceRecord.vibe"
     },
     "./core/SourceStore": "./src/core/SourceStore.ts",
-    "./core/Sync": "./src/core/Sync.ts",
+    "./core/Sync": {
+      "types": "./src/core/Sync.d.vibe.ts",
+      "default": "./src/core/Sync.vibe"
+    },
     "./github": "./src/github.ts",
     "./github/Actions": "./src/github/Actions.ts",
     "./github/AppAuth": "./src/github/AppAuth.ts",
