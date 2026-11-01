@@ -7,7 +7,7 @@ import { Input, type RunId, type SourceId } from "@smthrs/journal/JournalEvent"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect, Fiber } from "effect"
 import type * as Scope from "effect/Scope"
-import * as GrantEvent from "../src/GrantEvent.ts"
+import * as GrantEvent from "../src/GrantEvent.vibe"
 import * as JournalGrantStore from "../src/JournalGrantStore.ts"
 import * as Workspace from "../src/Workspace.ts"
 
