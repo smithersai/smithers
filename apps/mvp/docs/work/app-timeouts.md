@@ -29,6 +29,9 @@ checks and row replication without TRUNCATE's catalog scan or file replacement.
 confirms that TRUNCATE sequentially scans pg_constraint.
 Two regressions first failed with TRUNCATE: a reset blocked by a real reader,
 and the table-file identity check. Both passed after the change in 19–21 ms.
+On main the reset landed separately as `worker/test/reset.ts` (1dc140ad06),
+with its own catalog-scan regression, so this lane's reset and its regressions
+were not landed; the harness keeps this lane's slow-await trace.
 
 The relay independently waited on an unassigned loopback address at its default
 HTTPS port on macOS. Its real dependency now selects an owned local port, with
