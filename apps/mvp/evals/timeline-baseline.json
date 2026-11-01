@@ -1,4 +1,5 @@
 {
+  "note": "Measured 2026-10-31 on the claude-code haiku seat before the faithfulness prompt fix and per-phase judging. A record only: every fixture must clear evals/timelineGrades.ts on its own.",
   "model": "haiku",
   "scores": {
     "summariesMade": 0.9907407407407408,

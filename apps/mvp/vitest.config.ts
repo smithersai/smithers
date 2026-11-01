@@ -220,6 +220,8 @@ export default defineConfig({
         "evals/checks.ts",
         "evals/judge.ts",
         "evals/report.ts",
+        // What the timeline eval judges each phase on, and the bars every fixture must clear.
+        "evals/timelineGrades.ts",
         // How a flow's video and GIF are paced, captioned and checked (e2e/gifs.mjs, e2e/check-gifs.mjs).
         "e2e/frames.ts",
         // The e2e run against a deployment: its summary, spend guard and stored session (docs/infrastructure.md#against-a-deployment).
