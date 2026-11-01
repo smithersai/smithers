@@ -1,0 +1,27 @@
+$ vitest run --maxWorkers=2
+
+ RUN  v5.0.0 <workspace>/apps/mvp
+      Coverage enabled with v8
+
+(node:74822) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:74823) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:74982) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:75746) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:79760) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:79806) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ src/features/repo/repo.test.ts (23 tests | 1 failed) 127286ms
+   ❯ cloning from a tab (3)
+     × Clone shows cloning, Electric delivers the row, and the view opens at its README 21566ms
+(node:83282) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:83396) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[ELIFECYCLE] Test failed. See above for more details.
+
+Stopped by SIGINT after Clone failure; exit130. No complete coverage result.

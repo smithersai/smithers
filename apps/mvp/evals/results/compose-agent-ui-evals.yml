@@ -1,0 +1,9 @@
+# A separate project/volume of apps/mvp/docker-compose.yml; no shared farm slot changes.
+# docker compose -p smithers-agent-ui-evals -f apps/mvp/docker-compose.yml -f apps/mvp/evals/results/compose-agent-ui-evals.yml up -d --wait postgres electric
+services:
+  postgres:
+    ports: !override ["127.0.0.1:55487:5432"]
+  electric:
+    ports: !override ["127.0.0.1:31388:3000"]
+  pgbouncer:
+    ports: !override ["127.0.0.1:55488:5432"]

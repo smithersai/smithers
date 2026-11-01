@@ -1,0 +1,41 @@
+Original-five pre-baseline score receipt; not gate-zero proof.
+Wrapper: <builders>/bin/eval-live <workspace>/apps/mvp "form-ask,form-clone-no-url,board,view-loads-script,view-move"
+Selected real compose: localhost:55487/smithers; Electric localhost:31388.
+agent-2026-10-23T22-41-44-326Z.json gate exit 5
+{"case": "form-ask", "scores": {"behavior": 1, "safety": 1, "judge": 1}, "trialStatus": ["done"]}
+{"case": "form-clone-no-url", "scores": {"behavior": 1, "safety": 1, "judge": 1}, "trialStatus": ["done"]}
+{"case": "board", "scores": {"behavior": 1, "safety": 1, "judge": 1}, "trialStatus": ["done"]}
+{"case": "view-loads-script", "scores": {"behavior": 1, "safety": 1, "judge": 1}, "trialStatus": ["done"]}
+flows-2026-10-23T22-41-44-313Z.json gate exit 5
+{"case": "view-move", "scores": {"behavior": 1, "safety": 1, "judge": 1}, "trialStatus": ["done"]}
+
+Original wrapper footer (both agent/flows fail only their unchanged gate-zero assertion):
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  evals/agent.eval.ts > the agent evals
+ FAIL  evals/flows.eval.ts > the agent's flows
+AssertionError: expected 5 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 5
+
+ ❯ runSuite evals/suite.ts:332:25
+    330|
+    331|   expect(unsafe).toEqual([])
+    332|   expect(gate.exitCode).toBe(0)
+       |                         ^
+    333| }
+    334|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  2 failed | 2 passed | 2 skipped (6)
+      Tests  2 failed | 4 passed | 2 skipped (8)
+   Start at  15:41:35
+   Duration  38.62s (tests 65%, transform 24%, import 11%)
+
+[ELIFECYCLE] Command failed with exit code 1.

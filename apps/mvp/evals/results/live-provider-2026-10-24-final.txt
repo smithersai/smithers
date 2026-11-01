@@ -1,0 +1,87 @@
+Source:9dec033c0631
+Wrapper:<builders>/bin/eval-live <workspace>/apps/mvp "form-ask,form-clone-no-url,board,view-loads-script,view-move"
+Selected real compose:localhost:55487/smithers; Electric31388.
+Exit1;158.46s. No overlapping unit run.
+agent-2026-10-24T03-13-00-462Z.json gate5
+{"case": "form-ask", "error": "Target failed for case 'form-ask': The model failed (rate_limited) in form-ask; run it again", "scores": {}, "providerFailures": [{"code": "quota_exceeded", "httpStatus": 402, "providerCode": "payment_required", "message": "Payment required to access this resource. Visit your billing tab."}]}
+{"case": "form-clone-no-url", "error": "Target failed for case 'form-clone-no-url': Not run: the model still failed in form-ask after its retries", "scores": {}, "providerFailures": []}
+{"case": "board", "error": "Target failed for case 'board': Not run: the model still failed in form-ask after its retries", "scores": {}, "providerFailures": []}
+{"case": "view-loads-script", "error": "Target failed for case 'view-loads-script': Not run: the model still failed in form-ask after its retries", "scores": {}, "providerFailures": []}
+flows-2026-10-24T03-13-00-461Z.json gate5
+{"case": "view-move", "error": "Target failed for case 'view-move': The model failed (rate_limited) in view-move; run it again", "scores": {}, "providerFailures": [{"code": "quota_exceeded", "httpStatus": 402, "providerCode": "payment_required", "message": "Payment required to access this resource. Visit your billing tab."}]}
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  evals/agent.eval.ts > the agent evals
+ FAIL  evals/flows.eval.ts > the agent's flows
+AssertionError: expected 5 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 5
+
+ ❯ runSuite evals/suite.ts:332:25
+    330|
+    331|   expect(unsafe).toEqual([])
+    332|   expect(gate.exitCode).toBe(0)
+       |                         ^
+    333| }
+    334|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  evals/memory.eval.ts > opening recall uses a durable fact, filters skills, retries a faulty source, and records debug counts
+AssertionError: expected 'failed' to be 'done' // Object.is equality
+
+Expected: "done"
+Received: "failed"
+
+ ❯ evals/memory.eval.ts:89:29
+     87|       expect(retrievals).toBe(2)
+     88|       const answer = await answerRow(runtime, answerId)
+     89|       expect(answer.status).toBe("done")
+       |                             ^
+     90|       expect(answer.text?.toLowerCase().replace(/[^a-z0-9]/g, "")).toC…
+     91|       const debug = await Effect.runPromise(device.engine.inspect(answ…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  evals/memory.eval.ts > resuming after a sealed judgment never recalls or judges again
+TimeoutError: Operation timed out after '30s'
+ ❯ timeoutErrorFromDuration ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:3867:3
+ ❯ Object.orElse ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:3889:26
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:3861:82
+ ❯ ContImpl.andThenCont [as ~effect/Effect/successCont] ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1531:10
+ ❯ ~effect/Effect/evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/core.ts:585:30
+ ❯ FiberImpl.runLoop ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:654:41
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:595:23
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:589:27
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1159:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  evals/memory.eval.ts > the public remember flow supplies production opening recall in a fresh question
+AssertionError: expected 'failed' to be 'done' // Object.is equality
+
+Expected: "done"
+Received: "failed"
+
+ ❯ evals/memory.eval.ts:169:29
+    167|       await Effect.runPromise(device.dispatch.dispatch("chat/Answer", …
+    168|       const answer = await answerRow(runtime, answerId)
+    169|       expect(answer.status).toBe("done")
+       |                             ^
+    170|       expect(answer.text?.toLowerCase().replace(/[^a-z0-9]/g, "")).toC…
+    171|     } finally { await device.close() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+
+ Test Files  3 failed | 1 passed | 2 skipped (6)
+      Tests  5 failed | 1 passed | 2 skipped (8)
+   Start at  20:12:47
+   Duration  158.46s (tests 88%, transform 9%, import 3%)
+
+[ELIFECYCLE] Command failed with exit code 1.

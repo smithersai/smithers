@@ -1,0 +1,188 @@
+Source:9dec033c0631
+Command:pnpm test --maxWorkers=2
+Selected compose:localhost:55487/smithers; Electric31388
+No reporter override, no overlapping checks.
+Exit:1
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  worker/RepoApi.test.ts > reads > a tree reads page by page, and stops at REPO_TREE_MAX_PATHS saying it is truncated
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ worker/RepoApi.test.ts:367:3
+    365|   })
+    366|
+    367|   test("a tree reads page by page, and stops at REPO_TREE_MAX_PATHS sa…
+       |   ^
+    368|     const files = Object.fromEntries(Array.from({ length: 7 }, (_, ind…
+    369|     const all = Array.from({ length: 7 }, (_, index) => `f${index}.txt…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  worker/RepoApi.test.ts > reads > Code Storage busy: 503 with its Retry-After, never cached; the next read answers
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ worker/RepoApi.test.ts:457:3
+    455|   })
+    456|
+    457|   test("Code Storage busy: 503 with its Retry-After, never cached; the…
+       |   ^
+    458|     const h = await repoHarness(runtime)
+    459|     const { headSha } = await h.seed("octocat", "Spoon-Knife")
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  worker/RepoApi.test.ts > reads > this month's reads spent: a miss is 503 capacity, a cached answer still serves
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ worker/RepoApi.test.ts:473:3
+    471|   })
+    472|
+    473|   test("this month's reads spent: a miss is 503 capacity, a cached ans…
+       |   ^
+    474|     const h = await repoHarness(runtime, { config: { REPO_MAX_READ_GB_…
+    475|     const { headSha } = await h.seed("octocat", "Spoon-Knife")
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  worker/RepoApi.test.ts > reads > this month's reads spent: a miss is 503 capacity, a cached answer still serves
+Error: Hook timed out in 30000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".
+ ❯ repoHarness worker/test/repos.ts:187:3
+    185|   const scope = await Effect.runPromise(Scope.make())
+    186|   const fibers = new Map<string, Fiber.Fiber<unknown, unknown>>()
+    187|   onTestFinished(async () => {
+       |   ^
+    188|     await Effect.runPromise(Fiber.interruptAll([...fibers.values()]))
+    189|     await Effect.runPromise(Scope.close(scope, Exit.void))
+ ❯ worker/RepoApi.test.ts:474:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  worker/flows/Todo.test.ts > the todo run > a person's steer, admitted while the agent works, reaches its next turn and is in the change
+AssertionError: expected { _id: 'Exit', _tag: 'Failure', …(1) } to deeply equal { _id: 'Exit', _tag: 'Success', …(1) }
+
+- Expected
++ Received
+
+  {
+    "_id": "Exit",
+-   "_tag": "Success",
+-   "value": {
+-     "state": "merged",
++   "_tag": "Failure",
++   "cause": {
++     "_id": "Cause",
++     "failures": [
++       {
++         "_tag": "Interrupt",
++         "fiberId": 7548,
++       },
++     ],
+    },
+  }
+
+ ❯ worker/flows/Todo.test.ts:331:24
+    329|       const ran = await ctx.run(start)
+    330|
+    331|       expect(ran.exit).toEqual(Exit.succeed({ state: "merged" }))
+       |                        ^
+    332|       // Not in the turn it arrived during; in the next one, once, as …
+    333|       expect(requests[0]).not.toContain("steered widget")
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  src/features/chat/chat.test.ts > the agent > the asking tab's own agent answers once ChatApi takes the question: the answer streams, then settles
+AssertionError: expected [ 'user done hello', …(1) ] to deeply equal [ 'user done hello', …(1) ]
+
+- Expected
++ Received
+
+  [
+    "user done hello",
+-   "assistant done Hello \"there\"",
++   "assistant streaming Hello \"there\"",
+  ]
+
+ ❯ src/features/chat/chat.test.ts:230:43
+    228|     reply.say('lo "there"')
+    229|     reply.done()
+    230|     await until(() => expect(tab.shown()).toEqual(["user done hello", …
+       |                                           ^
+    231|     expect(tab.store.messages.tanstack.get(answerId)).toMatchObject({ …
+    232|     const answered = Metric.withAttributes(dispatches, {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  src/features/repo/faults.test.ts > opening a view > a reserved or invalid name is missing at once, and loads nothing
+effect/sql/SqlError: PgConnection: Connection timed out
+ ❯ Object.orElse ../../node_modules/.pnpm/@effect+sql-pg@4.0.5_effect@4.0.5/node_modules/@effect/sql-pg/src/PgConnection.ts:324:13
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:3861:82
+ ❯ ContImpl.andThenCont [as ~effect/Effect/successCont] ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1531:10
+ ❯ ~effect/Effect/evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/core.ts:585:30
+ ❯ FiberImpl.runLoop ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:654:41
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:595:23
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:589:27
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1159:17
+ ❯ Array.<anonymous> ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1697:11
+
+Caused by: effect/sql/SqlError/ConnectionError: PgConnection: Connection timed out
+ ❯ Object.orElse ../../node_modules/.pnpm/@effect+sql-pg@4.0.5_effect@4.0.5/node_modules/@effect/sql-pg/dist/PgConnection.js:77:13
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1659:159
+ ❯ ContImpl.andThenCont [as ~effect/Effect/successCont] ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1055:10
+ ❯ ~effect/Effect/evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/core.js:342:30
+ ❯ FiberImpl.runLoop ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:453:97
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:402:23
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:396:27
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:808:17
+ ❯ Array.<anonymous> ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1137:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { _tag: 'ConnectionError', operation: 'connect', '~effect/sql/SqlError/Reason': '~effect/sql/SqlError/Reason' }
+Caused by: Error: Connection timed out
+ ❯ Object.orElse ../../node_modules/.pnpm/@effect+sql-pg@4.0.5_effect@4.0.5/node_modules/@effect/sql-pg/dist/PgConnection.js:78:14
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1659:159
+ ❯ ContImpl.andThenCont [as ~effect/Effect/successCont] ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1055:10
+ ❯ ~effect/Effect/evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/core.js:342:30
+ ❯ FiberImpl.runLoop ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:453:97
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:402:23
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:396:27
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:808:17
+ ❯ Array.<anonymous> ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1137:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  4 failed | 300 passed | 4 skipped (308)
+      Tests  6 failed | 3933 passed | 2 expected fail | 10 skipped (3951)
+   Start at  19:28:46
+   Duration  2612.97s (tests 93%, import 7%)
+
+    Isolate  308 workers spawned · ~67ms startup each (spawn + environment, per file)
+             at least ~10.18s faster with isolate: false — reuses workers across files instead of one per file
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   99.99 |    99.99 |     100 |   99.99 |                   
+ worker            |   99.96 |    99.94 |     100 |   99.96 |                   
+  RepoApi.ts       |   99.57 |    99.36 |     100 |   99.52 | 349               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 99.99% ( 22150/22151 )
+Branches     : 99.99% ( 12042/12043 )
+Functions    : 100% ( 6655/6655 )
+Lines        : 99.99% ( 19207/19208 )
+================================================================================
+ERROR: Coverage for lines (99.99%) does not meet global threshold (100%)
+ERROR: Coverage for statements (99.99%) does not meet global threshold (100%)
+ERROR: Coverage for branches (99.99%) does not meet global threshold (100%)
+[ELIFECYCLE] Test failed. See above for more details.
+
+Matching Todo lease warning from same exact run:
+[19:36:36.050] WARN (#7548): run lease lapsed; interrupting owned work {
+  runId: 'todo:b4d69716-3415-43a6-96aa-77d7fa4f9d50',
+  unconfirmedMs: 19003
+}

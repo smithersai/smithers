@@ -1,0 +1,19 @@
+// Observer only: does not change scheduling, assertions, retries or coverage.
+export default class UnitProgress {
+  completed = 0
+  onTestCaseResult(test) {
+    const result = test.result()
+    if (result.state === 'failed') console.log('UNIT_FAILURE', JSON.stringify({
+      file: test.module.relativeModuleId,
+      test: test.fullName,
+      errors: result.errors.map(({ name, message, stack }) => ({ name, message, stack })),
+    }))
+  }
+  onTestModuleEnd(module) {
+    console.log('UNIT_PROGRESS', JSON.stringify({
+      completed: ++this.completed,
+      file: module.relativeModuleId,
+      state: module.state(),
+    }))
+  }
+}

@@ -1,0 +1,209 @@
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/FileTabs.navigation.test.ts > persisted keyboard close survives the real repository route reopening
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/FileTabs.navigation.test.ts:28:1
+     26| const base = "/octocat/Spoon-Knife/blob/main/"
+     27|
+     28| test("persisted keyboard close survives the real repository route reop…
+       | ^
+     29|   const h = await repoHarness(server)
+     30|   await h.seed("octocat", "Spoon-Knife")
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  tests/ThemeButton.test.ts > system changes update the button and every mode view without saving a preference
+AssertionError: expected 'Switch to light mode' to be 'Switch to dark mode' // Object.is equality
+
+Expected: "Switch to dark mode"
+Received: "Switch to light mode"
+
+ ❯ tests/ThemeButton.test.ts:72:8
+     70|     await act(async () => {})
+     71|     expect(container.querySelector("button")?.getAttribute("aria-label…
+     72|       .toBe(mode === "dark" ? "Switch to light mode" : "Switch to dark…
+       |        ^
+     73|     expect(container.querySelectorAll("button circle")).toHaveLength(m…
+     74|     expect([...container.querySelectorAll("output")].map((node) => nod…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  src/features/agent/memory.test.ts > remember returns a save receipt, stores in the host-owned bank and replaces the same key
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/features/agent/memory.test.ts:113:1
+    111|   expect(result.candidates).toContainEqual(expect.objectContaining({ k…
+    112|   expect(result.candidates.some((row) => row.kind === "skill")).toBe(f…
+    113| })
+       | ^
+    114|
+    115| test("remember returns a save receipt, stores in the host-owned bank a…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  src/features/agent/memory.test.ts > a nonempty opening is unavailable through the durable judge seat
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/features/agent/memory.test.ts:131:46
+    131|
+    132|
+    133| test.each(["judged", "unavailable"] as const)("a nonempty opening is %…
+       |                                            ^
+    134|   let attempts = 0
+    135|   const agent = await openAgent(runtime, (request) => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  src/features/domains/domains.test.ts > a Maintainer's Settings page > adds a domain: Adding… until ChatApi takes it, then its row: pending, with the CNAME to add
+AssertionError: expected [] to match object [ { …(5) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "certificate": "unmanaged",
+-     "hostname": "docs.vibelang-e2e.example",
+-     "records": [
+-       ObjectContaining {
+-         "name": "docs.vibelang-e2e.example",
+-         "type": "CNAME",
+-       },
+-     ],
+-     "state": "pending",
+-     "verification": "pending",
+-   },
+- ]
++ []
+
+ ❯ src/features/domains/domains.test.ts:76:26
+     74|     await until(() => expect(tab.saves()).toEqual([]))
+     75|     await until(() =>
+     76|       expect(tab.list()).toMatchObject([
+       |                          ^
+     77|         {
+     78|           hostname: "docs.vibelang-e2e.example",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  src/features/domains/domains.test.ts > a Maintainer's Settings page > showing the same repository again keeps its list; another repository's starts empty
+AssertionError: expected [] to deeply equal [ 'www.vibelang-e2e.example' ]
+
+- Expected
++ Received
+
+- [
+-   "www.vibelang-e2e.example",
+- ]
++ []
+
+ ❯ src/features/domains/domains.test.ts:108:69
+    106|     const tab = await openSettings(maintainer)
+    107|     tab.domains.actions.add("www.vibelang-e2e.example")
+    108|     await until(() => expect(tab.list().map((row) => row.hostname)).to…
+       |                                                                     ^
+    109|     await tab.domains.actions.open(owner, name)
+    110|     expect(tab.list().map((row) => row.hostname)).toEqual(["www.vibela…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
+
+ FAIL  src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/features/timeline/engine.test.ts:112:1
+    110|   expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(new…
+    111| })
+    112|
+       | ^
+    113|
+    114| test("a model grant-store failure leaves the summary unavailable witho…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯
+
+ FAIL  src/features/secrets/secrets.test.ts > an Admin's Secrets page > Add and Rotate: Saving until the list shows the write; the form clears; the value is kept nowhere
+AssertionError: expected { id: 'github/octo/hello|add', …(12) } to match object { state: 'done', failure: null, …(1) }
+(10 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "failure": null,
+-   "saved": 1,
++   "saved": 0,
+    "state": "done",
+  }
+
+ ❯ src/features/secrets/secrets.test.ts:190:47
+    188|     await until(() => expect(tab.rows()).toEqual([{ name: "STRIPE_KEY"…
+    189|     // ChatApi took it (`saved` keys the form, so its fields clear), a…
+    190|     await until(() => expect(tab.form("add")).toMatchObject({ state: "…
+       |                                               ^
+    191|     expect(Number.isNaN(Date.parse(tab.list.toArray[0]!.updatedAt))).t…
+    192|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/9]⎯
+
+ FAIL  src/features/secrets/secrets.test.ts > an Admin's Secrets page > a write the list doesn't show within the deadline says it hasn't shown up yet; one that landed stays landed
+AssertionError: expected { id: 'github/octo/hello|add', …(12) } to match object { state: 'confirming', …(2) }
+(10 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "saved": 2,
++   "saved": 1,
+    "secret": "NEVER_KEY",
+-   "state": "confirming",
++   "state": "late",
+  }
+
+ ❯ src/features/secrets/secrets.test.ts:347:47
+    345|     faulty.state.next.push("taken")
+    346|     expect(tab.actions.add("NEVER_KEY", VALUE, "api.stripe.com")).toBe…
+    347|     await until(() => expect(tab.form("add")).toMatchObject({ state: "…
+       |                                               ^
+    348|     const taken = Date.now()
+    349|     await until(() => expect(tab.form("add")).toMatchObject({ state: "…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/9]⎯
+
+
+ Test Files  6 failed | 298 passed | 4 skipped (308)
+      Tests  9 failed | 3930 passed | 2 expected fail | 10 skipped (3951)
+   Start at  16:05:34
+   Duration  3098.54s (tests 91%, import 8%, transform 1%)
+
+    Isolate  308 workers spawned · ~92ms startup each (spawn + environment, per file)
+             at least ~14.12s faster with isolate: false — reuses workers across files instead of one per file
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   99.92 |    99.91 |   99.81 |   99.95 |                   
+ ...features/agent |   99.68 |      100 |   99.14 |   99.64 |                   
+  memory.ts        |   98.33 |      100 |   95.83 |   98.03 | 44                
+ ...atures/domains |   93.54 |    93.06 |   86.74 |   96.24 |                   
+  actions.ts       |   82.25 |    76.92 |   73.91 |   93.75 | 21-24             
+  domains.ts       |   84.61 |      100 |      75 |   83.33 | 54-55             
+  store.ts         |   86.95 |       50 |      75 |   86.36 | 56,69-74          
+ ...atures/secrets |     100 |    98.13 |     100 |     100 |                   
+  actions.ts       |     100 |    95.34 |     100 |     100 | 172,184           
+ ...features/theme |     100 |    94.44 |     100 |     100 |                   
+  store.ts         |     100 |    93.75 |     100 |     100 | 90                
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 99.92% ( 22129/22146 )
+Branches     : 99.91% ( 12029/12039 )
+Functions    : 99.81% ( 6643/6655 )
+Lines        : 99.95% ( 19195/19204 )
+================================================================================
+ERROR: Coverage for lines (99.95%) does not meet global threshold (100%)
+ERROR: Coverage for functions (99.81%) does not meet global threshold (100%)
+ERROR: Coverage for statements (99.92%) does not meet global threshold (100%)
+ERROR: Coverage for branches (99.91%) does not meet global threshold (100%)
+[ELIFECYCLE] Test failed. See above for more details.

@@ -1,0 +1,20 @@
+Source:9dec033c0631
+Command:pnpm exec vitest run src/features/chat/chat.test.ts worker/flows/Todo.test.ts worker/RepoApi.test.ts src/features/repo/faults.test.ts --maxWorkers=2 -t "the asking tab's own agent answers|a person's steer, admitted|a tree reads page by page|Code Storage busy: 503|this month's reads spent|a reserved or invalid name is missing"
+Selected real compose:localhost:55487/smithers; Electric31388
+Exit1: all6behaviorcases pass, partial global coverage correctly fails100% gate.
+
+ Test Files  4 passed (4)
+      Tests  6 passed | 204 skipped (210)
+   Start at  20:17:30
+   Duration  23.23s (tests 62%, transform 25%, import 14%)
+
+=============================== Coverage summary ===============================
+Statements   : 38.16% ( 8455/22151 )
+Branches     : 10.9% ( 1313/12043 )
+Functions    : 26.74% ( 1780/6655 )
+Lines        : 41.96% ( 8061/19208 )
+================================================================================
+ERROR: Coverage for lines (41.96%) does not meet global threshold (100%)
+ERROR: Coverage for functions (26.74%) does not meet global threshold (100%)
+ERROR: Coverage for statements (38.16%) does not meet global threshold (100%)
+ERROR: Coverage for branches (10.9%) does not meet global threshold (100%)

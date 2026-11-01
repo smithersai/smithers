@@ -1,0 +1,53 @@
+
+ RUN  v5.0.0 <workspace>/apps/mvp
+      Coverage enabled with v8
+
+(node:86005) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ src/features/repo/repo.test.ts (23 tests | 1 failed | 22 skipped) 18448ms
+   ❯ cloning from a tab (3)
+     × Clone shows cloning, Electric delivers the row, and the view opens at its README 17988ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/repo/repo.test.ts > cloning from a tab > Clone shows cloning, Electric delivers the row, and the view opens at its README
+AssertionError: expected { …(9) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "$collectionId": "repo-clones",
+  "$hasPendingWrites": false,
+  "$key": "github/octocat/spoon-knife",
+  "$origin": "local",
+  "$synced": true,
+  "id": "github/octocat/spoon-knife",
+  "name": "Spoon-Knife",
+  "owner": "octocat",
+  "status": "requesting",
+}
+
+ ❯ waitFor.timeout src/features/repo/repo.test.ts:83:50
+     81|     expect(header(tab)).toEqual({ kind: "cloning" })
+     82|     // The Clone button runs `repo/clone` on this device's engine, who…
+     83|     await waitFor(() => expect(tab.view().clone).toBeUndefined(), { ti…
+       |                                                  ^
+     84|     expect(tab.count(clones, { outcome: "started" })).toBe(1)
+     85|     expect(tab.lines("repo.clone")[0]!.annotations).toMatchObject({ ou…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 22 skipped (23)
+   Start at  18:08:04
+   Duration  32.61s (tests 60%, transform 28%, import 12%)
+
+  Transform  transforming modules took 8.59s · 28% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+
+
+Filtered coverage gate remains100% and exits1; this receipt records the behavioral failure.

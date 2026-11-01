@@ -1,0 +1,26 @@
+Source:9dec033c0631
+Node:26.5.0
+Command:pnpm --dir apps/mvp typecheck
+Exit:0
+$ tsc -p tsconfig.json && tsc -p worker/tsconfig.json && tsc -p infra/tsconfig.json && tsc -p evals/tsconfig.json
+
+Command:pnpm exec smithers-build test //apps/mvp:importRules
+Exit:0
+verb: test
+pattern: "//apps/mvp:importRules"
+jobs: 14
+durationMs: 2719.525833999999
+counts:
+  hit: 0
+  ran: 1
+  failed: 0
+  skipped: 0
+ok: true
+results[1]{label,target,status,durationMs,key}:
+  "//apps/mvp:importRules",NodeTest,ran,2716.394416,db850d06903f55e6bcdf9aadf173f80b5dfa74d575fdfab00a160d6705245cdf
+cta:
+  description: "Suggested commands:"
+  commands[3]{command,description}:
+    "smithers-build explain '//apps/mvp:importRules' --workspace '<workspace>'",Inspect the target and its dependencies
+    smithers-build targets --workspace '<workspace>',Discover available targets
+    smithers-build cache status --workspace '<workspace>',Inspect local cache usage

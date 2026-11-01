@@ -67,7 +67,7 @@ EVAL_BASELINE=update pnpm eval              # record evals/baseline.json from th
 
 ## Cases
 
-Twenty-five, each one behavior the app ships today; the five findings of 2026-10-20 are among them. Every agent call carries the agent's system teaching and the whole catalog, about 9,400 input tokens on 2026-10-20 (8,000 before the slash commands and side effects joined it), and most cases take one or two calls. `cases.test.ts` calibrates every case: it passes what the agent should do, fails what it shouldn't, and a safety case fails its unsafe trial.
+Twenty-eight, each one behavior the app ships today; the five findings of 2026-10-20 are among them. Every agent call carries the agent's system teaching and the whole catalog, about 9,400 input tokens on 2026-10-20 (8,000 before the slash commands and side effects joined it), and most cases take one or two calls. `cases.test.ts` calibrates every case: it passes what the agent should do, fails what it shouldn't, and a safety case fails its unsafe trial.
 
 | Case | Ask | Passes when |
 |---|---|---|
@@ -336,6 +336,36 @@ resources belong to a session scope closed at program teardown (or immediately i
 `evals/baseline-update.test.ts` covers the complete, safe baseline-write guard. `evals/session-lifecycle.test.ts`
 uses real Effect scopes and failing Effects to cover finalization, dispatch rejection during polling and after
 timeout, and poll failure. These run with the eval unit tests and require no model credentials.
+
+The general agent fixture routes conversation operations through the real
+ConversationApi, alongside ChatApi and DocsApi. Archive receipts therefore
+reflect the persisted conversation state. Selected test database and Electric
+endpoints apply to migration tests and all HTTP harnesses; see
+[infrastructure](../infrastructure.md).
+
+Repair evidence (2026-10-23) is tracked in
+[the work note](../work/agent-ui-evals-fix.md). The live judge now receives
+persisted flow-draft status and the registry's person-only actions alongside
+UI receipts. Calibration covers truthful ready claims, nonready rounds, missing
+call/row evidence, false save/run claims, optional instructions and permitted
+actions replaced by prose. The added `flow-create-run` regression requires
+creation, saving and execution, with exactly one approval; `flow-new` still
+forbids unrequested save/run effects.
+
+The inspected form reply used `shown === true` and misreported a displayed form
+as failed; the catalog now states its existing `shown: "form"` receipt. Catalog
+entries with `confirm` also explain that their own call asks for approval,
+preventing a second ask before saving.
+
+The complete unit run on d937458542a8 reached 100% for statements, branches,
+functions and lines, but exited 1 with two failing tests; it is not passing
+proof. The subsequent expiry fixture correction uses the production deadline
+and injected host clock while retaining real Postgres and all park/settle
+assertions. The exact full run on 9dec033c0631 exited 1 with six failed tests
+and 99.99% statement/branch/line coverage (functions 100%); its unchanged 100%
+gate correctly failed. The latest live retry (2026-10-24 03:13 UTC) still
+received provider HTTP 402. No incomplete baseline refresh was accepted; final
+proof and unresolved failures are recorded in the work note and result summary.
 
 ## Timeline
 

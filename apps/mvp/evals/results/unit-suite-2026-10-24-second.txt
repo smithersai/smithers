@@ -1,0 +1,82 @@
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  worker/ExecutionHost.test.ts > ExecutionHost over the compose Postgres > the deployed flows run chat/Expire: it parks on its timer, then settles the answer abandoned
+AssertionError: expected 'Settled' to be 'Parked' // Object.is equality
+
+Expected: "Parked"
+Received: "Settled"
+
+ ❯ worker/ExecutionHost.test.ts:395:29
+    393|         // The first alarm finds the answer young and parks on the dur…
+    394|         const parked = yield* host.alarm()
+    395|         expect(parked._tag).toBe("Parked")
+       |                             ^
+    396|         const wakeAt = parked._tag === "Parked" ? parked.wakeAtMs : nu…
+    397|         expect(object.alarm()).toBe(wakeAt)
+ ❯ ~effect/Effect/successCont ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1422:28
+ ❯ FiberImpl.succeedWith ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:711:30
+ ❯ ContImpl.succeedPayload [as ~effect/Effect/successCont] ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1506:16
+ ❯ ~effect/Effect/evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/core.ts:585:30
+ ❯ FiberImpl.runLoop ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:654:41
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:595:23
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:589:27
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  worker/flows/SpendAlert.test.ts > ops/SpendAlert delivers outside the app > a window with nothing to carry sends nothing
+effect/sql/SqlError: PgConnection: Connection timed out
+ ❯ Object.orElse ../../node_modules/.pnpm/@effect+sql-pg@4.0.5_effect@4.0.5/node_modules/@effect/sql-pg/src/PgConnection.ts:324:13
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:3861:82
+ ❯ ContImpl.andThenCont [as ~effect/Effect/successCont] ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1531:10
+ ❯ ~effect/Effect/evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/core.ts:585:30
+ ❯ FiberImpl.runLoop ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:654:41
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:595:23
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:589:27
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1159:17
+ ❯ Array.<anonymous> ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/src/internal/effect.ts:1697:11
+
+Caused by: effect/sql/SqlError/ConnectionError: PgConnection: Connection timed out
+ ❯ Object.orElse ../../node_modules/.pnpm/@effect+sql-pg@4.0.5_effect@4.0.5/node_modules/@effect/sql-pg/dist/PgConnection.js:77:13
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1659:159
+ ❯ ContImpl.andThenCont [as ~effect/Effect/successCont] ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1055:10
+ ❯ ~effect/Effect/evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/core.js:342:30
+ ❯ FiberImpl.runLoop ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:453:97
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:402:23
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:396:27
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:808:17
+ ❯ Array.<anonymous> ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1137:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { _tag: 'ConnectionError', operation: 'connect', '~effect/sql/SqlError/Reason': '~effect/sql/SqlError/Reason' }
+Caused by: Error: Connection timed out
+ ❯ Object.orElse ../../node_modules/.pnpm/@effect+sql-pg@4.0.5_effect@4.0.5/node_modules/@effect/sql-pg/dist/PgConnection.js:78:14
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1659:159
+ ❯ ContImpl.andThenCont [as ~effect/Effect/successCont] ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1055:10
+ ❯ ~effect/Effect/evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/core.js:342:30
+ ❯ FiberImpl.runLoop ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:453:97
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:402:23
+ ❯ FiberImpl.evaluate ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:396:27
+ ❯ ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:808:17
+ ❯ Array.<anonymous> ../../node_modules/.pnpm/effect@4.0.5/node_modules/effect/dist/internal/effect.js:1137:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 302 passed | 4 skipped (308)
+      Tests  2 failed | 3937 passed | 2 expected fail | 10 skipped (3951)
+   Start at  17:05:31
+   Duration  2727.41s (tests 93%, import 6%)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 100% ( 22151/22151 )
+Branches     : 100% ( 12043/12043 )
+Functions    : 100% ( 6655/6655 )
+Lines        : 100% ( 19208/19208 )
+================================================================================
+[ELIFECYCLE] Test failed. See above for more details.

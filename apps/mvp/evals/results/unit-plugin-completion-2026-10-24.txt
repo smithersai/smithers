@@ -1,0 +1,26 @@
+Source:9dec033c0631
+Command:pnpm exec vitest run src/plugins/plugins.test.ts --maxWorkers=1 -t 'loads the queue|keys: g q'
+Exit:1 (partial coverage gate; both behavioral cases passed)
+
+ RUN  v5.0.0 <workspace>/apps/mvp
+      Coverage enabled with v8
+
+(node:13764) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 3 skipped (5)
+   Start at  19:15:18
+   Duration  48.05s (tests 78%, transform 18%, import 4%)
+
+
+=============================== Coverage summary ===============================
+Statements   : 35.37% ( 7837/22151 )
+Branches     : 10.1% ( 1217/12043 )
+Functions    : 25.37% ( 1689/6655 )
+Lines        : 38.74% ( 7443/19208 )
+================================================================================
+ERROR: Coverage for lines (38.74%) does not meet global threshold (100%)
+ERROR: Coverage for functions (25.37%) does not meet global threshold (100%)
+ERROR: Coverage for statements (35.37%) does not meet global threshold (100%)
+ERROR: Coverage for branches (10.1%) does not meet global threshold (100%)
