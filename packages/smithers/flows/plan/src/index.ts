@@ -46,7 +46,7 @@ export * as KeyMaterial from "./KeyMaterial.vibe"
  * @category models
  * @slop
  */
-export * as FileSet from "./FileSet.ts"
+export * as FileSet from "./FileSet.vibe"
 
 /**
  * @since 0.1.0

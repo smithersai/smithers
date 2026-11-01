@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import * as FastCheck from "fast-check"
 import { describe, expect, it, vi } from "vitest"
-import * as FileSet from "../src/FileSet.ts"
+import * as FileSet from "../src/FileSet.vibe"
 import * as EffectCandidates from "../src/internal/EffectCandidates.ts"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"

@@ -34,7 +34,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
-import type * as FileSet from "./FileSet.ts"
+import type * as FileSet from "./FileSet.vibe"
 import type * as KeyMaterial from "./KeyMaterial.vibe"
 
 /**

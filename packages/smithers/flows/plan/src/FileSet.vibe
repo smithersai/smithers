@@ -77,8 +77,8 @@ export const folded = (path: string): string => canonical(path).toUpperCase().no
 export const Pattern = Schema.NonEmptyString.check(
   Schema.makeFilter(
     (pattern) => workspaceRelative(pattern) || "file patterns must be workspace-relative and cannot traverse upward",
-    { title: "workspaceRelativePattern" }
-  )
+    { title: "workspaceRelativePattern" },
+  ),
 )
 
 /**
@@ -117,7 +117,7 @@ export const workspaceRelative = (pattern: string): boolean => {
  */
 export const Glob = Schema.TaggedStruct("Glob", {
   include: Schema.NonEmptyArray(Pattern),
-  exclude: Schema.optional(Schema.Array(Pattern))
+  exclude: Schema.optional(Schema.Array(Pattern)),
 })
 
 /**
@@ -138,7 +138,7 @@ export type Glob = typeof Glob.Type
  * @since 0.1.0
  */
 export const TreeArtifact = Schema.TaggedStruct("TreeArtifact", {
-  path: Pattern
+  path: Pattern,
 })
 
 /**
@@ -195,7 +195,7 @@ export type ReadEntry = typeof ReadEntry.Type
  */
 export const Filegroup = Schema.TaggedStruct("Filegroup", {
   name: Schema.NonEmptyString,
-  entries: Schema.Array(Entry)
+  entries: Schema.Array(Entry),
 })
 
 /**
@@ -215,7 +215,7 @@ export type Filegroup = typeof Filegroup.Type
  */
 export const ReadFilegroup = Schema.TaggedStruct("Filegroup", {
   name: Schema.NonEmptyString,
-  entries: Schema.Array(ReadEntry)
+  entries: Schema.Array(ReadEntry),
 })
 
 /**
@@ -273,7 +273,7 @@ export type ReadDeclaration = typeof ReadDeclaration.Type
 export const makeFilegroup = (name: string, entries: ReadonlyArray<Entry>): Filegroup => ({
   _tag: "Filegroup",
   name,
-  entries
+  entries,
 })
 
 /**
@@ -329,7 +329,7 @@ export const isTreeArtifact = (value: unknown): value is TreeArtifact =>
   typeof value === "object" && value !== null && "_tag" in value && value._tag === "TreeArtifact"
 
 /** KMP searches a literal without rescanning a long near-matching prefix. */
-const literalSearch = (literal: string) => {
+const literalSearch = (literal: string): infer _ => {
   const fallback = new Uint32Array(literal.length)
   let matched = 0
   for (let index = 1; index < literal.length; index++) {
@@ -389,8 +389,8 @@ const patternMatcher = (pattern: string): (path: string) => boolean => {
           // A trailing ** accepts every remaining code unit. It still needs
           // the separator preceding it: src/** does not match bare src.
           ? Number(
-            index === segments.length - 1 || next[part] === 1 ||
-              (parts[part] !== "" && current[part + 1] === 1)
+            index === segments.length - 1 || next[part] === 1
+              || (parts[part] !== "" && current[part + 1] === 1),
           )
           : Number(next[part + 1] === 1 && segment(parts[part]!))
       }
@@ -429,8 +429,8 @@ export const matchesPattern = (pattern: string, path: string): boolean => patter
  * @since 0.1.0
  */
 export const matchesGlob = (glob: Glob, path: string): boolean =>
-  glob.include.some((pattern) => matchesPattern(pattern, path)) &&
-  !(glob.exclude ?? []).some((pattern) => matchesPattern(pattern, path))
+  glob.include.some((pattern) => matchesPattern(pattern, path))
+  && !(glob.exclude ?? []).some((pattern) => matchesPattern(pattern, path))
 
 const beneath = (tree: string, path: string): boolean => {
   const root = folded(tree)
