@@ -548,7 +548,9 @@ install `Flow.layerExecutionIds(Flow.derived)`. Existing stored key encodings ar
 unchanged; the library does not rewrite historical runs.
 
 `Interpreter.layerWithImplementations(flow, implementationLayer)` builds the
-interpreter and all action implementations against one isolated registry. Its
+interpreter and all action implementations against one isolated registry. The
+implementation layers finish building before the flow is registered, so durable
+recovery cannot dispatch against a partly populated action table. Its
 types require every action named by the flow; runtime graph preflight rejects
 missing handlers before dispatch. Conflicting same-tag registrations fail during
 layer construction. Intentional scoped substitution uses

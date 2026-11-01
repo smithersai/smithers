@@ -1,0 +1,32 @@
+[
+  {
+    "form": "poll",
+    "handlerDelay": 20,
+    "registrationDelay": 0
+  },
+  {
+    "form": "poll",
+    "handlerDelay": 0,
+    "registrationDelay": 20
+  },
+  {
+    "form": "poll",
+    "handlerDelay": 0,
+    "registrationDelay": 0
+  },
+  {
+    "form": "flow",
+    "handlerDelay": 20,
+    "registrationDelay": 0
+  },
+  {
+    "form": "flow",
+    "handlerDelay": 0,
+    "registrationDelay": 20
+  },
+  {
+    "form": "flow",
+    "handlerDelay": 5,
+    "registrationDelay": 5
+  }
+]

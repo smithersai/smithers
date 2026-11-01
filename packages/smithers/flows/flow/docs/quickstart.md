@@ -86,7 +86,9 @@ const GreetingLayer = Interpreter.layerWithImplementations(
 ```
 
 `layerWithImplementations` supplies the action registry while building the
-implementation layers. The remaining providers supply the runtime and digest:
+implementation layers. It registers the interpreter after those layers are ready,
+including when a durable engine can immediately resume stored work. The remaining
+providers supply the runtime and digest:
 
 - `FlowEngine.layerMemory` supplies the `FlowRuntime` port. Swap it for the
   durable engine from [`@smthrs/engine-store`](/api/engine-store) and nothing

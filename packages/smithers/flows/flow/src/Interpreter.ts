@@ -2187,6 +2187,8 @@ const makeLayer = <
 
 /**
  * Composes one flow and its implementation layers around one isolated registry.
+ * Implementation layers finish building before registration exposes the flow to
+ * recovery, so every named action is ready for the first resumed dispatch.
  *
  * The implementation layer must provide every action requirement carried by the
  * flow. Callback identity defaults to `stable`: raw callbacks are refused before
@@ -2228,13 +2230,11 @@ export const layerWithImplementations = <
     ),
   options: ExecutionOptions = {}
 ) =>
-  Layer.merge(
-    implementations,
-    makeLayer(flow, { ...options, callbackIdentity: options.callbackIdentity ?? "stable" }).pipe(
-      Layer.provide(systemActions)
-    )
+  // Registration makes a pending durable run eligible for dispatch. File its
+  // handlers first so a recovery poll never observes a half-built interpreter.
+  makeLayer(flow, { ...options, callbackIdentity: options.callbackIdentity ?? "stable" }).pipe(
+    Layer.provide(systemActions),
+    Layer.provideMerge(implementations),
+    Layer.provide(layerImplementations),
+    Layer.fresh
   )
-    .pipe(
-      Layer.provide(layerImplementations),
-      Layer.fresh
-    )

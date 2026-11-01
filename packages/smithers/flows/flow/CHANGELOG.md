@@ -24,6 +24,8 @@
 
 ### Fixed
 
+- Recovered flows could dispatch before their action handlers finished building and report `unresolved_action`. Interpreter registration now waits for its implementation layers.
+
 - Publish node outcomes only after their settlement records persist. Join journal
   reads isolate their waiting annotation, and joins request loser interruption
   before persisting the cancellation snapshot.
