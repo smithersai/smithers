@@ -147,8 +147,8 @@ export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJ
     return () => { made.dispose(); driver.current = null; };
   }, []);
   useLayoutEffect(() => {
-    driver.current?.sync({ ids, asks: entries.map(entry => entry.kind === "ask"), levels, spans, arcs: larger });
-  }, [ids, entries, levels, spans, larger, size]);
+    driver.current?.sync({ ids, asks: entries.map(entry => entry.kind === "ask"), levels, spans, arcs: larger, ...(onJump === undefined ? {} : { onJump }) });
+  }, [ids, entries, levels, spans, larger, size, onJump]);
   const [preview, setPreview] = useState<{ readonly title: string; readonly summary?: string; readonly detail: string; readonly left: number; readonly top: number } | undefined>();
   const show = (element: HTMLElement, title: string, detail: string, summary?: string) => {
     const box = element.getBoundingClientRect();

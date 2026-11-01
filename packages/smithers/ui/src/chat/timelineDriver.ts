@@ -13,6 +13,8 @@ export interface TimelineModel {
   readonly levels: number;
   readonly spans: readonly TimelineBlock[];
   readonly arcs: readonly TimelineBlock[];
+  /** Widen the transcript history window; mounting is observed before restoring the requested position. */
+  readonly onJump?: (id: string) => void;
 }
 
 export interface TimelineDriver {
@@ -43,6 +45,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   let rowWindow: TimelineWindow | undefined;
   let blockWindow: TimelineWindow | undefined;
   let drag: { readonly kind: "thumb" | "lens1" | "lens2"; readonly grab: number } | undefined;
+  let pendingRead: { readonly row: number; readonly center: boolean; readonly id: string } | undefined;
   let frame = 0;
   let layoutWidth = -1, layoutHeight = -1;
   let viewport: HTMLElement | null = null;
@@ -218,7 +221,20 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     drawFunnels();
   };
 
-  const schedule = () => { if (frame === 0) frame = requestAnimationFrame(() => { frame = 0; update(); }); };
+  const restoreRead = () => {
+    if (pendingRead === undefined || viewport === null) return;
+    const row = Math.floor(pendingRead.row);
+    if (!boxes.some(item => item.row === row)) return;
+    viewport.scrollTop = timelineToChat(boxes, pendingRead.row) - (pendingRead.center ? viewport.clientHeight / 2 : 0);
+    pendingRead = undefined;
+    rail.removeAttribute("data-navigation");
+  };
+  const schedule = () => { if (frame === 0) frame = requestAnimationFrame(() => {
+    frame = 0;
+    if (pendingRead !== undefined) { measure(); restoreRead(); }
+    update();
+  }); };
+  const mounted = new MutationObserver(() => { measure(); schedule(); });
   /** Keeps funnel lines on the columns while they slide. */
   let following = 0;
   const follow = (until: number) => {
@@ -231,7 +247,9 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     const next = viewportOf(rail);
     if (next === viewport) return;
     viewport?.removeEventListener("scroll", schedule);
+    mounted.disconnect();
     viewport = next;
+    if (viewport !== null) mounted.observe(viewport, { childList: true, subtree: true });
     viewport?.addEventListener("scroll", schedule, { passive: true });
     if (viewport !== null) observer?.observe(viewport);
     const content = viewport?.firstElementChild;
@@ -253,9 +271,21 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   if (transcript) observer?.observe(transcript);
   window.addEventListener("resize", remeasure);
 
-  const setRead = (chatY: number) => { if (viewport !== null) viewport.scrollTop = chatY - viewport.clientHeight / 2; };
+  const readRow = (requested: number, center: boolean) => {
+    if (viewport === null || model.ids.length === 0) return;
+    const row = Math.max(0, Math.min(model.ids.length - Number.EPSILON, requested));
+    const index = Math.min(model.ids.length - 1, Math.floor(row));
+    const id = model.ids[index]!;
+    const previous = pendingRead;
+    pendingRead = { row: Math.min(row, index + .999999), center, id };
+    measure();
+    if (boxes.some(item => item.row === index)) { restoreRead(); return; }
+    rail.setAttribute("data-navigation", "pending");
+    if (previous?.id !== id) model.onJump?.(id);
+    schedule();
+  };
   /** A y on an outer strip to the transcript: the mark under it, and how far down that mark. */
-  const stripToChat = (content: HTMLElement, y: number) => {
+  const stripToRow = (content: HTMLElement, y: number) => {
     let best: { start: number; end: number; distance: number; fraction: number } | undefined;
     content.querySelectorAll<HTMLElement>(".sui-tl-sm").forEach(mark => {
       const top = (mark.closest<HTMLElement>("[data-block]")?.offsetTop ?? 0) + mark.offsetTop, bottom = top + mark.offsetHeight;
@@ -263,7 +293,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       if (best !== undefined && distance >= best.distance) return;
       best = { start: Number(mark.dataset.start), end: Number(mark.dataset.end), distance, fraction: Math.max(0, Math.min(1, (y - top) / Math.max(1, bottom - top))) };
     });
-    return best === undefined ? undefined : timelineToChat(boxes, best.start + best.fraction * (best.end - best.start));
+    return best === undefined ? undefined : best.start + best.fraction * (best.end - best.start);
   };
   const down = (event: PointerEvent) => {
     const target = event.target as HTMLElement;
@@ -287,13 +317,13 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       if (content === null || rowWindow === undefined) return;
       const y = event.clientY - content.getBoundingClientRect().top - drag.grab;
       const row = Math.max(rowWindow.start, Math.min(rowWindow.end, y / TIMELINE_PITCH));
-      viewport.scrollTop = timelineToChat(boxes, row);
+      readRow(row, false);
       return;
     }
     const content = inner(drag.kind === "lens1" ? 1 : 2);
     if (content === null) return;
-    const y = stripToChat(content, event.clientY - content.getBoundingClientRect().top - drag.grab);
-    if (y !== undefined) setRead(y);
+    const row = stripToRow(content, event.clientY - content.getBoundingClientRect().top - drag.grab);
+    if (row !== undefined) readRow(row, true);
   };
   const up = () => {
     if (drag === undefined) return;
@@ -323,6 +353,8 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     },
     dispose: () => {
       observer?.disconnect();
+      mounted.disconnect();
+      pendingRead = undefined;
       if (frame !== 0) cancelAnimationFrame(frame);
       viewport?.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", remeasure);

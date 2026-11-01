@@ -14,7 +14,7 @@ Level 0 holds one 34 px row per entry: a mark whose height follows `length` (neu
 
 Level 1 appears once entries no longer fit, and level 2 once phases no longer fit level 1. `phases` and `arcs` are `TimelineMarker`s: a block starts at entry `start` and stops at its recorded inclusive `end` anchor, so sizes follow what happened. Blocks in a column are one height; a strip of marks shows each block's size. Entries before, between or after recorded coverage are separate blocks titled with the first entry's label, marked pending. The rail never shows a count in place of a title.
 
-A lens on each outer strip marks the stretch the next level shows, joined to it by funnel lines. Dragging the thumb or a lens scrubs the transcript. Each level holds still while the viewport stays inside it and pages when it leaves, so scrolling never drags it along.
+A lens on each outer strip marks the stretch the next level shows, joined to it by funnel lines. Dragging the thumb or a lens scrubs the transcript. When its target is not mounted, the driver requests it through `onJump`, observes its mount, and restores the requested fractional message position. A newer drag target supersedes an earlier one; `data-navigation="pending"` exposes a history request until mounting completes. Each level holds still while the viewport stays inside it and pages when it leaves, so scrolling never drags it along.
 
 A level slides in over 240 ms, then its lens fades in and its funnel draws. It leaves in reverse. With reduced motion, these become a 120 ms fade.
 
