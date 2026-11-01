@@ -221,6 +221,25 @@ export function createWorkspace(root, destination, name) {
   return path
 }
 
+/**
+ * Work a lane can strand without it being under @: a bookmark named for the lane
+ * (`<name>`, `builder/<name>`), or a head no workspace, bookmark or remote holds,
+ * committed since the lane began. Side repositories (w12-hold) lost work this way:
+ * the lane moved @ back to main and the commits stayed behind as bare heads.
+ */
+export function strandedWork(root, { name, created }) {
+  const unlanded = "~::main@origin & ~empty()"
+  const quoted = JSON.stringify(name)
+  const bookmarks = `(bookmarks(exact:${quoted}) | bookmarks(glob:${JSON.stringify(`*/${name}`)}))`
+  const orphans = `heads(${unlanded} & ~::(working_copies() | bookmarks() | remote_bookmarks()))`
+  // Dates compare here, not in the revset: jj 0.46 matches nothing for ISO date patterns.
+  const template = 'committer.timestamp().format("%s") ++ " " ++ commit_id.short(12) ++ " " ++ local_bookmarks.map(|b| b.name()).join(",") ++ " " ++ description.first_line() ++ "\\n"'
+  const since = Math.floor(Date.parse(created) / 1000) // commit times are whole seconds
+  const found = jj(root, ["log", "--ignore-working-copy", "--no-graph", "-r", `(::${bookmarks} & ${unlanded}) | ${orphans}`, "-T", template]).split("\n").filter(Boolean)
+  const onBookmark = new Set(jj(root, ["log", "--ignore-working-copy", "--no-graph", "-r", `::${bookmarks} & ${unlanded}`, "-T", 'commit_id.short(12) ++ "\\n"']).split("\n").filter(Boolean))
+  return found.filter((line) => { const [seconds, id] = line.split(" "); return onBookmark.has(id) || Number(seconds) >= since }).map((line) => line.slice(line.indexOf(" ") + 1))
+}
+
 /** Refuse removal unless every source change is already on remote main and the directory is tool-owned. */
 export function removeWorkspace(root) {
   const data = JSON.parse(readFileSync(join(root, marker), "utf8"))
@@ -230,11 +249,15 @@ export function removeWorkspace(root) {
   if (existsSync(recovery) && readdirSync(recovery).some((name) => !JSON.parse(readFileSync(join(recovery, name, "manifest.json"), "utf8")).replayed)) throw new Error("Unresolved saved source; workspace retained")
   jj(root, ["git", "fetch", "--remote", "origin"])
   if (revision(root, "main@origin..@ ~ (empty() & @)")) throw new Error("Unpublished source changes; workspace retained")
+  const stranded = strandedWork(root, data)
+  if (stranded.length) throw new Error(`Unlanded work outside @; workspace retained (land it, or record why it is superseded):\n${stranded.join("\n")}`)
   // Refuse ignored files that jj cannot certify as landed, including local installs and secrets.
   const tracked = new Set(jj(root, ["file", "list", "--ignore-working-copy"]).split("\n"))
   const inspect = (directory = "") => {
     for (const entry of readdirSync(join(root, directory), { withFileTypes: true })) {
       if (!directory && entry.name === ".jj") continue
+      // jj 0.46+ links a colocated repo's secondary workspace with a `.git` gitdir file; `workspace forget` removes it.
+      if (!directory && entry.name === ".git" && entry.isFile() && /^gitdir: .*\/worktrees\/[^/\n]+\n?$/.test(readFileSync(join(root, ".git"), "utf8"))) continue
       const path = directory ? `${directory}/${entry.name}` : entry.name
       if (entry.isDirectory()) inspect(path)
       else if (!tracked.has(path)) throw new Error(`Untracked/ignored data retained: ${path}`)

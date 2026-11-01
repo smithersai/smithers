@@ -209,3 +209,19 @@ test("CLI interruption and failed fetch release the lock and retain source", asy
   assert.equal(existsSync(lock), false)
   assert.equal(readFileSync(join(lane, "feature.txt"), "utf8"), "retained\n")
 })
+
+test("removal refuses work the lane moved off @: a lane bookmark or a bare head", (t) => {
+  const { root, lane } = fixture(t)
+  createWorkspace(root, lane, "lane")
+  writeFileSync(join(lane, "kept.txt"), "kept on a bookmark\n")
+  jj(lane, ["commit", "-m", "bookmarked work"])
+  jj(lane, ["bookmark", "set", "builder/lane", "-r", "@-"])
+  jj(lane, ["new", "main@origin"])
+  assert.throws(() => removeWorkspace(lane), /Unlanded work outside @[\s\S]*builder\/lane[\s\S]*bookmarked work/)
+  jj(lane, ["bookmark", "delete", "builder/lane"])
+  // Without the bookmark the commit is a bare head: still the lane's work.
+  assert.throws(() => removeWorkspace(lane), /Unlanded work outside @[\s\S]*bookmarked work/)
+  jj(lane, ["abandon", "description(substring:bookmarked)"])
+  removeWorkspace(lane)
+  assert.equal(existsSync(lane), false)
+})
