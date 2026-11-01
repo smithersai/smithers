@@ -35,8 +35,14 @@ const bootLine = /^btime[ \t]+([0-9]+)$/m
 /** Fields 3 through 22 inclusive: state, then pgrp third, then starttime. */
 const statFieldsAfterComm = 20
 
-/** A read that failed because the file is no longer there. */
-const missing = (cause: unknown): boolean => (cause as NodeJS.ErrnoException).code === "ENOENT"
+/**
+ * A process gone before open (ENOENT), or after open but before read (ESRCH).
+ * Holding a proc stat inode open cannot keep its process alive.
+ */
+const missing = (cause: unknown): boolean => {
+  const code = (cause as NodeJS.ErrnoException).code
+  return code === "ENOENT" || code === "ESRCH"
+}
 
 /**
  * One process's group, zombie state and start time, from a `/proc/<pid>/stat`
@@ -163,7 +169,7 @@ export const ownGroup = (root: string) => (): number | null => {
  * When `pid` started, in epoch milliseconds, read from `/proc/<pid>/stat` and
  * `/proc/stat`'s `btime`.
  *
- * `gone` is the table having no entry for the pid (`ENOENT`). Every other
+ * `gone` is the pid ending before open (`ENOENT`) or before read (`ESRCH`). Every other
  * failure is `unavailable`: the question could not be asked, so the caller
  * keeps its record instead of acting on it.
  * @private

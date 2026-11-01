@@ -116,13 +116,16 @@ describe("write grant symlink confinement", () => {
     try {
       const alias = NodePath.join(base, "alias")
       NodeFs.symlinkSync(workspaceRoot, alias, "dir")
+      NodeFs.writeFileSync(NodePath.join(workspaceRoot, "input"), "declared input")
       const result = ProcessSandbox.plan(
-        { network: "none", reads: [], writes: ["out/new"] },
+        { network: "none", reads: ["input"], writes: ["out/new"] },
         { workspaceRoot: alias, cwd: workspaceRoot, tmp: NodePath.join(workspaceRoot, ".tmp") },
         { ...facts, realpath: undefined, isSymbolicLink: undefined }
       )
       if (result === undefined || ProcessSandbox.isUnenforceable(result)) throw new Error("expected a plan")
       expect(result.workspaceRoot).toBe(workspaceRoot)
+      expect(result.reads).toEqual([NodePath.join(workspaceRoot, "input")])
+      expect(result.externalReads).toEqual([])
       expect(result.writes).toEqual([NodePath.join(workspaceRoot, "out/new")])
       expect(() => ProcessSandbox.validateWrites(result)).not.toThrow()
     } finally {
@@ -943,6 +946,15 @@ describe("preserving declared read authority", () => {
 })
 
 describe("seatbelt profile", () => {
+  it("renders explicit read denials after workspace read grants", () => {
+    const denied = "/work/ws/src/private"
+    const profile = ProcessSandbox.seatbelt({ ...planned(darwin), readDenies: [denied] }, darwin)
+    const denial = `(deny file-read* (subpath "${denied}"))`
+    expect(profile).toContain(denial)
+    expect(profile.indexOf(denial)).toBeGreaterThan(profile.indexOf("(allow file-read*"))
+    expect(profile).toContain("(subpath \"/work/ws/src/a.ts\")")
+  })
+
   it("reads the selected Xcode tree without opening arbitrary Applications paths", () => {
     const developerDirectory = "/Applications/Xcode_26.6.app/Contents/Developer"
     const selected: ProcessSandbox.Host = {

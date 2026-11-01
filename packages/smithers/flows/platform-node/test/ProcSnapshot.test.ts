@@ -1,4 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { spawn } from "node:child_process"
+import { once } from "node:events"
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -151,6 +153,30 @@ describe("ProcSnapshot.snapshot", () => {
 })
 
 describe.runIf(process.platform === "linux")("ProcSnapshot.snapshot on a real /proc", () => {
+  it("treats an opened stat whose process exited as gone, including ESRCH", async () => {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })
+    const closed = once(child, "close")
+    let descriptor: number | undefined
+    try {
+      await once(child, "spawn")
+      descriptor = openSync(`/proc/${child.pid}/stat`, "r")
+      child.kill("SIGKILL")
+      await closed
+      // Keep the proc inode open after exit: Linux reads it with ESRCH, while
+      // opening the now-absent PID pathname would only exercise ENOENT.
+      const root = procRoot([{ pid: 30, pgid: 30 }, { pid: 31, pgid: 30 }], 30)
+      rmSync(join(root, "31", "stat"))
+      symlinkSync(`/proc/self/fd/${descriptor}`, join(root, "31", "stat"))
+      expect(() => readFileSync(join(root, "31", "stat"), "utf8")).toThrow(expect.objectContaining({ code: "ESRCH" }))
+      expect(ProcSnapshot.snapshot(root)(30)?.members.map((member) => member.pid)).toEqual([30])
+      expect(ProcSnapshot.startedAtMs(root)(31)).toEqual({ _tag: "gone" })
+    } finally {
+      child.kill("SIGKILL")
+      await closed
+      if (descriptor !== undefined) closeSync(descriptor)
+    }
+  })
+
   it("finds this very process in its own group", () => {
     const own = ProcSnapshot.snapshot(ProcSnapshot.defaultProcRoot)(process.pid)
 

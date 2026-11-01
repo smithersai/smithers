@@ -223,3 +223,22 @@ The sustained 60-second concurrency-10 repeat completed 199 requests, received
 25/50 escalation. This establishes a provider refusal boundary for that shared
 account and workload. The local TLS corruption fixture establishes the transport
 failure independently of this capacity experiment.
+
+## Linux host integration fixtures
+
+Runtime registration diagnostics share stdout with fixture output. A host is
+ready only when its explicit receipt arrives: `STATUS=running` for signal cleanup,
+`SPAWNED=<pid>` for crash reaping. Never signal a PID parsed from an arbitrary
+first output line. The Linux integration suites exercise actual orphan reaping
+and the journal the next host inherits.
+
+Restart refusal fixtures must change behavior, not just comments. Durable
+resume uses the normalized source shape in `@smthrs/crypto`'s
+`src/internal/sourceShape.ts`, which drops comments and whitespace. The restart
+suite checks both semantic-edit refusal and comment-only resumption.
+
+Linux proc-stat reads can fail with `ENOENT` before open or `ESRCH` if the
+process exits after open. Both mean that PID is gone. A different read failure
+still makes the snapshot unavailable, preserving the reaper's fail-closed
+behavior. The regression retains a real stat descriptor through child exit to
+exercise `ESRCH` without a timing-dependent race.
