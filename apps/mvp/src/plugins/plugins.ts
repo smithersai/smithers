@@ -299,7 +299,7 @@ export const readable = (
   return name === FEED_ITEMS ? plugins.itemsOpen.get(itemsKey(repo, params?.name ?? "")) : undefined
 }
 
-/** How long a plugin's first read of an index waits for its first sync before it answers what the tab has. */
+/** How long a plugin's first read of an index or a fleet query waits for its first sync before it answers what the tab has. */
 export const INDEX_FIRST_SYNC = "30 seconds"
 
 /**
@@ -393,8 +393,14 @@ export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
       const key = `${name}:${repo}`
       const opening = plugins.fleetOpen.get(key) ?? (yield* Effect.cached(
         Effect.gen(function* () {
-          const rows = name === AGENT_RUNS ? (yield* plugins.fleet.runs(repo)).rows : (yield* plugins.fleet.machines(repo)).rows
-          return (yield* liveOf(rows as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>)) as CoreQuery["live"]
+          const query = name === AGENT_RUNS ? yield* plugins.fleet.runs(repo) : yield* plugins.fleet.machines(repo)
+          // As indexOf: rows still loading are never no rows, which the fleet would draw as "No agent runs" and
+          // "runners 0/0" for as long as the first sync takes (6 s and more on smithers.sh, 2026-11-01).
+          // expected: a shape that fails or takes longer answers what the tab has, and its rows follow as they arrive
+          yield* query.preload.pipe(Effect.timeout(INDEX_FIRST_SYNC), Effect.ignore)
+          const rows = query.rows as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>
+          const synced = (yield* query.toArray) as ReadonlyArray<Readonly<Record<string, unknown>>>
+          return (yield* liveOf(rows, synced)) as CoreQuery["live"]
         }).pipe(Scope.provide(plugins.scope)),
       ))
       plugins.fleetOpen.set(key, opening)

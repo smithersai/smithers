@@ -57,7 +57,8 @@ never both.
 | `core/machines` | `{ repo: "owner/name" }` | `runners` of the repository, by name: `id`, `name`, `labels`, `capacity`, `seenAt`, `removedAt`, `version`, `load1`, `diskFreeGb` |
 
 Each is one Electric shape per repository, opened once a tab asks and kept while it lives (`src/features/fleet/store.ts`),
-never kept on the device. Fifty runs are fifty rows of one shape; no run inspector opens. A missing or malformed `repo`
+never kept on the device. A first read answers once its first sync arrived, or after 30 s (`INDEX_FIRST_SYNC`), so rows
+still loading never read as "No agent runs". Fifty runs are fifty rows of one shape; no run inspector opens. A missing or malformed `repo`
 is refused `invalid_fields`.
 
 ## The shapes
