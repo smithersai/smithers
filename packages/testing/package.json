@@ -41,7 +41,10 @@
     },
     "./internal/*": null,
     "./*/index": null,
-    "./CachedModel": "./src/CachedModel.ts",
+    "./CachedModel": {
+      "types": "./src/CachedModel.d.vibe.ts",
+      "default": "./src/CachedModel.vibe"
+    },
     "./Conformance": {
       "types": "./src/Conformance.d.vibe.ts",
       "default": "./src/Conformance.vibe"

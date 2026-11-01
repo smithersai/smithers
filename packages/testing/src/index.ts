@@ -48,7 +48,7 @@ export * as RecordedModel from "./RecordedModel.ts"
 export * as RecordingModel from "./RecordingModel.ts"
 
 /** @since 0.0.0 @category models */
-export * as CachedModel from "./CachedModel.ts"
+export * as CachedModel from "./CachedModel.vibe"
 
 /** @since 1.0.0 @category models */
 export * as CachedEvaluator from "./CachedEvaluator.ts"
