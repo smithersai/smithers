@@ -100,9 +100,8 @@ const asJson = (value: unknown): typeof Schema.Json.Type => JSON.parse(JSON.stri
  */
 export const hostRoot = (
   explicit: string | undefined,
-  host: { readonly process?: { readonly cwd?: () => string } | undefined } = globalThis as typeof globalThis & {
-    readonly process?: { readonly cwd?: () => string } | undefined
-  }
+  // Read through Reflect so the default needs no Node ambient declarations.
+  host: { readonly process?: { readonly cwd?: () => string } | undefined } = { process: Reflect.get(globalThis, "process") }
 ): string | undefined => {
   if (explicit !== undefined) return explicit
   return typeof host.process?.cwd === "function" ? host.process.cwd() : undefined

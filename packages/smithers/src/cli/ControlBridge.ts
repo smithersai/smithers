@@ -7,7 +7,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
-import { ApprovalAuthority, Control } from "@smthrs/control"
+import { ApprovalAuthority, type Control } from "@smthrs/control"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Otlp from "@smthrs/observability/Otlp"

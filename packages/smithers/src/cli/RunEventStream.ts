@@ -1,4 +1,9 @@
-/** Journal following is settled by committed coordination state, not an earlier engine observation. */
+/**
+ * Journal following is settled by committed coordination state, not an earlier engine observation.
+ *
+ * @since 1.0.0
+ */
+
 import { Control, type ControlSchema } from "@smthrs/control"
 import { Ownership } from "@smthrs/run-store"
 import { Clock, Effect, Schema, Stream } from "effect"

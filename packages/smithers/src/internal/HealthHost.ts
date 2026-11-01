@@ -127,7 +127,11 @@ const prepare = (
     )
   })
 
-/** Observe with registrations and probes owned by the same host scope. @private */
+/**
+ * Observe with registrations and probes owned by the same host scope.
+ * @since 1.0.0
+ * @private
+ */
 export const watch = (registry: Health.Registry) => prepare(registry).pipe(Effect.flatten, Effect.scoped, Effect.orDie)
 
 /** Validate trusted configuration before forking the lifetime-bound observer.
