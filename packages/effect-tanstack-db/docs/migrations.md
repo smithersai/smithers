@@ -109,7 +109,7 @@ Outbox.layer({
 ```ts
 const recorded = JSON.parse(readFileSync("schemas.lock.json", "utf8"))
 expect(Migrations.check(registry, recorded)).toEqual([])
-// To record new versions: writeFileSync("schemas.lock.json", JSON.stringify(Migrations.lock(registry, recorded).lock))
+// To record new versions: writeFileSync("schemas.lock.json", JSON.stringify(Migrations.snapshot(Migrations.lock(registry, recorded).lock)))
 ```
 
 The lock holds each store's fingerprint by version: a hash of its schema's JSON
@@ -149,3 +149,8 @@ content.
 - Values are written back as the persistence encodes them: JSON, with bigints,
   dates and non-finite numbers tagged. A row holding a value tagged with
   another type, such as a Temporal value, is kept aside, not rewritten.
+
+Persist `Migrations.snapshot(lock)` for parallel authoring: it sorts ids and
+mutation names and omits the derived epoch. Both this snapshot and older locks
+with an epoch are accepted by `check` and `lock`. Runtime build comparison still
+uses `registry.epoch`; no device ledger or stored row changes.

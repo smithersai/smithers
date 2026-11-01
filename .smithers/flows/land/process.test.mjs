@@ -1,0 +1,24 @@
+import { strict as assert } from "node:assert"
+import { test } from "node:test"
+import { runProcess } from "./process.mjs"
+
+test("real child output and status are retained without shell interpolation", async () => {
+  const result = await runProcess(process.execPath, ["-e", "console.log(process.argv[1]); console.error('err'); process.exit(7)", "$(never run)"])
+  assert.equal(result.stdout, "$(never run)\n")
+  assert.equal(result.stderr, "err\n")
+  assert.equal(result.status, 7)
+})
+test("bounds hung processes and output; nonexistent executables fail clearly", async () => {
+  await assert.rejects(runProcess(process.execPath, ["-e", "setInterval(()=>{},1000)"], { timeoutMs: 50 }), /timed out/)
+  await assert.rejects(runProcess(process.execPath, ["-e", "console.log('x'.repeat(10000))"], { maxBytes: 20 }), /output exceeded/)
+  await assert.rejects(runProcess("/nonexistent-devx-command", []), /ENOENT/)
+})
+test("abort before and during execution stops only the new process group", async () => {
+  const before = new AbortController()
+  before.abort(new Error("before"))
+  await assert.rejects(runProcess(process.execPath, ["-e", "0"], { signal: before.signal }), /before/)
+  const during = new AbortController()
+  const running = runProcess(process.execPath, ["-e", "setInterval(()=>{},1000)"], { signal: during.signal })
+  setTimeout(() => during.abort(new Error("during")), 50)
+  await assert.rejects(running, /during/)
+})

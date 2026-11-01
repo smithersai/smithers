@@ -9,7 +9,7 @@ export const decisions = "apps/mvp/docs/decisions"
 export const migrations = "apps/mvp/db/migrations"
 
 export function jj(root, args) {
-  const result = spawnSync("jj", ["--color=never", "--no-pager", ...args], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 })
+  const result = spawnSync("jj", ["--color=never", "--no-pager", "--config", "snapshot.auto-update-stale=false", ...args], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 60000 })
   if (result.error || result.status !== 0) throw new Error(`jj ${args[0]}: ${result.error?.message ?? result.stderr}`)
   return result.stdout.trimEnd()
 }
@@ -127,7 +127,8 @@ export function applyNumbers(root, plan) {
 export function checkNumbers(root) {
   const treeFiles = (directory) => existsSync(join(root, directory)) ? readdirSync(join(root, directory)).map((name) => `${directory}/${name}`) : []
   for (const directory of [decisions, migrations]) unique(treeFiles(directory), directory)
-  const database = join(root, "apps/mvp/db/Database.ts")
+  const manifest = join(root, "apps/mvp/db/MigrationManifest.ts")
+  const database = existsSync(manifest) ? manifest : join(root, "apps/mvp/db/Database.ts")
   if (existsSync(database)) {
     const source = readFileSync(database, "utf8")
     for (const path of treeFiles(migrations)) {

@@ -1,44 +1,27 @@
 {
-  "epoch": 104,
   "stores": {
-    "message-pin-pending": {
-      "kind": "local",
+    "alert-channels": {
+      "kind": "synced",
       "versions": {
-        "1": "04d27563af6f12d9"
+        "1": "cd92662381b733b7"
       }
     },
-    "branch-conversations": {
-      "kind": "local",
+    "alert-deliveries": {
+      "kind": "synced",
       "versions": {
-        "1": "1b558ae889cb293f"
+        "1": "f14ef22ddcde5173"
       }
     },
-    "chat-unsent": {
+    "attention-dismissed": {
       "kind": "local",
       "versions": {
-        "1": "9a9f1d7276e2a5c7",
-        "2": "14a0841638f7bbbc"
+        "1": "abd9f43701bea8d4"
       }
     },
-    "chat-drafts": {
+    "attention-pending": {
       "kind": "local",
       "versions": {
-        "1": "2e3b027d15ac792d",
-        "2": "5b081e82bbcd7b40"
-      }
-    },
-    "issue-requested": {
-      "kind": "local",
-      "versions": {
-        "1": "52197947eaf596c8",
-        "2": "a652bcc3bfcce151",
-        "3": "070a8bd29d2b17eb"
-      }
-    },
-    "issue-drafts": {
-      "kind": "local",
-      "versions": {
-        "1": "60ced9e0aaf4e760"
+        "1": "05618a6f6026892d"
       }
     },
     "auth-confirmed": {
@@ -48,29 +31,45 @@
         "2": "e01a331097b98bbc"
       }
     },
-    "preferences": {
+    "branch-conversations": {
       "kind": "local",
       "versions": {
-        "1": "1444df6c1d4e86c2"
+        "1": "1b558ae889cb293f"
       }
     },
-    "plugin-drafts": {
-      "kind": "local",
+    "bug-reports": {
+      "kind": "synced",
       "versions": {
-        "1": "2e3b027d15ac792d"
+        "2": "cd92d1f4e450fc5a"
       }
     },
-    "file-tabs": {
+    "chat-drafts": {
       "kind": "local",
       "versions": {
-        "1": "1bf5ea72a24a5221"
+        "1": "2e3b027d15ac792d",
+        "2": "5b081e82bbcd7b40"
       }
     },
-    "homes": {
+    "chat-messages": {
+      "kind": "synced",
+      "versions": {
+        "3": "fad6fd295c841426",
+        "4": "53151b369335faa2",
+        "5": "88e22e78da36cb37",
+        "6": "b07b2fe86323d274"
+      }
+    },
+    "chat-unsent": {
       "kind": "local",
       "versions": {
-        "2": "3913295b44917af6",
-        "3": "77edcb3fe56a42f1"
+        "1": "9a9f1d7276e2a5c7",
+        "2": "14a0841638f7bbbc"
+      }
+    },
+    "conversation-pending": {
+      "kind": "local",
+      "versions": {
+        "1": "c011a7d1a3ae4eb4"
       }
     },
     "curated-homes": {
@@ -80,46 +79,10 @@
         "2": "3653ab53db6c617b"
       }
     },
-    "attention-pending": {
+    "file-tabs": {
       "kind": "local",
       "versions": {
-        "1": "05618a6f6026892d"
-      }
-    },
-    "attention-dismissed": {
-      "kind": "local",
-      "versions": {
-        "1": "abd9f43701bea8d4"
-      }
-    },
-    "conversation-pending": {
-      "kind": "local",
-      "versions": {
-        "1": "c011a7d1a3ae4eb4"
-      }
-    },
-    "spend-seen": {
-      "kind": "local",
-      "versions": {
-        "1": "0f9d97976b794f85"
-      }
-    },
-    "personal-model-hidden": {
-      "kind": "local",
-      "versions": {
-        "1": "fd83612f01f28b0f"
-      }
-    },
-    "todo-drafts": {
-      "kind": "local",
-      "versions": {
-        "1": "0a0ad36b40938642"
-      }
-    },
-    "flow-form": {
-      "kind": "local",
-      "versions": {
-        "1": "161b0a63369949bd"
+        "1": "1bf5ea72a24a5221"
       }
     },
     "flow-answers": {
@@ -134,57 +97,55 @@
         "1": "7a86db82cff4f994"
       }
     },
-    "todo-requested": {
+    "flow-drafts": {
+      "kind": "synced",
+      "versions": {
+        "1": "7c2412270978bb1c"
+      }
+    },
+    "flow-form": {
       "kind": "local",
       "versions": {
-        "1": "dabd1d95e7d0a02f",
-        "2": "3bc5b0ecf965a1b5",
-        "3": "f85ad0ef5fe9761d",
-        "4": "3c9220a7796be4b1"
+        "1": "161b0a63369949bd"
       }
     },
-    "steer-sent": {
+    "flows": {
+      "kind": "synced",
+      "versions": {
+        "2": "1788543c3fde7d20"
+      }
+    },
+    "homes": {
       "kind": "local",
       "versions": {
-        "1": "f8521c8bcade1250"
+        "2": "3913295b44917af6",
+        "3": "77edcb3fe56a42f1"
       }
     },
-    "chat-messages": {
+    "issue-comments": {
       "kind": "synced",
       "versions": {
-        "3": "fad6fd295c841426",
-        "4": "53151b369335faa2",
-        "5": "88e22e78da36cb37",
-        "6": "b07b2fe86323d274"
+        "1": "b5aa3bdd0763e470"
       }
     },
-    "message-pins": {
-      "kind": "synced",
+    "issue-drafts": {
+      "kind": "local",
       "versions": {
-        "1": "87cecdd8ec6b2979"
+        "1": "60ced9e0aaf4e760"
       }
     },
-    "views": {
+    "issue-items": {
       "kind": "synced",
       "versions": {
-        "2": "eab96e2a43688e23",
-        "3": "8572e19e235bf950",
-        "4": "9214617408929875",
-        "5": "edefbe82db5cdc49"
+        "3": "33be5d593291f26b"
       }
     },
-    "runs": {
-      "kind": "synced",
+    "issue-requested": {
+      "kind": "local",
       "versions": {
-        "1": "a8b6d8a96b2ccfb8",
-        "2": "52d6c4afc9127e76"
-      }
-    },
-    "repo-repositories": {
-      "kind": "synced",
-      "versions": {
-        "3": "8c608a025f56038b",
-        "4": "9778251e67d4d6e9"
+        "1": "52197947eaf596c8",
+        "2": "a652bcc3bfcce151",
+        "3": "070a8bd29d2b17eb"
       }
     },
     "issue-summaries": {
@@ -194,22 +155,16 @@
         "2": "46e882977e629652"
       }
     },
-    "issue-items": {
-      "kind": "synced",
-      "versions": {
-        "3": "33be5d593291f26b"
-      }
-    },
-    "issue-comments": {
-      "kind": "synced",
-      "versions": {
-        "1": "b5aa3bdd0763e470"
-      }
-    },
     "issue-sync": {
       "kind": "synced",
       "versions": {
         "1": "b0c0ae0b152febbb"
+      }
+    },
+    "issue-triage-settings": {
+      "kind": "synced",
+      "versions": {
+        "1": "d49a12999fa2df56"
       }
     },
     "issue-writes": {
@@ -220,22 +175,22 @@
         "3": "ecb2adbd06ae341b"
       }
     },
-    "issue-triage-settings": {
-      "kind": "synced",
+    "message-pin-pending": {
+      "kind": "local",
       "versions": {
-        "1": "d49a12999fa2df56"
+        "1": "04d27563af6f12d9"
       }
     },
-    "flows": {
+    "message-pins": {
       "kind": "synced",
       "versions": {
-        "2": "1788543c3fde7d20"
+        "1": "87cecdd8ec6b2979"
       }
     },
-    "flow-drafts": {
+    "my-conversations": {
       "kind": "synced",
       "versions": {
-        "1": "7c2412270978bb1c"
+        "1": "50ade954f9984c9f"
       }
     },
     "notifications": {
@@ -247,67 +202,36 @@
         "4": "64540f88bb28571b"
       }
     },
-    "my-conversations": {
+    "personal-model": {
       "kind": "synced",
       "versions": {
-        "1": "50ade954f9984c9f"
+        "1": "75531a80d8222141",
+        "2": "4a9b298c4cdfb033",
+        "3": "5bc4898247083dd7"
       }
     },
-    "spend-alerts": {
-      "kind": "synced",
+    "personal-model-hidden": {
+      "kind": "local",
       "versions": {
-        "1": "c7bf0034db58c563"
+        "1": "fd83612f01f28b0f"
       }
     },
-    "alert-channels": {
-      "kind": "synced",
+    "plugin-drafts": {
+      "kind": "local",
       "versions": {
-        "1": "cd92662381b733b7"
+        "1": "2e3b027d15ac792d"
       }
     },
-    "alert-deliveries": {
-      "kind": "synced",
+    "preferences": {
+      "kind": "local",
       "versions": {
-        "1": "f14ef22ddcde5173"
+        "1": "1444df6c1d4e86c2"
       }
     },
-    "sandbox-limits": {
+    "pull-checks": {
       "kind": "synced",
       "versions": {
-        "1": "6f7fc6c6bdcb9c31"
-      }
-    },
-    "bug-reports": {
-      "kind": "synced",
-      "versions": {
-        "2": "cd92d1f4e450fc5a"
-      }
-    },
-    "todos": {
-      "kind": "synced",
-      "versions": {
-        "2": "836adaeaec60ebbd",
-        "3": "a8aa59aaa4528a72",
-        "4": "29be654797529d50",
-        "5": "4e36e9b81557dea4"
-      }
-    },
-    "todo-requests": {
-      "kind": "synced",
-      "versions": {
-        "1": "70c545648a714a06"
-      }
-    },
-    "text-updates": {
-      "kind": "synced",
-      "versions": {
-        "1": "53adcabcae2e43cf"
-      }
-    },
-    "pull-rows": {
-      "kind": "synced",
-      "versions": {
-        "1": "de6fb2b71ede2300"
+        "1": "08c8ce91e2a65800"
       }
     },
     "pull-commits": {
@@ -322,24 +246,17 @@
         "1": "949e0620b2784b5c"
       }
     },
-    "pull-checks": {
+    "pull-rows": {
       "kind": "synced",
       "versions": {
-        "1": "08c8ce91e2a65800"
+        "1": "de6fb2b71ede2300"
       }
     },
-    "secrets": {
+    "repo-repositories": {
       "kind": "synced",
       "versions": {
-        "1": "aad5709b2c9c7bd6"
-      }
-    },
-    "personal-model": {
-      "kind": "synced",
-      "versions": {
-        "1": "75531a80d8222141",
-        "2": "4a9b298c4cdfb033",
-        "3": "5bc4898247083dd7"
+        "3": "8c608a025f56038b",
+        "4": "9778251e67d4d6e9"
       }
     },
     "repo-runs": {
@@ -348,12 +265,94 @@
         "1": "e7190ed1cf1bf5d1"
       }
     },
+    "runs": {
+      "kind": "synced",
+      "versions": {
+        "1": "a8b6d8a96b2ccfb8",
+        "2": "52d6c4afc9127e76"
+      }
+    },
+    "sandbox-limits": {
+      "kind": "synced",
+      "versions": {
+        "1": "6f7fc6c6bdcb9c31"
+      }
+    },
+    "secrets": {
+      "kind": "synced",
+      "versions": {
+        "1": "aad5709b2c9c7bd6"
+      }
+    },
+    "spend-alerts": {
+      "kind": "synced",
+      "versions": {
+        "1": "c7bf0034db58c563"
+      }
+    },
+    "spend-seen": {
+      "kind": "local",
+      "versions": {
+        "1": "0f9d97976b794f85"
+      }
+    },
+    "steer-sent": {
+      "kind": "local",
+      "versions": {
+        "1": "f8521c8bcade1250"
+      }
+    },
+    "text-updates": {
+      "kind": "synced",
+      "versions": {
+        "1": "53adcabcae2e43cf"
+      }
+    },
     "timeline-summaries": {
       "kind": "local",
       "versions": {
         "1": "4bed7c4c611479a2"
       },
       "retired": true
+    },
+    "todo-drafts": {
+      "kind": "local",
+      "versions": {
+        "1": "0a0ad36b40938642"
+      }
+    },
+    "todo-requested": {
+      "kind": "local",
+      "versions": {
+        "1": "dabd1d95e7d0a02f",
+        "2": "3bc5b0ecf965a1b5",
+        "3": "f85ad0ef5fe9761d",
+        "4": "3c9220a7796be4b1"
+      }
+    },
+    "todo-requests": {
+      "kind": "synced",
+      "versions": {
+        "1": "70c545648a714a06"
+      }
+    },
+    "todos": {
+      "kind": "synced",
+      "versions": {
+        "2": "836adaeaec60ebbd",
+        "3": "a8aa59aaa4528a72",
+        "4": "29be654797529d50",
+        "5": "4e36e9b81557dea4"
+      }
+    },
+    "views": {
+      "kind": "synced",
+      "versions": {
+        "2": "eab96e2a43688e23",
+        "3": "8572e19e235bf950",
+        "4": "9214617408929875",
+        "5": "edefbe82db5cdc49"
+      }
     }
   },
   "payloads": {
@@ -372,6 +371,12 @@
         "3": "51762534f91c11e1"
       }
     },
+    "steer-sending": {
+      "kind": "payload",
+      "versions": {
+        "1": "630c242b6686e165"
+      }
+    },
     "text-sending": {
       "kind": "payload",
       "versions": {
@@ -384,19 +389,13 @@
         "1": "3c0ca8e41d1eb3d4",
         "2": "84684138fa1a48e3"
       }
-    },
-    "steer-sending": {
-      "kind": "payload",
-      "versions": {
-        "1": "630c242b6686e165"
-      }
     }
   },
   "mutations": [
     "ask",
     "issue-write",
+    "run-steer",
     "text-update",
-    "todo-op",
-    "run-steer"
+    "todo-op"
   ]
 }

@@ -15,8 +15,8 @@ import { ChatUnsentStore, deviceRegistry, IssueRequestedStore } from "./registry
 
 const lockPath = new URL("./schemas.lock.json", import.meta.url)
 
-const read = (): Migrations.Lock | undefined =>
-  existsSync(lockPath) ? (JSON.parse(readFileSync(lockPath, "utf8")) as Migrations.Lock) : undefined
+const read = (): Migrations.Snapshot | undefined =>
+  existsSync(lockPath) ? (JSON.parse(readFileSync(lockPath, "utf8")) as Migrations.Snapshot) : undefined
 
 /** What to do about each problem, in words a person changing a schema acts on. */
 const advice: Record<Migrations.Problem["problem"], string> = {
@@ -46,7 +46,7 @@ describe("the device's stores", () => {
     if (process.env["UPDATE_DEVICE_SCHEMAS"] === "1") {
       const { lock, refused } = Migrations.lock(deviceRegistry, read())
       expect(explain(refused)).toEqual([])
-      writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`)
+      writeFileSync(lockPath, `${JSON.stringify(Migrations.snapshot(lock), null, 2)}\n`)
     }
     expect(explain(Migrations.check(deviceRegistry, read()))).toEqual([])
   })
@@ -84,9 +84,10 @@ describe("the device's stores", () => {
     expect(explain(Migrations.check(withoutRequested, read()))).toEqual([`issue-requested: ${advice.removed}`])
   })
 
-  test("every outbox mutation the app sends has a payload version, and builds compare by the epoch", () => {
+  test("every outbox mutation has a payload version; the lock has no handwritten epoch", () => {
     expect(deviceRegistry.outbox.mutations).toEqual(["ask", "issue-write", "text-update", "todo-op", "run-steer"])
-    expect(read()?.epoch).toBe(deviceRegistry.epoch)
+    expect(read()).not.toHaveProperty("epoch")
+    expect(Migrations.snapshot(read()!)).toEqual(read())
   })
 })
 

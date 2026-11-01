@@ -69,3 +69,24 @@ remotes. Run installed/package-dependent gates on the mini; no installs,
 containers, or full suites on the MacBook. Each fix lands independently once
 its checks pass. This is repository bootstrap tooling (catalog: repository
 flows / `land`), not a product workflow or alternate flow runtime.
+
+## Implemented: identities and schema history
+
+`numbering.mjs prepare` runs before rebase under the shared landing lock. It
+renumbers only additions relative to the common ancestor, then changes only
+added lines in the lane's diff, preserving historical test boundaries. The
+source-only check runs with the existing landing target. Published comparison
+appendices and the two historical 0038 decisions are explicitly preserved.
+
+`generated.mjs` captures base/local/main before rebase, merges device schema
+history structurally and refuses conflicting fingerprints at the same version.
+Database registration moves into a generated static `MigrationManifest.ts`;
+Workers still receive exactly the same Effect SQL migration keys. In-flight
+lanes may keep authoring imports and records in Database.ts: preparation strips
+only those generated sections and rebuilds the manifest from actual files.
+Conflicting database service edits remain conflicts.
+
+Catalog entry used for device snapshots: `@smthrs/effect-tanstack-db`. Its new
+`snapshot` helper omits the already-derived epoch and sorts history; legacy
+locks remain accepted. Runtime epoch calculation and device preparation are
+unchanged. No existing Postgres migration or ledger key is renamed.

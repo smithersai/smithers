@@ -1059,6 +1059,40 @@ export interface Lock {
 }
 
 /**
+ * The persisted schema history, without the registry's derived epoch. Older
+ * `Lock` values remain valid snapshots. Store this beside source declarations;
+ * the runtime continues to compare builds using `Registry.epoch`.
+ *
+ * @category lock
+ * @since 0.1.0
+ */
+export type Snapshot = Omit<Lock, "epoch">
+
+/**
+ * A stable, merge-friendly schema snapshot. Versions and fingerprints are
+ * preserved; independent stores sort by id and carry no shared epoch counter.
+ *
+ * @category lock
+ * @since 0.1.0
+ */
+export const snapshot = (lock: Snapshot): Snapshot => {
+  const ordered = (entries: Readonly<Record<string, LockEntry>>) =>
+    Object.fromEntries(Object.keys(entries).sort().map((id) => {
+      const entry = entries[id]!
+      return [id, {
+        kind: entry.kind,
+        ...(entry.retired === true ? { retired: true as const } : {}),
+        versions: Object.fromEntries(Object.entries(entry.versions).sort(([a], [b]) => Number(a) - Number(b)))
+      }]
+    }))
+  return {
+    stores: ordered(lock.stores),
+    payloads: ordered(lock.payloads),
+    mutations: [...new Set(lock.mutations)].sort()
+  }
+}
+
+/**
  * Something the lock says is wrong with a registry:
  * - `changed_without_version`: the schema of a version the lock recorded
  *   changed: the store needs a new version, and a local one a migration;
@@ -1152,7 +1186,7 @@ const compare = (declared: ReadonlyArray<Entry>, recorded: Readonly<Record<strin
  * @category lock
  * @since 0.3.0
  */
-export const check = (registry: Registry, lock: Lock | undefined): ReadonlyArray<Problem> => {
+export const check = (registry: Registry, lock: Snapshot | undefined): ReadonlyArray<Problem> => {
   const declared = entries(registry)
   const recorded = lock ?? { epoch: 0, stores: {}, payloads: {}, mutations: [] }
   const problems = [...compare(declared.stores, recorded.stores), ...compare(declared.payloads, recorded.payloads)]
@@ -1193,9 +1227,9 @@ const recordVersions = (declared: ReadonlyArray<Entry>, recorded: Readonly<Recor
  */
 export const lock = (
   registry: Registry,
-  previous: Lock | undefined
+  previous: Snapshot | undefined
 ): { readonly lock: Lock; readonly refused: ReadonlyArray<Problem> } => {
-  const recorded = previous ?? { epoch: 0, stores: {}, payloads: {}, mutations: [] }
+  const recorded: Snapshot = previous ?? { stores: {}, payloads: {}, mutations: [] }
   const refused = check(registry, previous).filter((problem) => problem.problem !== "unrecorded")
   const declared = entries(registry)
   const retiredStores = Object.fromEntries(

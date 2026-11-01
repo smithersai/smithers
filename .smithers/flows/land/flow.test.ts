@@ -1,3 +1,6 @@
+import "./process.test.mjs"
+import "./projection.test.mjs"
+import "./generated.test.mjs"
 import "./numbering.test.mjs"
 /**
  * `land` through the flow API: the real graph, the real layer and a real child

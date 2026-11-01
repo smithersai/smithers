@@ -168,3 +168,39 @@ describe("the lock", () => {
     expect(next.stores["old"]).toEqual({ kind: "synced", versions: {}, retired: true })
   })
 })
+
+
+describe("persisted snapshots", () => {
+  test("omits the derived epoch, sorts stores and mutations, and keeps all historical versions", () => {
+    const legacy: Migrations.Lock = {
+      epoch: 99,
+      stores: {
+        z: { kind: "synced", versions: { "10": "new", "2": "old" } },
+        a: { kind: "local", retired: true, versions: { "1": "kept" } }
+      },
+      payloads: { z: { kind: "payload", versions: { "1": "payload" } }, a: { kind: "payload", versions: {} } },
+      mutations: ["save", "ask", "save"]
+    }
+    const result = Migrations.snapshot(legacy)
+    expect(result).not.toHaveProperty("epoch")
+    expect(Object.keys(result.stores)).toEqual(["a", "z"])
+    expect(Object.keys(result.payloads)).toEqual(["a", "z"])
+    expect(result.stores["a"]).toEqual(legacy.stores["a"])
+    expect(result.stores["z"]?.versions).toEqual({ "2": "old", "10": "new" })
+    expect(result.mutations).toEqual(["ask", "save"])
+    expect(Migrations.snapshot(result)).toEqual(result)
+    expect(legacy.epoch).toBe(99)
+    expect(legacy.mutations).toEqual(["save", "ask", "save"])
+  })
+
+  test("accepts new and legacy snapshots without weakening schema checks", () => {
+    const declared = registry({ drafts: local(1), payload: asking(1), mutations: ["ask"] })
+    const legacy = recorded(declared)
+    const stored = Migrations.snapshot(legacy)
+    expect(Migrations.check(declared, stored)).toEqual([])
+    expect(Migrations.lock(declared, stored).lock).toEqual(legacy)
+    const changed = registry({ drafts: local(2), payload: asking(1), mutations: ["ask"] })
+    expect(Migrations.check(changed, stored)).toEqual([{ store: "drafts", problem: "unrecorded", version: 2 }])
+    expect(Migrations.check(changed, legacy)).toEqual(Migrations.check(changed, stored))
+  })
+})
