@@ -181,7 +181,12 @@ const expectNoShift = async (
   const headerBox = (await header.boundingBox())!
   expect(stackBox.y, "the stack hangs under the header").toBeGreaterThanOrEqual(headerBox.y + headerBox.height)
   expect(stackBox.x + stackBox.width, "the stack keeps to the header's width").toBeLessThanOrEqual(headerBox.x + headerBox.width + 1)
-  expect(stackBox.y, "the stack sits right under the header, not at the window's foot").toBeLessThan(headerBox.y + headerBox.height + 48)
+  // A header scrolled offscreen cannot bound a visible overlay. Clearance then
+  // picks a visible free gap; an on-screen anchor still keeps the stack nearby.
+  if (headerBox.y + headerBox.height >= 0) {
+    expect(stackBox.y, "the stack sits right under the header, not at the window's foot").toBeLessThan(headerBox.y + headerBox.height + 48)
+  }
+  await expect(toast).toBeInViewport({ ratio: 1 })
   await test.step("Ann: hides it", async () => {
     await toast.getByRole("button", { name: "Hide", exact: true }).click()
     await expect(toast).toHaveCount(0, { timeout: 30_000 })

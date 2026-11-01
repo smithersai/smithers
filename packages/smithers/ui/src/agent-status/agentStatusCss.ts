@@ -50,6 +50,8 @@ button.sui-agent-status:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.r
 /* Anchored: hung from the bottom of its positioned parent, at its end edge; no height in the flow, so nothing under it moves. */
 .sui-toast-stack[data-placement='anchored'] { position:absolute; top:calc(100% + 6px); right:0; bottom:auto; left:0; width:auto; align-items:flex-end; }
 .sui-toast-stack[data-placement='anchored'] > .sui-toast { width:min(380px, 100%); }
+.sui-toast-stack[data-placement='anchored'][data-clearance] { top:calc(100% + 6px + var(--sui-toast-clearance, 0px)); max-width:380px; margin-left:auto; max-height:var(--sui-toast-room); overflow:var(--sui-toast-overflow, visible); pointer-events:var(--sui-toast-pointer, none); }
+.sui-toast-stack[data-clearance] > * { flex-shrink:0; }
 button.sui-toast-open { flex:1; min-width:0; display:flex; align-items:center; gap:8px; padding:2px 0; border:0; border-radius:${t.radius}; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 button.sui-toast-open:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
 .sui-toast:has(button.sui-toast-open:hover) { border-color:${t.primaryBorder}; }

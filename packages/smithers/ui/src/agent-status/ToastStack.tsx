@@ -5,6 +5,7 @@ import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
 import { isNoticeHotkey, isTypingTarget, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeKeyAction, type NoticeState } from "./notices";
 import { moveFocus } from "./roving";
+import { useToastClearance } from "./useToastClearance";
 
 /** What takes focus in each toast: its open button, else its action, else Hide. */
 const TOAST_FOCUS = '[data-slot="toast"] [data-toast-focus]';
@@ -31,6 +32,12 @@ export type ToastStackProps = Omit<ComponentProps<"section">, "children"> & {
    * or leaving never moves the page (apps/mvp decision 0137).
    */
   placement?: "fixed" | "anchored";
+  /**
+   * A CSS selector for page headers and primary actions an anchored stack must clear.
+   * Tracks actual bounds across wrapping, mounting and scroll. A crowded viewport
+   * scrolls the overlay in its largest free gap; the page never reserves space.
+   */
+  avoid?: string;
 };
 
 /**
@@ -53,6 +60,7 @@ export function ToastStack({
   max = 3,
   label = "Notifications",
   placement = "fixed",
+  avoid,
   className,
   onKeyDown,
   ...props
@@ -66,7 +74,7 @@ export function ToastStack({
     const onHotkey = (event: globalThis.KeyboardEvent) => {
       if (!isNoticeHotkey(event, "toasts")) return;
       const first = section.current?.querySelector<HTMLElement>(TOAST_FOCUS);
-      if (first === null || first === undefined) return;
+      if (first === null || first === undefined || section.current?.style.getPropertyValue("--sui-toast-room") === "0px") return;
       event.preventDefault();
       const active = document.activeElement;
       if (!section.current!.contains(active)) before.current = active instanceof HTMLElement ? active : null;
@@ -78,6 +86,7 @@ export function ToastStack({
   const toasts = Children.toArray(children);
   const entries = onMore === undefined ? Children.toArray(more) : [];
   const extra = onMore === undefined ? entries.length : moreCount;
+  useToastClearance(section, placement === "anchored" ? avoid : undefined, toasts.length + extra > 0);
   if (toasts.length === 0 && extra === 0) return null;
   const folded = Math.max(0, toasts.length - max) + extra;
   const open = onMore === undefined && expanded;
@@ -104,6 +113,7 @@ export function ToastStack({
       ref={section}
       data-slot="toast-stack"
       data-placement={placement}
+      data-clearance={placement === "anchored" && avoid !== undefined ? "" : undefined}
       aria-label={label}
       aria-live="polite"
       aria-keyshortcuts={NOTICE_KEYS.toasts}

@@ -1,6 +1,5 @@
 import { expect, test } from "./devices"
 import { github } from "./github"
-import { hideModelNotice } from "./modelNotice"
 import { dropTodo } from "./stackWrites"
 import { requires, scratchRepository, stackRepository } from "./target"
 
@@ -33,7 +32,6 @@ test("Commit: progress survives navigation and settles on the numbered TODO", {
   const [person] = await devices.open("Maya")
   const page = person!.page
   const title = `progress-todo-${devices.word}`
-  await hideModelNotice(page)
   try {
     await page.goto(`/${repo}/stack`)
     await page.getByRole("button", { name: "New TODO", exact: true }).click()

@@ -7,6 +7,10 @@ import { TRY_AGAIN } from "../../repo/contract"
 import type { Entry } from "../schema"
 import { useAttention } from "./AttentionContext"
 
+// Core overlay layout: shared headers/toolbars and primary buttons, including plugin controls.
+// A custom primary action can opt in with data-primary-action (decision 0137).
+const CLEAR_OF = ':is(header, [role="toolbar"], .home-tabs, .file-tabs-bar, .branch-header, .mvp-pin-actions, .sui-button-solid, .sui-button-default, .sui-rh-action-primary, [data-primary-action]):not(.sui-msg-scroller *, .sui-chat-messages *)'
+
 // The current notices, at most three; older and overflow entries stay in the bell.
 export function useNotices(surface: Surface): {
   readonly toasts: ReadonlyArray<ReactElement>
@@ -21,13 +25,14 @@ export function useNotices(surface: Surface): {
 /**
  * The feed's stack, hung under its page's header or the home conversation's pin (decision 0137): `ToastStack`'s
  * `anchored` placement, rendered inside a positioned element. It overlays what follows and takes no layout
- * space, so a toast arriving or leaving never moves the conversation, the composer or the page. `surface` picks the
+ * space. Actual header and primary-action bounds clear the overlay on every page and width,
+ * so a toast arriving or leaving never moves the conversation, the composer or the page. `surface` picks the
  * entries: over a conversation, its own runs show in it instead, unless they need you.
  */
 export function Notices({ surface }: { readonly surface: Surface }) {
   const { toasts } = useNotices(surface)
   return (
-    <ToastStack label="Smithers" placement="anchored">
+    <ToastStack label="Smithers" placement="anchored" avoid={CLEAR_OF}>
       {toasts.slice(0, 3)}
     </ToastStack>
   )

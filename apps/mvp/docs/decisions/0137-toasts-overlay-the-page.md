@@ -72,3 +72,29 @@ and uses Alt+T/H to Hide without changing the pin, conversation or composer
 bounds. The phone uses reduced motion. `e2e/model-toast.spec.ts` covers Settings
 and model resolution; `e2e/toast-layout-shift.spec.ts` keeps the no-pin overlay
 and branch layout-shift checks.
+
+## Page-action clearance (2026-10-31)
+
+A toast never covers a page's primary action or any control in the header rows
+it hangs under. This includes the second row of a repository page: the stack's
+New TODO, list filters and tabs, not only RepoHeader. The existing after-pin
+anchor remains the preferred start on the home conversation.
+
+The catalog's @smthrs/ui ToastStack accepts an `avoid` selector for page chrome
+and primary actions. It uses their actual visible bounds, including wrapped
+phone rows and controls added by plugins. Starting at its existing anchor, it
+uses the first free gap that fits; if the viewport is crowded, the largest free
+gap scrolls the overlay. Resize, relevant DOM changes and scrolling remeasure clearance once per frame.
+Conversation-message controls are content, not page chrome: they never move the
+after-pin anchor as the transcript scrolls. The stack keeps its shadow and
+entrance slide unclipped unless it needs internal scrolling; its narrow scroll
+region accepts pointer and keyboard scrolling. An anchor outside the viewport
+falls back to visible free space. Alt+T never focuses a zero-room stack.
+Only the absolute overlay moves: no page space is reserved. The shared cap,
++N, Hide, focus keys, live region and reduced motion remain unchanged.
+
+The real-browser regression `e2e/toast-action-clearance.spec.ts` opens New TODO
+with Add your model still showing and checks every visible header button/link
+and primary action for both rectangle intersection and center pointer delivery
+on the main pages at 1190x785, 1440x900 and 390x844. The modelNotice hiding
+workaround is removed; dedicated Hide behavior tests remain.

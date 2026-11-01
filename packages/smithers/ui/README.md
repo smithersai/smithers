@@ -173,3 +173,9 @@ At widths up to 960px, `ItemAsideSection` links (TODO numbers, branches and Watc
 have a 32px minimum touch target. Longer labels wrap within the side column.
 
 The transcript rail uses `MessageScrollerCommands.scrollByReader(delta)` (CSS pixels) to release follow, pending jumps and read anchors before scrolling. Native wheel input uses the same reader-release path. Bottom-bound downward input and pinch zoom preserve follow.
+
+`ToastStack` with `placement="anchored"` accepts `avoid`, a CSS selector for
+page headers and primary actions. It keeps the existing anchor as its start,
+clears their visible bounds across wrapping, mounting and scrolling, and uses
+a scrollable gap in a crowded viewport. It takes no layout space. Include
+plugin headers and custom primary controls in the host's selector.

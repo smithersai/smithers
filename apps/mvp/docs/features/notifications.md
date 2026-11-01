@@ -40,6 +40,7 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 - **×** hides a toast (the entry stays in your list); in the panel, × dismisses a settled entry and hides a live one.
 - **Unread** entries carry a dot, and the bell counts them. Opening, expanding and Answer record Read.
 - **A failed run's toast** shows for 4 s like a finished one; the failure stays in its conversation with Retry and in your list until you dismiss it.
+- A toast never covers a page's primary action or any control in its header rows, including list toolbars and tabs. The shared stack clears their actual visible bounds after its existing anchor; a crowded viewport scrolls the overlay in a free gap. Wrapped phone headers and plugin controls get the same clearance. Use shared primary buttons or mark a custom primary control with `data-primary-action` ([0137](../decisions/0137-toasts-overlay-the-page.md)). Arrival, removal and repositioning reserve no page space.
 - Every toast fades in after 300 ms.
 
 ## Background progress

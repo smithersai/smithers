@@ -2,7 +2,6 @@ import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { github } from "./github"
 import { type Runner, startRunner } from "./runner"
-import { hideModelNotice } from "./modelNotice"
 import { configureStack, dropTodo } from "./stackWrites"
 import { requires } from "./target"
 
@@ -27,7 +26,6 @@ test("agent runner: an external agent's TODO publishes a pull request", {
   // A device of its own (e2e/devices.ts): Commit needs the browser's engine, which a private window can't run.
   const [maya] = await devices.open("Maya")
   const page = maya!.page
-  await hideModelNotice(page)
   const word = `a${Date.now().toString(36)}`
   const row = page.getByRole("region", { name: `${repo} stack` }).locator("[data-slot=issues-row]", { hasText: word })
   let runner: Runner | undefined
