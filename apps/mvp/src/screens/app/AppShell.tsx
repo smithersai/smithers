@@ -59,12 +59,7 @@ export function AppShell() {
             <FirstRunAccount />
           </>
         }
-      >
-        {/* The toasts, the bar's children (decision 0137): hung under its row at the bell's end, over the conversation's
-            top, taking no space, so a notice never pushes the page down. Under the header, not at the window's foot,
-            because the open composer docks over the column's foot and would hide them (decision 0015). */}
-        <Notices surface="conversation" />
-      </PageHeader>
+      />
       {/* The room the timeline rail wants beside the chat; app-shell.css shifts the column to leave it. */}
       <div className="app-shell-center" style={{ "--sui-timeline-want": `${TIMELINE_ROOM}px` } as CSSProperties}>
         {/* Until the person has a conversation of their own, the steps to their first one, above the composer's place,
@@ -80,7 +75,8 @@ export function AppShell() {
           </FirstRunGate>
         </div>
         <section className="app-shell-conversation" aria-label="Conversation">
-          <Conversation />
+          {/* Anchor after the pin so its controls stay clear; the stack still takes no space (0137). */}
+          <Conversation notices={<Notices surface="conversation" />} />
         </section>
       </div>
     </main>

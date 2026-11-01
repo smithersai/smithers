@@ -29,7 +29,7 @@ import { debugRunOf, timeOf } from "../view"
 const JUMP_WAIT_MS = 5_000
 const JUMP_SETTLE_FRAMES = 3
 
-export function Conversation({ empty = <Wordmark />, readOnly = false, timelineTodos = [], timelineRepo }: { readonly empty?: ReactNode; readonly readOnly?: boolean; readonly timelineTodos?: readonly RailTodo[]; readonly timelineRepo?: { readonly owner: string; readonly name: string } } = {}) {
+export function Conversation({ empty = <Wordmark />, notices, readOnly = false, timelineTodos = [], timelineRepo }: { readonly empty?: ReactNode; readonly notices?: ReactNode; readonly readOnly?: boolean; readonly timelineTodos?: readonly RailTodo[]; readonly timelineRepo?: { readonly owner: string; readonly name: string } } = {}) {
   const navigate = useNavigate()
   // The rail spans the whole conversation and the transcript only its window: an entry above it widens the window first.
   const jump = (id: string) => {
@@ -73,6 +73,7 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
     <div className="mvp-conversation">
     {failedPin === undefined ? null : <Button variant="ghost" size="sm" aria-label={failedPin.messageId === null ? "Retry unpin" : "Retry pin"} onClick={() => actions.retryPin(failedPin.conversationId)}>Retry</Button>}
     {pin === undefined ? null : <PinnedMessage message={pin} collapsed={collapsed} onUnpin={actions.unpin} onCollapse={() => actions.collapsePin(pin.id, !collapsed)} />}
+    <div className="mvp-conversation-notices">{notices}</div>
     <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={everything} statuses={statuses} unavailable={timelineNotice?.text} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onRequestHistory={actions.showMessage} onActivate={activate} />}>
       {history?.earlier === true ? (
         <Button variant="ghost" size="sm" onClick={actions.loadEarlier}>

@@ -29,7 +29,7 @@ test("model setup overlays existing history, survives reload, opens Settings and
     await expect(page.locator("section.app-shell-conversation")).toContainText(text, { timeout: 60_000 })
     await expect(notice).toBeVisible({ timeout: 30_000 })
     await expect(page.locator("[data-add-model]")).toHaveCount(1)
-    await expect(page.locator(".app-shell-center [data-add-model], .sui-empty[data-add-model]")).toHaveCount(0)
+    await expect(page.locator(".app-shell-composer [data-add-model], .sui-empty[data-add-model]")).toHaveCount(0)
     await expect(page.getByRole("region", { name: "Get started" })).toHaveCount(0)
     await expect(notice.locator("xpath=..")).toHaveAttribute("data-placement", "anchored")
     await expect(page.getByRole("button", { name: "Add your model to ask" })).toBeDisabled()

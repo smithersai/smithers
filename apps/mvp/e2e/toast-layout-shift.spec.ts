@@ -212,6 +212,8 @@ for (const width of [1280, 390]) {
     const conversationId = await track(ann, ELSEWHERE)
     const asked = await ask(ann, DEVELOPER, devices.word, conversationId)
     try {
+      // ComposerGate waits for the session and model rows. Measure the settled page, not that initial loading gap.
+      await expect(watched.composer.locator(":scope > *").first()).toBeVisible({ timeout: 60_000 })
       await expectNoShift(ann, asked, watched, watched.header)
     } finally {
       await asked.settle()

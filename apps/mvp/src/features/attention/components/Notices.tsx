@@ -19,8 +19,8 @@ export function useNotices(surface: Surface): {
 }
 
 /**
- * The feed's stack, hung under the header of the page it is on (decision 0137): `ToastStack`'s `anchored` placement,
- * so render it inside a positioned element, right after the header. It overlays what follows and takes no layout
+ * The feed's stack, hung under its page's header or the home conversation's pin (decision 0137): `ToastStack`'s
+ * `anchored` placement, rendered inside a positioned element. It overlays what follows and takes no layout
  * space, so a toast arriving or leaving never moves the conversation, the composer or the page. `surface` picks the
  * entries: over a conversation, its own runs show in it instead, unless they need you.
  */

@@ -4,3 +4,6 @@
 .mvp-pin-content { max-height:min(30dvh,20rem); overflow:auto; overscroll-behavior:contain; padding:0 1rem .75rem; overflow-wrap:anywhere; white-space:pre-wrap; }
 .mvp-pin-content[hidden] { display:none; }
 .mvp-pin-content pre { max-width:100%; overflow:auto; }
+
+/* A zero-height anchor after the pin: toasts overlay messages while pin controls stay clear. */
+.mvp-conversation-notices { position:relative; flex:0 0 auto; height:0; }

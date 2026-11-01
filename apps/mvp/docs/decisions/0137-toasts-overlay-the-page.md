@@ -49,3 +49,26 @@ through the real runs route; the toast arrives and Hide removes it while the hea
 and the view keep their boxes, the stack hangs under the header, and `PerformanceObserver`'s `layout-shift` entries
 name nothing outside the conversation's messages and the header's status. It failed on the inline stack.
 `@smthrs/ui` `tests/agent-status.test.tsx` pins the sheet; `src/features/attention/page-notices.test.ts` the owners.
+
+## Pinned-message clearance (2026-10-31)
+
+The header anchor let **Add your model** cover the home conversation's pin controls
+at laptop and phone widths. On `/app`, pass the existing `Notices` into
+`Conversation` and anchor it in a zero-height box immediately after the pinned
+message, before the transcript. The stack follows the pin's real height, including
+collapse and expand, rather than estimating an offset or reserving notice space.
+Without a pin it stays at the conversation's top under the header. It aligns with
+the conversation's end and overlays its messages; the header, pin and composer
+keep their controls. Other pages retain their existing header anchors.
+
+This is core page layout using the catalog's `@smthrs/ui` ToastStack/Toast, with
+no new plugin behavior. The three-card cap, overflow, Hide, keyboard shortcuts,
+live region and reduced-motion behavior stay in that shared component.
+
+`e2e/toast-pin-clearance.spec.ts` uses the real API and a model-off session at
+1190×785, 1440×900 and 390×844. It checks `elementFromPoint` at both pin buttons,
+clicks collapse, expand and unpin, checks the complete toast and its controls,
+and uses Alt+T/H to Hide without changing the pin, conversation or composer
+bounds. The phone uses reduced motion. `e2e/model-toast.spec.ts` covers Settings
+and model resolution; `e2e/toast-layout-shift.spec.ts` keeps the no-pin overlay
+and branch layout-shift checks.
