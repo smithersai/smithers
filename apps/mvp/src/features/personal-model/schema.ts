@@ -8,7 +8,7 @@ import {
   type TestResult as ContractTestResult,
 } from "./contract"
 
-// A person's own models on the tab (decisions 0096, 0107 and 0134, docs/features/personal-model.md), as the Effect
+// A person's own models on the tab (decisions 0096, 0107 and 0132, docs/features/personal-model.md), as the Effect
 // Schemas its collections check rows with. No row has a field for a key: a key lives in the form's password field until
 // Save, then in one request (actions.ts). Each synced row matches `PERSONAL_MODEL_SHAPE_COLUMNS`, camelCased; its times
 // are ISO 8601. A row kept on the device is read by the next version of the app too: change its shape only with its

@@ -40,7 +40,7 @@ import * as Subscriptions from "./Subscriptions.ts"
 import * as Store from "./Store.ts"
 import * as PersonalUsage from "./Usage.ts"
 
-// A person's own connections' routes (decisions 0096, 0107 and 0134, docs/features/personal-model.md). Credentials are
+// A person's own connections' routes (decisions 0096, 0107 and 0132, docs/features/personal-model.md). Credentials are
 // write-only: no route answers one.
 //
 // - `PUT /api/me/model { connections }`: saves the person's ordered list, replacing what they saved. It admits the write

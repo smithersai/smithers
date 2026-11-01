@@ -11,7 +11,7 @@ import { acceptsEffort } from "../ModelTiers.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import * as Store from "./Store.ts"
 
-// A person's own model, opened for one call (decisions 0096, 0107 and 0134, docs/features/personal-model.md#answering).
+// A person's own model, opened for one call (decisions 0096, 0107 and 0132, docs/features/personal-model.md#answering).
 // The model endpoint asks for the tier of the call's role before every call: a person with a connection that serves
 // models is answered by the model that tier resolves to among them (`resolveTier`), and never by the deployment's. The
 // key opens in memory for that call only, and goes only to its saved base URL's origin: the planner pins it there, and

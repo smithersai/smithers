@@ -8,7 +8,7 @@ import { SecretKeys } from "../secrets/Keys.ts"
 import * as Codex from "./Codex.ts"
 import * as Store from "./Store.ts"
 
-// `model/Put` and `model/Delete` (decisions 0096, 0107 and 0134, docs/features/personal-model.md#saving): a person saves
+// `model/Put` and `model/Delete` (decisions 0096, 0107 and 0132, docs/features/personal-model.md#saving): a person saves
 // or removes their own connections. The route admits the write and seals each credential typed before it starts the flow, so the payload, and with it the journal, holds only ciphertext. Each flow is one durable step that writes the row and records the change once,
 // under its invocation key. They run on any host; the deployment runs them on the Cloudflare host (`FlowExecution`).
 
