@@ -33,7 +33,7 @@
  *
  * @since 1.0.0
  */
-export * as CloudflareHost from "./CloudflareHost.ts"
+export * as CloudflareHost from "./CloudflareHost.vibe"
 
 /**
  * The durable engine for one execution on Cloudflare.

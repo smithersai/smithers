@@ -38,7 +38,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
-import * as FailureDetail from "./internal/FailureDetail.ts"
+import * as FailureDetail from "./internal/FailureDetail.vibe"
 import * as Routing from "./internal/Routing.ts"
 
 /**

@@ -12,18 +12,14 @@
  *
  * @since 1.0.0
  */
-
-import { type Crypto, WebCrypto } from "@smthrs/crypto"
-import { OwnerIdentity } from "@smthrs/engine-store"
-import * as Jj from "@smthrs/jj"
-import type { FileSystem } from "effect/FileSystem"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
-import type { HttpClient } from "effect/http/HttpClient"
-import * as Layer from "effect/Layer"
-import * as Path from "effect/Path"
-import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import * as Refusals from "./internal/Refusals.ts"
-
+import { type Crypto } from "@smthrs/crypto";
+import { OwnerIdentity } from "@smthrs/engine-store";
+import * as Jj from "@smthrs/jj";
+import type { FileSystem } from "effect/FileSystem";
+import type { HttpClient } from "effect/http/HttpClient";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
 /**
  * The services {@link layer} provides: the five closed Host tags, `Crypto`,
  * and the engine's `OwnerIdentity`.
@@ -31,21 +27,7 @@ import * as Refusals from "./internal/Refusals.ts"
  * @category models
  * @since 1.0.0
  */
-export type CloudflareHost =
-  | FileSystem
-  | Path.Path
-  | ChildProcessSpawner
-  | Jj.Jj
-  | HttpClient
-  | Crypto.Crypto
-  | OwnerIdentity.OwnerIdentity
-
-/** Effect's fetch client, told never to follow a redirect on its own. */
-const layerHttpClient: Layer.Layer<HttpClient> = Layer.provide(
-  FetchHttpClient.layer,
-  Layer.succeed(FetchHttpClient.RequestInit)({ redirect: "manual" })
-)
-
+export type CloudflareHost = FileSystem | Path.Path | ChildProcessSpawner | Jj.Jj | HttpClient | Crypto.Crypto | OwnerIdentity.OwnerIdentity;
 /**
  * Provides the closed Host surface on Cloudflare.
  *
@@ -67,11 +49,4 @@ const layerHttpClient: Layer.Layer<HttpClient> = Layer.provide(
  * @category layers
  * @since 1.0.0
  */
-export const layer: Layer.Layer<CloudflareHost> = Layer.mergeAll(
-  OwnerIdentity.layerWithoutPid,
-  Path.layer,
-  layerHttpClient,
-  Refusals.layerFileSystem,
-  Refusals.layerChildProcessSpawner,
-  Jj.layerNoop({})
-).pipe(Layer.provideMerge(WebCrypto.layer))
+export declare const layer: Layer.Layer<CloudflareHost>;
