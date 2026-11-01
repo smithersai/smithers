@@ -18,9 +18,9 @@ import {
 } from "./internal/AtomicFileSystemExecutable.ts"
 import * as Protocol from "./internal/AtomicFileSystemProtocol.ts"
 import * as Transport from "./internal/AtomicFileSystemTransport.ts"
-import { AtomicHelperError } from "./internal/AtomicHelperError.ts"
+import { AtomicHelperError } from "./internal/AtomicHelperError.vibe"
 
-export { AtomicHelperError, AtomicHelperErrorCode } from "./internal/AtomicHelperError.ts"
+export { AtomicHelperError, AtomicHelperErrorCode } from "./internal/AtomicHelperError.vibe"
 
 /**
  * The legacy system installation path, used after package and checkout paths.

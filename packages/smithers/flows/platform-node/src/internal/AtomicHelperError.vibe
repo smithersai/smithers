@@ -6,8 +6,6 @@
  * @since 1.0.0
  */
 
-import { Schema } from "effect"
-
 /**
  * Why the atomic helper could not be configured or resolved.
  * @category models
@@ -24,7 +22,7 @@ export const AtomicHelperErrorCode = Schema.Literals([
   "helper_not_regular_file",
   "helper_inside_workspace",
   "staging_directory_not_private",
-  "staging_unavailable"
+  "staging_unavailable",
 ])
 
 /**
@@ -43,7 +41,7 @@ export type AtomicHelperErrorCode = typeof AtomicHelperErrorCode.Type
 export class AtomicHelperError
   extends Schema.TaggedError<AtomicHelperError>()("@smthrs/platform-node/AtomicHelperError", {
     code: AtomicHelperErrorCode,
-    message: Schema.String
+    message: Schema.String,
   })
 {
   override readonly name = "AtomicHelperError"
