@@ -116,7 +116,7 @@
     "miniflare": "5.20261019.0-beta",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-bcfe8ed6f069.tgz",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-4cc0b47f9e9d.tgz",
     "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-f8e51b377e05.tgz",
     "vitest": "5.0.0"
   },
