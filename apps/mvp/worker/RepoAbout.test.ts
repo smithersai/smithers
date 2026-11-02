@@ -3,7 +3,7 @@
 // while GitHub can't answer, the waits after GitHub refused, many visitors causing one read, in one isolate and across
 // two, with no request resuming on another's work, and a store that fails, injected. The reads themselves are worker/about/GitHubRead.test.ts.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { ConfigProvider, Duration, Effect, Layer, Logger, Metric, Option, Redacted } from "effect"
+import { Clock, ConfigProvider, Duration, Effect, Layer, Logger, Metric, Option, Redacted } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test, vi } from "vitest"
@@ -44,6 +44,7 @@ const isolate = async (
     readonly config?: Record<string, string>
     readonly store?: AboutStore.AboutStore
     readonly timing?: RepoAbout.Timing
+    readonly now?: number
   } = {},
 ) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
@@ -51,6 +52,16 @@ const isolate = async (
   const logger = Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))
   const registry: Metric.MetricRegistry = new Map()
   const provider = ConfigProvider.fromUnknown(options.config ?? {})
+  const live = Effect.runSync(Clock.clockWith(Effect.succeed))
+  const clock: Clock.Clock = options.now === undefined ? live : {
+    ...live,
+    monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+    sleep: (duration) => live.sleep(duration),
+    currentTimeMillis: Effect.succeed(options.now),
+    currentTimeMillisUnsafe: () => options.now!,
+    currentTimeNanos: Effect.succeed(BigInt(options.now) * 1_000_000n),
+    currentTimeNanosUnsafe: () => BigInt(options.now!) * 1_000_000n,
+  }
   const fetch = ((input: RequestInfo | URL, init?: RequestInit) => github.fetch(new Request(input, init))) as typeof globalThis.fetch
   const observed = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
     effect.pipe(
@@ -59,6 +70,7 @@ const isolate = async (
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
       Effect.provideService(ConfigProvider.ConfigProvider, provider),
+      Effect.provideService(Clock.Clock, clock),
     )
   const source = await Effect.runPromise(observed(Effect.flatMap(
     RepoAbout.settings,
@@ -84,15 +96,21 @@ const answered = (outcome: RepoAbout.Outcome) => {
   return { ...outcome, about: JSON.parse(outcome.text) as { readonly name: string } }
 }
 
-/** `id`'s row, its times as milliseconds from now. */
-const row = async (id: string) => {
-  const [found] = await sql<{ readonly via: string | null; readonly refusal: string | null; readonly freshIn: number | null; readonly nextIn: number | null; readonly absentIn: number | null }>(`
+/** `id`'s persisted deadlines relative to the reader's application clock, never the database host's clock. */
+const row = async (id: string, now?: number) => {
+  const [found] = await sql<{ readonly via: string | null; readonly refusal: string | null; readonly freshAt: number | null; readonly nextAt: number | null; readonly absentAt: number | null }>(`
     SELECT via, refusal,
-      (extract(epoch FROM fresh_until - now()) * 1000)::float8 AS "freshIn",
-      (extract(epoch FROM next_read_at - now()) * 1000)::float8 AS "nextIn",
-      (extract(epoch FROM app_absent_until - now()) * 1000)::float8 AS "absentIn"
+      (extract(epoch FROM fresh_until) * 1000)::float8 AS "freshAt",
+      (extract(epoch FROM next_read_at) * 1000)::float8 AS "nextAt",
+      (extract(epoch FROM app_absent_until) * 1000)::float8 AS "absentAt"
     FROM repo_about WHERE repo_id = '${id}'`)
-  return found
+  const at = now ?? Date.now()
+  return found === undefined ? undefined : {
+    via: found.via, refusal: found.refusal,
+    freshIn: found.freshAt === null ? null : found.freshAt - at,
+    nextIn: found.nextAt === null ? null : found.nextAt - at,
+    absentIn: found.absentAt === null ? null : found.absentAt - at,
+  }
 }
 
 /** Waits until `check` holds: another isolate's step that the test can only see in the store or at GitHub. */
@@ -365,14 +383,15 @@ describe("kept for every data center", () => {
   test("while GitHub doesn't answer, the last good answer serves, and nobody asks again for 5 seconds", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
-    const one = await isolate(github)
+    const now = Date.now() + 60_000 // A different host clock must not change the duration.
+    const one = await isolate(github, { now })
     await one.answer("octocat", "Spoon-Knife")
     await age(SPOON)
     github.fail("", 502)
     const stale = answered(await one.answer("octocat", "Spoon-Knife"))
     expect(stale).toMatchObject({ cache: "stale", maxAgeSeconds: RepoAbout.STALE_MAX_AGE_SECONDS, about: { name: "octocat/Spoon-Knife" } })
     expect(stale.read).toMatchObject({ outcome: "github_unavailable", stage: "repository", upstreamStatus: 502 })
-    const kept = await row(SPOON)
+    const kept = await row(SPOON, now)
     expect(kept).toMatchObject({ refusal: "github_unavailable" })
     expect(kept?.nextIn).toBeGreaterThan(2_000)
     expect(kept?.nextIn).toBeLessThanOrEqual(Duration.toMillis(RepoAbout.HOLD))
@@ -461,12 +480,13 @@ describe("kept for every data center", () => {
     github.publish("octocat", "Limited")
     github.fail("", 429)
     github.state.remaining = undefined
-    const one = await isolate(github)
+    const now = Date.now() + 60_000 // A different host clock must not change the duration.
+    const one = await isolate(github, { now })
     const limited = await one.answer("octocat", "Limited")
     expect(limited).toMatchObject({ _tag: "Refused", code: "rate_limited", read: { outcome: "rate_limited", upstreamStatus: 429 } })
     expect(limited._tag === "Refused" && limited.retryAfterMillis).toBeUndefined()
     expect(limited.read?.rateRemaining).toBeUndefined()
-    const next = (await row("github/octocat/limited"))?.nextIn ?? 0
+    const next = (await row("github/octocat/limited", now))?.nextIn ?? 0
     expect(next).toBeGreaterThan(55_000)
     expect(next).toBeLessThanOrEqual(Duration.toMillis(RepoAbout.RATE_HOLD))
     expect(one.reads()[0]).not.toHaveProperty("rateRemaining")
@@ -478,11 +498,12 @@ describe("kept for every data center", () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
     github.fail("/languages", "rate_limited")
-    const one = await isolate(github)
+    const now = Date.now() + 60_000 // A different host clock must not change the duration.
+    const one = await isolate(github, { now })
     const partial = answered(await one.answer("octocat", "Spoon-Knife"))
     expect(partial.read).toMatchObject({ outcome: "partial", missing: ["languages"] })
     expect(partial.maxAgeSeconds).toBeLessThanOrEqual(300)
-    expect((await row(SPOON))?.freshIn).toBeLessThanOrEqual(Duration.toMillis(RepoAbout.PARTIAL_FRESH))
+    expect((await row(SPOON, now))?.freshIn).toBeLessThanOrEqual(Duration.toMillis(RepoAbout.PARTIAL_FRESH))
     expect(one.reads()).toEqual([expect.objectContaining({ outcome: "partial", missing: "languages" })])
   })
 })
