@@ -9,7 +9,7 @@ import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { test } from "node:test"
 import * as MeteredDispatch from "../../../packages/smithers/src/internal/MeteredDispatch.ts"
-import { attribute, header, layer } from "../coding/metered-steps.ts"
+import { attribute, header, layer } from "../coding/metered-steps.vibe"
 
 const proxy = "http://127.0.0.1:4100/model-proxy"
 const sent: Array<HttpClientRequest.HttpClientRequest> = []

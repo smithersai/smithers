@@ -7,7 +7,7 @@ import {
   LaneReceipt,
   LocalPull,
   MergeOutcome
-} from "./landing-schema.ts"
+} from "./landing-schema.vibe"
 import { SourcePublication, StackProposal } from "./native-schema.ts"
 import { Receipt, RequestResult, Result, Revision } from "./schema.ts"
 
