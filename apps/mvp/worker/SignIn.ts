@@ -1003,15 +1003,16 @@ export const make = <E, R>(
         return Context.make(RunCredentials.RunCredentials, credentials).pipe(
           Context.add(
             Actor.Sessions,
-            Actor.Sessions.of({
-              resolve: RunCredentials.resolveWith(
-                credentials,
-                current.pipe(
-                  Effect.map(Option.map((signed) => ({ ...signed.actor, login: signed.login }))),
-                  Effect.provide(context),
-                ),
-              ),
-            }),
+            (() => {
+              const person = current.pipe(
+                Effect.map(Option.map((signed) => ({ ...signed.actor, login: signed.login }))),
+                Effect.provide(context),
+              )
+              return Actor.Sessions.of({
+                resolve: RunCredentials.resolveWith(credentials, person),
+                resolveCookie: RunCredentials.resolveCookieWith(person),
+              })
+            })(),
           ),
         )
       }),

@@ -8,7 +8,8 @@ import { type ListedLink, workOf } from "./WorkLinks.ts"
 
 // `GET /api/repos/<owner>/<name>/issues` (docs/features/issues.md#routes): a repository's issues from Smithers'
 // projection, one page at a time, for a client that doesn't sync the whole list (the CLI, the proof, an agent). The
-// browser's list stays the synced `item-summaries` shape. Who may read is the shapes' rule (Api.ts `readRefusal`).
+// browser's list stays the synced `item-summaries` shape. Who may read is the shapes' rule (`Access.repositoryReadable`),
+// and a runner registered on the repository, with its token.
 //
 // Order is the latest update first, then the highest number. A page is at most `ISSUE_PAGE_MAX` issues; when more
 // follow, `Link: <...&cursor=<c>>; rel="next"` names the next page, as GitHub's REST API does. The cursor is the

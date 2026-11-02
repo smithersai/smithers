@@ -223,10 +223,28 @@ export const resolveWith = <R>(
     const request = yield* HttpServerRequest.HttpServerRequest
     const bearer = bearerOf(request)
     const actor = Option.isSome(bearer) ? yield* credentials.verify(bearer.value) : yield* session
+    return yield* bound(request, actor, Option.isSome(bearer))
+  })
+
+/**
+ * The person behind `request`'s session cookie alone (`session`), never a run credential its `Authorization` carries,
+ * bound by the device header as `resolveWith` binds a cookie's person.
+ */
+export const resolveCookieWith = <R>(
+  session: Effect.Effect<Option.Option<Actor>, SessionsUnavailable, R>,
+): Effect.Effect<Option.Option<Actor>, SessionsUnavailable, R | HttpServerRequest.HttpServerRequest> =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    return yield* bound(request, yield* session, false)
+  })
+
+/** `actor`, or nobody where the request's device header names someone else, or a cookie write names no one. */
+const bound = (request: HttpServerRequest.HttpServerRequest, actor: Option.Option<Actor>, viaBearer: boolean) =>
+  Effect.gen(function* () {
     const header = request.headers[DEVICE_PERSON_HEADER]
     // A page with none of the device's data carries no one's data: it binds nothing.
     const expected = header === NO_DEVICE_DATA ? undefined : header
-    const cookieMutation = Option.isNone(bearer) && request.headers.cookie !== undefined && !["GET", "HEAD", "OPTIONS"].includes(request.method)
+    const cookieMutation = !viaBearer && request.headers.cookie !== undefined && !["GET", "HEAD", "OPTIONS"].includes(request.method)
     if (Option.isSome(actor) && ((cookieMutation && header === undefined) || (expected !== undefined && actor.value.subject.id !== expected))) {
       const outcome = expected === undefined ? "unbound" : "mismatch"
       yield* Metric.update(Metric.withAttributes(devicePrincipalRefusals, { outcome }), 1)
@@ -243,4 +261,8 @@ export const resolveWith = <R>(
 export const sessionsWith = (
   session: Effect.Effect<Option.Option<Actor>, SessionsUnavailable, HttpServerRequest.HttpServerRequest>,
 ): Layer.Layer<Sessions, never, RunCredentials> =>
-  Layer.effect(Sessions, Effect.map(RunCredentials, (credentials) => Sessions.of({ resolve: resolveWith(credentials, session) })))
+  Layer.effect(
+    Sessions,
+    Effect.map(RunCredentials, (credentials) =>
+      Sessions.of({ resolve: resolveWith(credentials, session), resolveCookie: resolveCookieWith(session) })),
+  )

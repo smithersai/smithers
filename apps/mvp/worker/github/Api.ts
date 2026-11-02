@@ -101,6 +101,7 @@ import * as Visibility from "./Visibility.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Review from "./Review.ts"
 import * as Store from "./Store.ts"
+import * as Access from "./Access.ts"
 import { TriageRun } from "./Triage.ts"
 import * as TriageStore from "./TriageStore.ts"
 import { Write } from "./Write.ts"
@@ -816,17 +817,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     )
 
     /**
-     * The repository a shape names, `?repo=<owner>/<name>`, the deployment's own unless it names one: one the
-     * deployment acts on (`mayAct`), else the refusal: `400 invalid` for a name GitHub couldn't have, `404 not_found`
-     * for a repository it doesn't act on.
+     * The repository a shape names, `?repo=<owner>/<name>`, the deployment's own unless it names one; `400 invalid` for
+     * a name GitHub couldn't have. Whether the deployment acts on it is `repositoryReadable`'s to say.
      */
     const shapeTarget = (url: string): Result.Result<Repository, HttpServerResponse.HttpServerResponse> => {
       const named = new URL(url, "http://localhost").searchParams.get("repo")
       if (named === null) return Result.succeed(repository)
       const [owner = "", name = "", ...rest] = named.split("/")
       if (rest.length !== 0 || !isRepository(owner, name)) return Result.fail(refuse(400, "invalid"))
-      const target = repositoryOf(`${owner}/${name}`)
-      return mayAct(target.id) ? Result.succeed(target) : Result.fail(refuse(404, "not_found"))
+      // Whether the deployment acts on it is `repositoryReadable`'s first check.
+      return Result.succeed(repositoryOf(`${owner}/${name}`))
     }
 
     /** An Electric shape of `table` with its `columns`, filtered by `where` and `params`. */
@@ -844,33 +844,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       })
 
     /**
-     * Who may read the repository's rows (decision 0012, Consequences: until shapes are authorized per request, only a
-     * public repository's rows reach a visitor): a signed-in person with a role on it, which GitHub granted because
-     * they can see it; anyone else only when a GitHub metadata answer less than 60 seconds old says the repository is public. `None` when they may read,
-     * else the refusal: signed out `401`, no role `403`, unavailable checks `503`.
+     * Who may read a repository's content (worker/github/Access.ts): the one predicate the shapes, the issue list and
+     * every other repository read share.
      */
-    const readRefusal = (target = repository) => Effect.gen(function* () {
-      const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
-      if (Option.isNone(actor)) return Option.some(refuse(503, "unavailable"))
-      if (Option.isSome(actor.value)) {
-        const resolved = yield* options.roles.resolve(actor.value.value, target).pipe(Effect.result)
-        if (resolved._tag === "Failure") {
-          // Where the App can't act, nobody has a role there: the public check below decides, as for anyone. Every
-          // other refusal is GitHub or Postgres not answering now.
-          if (!RepoRoles.CANT_ACT.has(resolved.failure.code)) {
-            return Option.some(refuse(503, "unavailable", resolved.failure.retryAfterSeconds))
-          }
-        } else if (resolved.success.role !== null) return Option.none()
-      }
-      const isPublic = yield* Store.isPublic(target.id).pipe(Effect.provide(database), Effect.option)
-      if (Option.isNone(isPublic)) return Option.some(refuse(503, "unavailable"))
-      if (Option.getOrElse(isPublic.value, () => false)) {
-        const current = yield* visibility(target)
-        if (Option.isNone(current)) return Option.some(refuse(503, "unavailable"))
-        if (current.value) return Option.none()
-      }
-      return Option.some(Option.isNone(actor.value) ? refuse(401, "authentication") : refuse(403, "forbidden"))
-    })
+    const access = Access.make({ repository, mayAct, roles: options.roles, visibility, database })
+    /** A refused proof as the readers answer it: the refusal's status and code, and how long to wait when known. */
+    const refusalOf = (proof: Access.Proof & { readonly _tag: "Refused" }) => refuse(proof.status, proof.refusal, proof.retryAfterSeconds)
+
+    /**
+     * Who may read the repository's rows (decision 0012, Consequences: until shapes are authorized per request, only a
+     * public repository's rows reach a visitor), the viewer stage alone, for the readers without the deployment's checks
+     * (the actions shape, compare, home): `None` when they may read, else the refusal.
+     */
+    const readRefusal = (target = repository) =>
+      Effect.map(access.viewerAccess(target, "session"), (proof) => proof._tag === "Readable" ? Option.none() : Option.some(refusalOf(proof)))
 
     /** A repository shape, served only to whom `readRefusal` lets read it; the refusal is counted under its table. */
     const readable = (table: string, columns: ReadonlyArray<string>, where = "repo_id = $1", target = repository, params: Readonly<Record<string, string>> = { "1": target.id }) =>
@@ -920,36 +907,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           }
           const target = repositoryOf(`${named.owner}/${named.name}`)
           fields.repoId = target.id
-          if (!mayAct(target.id)) {
-            fields.outcome = "not_found"
-            return refuse(404, "not_found")
-          }
-          if (target.id !== repository.id) {
-            const absent = yield* Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.orElseSucceed(() => false))
-            if (absent) {
-              fields.outcome = "app_not_installed"
-              return refuse(404, "app_not_installed")
-            }
-          }
           const search = new URL(request.url, "http://localhost").searchParams
           const query = IssueList.parseQuery(search)
-          if (query === undefined) {
-            fields.outcome = "invalid"
-            return refuse(400, "invalid")
-          }
           // A runner registered on the repository reads its issues with its own token, as it reads its jobs.
-          const refused = yield* readRefusal(target)
-          if (Option.isSome(refused)) {
-            const runner = yield* WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database), Effect.orElseSucceed(() => Option.none<string>()))
-            if (Option.isNone(runner)) {
-              fields.outcome = "refused"
-              return refused.value
-            }
-            fields.by = "runner"
+          const { proof } = yield* access.repositoryReadable(target, "session_or_runner", { validate: Effect.succeed(query !== undefined) })
+          if (proof._tag === "Refused") {
+            fields.outcome = proof.stage === "viewer" ? "refused" : proof.refusal
+            return refusalOf(proof)
           }
+          if (proof.via === "runner") fields.by = "runner"
           const [, found] = yield* Effect.all([
             reconcileIfStale(target),
-            IssueList.page(target.id, query).pipe(Effect.provide(database), Effect.result),
+            IssueList.page(target.id, query!).pipe(Effect.provide(database), Effect.result),
           ], { concurrency: 2 })
           if (found._tag === "Failure") {
             fields.outcome = "unavailable"
@@ -1048,44 +1017,54 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       // commit): the repository `?repo=` names, its own unless it names one (decision 0079, slice 1b).
       const repositoryShape = REPOSITORY_SHAPES[path]
       if (repositoryShape !== undefined) {
-        const target = shapeTarget(request.url)
-        if (Result.isFailure(target)) return target.failure
-        // Where an About read found the App absent lately, and Smithers knows no installation, the deployment doesn't
-        // sync the repository: `404 app_not_installed`, which the page shows as GitHub's list. Postgres not answering
-        // here leaves it to the read below.
-        if (target.success.id !== repository.id) {
-          const absent = yield* Store.appAbsent(target.success.id).pipe(Effect.provide(database), Effect.orElseSucceed(() => false))
-          if (absent) {
+        const named = shapeTarget(request.url)
+        if (Result.isFailure(named)) return named.failure
+        const target = named.success
+        const params = new URL(request.url, "http://localhost").searchParams
+        const selected = itemShape(path, repositoryShape.where, target.id, params.get("number"))
+        const refresh = params.get("refresh")
+        // A pull's commits, reviews or checks with `?refresh=<number>` also refresh that pull from GitHub.
+        const refreshes = refresh !== null && (path === PULL_COMMITS_SHAPE_ROUTE || path === REVIEWS_SHAPE_ROUTE || path === CHECKS_SHAPE_ROUTE)
+        const refreshed = refreshes ? issueNumberOf(refresh) : undefined
+        // Admission runs beside the shape read inside this request, bounded at `RECONCILE_START_TIMEOUT`.
+        // Reconcile's work stays on the durable engine; no admission outlives the request (decision 0104).
+        const reconciles = path === ITEMS_SHAPE_ROUTE || path === ITEM_SUMMARIES_SHAPE_ROUTE
+        const validate = Effect.succeed(selected !== undefined && (!refreshes || refreshed !== undefined))
+        const { proof, settled } = yield* access.repositoryReadable(
+          target,
+          "session",
+          reconciles ? { validate, alongside: reconcileIfStale(target) } : { validate },
+        )
+        if (proof._tag === "Refused") {
+          // Where an About read found the App absent lately, and Smithers knows no installation, the deployment doesn't
+          // sync the repository: `404 app_not_installed`, which the page shows as GitHub's list. A viewer's refusal is
+          // counted and logged as the read's, except a refresh's, which never was.
+          const counted = proof.refusal === "app_not_installed" || (proof.stage === "viewer" && !refreshes)
+          if (counted) {
             yield* Metric.update(
-              Metric.withAttributes(Metrics.shapes, { table: repositoryShape.table, status: "404", live: "false" }),
+              Metric.withAttributes(Metrics.shapes, { table: repositoryShape.table, status: String(proof.status), live: "false" }),
               1,
             )
-            yield* Effect.logInfo(`github.shape.${repositoryShape.table}`).pipe(
-              Effect.annotateLogs({ status: 404, errorCode: "app_not_installed", repoId: target.success.id }),
-            )
-            return refuse(404, "app_not_installed")
           }
+          if (proof.refusal === "app_not_installed") {
+            yield* Effect.logInfo(`github.shape.${repositoryShape.table}`).pipe(
+              Effect.annotateLogs({ status: 404, errorCode: "app_not_installed", repoId: target.id }),
+            )
+          } else if (counted) {
+            yield* Effect.logWarning(`github.shape.${repositoryShape.table}`).pipe(Effect.annotateLogs({ status: proof.status }))
+          }
+          yield* settled
+          return refusalOf(proof)
         }
-        const selected = itemShape(path, repositoryShape.where, target.success.id, new URL(request.url, "http://localhost").searchParams.get("number"))
-        if (selected === undefined) return refuse(400, "invalid")
-        const read = readable(repositoryShape.table, repositoryShape.columns, selected.where, target.success, selected.params)
-        const refresh = new URL(request.url, "http://localhost").searchParams.get("refresh")
-        if (refresh !== null && (path === PULL_COMMITS_SHAPE_ROUTE || path === REVIEWS_SHAPE_ROUTE || path === CHECKS_SHAPE_ROUTE)) {
-          const number = issueNumberOf(refresh)
-          if (number === undefined) return refuse(400, "invalid")
-          const refusal = yield* readRefusal(target.success)
-          if (Option.isSome(refusal)) return refusal.value
-          const [, response] = yield* Effect.all([refreshPull.start(target.success, number), read], { concurrency: 2 })
-          const receipt = yield* refreshPull.receipt(target.success, number)
+        const read = shape(repositoryShape.table, repositoryShape.columns, selected!.where, selected!.params)
+        if (refreshed !== undefined) {
+          const [, response] = yield* Effect.all([refreshPull.start(target, refreshed), read], { concurrency: 2 })
+          const receipt = yield* refreshPull.receipt(target, refreshed)
           return HttpServerResponse.setHeader(response, PULL_RECEIPT_HEADER, receipt)
         }
-        if (path === ITEMS_SHAPE_ROUTE || path === ITEM_SUMMARIES_SHAPE_ROUTE) {
-          // Admission runs beside the shape read inside this request, bounded at `RECONCILE_START_TIMEOUT`.
-          // Reconcile's work stays on the durable engine; no admission outlives the request (decision 0104).
-          const [, response] = yield* Effect.all([reconcileIfStale(target.success), read], { concurrency: 2 })
-          return response
-        }
-        return yield* read
+        const response = yield* read
+        yield* settled
+        return response
       }
       if (path === ACTIONS_SHAPE_ROUTE) {
         const named = new URL(request.url, "http://localhost").searchParams.get("repo")

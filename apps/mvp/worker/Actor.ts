@@ -82,6 +82,12 @@ export class Sessions extends Context.Service<
   Sessions,
   {
     readonly resolve: Effect.Effect<Option.Option<Actor>, SessionsUnavailable, HttpServerRequest.HttpServerRequest>
+    /**
+     * The person behind the request's session cookie alone, never a run credential its `Authorization` carries, bound
+     * by `x-smithers-device-person` as `resolve` binds it (`RunCredentials.resolveCookieWith`). For a read that must
+     * answer for the browser's own session, such as the issue page's first paint. Absent: such a read is unavailable.
+     */
+    readonly resolveCookie?: Effect.Effect<Option.Option<Actor>, SessionsUnavailable, HttpServerRequest.HttpServerRequest>
   }
 >()("@smthrs/mvp/Sessions") {}
 

@@ -277,6 +277,30 @@ describe("signing and reading a credential", () => {
     expect(await resolve({ authorization: "Bearer forged", cookie: "smithers_session=x" })).toEqual(Option.none())
   })
 
+  test("the cookie resolver reads the cookie's person alone, never a credential, bound by the device header", async () => {
+    const sessions = RunCredentials.sessionsWith(Effect.succeedSome(member)).pipe(
+      Layer.provide(Layer.succeed(RunCredentials.RunCredentials, credentials)),
+    )
+    const resolve = (headers: Record<string, string>) =>
+      at(
+        NOW,
+        Effect.flatMap(Effect.service(Sessions), (service) => service.resolveCookie!).pipe(
+          Effect.provideService(
+            HttpServerRequest.HttpServerRequest,
+            HttpServerRequest.fromWeb(new Request("http://chat.test/", { headers })),
+          ),
+          Effect.provide(sessions),
+        ),
+      )
+    expect(await resolve({})).toEqual(Option.some(member))
+    // A credential, valid or not, changes nothing: the cookie's person, never the run acting for them.
+    expect(await resolve({ authorization: `Bearer ${signed}` })).toEqual(Option.some(member))
+    expect(await resolve({ authorization: "Bearer forged" })).toEqual(Option.some(member))
+    // Bound as `resolve` binds a cookie: another person's device data reads as nobody.
+    expect(await resolve({ [DEVICE_PERSON_HEADER]: "person-other" })).toEqual(Option.none())
+    expect(await resolve({ [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA })).toEqual(Option.some(member))
+  })
+
   test("a request from another person's device data reads as nobody, counted and logged without either person", async () => {
     const registry: Metric.MetricRegistry = new Map()
     const logs: Array<unknown> = []
