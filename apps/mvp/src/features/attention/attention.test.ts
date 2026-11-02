@@ -516,6 +516,9 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
             '/acme/widgets', ${version})
           ON CONFLICT (recipient, subject) DO UPDATE SET state = EXCLUDED.state, ref = EXCLUDED.ref,
             version = EXCLUDED.version, updated_at = now()`)))
+    // Ann may clone acme/widgets: a role read that denied her would delete the repository from her feed, clone and all.
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/widgets', 'person-member', 'member')`)))
     await write("working", `fetching:${2 * 1024 * 1024}`, 1)
     await until(() =>
       expect(ann.entry(subject)).toMatchObject({
