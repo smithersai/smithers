@@ -33,6 +33,10 @@ export const fullPageScreenshot = async (
   path?: string,
   options: Pick<NonNullable<Parameters<Page["screenshot"]>[0]>, "clip" | "timeout"> = {},
 ): Promise<Buffer> => {
+  // The viewport redraw shares the capture budget; a timed-out font wait must
+  // not start a second wait with the original timeout. Zero keeps Playwright’s
+  // explicit unbounded semantics.
+  const deadline = options.timeout === undefined || options.timeout === 0 ? undefined : performance.now() + options.timeout
   const intervals = captures.get(page) ?? []
   captures.set(page, intervals)
   const capture = { start: Date.now(), end: Date.now() }
@@ -41,9 +45,15 @@ export const fullPageScreenshot = async (
     return await page.screenshot({ ...options, ...(path === undefined ? {} : { path }), fullPage: true, animations: "disabled" })
   } finally {
     // End the tool interval only after the recording holds the restored viewport, not the tall surface.
-    await recordCurrentPicture(page, options.timeout)
-    await painted(page)
-    capture.end = Date.now()
+    try {
+      const remaining = deadline === undefined ? undefined : deadline - performance.now()
+      if (remaining === undefined || remaining > 0) {
+        await recordCurrentPicture(page, remaining)
+        await painted(page)
+      }
+    } finally {
+      capture.end = Date.now()
+    }
   }
 }
 

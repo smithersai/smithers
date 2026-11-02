@@ -11,3 +11,7 @@ links:
 Repair schema prefix normalization and execute the five stranded suites; check timeline containment against FE-16/FE-19; prepare real sandbox test images with the deployment CLI pack; reconcile GATE_IMAGE bindings; enforce the existing desktop screenshot deadline through cleanup.
 
 Uses the catalog's @smthrs/database fixture identities and @smthrs/ui timeline. Checks run only on the Mac mini. Each fix lands separately; final whole-suite counts are recorded in green-a-STATUS.md outside the repository.
+
+Schema fix: shared identities normalize hyphens before truncation. All 55 stranded tests and 10 schema/reaper tests pass; library regressions 2/2 and all four typecheck projects pass on the mini.
+
+Desktop cleanup: viewport redraw consumes the full-page capture’s remaining budget; expired captures finalize their evidence interval without a second font wait. The real blocked-font regression retains the 15-second bound and verifies no later output or interval mutation.

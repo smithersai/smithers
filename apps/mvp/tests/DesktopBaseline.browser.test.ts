@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { createServer } from "node:http"
 import { chromium, errors, type Browser, type Page, type Locator, type TestInfo } from "@playwright/test"
 import { afterAll, beforeAll, expect, test } from "vitest"
+import { capturesOf } from "../e2e/fullPageScreenshot"
 import { captureHeight, captureTimeout, CaptureDeadline, comparisonFailure, desktopBaseline } from "../e2e/mobile-baseline"
 
 let browser: Browser
@@ -178,6 +179,9 @@ test("the stable-window deadline finishes cleanup and prevents late captures", a
       const started = performance.now()
       await expect(desktopBaseline(page, info, "deadline")).rejects.toThrow(/Timeout|deadline expired/)
       expect(performance.now() - started).toBeLessThan(15_000)
+      const intervals = capturesOf(page).map(interval => ({ ...interval }))
+      expect(intervals).toHaveLength(1)
+      expect(intervals[0]!.end).toBeGreaterThan(intervals[0]!.start)
       const files = await readdir(directory)
       expect(await page.locator(".app-shell-header").evaluate(el => getComputedStyle(el).flexWrap)).toBe("wrap")
       release()
@@ -187,6 +191,7 @@ test("the stable-window deadline finishes cleanup and prevents late captures", a
         for (let frame = 0; frame < 60; frame++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
       })
       expect(await readdir(directory), "no abandoned callback may produce later captures").toEqual(files)
+      expect(capturesOf(page), "capture intervals must finish before the helper returns").toEqual(intervals)
       expect(await page.locator(".app-shell-header").evaluate(el => getComputedStyle(el).flexWrap)).toBe("wrap")
       expect(await page.evaluate(() => [scrollX, scrollY])).toEqual([0, 0])
     })
