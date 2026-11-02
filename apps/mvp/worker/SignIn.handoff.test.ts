@@ -223,7 +223,12 @@ describe("signing in at an alias", () => {
     const skewed = await h.sessionAt(ALIAS, alias) as { readonly expiresAt?: number; readonly serverNow?: number }
     expect(skewed.serverNow).toBeLessThan(Date.now() + 60 * 1000)
     expect(skewed.expiresAt).toBe(answer.expiresAt)
-    h.advance(-60 * 60 * 1000)
+    // And a Worker clock an hour behind: the same database now, the same end.
+    h.advance(-2 * 60 * 60 * 1000)
+    const behind = await h.sessionAt(ALIAS, alias) as { readonly expiresAt?: number; readonly serverNow?: number }
+    expect(behind.serverNow).toBeGreaterThan(Date.now() - 60 * 1000)
+    expect(behind.expiresAt).toBe(answer.expiresAt)
+    h.advance(60 * 60 * 1000)
     // The answer names no session: neither the parent's id nor the alias's own appears anywhere in it.
     const [ids] = await sql((client) =>
       client<{ readonly parent: string; readonly alias: string }>`

@@ -124,7 +124,7 @@ const within = <A>(renewal: Effect.Effect<A, never, SqlClient.SqlClient>) => ren
 const transcriptHost = (
   storage: TranscriptHost.Storage<SqlClient.SqlClient>,
   sockets: Array<Socket>,
-  check: (admission: SocketAccess.Admission) => Effect.Effect<SocketAccess.Verdict, never, SqlClient.SqlClient>,
+  check: (admission: SocketAccess.Admission) => Effect.Effect<SocketAccess.Checked, never, SqlClient.SqlClient>,
   store = sqliteStore(),
   wrap: <A>(renewal: Effect.Effect<A, never, SqlClient.SqlClient>) => Effect.Effect<A, unknown, SqlClient.SqlClient> =
     within,
@@ -229,6 +229,62 @@ describe("a transcript's watchers", () => {
       expect(left, String(skew)).toBeGreaterThan(590_000)
       expect(left, String(skew)).toBeLessThanOrEqual(600_000)
     }
+  })
+
+  // The clock contract on renewal and freshness (decision 0151 rule 9): a role confirmed now is fresh whatever the
+  // Worker's clock says, and a renewal's window starts when its check started, not when the slowest check finished.
+  test("on a Worker clock an hour off the database's, a role confirmed now is fresh, at admission and at renewal", async () => {
+    const check = await checks()
+    const kept = await signIn("member")
+    // Past the freshness window either way, so a Worker-clock comparison would call the role stale or not yet seen.
+    const fresh = await runtime.runPromise(SocketAccess.roleFreshMs)
+    for (const skew of [fresh + 60 * 60 * 1000, -(fresh + 60 * 60 * 1000)]) {
+      const [admitted, renewed] = await runtime.runPromise(Effect.gen(function* () {
+        yield* TestClock.setTime(Date.now() + skew)
+        const admitted = yield* SocketAccess.admit(kept, RUN, "member")
+        if (admitted._tag !== "admitted") return [admitted._tag, undefined] as const
+        const [renewed] = yield* SocketAccess.renew("transcript", [admitted.admission], check, within)
+        return [admitted._tag, renewed] as const
+      }).pipe(Effect.provide(TestClock.layer())))
+      expect(admitted, String(skew)).toBe("admitted")
+      expect(renewed?.verdict, String(skew)).toBe("keep")
+    }
+  })
+
+  test("a renewal's window runs from when its check started: a slow renewal doesn't stretch it", async () => {
+    const check = await checks()
+    const kept = await signIn("member")
+    const [started, renewed] = await runtime.runPromise(Effect.gen(function* () {
+      yield* TestClock.setTime(Date.now())
+      const admitted = yield* SocketAccess.admit(kept, RUN, "member")
+      if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
+      const started = yield* now
+      // The renewal's other work takes 4 s after this check answered, inside its deadline.
+      const slow = <A>(renewal: Effect.Effect<A, never, SqlClient.SqlClient>) =>
+        Effect.tap(renewal, () => TestClock.adjust(4_000))
+      const [renewed] = yield* SocketAccess.renew("transcript", [admitted.admission], check, slow)
+      return [started, renewed] as const
+    }).pipe(Effect.provide(TestClock.layer())))
+    expect(renewed!.verdict).toBe("keep")
+    expect(renewed!.until).toBe(started + SocketAccess.LEASE_MS)
+  })
+
+  test("on a Worker clock an hour ahead of the database's, a lease still ends with its session: no event after it", async () => {
+    const check = await checks()
+    const ending = await signIn("member", 20)
+    const socket = new Socket()
+    const host = transcriptHost(memoryStorage().storage, [socket], check)
+    await runtime.runPromise(Effect.gen(function* () {
+      yield* TestClock.setTime(Date.now() + 60 * 60 * 1000)
+      const admitted = yield* SocketAccess.admit(ending, RUN, "member")
+      if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
+      yield* host.join(socket, admitted.admission, -1)
+      yield* host.append(1, [event(0)])
+      yield* TestClock.adjust(20_001)
+      yield* host.append(1, [event(1)])
+    }).pipe(Effect.provide(TestClock.layer())))
+    expect(socket.events()).toEqual([1])
+    expect(socket.closed).toEqual({ code: 4401, reason: "session ended" })
   })
 
   test("a lease never runs past the session's end: no event after it, and 4401 with no query", async () => {
