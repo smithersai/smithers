@@ -659,8 +659,8 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "maintain")
     const actor = await maya("guest")
-    await sql(runtime, `INSERT INTO personal_models (person_id, protocol, base_url, fast_model, ciphertext, nonce, key_version,
-      key_last4) VALUES ('${actor.subject.id}', 'openai-chat', 'https://api.example.com', 'm-1', 'c', 'n', 1, 'abcd')`)
+    await sql(runtime, `INSERT INTO personal_models (person_id, kind, protocol, base_url, fast_model, ciphertext, nonce, key_version,
+      key_last4) VALUES ('${actor.subject.id}', 'api_key', 'openai-chat', 'https://api.example.com', 'm-1', 'c', 'n', 1, 'abcd')`)
     const h = await githubHarness(runtime, { own: OWN, actor, github })
     expect(await statuses(h, maintainerWrites())).toEqual([
       ["issue/triage", 202],

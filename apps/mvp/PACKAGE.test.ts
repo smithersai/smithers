@@ -86,7 +86,7 @@ describe("the app's rule scopes", () => {
  * (decision 0014) has no `/repos/` before it.
  */
 const githubActions =
-  /\/repos\/[^\s"'`]*\/actions\/|\bcheck[-_]runs?\b|\bcheck[-_]suites?\b|\/statuses\/|\/commits\/[^\s"'`]*\/status(?:es)?\b|\bworkflow_(?:run|job|dispatch)\b|\b(?:layer)?CheckRun/
+  /\/repos\/[^\s"'`]*\/actions\/|\bcheck[-_]runs?\b|\bcheck[-_]suites?\b|\/statuses\/|\/commits\/[^\s"'`]*\/status(?:es)?\b|\bworkflow_(?:run|job|dispatch)\b|\b(?:layer)?CheckRuns?\b/
 
 /** Every file under the app's source roots, app-relative with `/`. */
 const appFiles: ReadonlyArray<string> = ["src", "worker", "db"].flatMap((root) =>
@@ -113,7 +113,8 @@ describe("github.no-actions", () => {
     "`/${owner}/${repo}/actions/runs/${runId}`",
     "import { open } from \"./actions\"",
     "store.statuses.tanstack",
-    "GitHub.Actions.AddLabels"
+    "GitHub.Actions.AddLabels",
+    "Action.make(\"ops/CheckRunners\")"
   ])("lets %s through", (text) => {
     expect(githubActions.test(text)).toBe(false)
   })

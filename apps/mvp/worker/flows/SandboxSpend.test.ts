@@ -64,12 +64,15 @@ const person = async (role: string, ended?: "revoked" | "expired") => {
   return id
 }
 
-/** `hours` of machine time on `instance`, ended now. */
+/**
+ * `hours` of machine time on `instance`, all of it inside this UTC month: the month's first hours, even when they are
+ * still ahead. Ended "now" instead, a run in a month's first days starts part of it last month, which isn't priced.
+ */
 const spent = (hours: number, instance = "standard-4") =>
   sql(`
     INSERT INTO sandbox_generations (branch_id, generation, kind, instance, started_at, seen_at, ended_at)
-    VALUES ('${crypto.randomUUID()}', 1, 'branch', '${instance}', now() - make_interval(secs => ${hours * 3600}),
-      now(), now())`)
+    SELECT '${crypto.randomUUID()}', 1, 'branch', '${instance}', first, first, first + make_interval(secs => ${hours * 3600})
+    FROM (SELECT date_trunc('month', now(), 'UTC') AS first) AS month`)
 
 const bellRows = () =>
   sql<{ recipient: string; subject: string; kind: string; state: string; title: string; href: string }>(

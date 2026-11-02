@@ -233,10 +233,12 @@ describe("your conversations", () => {
 
     const later = future + 60_000
     await laptop.runtime.runPromise(store.pending.insert({ conversationId, archived: true, at: later }))
+    // The branch this tab shows opens without tracking it (`kept`): it has to leave it and come back.
+    await laptop.branch.actions.open("octo", "hello", "main")
     await laptop.branch.actions.open("octo", "hello", "feature/one")
     await until(() => expect(laptop.pending()).toEqual([]))
     expect(new Date(store.mine.tanstack.get(conversationId)!.changedAt).getTime()).toBeGreaterThan(later)
-    expect(laptop.list()).toEqual(["feature/one"])
+    expect(laptop.list()).toEqual(["feature/one", "main"])
   }, WITHIN)
 
   test("search matches the repository and the branch, every word", async () => {
