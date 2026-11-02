@@ -12,7 +12,7 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import type { JournalEntryLike } from "../src/EngineSubject.vibe"
-import { expectJournal } from "../src/JournalAssertions.ts"
+import { expectJournal } from "../src/JournalAssertions.vibe"
 import type { JournalAssertionError } from "../src/TestingError.ts"
 
 const codeOf = (effect: Effect.Effect<void, JournalAssertionError>) =>

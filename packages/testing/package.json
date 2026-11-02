@@ -50,7 +50,7 @@
     "./FixtureStore": "./src/FixtureStore.ts",
     "./FlowEngineLike": "./src/FlowEngineLike.ts",
     "./HostSuite": "./src/HostSuite.ts",
-    "./JournalAssertions": "./src/JournalAssertions.ts",
+    "./JournalAssertions": "./src/JournalAssertions.vibe",
     "./MemoryEngine": "./src/MemoryEngine.ts",
     "./ModelLike": "./src/ModelLike.ts",
     "./ModelServer": "./src/ModelServer.ts",
