@@ -17,6 +17,8 @@ overrides:
   '@effect/sql-sqlite-node': 4.0.5
   '@effect/vitest': 4.0.5
 
+packageExtensionsChecksum: sha256-8si9If8uynEG4nU8+qUmtNNeZDzCAlOocZtoDu8DvpY=
+
 pnpmfileChecksum: sha256-WT4I+tYhRao6cP63D8ZRgAv3w9Cn2XcR/8xhNAyhVro=
 
 patchedDependencies:
@@ -958,9 +960,6 @@ importers:
         specifier: workspace:*
         version: link:../effect-tanstack-db
     devDependencies:
-      '@smthrs/database':
-        specifier: workspace:*
-        version: link:../smithers/flows/database
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
@@ -976,6 +975,9 @@ importers:
       '@journeyapps/wa-sqlite':
         specifier: 1.7.2
         version: 1.7.2
+      '@smthrs/database':
+        specifier: workspace:*
+        version: link:../smithers/flows/database
       '@tanstack/browser-db-sqlite-persistence':
         specifier: 0.2.36
         version: 0.2.36(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
@@ -21448,6 +21450,7 @@ snapshots:
       '@alchemy.run/floci': 2.0.0-beta.83(effect@4.0.5)
       '@alchemy.run/node-utils': 2.0.0-beta.83
       '@alchemy.run/sigil': 0.1.0-alpha.1(@types/react@19.2.18)(react-devtools-core@7.0.1)
+      '@cloudflare/workers-types': 5.20261019.1
       '@distilled.cloud/acme': 1.0.0-rc.15(effect@4.0.5)
       '@distilled.cloud/aws': 1.0.0-rc.15(effect@4.0.5)
       '@distilled.cloud/axiom': 1.0.0-rc.15(effect@4.0.5)

@@ -86,3 +86,10 @@ minimumReleaseAgeExclude:
   - 'vibelang-linux-x64'
   - 'vibelang-win32-arm64'
   - 'vibelang-win32-x64'
+
+# Alchemy publishes declarations importing workers-types but declares it only for development.
+# Give its declarations the same exact type dependency as the app, independent of hoisting.
+packageExtensions:
+  alchemy@2.0.0-beta.83:
+    dependencies:
+      "@cloudflare/workers-types": "5.20261019.1"
