@@ -18,8 +18,9 @@ import {
   SYNC_SHAPE_ROUTE,
   TRIAGE_SETTINGS_SHAPE_ROUTE,
 } from "../../src/features/issues/contract.ts"
-import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULL_RECEIPT_HEADER, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
+import { CHECKS_SHAPE_ROUTE, compareRoute, PULL_COMMITS_SHAPE_ROUTE, PULL_RECEIPT_HEADER, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import { WORK_LINKS_SHAPE_ROUTE } from "../../src/features/issues/work.ts"
+import { ACTIONS_SHAPE_ROUTE } from "../../src/features/actions/contract.ts"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type Role, type SessionState } from "../../src/features/auth/contract.ts"
 import * as Actor from "../Actor.ts"
 import * as RunCredentials from "../RunCredentials.ts"
@@ -255,6 +256,21 @@ const shapeReaders = (cell: Cell): ReadonlyArray<Reader> => {
   return cell.invalid === true ? all.filter((reader) => reader.numbered === true) : all
 }
 
+/**
+ * The repository readers outside the issues: its actions shape (its runs), a comparison of two commits, and the role
+ * route's `readable`. A comparison the gate lets through asks GitHub for it.
+ */
+const otherReaders = async (h: Awaited<ReturnType<typeof harnessFor>>, cell: Cell, headers: Record<string, string>) => {
+  const actions = (await answerOf(await h.fetch(`${ACTIONS_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=-1`, { headers }))).answer
+  const compared = (await answerOf(await h.fetch(compareRoute(cell.repo.owner, cell.repo.name, "a".repeat(40), "b".repeat(40)), { headers }))).answer
+  const asked = h.github.calls.some((call) => call.path.includes("/compare/"))
+  return {
+    actions,
+    compare: cell.shapes === "200" ? { asked } : { answer: compared, asked },
+    readable: await h.mayRead({ owner: cell.repo.owner, name: cell.repo.name, id: cell.repo.id }, headers),
+  }
+}
+
 const listPath = (cell: Cell) => `${issuesRoute(cell.repo.owner, cell.repo.name)}?state=all&limit=${cell.invalid === true ? "lots" : "5"}`
 
 const values = (body: string) =>
@@ -285,9 +301,25 @@ describe("one access matrix for every reader of a repository's issues", () => {
       list: cell.list,
     })
 
+    // Step 5 (devpriv FINAL): the actions shape, compare and the role route's `readable` answer the same matrix; they
+    // checked only the viewer before, so a repository the deployment doesn't act on, or where the App is absent, was
+    // read by its public check. Each is one more request through the viewer stage when it reaches it.
+    // (An invalid request names an item number; these readers take none, so they sit those cells out.)
+    if (cell.invalid !== true) {
+      const others = await otherReaders(h, cell, headers)
+      expect(others).toEqual({
+        actions: cell.shapes,
+        // A comparison the gate lets through asks GitHub for it, whatever GitHub then answers; a refused one never does.
+        compare: cell.shapes === "200" ? { asked: true } : { answer: cell.shapes, asked: false },
+        readable: cell.shapes === "200",
+      })
+    }
+
     // What was read to answer: nothing of the viewer before the deployment's checks and the request's own pass; once
     // they pass, who asks is resolved once per request, and a person's role read once per request.
-    const reached = readers.filter(() => !beforeViewer(cell.shapes)).length + (beforeViewer(cell.list) ? 0 : 1)
+    // The other readers below (actions, compare, readable) each reach the viewer stage when the shapes do.
+    const reached = readers.filter(() => !beforeViewer(cell.shapes)).length + (beforeViewer(cell.list) ? 0 : 1) +
+      (beforeViewer(cell.shapes) || cell.invalid === true ? 0 : 3)
     const personal = cell.viewer.kind !== "signed_out" && cell.viewer.kind !== "sessions_down"
     // A request carrying a runner's token is read by its credential, which reads as nobody: no role is read for it.
     const asPerson = personal && cell.runnerOn === undefined
@@ -316,7 +348,9 @@ describe("one access matrix for every reader of a repository's issues", () => {
     // (A served read is counted by the shape proxy itself, as every 200 is.)
     if (cell.shapes !== "200") {
       for (const table of new Set(readers.map((reader) => reader.table))) {
-        const expected = readers.filter((reader) => reader.table === table && counted(reader)).length
+        // The actions shape counts under `runs` as the checks shape does.
+        const actionsCounted = cell.invalid !== true && table === "runs" && counted({ reader: "actions", path: "", table: "runs" }) ? 1 : 0
+        const expected = readers.filter((reader) => reader.table === table && counted(reader)).length + actionsCounted
         expect([table, h.count(Metrics.shapes, { table, status, live: "false" })]).toEqual([table, expected])
       }
     }

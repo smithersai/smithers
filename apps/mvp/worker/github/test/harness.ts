@@ -22,7 +22,7 @@ import {
   Scope,
   Tracer,
 } from "effect"
-import { FetchHttpClient, HttpEffect } from "effect/http"
+import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { onTestFinished } from "vitest"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
@@ -253,6 +253,12 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     fetch,
     /** Whether the deployment syncs a repository's issues and pull requests, as the role route answers it. */
     maySync: (target: Repository) => runtime.runPromise(routes.maySync(target)),
+    /** Whether the request may read a repository's content, as the role route's `readable` answers it. */
+    mayRead: (target: Repository, headers: Record<string, string> = {}) =>
+      runtime.runPromise(observed(routes.mayRead(target).pipe(
+        Effect.provide(options.sessions ?? (options.actor === null ? Actor.signedOut : signedInAs(options.actor ?? member()))),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://github.test/", { headers }))),
+      ))),
     github,
     starts,
     logs,
