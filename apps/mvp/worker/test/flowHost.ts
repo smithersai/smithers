@@ -8,10 +8,10 @@ import { PostgresDatabase } from "@smthrs/database"
 import { type Flow, FlowRuntime } from "@smthrs/flow"
 import { EngineStore, RunStore, Runtime } from "@smthrs/flows"
 import { NodeHost } from "@smthrs/platform-node"
-import { Context, Effect, type Exit, Layer, Redacted, type Schema, Stream } from "effect"
+import { Context, Effect, Exit, Layer, Redacted, type Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Connection } from "effect/sql/SqlConnection"
-import type { SqlError } from "effect/sql/SqlError"
+import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 
 /** Where a Node-host runtime keeps its engine: a fresh schema of the compose Postgres, dropped with the runtime. */
@@ -179,3 +179,76 @@ export const runFlow = <
     ) as Effect.Effect<Ran<Success["Type"], Error["Type"]>, unknown>,
     options.signal === undefined ? undefined : { signal: options.signal },
   )
+
+/** One incarnation of a host's engine (`incarnation`): runs flows until it crashes or closes. */
+export interface Incarnation {
+  readonly engine: Engine
+  /** Starts or resumes `flow` as `executionId` here; resolves with its exit. */
+  readonly execute: <A, E>(
+    flow: Flow.Any,
+    executionId: string,
+    payload: unknown,
+  ) => Effect.Effect<Exit.Exit<A, E>>
+  /** Cuts it off as a process that died would be: its connections end, and it can't reconnect. */
+  readonly crash: () => Promise<void>
+  readonly close: () => Promise<void>
+}
+
+/**
+ * One incarnation of a Durable Object's engine over `registration`, on a fresh engine schema or, to resume another's
+ * runs, on `schema`: each incarnation is its own host whose predecessor counts as dead
+ * (`singleIncarnationLiveness`), as a Durable Object's next alarm is. `crash` ends its connections, so the next
+ * incarnation resumes what it was running from the journal (worker/flows/Todo.test.ts' crash test runs the same way).
+ */
+export const incarnation = async <ROut, RE, RR>(
+  registration: Layer.Layer<ROut, RE, RR>,
+  schema?: string,
+): Promise<Incarnation> => {
+  const scope = Effect.runSync(Scope.make())
+  let disconnected = false
+  const connectionName = `incarnation-${crypto.randomUUID()}`
+  const databaseGate = Effect.suspend(() =>
+    disconnected
+      ? Effect.fail(
+        new SqlError({
+          reason: new ConnectionError({
+            cause: "incarnation crashed",
+            message: "The incarnation's database connection ended",
+            operation: "execute",
+          }),
+        }),
+      )
+      : Effect.void
+  )
+  // What `registration` requires beyond the engine's own services can't be named generically, as in `runFlow`.
+  const built = await Effect.runPromise(
+    Scope.provide(scope)(
+      build(registration, {
+        hostId: "durable-object",
+        isAlive: RunStore.Ownership.singleIncarnationLiveness,
+        maxConnections: 3,
+        databaseGate,
+        connectionName,
+        ...(schema === undefined ? {} : { schema }),
+      }),
+    ) as unknown as Effect.Effect<{ readonly context: Context.Context<FlowRuntime.FlowRuntime>; readonly engine: Engine }, unknown>,
+  )
+  return {
+    engine: built.engine,
+    execute: <A, E>(flow: Flow.Any, executionId: string, payload: unknown) =>
+      Effect.exit(
+        Context.get(built.context, FlowRuntime.FlowRuntime).execute(flow as never, { executionId, payload: payload as never })
+          .pipe(Effect.provide(built.context)) as Effect.Effect<A, E>,
+      ),
+    crash: async () => {
+      disconnected = true
+      await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+        const context = yield* Layer.build(admin)
+        const sql = Context.get(context, SqlClient.SqlClient)
+        yield* Effect.orDie(sql`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+          WHERE pid <> pg_backend_pid() AND application_name = ${connectionName}`)
+      })))
+    },
+    close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+  }
+}

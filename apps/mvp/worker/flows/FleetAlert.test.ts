@@ -5,6 +5,7 @@ import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as FeedLocks from "../FeedLocks.ts"
 import * as Flows from "../Flows.ts"
 import { testFile } from "../test/harness.ts"
 import * as Fleet from "../runners/Fleet.ts"
@@ -158,4 +159,30 @@ test("a bell title with a repository's longest name is cut to a title's 200 char
   const title = FleetAlert.bellTitleOf("waiting", `github/${"o".repeat(100)}/${"n".repeat(100)}`)
   expect(title).toHaveLength(200)
   expect(title.endsWith("…")).toBe(true)
+})
+
+test("the bell takes its recipients' feed locks before it writes any of their rows (worker/FeedLocks.ts)", async () => {
+  const query = (text: string, ...params: ReadonlyArray<unknown>) =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.orDie(sql.unsafe<Record<string, unknown>>(text, params))))
+  const WIDGETS = "github/acme/widgets"
+  await query(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ($1, 'admin-a', 'admin'), ($1, 'admin-b', 'admin')
+    ON CONFLICT (repo_id, person_id) DO UPDATE SET role = 'admin', checked_at = now()`, WIDGETS)
+  await query(`INSERT INTO agent_runs (key, repo_id, agent, generation, queued_at, number, title, cost_usd)
+    VALUES ('locked-cost', $1, 'coder', 1, now(), 3, 'x', 1)`, WIDGETS)
+  // admin-b's lock held a while, as a role read that denies them holds it.
+  const holding = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+    yield* FeedLocks.lock(sql, [{ repoId: WIDGETS, personId: "admin-b" }])
+    yield* Effect.sleep(500)
+  }))))
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  const belling = runtime.runPromise(Effect.flatMap(TestDatabase.Scratch, (scratch) =>
+    FleetAlert.observedBell({ alertId: "locked-cost", kind: "cost", repoId: WIDGETS, subject: "locked-cost" }, "github/acme/home", scratch.database)))
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  // Nothing yet, not even admin-a's row, whose lock was free.
+  expect(await query(`SELECT recipient FROM notifications WHERE subject = 'fleet:locked-cost'`)).toEqual([])
+  await holding
+  // Others with cached Admin roles from earlier tests hear it too; these two are who this checks.
+  expect(await belling).toMatchObject({ outcome: "written" })
+  expect(await query(`SELECT recipient FROM notifications WHERE subject = 'fleet:locked-cost' AND recipient LIKE 'admin-%' ORDER BY recipient`))
+    .toEqual([{ recipient: "admin-a" }, { recipient: "admin-b" }])
 })

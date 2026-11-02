@@ -416,7 +416,7 @@ export const recordRepoEvent = (event: RepoEvent, localPeople: ReadonlyArray<Loc
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     // A person's watch names their id, a UUID; any other principal has no session, so no role GitHub confirmed.
-    const watchers = yield* sql<Inbox.Watcher & { readonly mayRead: boolean }>`
+    const watchersOf = () => sql<Inbox.Watcher & { readonly mayRead: boolean }>`
       SELECT w.principal_id AS principal, w.level,
         COALESCE(${SessionStore.latestRole(sql, sql`person.id`)} IN ('admin', 'maintainer', 'member') AND EXISTS (
           SELECT 1 FROM sessions live
@@ -430,13 +430,24 @@ export const recordRepoEvent = (event: RepoEvent, localPeople: ReadonlyArray<Loc
       WHERE w.subject = ${`repo:${event.repoId}`}
       ORDER BY w.created_at, w.principal_id`
     const local = new Map(localPeople.map((person) => [person.id, person.role]))
-    const readers = new Set(
-      watchers.filter(({ principal, mayRead }) => local.has(principal) ? memberOrAbove(local.get(principal)!) : mayRead)
-        .map((watcher) => watcher.principal),
+    const audienceOf = (watchers: ReadonlyArray<Inbox.Watcher & { readonly mayRead: boolean }>) => {
+      const readers = new Set(
+        watchers.filter(({ principal, mayRead }) => local.has(principal) ? memberOrAbove(local.get(principal)!) : mayRead)
+          .map((watcher) => watcher.principal),
+      )
+      return { readers, audience: Inbox.audience(watchers, (principal) => readers.has(principal)) }
+    }
+    // Who may hear it, read without locking anything; then their feed locks, sorted, before any notification row
+    // (worker/FeedLocks.ts); then, read again after the locks, those locked who may still hear it.
+    const held = yield* FeedLocks.lock(
+      sql,
+      audienceOf(yield* watchersOf()).audience.map((principal) => ({ repoId: event.repoId, personId: principal })),
     )
+    const watchers = yield* watchersOf()
+    const { readers, audience } = audienceOf(watchers)
     const subject = event.kind === "main" ? `main:${event.repoId}` : `release:${event.repoId}:${event.ref}`
     let written = 0
-    for (const recipient of Inbox.audience(watchers, (principal) => readers.has(principal))) {
+    for (const recipient of audience.filter((principal) => FeedLocks.holds(held, { repoId: event.repoId, personId: principal }))) {
       const rows = event.kind === "main"
         ? yield* sql`
           INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)

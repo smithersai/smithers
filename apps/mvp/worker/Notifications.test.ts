@@ -13,6 +13,7 @@ import type { Report } from "../src/features/status/schema.ts"
 import type { Actor } from "./Actor.ts"
 import { REPOSITORY } from "./github/test/fixtures.ts"
 import { delivery, githubHarness } from "./github/test/harness.ts"
+import * as FeedLocks from "./FeedLocks.ts"
 import * as Notifications from "./Notifications.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
@@ -897,5 +898,34 @@ describe("a run on a repository's branch quotes its question only to its launche
     expect(live).toHaveLength(80)
     expect(live.startsWith("Agent run · acme/gizmos/bxxx")).toBe(true)
     expect(live.endsWith("…")).toBe(true)
+  })
+})
+
+describe("a repository event takes its watchers' feed locks before it writes any of their rows (worker/FeedLocks.ts)", () => {
+  test("while another transaction holds one watcher's lock, no watcher's row changes; once it ends, both do", async () => {
+    await sql(`TRUNCATE people, sessions CASCADE`)
+    const people = [crypto.randomUUID(), crypto.randomUUID()].sort()
+    for (const [index, id] of people.entries()) {
+      await sql(`INSERT INTO people (id, github_id, github_login) VALUES ($1, $2, $3)`, id, 70_000 + index, `lock-watcher-${index}`)
+      await sql(`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at)
+        VALUES ($1, $2, $3, 'member', now(), now() + interval '1 day')`, crypto.randomUUID(), crypto.randomUUID(), id)
+      await sql(`INSERT INTO watches (principal_id, subject, level) VALUES ($1, $2, 'all')`, id, `repo:${REPOSITORY.id}`)
+    }
+    const event = Option.getOrThrow(Notifications.repoEventOf("push", {
+      ref: "refs/heads/main", after: "c".repeat(40), repository: { full_name: "acme/widgets", default_branch: "main" },
+    }, REPOSITORY, new Date()))
+    // The second watcher's lock held a while, as a role read that denies them holds it.
+    const holding = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
+      yield* FeedLocks.lock(client, [{ repoId: REPOSITORY.id, personId: people[1]! }])
+      yield* Effect.sleep(500)
+    }))))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const recording = runtime.runPromise(Notifications.recordRepoEvent(event))
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    // Nothing yet, not even the first watcher's row, whose lock was free.
+    expect(await rows(`main:${REPOSITORY.id}`)).toEqual([])
+    await holding
+    expect(await recording).toBe(2)
+    expect((await rows(`main:${REPOSITORY.id}`)).map((row) => row.recipient)).toEqual(people)
   })
 })

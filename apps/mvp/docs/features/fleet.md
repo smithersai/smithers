@@ -123,7 +123,8 @@ Durable flows, no sweeps (FINAL.md §4.2):
   fleet). The TODO's title, its failure, the cost and the runner's name show only on that page, whose shapes check the
   reader's current role (`RepoRoles.resolve`, worker/runners/FleetApi.ts and worker/stack/Api.ts), as a GitHub
   notification links to a private repository rather than quoting it. Rows written
-  before this change keep their old titles until a separate pass rewrites them. The bell always works.
+  before this change keep their old titles until a feed barrier's pass rewrites them
+  ([notifications.md](notifications.md#rows-written-before)). The bell always works.
 - **Outside the app.** A message says only the kind, the repository and the link, `Agent run failed · acme/widgets`, never the TODO's title, its failure, the cost or the runner's name ([decision 0149](../decisions/0149-shared-alert-channels-carry-no-private-content.md)). `ops/DeliverFleetAlert` sends on the deployment's email and Telegram channels, where an Admin set
   them, as every alert delivers ([spend-alerts.md](spend-alerts.md#delivery)), each with an `alert_deliveries` receipt.
   Nothing here sends to Telegram any other way.

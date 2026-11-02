@@ -4,6 +4,7 @@ import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
+import type { SqlClient } from "effect/sql"
 import { FetchHttpClient } from "effect/http"
 import * as Database from "../db/Database.ts"
 import * as AlertChannels from "./AlertChannels.ts"
@@ -20,6 +21,7 @@ import * as Flows from "./Flows.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import { recorded } from "./DurableObjectFailure.ts"
 import * as FleetAlert from "./flows/FleetAlert.ts"
+import * as RedactFeed from "./flows/RedactFeed.ts"
 import * as Fleet from "./runners/Fleet.ts"
 import { repoId } from "../src/features/repo/contract.ts"
 import * as SandboxSpend from "./flows/SandboxSpend.ts"
@@ -126,11 +128,12 @@ export const live = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   options: ProgramOptions,
 ) => Layer.unwrap(Effect.map(
-  Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler]),
+  Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, RedactFeed.launcher]),
   // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md),
-  // then its window's look at the runners (docs/features/fleet.md#alerts).
-  ([sampleLoad, sampleSpend, sampleRunners]) =>
-    object(connection, options, Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners)),
+  // then its window's look at the runners (docs/features/fleet.md#alerts), then each confirmed feed barrier's pass not
+  // yet completed (docs/features/notifications.md#rows-written-before).
+  ([sampleLoad, sampleSpend, sampleRunners, redactFeed]) =>
+    object(connection, options, Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners), redactFeed),
 ))
 
 /** One object, whose alarms start the window's `ops/DatabaseLoad` through `sampleLoad`. */
@@ -138,6 +141,7 @@ const object = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   options: ProgramOptions,
   sampleLoad: Effect.Effect<void, never, Flows.FlowStarter>,
+  redactFeed: Effect.Effect<void, never, Flows.FlowStarter | SqlClient.SqlClient>,
 ) =>
   FlowExecution.make(
     Effect.gen(function* () {
@@ -250,11 +254,14 @@ const object = <E, R>(
             driveBudgetMs,
             canStart: (intent) => TodoRuns.canStart(intent).pipe(Effect.provide(appDatabase), Effect.orDie),
             router: {
-              start: (intent) => executions.getByName(intent.executionId).start(intent),
+              // A feed redaction round's handoff is recorded on its barrier, where a claim wakes a stalled pass.
+              start: RedactFeed.recordingHandoffs((intent) => executions.getByName(intent.executionId).start(intent), appDatabase),
               wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake()),
             },
             afterAlarm: Effect.flatMap(flowStarter, (started) =>
-              sampleLoad.pipe(Effect.provideService(Flows.FlowStarter, started))),
+              Effect.andThen(sampleLoad, redactFeed.pipe(Effect.provide(appDatabase), Effect.orDie)).pipe(
+                Effect.provideService(Flows.FlowStarter, started),
+              )),
             // A repository's run settles its row from the engine's status and its reported result (docs/features/actions.md), and a `todo` run
             // that ended in a defect fails its TODO `crashed` and starts the TODOs that frees (docs/features/todos.md).
             settled: (executionId) =>
@@ -310,7 +317,7 @@ const object = <E, R>(
         // The fleet's alerts (docs/features/fleet.md#alerts): an incident's `ops/FleetAlert` runs on its own object,
         // started through this alarm's runtime.
         const raiser = Effect.map(flowStarter, FleetAlert.startWith)
-        const base = ExecutionHost.withFleet(ExecutionHost.withRunners(ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withPersonalModels(ExecutionHost.withSecrets(
+        const base = ExecutionHost.withFeedRedaction(ExecutionHost.withFleet(ExecutionHost.withRunners(ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withPersonalModels(ExecutionHost.withSecrets(
           ExecutionHost.withSandboxTools(
             ExecutionHost.withTerminals(
               Option.isSome(signIn)
@@ -325,7 +332,8 @@ const object = <E, R>(
           ),
           appDatabase,
         ), appDatabase, credentials), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(machineObjects, keep)),
-          appDatabase), appDatabase, repoId(options.homeRepository.owner, options.homeRepository.name), fleet, raiser, alertChannels)
+          appDatabase), appDatabase, repoId(options.homeRepository.owner, options.homeRepository.name), fleet, raiser, alertChannels),
+          appDatabase)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are: triage's on

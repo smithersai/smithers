@@ -40,6 +40,7 @@ import * as TodoDrop from "./flows/TodoDrop.ts"
 import type { Implement } from "./flows/TodoAgent.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
 import * as FleetAlert from "./flows/FleetAlert.ts"
+import * as RedactFeed from "./flows/RedactFeed.ts"
 import * as Fleet from "./runners/Fleet.ts"
 import * as RunnerAdmin from "./runners/AdminFlows.ts"
 import * as GitHubHost from "./github/Host.ts"
@@ -315,6 +316,18 @@ export const withFleet = <ROut, E, R, DE, DR, SR>(
     // Built with each execution's registration, so its starts run on that execution's runtime.
     Layer.unwrap(Effect.map(start, (raise) => FleetAlert.healthRegistration(database, settings.offlineSeconds, raise))),
   ),
+})
+
+/**
+ * `flows`, plus `ops/RedactFeed` over the app's tables: each confirmed feed barrier's pass
+ * (docs/features/notifications.md#rows-written-before).
+ */
+export const withFeedRedaction = <ROut, E, R, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+) => ({
+  flows: [...flows.flows, RedactFeed.RedactFeed],
+  registration: Layer.merge(flows.registration, RedactFeed.registration(database)),
 })
 
 /**

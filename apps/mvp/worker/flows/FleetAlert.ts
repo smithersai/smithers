@@ -4,6 +4,7 @@ import { Node } from "@smthrs/plan"
 import { Duration, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
+import * as FeedLocks from "../FeedLocks.ts"
 import * as Flows from "../Flows.ts"
 import * as Fleet from "../runners/Fleet.ts"
 import * as AlertDelivery from "./AlertDelivery.ts"
@@ -203,10 +204,10 @@ export const bell = (alert: Fleet.Alert, home: string) =>
         INSERT INTO fleet_alerts (id, kind, repo_id, subject, title, href)
         VALUES (${alert.alertId}, ${alert.kind}, ${alert.repoId}, ${alert.subject}, ${title}, ${href})
         ON CONFLICT (id) DO NOTHING`
-      const rows = yield* sql<{ readonly recipient: string }>`
-        INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href)
-        SELECT DISTINCT recipient, ${`fleet:${alert.alertId}`}, 'fleet', 'update', ${alert.repoId},
-          ${bellTitleOf(alert.kind, alert.repoId)}, ${href}
+      // Who may hear it, read without locking anything; then their feed locks, sorted, before any notification row
+      // (worker/FeedLocks.ts); then the rows, for those locked who may still hear it, in a statement of its own.
+      const audience = () => sql<{ readonly recipient: string }>`
+        SELECT DISTINCT recipient
         FROM (
           SELECT person_id AS recipient FROM github_repo_roles
           WHERE repo_id = ${alert.repoId} AND role IN (SELECT jsonb_array_elements_text(${rolesJson}::jsonb))
@@ -221,7 +222,15 @@ export const bell = (alert: Fleet.Alert, home: string) =>
             SELECT 1 FROM github_repo_roles
             WHERE repo_id = ${alert.repoId} AND person_id = ${committer}::text AND checked_at <> '-infinity'
               AND (role IS NULL OR role NOT IN ('member', 'maintainer', 'admin')))
-        ) AS audience
+        ) AS audience`
+      const held = yield* FeedLocks.lock(sql, (yield* audience()).map(({ recipient }) => ({ repoId: alert.repoId, personId: recipient })))
+      const recipients = (yield* audience()).map(({ recipient }) => recipient)
+        .filter((recipient) => FeedLocks.holds(held, { repoId: alert.repoId, personId: recipient }))
+      const rows = yield* sql<{ readonly recipient: string }>`
+        INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href)
+        SELECT recipient, ${`fleet:${alert.alertId}`}, 'fleet', 'update', ${alert.repoId},
+          ${bellTitleOf(alert.kind, alert.repoId)}, ${href}
+        FROM jsonb_array_elements_text(${JSON.stringify(recipients)}::jsonb) AS chosen(recipient)
         ON CONFLICT (recipient, subject) DO NOTHING
         RETURNING recipient`
       yield* sql`UPDATE fleet_alerts SET recipients = recipients + ${rows.length} WHERE id = ${alert.alertId}`

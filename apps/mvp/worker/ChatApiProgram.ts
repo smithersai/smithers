@@ -60,6 +60,7 @@ import * as SecretsApi from "./secrets/Api.ts"
 import * as RunnerAdmin from "./runners/Admin.ts"
 import * as RunnerAudit from "./runners/Audit.ts"
 import * as RunnersApi from "./runners/Api.ts"
+import * as RedactFeed from "./flows/RedactFeed.ts"
 import * as FleetApi from "./runners/FleetApi.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
@@ -354,6 +355,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
 
     /** Where ChatApi's routes start a remote flow (worker/Flows.ts): its own Durable Object, named by the execution id. */
     const flowStarter = Executions.starter(executions)
+    // A confirmed feed barrier's pass starts with the next request, whatever else runs
+    // (docs/features/notifications.md#rows-written-before): at most one indexed read a minute per isolate.
+    const launchFeedRedaction = yield* RedactFeed.launcher
 
     return {
       fetch: Effect.gen(function* () {
@@ -376,6 +380,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         // Who is asking, and their role on a branch's repository for every branch check (decision 0079).
         const signedIn = Layer.mergeAll(checks, signIn.sessions.pipe(Layer.provide(checks)), BranchRoles.layer(roles))
         const starter = yield* flowStarter
+        // After the response, never before it: no request waits on a claim or a start (ctx.waitUntil).
+        yield* RedactFeed.inBackground(
+          launchFeedRedaction.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(database), Effect.ignore),
+        )
         if (request.url.startsWith(`${AUTH_ROUTE}/`)) {
           // Signing out starts `auth/RevokeGitHubToken` through `starter` and answers once the start is recorded.
           return yield* signIn.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(signedIn))
