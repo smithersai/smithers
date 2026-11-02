@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { Scorers } from "../src/index.ts"
@@ -9,10 +9,32 @@ const packageRoot = fileURLToPath(new URL("../", import.meta.url))
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8")
 
-// `index.ts` is a barrel, so every namespace names a sibling module.
-const namespaces = (): ReadonlyArray<readonly [string, string]> =>
-  [...read("../src/index.ts").matchAll(/export \* as (\w+) from "\.\/(\w+)\.ts"/g)]
-    .map(([, namespace, file]) => [namespace!, file!] as const)
+/** A source module: TypeScript, or the same module migrated to VibeLang. */
+const sourceExtensions = [".ts", ".vibe"] as const
+
+/** The one file, among the paths `exists` accepts, that holds the module `name`. */
+const sourceFile = (exists: (file: string) => boolean, name: string): string => {
+  const found = sourceExtensions.map((extension) => `${name}${extension}`).filter(exists)
+  if (found.length !== 1) {
+    throw new Error(`${name} needs one source module, found ${found.length === 0 ? "none" : found.join(" and ")}`)
+  }
+  return found[0]!
+}
+
+/** The file under `src/` that holds the module `name`, as a path from `src/`. */
+const moduleFile = (name: string): string =>
+  sourceFile((file) => existsSync(new URL(`../src/${file}`, import.meta.url)), name)
+
+/** A barrel line's sibling module: a bare name and a source extension. */
+const bareSibling = /^[A-Za-z0-9_$]+\.(?:ts|vibe)$/
+
+/** The barrel's `namespace` and sibling module name pairs. */
+const reExports = (barrel: string): ReadonlyArray<readonly [string, string]> =>
+  [...barrel.matchAll(/export \* as (\w+) from "\.\/(\w+)\.(?:ts|vibe)"/g)]
+    .map(([, namespace, module]) => [namespace!, module!] as const)
+
+// The barrel names a sibling module for every namespace.
+const namespaces = (): ReadonlyArray<readonly [string, string]> => reExports(read(`../src/${moduleFile("index")}`))
 
 // Migration step modules are applied through the root `Migrations` namespace;
 // the step bodies themselves are sealed implementation detail.
@@ -28,7 +50,7 @@ describe("package exports", () => {
       "touchedFiles"
     ])
     const manifest = JSON.parse(read("../package.json"))
-    expect(manifest.exports["./Scorers"]).toBe("./src/Scorers.ts")
+    expect(manifest.exports["./Scorers"]).toBe(`./src/${moduleFile("Scorers")}`)
     expect(manifest.publishConfig.exports["./Scorers"]).toEqual({
       import: { types: "./dist/esm/Scorers.d.ts", default: "./dist/esm/Scorers.js" },
       require: { types: "./dist/cjs/Scorers.d.ts", default: "./dist/cjs/Scorers.js" }
@@ -39,10 +61,10 @@ describe("package exports", () => {
   // `index.ts` instead of its own named file, and every reader of the barrel
   // then has to follow a path to find it.
   it("re-exports every namespace from a bare sibling module", () => {
-    const specifiers = [...read("../src/index.ts").matchAll(/export \* as \w+ from "\.\/([^"]+)"/g)]
+    const specifiers = [...read(`../src/${moduleFile("index")}`).matchAll(/export \* as \w+ from "\.\/([^"]+)"/g)]
       .map(([, specifier]) => specifier!)
     expect(specifiers.length).toBeGreaterThan(0)
-    expect(specifiers.filter((specifier) => !/^[A-Za-z0-9_$]+\.ts$/.test(specifier))).toEqual([])
+    expect(specifiers.filter((specifier) => !bareSibling.test(specifier))).toEqual([])
   })
 
   it("keeps migration implementations private in development and published exports", () => {
@@ -86,10 +108,46 @@ describe("package exports", () => {
     const forwarding = /export const (\w+) = \((\w+): Service\): Service =>\s*\w+\.of\(\2\)/g
     const offenders: Array<string> = []
     for (const [namespace, file] of namespaces()) {
-      for (const [, name] of read(`../src/${file}.ts`).matchAll(forwarding)) {
+      for (const [, name] of read(`../src/${moduleFile(file)}`).matchAll(forwarding)) {
         offenders.push(`${namespace}.${name!}`)
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  it.each([
+    ["a .ts module", ["M.ts"], "M.ts"],
+    ["a .vibe module", ["M.vibe"], "M.vibe"]
+  ])("finds %s", (_case, files, expected) => {
+    expect(sourceFile((file) => files.includes(file), "M")).toBe(expected)
+  })
+
+  it.each([
+    ["a missing module", ["Other.ts"], "none"],
+    ["a module in both languages", ["M.ts", "M.vibe"], "M.ts and M.vibe"],
+    ["a declaration sidecar only", ["M.d.vibe.ts"], "none"],
+    ["a module in another language", ["M.js"], "none"]
+  ])("refuses %s", (_case, files, found) => {
+    expect(() => sourceFile((file) => files.includes(file), "M")).toThrow(`M needs one source module, found ${found}`)
+  })
+
+  it.each([
+    ["Scorers.ts", true],
+    ["Scorers.vibe", true],
+    ["internal/json.ts", false],
+    ["internal/json.vibe", false],
+    ["Scorers.js", false],
+    ["Scorers", false]
+  ])("reads %s as a bare sibling module: %s", (specifier, expected) => {
+    expect(bareSibling.test(specifier)).toBe(expected)
+  })
+
+  it("reads a namespace from a .ts or a .vibe sibling and not from another file", () => {
+    expect(reExports([
+      `export * as A from "./A.ts"`,
+      `export * as B from "./B.vibe"`,
+      `export * as C from "./C.js"`,
+      `export * as D from "./internal/D.vibe"`
+    ].join("\n"))).toEqual([["A", "A"], ["B", "B"]])
   })
 })
