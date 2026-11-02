@@ -17,7 +17,7 @@ effect function scan() {
 }
 
 layer(platformLayer)("FileRouter", (it) => {
-  it.effect("routes directory entries by path without evaluating module bodies") {
+  it.effect("routes directory entries by path without evaluating module bodies", effect () => {
     const path = try Path()
     const result = try scan()
 
@@ -35,9 +35,9 @@ layer(platformLayer)("FileRouter", (it) => {
     expect(result.routes.find((route) => route.name === "review")?.sourcePath).toBe(
       path.join(root, "review", "flow.ts")
     )
-  }
+  })
 
-  it.effect("preserves registry entry precedence and diagnostics") {
+  it.effect("preserves registry entry precedence and diagnostics", effect () => {
     const path = try Path()
     const result = try scan()
 
@@ -48,9 +48,9 @@ layer(platformLayer)("FileRouter", (it) => {
       expect.objectContaining({ code: "root_level_entry", path: path.join(root, "flow.ts") }),
       expect.objectContaining({ code: "name_field_ignored", path: path.join(root, "review", "flow.ts") })
     ]))
-  }
+  })
 
-  it.effect("records UI companions without routing companions or colocated tests") {
+  it.effect("records UI companions without routing companions or colocated tests", effect () => {
     const path = try Path()
     const result = try scan()
     const review = result.routes.find((route) => route.name === "review")
@@ -58,23 +58,23 @@ layer(platformLayer)("FileRouter", (it) => {
     expect(review?.ui).toEqual(Option.some(path.join(root, "review", "ui.tsx")))
     expect(result.routes.some((route) => path.basename(route.sourcePath) === "ui.tsx")).toBe(false)
     expect(result.routes.some((route) => path.basename(route.sourcePath) === "flow.test.ts")).toBe(false)
-  }
+  })
 
-  it.effect("routes skills as metadata while leaving skill parsing lazy") {
+  it.effect("routes skills as metadata while leaving skill parsing lazy", effect () => {
     const result = try scan()
     const skill = result.routes.find((route) => route.name === "skills/demo")
 
     expect(skill).toMatchObject({ kind: "skill", sourcePath: expect.stringMatching(/SKILL\.md$/) })
-  }
+  })
 
-  it.effect("is deterministic") {
+  it.effect("is deterministic", effect () => {
     const first = try scan()
     const second = try scan()
 
     expect(second).toEqual(first)
-  }
+  })
 
-  it.effect("resolves a relative root once and returns absolute immutable routes") {
+  it.effect("resolves a relative root once and returns absolute immutable routes", effect () => {
     const path = try Path()
     const config: { mutable root: string } = { root: path.relative(path.resolve(), root) }
     // The scan starts at once, as runPromise would start it, so the root is
@@ -87,9 +87,9 @@ layer(platformLayer)("FileRouter", (it) => {
     expect(result.routes.every((route) => path.isAbsolute(route.sourcePath))).toBe(true)
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.routes)).toBe(true)
-  }
+  })
 
-  it.effect("preserves a literal backslash segment on POSIX") {
+  it.effect("preserves a literal backslash segment on POSIX", effect () => {
     const fs = try FileSystem()
     const path = try Path()
     if (path.sep !== "/") return
@@ -100,9 +100,9 @@ layer(platformLayer)("FileRouter", (it) => {
     try fs.writeFileString(`${temporary}/a/b/flow.ts`, fixtureSource)
     const result = try FileRouter.scan({ root: temporary })
     expect(result.routes.map((route) => route.name)).toEqual(["a/b", "a\\b"])
-  }
+  })
 
-  it.effect("keeps scanning when one flow declares an empty description") {
+  it.effect("keeps scanning when one flow declares an empty description", effect () => {
     const fs = try FileSystem()
     const path = try Path()
     const temporary = try fs.makeTempDirectoryScoped({ prefix: "smithers-fs-empty-description-" })
@@ -121,9 +121,9 @@ export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSO
       ["blank", Option.none()],
       ["named", Option.some("A named flow")]
     ])
-  }
+  })
 
-  it.effect("preserves discovery error codes and refuses hostile config") {
+  it.effect("preserves discovery error codes and refuses hostile config", effect () => {
     expect((try failureOf(FileRouter.scan({ root: "/definitely/missing/smithers-flows" }))).code).toBe("root_missing")
 
     let called = false
@@ -136,8 +136,8 @@ export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSO
     })
     expect((try failureOf(FileRouter.scan(config as FileRouter.ScanConfig))).code).toBe("invalid_root")
     expect(called).toBe(false)
-  }
-  it.effect("never routes a flow or UI companion whose real path leaves the root") {
+  })
+  it.effect("never routes a flow or UI companion whose real path leaves the root", effect () => {
     const fs = try FileSystem()
     const path = try Path()
     const temporary = try fs.makeTempDirectoryScoped({ prefix: "smithers-fs-escape-" })
@@ -164,5 +164,5 @@ export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSO
       expect.objectContaining({ code: "outside_root", path: path.join(flows, "dir") }),
       expect.objectContaining({ code: "outside_root", path: path.join(flows, "file", "flow.ts") })
     ]))
-  }
+  })
 })

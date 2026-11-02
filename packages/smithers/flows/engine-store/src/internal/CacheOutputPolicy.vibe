@@ -7,7 +7,6 @@
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as FileSet from "@smthrs/plan/FileSet"
-import * as Schema from "effect/Schema"
 import type * as StepBoundary from "../StepBoundary.ts"
 
 const Outputs = Schema.Struct({
@@ -16,7 +15,7 @@ const Outputs = Schema.Struct({
 })
 // The existing abstract boundary protocol records its exact declared path set.
 // Validate that format separately; it does not claim a filesystem blob manifest.
-const DeclaredPaths = Schema.Struct({ paths: Schema.Array(FileSet.Entry) })
+schema DeclaredPaths { paths: ReadonlyArray<FileSet.Entry> }
 const samePaths = Schema.toEquivalence(Schema.Array(FileSet.Entry))
 
 /** A typed refusal leaves both the evidence and the workspace intact.

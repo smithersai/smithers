@@ -521,19 +521,16 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
   const read = SpanFailure.fn(
     Effect.fn(`Classifier.evaluate(${id})`)(effect (value: State["Type"]) => {
       const evaluator = try Evaluator.Evaluator
-      const encoded = try (encodeState(value)
-        |> Effect.mapError(%, (error) => new ClassifierError({ code: "invalid_question", message: error.message })))
-      const response = try (evaluator.evaluate({
+      const encoded = encodeState(value) catch effect (error) => { throw new ClassifierError({ code: "invalid_question", message: error.message }) }
+      const response = evaluator.evaluate({
         state: encoded,
         questions,
         ...(seatNote === undefined ? {} : { seatNote }),
-      }) |> Effect.mapError(%, fromEvaluatorError))
+      }) catch effect (e) => { throw fromEvaluatorError(e) }
       // An answer this classifier cannot decode was still paid for.
-      const answers = try (decodeAnswers(questions, response.answers)
-        |> Effect.mapError(%, (error) =>
-          response.usage === undefined
+      const answers = decodeAnswers(questions, response.answers) catch effect (error) => { throw response.usage === undefined
             ? error
-            : new ClassifierError({ code: error.code, message: error.message, usage: response.usage })))
+            : new ClassifierError({ code: error.code, message: error.message, usage: response.usage }) }
       return { ...response, answers }
     }),
   )

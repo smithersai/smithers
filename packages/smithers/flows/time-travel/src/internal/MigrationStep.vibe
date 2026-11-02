@@ -14,5 +14,4 @@ import { error } from "../TimeTravelError.vibe"
  * @private
  */
 export const step = <A, E, R>(object: string, statement: A!E!R) =>
-  statement
-  |> Effect.mapError(%, (cause) => error("unknown", `time-travel migration failed creating ${object}`, cause))
+  statement catch effect (cause) => { throw error("unknown", `time-travel migration failed creating ${object}`, cause) }

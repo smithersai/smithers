@@ -25,10 +25,10 @@ it("looks up a recognized failure and leaves unrelated values unclassified", () 
   expect(describeFailure(null)).toBeUndefined()
 })
 
-it.effect("fails with the constructed failure") {
+it.effect("fails with the constructed failure", effect () => {
   expect(failureOf(raiseFailure())).toMatchObject({ code: "INTEGRATION_ERROR", _tag: "SmithersError" })
-}
+})
 
-it.effect("recovers the tagged failure through the public error code") {
+it.effect("recovers the tagged failure through the public error code", effect () => {
   expect(recoverFailure()).toBe("Recovered INTEGRATION_ERROR")
-}
+})

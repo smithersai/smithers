@@ -131,15 +131,10 @@ export const listBranches = (
     const page = try client.paginate(path, { maxPages: options?.maxPages })
     const items: Array<Branch> = []
     for (const item of page.items) {
-      const ref = try (Schema.decodeUnknownEffect(RefAnswer)(item)
-        |> Effect.mapError(
-          %,
-          (cause) =>
-            new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
+      const ref = Schema.decodeUnknownEffect(RefAnswer)(item) catch effect (cause) => { throw new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
               method: "GET",
               path,
-            }, { cause }),
-        ))
+            }, { cause }) }
       if (ref.ref.startsWith("refs/heads/")) {
         items.push({ name: ref.ref.slice("refs/heads/".length), sha: ref.object.sha })
       }

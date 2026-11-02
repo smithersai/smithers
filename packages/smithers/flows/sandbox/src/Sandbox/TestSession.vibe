@@ -94,15 +94,15 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
           ? throw new ProviderError({ code: "not_found", message: `the sandbox holds nothing at ${path}` })
           : content.slice()
       }),
-    writeFile: (path, content) =>
-      Effect.sync(() => {
+    writeFile: effect (path, content) =>
+      {
         files.set(path, content.slice())
-      }),
+      },
     ...options.ping === undefined ? {} : { ping: options.ping },
     fork: (key) =>
       options.forkFailure === undefined
         ? Effect.acquireRelease(
-          Effect.sync(() => {
+          effect {
             const tree = new Map(
               Array.from(files, ([path, content]) => [path, content.slice()] as const)
                 .filter(([path]) => !credentials.has(path)),
@@ -110,12 +110,12 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
             state.forked.push(key)
             state.children.set(key, tree)
             return open(key, `${remoteId}/${key}`, tree)
-          }),
-          () =>
-            Effect.sync(() => {
+          },
+          effect () =>
+            {
               state.children.delete(key)
               state.released += 1
-            }),
+            },
         )
         : throw options.forkFailure,
   })
@@ -125,14 +125,14 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
     acquire: (key) =>
       options.acquireFailure === undefined
         ? Effect.acquireRelease(
-          Effect.sync(() => {
+          effect {
             state.acquired.push(key)
             return session
-          }),
-          () =>
-            Effect.sync(() => {
+          },
+          effect () =>
+            {
               state.released += 1
-            }),
+            },
         )
         : throw options.acquireFailure,
   }

@@ -33,7 +33,7 @@ effect function invoking<A, E>(program: Effect<A, E, FlowInvoker.FlowInvoker>): 
 }
 
 describe("runtime model visibility", () => {
-  it.effect("refuses a flow hidden after its route metadata was captured") {
+  it.effect("refuses a flow hidden after its route metadata was captured", effect () => {
     const [scanned] = (try scan()).routes
     expect(scanned?.modelInvocable).toBe(false)
     // Route metadata is caller-owned and can be stale: the author hid the flow
@@ -45,9 +45,9 @@ describe("runtime model visibility", () => {
     expect((try failureOf(invoking(surface.call("hidden", { number: 1 })))).code).toBe("load_failed")
     expect((try failureOf(invoking(surface.parse("hidden --number 1")))).code).toBe("load_failed")
     expect(invoked).toEqual([])
-  }
+  })
 
-  it.effect("refuses the stale route over Incur HTTP dispatch") {
+  it.effect("refuses the stale route over Incur HTTP dispatch", effect () => {
     const [scanned] = (try scan()).routes
     const stale = { ...scanned!, modelInvocable: true }
     const cli = try invoking(Incur.createCli("app", [stale]))
@@ -62,11 +62,11 @@ describe("runtime model visibility", () => {
     } finally {
       try sync(async (cli) => cli.close(), cli)
     }
-  }
+  })
 
-  it.effect("still loads the hidden flow for a route that is not model-invocable") {
+  it.effect("still loads the hidden flow for a route that is not model-invocable", effect () => {
     const [scanned] = (try scan()).routes
     const loaded = try Route.load(scanned!)
     expect(loaded.name).toBe("hidden")
-  }
+  })
 })

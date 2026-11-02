@@ -59,16 +59,16 @@ export class CellHistory extends Context.Service<CellHistory, Service>()("@smthr
  * @category constructors
  * @since 0.1.0
  */
-export const make: Service!! = Effect.sync(() => {
+export const make: Service!! = effect {
   const recorded: Array<ExecutedCell> = []
   return CellHistory.of({
-    record: (source) =>
-      Effect.sync(() => {
+    record: effect (source) =>
+      {
         recorded.push({ ordinal: recorded.length, source })
-      }),
-    cells: () => Effect.sync(() => [...recorded]),
+      },
+    cells: effect () => [...recorded],
   })
-})
+}
 
 /**
  * Constructs a history over a fixed cell list.

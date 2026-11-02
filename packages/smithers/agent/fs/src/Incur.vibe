@@ -24,7 +24,7 @@ effect function execute(
   selected: IncurHost.SelectedRoute,
   context: IncurHost.Context,
 ): Effect<unknown, never, FlowInvoker.FlowInvoker> {
-  const outcome = try exit {
+  const outcome = try exit(effect {
     const input = try selected.schema.decode(selected.schema.assemble(context.args, context.options))
     const output = try FlowInvoker.FlowInvoker.invoke(Object.freeze({
       name: selected.route.name,
@@ -32,7 +32,7 @@ effect function execute(
       input,
     }))
     return try SchemaBridge.encodeOutput(selected.flow.output, output)
-  }
+  })
   if (outcome is Exit.Success(let output)) return context.ok(output)
   const cause = outcome.cause
   if (cause.reasons is [{ _tag: "Fail", error: FsError and let error }]) return mapError(context, error)

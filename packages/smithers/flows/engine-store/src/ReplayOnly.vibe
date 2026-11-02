@@ -57,7 +57,7 @@ export interface Dispatch {
  * @category models
  */
 export interface Service {
-  readonly observe: (dispatch: Dispatch) => Effect.Effect<void>
+  readonly observe: (dispatch: Dispatch) => void!!
 }
 
 /**

@@ -150,7 +150,7 @@ effect function call(cli: Cli, transport: typeof transports[number]) {
 }
 
 describe("Incur projection", () => {
-  it.live("bounds a native import stuck in top-level await and discovers sibling routes") {
+  it.live("bounds a native import stuck in top-level await and discovers sibling routes", effect () => {
     const gate = makeGate()
     const globals = globalThis as { mutable fsMetadataGate?: Promise<void> }
     globals.fsMetadataGate = gate.promise
@@ -171,7 +171,7 @@ describe("Incur projection", () => {
       delete globals.fsMetadataGate
       sync(async (directory) => removeDirectory(directory), directory)
     }
-  }
+  })
 
   it.live.each(["/openapi.json", "/missing"])("cancels only the waiter for %s", effect (path) => {
     const gate = makeGate()
@@ -195,7 +195,7 @@ describe("Incur projection", () => {
     }
   })
 
-  it.live("does not start a metadata build for an already aborted request") {
+  it.live("does not start a metadata build for an already aborted request", effect () => {
     const load = vi.spyOn(Route, "load")
     const { cli } = makeCli()
     const controller = new AbortController()
@@ -210,9 +210,9 @@ describe("Incur projection", () => {
     } finally {
       load.mockRestore()
     }
-  }
+  })
 
-  it.live("retries a rejected shared metadata build on the next request") {
+  it.live("retries a rejected shared metadata build on the next request", effect () => {
     const load = vi.spyOn(Route, "load").mockReturnValueOnce(die(new Error("build failed once")))
     const { cli } = makeCli()
     try {
@@ -223,9 +223,9 @@ describe("Incur projection", () => {
     } finally {
       load.mockRestore()
     }
-  }
+  })
 
-  it.live("cancels a request aborted synchronously while its shared build starts") {
+  it.live("cancels a request aborted synchronously while its shared build starts", effect () => {
     const controller = new AbortController()
     const reason = new Error("cancelled during startup")
     // The abort runs when the build calls `load`, before its program runs.
@@ -246,10 +246,10 @@ describe("Incur projection", () => {
     } finally {
       load.mockRestore()
     }
-  }
+  })
 
   describe("request cancellation", () => {
-    it.live("never invokes a flow for an already aborted request") {
+    it.live("never invokes a flow for an already aborted request", effect () => {
       const { cli, seen } = makeCli()
       const controller = new AbortController()
       const reason = new Error("cancelled before dispatch")
@@ -264,9 +264,9 @@ describe("Incur projection", () => {
         ).rejects.toBe(reason)
       )
       expect(seen).toEqual([])
-    }
+    })
 
-    it.live("interrupts route selection when the request aborts") {
+    it.live("interrupts route selection when the request aborts", effect () => {
       const gate = makeGate()
       const interrupted = vi.fn()
       const load = vi.spyOn(Route, "load").mockReturnValue(gatedLoad(gate.promise, interrupted))
@@ -284,7 +284,7 @@ describe("Incur projection", () => {
         awaited(Promise.allSettled([request]))
         load.mockRestore()
       }
-    }
+    })
 
     it.live.each(["HTTP", "MCP"] as const)(
       "interrupts an in-flight %s invocation when the request aborts",
@@ -324,7 +324,7 @@ describe("Incur projection", () => {
     )
   })
 
-  it.live("closes the host by interrupting the build before projecting more routes") {
+  it.live("closes the host by interrupting the build before projecting more routes", effect () => {
     const interrupted = vi.fn()
     const gate = makeGate()
     const load = vi.spyOn(Route, "load").mockReturnValue(gatedLoad(gate.promise, interrupted))
@@ -347,9 +347,9 @@ describe("Incur projection", () => {
       awaited(settled)
       load.mockRestore()
     }
-  }
+  })
 
-  it.live("carries typed inputs consistently over GET and JSON POST") {
+  it.live("carries typed inputs consistently over GET and JSON POST", effect () => {
     const { cli, seen } = makeCli()
     const get = awaited(cli.fetch(new Request("http://localhost/review?number=42&enabled=true")))
     const post = awaited(cli.fetch(
@@ -368,9 +368,9 @@ describe("Incur projection", () => {
       { number: 42, enabled: true },
       { number: 43, tags: ["a", "b"] }
     ])
-  }
+  })
 
-  it.live("accepts declared flags from the CLI projection") {
+  it.live("accepts declared flags from the CLI projection", effect () => {
     const { cli, seen } = makeCli()
     const writes: Array<string> = []
     const write = spyOnStdout(writes)
@@ -381,9 +381,9 @@ describe("Incur projection", () => {
     }
     expect(seen[0]?.input).toEqual({ number: 44 })
     expect(writes.join("")).toContain("44")
-  }
+  })
 
-  it.live("carries an explicit null scalar input over a JSON body and MCP arguments") {
+  it.live("carries an explicit null scalar input over a JSON body and MCP arguments", effect () => {
     const flow = {
       capabilities: [],
       effects: undefined,
@@ -412,9 +412,9 @@ describe("Incur projection", () => {
     } finally {
       vi.restoreAllMocks()
     }
-  }
+  })
 
-  it.live("advertises the real input schema on every discovery surface") {
+  it.live("advertises the real input schema on every discovery surface", effect () => {
     const { cli } = makeCli()
     // The flow's own JSON Schema is the yardstick: a discovery surface that
     // publishes anything narrower or vaguer misdescribes what the flow takes.
@@ -455,17 +455,17 @@ describe("Incur projection", () => {
     const help = capture()
     awaited(cli.serve(["review", "--schema"], help.options))
     expect(help.writes.join("")).toContain("number")
-  }
+  })
 
-  it.live("carries MCP tool arguments through to the invoked flow") {
+  it.live("carries MCP tool arguments through to the invoked flow", effect () => {
     const { cli, seen } = makeCli()
     const called = tool(cli, "call_write_tool", { name: "review", arguments: { number: 42 } })
     expect(called.result.isError).toBeUndefined()
     expect(called.result.content[0]!.text).toContain("42")
     expect(seen.map((invocation) => invocation.input)).toEqual([{ number: 42 }])
-  }
+  })
 
-  it.live("keeps an unprojectable route advertised and answers with its typed failure") {
+  it.live("keeps an unprojectable route advertised and answers with its typed failure", effect () => {
     const unsupported = makeRoute("bad", undefined, { input: new Descriptor.SchemaRefMarkdownOutput({}) })
     const { cli, seen } = makeCli([makeRoute("review"), unsupported])
 
@@ -476,9 +476,9 @@ describe("Incur projection", () => {
     expect(called.result.isError).toBe(true)
     expect(called.result.content[0]!.text).toContain("An output locator cannot describe command input")
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("loads only the dispatched module until a discovery surface needs the rest") {
+  it.live("loads only the dispatched module until a discovery surface needs the rest", effect () => {
     const { cli, seen } = makeCli([makeRoute("review"), makeRoute("recorded", recordedModule)])
     expect(recordedImports()).toBe(0)
 
@@ -492,17 +492,17 @@ describe("Incur projection", () => {
     expect(recordedImports()).toBe(1)
     expect(awaited(paths(cli))).toEqual(["/recorded", "/review"])
     expect(recordedImports()).toBe(1)
-  }
+  })
 
-  it.live("keeps parent routes and nested routes independently executable") {
+  it.live("keeps parent routes and nested routes independently executable", effect () => {
     const { cli, seen } = makeCli([makeRoute("domains"), makeRoute("domains/list")])
     expect(awaited(cli.fetch(new Request("http://localhost/domains?number=1"))).status).toBe(200)
     const nested = awaited(cli.fetch(new Request("http://localhost/domains/list?number=2")))
     expect(nested.status, text(nested.clone())).toBe(200)
     expect(seen.map((invocation) => invocation.name)).toEqual(["domains", "domains/list"])
-  }
+  })
 
-  it.live("advertises a route that also has children under the reserved self segment") {
+  it.live("advertises a route that also has children under the reserved self segment", effect () => {
     const { cli, seen } = makeCli([makeRoute("domains"), makeRoute("domains/list")])
     expect(awaited(paths(cli))).toEqual(["/domains/list", "/domains/self"])
 
@@ -518,16 +518,16 @@ describe("Incur projection", () => {
     awaited(cli.serve(["domains", "self", "--number", "5", "--format", "json"], cliRun.options))
     expect(cliRun.writes.join("")).toContain("5")
     expect(seen.map((invocation) => invocation.name)).toEqual(["domains", "domains"])
-  }
+  })
 
-  it.live("refuses a child route that claims the reserved self segment") {
+  it.live("refuses a child route that claims the reserved self segment", effect () => {
     provide FlowInvoker.layerNoop() {
       expect(failureOf(Incur.createCli("flows", [makeRoute("domains"), makeRoute(`domains/${Incur.selfSegment}`)])))
         .toMatchObject({ code: "duplicate_route", path: "domains/self" })
     }
-  }
+  })
 
-  it.live("surfaces a hydration failure instead of falling back to help output") {
+  it.live("surfaces a hydration failure instead of falling back to help output", effect () => {
     const unsupported = makeRoute("bad", undefined, { input: new Descriptor.SchemaRefMarkdownOutput({}) })
     const { cli, seen } = makeCli([unsupported])
 
@@ -544,9 +544,9 @@ describe("Incur projection", () => {
     expect(run.writes.join("")).toContain("unsupported_schema")
     expect(run.exits).toContain(1)
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("reports a resolution resource limit before dispatch on both surfaces") {
+  it.live("reports a resolution resource limit before dispatch on both surfaces", effect () => {
     const { cli, seen } = makeCli()
     const oversized = "x".repeat(5_000)
 
@@ -559,9 +559,9 @@ describe("Incur projection", () => {
     expect(run.writes.join("")).toContain("resource_limit")
     expect(run.exits).toEqual([1])
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("writes a pre-dispatch failure to stdout and exits when no overrides are supplied") {
+  it.live("writes a pre-dispatch failure to stdout and exits when no overrides are supplied", effect () => {
     const { cli } = makeCli()
     const writes: Array<string> = []
     const write = spyOnStdout(writes)
@@ -580,9 +580,9 @@ describe("Incur projection", () => {
     }
     expect(writes.join("")).toContain("resource_limit")
     expect(exits).toEqual([1])
-  }
+  })
 
-  it.live("percent-decodes and NFC-normalizes request paths") {
+  it.live("percent-decodes and NFC-normalizes request paths", effect () => {
     const composed = "café"
     const decomposed = "café"
     // The route is declared decomposed, as a macOS directory name arrives, and
@@ -603,9 +603,9 @@ describe("Incur projection", () => {
       message: "The request path contains a malformed percent escape"
     })
     expect(seen).toHaveLength(1)
-  }
+  })
 
-  it.live("treats COMPLETE as truthy exactly as incur does") {
+  it.live("treats COMPLETE as truthy exactly as incur does", effect () => {
     const { cli, seen } = makeCli()
     const previous = sync(() => process.env.COMPLETE)
     const empty = capture()
@@ -628,9 +628,9 @@ describe("Incur projection", () => {
     expect(empty.writes.join("")).toContain("4")
     expect(shell.writes.join("")).not.toContain("6")
     expect(seen.map((invocation) => invocation.input)).toEqual([{ number: 4 }])
-  }
+  })
 
-  it.live("accepts slash names and metadata-only groups through the CLI") {
+  it.live("accepts slash names and metadata-only groups through the CLI", effect () => {
     const { cli, seen } = makeCli([makeRoute("nested/visible"), makeRoute("domains/list")])
     const writes: Array<string> = []
     awaited(cli.serve(["nested/visible", "--number", "7", "--format", "json"], {
@@ -640,9 +640,9 @@ describe("Incur projection", () => {
     expect(seen.map((entry) => entry.name)).toEqual(["nested/visible"])
     expect(writes.join("")).toContain("7")
     expect(awaited(cli.fetch(new Request("http://localhost/openapi.json"))).status).toBe(200)
-  }
+  })
 
-  it.live("refuses a surplus positional on every route before invoking its flow") {
+  it.live("refuses a surplus positional on every route before invoking its flow", effect () => {
     const { cli, seen } = makeCli([
       makeRoute("review"),
       makeRoute("nested/visible"),
@@ -661,9 +661,9 @@ describe("Incur projection", () => {
       })
     }
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("keeps CLI discovery and unknown commands metadata-only") {
+  it.live("keeps CLI discovery and unknown commands metadata-only", effect () => {
     const { cli, seen } = makeCli()
     const writes: Array<string> = []
     const exits: Array<number> = []
@@ -676,9 +676,9 @@ describe("Incur projection", () => {
     expect(writes.join("")).toContain("review")
     expect(exits).toContain(1)
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("never mounts hidden or unsupported routes") {
+  it.live("never mounts hidden or unsupported routes", effect () => {
     const { cli } = makeCli([
       makeRoute("visible"),
       makeRoute("hidden", undefined, { modelInvocable: false }),
@@ -691,9 +691,9 @@ describe("Incur projection", () => {
     const spec = awaited(cli.fetch(new Request("http://localhost/openapi.json")))
     expect(spec.status).toBe(200)
     expect(text(spec)).not.toContain("hidden")
-  }
+  })
 
-  it.live("refuses input its advertised schema rejects without echoing the value") {
+  it.live("refuses input its advertised schema rejects without echoing the value", effect () => {
     const { cli, seen } = makeCli()
     // The advertised schema is enforced, not decorative: the refusal names the
     // field that failed and never repeats what the caller sent.
@@ -710,9 +710,9 @@ describe("Incur projection", () => {
     expect(run.writes.join("")).toContain("\"path\": \"number\"")
     expect(run.writes.join("")).not.toContain("not-a-number")
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("returns a stable typed refusal when only the flow schema can reject the input") {
+  it.live("returns a stable typed refusal when only the flow schema can reject the input", effect () => {
     // `Schema.NonEmptyString` projects to `string`, so the empty title passes
     // the advertised schema and the authoritative decoder is what refuses it.
     const { cli, seen } = makeCli([makeRoute("refined", refinedModule)])
@@ -721,7 +721,7 @@ describe("Incur projection", () => {
     expect(response.status).toBeGreaterThanOrEqual(400)
     expect(body.error).toMatchObject({ code: "decode_failed" })
     expect(seen).toEqual([])
-  }
+  })
 
   describe.each(transports)("%s invocation boundary", (transport) => {
     it.live.each([false, true])("enforces authorization after metadata initialized: %s", effect (initialized) => {
@@ -779,7 +779,7 @@ describe("Incur projection", () => {
       expect(response.body).not.toContain(sentinel)
     })
 
-    it.live("preserves deliberately public typed failures") {
+    it.live("preserves deliberately public typed failures", effect () => {
       const { cli } = makeCli(undefined, effect () => {
         throw new FsError({
           code: "invocation_unavailable",
@@ -791,10 +791,10 @@ describe("Incur projection", () => {
       expect(response.failed).toBe(true)
       if (transport !== "MCP") expect(response.body).toContain("invocation_unavailable")
       expect(response.body).toContain("Public refusal")
-    }
+    })
   })
 
-  it.live("retains unexpected causes only in the host's private debug logger") {
+  it.live("retains unexpected causes only in the host's private debug logger", effect () => {
     const defect = new Error("SECRET_SENTINEL_private_diagnostics")
     const logged: Array<{ message: unknown; cause: Cause<unknown> }> = []
     const logger = Logger.make((entry) => {
@@ -807,9 +807,9 @@ describe("Incur projection", () => {
     expect(logged).toHaveLength(1)
     expect(logged[0]!.message).toEqual(["Incur invocation failed"])
     expect(logged[0]!.cause.squash()).toBe(defect)
-  }
+  })
 
-  it.live("keeps built-in debug diagnostics off CLI stdout") {
+  it.live("keeps built-in debug diagnostics off CLI stdout", effect () => {
     const sentinel = "SECRET_SENTINEL_debug_console"
     const cli = debugCli(
       Logger.layer([Logger.defaultLogger]),
@@ -826,5 +826,5 @@ describe("Incur projection", () => {
       stdout.mockRestore()
       stderr.mockRestore()
     }
-  }
+  })
 })

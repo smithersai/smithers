@@ -188,7 +188,7 @@ const levels = { Warn: "warn", Error: "error", Fatal: "fatal" } as const
  * @since 1.0.0-rc.17
  */
 export const layer = (options?: Options): Layer.Layer<Recent> =>
-  Layer.unwrap(Effect.sync(() => {
+  Layer.unwrap(effect {
     const allowed = options?.records === undefined ? undefined : new Set(options.records)
     const codeFields = options?.codes ?? defaultCodeFields
     const areaField = options?.area ?? "feature"
@@ -236,6 +236,6 @@ export const layer = (options?: Options): Layer.Layer<Recent> =>
 
     return Layer.merge(
       Logger.layer([logger], { mergeWithExisting: true }),
-      Layer.succeed(Recent, Recent.of({ entries: Effect.sync(() => entries.slice()) })),
+      Layer.succeed(Recent, Recent.of({ entries: effect { return entries.slice() } })),
     )
-  }))
+  })
