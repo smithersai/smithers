@@ -6,6 +6,7 @@ import {
   CONNECTION_BUDGET,
   ELECTRIC_POOL_SIZE,
   maxConnections,
+  ROLLOUT_REQUEST_LIMIT,
 } from "./Connections.ts"
 
 // On 2026-10-22 a fixed 0.25 CU compute (112 connections) held 91 under load and stopped accepting logins.
@@ -18,6 +19,13 @@ describe("the production database's connection budget", () => {
   it("stays under the alert share of the smallest compute's connections with every client at its cap", () => {
     const sum = Object.values(CONNECTION_BUDGET).reduce((total, share) => total + share, 0)
     expect(sum * 100).toBeLessThanOrEqual(ALERT_PERCENT * maxConnections(COMPUTE_MIN_CU))
+  })
+
+  it("during decision 0150's rollout, keeps the request path's old limit, under the alert share of the range's top", () => {
+    const rollout = Object.values({ ...CONNECTION_BUDGET, hyperdrive: ROLLOUT_REQUEST_LIMIT })
+      .reduce((total, share) => total + share, 0)
+    expect(ROLLOUT_REQUEST_LIMIT).toBe(50)
+    expect(rollout * 100).toBeLessThanOrEqual(ALERT_PERCENT * maxConnections(COMPUTE_MAX_CU))
   })
 
   it("gives Electric's query pool its share less the replication connection", () => {

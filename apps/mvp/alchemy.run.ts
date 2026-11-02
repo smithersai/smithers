@@ -3,7 +3,8 @@
  *
  * Production (`pnpm run deploy`, stage `prod`) declares every dependency:
  * - Postgres: a Neon project with logical replication on (infra/Postgres.ts), migrated by a deploy step.
- * - Hyperdrive: the `ChatDatabase` config in front of Postgres, created after the migrations ran (infra/ChatDatabase.ts).
+ * - Hyperdrive: the `ChatDatabase` (requests) and `EngineDatabase` (the durable engine) configs in front of Postgres,
+ *   created after the migrations ran (infra/ChatDatabase.ts).
  * - Electric: `electricsql/electric:1.8.1` in a Cloudflare Container behind the ElectricGateway Worker, which has no
  *   public URL: ChatApi reaches it through a service binding (infra/ElectricGateway.ts, infra/Electric.ts).
  * - ChatApi (worker/ChatApi.ts): an Effect-native Worker that answers /api/*: questions, the Electric shape proxy,
@@ -14,8 +15,8 @@
  * - SecretsKey (infra/Secrets.ts): a random secret Alchemy generates once, bound to ChatApi as SECRETS_KEY; repository
  *   secrets are sealed and sandbox placeholders derived under it (docs/features/secrets.md#keys).
  * - FlowExecution (worker/Executions.ts): the Durable Object ChatApi hosts, one per remote flow execution, which runs
- *   the durable flow engine over Postgres (schema smithers_flows) through the same Hyperdrive config
- *   (docs/features/remote-flows.md). Declaring ChatApi declares it.
+ *   the durable flow engine over Postgres (schema smithers_flows) through its own Hyperdrive config, `EngineDatabase`
+ *   (docs/features/remote-flows.md, decision 0150). Declaring ChatApi declares it.
  * - RunContent (worker/RunContent.ts): the Durable Object ChatApi hosts, one per run, which keeps an external agent's
  *   transcript in its own SQLite and serves its watchers' sockets (docs/features/agent-transcripts.md).
  * - The branch sandboxes' `SandboxObject` and its `BranchSandbox` container, which ChatApi hosts; with GATE_IMAGE also the
@@ -43,7 +44,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import * as Neon from "alchemy/Neon"
 import type { State } from "alchemy/State"
 import { Effect, Layer, Option } from "effect"
-import { ChatDatabase } from "./infra/ChatDatabase.ts"
+import { Databases } from "./infra/ChatDatabase.ts"
 import { DocsSite } from "./infra/DocsSite.ts"
 import { aliasesBinding, AppDomain, type AppHost, workerDomain } from "./infra/Domain.ts"
 import * as Electric from "./infra/Electric.ts"
@@ -78,8 +79,9 @@ export default Alchemy.Stack(
     // Production's hostname, read first: a production deploy without APP_DOMAIN stops before it changes anything
     // (infra/Domain.ts).
     const domain = (yield* Alchemy.ALCHEMY_DEV) ? Option.none<AppHost>() : yield* AppDomain.pipe(Effect.orDie)
-    // Declared before ChatApi, so ChatApi's `ChatDatabase` is this one: Neon's in production, compose's in dev.
-    yield* ChatDatabase
+    // Declared before ChatApi, so ChatApi's `ChatDatabase` and `EngineDatabase` are these: Neon's in production,
+    // compose's in dev.
+    yield* Databases
     const endpoint = yield* electric
     // Sign-in's secret, in production and under `alchemy dev` alike (docs/features/sign-in.md#configuration).
     const sessionSecret = SignIn.Secret.of({ value: (yield* SignIn.SessionSecret).text })

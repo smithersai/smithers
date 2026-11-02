@@ -12,7 +12,7 @@ import * as Alchemy from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Neon from "alchemy/Neon"
 import { Effect, Layer } from "effect"
-import { ChatDatabase } from "../../../infra/ChatDatabase.ts"
+import { Databases } from "../../../infra/ChatDatabase.ts"
 import * as Electric from "../../../infra/Electric.ts"
 import ElectricGateway from "../../../infra/ElectricGateway.ts"
 import { DatabaseUrl as ElectricDatabaseUrl } from "../../../infra/ElectricRuntime.ts"
@@ -27,7 +27,7 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const stage = (yield* Alchemy.Stage).toString()
     if (!stage.startsWith("smithers-gates-")) return yield* Effect.die(new Error(`the gate harness deploys only to smithers-gates-*, not ${stage}`))
-    yield* ChatDatabase
+    yield* Databases
     const databaseUrl = ElectricDatabaseUrl.of({ value: directUrl(yield* Postgres) })
     const gateway = yield* ElectricGateway.pipe(Effect.provideService(ElectricDatabaseUrl, databaseUrl))
     const sessionSecret = SignIn.Secret.of({ value: (yield* SignIn.SessionSecret).text })

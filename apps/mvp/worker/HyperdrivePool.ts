@@ -1,0 +1,178 @@
+import { Config, Data, Duration, Effect, Option, Redacted, Schema } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+
+// Hyperdrive's pools as Cloudflare's GraphQL Analytics API reports them (`hyperdrivePoolSizesAdaptiveGroups`): each
+// minute, each pool slice's size and the clients waiting for one of its connections. Postgres never sees a client that
+// waits at Hyperdrive, so `ops/DatabaseLoad`'s connection sample (worker/flows/DatabaseLoad.ts) missed the saturation
+// that answered smithers.sh's requests 503 on 2026-11-02 (19:01Z to 19:08Z: every slice at 10 of 10, up to 30 clients
+// waiting, 1.2 s to get a connection; decision 0150). One request per read, with the deployment's analytics token; the
+// token never reaches a record, a failure or a log.
+//
+// API: https://developers.cloudflare.com/analytics/graphql-api/
+
+/** Cloudflare's API origin. */
+export const API_URL = "https://api.cloudflare.com/client/v4"
+
+/** How long one read may take before the sample goes on without it. */
+export const REQUEST_TIMEOUT = Duration.seconds(10)
+
+/** Clients waiting at one config's busiest slice past which a minute counts as saturated. */
+export const WAITING_THRESHOLD = 10
+
+/** How many saturated minutes in a row alert. */
+export const SUSTAINED_MINUTES = 2
+
+/** How far back a read looks: the window ending now, and the analytics' couple of minutes of lag. */
+export const LOOKBACK = Duration.minutes(7)
+
+/** One config's busiest slice in one minute: the most clients that waited for one of its connections. */
+export interface Minute {
+  readonly configId: string
+  /** The minute's start, an ISO timestamp. */
+  readonly minute: string
+  readonly waiting: number
+}
+
+/** What a read found: the peak, and whether some config stayed saturated `SUSTAINED_MINUTES` minutes in a row. */
+export interface Reading {
+  readonly peak: number
+  /** The longest run of consecutive saturated minutes of any config. */
+  readonly sustainedMinutes: number
+  readonly saturated: boolean
+}
+
+/** Cloudflare didn't answer the read: `unreachable`, `timeout`, `http_<status>` or `malformed`. Never the token. */
+export class ReadFailed extends Data.TaggedError("@smthrs/mvp/HyperdrivePool/ReadFailed")<{ readonly code: string }> {}
+
+/** Where and how to read: the account, the configs (none: every config of the account) and an analytics token. */
+export interface Options {
+  readonly accountId: string
+  readonly configIds: ReadonlyArray<string>
+  readonly token: Redacted.Redacted<string>
+  /** Another API origin, for the reader's own tests. */
+  readonly apiUrl?: string
+}
+
+/** A pool read over a time span. */
+export type Reader = (from: Date, to: Date) => Effect.Effect<Reading, ReadFailed>
+
+const MINUTE_MS = 60_000
+
+/**
+ * Whether `minutes` hold `SUSTAINED_MINUTES` consecutive minutes, for one config, with more than `threshold` clients
+ * waiting; a minute with no row counts as calm.
+ */
+export const judge = (minutes: ReadonlyArray<Minute>, threshold = WAITING_THRESHOLD): Reading => {
+  let peak = 0
+  let sustainedMinutes = 0
+  const byConfig = new Map<string, Array<Minute>>()
+  for (const minute of minutes) {
+    peak = Math.max(peak, minute.waiting)
+    byConfig.set(minute.configId, [...(byConfig.get(minute.configId) ?? []), minute])
+  }
+  for (const rows of byConfig.values()) {
+    const over = rows.filter((row) => row.waiting > threshold).map((row) => Date.parse(row.minute)).sort((a, b) => a - b)
+    let run = 0
+    let previous = Number.NaN
+    for (const at of over) {
+      run = at - previous === MINUTE_MS ? run + 1 : 1
+      previous = at
+      sustainedMinutes = Math.max(sustainedMinutes, run)
+    }
+  }
+  return { peak, sustainedMinutes, saturated: sustainedMinutes >= SUSTAINED_MINUTES }
+}
+
+const QUERY = `query($account: String!, $from: Time!, $to: Time!, $configs: [String!]) {
+  viewer { accounts(filter: { accountTag: $account }) {
+    pools: hyperdrivePoolSizesAdaptiveGroups(
+      limit: 1000,
+      filter: { datetime_geq: $from, datetime_leq: $to, configId_in: $configs }
+    ) { max { waitingClients } dimensions { datetimeMinute configId } }
+  } }
+}`
+
+const QUERY_EVERY_CONFIG = QUERY.replace(", $configs: [String!]", "").replace(", configId_in: $configs", "")
+
+/**
+ * A whole answer, decoded totally: `data` with exactly one account whose every pool row has a non-negative integer
+ * `waitingClients`, a minute and a config id, and no `errors`. GraphQL answers a partial failure with both `data` and
+ * `errors`; such an answer is refused rather than judged on what it holds.
+ */
+const Answer = Schema.Struct({
+  data: Schema.Struct({
+    viewer: Schema.Struct({
+      accounts: Schema.Tuple([
+        Schema.Struct({
+          pools: Schema.Array(Schema.Struct({
+            max: Schema.Struct({
+              waitingClients: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+            }),
+            dimensions: Schema.Struct({ datetimeMinute: Schema.String, configId: Schema.String }),
+          })),
+        }),
+      ]),
+    }),
+  }),
+  errors: Schema.optionalKey(Schema.Union([Schema.Null, Schema.Tuple([])])),
+})
+
+const decodeAnswer = Schema.decodeUnknownOption(Answer)
+
+/** The minutes in a GraphQL answer, or undefined when it isn't one in full. Never throws. */
+export const minutesOf = (body: unknown): Array<Minute> | undefined => {
+  const answer = decodeAnswer(body)
+  if (Option.isNone(answer)) return undefined
+  const pools = answer.value.data.viewer.accounts[0].pools
+  if (pools.some((row) => Number.isNaN(Date.parse(row.dimensions.datetimeMinute)))) return undefined
+  return pools.map((row) => ({
+    configId: row.dimensions.configId,
+    minute: row.dimensions.datetimeMinute,
+    waiting: row.max.waitingClients,
+  }))
+}
+
+/** The reader over the `HttpClient` in context. */
+export const make = (options: Options) =>
+  Effect.map(HttpClient.HttpClient, (http): Reader => (from, to) => {
+    const variables = {
+      account: options.accountId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      ...(options.configIds.length === 0 ? {} : { configs: options.configIds }),
+    }
+    const request = HttpClientRequest.post(`${options.apiUrl ?? API_URL}/graphql`).pipe(
+      HttpClientRequest.bodyJsonUnsafe({ query: options.configIds.length === 0 ? QUERY_EVERY_CONFIG : QUERY, variables }),
+      HttpClientRequest.bearerToken(Redacted.value(options.token)),
+    )
+    return http.execute(request).pipe(
+      Effect.mapError(() => new ReadFailed({ code: "unreachable" })),
+      Effect.flatMap((response) =>
+        response.status !== 200
+          ? Effect.fail(new ReadFailed({ code: `http_${response.status}` }))
+          : Effect.mapError(response.json, () => new ReadFailed({ code: "malformed" }))
+      ),
+      Effect.flatMap((body) => {
+        const minutes = minutesOf(body)
+        return minutes === undefined ? Effect.fail(new ReadFailed({ code: "malformed" })) : Effect.succeed(judge(minutes))
+      }),
+      Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => Effect.fail(new ReadFailed({ code: "timeout" })) }),
+    )
+  })
+
+/**
+ * The deployment's reader from its environment, or none: `HYPERDRIVE_METRICS_TOKEN` (a Cloudflare API token with
+ * Account Analytics: Read), `CLOUDFLARE_ACCOUNT_ID`, and `HYPERDRIVE_CONFIG_IDS`, the configs to watch, comma-separated
+ * (none: every config of the account). Without a token or an account the pools aren't read.
+ */
+export const fromConfig = Effect.gen(function* () {
+  const token = yield* Config.option(Config.Redacted("HYPERDRIVE_METRICS_TOKEN"))
+  const accountId = yield* Config.option(Config.NonEmptyString("CLOUDFLARE_ACCOUNT_ID"))
+  const configIds = yield* Config.String("HYPERDRIVE_CONFIG_IDS").pipe(Config.withDefault(""))
+  if (Option.isNone(token) || Option.isNone(accountId)) return Option.none<Options>()
+  return Option.some<Options>({
+    token: token.value,
+    accountId: accountId.value,
+    configIds: configIds.split(",").map((id) => id.trim()).filter((id) => id !== ""),
+  })
+})

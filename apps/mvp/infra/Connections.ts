@@ -24,14 +24,30 @@ export const ALERT_PERCENT = 80
  * The most server connections each client of the production database may hold. Their sum stays under `ALERT_PERCENT`
  * of the `max_connections` of the range's bottom, so the budget holds even if Neon sized by it
  * (docs/infrastructure.md#connections):
- * - `hyperdrive`: the `ChatDatabase` config's origin connection limit. Every Worker, ChatApi's requests and every
- *   `FlowExecution` alarm, shares it; `@smthrs/database` writers let theirs go after 2 seconds of waiting for the engine
- *   schema's writer lock, so a queue of them can't hold it all.
+ * - `hyperdrive`: the `ChatDatabase` config's origin connection limit, the request path's: ChatApi's requests (sessions,
+ *   roles, repositories, shape access) and the site's.
+ * - `engine`: the `EngineDatabase` config's, the durable engine's: every `FlowExecution` alarm and call, whose journal,
+ *   leases and app writes are about 95% of the queries. On smithers.sh on 2026-11-02 the two shared one config of 50;
+ *   when ten TODOs ran at once the engine filled every pool slice (Hyperdrive's 10 connections each, up to 30 clients
+ *   waiting, 1.2 s to get a connection) and sessions, role, refs, home and shape-access reads answered 503 (decision
+ *   0150). Apart, an engine burst queues only engine work. `@smthrs/database` writers let theirs go after 2 seconds of
+ *   waiting for the engine schema's writer lock, so a queue of them can't hold it all.
+ *   Hyperdrive enforces both limits softly and may exceed them briefly (Hyperdrive: Connection pooling).
  * - `electric`: Electric's query pool (`ELECTRIC_DB_POOL_SIZE`) and its one replication connection.
  * - `deploy`: the deploy's migrations and an operator's `psql`.
  * - `reserved`: what Neon keeps for itself and superusers.
  */
-export const CONNECTION_BUDGET = { hyperdrive: 50, electric: 20 + 1, deploy: 5, reserved: 13 } as const
+export const CONNECTION_BUDGET = { hyperdrive: 20, engine: 30, electric: 20 + 1, deploy: 5, reserved: 13 } as const
+
+/**
+ * `ChatDatabase`'s limit while decision 0150 rolls out: the shared config's old 50, kept for the deploy that creates
+ * `EngineDatabase` and moves the engine's traffic to it, so the Worker still sending the engine through `ChatDatabase`
+ * never meets a smaller pool. A later deploy shrinks it to `CONNECTION_BUDGET.hyperdrive` and removes this.
+ *
+ * Meanwhile the sum exceeds the budget at the range's bottom (112 connections at 0.25 CU) but stays under
+ * `ALERT_PERCENT` of what Neon sizes the compute's `max_connections` by, the range's top: 450 at 1 CU.
+ */
+export const ROLLOUT_REQUEST_LIMIT = 50
 
 /** Electric's query pool: the `electric` budget less its replication connection. */
 export const ELECTRIC_POOL_SIZE = CONNECTION_BUDGET.electric - 1

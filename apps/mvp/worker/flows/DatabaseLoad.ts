@@ -1,11 +1,12 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Channels } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
-import { Duration, Effect, Layer, Metric, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ALERT_PERCENT } from "../../infra/Connections.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
+import * as HyperdrivePool from "../HyperdrivePool.ts"
 import * as AlertDelivery from "./AlertDelivery.ts"
 
 // `ops/DatabaseLoad { from, until }` (docs/features/database-alerts.md): how many connections the app's Postgres has
@@ -38,6 +39,9 @@ export const WINDOW = Duration.minutes(5)
 /** The execution, and the alert, for one window: one per window length and start. */
 export const executionId = (window: Window) => `database-load-${window.until - window.from}-${window.from}`
 
+/** v2's execution, and alert, for one window: never v1's, whose intent a v2 start would conflict with. */
+export const executionIdV2 = (window: Window) => `database-load-v2-${window.until - window.from}-${window.from}`
+
 /** Client connections in use and `max_connections`, and whether in use reached the alert's share of it. */
 export const Sampled = Schema.Struct({ used: nonNegative, max: positive, over: Schema.Boolean })
 export type Sampled = typeof Sampled.Type
@@ -66,6 +70,17 @@ export const maxConnections = Metric.gauge("smithers_database_max_connections", 
   description: "The app's Postgres max_connections at the last sample",
 })
 
+/** The most clients that waited at one Hyperdrive slice in the last sample's look back. */
+export const hyperdriveWaiting = Metric.gauge("smithers_hyperdrive_waiting_clients", {
+  description: "The most clients that waited for a Hyperdrive pool connection at the last sample",
+})
+
+/** Hyperdrive pool reads, by `outcome`: `calm`, `saturated` or `failed`. */
+export const hyperdriveReads = Metric.counter("smithers_hyperdrive_pool_reads", {
+  description: "Hyperdrive pool reads by the database sample, by outcome",
+  incremental: true,
+})
+
 /** Deliveries, by `channel` and `outcome`, as `smithers_spend_alert_deliveries` counts a spend alert's. */
 export const deliveries = Metric.counter("smithers_database_alert_deliveries", {
   description: "Database alert deliveries outside the app, by channel and outcome",
@@ -81,6 +96,19 @@ export const Sample = Action.make("ops/SampleConnections", {
   success: Sampled,
   error: SampleFailed,
   capabilities: ["db:read:pg_stat_activity"],
+  retryPolicy,
+})
+
+/**
+ * v2's sample: the connections, and Hyperdrive's pools when the deployment can read them (decision 0150). A new step,
+ * never a changed `ops/SampleConnections`: a changed declaration changes the plan's digest, and a v1 run in flight
+ * would stop with `plan_changed`.
+ */
+export const SampleV2 = Action.make("ops/SampleDatabaseLoad", {
+  payload,
+  success: Sampled,
+  error: SampleFailed,
+  capabilities: ["db:read:pg_stat_activity", "net:cloudflare_analytics"],
   retryPolicy,
 })
 
@@ -110,11 +138,53 @@ export const Deliver = Action.make("ops/DeliverDatabaseAlert", {
 })
 
 /** What the flow did: the sample, and each channel's delivery, `none` under the share. */
-const Outcome = Schema.Struct({ sample: Sampled, email: AlertDelivery.Delivered, telegram: AlertDelivery.Delivered })
+export const Outcome = Schema.Struct({ sample: Sampled, email: AlertDelivery.Delivered, telegram: AlertDelivery.Delivered })
 
 const NONE = { outcome: "none" } as const
 
-/** `ops/DatabaseLoad`: samples the app's Postgres connections and alerts the Admins once they reach the share. */
+/** v1's body: the connection sample, then, over the share, one alert per channel keyed by v1's execution id. */
+export const bodyV1 = Node.capture({}, (window: Window) =>
+  Sample.call(window).pipe(
+    Node.branch({
+      if: Node.capture({}, (sampled: Sampled) => sampled.over),
+      then: Node.capture({ alertId: executionId(window) }, function (sampled) {
+        const { used, max } = sampled
+        return Node.all({
+          sample: Node.succeed(sampled),
+          email: Deliver.call({ alertId: this.alertId, channel: "email", used, max }),
+          telegram: Deliver.call({ alertId: this.alertId, channel: "telegram", used, max }),
+        })
+      }),
+      else: Node.capture({}, (sampled) =>
+        Node.all({ sample: Node.succeed(sampled), email: Node.succeed(NONE), telegram: Node.succeed(NONE) })),
+    }),
+  ))
+
+/** v2's body: v1's over `SampleV2`, keyed by v2's execution id. */
+const bodyV2 = Node.capture({}, (window: Window) =>
+  SampleV2.call(window).pipe(
+    Node.branch({
+      if: Node.capture({}, (sampled: Sampled) => sampled.over),
+      then: Node.capture({ alertId: executionIdV2(window) }, function (sampled) {
+        const { used, max } = sampled
+        return Node.all({
+          sample: Node.succeed(sampled),
+          email: Deliver.call({ alertId: this.alertId, channel: "email", used, max }),
+          telegram: Deliver.call({ alertId: this.alertId, channel: "telegram", used, max }),
+        })
+      }),
+      else: Node.capture({}, (sampled) =>
+        Node.all({ sample: Node.succeed(sampled), email: Node.succeed(NONE), telegram: Node.succeed(NONE) })),
+    }),
+  ))
+
+/** Either version's failure. */
+export const Failure = Schema.Union([SampleFailed, Channels.DeliveryFailed, AlertDelivery.DeliverUnavailable])
+
+/**
+ * `ops/DatabaseLoad`: samples the app's Postgres connections and alerts the Admins once they reach the share. v1, kept
+ * as it was so a run in flight when v2 deploys resumes (`DatabaseLoadV2`); nothing starts a new one.
+ */
 export const DatabaseLoad = Flow.make("ops/DatabaseLoad", {
   description: "Sample the app's Postgres connections in use against max_connections, and alert the deployment's " +
     `Admins by email and Telegram where they set them once ${ALERT_PERCENT}% are in use.`,
@@ -127,23 +197,31 @@ export const DatabaseLoad = Flow.make("ops/DatabaseLoad", {
   modelInvocable: false,
   payload,
   success: Outcome,
-  error: Schema.Union([SampleFailed, Channels.DeliveryFailed, AlertDelivery.DeliverUnavailable]),
-  body: Node.capture({}, (window: Window) =>
-    Sample.call(window).pipe(
-      Node.branch({
-        if: Node.capture({}, (sampled: Sampled) => sampled.over),
-        then: Node.capture({ alertId: executionId(window) }, function (sampled) {
-          const { used, max } = sampled
-          return Node.all({
-            sample: Node.succeed(sampled),
-            email: Deliver.call({ alertId: this.alertId, channel: "email", used, max }),
-            telegram: Deliver.call({ alertId: this.alertId, channel: "telegram", used, max }),
-          })
-        }),
-        else: Node.capture({}, (sampled) =>
-          Node.all({ sample: Node.succeed(sampled), email: Node.succeed(NONE), telegram: Node.succeed(NONE) })),
-      }),
-    )),
+  error: Failure,
+  body: bodyV1,
+})
+
+/**
+ * `ops/DatabaseLoad/v2`: v1, plus Hyperdrive's pools (decision 0150): the sample is over once the connections reach
+ * the share or a config's pool stayed saturated. Each window's sampler starts this one.
+ */
+export const DatabaseLoadV2 = Flow.make("ops/DatabaseLoad/v2", {
+  description: "Sample the app's Postgres connections in use against max_connections, and Hyperdrive's pools, and " +
+    `alert the deployment's Admins by email and Telegram where they set them once ${ALERT_PERCENT}% are in use or ` +
+    `more than ${HyperdrivePool.WAITING_THRESHOLD} clients waited for a pool connection ` +
+    `${HyperdrivePool.SUSTAINED_MINUTES} minutes in a row.`,
+  capabilities: [
+    "db:read:pg_stat_activity",
+    "net:cloudflare_analytics",
+    "db:read:alert_channels",
+    "db:write:alert_deliveries",
+    "net:alert_channels",
+  ],
+  modelInvocable: false,
+  payload,
+  success: Outcome,
+  error: Failure,
+  body: bodyV2,
 })
 
 /** Whether `used` reached `percent` of `max`. */
@@ -170,11 +248,50 @@ export const sample = (percent: number) =>
   })
 
 /**
- * The sample step over `database`, with its records: a `database.connections` log line, Info, Warn when in use reached
+ * The sample step over `database`, then over `pool` when there is one (`observedPool`), whose saturation alerts as
+ * connections over the share do. The Postgres sample's records: a `database.connections` log line, Info, Warn when in use reached
  * the share or the sample failed, a span, both gauges and `smithers_database_load_samples`. They carry counts and the
  * ratio, never a query, a role or an address.
  */
 export const observedSample = <E, R>(
+  window: Window,
+  percent: number,
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  pool?: HyperdrivePool.Reader,
+) =>
+  Effect.flatMap(postgresSample(window, percent, database), (sampled) =>
+    pool === undefined
+      ? Effect.succeed(sampled)
+      : Effect.map(observedPool(pool), (saturated) => (saturated ? { ...sampled, over: true } : sampled)))
+
+/**
+ * Reads Hyperdrive's pools over `HyperdrivePool.LOOKBACK` ending now, with its records: a `database.hyperdrive` log
+ * line (Info `calm`, Warn `saturated` and `failed`), `smithers_hyperdrive_waiting_clients` and
+ * `smithers_hyperdrive_pool_reads`. Whether some config stayed saturated; a read that failed is not, and never fails
+ * the sample. Counts only, never the token, an account or a config id.
+ */
+export const observedPool = (pool: HyperdrivePool.Reader) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis
+    const read = yield* Effect.result(pool(new Date(now - Duration.toMillis(HyperdrivePool.LOOKBACK)), new Date(now)))
+    if (read._tag === "Failure") {
+      yield* Metric.update(Metric.withAttributes(hyperdriveReads, { outcome: "failed" }), 1)
+      yield* Effect.logWarning("database.hyperdrive").pipe(
+        Effect.annotateLogs({ outcome: "failed", errorCode: read.failure.code }),
+      )
+      return false
+    }
+    const { peak, saturated, sustainedMinutes } = read.success
+    const outcome = saturated ? "saturated" : "calm"
+    yield* Metric.update(hyperdriveWaiting, peak)
+    yield* Metric.update(Metric.withAttributes(hyperdriveReads, { outcome }), 1)
+    yield* Effect.logWithLevel(saturated ? "Warn" : "Info")("database.hyperdrive").pipe(
+      Effect.annotateLogs({ outcome, peakWaiting: peak, sustainedMinutes }),
+    )
+    return saturated
+  })
+
+const postgresSample = <E, R>(
   window: Window,
   percent: number,
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
@@ -231,32 +348,39 @@ export const observedDeliver = <E, R>(request: DeliverRequest, database: Layer.L
   )
 
 /**
- * Registers `ops/DatabaseLoad` with its steps, reaching Postgres through `database`, sending through `channels`
+ * Registers `ops/DatabaseLoad` (v1, for runs in flight) and `ops/DatabaseLoad/v2` with their steps, reaching Postgres through `database`, sending through `channels`
  * (worker/AlertChannels.ts `channelsConfig`; none by default), and alerting once `percent` of `max_connections` is in
- * use (`ALERT_PERCENT` unless set).
+ * use (`ALERT_PERCENT` unless set), or once `pool` (worker/HyperdrivePool.ts; unread without one) finds a config's
+ * pool saturated (decision 0150).
  */
 export const registration = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   channels: Layer.Layer<Channels.Channels> = AlertDelivery.noChannels,
-  options: { readonly percent?: number } = {},
-) =>
-  Interpreter.layerWithImplementations(
-    DatabaseLoad,
-    Layer.mergeAll(
-      Sample.toLayer((window) => observedSample(window, options.percent ?? ALERT_PERCENT, database)),
-      Deliver.toLayer((request) => observedDeliver(request, database)),
+  options: { readonly percent?: number; readonly pool?: HyperdrivePool.Reader | undefined } = {},
+) => {
+  const percent = options.percent ?? ALERT_PERCENT
+  const deliver = Deliver.toLayer((request) => observedDeliver(request, database))
+  return Layer.mergeAll(
+    Interpreter.layerWithImplementations(
+      DatabaseLoad,
+      Layer.merge(Sample.toLayer((window) => observedSample(window, percent, database)), deliver),
+    ),
+    Interpreter.layerWithImplementations(
+      DatabaseLoadV2,
+      Layer.merge(SampleV2.toLayer((window) => observedSample(window, percent, database, options.pool)), deliver),
     ),
   ).pipe(Layer.provide(channels), Layer.provideMerge(Action.layerImplementations))
+}
 
 /**
  * Returns what each `FlowExecution` alarm runs once it is done (worker/Executions.ts): it starts the current window's
- * `ops/DatabaseLoad` through `FlowStarter`, once a window in this isolate (`Flows.startEachWindow`). A start that found
+ * `ops/DatabaseLoad/v2` through `FlowStarter`, once a window in this isolate (`Flows.startEachWindow`). A start that found
  * it started already counts as started. A start the host can't record is an Error `database.connections` line and a
  * count, `not_started`, and the next alarm starts it again; the alarm itself goes on.
  */
 export const sampler = Flows.startEachWindow(
   WINDOW,
-  (window) => ({ flow: DatabaseLoad, executionId: executionId(window), payload: window }),
+  (window) => ({ flow: DatabaseLoadV2, executionId: executionIdV2(window), payload: window }),
   (errorCode) =>
     Effect.andThen(
       Metric.update(Metric.withAttributes(samples, { outcome: "not_started" }), 1),

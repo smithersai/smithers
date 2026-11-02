@@ -6,6 +6,7 @@ import { Logger } from "@smthrs/observability"
 import { EdgeCache } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
+import * as Output from "alchemy/Output"
 import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
 import type { HttpServerResponse } from "effect/http"
@@ -32,6 +33,7 @@ import * as Chat from "./Chat.ts"
 import * as ViewRealm from "./ViewRealm.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
+import * as DatabaseRoutes from "./DatabaseRoutes.ts"
 import * as Executions from "./Executions.ts"
 import * as Placement from "./Placement.ts"
 import * as Flows from "./Flows.ts"
@@ -78,14 +80,28 @@ import * as Throttle from "./Throttle.ts"
  * through to the same database (the compose Postgres by default). Hyperdrive's query cache is off: an answer's
  * history must see the latest writes.
  */
-const ChatDatabase = Effect.gen(function* () {
-  const { origin, sslmode } = Database.hyperdrive(yield* Database.url)
-  return yield* Cloudflare.Hyperdrive.Connection("ChatDatabase", {
-    origin,
-    caching: { disabled: true },
-    dev: { ...origin, sslmode },
+const connection = (name: "ChatDatabase" | "EngineDatabase") =>
+  Effect.gen(function* () {
+    const { origin, sslmode } = Database.hyperdrive(yield* Database.url)
+    return yield* Cloudflare.Hyperdrive.Connection(name, {
+      origin,
+      caching: { disabled: true },
+      dev: { ...origin, sslmode },
+    })
   })
-})
+
+/** The request path's config: ChatApi's requests read sessions, roles, repositories and shape access through it. */
+const ChatDatabase = connection("ChatDatabase")
+
+/**
+ * The durable engine's config: every `FlowExecution` alarm and call, about 95% of the queries, so an engine burst
+ * queues behind its own origin connections and never the request path's (infra/Connections.ts `CONNECTION_BUDGET`,
+ * decision 0150).
+ */
+const EngineDatabase = connection("EngineDatabase")
+
+/** The configs by pool: each consumer's is `DatabaseRoutes.route(pools, consumer)` (worker/DatabaseRoutes.ts). */
+const pools = { request: ChatDatabase, engine: EngineDatabase } as const
 
 /**
  * ChatApi's program. Who is asking comes from sign-in (`worker/SignIn.ts`); `fallback` is who is signed in while the
@@ -147,7 +163,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     yield* Electric.bind
     yield* SignInSecret.bind
     yield* SecretsInfra.bind
-    const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(ChatDatabase)
+    // The configs `ops/DatabaseLoad` watches for saturated pools (worker/HyperdrivePool.ts, decision 0150).
+    const configs = Output.all((yield* ChatDatabase).hyperdriveId, (yield* EngineDatabase).hyperdriveId)
+    yield* Output.named(Output.map(configs, (ids) => ids.join(",")), "HYPERDRIVE_CONFIG_IDS")
+    const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(DatabaseRoutes.route(pools, "requests"))
     const database = Database.layer(hyperdrive.connectionString)
     // Repository secrets (docs/features/secrets.md): write-only values sealed under SECRETS_KEY, off without it. A
     // person's own model's key is sealed under it too (docs/features/personal-model.md).
@@ -495,15 +514,15 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       ),
     }
   }).pipe(
-    Effect.provide(Executions.live(ChatDatabase, {
+    Effect.provide(Executions.live(DatabaseRoutes.route(pools, "FlowExecution"), {
       repositories,
       homeRepository,
       ...(options.dev === true ? { dev: true } : {}),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
       ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
     })),
-    Effect.provide(BranchSandboxes.live(ChatDatabase)),
-    Effect.provide(BranchSandboxes.gateLive(ChatDatabase)),
+    Effect.provide(BranchSandboxes.live(DatabaseRoutes.route(pools, "SandboxObject"))),
+    Effect.provide(BranchSandboxes.gateLive(DatabaseRoutes.route(pools, "GateObject"))),
     Effect.provide(BranchRooms.live),
     Effect.provide(RunContent.live),
     Effect.provide(

@@ -4,9 +4,11 @@
 // connections open and alerts at a share they reach, never made-up numbers. Alerts go to the local providers
 // (worker/test/alertProviders.ts); a provider that refuses is the local one answering 400.
 import { PgClient } from "@effect/sql-pg"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { RunStore } from "@smthrs/flows"
 import { Channels } from "@smthrs/notifications"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Redacted, Tracer } from "effect"
+import { Cause, Context, Effect, Exit, Fiber, Layer, Logger, Metric, Redacted, Schema, Scope, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
@@ -14,10 +16,12 @@ import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { ALERT_PERCENT } from "../../infra/Connections.ts"
 import * as Flows from "../Flows.ts"
+import * as HyperdrivePool from "../HyperdrivePool.ts"
 import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
-import { runFlow } from "../test/flowHost.ts"
+import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as AlertDelivery from "./AlertDelivery.ts"
+import * as V1 from "../test/DatabaseLoadV1.ts"
 import * as DatabaseLoad from "./DatabaseLoad.ts"
 
 const runtime = testFile("database_load")
@@ -180,6 +184,36 @@ describe("the sample", () => {
     expect(over.count("under")).toBe(0)
   })
 
+  test("a saturated Hyperdrive pool makes the sample over, Warn; a calm one or a failed read leaves it, never failing", async () => {
+    const db = await database()
+    const reading = (saturated: boolean) => () =>
+      Effect.succeed({ peak: saturated ? 30 : 3, sustainedMinutes: saturated ? 7 : 0, saturated })
+    const saturated = await observed(DatabaseLoad.observedSample(window(), 100, db, reading(true)))
+    expect(Exit.isSuccess(saturated.exit) && saturated.exit.value.over).toBe(true)
+    expect(saturated.lines.find((line) => line.message === "database.hyperdrive")).toMatchObject({
+      level: "WARN",
+      annotations: { outcome: "saturated", peakWaiting: 30, sustainedMinutes: 7 },
+    })
+    expect(saturated.read(DatabaseLoad.hyperdriveWaiting).value).toBe(30)
+    expect(saturated.read(Metric.withAttributes(DatabaseLoad.hyperdriveReads, { outcome: "saturated" })).count).toBe(1)
+
+    const calm = await observed(DatabaseLoad.observedSample(window(), 100, db, reading(false)))
+    expect(Exit.isSuccess(calm.exit) && calm.exit.value.over).toBe(false)
+    expect(calm.lines.find((line) => line.message === "database.hyperdrive")).toMatchObject({
+      level: "INFO",
+      annotations: { outcome: "calm", peakWaiting: 3 },
+    })
+
+    const failed = await observed(DatabaseLoad.observedSample(window(), 100, db, () =>
+      Effect.fail(new HyperdrivePool.ReadFailed({ code: "http_403" }))))
+    expect(Exit.isSuccess(failed.exit) && failed.exit.value.over).toBe(false)
+    expect(failed.lines.find((line) => line.message === "database.hyperdrive")).toMatchObject({
+      level: "WARN",
+      annotations: { outcome: "failed", errorCode: "http_403" },
+    })
+    expect(failed.read(Metric.withAttributes(DatabaseLoad.hyperdriveReads, { outcome: "failed" })).count).toBe(1)
+  })
+
   test("Postgres failing fails the step with SampleFailed, logged and counted by its code", async () => {
     // A Postgres that isn't there: nothing listens on port 1.
     const unreachable = Database.layer(
@@ -230,6 +264,26 @@ const receipts = () =>
   sql<Record<string, unknown>>(`
     SELECT alert_id AS "alertId", channel, status, code, reason, http_status AS "httpStatus", attempts
     FROM alert_deliveries ORDER BY channel`)
+
+/** Builds a Node-host engine in `scope` for `registration`; the registration's own requirements are the host's. */
+const boot = <ROut, E, R>(scope: Scope.Scope, registration: Layer.Layer<ROut, E, R>, options: Parameters<typeof build>[1]) =>
+  Effect.runPromise(Scope.provide(scope)(build(registration, options)) as Effect.Effect<
+    Effect.Success<ReturnType<typeof build>>,
+    unknown
+  >)
+
+/**
+ * The registration production ran before decision 0150: the frozen v1 declarations (worker/test/DatabaseLoadV1.ts),
+ * implemented as the module implements them, over `database` and `deliveries`.
+ */
+const frozenV1 = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, deliveries: Layer.Layer<Channels.Channels>) =>
+  Interpreter.layerWithImplementations(
+    V1.DatabaseLoad,
+    Layer.merge(
+      V1.Sample.toLayer((window) => DatabaseLoad.observedSample(window, 1, database) as never),
+      V1.Deliver.toLayer((request) => DatabaseLoad.observedDeliver(request, database) as never),
+    ),
+  ).pipe(Layer.provide(deliveries), Layer.provideMerge(Action.layerImplementations))
 
 describe("ops/DatabaseLoad on the Node host", () => {
   test("under the share it samples and sends nothing, even with both channels set", async () => {
@@ -292,8 +346,186 @@ describe("ops/DatabaseLoad on the Node host", () => {
     expect(await receipts()).toEqual([{ ...sent, channel: "email" }, { ...sent, channel: "telegram" }])
   })
 
+  test("v2, under the connection share but with a saturated Hyperdrive pool, alerts on both channels; v1 never reads it", async () => {
+    await setChannel("email", ADDRESSES)
+    await setChannel("telegram", [CHAT])
+    let reads = 0
+    const saturated = () => Effect.sync(() => (reads++, { peak: 30, sustainedMinutes: 7, saturated: true }))
+
+    const v1 = await runFlow(
+      DatabaseLoad.DatabaseLoad,
+      window(),
+      DatabaseLoad.registration(await database(), channels(), { percent: 100, pool: saturated }),
+    )
+    expect(Exit.isSuccess(v1.exit) && v1.exit.value).toMatchObject({ sample: { over: false }, email: { outcome: "none" } })
+    expect(reads).toBe(0)
+
+    const ran = await runFlow(
+      DatabaseLoad.DatabaseLoadV2,
+      window(),
+      DatabaseLoad.registration(await database(), channels(), { percent: 100, pool: saturated }),
+    )
+
+    expect(ran.status).toBe("completed")
+    expect(Exit.isSuccess(ran.exit) && ran.exit.value).toMatchObject({
+      sample: { over: true },
+      email: { outcome: "sent" },
+      telegram: { outcome: "sent" },
+    })
+    expect(providers.received).toHaveLength(2)
+  })
+
+  test("a v1 run in flight when v2 deploys resumes on the new registration; v2 runs beside it", async () => {
+    // Astra review of 0bf47166, P1: a changed v1 declaration changes its plan's digest, and the run in flight stops with
+    // `plan_changed`. v1 stays as it was, and the new registration still implements it.
+    const current = window()
+    const v1Id = DatabaseLoad.executionId(current)
+    const unreachable = Database.layer(
+      Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")),
+    )
+    // The registration production ran before v2: v1 alone, here with a sample that can't reach Postgres, so its run
+    // stays in flight, retrying.
+    const before = frozenV1(unreachable, channels())
+    const engine = async <ROut, E, R>(registration: Layer.Layer<ROut, E, R>, schema?: string) => {
+      const scope = Effect.runSync(Scope.make())
+      const built = await boot(scope, registration, {
+        hostId: "durable-object",
+        isAlive: RunStore.Ownership.singleIncarnationLiveness,
+        maxConnections: 3,
+        ...(schema === undefined ? {} : { schema }),
+      })
+      return {
+        schema: built.engine.schema,
+        status: (id: string) => Effect.runPromise(built.engine.status(id)),
+        flows: Context.get(built.context, FlowRuntime.FlowRuntime),
+        close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+      }
+    }
+    const first = await engine(before)
+    const running = Effect.runFork(Effect.exit(first.flows.execute(V1.DatabaseLoad, { executionId: v1Id, payload: current })))
+    await expect.poll(() => first.status(v1Id), { interval: 50, timeout: 20_000 }).toBe("running")
+    await Effect.runPromise(Fiber.interrupt(running))
+
+    const second = await engine(DatabaseLoad.registration(await database(), channels(), { percent: 100 }), first.schema)
+    try {
+      const resumed = await Effect.runPromise(
+        Effect.exit(second.flows.execute(DatabaseLoad.DatabaseLoad, { executionId: v1Id, payload: current })),
+      )
+      expect(Exit.isSuccess(resumed) && resumed.value).toMatchObject({ sample: { over: false }, email: { outcome: "none" } })
+      expect(await second.status(v1Id)).toBe("completed")
+      const v2Id = DatabaseLoad.executionIdV2(current)
+      const fresh = await Effect.runPromise(
+        Effect.exit(second.flows.execute(DatabaseLoad.DatabaseLoadV2, { executionId: v2Id, payload: current })),
+      )
+      expect(Exit.isSuccess(fresh)).toBe(true)
+      expect(await second.status(v2Id)).toBe("completed")
+    } finally {
+      await second.close()
+      await first.close()
+    }
+  }, 60_000)
+
+  test("a v1 alert in flight, its email sent and its Telegram message failing, resumes: no second email", async () => {
+    await setChannel("email", ADDRESSES)
+    await setChannel("telegram", [CHAT])
+    const current = window()
+    const v1Id = DatabaseLoad.executionId(current)
+    const db = await database()
+    // Telegram's provider is down on the old host: its step fails and retries while the email's has sent.
+    const telegramDown = Channels.layer({
+      email: { apiKey: Redacted.make(API_KEY), from: "Smithers <alerts@example.com>", url: providers.url },
+      telegram: { token: Redacted.make(BOT_TOKEN), url: "http://127.0.0.1:1" },
+    })
+    const options = { hostId: "durable-object", isAlive: RunStore.Ownership.singleIncarnationLiveness, maxConnections: 3 }
+    const firstScope = Effect.runSync(Scope.make())
+    const secondScope = Effect.runSync(Scope.make())
+    try {
+      const first = await boot(firstScope, frozenV1(db, telegramDown), options)
+      const running = Effect.runFork(Effect.exit(
+        Context.get(first.context, FlowRuntime.FlowRuntime).execute(V1.DatabaseLoad, { executionId: v1Id, payload: current }),
+      ))
+      await expect.poll(async () => (await receipts()).filter((row) => row.channel === "email" && row.status === "sent").length,
+        { interval: 50, timeout: 20_000 }).toBe(1)
+      expect(await Effect.runPromise(first.engine.status(v1Id))).toBe("running")
+      await Effect.runPromise(Fiber.interrupt(running))
+
+      const second = await boot(secondScope, DatabaseLoad.registration(db, channels(), { percent: 1 }), {
+        ...options,
+        schema: first.engine.schema,
+      })
+      const resumed = await Effect.runPromise(Effect.exit(
+        Context.get(second.context, FlowRuntime.FlowRuntime).execute(DatabaseLoad.DatabaseLoad, { executionId: v1Id, payload: current }),
+      ))
+      expect(Exit.isSuccess(resumed) && resumed.value).toMatchObject({
+        sample: { over: true },
+        email: { outcome: "sent" },
+        telegram: { outcome: "sent" },
+      })
+      expect(providers.received.filter((request) => request.provider === "email")).toHaveLength(1)
+      expect(providers.received.filter((request) => request.provider === "telegram")).toHaveLength(1)
+      expect((await receipts()).map((row) => [row.channel, row.status])).toEqual([["email", "sent"], ["telegram", "sent"]])
+    } finally {
+      await Effect.runPromise(Scope.close(secondScope, Exit.void))
+      await Effect.runPromise(Scope.close(firstScope, Exit.void))
+    }
+  }, 60_000)
+
+  test("the control: v1 declared with v2's capabilities, as 0bf47166 did, stops the run in flight with plan_changed", async () => {
+    const current = window()
+    const v1Id = DatabaseLoad.executionId(current)
+    const unreachable = Database.layer(
+      Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")),
+    )
+    // 0bf47166's v1: the same body, one more capability.
+    const changed = Flow.make("ops/DatabaseLoad", {
+      description: "Sample the app's Postgres connections in use against max_connections, and alert the deployment's " +
+        `Admins by email and Telegram where they set them once ${ALERT_PERCENT}% are in use.`,
+      capabilities: [
+        "db:read:pg_stat_activity",
+        "net:cloudflare_analytics",
+        "db:read:alert_channels",
+        "db:write:alert_deliveries",
+        "net:alert_channels",
+      ],
+      modelInvocable: false,
+      payload: { from: Schema.Int, until: Schema.Int },
+      success: DatabaseLoad.Outcome,
+      error: DatabaseLoad.Failure,
+      body: DatabaseLoad.bodyV1,
+    })
+    const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+      Layer.merge(
+        DatabaseLoad.Sample.toLayer((window) => DatabaseLoad.observedSample(window, 100, database)),
+        DatabaseLoad.Deliver.toLayer((request) => DatabaseLoad.observedDeliver(request, database)),
+      )
+    const before = frozenV1(unreachable, channels())
+    const after = Interpreter.layerWithImplementations(changed, steps(await database()))
+      .pipe(Layer.provide(channels()), Layer.provideMerge(Action.layerImplementations))
+    const options = { hostId: "durable-object", isAlive: RunStore.Ownership.singleIncarnationLiveness, maxConnections: 3 }
+    const firstScope = Effect.runSync(Scope.make())
+    const secondScope = Effect.runSync(Scope.make())
+    try {
+      const first = await boot(firstScope, before, options)
+      const running = Effect.runFork(Effect.exit(
+        Context.get(first.context, FlowRuntime.FlowRuntime).execute(V1.DatabaseLoad, { executionId: v1Id, payload: current }),
+      ))
+      await expect.poll(() => Effect.runPromise(first.engine.status(v1Id)), { interval: 50, timeout: 20_000 }).toBe("running")
+      await Effect.runPromise(Fiber.interrupt(running))
+      const second = await boot(secondScope, after, { ...options, schema: first.engine.schema })
+      const resumed = await Effect.runPromise(Effect.exit(
+        Context.get(second.context, FlowRuntime.FlowRuntime).execute(changed, { executionId: v1Id, payload: current }),
+      ))
+      expect(Exit.isFailure(resumed)).toBe(true)
+      expect(JSON.stringify(Exit.isFailure(resumed) ? Cause.squash(resumed.cause) : null)).toContain("plan_changed")
+    } finally {
+      await Effect.runPromise(Scope.close(secondScope, Exit.void))
+      await Effect.runPromise(Scope.close(firstScope, Exit.void))
+    }
+  }, 60_000)
+
   test("the execution id names the window, so every alarm in a window starts the same one", () => {
     expect(DatabaseLoad.executionId({ from: 1_800_000, until: 2_100_000 })).toBe("database-load-300000-1800000")
+    expect(DatabaseLoad.executionIdV2({ from: 1_800_000, until: 2_100_000 })).toBe("database-load-v2-300000-1800000")
     expect(Flows.windowAt(1_799_999, DatabaseLoad.WINDOW)).toEqual({ from: 1_500_000, until: 1_800_000 })
   })
 })
@@ -408,7 +640,7 @@ describe("the start once a window", () => {
 
     expect(Exit.isSuccess(ran.exit)).toBe(true)
     expect(started).toEqual([
-      { flow: "ops/DatabaseLoad", executionId: "database-load-300000-0", payload: { from: 0, until: 300_000 } },
+      { flow: "ops/DatabaseLoad/v2", executionId: "database-load-v2-300000-0", payload: { from: 0, until: 300_000 } },
     ])
     expect(ran.lines).toEqual([])
   })
@@ -434,6 +666,6 @@ describe("the start once a window", () => {
       annotations: { outcome: "not_started", errorCode: "object_unreachable" },
     })])
     expect(ran.count("not_started")).toBe(1)
-    expect(attempts).toEqual(["database-load-300000-0", "database-load-300000-0"])
+    expect(attempts).toEqual(["database-load-v2-300000-0", "database-load-v2-300000-0"])
   })
 })

@@ -361,6 +361,7 @@ describe("ExecutionHost over the compose Postgres", () => {
           Expire.Expire,
           SpendAlert.SpendAlert,
           DatabaseLoad.DatabaseLoad,
+          DatabaseLoad.DatabaseLoadV2,
           SandboxSpend.SandboxSpend,
           BugReport.BugReport,
         ])
@@ -559,7 +560,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       })
     ))
 
-  test("the deployed flows run ops/DatabaseLoad: an alarm starts its window's sample, which samples once", async () => {
+  test("the deployed flows run ops/DatabaseLoad/v2: an alarm starts its window's sample, which samples once", async () => {
     const services = await appServices()
     const samples: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
     const logger = Logger.make((options) => void samples.push(StructuredLogger.formatStructured.log(options)))
@@ -598,7 +599,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         expect((yield* pause.alarm())._tag).toBe("Settled")
         expect(started).toHaveLength(1)
         const loadId = started[0]!
-        expect(loadId).toMatch(/^database-load-300000-\d+$/)
+        expect(loadId).toMatch(/^database-load-v2-300000-\d+$/)
         expect(loadObject.alarm()).not.toBeNull()
 
         // The sample's own object, in another isolate: its alarm samples and settles, then starts its own window again.
@@ -698,6 +699,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       Expire.Expire,
       SpendAlert.SpendAlert,
       DatabaseLoad.DatabaseLoad,
+      DatabaseLoad.DatabaseLoadV2,
       SandboxSpend.SandboxSpend,
       BugReport.BugReport,
       RecheckRole.RecheckRole,
@@ -770,7 +772,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       index: () => Effect.succeed(3),
       installed: () => Effect.succeed(false),
     })
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, SandboxSpend.SandboxSpend, BugReport.BugReport, RepoClone.Clone, RepoRefresh.Refresh])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, DatabaseLoad.DatabaseLoadV2, SandboxSpend.SandboxSpend, BugReport.BugReport, RepoClone.Clone, RepoRefresh.Refresh])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()
@@ -819,6 +821,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       Expire.Expire,
       SpendAlert.SpendAlert,
       DatabaseLoad.DatabaseLoad,
+      DatabaseLoad.DatabaseLoadV2,
       SandboxSpend.SandboxSpend,
       BugReport.BugReport,
       SandboxCall.SandboxCall,
@@ -847,7 +850,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       session: (_, id, ownerId) => Effect.sync(() => void machines.push(`session ${id} ${ownerId}`)),
     }))
     const flows = ExecutionHost.withTerminals(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, sandboxes)
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, SandboxSpend.SandboxSpend, BugReport.BugReport, TerminalOpen.TerminalOpen])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, DatabaseLoad.DatabaseLoadV2, SandboxSpend.SandboxSpend, BugReport.BugReport, TerminalOpen.TerminalOpen])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()

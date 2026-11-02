@@ -140,7 +140,7 @@ agent/Session's next probe (≤ 30 s) ─▶ fails cancelled ─▶ todo/Fail: t
 |---|---|---|
 | `todo` | `todo_attempts` and the request revision it ran (`todo_requests.by_login`) | a Member or above of the deployment's repository, as the TODO itself |
 | `repo` | `runs` rows with an `execution` | a Member or above of that run's own repository (decision 0098); one read resolves at most eight repositories' roles |
-| `system` | the engine's runs of the deployment's own flows: `github/*` (issue sync, webhooks, writes, branch creation), `triage/Run`, `pr/Merge`, `repo/Clone`, `ops/SpendAlert`, `ops/DatabaseLoad`, `checks/Run`, `triggers/Dispatch` (`SYSTEM_FLOWS`) | an Admin of the deployment, who also reads and follows each one's page |
+| `system` | the engine's runs of the deployment's own flows: `github/*` (issue sync, webhooks, writes, branch creation), `triage/Run`, `pr/Merge`, `repo/Clone`, `ops/SpendAlert`, `ops/DatabaseLoad` and `ops/DatabaseLoad/v2`, `checks/Run`, `triggers/Dispatch` (`SYSTEM_FLOWS`) | an Admin of the deployment, who also reads and follows each one's page |
 
 A system flow is listed only when its declaration is in `SYSTEM_FLOWS`, so its page renders every value through its own schema (`Schema.Redacted` as `<redacted>`). Conversations' (`chat/*`), sign-in's (`auth/*`), secrets', models', terminals' and sandboxes' flows are never listed: they belong to one person, or carry what no list should. A repository whose role can't be read now leaves its runs out; the list still answers and its record says `partial`.
 

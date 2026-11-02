@@ -16,6 +16,7 @@ import { codeOf } from "./ErrorCode.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
 import * as DomainsConfig from "./domains/Config.ts"
 import { DomainProvider } from "./domains/Provider.ts"
+import * as HyperdrivePool from "./HyperdrivePool.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
@@ -218,6 +219,14 @@ const object = <E, R>(
       // `ops/SpendAlert` sends by email and Telegram through the deployment's providers, from its secrets
       // (docs/features/spend-alerts.md#channels).
       const alertChannels = yield* AlertChannels.channelsConfig(options).pipe(Effect.orDie)
+      // `ops/DatabaseLoad` reads Hyperdrive's pools too when the deployment has an analytics token (decision 0150).
+      const pool = yield* HyperdrivePool.fromConfig.pipe(
+        Effect.flatMap(Option.match({
+          onNone: () => Effect.succeed(undefined),
+          onSome: (poolOptions) => HyperdrivePool.make(poolOptions).pipe(Effect.provide(FetchHttpClient.layer)),
+        })),
+        Effect.orDie,
+      )
       // `domain/Verify` and `domain/Remove` reach the deployment's domain provider (docs/features/domains.md).
       const domains = yield* DomainsConfig.provider(options).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
       // `terminal/Open` wakes a branch's machine, its `SandboxObject` (docs/features/branch-workspace.md#opening-a-terminal).
@@ -321,8 +330,8 @@ const object = <E, R>(
           ExecutionHost.withSandboxTools(
             ExecutionHost.withTerminals(
               Option.isSome(signIn)
-                ? ExecutionHost.remoteWithSignIn(app, signIn.value, alertChannels)
-                : ExecutionHost.remote(app, alertChannels),
+                ? ExecutionHost.remoteWithSignIn(app, signIn.value, alertChannels, pool)
+                : ExecutionHost.remote(app, alertChannels, pool),
               appDatabase,
               BranchSandboxes.sandboxesLayer(sandboxObjects, keep),
             ),

@@ -38,6 +38,7 @@ export const SYSTEM_FLOWS: ReadonlyArray<Flow.Any> = [
   RepoClone.Clone,
   SpendAlert.SpendAlert,
   DatabaseLoad.DatabaseLoad,
+  DatabaseLoad.DatabaseLoadV2,
   Checks.ChecksRun,
   Checks.ReviewRun,
   Dispatch.Dispatch,

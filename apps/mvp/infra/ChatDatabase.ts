@@ -1,11 +1,12 @@
-// The `ChatDatabase` Hyperdrive config ChatApi binds, and in production the deploy step that migrates Postgres first.
+// The Hyperdrive configs ChatApi binds, `ChatDatabase` and `EngineDatabase`, and in production the deploy step that
+// migrates Postgres first.
 // Only alchemy.run.ts imports this file: it runs `db/migrations` from the deploying machine.
 import * as Alchemy from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Effect, FileSystem, type Redacted } from "effect"
 import * as Database from "../db/Database.ts"
-import { COMPUTE_MAX_CU, COMPUTE_MIN_CU, CONNECTION_BUDGET } from "./Connections.ts"
+import { COMPUTE_MAX_CU, COMPUTE_MIN_CU, CONNECTION_BUDGET, ROLLOUT_REQUEST_LIMIT } from "./Connections.ts"
 import { Compute, directUrl, Postgres } from "./Postgres.ts"
 
 /**
@@ -30,22 +31,24 @@ const migrationFiles = Effect.gen(function* () {
 }).pipe(Effect.orDie)
 
 /**
- * The `ChatDatabase` Hyperdrive config, with its query cache off: an answer's history must see the latest writes.
- * - Production: fronts the Neon project's direct host, and is created or updated only after the migrations ran, so
- *   ChatApi never deploys against an unmigrated database.
- * - `alchemy dev`: passes the binding straight through to `DATABASE_URL`, the compose Postgres by default.
+ * The two Hyperdrive configs in front of Postgres, with their query cache off: an answer's history must see the latest
+ * writes. `ChatDatabase` is the request path's (ChatApi's requests), `EngineDatabase` the durable engine's (every
+ * `FlowExecution` alarm and call), each with its own origin connection limit (infra/Connections.ts
+ * `CONNECTION_BUDGET`, decision 0150), so an engine burst can't take the connections sessions, roles and shape access
+ * read with.
+ * - Production: both front the Neon project's direct host, and are created or updated only after the migrations ran,
+ *   so ChatApi never deploys against an unmigrated database.
+ * - `alchemy dev`: each passes the binding straight through to `DATABASE_URL`, the compose Postgres by default.
  *
- * alchemy.run.ts declares it before ChatApi, so ChatApi's own `Hyperdrive.Connection("ChatDatabase", …)` resolves to
- * this one.
+ * alchemy.run.ts declares them before ChatApi, so ChatApi's own `Hyperdrive.Connection("ChatDatabase", …)` and
+ * `Hyperdrive.Connection("EngineDatabase", …)` resolve to these.
  */
-export const ChatDatabase = Effect.gen(function* () {
+export const Databases = Effect.gen(function* () {
   if (yield* Alchemy.ALCHEMY_DEV) {
     const { origin, sslmode } = Database.hyperdrive(yield* Database.url)
-    return yield* Cloudflare.Hyperdrive.Connection("ChatDatabase", {
-      origin,
-      caching: { disabled: true },
-      dev: { ...origin, sslmode },
-    })
+    const dev = (name: string) =>
+      Cloudflare.Hyperdrive.Connection(name, { origin, caching: { disabled: true }, dev: { ...origin, sslmode } })
+    return { chat: yield* dev("ChatDatabase"), engine: yield* dev("EngineDatabase") }
   }
   const postgres = yield* Postgres
   // The compute's size before anything connects to it (infra/Connections.ts `COMPUTE_MIN_CU`).
@@ -56,10 +59,18 @@ export const ChatDatabase = Effect.gen(function* () {
     maxCu: COMPUTE_MAX_CU,
   })
   const migrated = yield* Migrations({ database: directUrl(postgres), migrations: yield* migrationFiles })
-  return yield* Cloudflare.Hyperdrive.Connection("ChatDatabase", {
-    origin: Output.map(Output.all(postgres.origin, migrated, compute), ([origin]) => origin),
+  const origin = Output.map(Output.all(postgres.origin, migrated, compute), ([origin]) => origin)
+  // Each config's share of the compute's connections (infra/Connections.ts `CONNECTION_BUDGET`).
+  const chat = yield* Cloudflare.Hyperdrive.Connection("ChatDatabase", {
+    origin,
     caching: { disabled: true },
-    // Its share of the compute's connections (infra/Connections.ts `CONNECTION_BUDGET`).
-    originConnectionLimit: CONNECTION_BUDGET.hyperdrive,
+    // Kept at the shared config's 50 until the engine's traffic has moved (decision 0150, rollout step 1).
+    originConnectionLimit: ROLLOUT_REQUEST_LIMIT,
   })
+  const engine = yield* Cloudflare.Hyperdrive.Connection("EngineDatabase", {
+    origin,
+    caching: { disabled: true },
+    originConnectionLimit: CONNECTION_BUDGET.engine,
+  })
+  return { chat, engine }
 })
