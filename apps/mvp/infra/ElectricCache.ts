@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { admit } from "./ElectricAccess.ts"
 import { isLive } from "./ElectricAwake.ts"
-import { relay } from "./ElectricRelay.ts"
+import { relay, tableOf } from "./ElectricRelay.ts"
 
 /** What the gateway's response says when Workers Cache must not keep it. */
 export const NO_STORE = "no-store"
@@ -58,6 +58,7 @@ export const serve = <E, R>(
   Effect.gen(function* () {
     const admission = admit(yield* HttpServerRequest.HttpServerRequest)
     if (admission._tag === "Refused") return HttpServerResponse.empty({ status: admission.status, headers: { "cache-control": NO_STORE } })
-    const response = yield* relay(fetch(admission.request), isLive(admission.request.url), admission.request.headers["x-request-id"])
+    const { url, headers } = admission.request
+    const response = yield* relay(fetch(admission.request), isLive(url), headers["x-request-id"], tableOf(url))
     return cachePolicy(response, enabledFor(admission.request.url))
   })

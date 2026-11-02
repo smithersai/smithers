@@ -1080,9 +1080,21 @@ Regression proof: `infra/ElectricCache.test.ts`, `infra/ElectricRelay.test.ts` a
 
 Workers Cache may answer before ElectricGateway runs. `electric.gateway.request`
 therefore counts only invocations relayed to the object, not every authorized
-ChatApi request. It records `live`, `status`, `outcome` (answered, overloaded,
-transient, failed), `durationMs`, and failure `errorTag`; count overloads and
-transient failures by outcome.
+ChatApi request. It records `live`, the shape's `table`, `status`, `outcome`
+(answered, overloaded, transient, aborted, failed) and `durationMs`. A failed
+call into the object also records the error's class (`errorTag`: one of
+`KNOWN_CLASSES` in `worker/DurableObjectFailure.ts`, else `unknown`), Cloudflare's
+`retryable`, `overloaded` and `remote` flags (`remote`: the object's own code
+threw it), and the message's `category`
+(`connection-lost`, `reset`, `instance-inactive`, `overloaded`, `memory-limit`,
+`cpu-limit`, `storage-timeout`, `internal`, `other`), never its text, and counts
+once on `electric_gateway_failures` by `outcome`, `errorClass`, `category`,
+`retryable`, `overloaded`, `remote` and `table`. `aborted` (status 499) is a call the
+gateway's own caller abandoned, not a failure, recorded on any exit, an
+interruption from outside included. A cause that both failed and was
+interrupted, such as a caller's interruption whose cleanup died, is a `failed`
+record. Every call writes exactly one record. Describing a thrown value never throws
+and never replaces the call's own cause.
 `electric.object.request` records the object's duration, `inFlight`, `correlationId`, and for a container that
 couldn't answer `outcome: unavailable`, `status: 503`, `stage` and `error`, and
 `electric.object.port` identifies the startup fallback. Compare aggregate gateway
