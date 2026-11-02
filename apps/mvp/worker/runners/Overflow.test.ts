@@ -38,7 +38,7 @@ const member: Actor.Actor = { subject: { kind: "person", id: "person-member" }, 
 
 beforeEach(async () => {
   await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes, repo_overflow, secret_events RESTART IDENTITY CASCADE`))
+    sql`TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes, repo_overflow, secret_events, admin_receipts, admin_generations RESTART IDENTITY CASCADE`))
   // Overflow is turned on, and its runner claims, only where the App's installation is recorded (decision 0148).
   await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES (${REPO}, 42)
@@ -115,6 +115,103 @@ const setting = (connectionId: string) => ({
   argv: ["my-agent", "--acp"],
   labels: ["linux"],
   minQueuedSeconds: 30,
+})
+
+// Astra's review of 6b13eb85: a replay answered the outcome recorded under its execution, and the overflow setting
+// was then written, or deleted, again as if it were new: an old success overwrote a newer setting, even after its
+// authority was gone.
+describe("a replayed overflow action", () => {
+  const runnerKey = () => Store.resourceKey("runners", REPO, Overflow.RUNNER)
+  const generation = () => runtime.runPromise(Store.generationOf(runnerKey()))
+  const fenced = async (execution: string, op: "put" | "delete", expiresAt = Date.now() + 60_000): Promise<Store.By> => ({
+    actorId: admin.subject.id,
+    invocationKey: crypto.randomUUID(),
+    fenced: { kind: "overflow", op, fence: { execution, expiresAt, generation: await generation(), authority: { _tag: "Local" } } },
+  })
+  const writeOf = (connectionId: string, profile: string, sha: string) => ({
+    ...setting(connectionId),
+    profile,
+    capacity: 2,
+    repoId: REPO,
+    personId: admin.subject.id,
+    origin: "https://smithers.example",
+    token: { ciphertext: `ciphertext-${profile}`, nonce: `nonce-${profile}`, keyVersion: 1 },
+    tokenSha256: sha.repeat(64),
+    repoAuthorized: true,
+  })
+  const state = async () => ({
+    profile: Option.map(await runtime.runPromise(Overflow.read(REPO)), (each) => each.profile),
+    runners: await sql(`SELECT token_sha256 AS sha, removed_at IS NULL AS live FROM runners`),
+  })
+
+  // Astra's review of f7b3de5f: the write locked the overflow row before the runner's, the reverse of the release
+  // before it (runner, then overflow), so the two deadlocked while a deploy ran both.
+  test("a write that locks the runner's row, then the overflow's, as the release before did, never deadlocks with it", async () => {
+    const connectionId = await seedKey()
+    expect(await runtime.runPromise(Overflow.set(writeOf(connectionId, "first-profile", "1"), await fenced("overflow-put:base", "put"))))
+      .toBe("set")
+    let release = () => {}
+    const released = new Promise<void>((done) => (release = done))
+    let locked = () => {}
+    const runnerLocked = new Promise<void>((done) => (locked = done))
+    let wantOverflow = () => {}
+    const overflowWanted = new Promise<void>((done) => (wantOverflow = done))
+    // The release before: the runner's row first, then the overflow's.
+    const old = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`SELECT 1 FROM runners WHERE repo_id = ${REPO} AND name = ${Overflow.RUNNER} FOR UPDATE`
+        yield* Effect.sync(locked)
+        yield* Effect.promise(() => overflowWanted)
+        yield* client`SELECT 1 FROM repo_overflow WHERE repo_id = ${REPO} FOR UPDATE`
+        yield* Effect.promise(() => released)
+      }))))
+    await runnerLocked
+    const writing = runtime.runPromise(
+      Overflow.set(writeOf(connectionId, "second-profile", "2"), await fenced("overflow-put:during", "put")),
+    )
+    // Give the new write time to take whatever it takes first, then let the old one ask for the overflow row.
+    await new Promise((done) => setTimeout(done, 300))
+    wantOverflow()
+    await new Promise((done) => setTimeout(done, 300))
+    release()
+    await old
+    expect(await writing).toBe("set")
+  })
+
+  test("a PUT replayed after a later change, and after its authority ended, changes nothing", async () => {
+    const connectionId = await seedKey()
+    const first = writeOf(connectionId, "first-profile", "1")
+    const putFirst = await fenced("overflow-put:first", "put")
+    expect(await runtime.runPromise(Overflow.set(first, putFirst))).toBe("set")
+    expect(await runtime.runPromise(Overflow.set(writeOf(connectionId, "second-profile", "2"), await fenced("overflow-put:second", "put"))))
+      .toBe("set")
+    const after = await state()
+    expect(after.profile).toEqual(Option.some("second-profile"))
+    // The first action again: its recorded outcome, nothing written.
+    expect(await runtime.runPromise(Overflow.set(first, { ...putFirst, invocationKey: crypto.randomUUID() }))).toBe("set")
+    expect(await state()).toEqual(after)
+    // Again after its authority ended (its fence expired).
+    const expired = { ...putFirst, fenced: { ...putFirst.fenced!, fence: { ...putFirst.fenced!.fence, expiresAt: Date.now() - 1 } } }
+    expect(await runtime.runPromise(Overflow.set(first, expired))).toBe("set")
+    expect(await state()).toEqual(after)
+  })
+
+  test("a DELETE replayed after overflow was turned on again, and after its authority ended, changes nothing", async () => {
+    const connectionId = await seedKey()
+    expect(await runtime.runPromise(Overflow.set(writeOf(connectionId, "first-profile", "1"), await fenced("overflow-put:on", "put"))))
+      .toBe("set")
+    const removing = await fenced("overflow-delete:off", "delete")
+    expect(await runtime.runPromise(Overflow.remove({ repoId: REPO }, removing))).toBe("removed")
+    expect(await runtime.runPromise(Overflow.set(writeOf(connectionId, "again-profile", "3"), await fenced("overflow-put:again", "put"))))
+      .toBe("set")
+    const after = await state()
+    expect(after.profile).toEqual(Option.some("again-profile"))
+    expect(await runtime.runPromise(Overflow.remove({ repoId: REPO }, { ...removing, invocationKey: crypto.randomUUID() }))).toBe("removed")
+    expect(await state()).toEqual(after)
+    const expired = { ...removing, fenced: { ...removing.fenced!, fence: { ...removing.fenced!.fence, expiresAt: Date.now() - 1 } } }
+    expect(await runtime.runPromise(Overflow.remove({ repoId: REPO }, expired))).toBe("removed")
+    expect(await state()).toEqual(after)
+  })
 })
 
 describe("an Admin's overflow setting", () => {

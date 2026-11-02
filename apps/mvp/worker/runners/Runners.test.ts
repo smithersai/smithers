@@ -12,7 +12,7 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
-import * as Migration0093 from "../../db/migrations/0095_runner_reauthorization.ts"
+import * as MigrationReauthorization from "../../db/migrations/0095_runner_reauthorization.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
 import { BranchRoles } from "../branch/Access.ts"
@@ -923,6 +923,65 @@ describe("the repository's runners and agents", () => {
       expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
     })
 
+    /** Holds the rows `lock` locks in another connection until `release`: a write that needs them waits. */
+    const holdRows = async (lock: (client: SqlClient.SqlClient) => Effect.Effect<unknown, unknown>) => {
+      let release = () => {}
+      const released = new Promise<void>((done) => (release = done))
+      let locked = () => {}
+      const locking = new Promise<void>((done) => (locked = done))
+      const holder = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client.withTransaction(Effect.gen(function* () {
+          yield* lock(client)
+          yield* Effect.sync(locked)
+          yield* Effect.promise(() => released)
+        }))))
+      await locking
+      return { release: async () => (release(), await holder) }
+    }
+
+    // Astra's review of 6b13eb85: the session's expiry was judged in the statement that locked it, before the write
+    // waited on the alias's lock, so a session that expired during that wait still admitted the write.
+    test("a session that expires while the write waits on its alias's lock writes nothing", async () => {
+      const who = await signedInAdmin()
+      await sql`UPDATE sessions SET expires_at = clock_timestamp() + interval '400 milliseconds' WHERE id = ${who.session}::uuid`
+      const held = await holdRows((client) => client`SELECT 1 FROM host_sessions WHERE id = ${who.alias}::uuid FOR UPDATE`)
+      const writing = query(Store.addRunner(
+        { repoId: REPO, name: "nyc-alias-wait", tokenSha256: "a".repeat(64), labels: [], capacity: 1, repoAuthorized: true },
+        fencedBy({
+          execution: "runners-put:alias-wait",
+          authority: { _tag: "Session", personId: who.person, sessionId: who.session, alias: who.alias },
+        }),
+      ))
+      await new Promise((done) => setTimeout(done, 800))
+      // Released unchanged: only the clock ended the session.
+      await held.release()
+      expect(await writing).toBe("authorization_expired")
+      expect(await sql`SELECT count(*)::int AS n FROM runners WHERE name = 'nyc-alias-wait'`).toEqual([{ n: 0 }])
+    })
+
+    // Astra's review of 6b13eb85: the write checked its authority and expiry, then waited on the runner's own row, which
+    // runner activity locks without the resource's advisory lock, and wrote once it got it, the fence long expired.
+    test("a fence that expires while the write waits on the runner's row lock writes nothing", async () => {
+      for (const op of ["put", "delete"] as const) {
+        const name = `nyc-row-${op}`
+        const unfenced = { actorId: "person-admin", invocationKey: crypto.randomUUID() }
+        const sha = (op === "put" ? "a" : "c").repeat(64)
+        const write = { repoId: REPO, name, tokenSha256: sha, labels: [], capacity: 1, repoAuthorized: true }
+        expect(await query(Store.addRunner(write, unfenced))).toBe("set")
+        const generation = await query(Store.generationOf(Store.resourceKey("runners", REPO, name)))
+        const held = await holdRows((client) => client`SELECT 1 FROM runners WHERE name = ${name} FOR UPDATE`)
+        const by = fencedBy({ execution: `runners-${op}:row-wait`, expiresAt: Date.now() + 300, generation })
+        const writing = op === "put"
+          ? query(Store.addRunner({ ...write, tokenSha256: "b".repeat(64) }, by))
+          : query(Store.removeRunner({ repoId: REPO, name }, { ...by, fenced: { ...by.fenced!, op: "delete" } }))
+        await new Promise((done) => setTimeout(done, 700))
+        await held.release()
+        expect(await writing).toBe("authorization_expired")
+        expect(await sql`SELECT token_sha256 AS sha, removed_at IS NULL AS live FROM runners WHERE name = ${name}`)
+          .toEqual([{ sha, live: true }])
+      }
+    })
+
     // Astra's review of 29cacd16: a refusal's receipt committed but its acknowledgement lost, the replay was admitted
     // again, and wrote, once the authority was granted again.
     test("a replay of a refused action answers its recorded refusal, and writes nothing", async () => {
@@ -1050,15 +1109,15 @@ describe("the repository's runners and agents", () => {
 
   // Astra's review of 5fc33348: migration 0089 marked a runner authorized where its repository's installation record was
   // older than its registration, but the old route's role also fell back to the deployment's on `not_found` (a
-  // repository outside GITHUB_ALLOWED_REPOSITORIES, say). Migration 0093 trusts no earlier registration.
-  test("migration 0093 leaves every runner unauthorized until an Admin registers it again through the route", async () => {
+  // repository outside GITHUB_ALLOWED_REPOSITORIES, say). Migration `0095_runner_reauthorization` trusts no earlier registration.
+  test("migration `0095_runner_reauthorization` leaves every runner unauthorized until an Admin registers it again through the route", async () => {
     await recordInstallation()
     const token = await register("legacy")
     const backfilled = await register("backfilled")
     // As 0089's backfill left it: authorized from its registration time.
     await sql`UPDATE runners SET repo_authorized_at = added_at WHERE name = 'backfilled'`
     await Effect.runPromise((await jobs()).start(taskOf(), "todo:legacy#g1"))
-    await query(Migration0093.clearAuthorization)
+    await query(MigrationReauthorization.clearAuthorization)
     expect(await sql`SELECT count(*)::int AS n FROM runners WHERE repo_authorized_at IS NOT NULL`).toEqual([{ n: 0 }])
     const { claim } = await routes()
     expect(await claim(token)).toEqual({ status: 403, body: { code: "not_authorized" } })
@@ -1075,12 +1134,12 @@ describe("the repository's runners and agents", () => {
     expect((await claim(backfilled)).status).toBe(403)
   })
 
-  // Astra's review of 4cd69527: a runner holding a job across migration 0093 kept renewing its lease, reading steers,
+  // Astra's review of 4cd69527: a runner holding a job across migration `0095_runner_reauthorization` kept renewing its lease, reading steers,
   // settling and appending transcript, since only claim and reclaim checked it was current.
   test("a runner holding a job heartbeats, settles and sends events only while current: authorized, installed, its token", async () => {
     const outcome = { _tag: "Done", changes: { additions: [], deletions: [] }, summary: "done", usage: {} }
     const cases: ReadonlyArray<readonly [string, () => Promise<unknown>, () => Promise<unknown>]> = [
-      ["authorization cleared", () => query(Migration0093.clearAuthorization), () => sql`UPDATE runners SET repo_authorized_at = now()`],
+      ["authorization cleared", () => query(MigrationReauthorization.clearAuthorization), () => sql`UPDATE runners SET repo_authorized_at = now()`],
       ["installation forgotten", () => sql`UPDATE github_repositories SET installation_id = NULL`, () => recordInstallation()],
     ]
     for (const [, end, restore] of cases) {
@@ -1216,7 +1275,7 @@ describe("the repository's runners and agents", () => {
     await Effect.runPromise(store.start(taskOf(), "todo:stopped#g1"))
     const { call, claim } = await routes()
     const job = (await claim(token)).body.job!
-    await query(Migration0093.clearAuthorization)
+    await query(MigrationReauthorization.clearAuthorization)
     expect(await call("heartbeat", token, { key: job.key, claim: job.claim })).toEqual({ status: 403, body: { code: "not_authorized" } })
     await Effect.runPromise(store.cancel(job.key))
     // Another claim id of the same job is no one's: refused, nothing more.
@@ -1276,7 +1335,7 @@ describe("the repository's runners and agents", () => {
       const job = (await claim(token)).body.job!
       // As it stood before the deploy.
       await sql`UPDATE agent_jobs SET claimed_token_sha256 = NULL`
-      if (how === "migration") await query(Migration0093.backfillClaimedTokens)
+      if (how === "migration") await query(MigrationReauthorization.backfillClaimedTokens)
       else expect((await call<{ readonly held: boolean }>("heartbeat", token, { key: job.key, claim: job.claim })).body.held).toBe(true)
       expect(await sql`SELECT claimed_token_sha256 AS sha FROM agent_jobs`).toEqual([{ sha: digestSync(token) }])
       await sql`UPDATE runners SET token_sha256 = ${"e".repeat(64)}`
@@ -1289,7 +1348,7 @@ describe("the repository's runners and agents", () => {
   // Astra's review of 4cd69527: the migration took its locks with no bound, so a long reader of `agent_jobs` would queue
   // the runner routes behind it. It fails within its lock timeout, rewrites no runner already clear, and puts the
   // transaction's timeouts back for the migrations after it.
-  test("migration 0093 fails fast behind a held reader, rewrites no row already clear, and restores the timeouts", async () => {
+  test("migration `0095_runner_reauthorization` fails fast behind a held reader, rewrites no row already clear, and restores the timeouts", async () => {
     await recordInstallation()
     await register("authorized")
     await register("clear")
@@ -1299,7 +1358,7 @@ describe("the repository's runners and agents", () => {
     const run = Effect.flatMap(SqlClient.SqlClient, (client) =>
       client.withTransaction(Effect.gen(function* () {
         const [before] = yield* client<{ readonly lock: string }>`SELECT current_setting('lock_timeout') AS lock`
-        yield* Migration0093.migration
+        yield* MigrationReauthorization.migration
         const [after] = yield* client<{ readonly lock: string }>`SELECT current_setting('lock_timeout') AS lock`
         return [before!.lock, after!.lock]
       }))).pipe(Effect.provide(db))

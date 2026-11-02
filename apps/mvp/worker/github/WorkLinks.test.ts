@@ -118,7 +118,7 @@ describe("work links", () => {
     expect((await h.fetch(route(3), post({ links: [{ kind: "queue", ref: "q-9" }] }, asRunner))).status).toBe(401)
   })
 
-  // Decision 0148, migration 0093: a runner token posts and reads only while its runner is current as a claim requires.
+  // Decision 0148, migration `0095_runner_reauthorization`: a runner token posts and reads only while its runner is current as a claim requires.
   test("a runner no registration through the repository's Admin role authorized, or without a recorded installation, posts and reads nothing until registered again", async () => {
     await seed()
     await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private, installation_id) VALUES ('${REPOSITORY.id}', 1, true, 42)`)

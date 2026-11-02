@@ -47,14 +47,14 @@ test("only an Admin of the deployment's own repository, in person, reads it", as
   expect((await audit(admin)).status).toBe(200)
 })
 
-// Migration 0093 cleared every runner's authorization: the audit names each one that needs registering again.
+// Migration `0095_runner_reauthorization` cleared every runner's authorization: the audit names each one that needs registering again.
 test("lists each live runner with its registrant, its authorization and installation, flags what needs acting on, and no token", async () => {
   await sql`INSERT INTO people (id, github_id, github_login) VALUES (${ADMIN_ID}::uuid, 1, 'octo-admin')`
   await sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/acme/ok', 7)`
   await sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/acme/legacy', 8)`
   const tokens = ["token-ok-secret", "token-legacy-secret", "token-none-secret", "token-gone-secret"]
   await register("github/acme/ok", "a", tokens[0]!)
-  // Registered before the route proved the repository's Admin role: cleared by migration 0093.
+  // Registered before the route proved the repository's Admin role: cleared by migration `0095_runner_reauthorization`.
   await register("github/acme/legacy", "b", tokens[1]!)
   await sql`UPDATE runners SET repo_authorized_at = NULL WHERE name = 'b'`
   await register("github/acme/none", "c", tokens[2]!)

@@ -9,7 +9,8 @@ import { codeOf } from "../ErrorCode.ts"
 // repository with who registered it, when, whether a registration through the repository's Admin role authorized it,
 // and the App's installation on its repository as Smithers recorded it. It flags each runner that claims nothing until
 // someone acts: `needs_registration` (no registration through the route that takes the Admin role GitHub gives on the
-// repository; migration 0093 cleared every earlier one) and `no_installation`. Never a token or a token's digest.
+// repository; migration `0095_runner_reauthorization` cleared every earlier one) and `no_installation`. Never a token
+// or a token's digest.
 
 /** The route's path. */
 export const ROUTE = "/api/runners/audit"

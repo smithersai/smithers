@@ -117,7 +117,7 @@ describe("machines and the counts", () => {
     expect(summaryOf([], machines, NOW)).toMatchObject({ online: 2, held: 1, machines: 3 })
   })
 
-  // Migration 0093 cleared every runner's authorization (decision 0148): one that still answers claims nothing, so the
+  // Migration `0095_runner_reauthorization` cleared every runner's authorization (decision 0148): one that still answers claims nothing, so the
   // fleet names what to do rather than reading Online.
   test("a runner no registration through the repository's Admin role authorized reads Needs re-registration", () => {
     const machines = machinesOf([

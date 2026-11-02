@@ -80,6 +80,18 @@ export const connectionOf = (personId: string, connectionId: string) =>
   })
 
 /**
+ * Locks the overflow runner's row, then the repository's overflow row: the order every release writes them in (the
+ * runner's registration, then the setting), so a write here and one from the release before it, both live while a
+ * deploy runs, never deadlock (decision 0148).
+ */
+const lockRunnerThenOverflow = (repoId: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    Effect.andThen(
+      sql`SELECT 1 FROM runners WHERE repo_id = ${repoId} AND name = ${RUNNER} FOR UPDATE`,
+      sql`SELECT 1 FROM repo_overflow WHERE repo_id = ${repoId} FOR UPDATE`,
+    ))
+
+/**
  * Turns overflow on, or changes it, for `write.repoId`: registers the overflow runner by the minted token's SHA-256
  * (`Store.addRunner`, which refuses its old token from then on) and keeps the setting with the sealed token, in one
  * transaction under the step's invocation key.
@@ -90,6 +102,10 @@ export const set = (
 ): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      // A replay answers what its action did, before anything is written (decision 0148).
+      const before = yield* Store.replayed("runners", write.repoId, RUNNER, by)
+      if (before !== undefined) return before
+      yield* lockRunnerThenOverflow(write.repoId)
       const change = yield* Store.addRunner({
         repoId: write.repoId,
         name: RUNNER,
@@ -122,6 +138,9 @@ export const remove = (
 ): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      const before = yield* Store.replayed("runners", write.repoId, RUNNER, by)
+      if (before !== undefined) return before
+      yield* lockRunnerThenOverflow(write.repoId)
       const change = yield* Store.removeRunner({ repoId: write.repoId, name: RUNNER }, by)
       // Written again, or refused by its fence: the setting stays as it is.
       if (change !== "removed" && change !== "missing") return change

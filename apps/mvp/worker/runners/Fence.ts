@@ -17,8 +17,9 @@ import { latestRole } from "../SessionStore.ts"
 //   coding selection's (`admin_generations`, 0 for none yet), so an action that waited never overwrites a newer write.
 //
 // The writing transaction (worker/runners/Store.ts) takes the resource's lock (an advisory lock on its key, so even one
-// not yet written serializes), answers a replay with the outcome already recorded, then locks the authority's rows,
-// checks the authority and the expiry by the clock as it stands then, and the generations; only then does it write.
+// not yet written serializes), answers a replay with the outcome already recorded before it changes anything, then
+// locks the rows it writes and the authority's rows, checks the authority and the expiry by the clock as it stands then,
+// and the generations; only then does it write, and any lock it still waits on gives up at the expiry.
 // Refused, it writes nothing and records why, `authorization_expired` or `superseded`, under the execution id, which
 // the route answered with its 202. A payload with no fence (an action started before fences) is
 // `authorization_expired`. A Worker still on the release before fences writes unfenced until it is replaced.
@@ -86,22 +87,41 @@ export const authorityHolds = (fence: Fence) =>
 const sessionHolds = (personId: string, sessionId: string, alias: string | undefined) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    // Every lock first: judged in the statement that locks it, a session could expire while a later lock waited.
     const [person] = yield* sql`SELECT 1 FROM people WHERE id::text = ${personId} FOR SHARE`
     if (person === undefined) return false
+    const [locked] = yield* sql`
+      SELECT 1 FROM sessions WHERE id::text = ${sessionId} AND person_id::text = ${personId} FOR SHARE`
+    if (locked === undefined) return false
+    if (alias !== undefined) {
+      const [host] = yield* sql`
+        SELECT 1 FROM host_sessions WHERE id::text = ${alias} AND parent_id::text = ${sessionId} FOR SHARE`
+      if (host === undefined) return false
+    }
+    // Then each judged by the clock as it stands now.
     const [session] = yield* sql<{ readonly live: boolean }>`
-      SELECT revoked_at IS NULL AND expires_at > clock_timestamp() AS live FROM sessions
-      WHERE id::text = ${sessionId} AND person_id::text = ${personId} FOR SHARE`
+      SELECT revoked_at IS NULL AND expires_at > clock_timestamp() AS live FROM sessions WHERE id::text = ${sessionId}`
     if (session?.live !== true) return false
     if (alias !== undefined) {
       const [host] = yield* sql<{ readonly live: boolean }>`
-        SELECT revoked_at IS NULL AS live FROM host_sessions WHERE id::text = ${alias} AND parent_id::text = ${sessionId}
-        FOR SHARE`
+        SELECT revoked_at IS NULL AS live FROM host_sessions WHERE id::text = ${alias}`
       if (host?.live !== true) return false
     }
     const [row] = yield* sql<{ readonly admin: boolean | null }>`
       SELECT ${latestRole(sql, sql`${personId}::uuid`)} = 'admin' AS admin`
     return row?.admin === true
   })
+
+/**
+ * Inside an admitted write's transaction: every lock it still waits on gives up at the fence's expiry
+ * (`lock_timeout`), so the transaction fails rather than writing late.
+ */
+export const untilExpiry = (fence: Fence) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`
+      SELECT set_config('lock_timeout',
+        greatest(1, floor(extract(epoch FROM to_timestamp(${fence.expiresAt}::float8 / 1000) - clock_timestamp()) * 1000))::bigint
+          || 'ms', true)`)
 
 /** Records how an Admin action ended, once per execution. */
 export const receipt = (

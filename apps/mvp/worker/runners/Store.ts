@@ -126,6 +126,9 @@ const admit = (
     const { fence, kind, op } = by.fenced
     const before = yield* Fence.recorded(fence.execution)
     if (before !== undefined) return before
+    // The rows the write changes, locked before anything is judged: runner activity locks a runner's row without the
+    // resource's key, so a write that checked first could wait on it past its fence and write after.
+    yield* lockRows(table, repoId, name)
     const refuse = (outcome: Fence.Refused) =>
       Effect.as(Fence.receipt(fence.execution, { repoId, kind, name }, op, outcome, by.actorId), outcome)
     if (!(yield* Fence.authorityHolds(fence))) return yield* refuse("authorization_expired")
@@ -133,8 +136,31 @@ const admit = (
     if (coding === "compare" && (yield* generationOf(codingKey(repoId))) !== (fence.coding ?? 0)) {
       return yield* refuse("superseded")
     }
+    // Any lock the write still waits on gives up at the fence's expiry: the transaction fails, and the step's retry is
+    // refused `authorization_expired`.
+    yield* Fence.untilExpiry(fence)
     return "admitted" as const
   })
+
+/**
+ * Locks the rows a write of `table`'s `name` changes: the runner's row; or every agent of the repository, since making
+ * one the coding agent clears it on the others.
+ */
+const lockRows = (table: "runners" | "agents", repoId: string, name: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    table === "runners"
+      ? sql`SELECT 1 FROM runners WHERE repo_id = ${repoId} AND name = ${name} FOR UPDATE`
+      : sql`SELECT 1 FROM agents WHERE repo_id = ${repoId} FOR UPDATE`)
+
+/**
+ * Inside a write's transaction that does more than `Store`'s own write (`Overflow.set`, `Overflow.remove`): the
+ * resource's key locked, and the outcome already recorded under the write's execution when this is a replay of it,
+ * which the caller answers with before it changes anything. None unfenced, or for an action not done yet.
+ */
+export const replayed = (table: "runners" | "agents", repoId: string, name: string, by: By) =>
+  by.fenced === undefined
+    ? Effect.succeed(undefined)
+    : Effect.andThen(lockKeys([resourceKey(table, repoId, name)]), Fence.recorded(by.fenced.fence.execution))
 
 /** Records a write's change once: `repeat` when this invocation already did, which the caller answers with. */
 const once = (table: "runner_changes" | "agent_changes", op: string, repoId: string, name: string, by: By) =>
