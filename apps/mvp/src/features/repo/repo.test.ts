@@ -2,7 +2,7 @@ import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Cause, Deferred, Effect, Exit, Layer, Schedule } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, onTestFailed, onTestFinished, test, vi } from "vitest"
 import { fixture, shaOf } from "../../../worker/test/codeStorage"
 import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
@@ -32,6 +32,16 @@ import * as RepoMetrics from "../../../worker/RepoMetrics.ts"
 
 const server = testFile("repo_tab")
 beforeEach(() => resetRepos(server))
+
+// Functional clone assertions start with the real remote host migrated, as the deployed engine is. The fixture
+// retains the same deadline and cleanup; a fresh Postgres engine's DDL is not a browser-request latency contract.
+const cloneTest = test.extend<{ cloningRepo: RepoHarness }>({
+  cloningRepo: async ({}, use) => {
+    const h = await repoHarness(server)
+    await h.prepareCloneEngine()
+    await use(h)
+  },
+})
 
 /**
  * Waits for `check` to pass: a dispatch runs on this tab's engine, which a loaded machine can take seconds to reach.
@@ -101,8 +111,7 @@ describe("cloning from a tab", () => {
     }
   })
 
-  test("Clone shows cloning, Electric delivers the row, and the view opens at its README", async () => {
-    const h = await repoHarness(server)
+  cloneTest("Clone shows cloning, Electric delivers the row, and the view opens at its README", async ({ cloningRepo: h }) => {
     h.scripted.publish("octocat", "Spoon-Knife")
     h.scripted.syncPolls = 2
     const tab = await open(h)
@@ -510,15 +519,18 @@ describe("the agent's repository flows on this device", () => {
     })
   })
 
-  test("repo/clone asks RepoApi, which persists the clone, then launches it; asked again, it answers the row's status", async () => {
-    const h = await repoHarness(server)
+  cloneTest("repo/clone asks RepoApi, which persists the clone, then launches it; asked again, it answers the row's status", async ({ cloningRepo: h }) => {
+    let stage = "first clone flow"
+    onTestFailed(() => console.error("CLONE_FLOW_RECEIPTS", JSON.stringify({ stage, logs: h.logs.map(({ message, annotations }) => ({ message, outcome: annotations.outcome, stage: annotations.stage, errorCode: annotations.errorCode })) })))
     h.scripted.publish("octocat", "Spoon-Knife")
     const started = await runFlow(RepoCloneRequest, { repo: "octocat/Spoon-Knife" }, flows(h))
     const cloneId = expect.stringMatching(/^[0-9a-f-]{36}$/)
     expect(started.exit).toEqual(Exit.succeed({ txid: expect.any(Number), id: "github/octocat/spoon-knife", attempt: 1, cloneId }))
     // Its second step launched the attempt the first persisted.
     expect(h.started()).toHaveLength(1)
+    stage = "real clone settlement"
     await h.settled()
+    stage = "second clone flow"
     const again = await runFlow(RepoCloneRequest, { repo: "octocat/Spoon-Knife" }, flows(h))
     expect(again.exit).toEqual(Exit.succeed({ txid: null, id: "github/octocat/spoon-knife", status: "ready", cloneId }))
     expect(h.started().filter((id) => id.startsWith("repo-clone:"))).toHaveLength(1)

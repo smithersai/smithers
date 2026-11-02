@@ -376,6 +376,13 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     request,
     /** Launches attempt `cloneId` of `owner/name`: `POST /api/repos/launch`. */
     launch,
+    /**
+     * Migrates the real Node clone host during fixture setup. Cloudflare's deployed engine schema is already
+     * migrated; a test's fresh schema must not spend the browser's HTTP deadline creating every engine table.
+     */
+    prepareCloneEngine: () => codeStorage === "none"
+      ? Promise.reject(new Error("this harness has no Code Storage"))
+      : Effect.runPromise(observed(Effect.asVoid(engineFor(codeStorage)))),
     /** Waits for every clone started so far to end. */
     settled: async () => {
       for (const fiber of fibers.values()) await Effect.runPromise(Effect.exit(Fiber.join(fiber)))

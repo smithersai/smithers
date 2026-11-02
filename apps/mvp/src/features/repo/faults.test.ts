@@ -1,6 +1,6 @@
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Layer, Logger, Option } from "effect"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, onTestFailed, test, vi } from "vitest"
 import { openTab, type Tab } from "../../test/repoDevice"
 import { AuthStore } from "../auth/store"
 import { RepoClient, RepoRefused } from "./api"
@@ -260,19 +260,36 @@ describe("cloning when RepoApi doesn't take it", () => {
     expect(client.calls).toEqual([])
   })
 
-  test("Clone shows cloning at once, and a press while the request is on its way sends nothing more", async () => {
+  test("Clone shows cloning at once, and a press while the request is on its way sends nothing more", async ({ signal }) => {
+    let entered!: () => void
+    const requested = new Promise<void>((resolve) => { entered = resolve })
     let release = () => {}
     const held = new Promise<void>((resolve) => (release = resolve))
     const client = cloning(() =>
-      Effect.andThen(Effect.promise(() => held), Effect.fail(new RepoRefused({ status: 500 })))
+      Effect.gen(function* () {
+        entered()
+        yield* Effect.promise(() => held)
+        return yield* new RepoRefused({ status: 500 })
+      })
     )
     const tab = await open(client.layer)
+    onTestFailed(() => console.error("CLONE_DISPATCH_RECEIPTS", JSON.stringify(tab.logs.map(({ message, annotations }) => ({
+      message,
+      stage: annotations.stage,
+      outcome: annotations.outcome,
+      errorCode: annotations.errorCode,
+      flow: annotations.flow,
+    })))) )
     tab.repo.actions.open({ owner: "o", name: "n", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
     tab.repo.actions.clone("o", "n")
     expect(header(tab)).toEqual({ kind: "cloning" })
     tab.repo.actions.clone("o", "n")
-    await waitFor(() => expect(client.calls).toEqual(["o/n"]))
-    release()
+    // Admission is asynchronous: the invariant is one real pending request, independent of how long the loaded
+    // host takes to dispatch it. Await its actual entry receipt before releasing the injected network hold.
+    try {
+      await Effect.runPromise(Effect.promise(() => requested), { signal })
+      expect(client.calls).toEqual(["o/n"])
+    } finally { release() }
     await waitFor(() => expect(tab.count(clones, { outcome: "unavailable" })).toBe(1))
     expect(client.calls).toEqual(["o/n"])
   })
