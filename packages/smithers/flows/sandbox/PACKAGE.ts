@@ -79,7 +79,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/execSession.ts",
         "src/internal/envPrefix.ts",
         "src/internal/environmentCommand.ts",
-        "src/internal/environmentInput.ts",
+        "src/internal/environmentInput.vibe",
         "src/internal/environmentNames.ts",
         "src/internal/killScript.ts",
         "src/internal/stdinRedirect.ts",
