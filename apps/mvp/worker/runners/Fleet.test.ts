@@ -416,13 +416,32 @@ describe("ops/FleetAlert and ops/RunnerHealth on the Node host", () => {
       [maintainer, admin, "person-maya"].sort().map((recipient) => ({ recipient, ...row })),
     )
     const telegram = providers.received.find((request) => request.provider === "telegram")
-    expect(telegram!.body).toMatchObject({ chat_id: CHAT, text: "T7 drive foldkit · Stalled\n\nhttps://smithers.test/acme/widgets/stack/7" })
+    expect(telegram!.body).toMatchObject({ chat_id: CHAT, text: "Agent run stalled · acme/widgets\n\nhttps://smithers.test/acme/widgets/stack/7" })
     // Again: no second bell, no second message.
     const again = await runFlow(FleetAlert.FleetAlert, alert, registration)
     expect(Exit.isSuccess(again.exit) && again.exit.value).toEqual({ email: { outcome: "off" }, telegram: { outcome: "existing" } })
     expect(await bells()).toHaveLength(3)
     expect(providers.received).toHaveLength(1)
     expect(JSON.stringify([await bells(), providers.received])).not.toContain("PROMPT-SENTINEL")
+  })
+
+  test("a private repository's incident reaches the shared channels as its kind, its repository and a link, nothing else", async () => {
+    await sql(`INSERT INTO alert_channels (channel, destinations, app_url, updated_by) VALUES ('telegram', '["${CHAT}"]'::jsonb, '${APP_URL}', 'p')`)
+    await sql(`INSERT INTO github_repositories (repo_id, private, installation_id) VALUES ('${REPO}', true, 77)
+      ON CONFLICT (repo_id) DO UPDATE SET private = true`)
+    await register("nyc-secret-01")
+    const runner = (await sql<{ id: string }>(`SELECT id::text AS id FROM runners`))[0]!.id
+    const attemptId = await todo("person-maya", 9)
+    await sql(`UPDATE todos SET title = 'acquire initech quietly', failure = 'implement' WHERE number = 9`)
+    const registration = FleetAlert.registration(await database(), HOME, channels())
+    await runFlow(FleetAlert.FleetAlert, { alertId: Fleet.alertId.failed(attemptId), kind: "failed", repoId: REPO, subject: attemptId }, registration)
+    await runFlow(FleetAlert.FleetAlert, { alertId: Fleet.alertId.offline(runner, 5), kind: "offline", repoId: REPO, subject: runner }, registration)
+    const sent = providers.received.filter((request) => request.provider === "telegram").map((request) => (request.body as { text: string }).text)
+    expect(sent.sort()).toEqual([
+      "Agent run failed · acme/widgets\n\nhttps://smithers.test/acme/widgets/stack/9",
+      "Runner offline · acme/widgets\n\nhttps://smithers.test/acme/widgets/-/fleet",
+    ])
+    expect(JSON.stringify(providers.received)).not.toMatch(/initech|implement|nyc-secret-01|maya/)
   })
 
   test("a runner offline reaches its Admins only; a failed TODO run its committer and Maintainers with its code", async () => {

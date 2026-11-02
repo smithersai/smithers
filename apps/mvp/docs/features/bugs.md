@@ -86,7 +86,7 @@ It reads reports and nothing else. Unset, that door is off.
 
 `ops/BugReport { id }` (worker/flows/BugReport.ts) runs on a `FlowExecution` Durable Object:
 
-1. **Bell.** One `bug` notification for every Admin with a live session: `Bug report · @codeplanesmithers · /octocat/Spoon-Knife/issues`, opening the inbox. It sits in the bell only, never a toast.
+1. **Bell.** One `bug` notification for every Admin with a live session: `Bug report · @codeplanesmithers · /octocat/Spoon-Knife/issues`, opening the inbox. It sits in the bell only, never a toast. Email and Telegram say only `Bug report` and the inbox's link, never the login or the page, which can name a private repository ([decision 0149](../decisions/0149-shared-alert-channels-carry-no-private-content.md)).
 2. **Email and Telegram,** where an Admin set them ([spend alerts' channels](spend-alerts.md#channels)), through the shared `AlertDelivery`: one step per channel, a receipt in `alert_deliveries` under `bug-report-<id>`. The message says who and where and links to the inbox; never the words.
 
 ## The inbox

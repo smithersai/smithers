@@ -325,17 +325,10 @@ describe("ops/SpendAlert delivers outside the app", () => {
     expect(providers.received).toHaveLength(2)
     expect(email!.headers.authorization).toBe(`Bearer ${API_KEY}`)
     expect(email!.headers["idempotency-key"]).toBe(id)
-    const cost = usd(QWEN, 12_000, 0) + usd(OSS, 340, 0)
-    const subject = `Model spend · 12,340 tokens · $${cost.toFixed(2)}`
-    const start = new Date(window.from).toISOString()
-    const end = new Date(window.until).toISOString()
-    const text = [
-      start.slice(0, 10) === end.slice(0, 10)
-        ? `${start.slice(11, 16)}–${end.slice(11, 16)} UTC, ${start.slice(0, 10)}`
-        : `${start.slice(0, 10)} ${start.slice(11, 16)} – ${end.slice(0, 10)} ${end.slice(11, 16)} UTC`,
-      "agent 12,000 · judge 340",
-      "https://smithers.test/app",
-    ].join("\n")
+    // The shared channel says only the kind and the link (decision 0149): tokens, dollars and roles stay in the app.
+    const subject = "Model spend"
+    const text = "https://smithers.test/app"
+    expect(JSON.stringify(providers.received)).not.toContain("12,340")
     expect(email!.body).toEqual({ from: "Smithers <alerts@example.com>", to: ADDRESSES, subject, text })
     expect(telegram!.path).toBe(`/bot${BOT_TOKEN}/sendMessage`)
     expect(telegram!.body).toEqual({

@@ -231,14 +231,12 @@ export const dollars = (usd: number) =>
 export const detailOf = (alert: Pick<DeliverRequest, "usd" | "limitUsd">) =>
   `${dollars(alert.usd)} this month · alert at $${alert.limitUsd.toLocaleString("en-US")}`
 
-/** What a message says: `Sandbox spend · $104.20 this month · alert at $100`, and the link to the app's Settings. */
-export const alertWords = (alert: Pick<DeliverRequest, "usd" | "limitUsd">, appUrl: string): AlertDelivery.Words => ({
-  subject: `Sandbox spend · ${detailOf(alert)}`,
-  text: new URL(SETTINGS_HREF, appUrl).href,
-})
 
 /** Where the alert opens: Settings, where an Admin sets the limits. */
 export const SETTINGS_HREF = "/app/settings"
+
+/** What a shared channel says (decision 0149): `Sandbox spend`, and the link to Settings, which shows the amounts. */
+export const NOTICE: AlertDelivery.Notice = { kind: "Sandbox spend", repository: null, href: SETTINGS_HREF }
 
 /**
  * Puts the alert in the bell of every Admin with a live session, against the `SqlClient` in context: one `spend`
@@ -276,7 +274,7 @@ export const observedBell = <E, R>(alert: typeof Bell.payloadSchema.Type, databa
  * nothing when an earlier run recorded its receipt or no Admin set the channel; else one send and its receipt.
  */
 export const deliver = (request: DeliverRequest) =>
-  AlertDelivery.deliver(request, (appUrl) => Effect.succeed(Option.some(alertWords(request, appUrl))))
+  AlertDelivery.deliver(request, Effect.succeed(Option.some(NOTICE)))
 
 /** The delivery step over `database`, with its records (`AlertDelivery.observed`): `sandbox.spend.delivery`. */
 export const observedDeliver = <E, R>(request: DeliverRequest, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>

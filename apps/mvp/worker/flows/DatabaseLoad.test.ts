@@ -274,7 +274,9 @@ describe("ops/DatabaseLoad on the Node host", () => {
       telegram: { outcome: "sent" },
     })
     const { used } = outcome!.sample
-    const subject = `Database connections: ${used} of ${max} in use (${Math.floor((used * 100) / max)}%)`
+    // The shared channel never carries the counts (decision 0149).
+    const subject = "Database connections high"
+    expect(used).toBeGreaterThan(0)
     const id = DatabaseLoad.executionId(current)
     const email = providers.received.find((request) => request.provider === "email")
     const telegram = providers.received.find((request) => request.provider === "telegram")
@@ -331,7 +333,7 @@ describe("the delivery step", () => {
     expect(Exit.isSuccess(again.exit) && again.exit.value).toEqual({ outcome: "existing" })
     expect(providers.received).toHaveLength(1)
     expect(providers.received[0]!.body).toMatchObject({
-      text: `Database connections: 91 of 112 in use (81%)\n\n${APP_URL}`,
+      text: `Database connections high\n\n${APP_URL}`,
     })
     expect(await receipts()).toMatchObject([{ channel: "telegram", status: "sent", attempts: 1 }])
   })
@@ -380,14 +382,8 @@ describe("the delivery step", () => {
 })
 
 describe("the alert's words", () => {
-  test("in use of the most, with the percent rounded down, then the link", () => {
-    expect(DatabaseLoad.alertWords({ used: 91, max: 112 }, APP_URL)).toEqual({
-      subject: "Database connections: 91 of 112 in use (81%)",
-      text: APP_URL,
-    })
-    expect(DatabaseLoad.alertWords({ used: 3_599, max: 4_000 }, APP_URL).subject).toBe(
-      "Database connections: 3,599 of 4,000 in use (89%)",
-    )
+  test("the kind and the link, never the counts (decision 0149)", () => {
+    expect(AlertDelivery.wordsOf(DatabaseLoad.NOTICE, APP_URL)).toEqual({ subject: "Database connections high", text: APP_URL })
   })
 })
 

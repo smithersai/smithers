@@ -163,7 +163,8 @@ describe("ops/BugReport on the Node host", () => {
     expect(await bellRows()).toEqual(
       [{ recipient: maya, ...row }, { recipient: ben, ...row }].sort((a, b) => a.recipient.localeCompare(b.recipient)),
     )
-    const words = `Bug report · @${LOGIN} · ${ROUTE}`
+    // The shared channel never names who filed it or where (decision 0149); the bell, for Admins, does.
+    const words = "Bug report"
     const email = providers.received.find((request) => request.provider === "email")
     const telegram = providers.received.find((request) => request.provider === "telegram")
     expect(email!.headers["idempotency-key"]).toBe(`bug-report-${id}`)
@@ -174,8 +175,9 @@ describe("ops/BugReport on the Node host", () => {
       text: "https://smithers.test/app/bugs",
     })
     expect(telegram!.body).toMatchObject({ chat_id: CHAT, text: `${words}\n\nhttps://smithers.test/app/bugs` })
-    // What the person wrote reaches neither a bell nor a message.
+    // What the person wrote reaches neither a bell nor a message, and who and where reach no message.
     expect(JSON.stringify([await bellRows(), providers.received])).not.toContain(WHAT)
+    expect(leaks(JSON.stringify(providers.received))).toEqual([])
 
     // Run again: no second bell, no second message.
     const again = await runFlow(BugReport.BugReport, { id }, registration)
@@ -327,8 +329,8 @@ describe("the words", () => {
     expect(BugReport.titleOf({ login: "maya", route: "/app/repos/acme/web" })).toBe("@maya · /app/repos/acme/web")
     expect(BugReport.titleOf({ login: "maya", route: null })).toBe("@maya")
     expect(BugReport.titleOf({ login: null, route: "/app" })).toBe("someone · /app")
-    expect(BugReport.alertWords({ login: "maya", route: "/app" }, "https://smithers.sh/app")).toEqual({
-      subject: "Bug report · @maya · /app",
+    expect(AlertDelivery.wordsOf(BugReport.NOTICE, "https://smithers.sh/app")).toEqual({
+      subject: "Bug report",
       text: "https://smithers.sh/app/bugs",
     })
   })
@@ -338,9 +340,6 @@ describe("the words", () => {
     const title = BugReport.titleOf({ login: "maya", route })
     expect(title).toHaveLength(BugReport.MAX_TITLE)
     expect(title.endsWith("r…")).toBe(true)
-    const words = BugReport.alertWords({ login: "maya", route }, "https://smithers.sh/app")
-    expect(words.subject).toHaveLength(BugReport.MAX_TITLE)
-    expect(words.subject.startsWith("Bug report · @maya · /app/r")).toBe(true)
     expect(BugReport.clip("abcdef", 4)).toBe("abc…")
     expect(BugReport.clip("ab\u{1F600}cd", 4)).toBe("ab…")
     expect(BugReport.clip("abcd", 4)).toBe("abcd")

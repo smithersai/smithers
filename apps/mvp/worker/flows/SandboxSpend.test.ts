@@ -15,6 +15,7 @@ import * as Flows from "../Flows.ts"
 import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
+import * as AlertDelivery from "./AlertDelivery.ts"
 import * as SandboxSpend from "./SandboxSpend.ts"
 
 const runtime = testFile("sandbox_spend")
@@ -217,7 +218,8 @@ describe("ops/SandboxSpend on the Node host", () => {
     expect(await bellRows()).toEqual([{ recipient: maya, ...row }, { recipient: ben, ...row }].sort((a, b) =>
       a.recipient.localeCompare(b.recipient)
     ))
-    const words = "Sandbox spend · $104.20 this month · alert at $100"
+    // The shared channel never carries the amounts (decision 0149); the bell and Settings do.
+    const words = "Sandbox spend"
     const email = providers.received.find((request) => request.provider === "email")
     const telegram = providers.received.find((request) => request.provider === "telegram")
     expect(email!.headers["idempotency-key"]).toBe(`sandbox-spend-${month()}-100`)
@@ -295,8 +297,8 @@ describe("the bell and the delivery steps", () => {
   test("the words: dollars to the cent, the limit, and the link to Settings", () => {
     expect(SandboxSpend.dollars(1234.5)).toBe("$1,234.50")
     expect(SandboxSpend.detailOf({ usd: 99.999, limitUsd: 1000 })).toBe("$100.00 this month · alert at $1,000")
-    expect(SandboxSpend.alertWords({ usd: 5, limitUsd: 5 }, "https://smithers.sh/app")).toEqual({
-      subject: "Sandbox spend · $5.00 this month · alert at $5",
+    expect(AlertDelivery.wordsOf(SandboxSpend.NOTICE, "https://smithers.sh/app")).toEqual({
+      subject: "Sandbox spend",
       text: "https://smithers.sh/app/settings",
     })
   })

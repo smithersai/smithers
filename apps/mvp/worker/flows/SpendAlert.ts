@@ -4,7 +4,7 @@ import { Channels } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Clock, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { alertMessage } from "../../src/features/spend/copy.ts"
+import { ALERT_WORD } from "../../src/features/spend/copy.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as AlertDelivery from "./AlertDelivery.ts"
 import { DeliverUnavailable, noChannels } from "./AlertDelivery.ts"
@@ -303,14 +303,8 @@ export const observedRecord = <E, R>(window: Window, database: Layer.Layer<SqlCl
   )
 }
 
-/** The alert a delivery sends, as Postgres holds it. */
-interface AlertRow {
-  readonly from: number
-  readonly until: number
-  readonly tokens: number
-  readonly costUsd: number | null
-  readonly roles: ReadonlyArray<RoleSpend>
-}
+/** What a shared channel says of a spend alert (decision 0149): `Model spend`, and the link to the app. */
+export const NOTICE: AlertDelivery.Notice = { kind: ALERT_WORD, repository: null, href: "/app" }
 
 /**
  * Delivers one alert on one channel, against the `SqlClient` and `Channels` in context (`AlertDelivery.deliver`):
@@ -321,14 +315,12 @@ interface AlertRow {
 export const deliver = (request: DeliverRequest) =>
   Effect.gen(function* () {
     if (request.outcome === "none") return { outcome: "none" } satisfies AlertDelivery.Delivered
-    return yield* AlertDelivery.deliver(request, (appUrl) =>
+    // A shared channel says `Model spend` and links to the app, whose spend view shows the amounts to Admins
+    // (decision 0149).
+    return yield* AlertDelivery.deliver(request,
       Effect.flatMap(SqlClient.SqlClient, (sql) =>
-        sql<AlertRow>`
-          SELECT (extract(epoch FROM window_start) * 1000)::float8 AS "from",
-            (extract(epoch FROM window_end) * 1000)::float8 AS "until", tokens::float8 AS tokens,
-            cost_usd AS "costUsd", roles
-          FROM spend_alerts WHERE id = ${request.alertId}`).pipe(
-        Effect.map(([alert]) => Option.map(Option.fromUndefinedOr(alert), (found) => alertMessage(found, appUrl))),
+        sql<{ readonly id: string }>`SELECT id FROM spend_alerts WHERE id = ${request.alertId}`).pipe(
+        Effect.map(([alert]) => Option.map(Option.fromUndefinedOr(alert), () => NOTICE)),
       ))
   })
 

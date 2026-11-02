@@ -118,7 +118,7 @@ Durable flows, no sweeps (FINAL.md §4.2):
   repository, the live sessions' roles. The committer is the TODO's.
 - **The bell.** One `fleet` notification per person (`fleet:<alert id>`), in the panel only, never a toast: `Agents ·
   T398 migfix-t3code · Stalled`, opening the TODO's page (an outage opens the fleet). The bell always works.
-- **Outside the app.** `ops/DeliverFleetAlert` sends on the deployment's email and Telegram channels, where an Admin set
+- **Outside the app.** A message says only the kind, the repository and the link, `Agent run failed · acme/widgets`, never the TODO's title, its failure, the cost or the runner's name ([decision 0149](../decisions/0149-shared-alert-channels-carry-no-private-content.md)). `ops/DeliverFleetAlert` sends on the deployment's email and Telegram channels, where an Admin set
   them, as every alert delivers ([spend-alerts.md](spend-alerts.md#delivery)), each with an `alert_deliveries` receipt.
   Nothing here sends to Telegram any other way.
 

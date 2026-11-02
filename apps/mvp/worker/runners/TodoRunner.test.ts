@@ -776,14 +776,21 @@ describe("the fleet over a real runner", { timeout: 300_000 }, () => {
       const busyStalls = (await sql(runtime, `SELECT opened_at FROM fleet_alerts WHERE kind = 'stalled' AND subject IN
         (SELECT key FROM agent_runs WHERE number = 2)`)) as Array<{ opened_at: Date }>
       for (const stall of busyStalls) expect(new Date(stall.opened_at).getTime()).toBeGreaterThanOrEqual(killedAt)
-      // Each bell's message follows it on Telegram, once.
+      // Each bell's message follows it on Telegram, once: the kind, the repository and the link, never the TODO's title
+      // or the runner's name (decision 0149).
+      const repo = REPOSITORY.id.replace(/^github\//, "")
       const texts = () =>
         providers.received.filter((each) => each.provider === "telegram")
-          .map((each) => (each.body as { text: string }).text.split("\n")[0])
-          .filter((text) => text !== "T2 Busy · Stalled")
+          .map((each) => (each.body as { text: string }).text.split("\n\n").join(" "))
+          .filter((text) => !text.endsWith("/stack/2"))
           .sort()
       await eventually(() => texts().length === 3, 30_000)
-      expect(texts()).toEqual(["Runner test-runner offline", "T1 Silent · Stalled", "T3 Refused · Failed · implement"])
+      expect(texts()).toEqual([
+        `Agent run failed · ${repo} https://smithers.test/${repo}/stack/3`,
+        `Agent run stalled · ${repo} https://smithers.test/${repo}/stack/1`,
+        `Runner offline · ${repo} https://smithers.test/${repo}/-/fleet`,
+      ])
+      expect(JSON.stringify(providers.received)).not.toMatch(/Silent|Refused|test-runner/)
       // One incident per outage: later probes start nothing more.
       await new Promise((done) => setTimeout(done, 5_000))
       expect((await sql(runtime, `SELECT kind FROM fleet_alerts WHERE kind = 'offline'`)) as Array<{ kind: string }>)

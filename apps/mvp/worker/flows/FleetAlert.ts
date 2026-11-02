@@ -118,6 +118,18 @@ const MAX_TITLE = 200
 
 const clip = (text: string) => (text.length <= MAX_TITLE ? text : `${text.slice(0, MAX_TITLE - 1).replace(/[\uD800-\uDBFF]$/, "")}…`)
 
+/**
+ * Each kind as a shared channel names it (decision 0149): never the TODO's title, its failure, the cost or the
+ * runner's name.
+ */
+export const KIND_WORDS: Readonly<Record<Fleet.Kind, string>> = {
+  failed: "Agent run failed",
+  stalled: "Agent run stalled",
+  waiting: "Agent run waiting for a runner",
+  cost: "Agent run cost",
+  offline: "Runner offline",
+}
+
 /** A repository's page path: `github/<owner>/<name>` → `/<owner>/<name>`. */
 const repoPath = (repoId: string) => `/${repoId.replace(/^github\//, "")}`
 
@@ -220,18 +232,23 @@ export const observedBell = <E, R>(alert: Fleet.Alert, home: string, database: L
     Effect.withSpan("fleet.alert.bell", { attributes: { "smithers.fleet_alert.id": alert.alertId } }),
   )
 
-/** The message: the incident's title, and the link to what it is about. */
-export const alertWords = (incident: { readonly title: string; readonly href: string }, appUrl: string): AlertDelivery.Words => ({
-  subject: incident.title,
-  text: new URL(incident.href, appUrl).href,
+/**
+ * What a shared channel says of an incident (decision 0149): its kind (`KIND_WORDS`), its repository,
+ * and the link to what it is about.
+ */
+export const noticeOf = (incident: { readonly kind: Fleet.Kind; readonly repoId: string; readonly href: string }): AlertDelivery.Notice => ({
+  kind: KIND_WORDS[incident.kind],
+  repository: repoPath(incident.repoId).slice(1),
+  href: incident.href,
 })
 
 /** Delivers incident `alertId` on `channel`: nothing for an incident the bell didn't record. */
 export const deliver = (request: { readonly alertId: string; readonly channel: Channels.Channel }) =>
-  AlertDelivery.deliver(request, (appUrl) =>
+  AlertDelivery.deliver(request,
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql<{ readonly title: string; readonly href: string }>`SELECT title, href FROM fleet_alerts WHERE id = ${request.alertId}`
-    ).pipe(Effect.map((rows) => Option.map(Option.fromNullishOr(rows[0]), (row) => alertWords(row, appUrl)))))
+      sql<{ readonly kind: Fleet.Kind; readonly repoId: string; readonly href: string }>`
+        SELECT kind, repo_id AS "repoId", href FROM fleet_alerts WHERE id = ${request.alertId}`
+    ).pipe(Effect.map((rows) => Option.map(Option.fromNullishOr(rows[0]), noticeOf))))
 
 /** The delivery step over `database`, with its records (`AlertDelivery.observed`): `fleet.alert.delivery`. */
 export const observedDeliver = <E, R>(

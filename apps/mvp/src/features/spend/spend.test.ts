@@ -12,7 +12,7 @@ import * as SpendAlert from "../../../worker/flows/SpendAlert.ts"
 import { type AlertProviders, startAlertProviders } from "../../../worker/test/alertProviders.ts"
 import { asPerson, member, nodeDevice, type NodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { splitDestinations } from "./contract"
-import { ALERT_WORD, alertDetail, alertMessage, receiptText } from "./copy"
+import { ALERT_WORD, alertDetail, receiptText } from "./copy"
 import { RECEIPTS_SHOWN } from "./queries"
 import { Spend } from "./spend"
 import { setChannel } from "./actions"
@@ -416,51 +416,6 @@ describe("an Admin's alert channels", { timeout: 90_000 }, () => {
         FROM generate_series(1, ${RECEIPTS_SHOWN}) AS n`)))
     await until(() => expect(tab.receipts()).toHaveLength(RECEIPTS_SHOWN))
     expect(tab.receipts()[0]).toBe("telegram:sent")
-  })
-})
-
-describe("what an alert's message says", () => {
-  // 2026-10-20 15:00 to 15:15 UTC.
-  const from = Date.UTC(2026, 9, 20, 15, 0)
-  const until = Date.UTC(2026, 9, 20, 15, 15)
-
-  test("the word, tokens and cost; then the window, the roles that spent most, and the link", () => {
-    expect(alertMessage({
-      from,
-      until,
-      tokens: 12_340,
-      costUsd: 0.0184,
-      roles: [
-        { role: "judge", tokens: 340 },
-        { role: "agent", tokens: 12_000 },
-      ],
-    }, "https://smithers.test/app")).toEqual({
-      subject: "Model spend · 12,340 tokens · $0.02",
-      text: "15:00–15:15 UTC, 2026-10-20\nagent 12,000 · judge 340\nhttps://smithers.test/app",
-    })
-  })
-
-  test("no cost when a model isn't priced; three roles at most; a window over midnight names both days", () => {
-    const message = alertMessage({
-      from: Date.UTC(2026, 9, 20, 23, 50),
-      until: Date.UTC(2026, 9, 21, 0, 5),
-      tokens: 100,
-      costUsd: null,
-      roles: [
-        { role: "a", tokens: 10 },
-        { role: "b", tokens: 40 },
-        { role: "c", tokens: 30 },
-        { role: "d", tokens: 20 },
-      ],
-    }, "https://smithers.test/app")
-    expect(message.subject).toBe("Model spend · 100 tokens")
-    expect(message.text).toBe("2026-10-20 23:50 – 2026-10-21 00:05 UTC\nb 40 · c 30 · d 20\nhttps://smithers.test/app")
-  })
-
-  test("an alert with no roles leaves their line out", () => {
-    expect(alertMessage({ from, until, tokens: 0, costUsd: 0, roles: [] }, "https://smithers.test/app").text).toBe(
-      "15:00–15:15 UTC, 2026-10-20\nhttps://smithers.test/app",
-    )
   })
 })
 

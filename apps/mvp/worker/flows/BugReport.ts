@@ -119,11 +119,11 @@ export const titleOf = (filed: Filed) => {
   return clip(filed.route === null ? who : `${who} · ${filed.route}`, MAX_TITLE)
 }
 
-/** What a message says: `Bug report · @maya · /app/repos/acme/web`, and the link to the bug inbox. */
-export const alertWords = (filed: Filed, appUrl: string): AlertDelivery.Words => ({
-  subject: clip(`Bug report · ${titleOf(filed)}`, MAX_TITLE),
-  text: new URL(BUG_INBOX_PATH, appUrl).href,
-})
+/**
+ * What a shared channel says (decision 0149): `Bug report`, and the link to the bug inbox, which shows who filed it and
+ * where to its Admins. Never the login or the route, which can name a private repository.
+ */
+export const NOTICE: AlertDelivery.Notice = { kind: "Bug report", repository: null, href: BUG_INBOX_PATH }
 
 /** Who filed report `id` and where, against the `SqlClient` in context; none when there is no such report. */
 export const filedOf = (id: string) =>
@@ -177,7 +177,7 @@ export const observedBell = <E, R>(
 export const deliver = (request: DeliverRequest) =>
   AlertDelivery.deliver(
     { alertId: bugAlertId(request.id), channel: request.channel },
-    (appUrl) => Effect.map(filedOf(request.id), Option.map((filed) => alertWords(filed, appUrl))),
+    Effect.map(filedOf(request.id), Option.map(() => NOTICE)),
   )
 
 /** The delivery step over `database`, with its records (`AlertDelivery.observed`): `bug.report.delivery`. */

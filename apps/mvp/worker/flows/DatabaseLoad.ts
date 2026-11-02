@@ -204,22 +204,18 @@ export const observedSample = <E, R>(
     Effect.withSpan("database.connections", { attributes: { "smithers.database_load.id": executionId(window) } }),
   )
 
-/** What's in use, as its message says it: `Database connections: 91 of 112 in use (81%)`, and the link to the app. */
-export const alertWords = (connected: Pick<Sampled, "used" | "max">, appUrl: string): AlertDelivery.Words => {
-  const count = (value: number) => value.toLocaleString("en-US")
-  const percent = Math.floor((connected.used * 100) / connected.max)
-  return {
-    subject: `Database connections: ${count(connected.used)} of ${count(connected.max)} in use (${percent}%)`,
-    text: appUrl,
-  }
-}
+/**
+ * What a shared channel says (decision 0149): `Database connections high`, and the link to the app. The counts stay in
+ * the logs and metrics (`database.connections`).
+ */
+export const NOTICE: AlertDelivery.Notice = { kind: "Database connections high", repository: null, href: "/app" }
 
 /**
  * Delivers one alert on one channel, against the `SqlClient` and `Channels` in context (`AlertDelivery.deliver`):
  * nothing when an earlier run recorded its receipt or no Admin set the channel; else one send and its receipt.
  */
 export const deliver = (request: DeliverRequest) =>
-  AlertDelivery.deliver(request, (appUrl) => Effect.succeed(Option.some(alertWords(request, appUrl))))
+  AlertDelivery.deliver(request, Effect.succeed(Option.some(NOTICE)))
 
 /**
  * The delivery step over `database` and the `Channels` in context, with its records (`AlertDelivery.observed`): a

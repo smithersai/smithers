@@ -15,7 +15,7 @@ FlowExecution ── ops/SampleConnections: client connections in use, max_conne
                  ops/DeliverDatabaseAlert × { email, telegram } (one step per channel)
                     │ alert_channels row? ── none ─▶ off
                     ▼
-                 Channels.send ─▶ "Database connections: 91 of 112 in use (81%)" and the app's link
+                 Channels.send ─▶ "Database connections high" and the app's link
                     │ alert_deliveries receipt: sent · refused · failed (the engine retries)
                     └─▶ Settings: "Telegram chat · Sent · 1 min ago"
 ```
@@ -32,7 +32,7 @@ FlowExecution ── ops/SampleConnections: client connections in use, max_conne
 
 ## The alert
 
-- **The message.** Subject `Database connections: 91 of 112 in use (81%)`, the percent rounded down; text, the link to the app (the `app_url` the channel's setting holds). Telegram gets both as one plain-text message.
+- **The message.** Subject `Database connections high`; text, the link to the app (the `app_url` the channel's setting holds). A shared channel carries no numbers ([decision 0149](../decisions/0149-shared-alert-channels-carry-no-private-content.md)): the counts are in the `database.connections` log line and metrics. Telegram gets both as one plain-text message.
 - **Delivery.** The same as a spend alert's ([Delivery](spend-alerts.md#delivery)): `worker/flows/AlertDelivery.ts` holds what both flows' delivery steps do. At least once, `irreversible`, keyed by the alert and the channel; email carries the execution id as Resend's `Idempotency-Key`. A refusal is recorded and never tried again; a failure another attempt may clear retries for a day. No channel set: `off`, no receipt.
 - **How often.** Every window that is over alerts: an overload that lasts an hour sends 12. Settings lists the receipts with the spend alerts' (the latest 10).
 
