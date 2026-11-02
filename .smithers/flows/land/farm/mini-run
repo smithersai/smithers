@@ -129,8 +129,6 @@ while [ -z "$SLOT" ]; do
 done
 printf '[mini-run] slot %s; source %s\n' "$SLOT" "$SRC" >&2
 ssh "$HOST" "printf '%s\\n' '$REMOTE_OWNER' > ~/smithers-mirror/.farm/slot$SLOT.lock/owner" </dev/null || exit 3
-node -e 'setTimeout(()=>{require("fs").writeFileSync(process.argv[2],"timeout"); console.error("[mini-run] RUN_TIMEOUT after "+process.argv[3]+"s"); process.kill(Number(process.argv[1]),"SIGTERM")},Number(process.argv[3])*1000)' "$$" "$STATE/timeout.$RUN_ID" "$RUN_SECONDS" &
-TIMER=$!
 if [ "$E2E" = 1 ]; then
   until ssh "$HOST" "mkdir ~/smithers-mirror/.farm/e2e.lock && printf '%s\\n' '$REMOTE_OWNER' > ~/smithers-mirror/.farm/e2e.lock/owner" </dev/null 2>/dev/null; do
     result=$?
@@ -141,6 +139,9 @@ if [ "$E2E" = 1 ]; then
   ELOCK=1
   ssh "$HOST" "printf '%s\\n' '$REMOTE_OWNER' > ~/smithers-mirror/.farm/e2e.lock/owner" </dev/null || exit 3
 fi
+# The run's budget starts once it is admitted: waiting for the e2e reservation is admission (WAIT_SECONDS), not execution.
+node -e 'setTimeout(()=>{require("fs").writeFileSync(process.argv[2],"timeout"); console.error("[mini-run] RUN_TIMEOUT after "+process.argv[3]+"s"); process.kill(Number(process.argv[1]),"SIGTERM")},Number(process.argv[3])*1000)' "$$" "$STATE/timeout.$RUN_ID" "$RUN_SECONDS" &
+TIMER=$!
 # Perishable exclusions protect installed/generated paths but permit removing
 # a deleted source package. Never send credentials or VCS storage to the mini.
 FILTER=$STATE/filter.$$
