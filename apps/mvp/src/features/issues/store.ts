@@ -27,6 +27,7 @@ import {
   conversationQuery,
   deliveredQuery,
   itemQuery,
+  summaryQuery,
   listQuery,
   publicListQuery,
   type LiveRows,
@@ -107,6 +108,7 @@ export interface RepoIssues {
   readonly list: Query<typeof listQuery>
   readonly publicList: Query<typeof publicListQuery>
   readonly item: Query<typeof itemQuery>
+  readonly summary: Query<typeof summaryQuery>
   readonly conversation: Query<typeof conversationQuery>
   readonly synced: Query<typeof syncedQuery>
   readonly unsynced: Query<typeof unsyncedQuery>
@@ -223,6 +225,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       list: listQuery(view, items, requested, sending, writes),
       publicList: publicListQuery(view, items),
       item: itemQuery(view, details),
+      summary: summaryQuery(view, items),
       conversation: conversationQuery(view, items, comments, requested, sending, writes),
       synced: syncedQuery(view, sync),
       unsynced: unsyncedQuery(sync),

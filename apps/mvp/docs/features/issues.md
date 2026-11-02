@@ -332,6 +332,8 @@ Agent attribution names the requester only when their stored GitHub login exists
 
 Detail routes use item-scoped Electric shapes: `items?repo=owner/name&number=N` and `comments?repo=owner/name&number=N`. The server validates N and binds it into an additional number/item-id predicate after repository authorization. Separate persisted collection identities retain each item's cursor; moving between issues cannot reuse another item's handle. Lists share summaries, sync and triage metadata. Explicit repository-wide readers retain their existing full-body demand.
 
+An item-scoped shape is new to Electric for each issue, so its first answer is the slowest request of a cold issue page. Until it arrives the page's heading comes from the issue's row in the repository's shared `item-summaries` shape: its title, number, state and author, with the body's skeleton and “Syncing issue…” below.
+
 The October 26 production probe measured boot render at 2.82 s, first issue content at 7.37 s, and initial detail transfer of 8.24 MB of bodies plus 19.46 MB of comments. The scoped-shape regression verifies that a detail downloads only its own body and comments. Post-deployment timings remain a lander check; this change makes no measured speedup claim before deployment.
 
 

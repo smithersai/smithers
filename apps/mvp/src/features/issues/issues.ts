@@ -42,6 +42,8 @@ export interface IssuesQueries {
   readonly work: RepoIssues["workRows"]["tanstack"]
   /** The routed issue, once the device has it. */
   readonly item: RepoIssues["item"]["tanstack"]
+  /** The routed issue's summary row, with no body: its heading while the issue's own shape syncs. */
+  readonly summary: RepoIssues["summary"]["tanstack"]
   /** Its comments, this device's own last. */
   readonly conversation: RepoIssues["conversation"]["tanstack"]
   /** The repository's sync, once a walk was complete: before that its counts are unknown. */
@@ -114,6 +116,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           get publicList() { return store.routed().publicList.tanstack },
           get work() { return store.routed().workRows.tanstack },
           get item() { return store.routed().item.tanstack },
+          get summary() { return store.routed().summary.tanstack },
           get conversation() { return store.routed().conversation.tanstack },
           get synced() { return store.routed().synced.tanstack },
           get unsynced() { return store.routed().unsynced.tanstack },

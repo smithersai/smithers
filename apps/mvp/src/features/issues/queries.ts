@@ -192,6 +192,29 @@ export const syncedRepositoriesQuery = (sync: Synced<SyncRow>) =>
       .select(({ sync }) => ({ repoId: sync.repoId, syncedAt: sync.syncedAt }))
   )
 
+/**
+ * The routed issue's row in the repository's summaries: its title, state and author with no body. The repository's
+ * summaries shape is shared and warm, while the issue's own shape is new for each issue, so a cold issue page shows its
+ * heading from here before its body arrives.
+ */
+export const summaryQuery = (view: View, items: Synced<ItemSummary>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .innerJoin({ item: items.tanstack }, ({ view, item }) => Query.eq(view.repoId, item.repoId))
+      .where(({ view, item }) =>
+        Query.and(Query.eq(item.number, view.number), Query.eq(item.kind, "issue"), Query.isNull(item.deletedAt))
+      )
+      .select(({ item }) => ({
+        number: item.number,
+        title: item.title,
+        state: item.state,
+        author: item.authorLogin,
+        createdAt: item.createdAt,
+      }))
+      .findOne()
+  )
+
 /** The routed issue, once the device has it. */
 export const itemQuery = (view: View, items: Synced<Item>) =>
   LiveQuery.make((q) =>

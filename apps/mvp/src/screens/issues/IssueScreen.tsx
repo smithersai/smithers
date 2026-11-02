@@ -40,6 +40,7 @@ export function IssueScreen() {
   const { queries, actions } = useIssues()
   const auth = useAuth()
   const { data: item, isReady: itemReady } = useLiveQuery(queries.item)
+  const { data: summary } = useLiveQuery(queries.summary)
   const { data: rows } = useLiveQuery(queries.conversation)
   const { data: synced, isReady: syncedReady } = useLiveQuery(queries.synced)
   const { data: view } = useLiveQuery(queries.view)
@@ -101,11 +102,13 @@ export function IssueScreen() {
       <main className="issues-screen"><RepoHeader />
         <PageBody width="wide">
           {back}
+          {/* The repository's warm summaries name the issue before its own shape brings the body and comments. */}
+          {summary === undefined ? null : <ItemConversation {...conversationProps({ ...summary, body: "" }, [], { owner, name: repo })} />}
           <OfflineFallback>
             <Card><CardContent>
               <p role="status">Syncing issue…</p>
               <div className="issues-loading" aria-hidden>
-                <Skeleton className="issues-loading-title" />
+                {summary === undefined ? <Skeleton className="issues-loading-title" /> : null}
                 <Skeleton className="issues-loading-body" />
                 <Skeleton className="issues-loading-body" />
               </div>
