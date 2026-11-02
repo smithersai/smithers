@@ -4,7 +4,7 @@ import { Effect, Logger } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import { isOverloaded, relay, RETRY_AFTER_SECONDS } from "./ElectricRelay.ts"
+import { isOverloaded, isTransient, relay, RETRY_AFTER_SECONDS } from "./ElectricRelay.ts"
 
 type Record = ReturnType<typeof Logger.formatStructured.log>
 
@@ -21,6 +21,12 @@ const run = async <A, E>(effect: Effect.Effect<A, E>) => {
 /** The error workerd rejects a call into an overloaded Durable Object with. */
 const overloaded = () =>
   Object.assign(new Error("Durable Object is overloaded. Requests queued for too long."), { overloaded: true, retryable: false })
+
+/**
+ * The error workerd rejects a call into the object with when its connection to the object drops mid-call, as when the
+ * object's host restarts or moves it; Cloudflare marks it `retryable` (Durable Objects: Error handling).
+ */
+const lost = () => Object.assign(new Error("Network connection lost."), { retryable: true })
 
 /** A call into the object that takes `ms` of the test clock, then dies with `defect`, as a rejected stub fetch does. */
 const dying = (ms: number, defect: unknown) => Effect.andThen(TestClock.adjust(`${ms} millis`), Effect.die(defect))
@@ -70,12 +76,30 @@ describe("relay", () => {
     expect(JSON.stringify(log)).not.toContain("queued")
   })
 
+  test("a call Cloudflare marks retryable is answered 503 with retry-after and no-store, and recorded as transient", async () => {
+    // smithers.sh, 2026-11-02 10:00:07Z: 17 held live shape requests from two colos ended at once, the object recording
+    // each as `clientDisconnected` and ChatApi each gateway answer as a 500; 12:49:58Z and 13:35:11Z did the same to 1
+    // and 2 (docs/infrastructure.md#electric).
+    const { exit, log } = await run(relay(dying(3_000, lost()), true, "0123456789abcdef"))
+    expect(exit._tag).toBe("Success")
+    const response = exit._tag === "Success" ? exit.value : undefined
+    expect(response?.status).toBe(503)
+    expect(response?.headers).toMatchObject({ "retry-after": String(RETRY_AFTER_SECONDS), "cache-control": "no-store" })
+    expect(log).toMatchObject([{
+      message: "electric.gateway.request",
+      level: "WARN",
+      annotations: { live: true, status: 503, outcome: "transient", durationMs: 3_000, errorTag: "Error" },
+    }])
+    expect(JSON.stringify(log)).not.toContain("connection lost")
+  })
+
   test("any other failure fails the request as before, recorded as failed with its tag and never its message", async () => {
     class RpcCallError extends Error {
       readonly _tag = "RpcCallError"
     }
     for (const [call, tag] of [
       [dying(10, new TypeError("Network connection lost to 10.0.0.1")), "TypeError"],
+      [dying(10, Object.assign(new Error("10.0.0.1"), { retryable: false })), "Error"],
       [Effect.fail(new RpcCallError("fetch 10.0.0.1")), "RpcCallError"],
     ] as const) {
       const { exit, log } = await run(relay(call, true))
@@ -97,5 +121,18 @@ describe("isOverloaded", () => {
     expect(isOverloaded(Object.assign(new Error("reset"), { overloaded: false, retryable: true }))).toBe(false)
     expect(isOverloaded("overloaded")).toBe(false)
     expect(isOverloaded(null)).toBe(false)
+  })
+})
+
+describe("isTransient", () => {
+  test("only an error Cloudflare marks retryable and not overloaded counts, never one that merely says so", () => {
+    expect(isTransient(lost())).toBe(true)
+    expect(isTransient(Object.assign(new Error("reset"), { overloaded: false, retryable: true }))).toBe(true)
+    expect(isTransient(overloaded())).toBe(false)
+    expect(isTransient(Object.assign(new Error("x"), { overloaded: true, retryable: true }))).toBe(false)
+    expect(isTransient(new Error("Network connection lost."))).toBe(false)
+    expect(isTransient(Object.assign(new Error("x"), { retryable: "true" }))).toBe(false)
+    expect(isTransient("retryable")).toBe(false)
+    expect(isTransient(null)).toBe(false)
   })
 })
