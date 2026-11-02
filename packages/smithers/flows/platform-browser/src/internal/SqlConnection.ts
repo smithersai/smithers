@@ -58,6 +58,18 @@ export interface Result {
 }
 
 /**
+ * What a batch of statements returned: the rows of each, in order, and
+ * whether the batch left a transaction open that the same owner continues.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface BatchResult {
+  readonly results: ReadonlyArray<ReadonlyArray<unknown>>
+  readonly open: boolean
+}
+
+/**
  * The tab's request a statement runs for: `id`, its number, names it in the
  * receipt of every change it commits, and `at` is when it arrived. With
  * `undecided`, an earlier leader may have committed it and this one could not
@@ -140,6 +152,18 @@ export interface Service {
       request: Request | undefined
     ): Effect.Effect<Result, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided>
   }
+  /**
+   * Runs each of `statements` in order for `owner`, as one request: as {@link run}
+   * runs one statement, with the request's last statement the batch's last, so a
+   * change commits only with it. A statement SQLite refuses fails the batch with
+   * its `SqlError`, and the statements after it never run.
+   */
+  readonly runBatch: (
+    owner: string,
+    statements: ReadonlyArray<Statements.Entry>,
+    continuing: boolean,
+    request: Request | undefined
+  ) => Effect.Effect<BatchResult, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided>
   /** Whether this owner still holds an open transaction, including after a failed statement. */
   readonly isOpen: (owner: string) => boolean
   /**
@@ -202,6 +226,24 @@ const action = {
 const leaderTables: ReadonlySet<string> = new Set([SqlProtocol.commits, SqlProtocol.replies])
 
 const isLeaders = (table: string | null) => table !== null && leaderTables.has(table.toLowerCase())
+
+/** What a request runs: its statements, and whether it is a batch, whose reply keeps each one's rows. */
+interface Script {
+  readonly entries: ReadonlyArray<Statements.Entry>
+  readonly batch: boolean
+}
+
+/** One statement's script. */
+const single = (sql: string, params: ReadonlyArray<unknown> = []): Script => ({
+  entries: [{ sql, params }],
+  batch: false
+})
+
+/** A reply as `SqlProtocol.replies` keeps it: a batch's rows per statement, or one statement's rows. */
+const replyText = (script: Script, results: ReadonlyArray<ReadonlyArray<unknown>>): string =>
+  script.batch ? SqlProtocol.encodeResults(results) : SqlProtocol.encodeRows(results[0]!)
+
+const returnedRows = (results: ReadonlyArray<ReadonlyArray<unknown>>) => results.some((rows) => rows.length > 0)
 
 /**
  * Builds the connection's owner bookkeeping over an open database.
@@ -296,11 +338,11 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       }
     }
 
-    const writeReply = (owner: string, request: Request, rows: ReadonlyArray<unknown>) =>
+    const writeReply = (owner: string, request: Request, text: string) =>
       write(`INSERT OR REPLACE INTO main.${SqlProtocol.replies} (client, request, rows) VALUES (?, ?, ?)`, [
         owner,
         request.id,
-        SqlProtocol.encodeRows(rows)
+        text
       ])
 
     /**
@@ -327,18 +369,18 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       }
     }
 
-    /** Runs `sql` and moves ownership after each statement. Under `statement`. */
-    const execute = (owner: string, sql: string, params: ReadonlyArray<unknown>, request?: Request) =>
+    /** Runs `script` and moves ownership after each statement. Under `statement`. */
+    const execute = (owner: string, script: Script, request?: Request) =>
       Effect.tryPromise({
         try: async () => {
           try {
-            return await Statements.runAll(database, sql, params, "object", {
-              before: async ({ last, rows }) => {
+            return await Statements.runEach(database, script.entries, "object", {
+              before: async ({ last, results }) => {
                 if (guard === undefined || request === undefined) return
                 guard.last = last
                 // The statement that commits is the request's last: what the earlier ones returned is its reply.
-                if (last && guard.ends && rows.length > 0 && holder?.receipted === true) {
-                  await writeReply(owner, request, rows)
+                if (last && guard.ends && returnedRows(results) && holder?.receipted === true) {
+                  await writeReply(owner, request, replyText(script, results))
                 }
               },
               after: () => track(owner, request)
@@ -352,7 +394,7 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
         catch: (cause) =>
           cause instanceof ReceiptFailed ? cause : Statements.failed(cause, "Failed to execute statement", "execute")
       }).pipe(
-        Effect.map(({ rows }): Result => ({ rows, open: holder?.owner === owner }))
+        Effect.map(({ results }): BatchResult => ({ results, open: holder?.owner === owner }))
       )
 
     /** Rolls back `owner`'s open transaction. Under `statement`. */
@@ -363,7 +405,7 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
     const rollback = (owner: string): Effect.Effect<void, SqlError> => {
       const abandoned = holder
       if (abandoned?.owner !== owner) return Effect.void
-      return execute(owner, "ROLLBACK", []).pipe(
+      return execute(owner, single("ROLLBACK")).pipe(
         Effect.catchTag("ReceiptFailed", Effect.die),
         Effect.catch((error) => {
           // The connection still contains the abandoned transaction. Fail closed,
@@ -391,11 +433,10 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
      */
     const receipted = (
       owner: string,
-      sql: string,
-      params: ReadonlyArray<unknown>,
+      script: Script,
       continuing: boolean,
       request: Request
-    ): Effect.Effect<Result, SqlError | TransactionUnrecorded | TransactionUndecided> => {
+    ): Effect.Effect<BatchResult, SqlError | TransactionUnrecorded | TransactionUndecided> => {
       const current: Guard = { undecided: request.undecided, last: false, ends: false, vetoed: undefined }
       // What a failed request fails with: its own error, or the refusal of a change the commit hook or a receipt
       // refused.
@@ -415,23 +456,23 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       // all of it commits, or none of it does.
       const wrapped = Effect.gen(function*() {
         current.vetoed = undefined
-        yield* execute(owner, "BEGIN IMMEDIATE", [], request)
+        yield* execute(owner, single("BEGIN IMMEDIATE"), request)
         const wrapper = holder?.number
-        const result = yield* execute(owner, sql, params, request)
+        const result = yield* execute(owner, script, request)
         if (holder !== undefined && holder.number === wrapper) {
-          if (result.rows.length > 0) {
+          if (returnedRows(result.results)) {
             yield* Effect.tryPromise({
-              try: () => writeReply(owner, request, result.rows),
+              try: () => writeReply(owner, request, replyText(script, result.results)),
               catch: () => new ReceiptFailed()
             })
           }
-          yield* execute(owner, "COMMIT", [], request)
+          yield* execute(owner, single("COMMIT"), request)
         }
-        return { rows: result.rows, open: holder?.owner === owner }
+        return { results: result.results, open: holder?.owner === owner }
       }).pipe(Effect.catch((error) => rollback(owner).pipe(Effect.andThen(Effect.fail(failure(error))))))
       return Effect.suspend(() => {
         guard = current
-        return execute(owner, sql, params, request)
+        return execute(owner, script, request)
       }).pipe(
         Effect.catch((error) =>
           // A write refused for want of a receipt, outside a transaction it continues: it runs again, wrapped.
@@ -446,17 +487,16 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
     }
 
     type Outcome =
-      | { readonly _tag: "Ran"; readonly result: Result }
+      | { readonly _tag: "Ran"; readonly result: BatchResult }
       | { readonly _tag: "Wait"; readonly released: Deferred.Deferred<void> }
       | { readonly _tag: "Lost" }
 
-    const run = (
+    const runScript = (
       owner: string,
-      sql: string,
-      params: ReadonlyArray<unknown>,
+      script: Script,
       continuing: boolean,
       request?: Request
-    ): Effect.Effect<Result, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided> =>
+    ): Effect.Effect<BatchResult, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided> =>
       statement.withPermits(1)(Effect.suspend((): Effect.Effect<
         Outcome,
         SqlError | TransactionUnrecorded | TransactionUndecided
@@ -469,13 +509,13 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
         return Effect.uninterruptible(Effect.map(
           request === undefined ?
             // Only a request's statements write a receipt.
-            execute(owner, sql, params).pipe(Effect.catchTag("ReceiptFailed", Effect.die))
-            : receipted(owner, sql, params, continuing, request),
+            execute(owner, script).pipe(Effect.catchTag("ReceiptFailed", Effect.die))
+            : receipted(owner, script, continuing, request),
           (result) => ({ _tag: "Ran", result })
         ))
       })).pipe(
         Effect.flatMap((outcome): Effect.Effect<
-          Result,
+          BatchResult,
           SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided
         > => {
           switch (outcome._tag) {
@@ -485,7 +525,7 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
               return Effect.fail(new TransactionLost())
             case "Wait":
               // Another owner's transaction is open: wait for it to end, then try again.
-              return Effect.andThen(Deferred.await(outcome.released), run(owner, sql, params, continuing, request))
+              return Effect.andThen(Deferred.await(outcome.released), runScript(owner, script, continuing, request))
           }
         })
       )
@@ -497,7 +537,27 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
         )
       ).pipe(Effect.withSpan("browser.runtime.abandon"))
 
-    return SqlConnection.of({ run: run as Service["run"], abandon, isOpen: (owner) => holder?.owner === owner })
+    const run = (
+      owner: string,
+      sql: string,
+      params: ReadonlyArray<unknown>,
+      continuing: boolean,
+      request?: Request
+    ): Effect.Effect<Result, SqlError | TransactionLost | TransactionUnrecorded | TransactionUndecided> =>
+      Effect.map(runScript(owner, single(sql, params), continuing, request), ({ open, results }) => ({
+        rows: results[0]!,
+        open
+      }))
+
+    const runBatch: Service["runBatch"] = (owner, statements, continuing, request) =>
+      runScript(owner, { entries: statements, batch: true }, continuing, request)
+
+    return SqlConnection.of({
+      run: run as Service["run"],
+      runBatch,
+      abandon,
+      isOpen: (owner) => holder?.owner === owner
+    })
   })
 
 /**

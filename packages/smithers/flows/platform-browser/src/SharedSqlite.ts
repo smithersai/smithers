@@ -11,7 +11,9 @@
  * worker. TanStack DB's browser persistence takes {@link open}'s
  * {@link Database} as its injected `{ execute, close }`.
  *
- * - A tab runs one statement at a time, in the order it asks.
+ * - A tab runs one statement at a time, in the order it asks. A batch
+ *   ({@link Database.executeBatch}) runs its statements in order as one
+ *   request, one round trip to the leader for all of them.
  * - A transaction a tab opens is the tab's alone until a statement ends it:
  *   another tab's statement waits, so it never runs inside it or reads what
  *   it has not committed.
@@ -27,7 +29,7 @@
  *   the old leader ended is answered as committed, with the rows it returned,
  *   never run twice: every change commits with its request's receipt. A
  *   request commits only with its last statement, so `INSERT ...; COMMIT;
- *   SELECT ...` in one request fails; send them apart.
+ *   SELECT ...` in one request or one batch fails; send them apart.
  *
  * @since 1.0.0
  */
@@ -97,13 +99,36 @@ export interface Options {
   readonly name: string
 }
 
+/**
+ * One statement of a batch: `sql` with `params`, none when absent.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Statement {
+  readonly sql: string
+  readonly params?: ReadonlyArray<unknown> | undefined
+}
+
 type Reply = Extract<SqlProtocol.Message, { readonly _tag: "Executed" | "Failed" }>
 
-/** A statement of a tab's open transaction, and the rows it returned. */
-interface Ran {
+/** What a tab sends: one statement, or a batch of them under `SqlProtocol.batchSql`. */
+interface Request {
   readonly sql: string
   readonly params: ReadonlyArray<unknown>
+  readonly batch?: ReadonlyArray<typeof SqlProtocol.Statement.Type>
+}
+
+/** What a request returned: its rows, and a batch's rows per statement when the leader ran it as one. */
+interface Answer {
   readonly rows: ReadonlyArray<unknown>
+  readonly results: ReadonlyArray<ReadonlyArray<unknown>> | undefined
+}
+
+/** A request of a tab's open transaction, and what it returned. */
+interface Ran {
+  readonly request: Request
+  readonly answer: Answer
 }
 
 /** A tab's open transaction: the leader holding it, the request that opened it, and what it ran. */
@@ -147,6 +172,13 @@ const refused = (reply: Extract<Reply, { readonly _tag: "Failed" }>): SqlError =
       "execute"
     )
 
+/** The tab's client: {@link Service}'s `execute`, and `executeBatch`, a batch in one request. */
+interface Client extends Service {
+  readonly executeBatch: (
+    statements: ReadonlyArray<Statement>
+  ) => Effect.Effect<ReadonlyArray<ReadonlyArray<unknown>>, SqlError>
+}
+
 /**
  * Builds the service: opens the database's channel and holds this tab's
  * lock, both until the scope closes.
@@ -155,6 +187,10 @@ const refused = (reply: Extract<Reply, { readonly _tag: "Failed" }>): SqlError =
  * @since 1.0.0
  */
 export const make = (options: Options): Effect.Effect<Service, never, TabChannel | WebLock | Scope.Scope> =>
+  Effect.map(connect(options), ({ execute }) => SharedSqlite.of({ execute }))
+
+/** Opens this tab's client: the channel and this tab's lock, both until the scope closes. */
+const connect = (options: Options): Effect.Effect<Client, never, TabChannel | WebLock | Scope.Scope> =>
   Effect.gen(function*() {
     const client = crypto.randomUUID()
     // Held while this tab can still be answered: when it ends, or falls the channel's capacity behind, the leader
@@ -201,8 +237,8 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
       Effect.forkScoped
     )
 
-    // Sends one statement and waits for its answer, from whichever leader serves it.
-    const send = (sql: string, params: ReadonlyArray<unknown>) =>
+    // Sends one request and waits for its answer, from whichever leader serves it.
+    const send = ({ batch, params, sql }: Request) =>
       Effect.gen(function*() {
         const id = next++
         if (overflow !== undefined) return { id, answer: overflowed(id) }
@@ -214,7 +250,8 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
           sql,
           params,
           transaction: transaction?.leader ?? null,
-          ...(transaction === null ? {} : { opened: transaction.opened })
+          ...(transaction === null ? {} : { opened: transaction.opened }),
+          ...(batch === undefined ? {} : { batch })
         })
         pending = { message, id, reply }
         const answer = yield* port.post(message).pipe(
@@ -226,16 +263,17 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         return { id, answer }
       })
 
-    // Runs one statement. When the leader holding this tab's transaction ended before answering it, the transaction
-    // runs again on the leader now serving, then the statement.
-    const run = (sql: string, params: ReadonlyArray<unknown>): Effect.Effect<ReadonlyArray<unknown>, SqlError> =>
+    // Runs one request. When the leader holding this tab's transaction ended before answering it, the transaction
+    // runs again on the leader now serving, then the request.
+    const run = (request: Request): Effect.Effect<Answer, SqlError> =>
       Effect.gen(function*() {
-        const { answer, id } = yield* send(sql, params)
+        const { answer, id } = yield* send(request)
         if (answer._tag === "Executed") {
           if (!answer.open) transaction = null
           else if (transaction === null) transaction = { leader: answer.leader, opened: id, ran: [], replayable: true }
-          transaction?.ran.push({ sql, params, rows: answer.rows })
-          return answer.rows
+          const answered = { rows: answer.rows, results: answer.results }
+          transaction?.ran.push({ request, answer: answered })
+          return answered
         }
         if (answer.error !== lost) {
           if (answer.open === false) transaction = null
@@ -248,31 +286,48 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         // Only a statement sent in a transaction is lost.
         const { ran, replayable } = transaction!
         transaction = null
-        return replayable && (yield* replay(ran)) ? yield* run(sql, params) : yield* refused(answer)
+        return replayable && (yield* replay(ran)) ? yield* run(request) : yield* refused(answer)
       })
 
-    // Runs a lost transaction's statements again, in order. The transaction stands only if each returns the rows it
+    // Runs a lost transaction's requests again, in order. The transaction stands only if each returns the rows it
     // returned before, so everything the caller decided on them still holds; otherwise it is rolled back.
     const replay = (ran: ReadonlyArray<Ran>) =>
       Effect.gen(function*() {
-        for (const statement of ran) {
-          const rows = yield* Effect.option(run(statement.sql, statement.params))
-          if (Option.isNone(rows) || transaction === null || !Equal.equals(rows.value, statement.rows)) {
+        for (const { answer, request } of ran) {
+          const again = yield* Effect.option(run(request))
+          if (
+            Option.isNone(again) || transaction === null || !Equal.equals(again.value.rows, answer.rows) ||
+            !Equal.equals(again.value.results, answer.results)
+          ) {
             // Outside a transaction SQLite refuses it, which is as good.
-            yield* Effect.ignore(run("ROLLBACK", []))
+            yield* Effect.ignore(run({ sql: "ROLLBACK", params: [] }))
             return false
           }
         }
         return true
       })
 
+    // Runs a batch as one request. A leader of an older build runs `SqlProtocol.batchSql` instead and answers no
+    // `results`: the statements then go one at a time.
+    const runBatch = (statements: ReadonlyArray<Statement>) =>
+      Effect.gen(function*() {
+        const batch = statements.map(({ params, sql }) => ({ sql, params: params ?? [] }))
+        const { results } = yield* run({ sql: SqlProtocol.batchSql, params: [], batch })
+        if (results !== undefined) return results
+        return yield* Effect.forEach(batch, (statement) => Effect.map(run(statement), ({ rows }) => rows))
+      })
+
     const scope = yield* Effect.scope
     // The tab owns accepted requests until their replies update transaction state.
     // Cancelling a caller stops waiting; closing the tab still interrupts the request.
+    const owned = <A>(effect: Effect.Effect<A, SqlError>) =>
+      turn.withPermits(1)(effect).pipe(Effect.forkIn(scope), Effect.flatMap(Fiber.join))
     const execute: Service["execute"] = (sql, params = []) =>
-      turn.withPermits(1)(run(sql, params)).pipe(Effect.forkIn(scope), Effect.flatMap(Fiber.join))
+      owned(Effect.map(run({ sql, params }), ({ rows }) => rows))
+    const executeBatch: Client["executeBatch"] = (statements) =>
+      statements.length === 0 ? Effect.succeed([]) : owned(runBatch(statements))
 
-    return SharedSqlite.of({ execute })
+    return { execute, executeBatch }
   })
 
 /**
@@ -301,6 +356,16 @@ export interface Database {
    * own API does.
    */
   readonly execute: <Row = unknown>(sql: string, params?: ReadonlyArray<unknown>) => Promise<ReadonlyArray<Row>>
+  /**
+   * Runs each of `statements` in order as one request, one round trip to the
+   * leader, and resolves with each one's rows, in order. It rejects with a
+   * {@link SqliteError} for the first statement SQLite refuses; the
+   * statements after it never run, and a transaction the batch opened stays
+   * open, as it would after the same statements one at a time. TanStack DB's
+   * browser persistence restores a collection with a few batches
+   * (`patches/@tanstack__db-sqlite-persistence-core@0.4.11.patch`).
+   */
+  readonly executeBatch: (statements: ReadonlyArray<Statement>) => Promise<ReadonlyArray<ReadonlyArray<unknown>>>
   /** Closes the channel and releases this tab's lock. */
   readonly close: () => Promise<void>
 }
@@ -361,7 +426,7 @@ export const open = (options: OpenOptions): Promise<Database> =>
   Effect.runPromise(Effect.gen(function*() {
     const scope = yield* Scope.make()
     const close = Scope.close(scope, Exit.void)
-    const service = yield* make(options).pipe(
+    const service = yield* connect(options).pipe(
       Scope.provide(scope),
       Effect.provide(Layer.mergeAll(TabChannelLayer.layer, WebLockLayer.layer))
     )
@@ -386,6 +451,8 @@ export const open = (options: OpenOptions): Promise<Database> =>
         Effect.runPromise(
           service.execute(sql, params).pipe(Effect.mapError((error) => new SqliteError(error)))
         ) as Promise<ReadonlyArray<Row>>,
+      executeBatch: (statements: ReadonlyArray<Statement>) =>
+        Effect.runPromise(service.executeBatch(statements).pipe(Effect.mapError((error) => new SqliteError(error)))),
       close: () => Effect.runPromise(close)
     }
   }))

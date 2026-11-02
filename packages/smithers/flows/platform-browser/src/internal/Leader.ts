@@ -354,8 +354,11 @@ const prepareCommits = (connection: Connection, leader: string) =>
     )
   )
 
-/** What a request an earlier leader committed answers: its receipt's request, and the rows it returned, if any. */
-const receiptOf = (connection: Connection, client: string, request: number) =>
+/**
+ * What a request an earlier leader committed answers: its receipt's request, and the rows it returned, if any: a
+ * batch's rows per statement in `results`, one array for each of its `statements`.
+ */
+const receiptOf = (connection: Connection, client: string, request: number, statements?: number) =>
   connection.run(
     client,
     `SELECT opened, (SELECT rows FROM main.${SqlProtocol.replies} WHERE client = ? AND request = ?) AS rows FROM main.${SqlProtocol.commits} WHERE client = ?`,
@@ -363,7 +366,14 @@ const receiptOf = (connection: Connection, client: string, request: number) =>
     false
   ).pipe(Effect.map(({ rows }) => {
     const row = rows[0] as { readonly opened: unknown; readonly rows: string | null } | undefined
-    return { opened: row?.opened, rows: row?.rows == null ? [] : SqlProtocol.decodeRows(row.rows) }
+    return {
+      opened: row?.opened,
+      results: statements === undefined ?
+        [row?.rows == null ? [] : SqlProtocol.decodeRows(row.rows)]
+        : row?.rows == null ?
+        Array.from({ length: statements }, () => [])
+        : SqlProtocol.decodeResults(row.rows)
+    }
   }))
 
 /**
@@ -454,15 +464,16 @@ const serveStatements = (
         if (fence !== undefined) return yield* fence
         const connection = database.value
         const continuing = request.transaction !== null
+        const statements = request.batch?.length
         if (continuing && request.transaction !== leader) {
           // The transaction this statement belongs to ended with the leader that held it. Every earlier statement of it
           // left it open, so it committed only if this one committed it as that leader ended: its record says so.
-          const recorded = yield* receiptOf(connection, request.client, request.id).pipe(
+          const recorded = yield* receiptOf(connection, request.client, request.id, statements).pipe(
             // Taken as absent, the tab would run a transaction that may have committed again.
             Effect.mapError(() => new TransactionUndecided())
           )
           if (request.opened !== undefined && recorded.opened === request.opened) {
-            return { rows: recorded.rows, open: false, committed: true }
+            return { results: recorded.results, open: false, committed: true }
           }
           return yield* new TransactionLost()
         }
@@ -471,17 +482,19 @@ const serveStatements = (
         // commits, while a read still runs.
         let undecided = false
         if (!continuing && first) {
-          const recorded = yield* Effect.option(receiptOf(connection, request.client, request.id))
+          const recorded = yield* Effect.option(receiptOf(connection, request.client, request.id, statements))
           if (Option.isSome(recorded) && recorded.value.opened === request.id) {
-            return { rows: recorded.value.rows, open: false, committed: true }
+            return { results: recorded.value.results, open: false, committed: true }
           }
           undecided = Option.isNone(recorded)
         }
-        const result = yield* connection.run(request.client, request.sql, request.params, continuing, {
-          id: request.id,
-          at: yield* Clock.currentTimeMillis,
-          undecided
-        })
+        const receipt = { id: request.id, at: yield* Clock.currentTimeMillis, undecided }
+        const result = request.batch === undefined ?
+          yield* Effect.map(
+            connection.run(request.client, request.sql, request.params, continuing, receipt),
+            ({ open, rows }) => ({ results: [rows], open })
+          )
+          : yield* connection.runBatch(request.client, request.batch, continuing, receipt)
         yield* watch(request.client, result.open, connection)
         return { ...result, committed: false }
       }).pipe(
@@ -500,7 +513,9 @@ const serveStatements = (
                 client: request.client,
                 id: request.id,
                 leader,
-                rows: exit.value.rows,
+                ...(request.batch === undefined ?
+                  { rows: exit.value.results[0]! }
+                  : { rows: [], results: exit.value.results }),
                 open: exit.value.open
               }
               : {

@@ -120,7 +120,18 @@ the same pool, on a connection of its own, and runs every tab's
 TanStack DB collections on the device hands that database to TanStack's
 browser persistence, so it loads one SQLite build and opens one pool.
 
-- A tab sends one statement at a time, and the leader runs each request once.
+- A tab sends one request at a time, and the leader runs each request once.
+- A request is one statement, or a batch (`Database.executeBatch`): several
+  statements the leader runs in order and answers with each one's rows, in
+  one round trip. A batch commits only with its last statement, so a batch
+  outside a transaction commits all of its changes or none, and one that
+  opens a transaction ends it as its last statement or leaves it open. A
+  statement SQLite refuses fails the batch, and the ones after it never run.
+  TanStack DB's browser persistence restores a collection in about five
+  batches instead of about 35 statements, through the repository's patches to
+  `@tanstack/db-sqlite-persistence-core` and
+  `@tanstack/browser-db-sqlite-persistence`. A leader of an older build runs
+  no batch, and the tab sends the statements one at a time.
 - A transaction is one tab's from the statement that opens it to the one that
   ends it, by SQLite's own autocommit flag. Another tab's statement waits, so
   it never runs inside the transaction or reads what it has not committed.

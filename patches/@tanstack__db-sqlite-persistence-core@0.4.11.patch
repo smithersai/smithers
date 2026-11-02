@@ -1,0 +1,998 @@
+diff --git a/dist/cjs/persisted.d.cts b/dist/cjs/persisted.d.cts
+index d37166df038e2368f8b76d39760840749fb857ec..64469971a3d6b3796064191abd9506ab537c682c 100644
+--- a/dist/cjs/persisted.d.cts
++++ b/dist/cjs/persisted.d.cts
+@@ -417,6 +417,11 @@ export type HydrationPersistenceAdapter = PersistenceAdapter & {
+     }) => Promise<PersistencePullSinceResult>;
+ };
+ export type { RemoteSubsetOwner } from './remote-subset-owner.cjs';
++/** Smithers patch: one statement of a batch. */
++export type SQLiteStatement = {
++    sql: string;
++    params?: ReadonlyArray<unknown>;
++};
+ export interface SQLiteDriver {
+     readonly [SQLITE_DRIVER_SHARED_LOGICAL_SCHEDULING_KEY]?: object;
+     /** Host-specific limit on bound parameters in one query, when lower than SQLite's. */
+@@ -426,6 +431,18 @@ export interface SQLiteDriver {
+     run: (sql: string, params?: ReadonlyArray<unknown>) => Promise<void>;
+     transaction: <T>(fn: (transactionDriver: SQLiteDriver) => Promise<T>) => Promise<T>;
+     transactionWithDriver?: <T>(fn: (transactionDriver: SQLiteDriver) => Promise<T>) => Promise<T>;
++    /**
++     * Smithers patch: runs each statement in order, in one round trip when the
++     * database can, and resolves with each one's rows. The adapter sends a
++     * collection's schema in one batch.
++     */
++    batch?: (statements: ReadonlyArray<SQLiteStatement>) => Promise<ReadonlyArray<ReadonlyArray<any>>>;
++    /**
++     * Smithers patch: runs the statements in one transaction, BEGIN and COMMIT in
++     * the same batch, rolling back when any fails. The adapter restores a
++     * collection's rows and stream position with one each.
++     */
++    transactionBatch?: (statements: ReadonlyArray<SQLiteStatement>) => Promise<ReadonlyArray<ReadonlyArray<any>>>;
+ }
+ /**
+  * Forwards a driver's shared logical scheduling identity to a transparent
+diff --git a/dist/cjs/sqlite-core-adapter.cjs b/dist/cjs/sqlite-core-adapter.cjs
+index e43769a4b73ac4f958f98618063671948e005ac6..d05f7c547098859ddd5254e1fc0c7a9478f57988 100644
+--- a/dist/cjs/sqlite-core-adapter.cjs
++++ b/dist/cjs/sqlite-core-adapter.cjs
+@@ -1043,6 +1043,38 @@ function buildIndexName(collectionId, signature) {
+   const suffix = sanitizedSignature.length > 0 ? sanitizedSignature : `sig`;
+   return `idx_${hashedPart}_${suffix}`;
+ }
++// Smithers patch: the restore reads, as the unbatched path runs them.
++const RESTORE_SCHEMA_SQL = `SELECT schema_version
++       FROM collection_registry
++       WHERE collection_id = ?
++       LIMIT 1`;
++const RESTORE_KEY_SET_SQL = `SELECT
++         latest_row_version,
++         key_set_evidence_available,
++         key_set_evidence_incompatible AS key_set_incompatible
++       FROM collection_version
++       WHERE collection_id = ?
++       LIMIT 1`;
++const RESTORE_METADATA_SQL = `SELECT key, value
++         FROM collection_metadata
++         WHERE collection_id = ?`;
++const RESTORE_TERM_SQL = `SELECT latest_term
++         FROM leader_term
++         WHERE collection_id = ?
++         LIMIT 1`;
++const RESTORE_SEQ_SQL = `SELECT MAX(seq) AS max_seq
++         FROM applied_tx
++         WHERE collection_id = ? AND term = (
++           SELECT latest_term FROM leader_term WHERE collection_id = ? LIMIT 1
++         )`;
++const RESTORE_RESET_SQL = `SELECT reset_epoch
++         FROM collection_reset_epoch
++         WHERE collection_id = ?
++         LIMIT 1`;
++const RESTORE_LATEST_ROW_VERSION_SQL = `SELECT latest_row_version
++       FROM collection_version
++       WHERE collection_id = ?
++       LIMIT 1`;
+ class SQLiteCorePersistenceAdapter {
+   constructor(options) {
+     this.initialized = false;
+@@ -1402,6 +1434,10 @@ class SQLiteCorePersistenceAdapter {
+        LIMIT 1`,
+       [collectionId]
+     );
++    this.checkSchemaVersionRows(collectionId, schemaRows, operation);
++  }
++  // Smithers patch: the schema check over rows already read, so a batch can run it.
++  checkSchemaVersionRows(collectionId, schemaRows, operation) {
+     const persistedSchemaVersion = schemaRows[0]?.schema_version;
+     if (persistedSchemaVersion !== this.schemaVersion) {
+       throw new errors.InvalidPersistedCollectionConfigError(
+@@ -1546,6 +1582,9 @@ class SQLiteCorePersistenceAdapter {
+       ctx?.cacheGenerationClaimId
+     );
+     const includeRows = ctx?.includeRows !== false;
++    if (this.canBatchRestoreRead(collectionId, ctx) && !(includeRows && ctx?.requiredIndexSignatures?.length)) {
++      return this.loadResumeSnapshotBatched(collectionId, tableMapping, includeRows);
++    }
+     return this.runInTransaction(async (transactionDriver) => {
+       await this.assertCacheGenerationReadClaim(
+         transactionDriver,
+@@ -1991,6 +2030,9 @@ class SQLiteCorePersistenceAdapter {
+       ctx?.cacheGenerationClaimId
+     );
+     await this.ensureCollectionReady(collectionId, ctx?.cacheGenerationClaimId);
++    if (this.canBatchRestoreRead(collectionId, ctx)) {
++      return this.loadCollectionMetadataBatched(collectionId);
++    }
+     return this.runInTransaction(async (transactionDriver) => {
+       await this.assertCacheGenerationReadClaim(
+         transactionDriver,
+@@ -2219,6 +2261,9 @@ class SQLiteCorePersistenceAdapter {
+       ctx?.cacheGenerationClaimId
+     );
+     await this.ensureCollectionReady(collectionId, ctx?.cacheGenerationClaimId);
++    if (this.canBatchRestoreRead(collectionId, ctx)) {
++      return this.reserveLeadershipTermBatched(collectionId, observedTerm);
++    }
+     return this.runInTransaction(async (transactionDriver) => {
+       await this.assertCacheGenerationReadClaim(
+         transactionDriver,
+@@ -2260,6 +2305,9 @@ class SQLiteCorePersistenceAdapter {
+       ctx?.cacheGenerationClaimId
+     );
+     await this.ensureCollectionReady(collectionId, ctx?.cacheGenerationClaimId);
++    if (this.canBatchRestoreRead(collectionId, ctx)) {
++      return this.getStreamPositionBatched(collectionId);
++    }
+     return this.runInTransaction(async (transactionDriver) => {
+       await this.assertCacheGenerationReadClaim(
+         transactionDriver,
+@@ -2677,7 +2725,9 @@ class SQLiteCorePersistenceAdapter {
+     }
+     const collectionTableSql = quoteIdentifier(tableName);
+     const tombstoneTableSql = quoteIdentifier(tombstoneTableName);
+-    await this.driver.exec(
++    // Smithers patch: with a batching driver, these statements go in one batch.
++    const ddl = this.collectingDriver();
++    await ddl.exec(
+       `CREATE TABLE IF NOT EXISTS ${collectionTableSql} (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+@@ -2685,11 +2735,11 @@ class SQLiteCorePersistenceAdapter {
+          row_version INTEGER NOT NULL
+        )`
+     );
+-    await this.driver.exec(
++    await ddl.exec(
+       `CREATE INDEX IF NOT EXISTS ${quoteIdentifier(`${tableName}_row_version_idx`)}
+        ON ${collectionTableSql} (row_version)`
+     );
+-    await this.driver.exec(
++    await ddl.exec(
+       `CREATE TABLE IF NOT EXISTS ${tombstoneTableSql} (
+          key TEXT PRIMARY KEY,
+          value TEXT,
+@@ -2697,11 +2747,11 @@ class SQLiteCorePersistenceAdapter {
+          deleted_at TEXT NOT NULL
+        )`
+     );
+-    await this.driver.exec(
++    await ddl.exec(
+       `CREATE INDEX IF NOT EXISTS ${quoteIdentifier(`${tombstoneTableName}_row_version_idx`)}
+        ON ${tombstoneTableSql} (row_version)`
+     );
+-    await this.driver.run(
++    await ddl.run(
+       `INSERT INTO collection_version (
+          collection_id,
+          latest_row_version,
+@@ -2712,13 +2762,14 @@ class SQLiteCorePersistenceAdapter {
+        ON CONFLICT(collection_id) DO NOTHING`,
+       [collectionId]
+     );
+-    await this.driver.run(
++    await ddl.run(
+       `INSERT INTO collection_reset_epoch (collection_id, reset_epoch, updated_at)
+        VALUES (?, 0, CAST(strftime('%s', 'now') AS INTEGER))
+        ON CONFLICT(collection_id) DO NOTHING`,
+       [collectionId]
+     );
+-    await this.ensureCollectionKeyEvidenceTriggers(collectionId, tableName);
++    await this.ensureCollectionKeyEvidenceTriggers(collectionId, tableName, ddl);
++    await ddl.flush();
+     if (managedAtAdmission) {
+       const generation = await this.driver.query(
+         `SELECT physical_id FROM cache_generation WHERE physical_id = ?`,
+@@ -2755,13 +2806,13 @@ class SQLiteCorePersistenceAdapter {
+     this.collectionTableCache.set(collectionId, mapping);
+     return mapping;
+   }
+-  async ensureCollectionKeyEvidenceTriggers(collectionId, tableName) {
++  async ensureCollectionKeyEvidenceTriggers(collectionId, tableName, driver = this.driver) {
+     const collectionTableSql = quoteIdentifier(tableName);
+     const collectionIdLiteral = toSqliteLiteral(collectionId);
+     const insertTriggerSql = quoteIdentifier(`${tableName}_key_evidence_insert`);
+     const deleteTriggerSql = quoteIdentifier(`${tableName}_key_evidence_delete`);
+     const updateTriggerSql = quoteIdentifier(`${tableName}_key_evidence_update`);
+-    await this.driver.exec(
++    await driver.exec(
+       `CREATE TRIGGER IF NOT EXISTS ${insertTriggerSql}
+        AFTER INSERT ON ${collectionTableSql}
+        WHEN EXISTS (
+@@ -2781,7 +2832,7 @@ class SQLiteCorePersistenceAdapter {
+          WHERE collection_id = ${collectionIdLiteral};
+        END`
+     );
+-    await this.driver.exec(
++    await driver.exec(
+       `CREATE TRIGGER IF NOT EXISTS ${deleteTriggerSql}
+        AFTER DELETE ON ${collectionTableSql}
+        WHEN EXISTS (
+@@ -2801,7 +2852,7 @@ class SQLiteCorePersistenceAdapter {
+          WHERE collection_id = ${collectionIdLiteral};
+        END`
+     );
+-    await this.driver.exec(
++    await driver.exec(
+       `CREATE TRIGGER IF NOT EXISTS ${updateTriggerSql}
+        AFTER UPDATE OF key ON ${collectionTableSql}
+        WHEN OLD.key <> NEW.key AND EXISTS (
+@@ -2911,10 +2962,279 @@ class SQLiteCorePersistenceAdapter {
+       );
+     });
+   }
++  // Smithers patch: concurrent callers share one initialization; with a
++  // batching driver it is one batch, plus any ALTER an older database needs.
+   async ensureInitialized() {
+     if (this.initialized) {
+       return;
+     }
++    this.initializing ??= this.initialize().then(
++      () => {
++        this.initialized = true;
++      },
++      (error) => {
++        this.initializing = void 0;
++        throw error;
++      }
++    );
++    return this.initializing;
++  }
++  canBatchRestoreRead(collectionId, ctx) {
++    return typeof this.driver.transactionBatch === `function` && !ctx?.cacheGenerationClaimId && !hasCacheGenerationIdPrefix(collectionId);
++  }
++  // A driver that collects `exec` and `run` into one batch `flush` sends,
++  // or runs each at once on a driver without `batch`.
++  collectingDriver() {
++    const driver = this.driver;
++    if (typeof driver.batch !== `function`) {
++      return {
++        exec: (sql) => driver.exec(sql),
++        run: (sql, params) => driver.run(sql, params),
++        flush: async () => {
++        }
++      };
++    }
++    const statements = [];
++    return {
++      exec: async (sql) => {
++        statements.push({ sql });
++      },
++      run: async (sql, params = []) => {
++        statements.push({ sql, params });
++      },
++      flush: async () => {
++        if (statements.length > 0) await driver.batch(statements.splice(0));
++      }
++    };
++  }
++  async loadResumeSnapshotBatched(collectionId, tableMapping, includeRows) {
++    const results = await this.driver.transactionBatch([
++      { sql: RESTORE_SCHEMA_SQL, params: [collectionId] },
++      ...includeRows ? [{ sql: `SELECT key, value, metadata, row_version FROM ${quoteIdentifier(tableMapping.tableName)}` }] : [],
++      { sql: RESTORE_KEY_SET_SQL, params: [collectionId] },
++      { sql: RESTORE_METADATA_SQL, params: [collectionId] },
++      { sql: RESTORE_TERM_SQL, params: [collectionId] },
++      { sql: RESTORE_SEQ_SQL, params: [collectionId, collectionId] },
++      { sql: RESTORE_RESET_SQL, params: [collectionId] }
++    ]);
++    const [schemaRows, ...rest] = results;
++    this.checkSchemaVersionRows(collectionId, schemaRows, `load a resume snapshot`);
++    const storedRows = includeRows ? rest.shift() : void 0;
++    const [versionRows, collectionMetadataRows, termRows, seqRows, resetRows] = rest;
++    const rows = storedRows ? this.applyInMemoryPagination(
++      this.applyInMemoryOrderBy(this.applyInMemoryWhere(decodeStoredSqliteRows(storedRows), void 0), void 0),
++      void 0,
++      void 0
++    ) : [];
++    const version = versionRows[0];
++    return {
++      rows: rows.map((row) => ({
++        key: row.key,
++        value: row.value,
++        metadata: row.metadata
++      })),
++      keySet: {
++        status: version?.key_set_evidence_available !== 1 ? `unknown` : version.key_set_incompatible === 1 ? `incompatible` : `consistent`
++      },
++      collectionMetadata: collectionMetadataRows.map((row) => ({
++        key: row.key,
++        value: deserializePersistedRowValue(row.value)
++      })),
++      latestTerm: termRows[0]?.latest_term ?? 0,
++      latestSeq: seqRows[0]?.max_seq ?? 0,
++      latestRowVersion: version?.latest_row_version ?? 0,
++      resetEpoch: resetRows[0]?.reset_epoch ?? 0
++    };
++  }
++  async loadCollectionMetadataBatched(collectionId) {
++    const [schemaRows, rows] = await this.driver.transactionBatch([
++      { sql: RESTORE_SCHEMA_SQL, params: [collectionId] },
++      { sql: RESTORE_METADATA_SQL, params: [collectionId] }
++    ]);
++    this.checkSchemaVersionRows(collectionId, schemaRows, `load collection metadata`);
++    return rows.map((row) => ({
++      key: row.key,
++      value: deserializePersistedRowValue(row.value)
++    }));
++  }
++  async reserveLeadershipTermBatched(collectionId, observedTerm) {
++    // The term moves only when the schema matches, as the unbatched path
++    // checks the schema before it writes.
++    const [schemaRows, , termRows, seqRows, versionRows] = await this.driver.transactionBatch([
++      { sql: RESTORE_SCHEMA_SQL, params: [collectionId] },
++      {
++        sql: `INSERT INTO leader_term (collection_id, latest_term)
++         SELECT ?, ? + 1
++         WHERE EXISTS (
++           SELECT 1 FROM collection_registry WHERE collection_id = ? AND schema_version = ?
++         )
++         ON CONFLICT(collection_id) DO UPDATE SET
++           latest_term = MAX(leader_term.latest_term, ?) + 1`,
++        params: [collectionId, observedTerm, collectionId, this.schemaVersion, observedTerm]
++      },
++      { sql: RESTORE_TERM_SQL, params: [collectionId] },
++      { sql: RESTORE_SEQ_SQL, params: [collectionId, collectionId] },
++      { sql: RESTORE_LATEST_ROW_VERSION_SQL, params: [collectionId] }
++    ]);
++    this.checkSchemaVersionRows(collectionId, schemaRows, `reserve a leadership term`);
++    return {
++      latestTerm: termRows[0]?.latest_term ?? 0,
++      latestSeq: seqRows[0]?.max_seq ?? 0,
++      latestRowVersion: versionRows[0]?.latest_row_version ?? 0
++    };
++  }
++  async getStreamPositionBatched(collectionId) {
++    const [schemaRows, termRows, seqRows, versionRows] = await this.driver.transactionBatch([
++      { sql: RESTORE_SCHEMA_SQL, params: [collectionId] },
++      { sql: RESTORE_TERM_SQL, params: [collectionId] },
++      { sql: RESTORE_SEQ_SQL, params: [collectionId, collectionId] },
++      { sql: RESTORE_LATEST_ROW_VERSION_SQL, params: [collectionId] }
++    ]);
++    this.checkSchemaVersionRows(collectionId, schemaRows, `read the stream position`);
++    return {
++      latestTerm: termRows[0]?.latest_term ?? 0,
++      latestSeq: seqRows[0]?.max_seq ?? 0,
++      latestRowVersion: versionRows[0]?.latest_row_version ?? 0
++    };
++  }
++  async initializeBatched() {
++    const results = await this.driver.batch([
++      { sql: `CREATE TABLE IF NOT EXISTS cache_generation (
++         logical_id TEXT NOT NULL,
++         generation INTEGER NOT NULL,
++         physical_id TEXT NOT NULL UNIQUE,
++         retired INTEGER NOT NULL DEFAULT 0,
++         PRIMARY KEY (logical_id, generation)
++       )` },
++      { sql: `CREATE UNIQUE INDEX IF NOT EXISTS cache_generation_head
++       ON cache_generation (logical_id) WHERE retired = 0` },
++      { sql: `CREATE TABLE IF NOT EXISTS cache_generation_sequence (
++         logical_id TEXT PRIMARY KEY,
++         next_generation INTEGER NOT NULL
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS cache_generation_claim (
++         claim_id TEXT PRIMARY KEY,
++         logical_id TEXT NOT NULL,
++         physical_id TEXT NOT NULL,
++         expires_at_ms INTEGER NOT NULL
++       )` },
++      { sql: `PRAGMA table_info(cache_generation_claim)` },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_registry (
++         collection_id TEXT PRIMARY KEY,
++         table_name TEXT NOT NULL UNIQUE,
++         tombstone_table_name TEXT NOT NULL UNIQUE,
++         schema_version INTEGER NOT NULL,
++         updated_at INTEGER NOT NULL
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS persisted_index_registry (
++         collection_id TEXT NOT NULL,
++         signature TEXT NOT NULL,
++         index_name TEXT NOT NULL,
++         expression_sql TEXT NOT NULL,
++         where_sql TEXT,
++         removed INTEGER NOT NULL DEFAULT 0,
++         created_at INTEGER NOT NULL,
++         updated_at INTEGER NOT NULL,
++         last_used_at INTEGER NOT NULL,
++         PRIMARY KEY (collection_id, signature)
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS applied_tx (
++         collection_id TEXT NOT NULL,
++         term INTEGER NOT NULL,
++         seq INTEGER NOT NULL,
++         tx_id TEXT NOT NULL,
++         row_version INTEGER NOT NULL,
++         replay_json TEXT,
++         replay_requires_full_reload INTEGER NOT NULL DEFAULT 0,
++         applied_at INTEGER NOT NULL,
++         PRIMARY KEY (collection_id, term, seq)
++       )` },
++      { sql: `CREATE INDEX IF NOT EXISTS idx_applied_tx_collection_tx_id
++       ON applied_tx (collection_id, tx_id)` },
++      { sql: `PRAGMA table_info(applied_tx)` },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_version (
++         collection_id TEXT PRIMARY KEY,
++         latest_row_version INTEGER NOT NULL,
++         key_set_evidence_available INTEGER NOT NULL DEFAULT 0,
++         key_set_evidence_incompatible INTEGER NOT NULL DEFAULT 0
++       )` },
++      { sql: `PRAGMA table_info(collection_version)` },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_expected_keys (
++         collection_id TEXT NOT NULL,
++         key TEXT NOT NULL,
++         PRIMARY KEY (collection_id, key)
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_metadata (
++         collection_id TEXT NOT NULL,
++         key TEXT NOT NULL,
++         value TEXT NOT NULL,
++         updated_at INTEGER NOT NULL,
++         PRIMARY KEY (collection_id, key)
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS leader_term (
++         collection_id TEXT PRIMARY KEY,
++         latest_term INTEGER NOT NULL
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS schema_version (
++         scope TEXT PRIMARY KEY,
++         version INTEGER NOT NULL,
++         updated_at INTEGER NOT NULL
++       )` },
++      {
++        sql: `INSERT INTO schema_version (scope, version, updated_at)
++       VALUES ('global', ?, CAST(strftime('%s', 'now') AS INTEGER))
++       ON CONFLICT(scope) DO UPDATE SET
++         version = excluded.version,
++         updated_at = excluded.updated_at`,
++        params: [this.schemaVersion]
++      },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_reset_epoch (
++         collection_id TEXT PRIMARY KEY,
++         reset_epoch INTEGER NOT NULL,
++         updated_at INTEGER NOT NULL
++       )` }
++    ]);
++    const has = (rows, column) => rows.some(({ name }) => name === column);
++    const addColumn = async (table, column, definition) => {
++      try {
++        await this.driver.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
++      } catch (error) {
++        if (!isDuplicateColumnAddError(error, column)) {
++          throw error;
++        }
++      }
++    };
++    const claimColumns = results[4];
++    if (!has(claimColumns, `logical_id`)) {
++      await this.driver.exec(
++        `ALTER TABLE cache_generation_claim
++         ADD COLUMN logical_id TEXT NOT NULL DEFAULT ''`
++      );
++    }
++    if (!has(claimColumns, `expires_at_ms`)) {
++      await this.driver.exec(
++        `ALTER TABLE cache_generation_claim
++         ADD COLUMN expires_at_ms INTEGER NOT NULL DEFAULT 0`
++      );
++    }
++    const appliedTxColumns = results[9];
++    if (!has(appliedTxColumns, `replay_json`)) {
++      await addColumn(`applied_tx`, `replay_json`, `TEXT`);
++    }
++    if (!has(appliedTxColumns, `replay_requires_full_reload`)) {
++      await addColumn(`applied_tx`, `replay_requires_full_reload`, `INTEGER NOT NULL DEFAULT 0`);
++    }
++    const collectionVersionColumns = results[11];
++    for (const columnName of [`key_set_evidence_available`, `key_set_evidence_incompatible`]) {
++      if (!has(collectionVersionColumns, columnName)) {
++        await addColumn(`collection_version`, columnName, `INTEGER NOT NULL DEFAULT 0`);
++      }
++    }
++  }
++  async initialize() {
++    if (typeof this.driver.batch === `function`) {
++      return this.initializeBatched();
++    }
+     await this.driver.exec(
+       `CREATE TABLE IF NOT EXISTS cache_generation (
+          logical_id TEXT NOT NULL,
+diff --git a/dist/esm/persisted.d.ts b/dist/esm/persisted.d.ts
+index 550d2414ac6a62ca26a47dbf9712c9e58b297369..9e74d37d406be0e25e93b4da6820d5060be2cb39 100644
+--- a/dist/esm/persisted.d.ts
++++ b/dist/esm/persisted.d.ts
+@@ -417,6 +417,11 @@ export type HydrationPersistenceAdapter = PersistenceAdapter & {
+     }) => Promise<PersistencePullSinceResult>;
+ };
+ export type { RemoteSubsetOwner } from './remote-subset-owner.js';
++/** Smithers patch: one statement of a batch. */
++export type SQLiteStatement = {
++    sql: string;
++    params?: ReadonlyArray<unknown>;
++};
+ export interface SQLiteDriver {
+     readonly [SQLITE_DRIVER_SHARED_LOGICAL_SCHEDULING_KEY]?: object;
+     /** Host-specific limit on bound parameters in one query, when lower than SQLite's. */
+@@ -426,6 +431,18 @@ export interface SQLiteDriver {
+     run: (sql: string, params?: ReadonlyArray<unknown>) => Promise<void>;
+     transaction: <T>(fn: (transactionDriver: SQLiteDriver) => Promise<T>) => Promise<T>;
+     transactionWithDriver?: <T>(fn: (transactionDriver: SQLiteDriver) => Promise<T>) => Promise<T>;
++    /**
++     * Smithers patch: runs each statement in order, in one round trip when the
++     * database can, and resolves with each one's rows. The adapter sends a
++     * collection's schema in one batch.
++     */
++    batch?: (statements: ReadonlyArray<SQLiteStatement>) => Promise<ReadonlyArray<ReadonlyArray<any>>>;
++    /**
++     * Smithers patch: runs the statements in one transaction, BEGIN and COMMIT in
++     * the same batch, rolling back when any fails. The adapter restores a
++     * collection's rows and stream position with one each.
++     */
++    transactionBatch?: (statements: ReadonlyArray<SQLiteStatement>) => Promise<ReadonlyArray<ReadonlyArray<any>>>;
+ }
+ /**
+  * Forwards a driver's shared logical scheduling identity to a transparent
+diff --git a/dist/esm/sqlite-core-adapter.js b/dist/esm/sqlite-core-adapter.js
+index a632016fed33bbbbbc08ef688130054218b22328..17924a0a4739aa2b3b0d31b47609a4b7c1de9617 100644
+--- a/dist/esm/sqlite-core-adapter.js
++++ b/dist/esm/sqlite-core-adapter.js
+@@ -1041,6 +1041,38 @@ function buildIndexName(collectionId, signature) {
+   const suffix = sanitizedSignature.length > 0 ? sanitizedSignature : `sig`;
+   return `idx_${hashedPart}_${suffix}`;
+ }
++// Smithers patch: the restore reads, as the unbatched path runs them.
++const RESTORE_SCHEMA_SQL = `SELECT schema_version
++       FROM collection_registry
++       WHERE collection_id = ?
++       LIMIT 1`;
++const RESTORE_KEY_SET_SQL = `SELECT
++         latest_row_version,
++         key_set_evidence_available,
++         key_set_evidence_incompatible AS key_set_incompatible
++       FROM collection_version
++       WHERE collection_id = ?
++       LIMIT 1`;
++const RESTORE_METADATA_SQL = `SELECT key, value
++         FROM collection_metadata
++         WHERE collection_id = ?`;
++const RESTORE_TERM_SQL = `SELECT latest_term
++         FROM leader_term
++         WHERE collection_id = ?
++         LIMIT 1`;
++const RESTORE_SEQ_SQL = `SELECT MAX(seq) AS max_seq
++         FROM applied_tx
++         WHERE collection_id = ? AND term = (
++           SELECT latest_term FROM leader_term WHERE collection_id = ? LIMIT 1
++         )`;
++const RESTORE_RESET_SQL = `SELECT reset_epoch
++         FROM collection_reset_epoch
++         WHERE collection_id = ?
++         LIMIT 1`;
++const RESTORE_LATEST_ROW_VERSION_SQL = `SELECT latest_row_version
++       FROM collection_version
++       WHERE collection_id = ?
++       LIMIT 1`;
+ class SQLiteCorePersistenceAdapter {
+   constructor(options) {
+     this.initialized = false;
+@@ -1400,6 +1432,10 @@ class SQLiteCorePersistenceAdapter {
+        LIMIT 1`,
+       [collectionId]
+     );
++    this.checkSchemaVersionRows(collectionId, schemaRows, operation);
++  }
++  // Smithers patch: the schema check over rows already read, so a batch can run it.
++  checkSchemaVersionRows(collectionId, schemaRows, operation) {
+     const persistedSchemaVersion = schemaRows[0]?.schema_version;
+     if (persistedSchemaVersion !== this.schemaVersion) {
+       throw new InvalidPersistedCollectionConfigError(
+@@ -1544,6 +1580,9 @@ class SQLiteCorePersistenceAdapter {
+       ctx?.cacheGenerationClaimId
+     );
+     const includeRows = ctx?.includeRows !== false;
++    if (this.canBatchRestoreRead(collectionId, ctx) && !(includeRows && ctx?.requiredIndexSignatures?.length)) {
++      return this.loadResumeSnapshotBatched(collectionId, tableMapping, includeRows);
++    }
+     return this.runInTransaction(async (transactionDriver) => {
+       await this.assertCacheGenerationReadClaim(
+         transactionDriver,
+@@ -1989,6 +2028,9 @@ class SQLiteCorePersistenceAdapter {
+       ctx?.cacheGenerationClaimId
+     );
+     await this.ensureCollectionReady(collectionId, ctx?.cacheGenerationClaimId);
++    if (this.canBatchRestoreRead(collectionId, ctx)) {
++      return this.loadCollectionMetadataBatched(collectionId);
++    }
+     return this.runInTransaction(async (transactionDriver) => {
+       await this.assertCacheGenerationReadClaim(
+         transactionDriver,
+@@ -2217,6 +2259,9 @@ class SQLiteCorePersistenceAdapter {
+       ctx?.cacheGenerationClaimId
+     );
+     await this.ensureCollectionReady(collectionId, ctx?.cacheGenerationClaimId);
++    if (this.canBatchRestoreRead(collectionId, ctx)) {
++      return this.reserveLeadershipTermBatched(collectionId, observedTerm);
++    }
+     return this.runInTransaction(async (transactionDriver) => {
+       await this.assertCacheGenerationReadClaim(
+         transactionDriver,
+@@ -2258,6 +2303,9 @@ class SQLiteCorePersistenceAdapter {
+       ctx?.cacheGenerationClaimId
+     );
+     await this.ensureCollectionReady(collectionId, ctx?.cacheGenerationClaimId);
++    if (this.canBatchRestoreRead(collectionId, ctx)) {
++      return this.getStreamPositionBatched(collectionId);
++    }
+     return this.runInTransaction(async (transactionDriver) => {
+       await this.assertCacheGenerationReadClaim(
+         transactionDriver,
+@@ -2675,7 +2723,9 @@ class SQLiteCorePersistenceAdapter {
+     }
+     const collectionTableSql = quoteIdentifier(tableName);
+     const tombstoneTableSql = quoteIdentifier(tombstoneTableName);
+-    await this.driver.exec(
++    // Smithers patch: with a batching driver, these statements go in one batch.
++    const ddl = this.collectingDriver();
++    await ddl.exec(
+       `CREATE TABLE IF NOT EXISTS ${collectionTableSql} (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+@@ -2683,11 +2733,11 @@ class SQLiteCorePersistenceAdapter {
+          row_version INTEGER NOT NULL
+        )`
+     );
+-    await this.driver.exec(
++    await ddl.exec(
+       `CREATE INDEX IF NOT EXISTS ${quoteIdentifier(`${tableName}_row_version_idx`)}
+        ON ${collectionTableSql} (row_version)`
+     );
+-    await this.driver.exec(
++    await ddl.exec(
+       `CREATE TABLE IF NOT EXISTS ${tombstoneTableSql} (
+          key TEXT PRIMARY KEY,
+          value TEXT,
+@@ -2695,11 +2745,11 @@ class SQLiteCorePersistenceAdapter {
+          deleted_at TEXT NOT NULL
+        )`
+     );
+-    await this.driver.exec(
++    await ddl.exec(
+       `CREATE INDEX IF NOT EXISTS ${quoteIdentifier(`${tombstoneTableName}_row_version_idx`)}
+        ON ${tombstoneTableSql} (row_version)`
+     );
+-    await this.driver.run(
++    await ddl.run(
+       `INSERT INTO collection_version (
+          collection_id,
+          latest_row_version,
+@@ -2710,13 +2760,14 @@ class SQLiteCorePersistenceAdapter {
+        ON CONFLICT(collection_id) DO NOTHING`,
+       [collectionId]
+     );
+-    await this.driver.run(
++    await ddl.run(
+       `INSERT INTO collection_reset_epoch (collection_id, reset_epoch, updated_at)
+        VALUES (?, 0, CAST(strftime('%s', 'now') AS INTEGER))
+        ON CONFLICT(collection_id) DO NOTHING`,
+       [collectionId]
+     );
+-    await this.ensureCollectionKeyEvidenceTriggers(collectionId, tableName);
++    await this.ensureCollectionKeyEvidenceTriggers(collectionId, tableName, ddl);
++    await ddl.flush();
+     if (managedAtAdmission) {
+       const generation = await this.driver.query(
+         `SELECT physical_id FROM cache_generation WHERE physical_id = ?`,
+@@ -2753,13 +2804,13 @@ class SQLiteCorePersistenceAdapter {
+     this.collectionTableCache.set(collectionId, mapping);
+     return mapping;
+   }
+-  async ensureCollectionKeyEvidenceTriggers(collectionId, tableName) {
++  async ensureCollectionKeyEvidenceTriggers(collectionId, tableName, driver = this.driver) {
+     const collectionTableSql = quoteIdentifier(tableName);
+     const collectionIdLiteral = toSqliteLiteral(collectionId);
+     const insertTriggerSql = quoteIdentifier(`${tableName}_key_evidence_insert`);
+     const deleteTriggerSql = quoteIdentifier(`${tableName}_key_evidence_delete`);
+     const updateTriggerSql = quoteIdentifier(`${tableName}_key_evidence_update`);
+-    await this.driver.exec(
++    await driver.exec(
+       `CREATE TRIGGER IF NOT EXISTS ${insertTriggerSql}
+        AFTER INSERT ON ${collectionTableSql}
+        WHEN EXISTS (
+@@ -2779,7 +2830,7 @@ class SQLiteCorePersistenceAdapter {
+          WHERE collection_id = ${collectionIdLiteral};
+        END`
+     );
+-    await this.driver.exec(
++    await driver.exec(
+       `CREATE TRIGGER IF NOT EXISTS ${deleteTriggerSql}
+        AFTER DELETE ON ${collectionTableSql}
+        WHEN EXISTS (
+@@ -2799,7 +2850,7 @@ class SQLiteCorePersistenceAdapter {
+          WHERE collection_id = ${collectionIdLiteral};
+        END`
+     );
+-    await this.driver.exec(
++    await driver.exec(
+       `CREATE TRIGGER IF NOT EXISTS ${updateTriggerSql}
+        AFTER UPDATE OF key ON ${collectionTableSql}
+        WHEN OLD.key <> NEW.key AND EXISTS (
+@@ -2909,10 +2960,279 @@ class SQLiteCorePersistenceAdapter {
+       );
+     });
+   }
++  // Smithers patch: concurrent callers share one initialization; with a
++  // batching driver it is one batch, plus any ALTER an older database needs.
+   async ensureInitialized() {
+     if (this.initialized) {
+       return;
+     }
++    this.initializing ??= this.initialize().then(
++      () => {
++        this.initialized = true;
++      },
++      (error) => {
++        this.initializing = void 0;
++        throw error;
++      }
++    );
++    return this.initializing;
++  }
++  canBatchRestoreRead(collectionId, ctx) {
++    return typeof this.driver.transactionBatch === `function` && !ctx?.cacheGenerationClaimId && !hasCacheGenerationIdPrefix(collectionId);
++  }
++  // A driver that collects `exec` and `run` into one batch `flush` sends,
++  // or runs each at once on a driver without `batch`.
++  collectingDriver() {
++    const driver = this.driver;
++    if (typeof driver.batch !== `function`) {
++      return {
++        exec: (sql) => driver.exec(sql),
++        run: (sql, params) => driver.run(sql, params),
++        flush: async () => {
++        }
++      };
++    }
++    const statements = [];
++    return {
++      exec: async (sql) => {
++        statements.push({ sql });
++      },
++      run: async (sql, params = []) => {
++        statements.push({ sql, params });
++      },
++      flush: async () => {
++        if (statements.length > 0) await driver.batch(statements.splice(0));
++      }
++    };
++  }
++  async loadResumeSnapshotBatched(collectionId, tableMapping, includeRows) {
++    const results = await this.driver.transactionBatch([
++      { sql: RESTORE_SCHEMA_SQL, params: [collectionId] },
++      ...includeRows ? [{ sql: `SELECT key, value, metadata, row_version FROM ${quoteIdentifier(tableMapping.tableName)}` }] : [],
++      { sql: RESTORE_KEY_SET_SQL, params: [collectionId] },
++      { sql: RESTORE_METADATA_SQL, params: [collectionId] },
++      { sql: RESTORE_TERM_SQL, params: [collectionId] },
++      { sql: RESTORE_SEQ_SQL, params: [collectionId, collectionId] },
++      { sql: RESTORE_RESET_SQL, params: [collectionId] }
++    ]);
++    const [schemaRows, ...rest] = results;
++    this.checkSchemaVersionRows(collectionId, schemaRows, `load a resume snapshot`);
++    const storedRows = includeRows ? rest.shift() : void 0;
++    const [versionRows, collectionMetadataRows, termRows, seqRows, resetRows] = rest;
++    const rows = storedRows ? this.applyInMemoryPagination(
++      this.applyInMemoryOrderBy(this.applyInMemoryWhere(decodeStoredSqliteRows(storedRows), void 0), void 0),
++      void 0,
++      void 0
++    ) : [];
++    const version = versionRows[0];
++    return {
++      rows: rows.map((row) => ({
++        key: row.key,
++        value: row.value,
++        metadata: row.metadata
++      })),
++      keySet: {
++        status: version?.key_set_evidence_available !== 1 ? `unknown` : version.key_set_incompatible === 1 ? `incompatible` : `consistent`
++      },
++      collectionMetadata: collectionMetadataRows.map((row) => ({
++        key: row.key,
++        value: deserializePersistedRowValue(row.value)
++      })),
++      latestTerm: termRows[0]?.latest_term ?? 0,
++      latestSeq: seqRows[0]?.max_seq ?? 0,
++      latestRowVersion: version?.latest_row_version ?? 0,
++      resetEpoch: resetRows[0]?.reset_epoch ?? 0
++    };
++  }
++  async loadCollectionMetadataBatched(collectionId) {
++    const [schemaRows, rows] = await this.driver.transactionBatch([
++      { sql: RESTORE_SCHEMA_SQL, params: [collectionId] },
++      { sql: RESTORE_METADATA_SQL, params: [collectionId] }
++    ]);
++    this.checkSchemaVersionRows(collectionId, schemaRows, `load collection metadata`);
++    return rows.map((row) => ({
++      key: row.key,
++      value: deserializePersistedRowValue(row.value)
++    }));
++  }
++  async reserveLeadershipTermBatched(collectionId, observedTerm) {
++    // The term moves only when the schema matches, as the unbatched path
++    // checks the schema before it writes.
++    const [schemaRows, , termRows, seqRows, versionRows] = await this.driver.transactionBatch([
++      { sql: RESTORE_SCHEMA_SQL, params: [collectionId] },
++      {
++        sql: `INSERT INTO leader_term (collection_id, latest_term)
++         SELECT ?, ? + 1
++         WHERE EXISTS (
++           SELECT 1 FROM collection_registry WHERE collection_id = ? AND schema_version = ?
++         )
++         ON CONFLICT(collection_id) DO UPDATE SET
++           latest_term = MAX(leader_term.latest_term, ?) + 1`,
++        params: [collectionId, observedTerm, collectionId, this.schemaVersion, observedTerm]
++      },
++      { sql: RESTORE_TERM_SQL, params: [collectionId] },
++      { sql: RESTORE_SEQ_SQL, params: [collectionId, collectionId] },
++      { sql: RESTORE_LATEST_ROW_VERSION_SQL, params: [collectionId] }
++    ]);
++    this.checkSchemaVersionRows(collectionId, schemaRows, `reserve a leadership term`);
++    return {
++      latestTerm: termRows[0]?.latest_term ?? 0,
++      latestSeq: seqRows[0]?.max_seq ?? 0,
++      latestRowVersion: versionRows[0]?.latest_row_version ?? 0
++    };
++  }
++  async getStreamPositionBatched(collectionId) {
++    const [schemaRows, termRows, seqRows, versionRows] = await this.driver.transactionBatch([
++      { sql: RESTORE_SCHEMA_SQL, params: [collectionId] },
++      { sql: RESTORE_TERM_SQL, params: [collectionId] },
++      { sql: RESTORE_SEQ_SQL, params: [collectionId, collectionId] },
++      { sql: RESTORE_LATEST_ROW_VERSION_SQL, params: [collectionId] }
++    ]);
++    this.checkSchemaVersionRows(collectionId, schemaRows, `read the stream position`);
++    return {
++      latestTerm: termRows[0]?.latest_term ?? 0,
++      latestSeq: seqRows[0]?.max_seq ?? 0,
++      latestRowVersion: versionRows[0]?.latest_row_version ?? 0
++    };
++  }
++  async initializeBatched() {
++    const results = await this.driver.batch([
++      { sql: `CREATE TABLE IF NOT EXISTS cache_generation (
++         logical_id TEXT NOT NULL,
++         generation INTEGER NOT NULL,
++         physical_id TEXT NOT NULL UNIQUE,
++         retired INTEGER NOT NULL DEFAULT 0,
++         PRIMARY KEY (logical_id, generation)
++       )` },
++      { sql: `CREATE UNIQUE INDEX IF NOT EXISTS cache_generation_head
++       ON cache_generation (logical_id) WHERE retired = 0` },
++      { sql: `CREATE TABLE IF NOT EXISTS cache_generation_sequence (
++         logical_id TEXT PRIMARY KEY,
++         next_generation INTEGER NOT NULL
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS cache_generation_claim (
++         claim_id TEXT PRIMARY KEY,
++         logical_id TEXT NOT NULL,
++         physical_id TEXT NOT NULL,
++         expires_at_ms INTEGER NOT NULL
++       )` },
++      { sql: `PRAGMA table_info(cache_generation_claim)` },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_registry (
++         collection_id TEXT PRIMARY KEY,
++         table_name TEXT NOT NULL UNIQUE,
++         tombstone_table_name TEXT NOT NULL UNIQUE,
++         schema_version INTEGER NOT NULL,
++         updated_at INTEGER NOT NULL
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS persisted_index_registry (
++         collection_id TEXT NOT NULL,
++         signature TEXT NOT NULL,
++         index_name TEXT NOT NULL,
++         expression_sql TEXT NOT NULL,
++         where_sql TEXT,
++         removed INTEGER NOT NULL DEFAULT 0,
++         created_at INTEGER NOT NULL,
++         updated_at INTEGER NOT NULL,
++         last_used_at INTEGER NOT NULL,
++         PRIMARY KEY (collection_id, signature)
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS applied_tx (
++         collection_id TEXT NOT NULL,
++         term INTEGER NOT NULL,
++         seq INTEGER NOT NULL,
++         tx_id TEXT NOT NULL,
++         row_version INTEGER NOT NULL,
++         replay_json TEXT,
++         replay_requires_full_reload INTEGER NOT NULL DEFAULT 0,
++         applied_at INTEGER NOT NULL,
++         PRIMARY KEY (collection_id, term, seq)
++       )` },
++      { sql: `CREATE INDEX IF NOT EXISTS idx_applied_tx_collection_tx_id
++       ON applied_tx (collection_id, tx_id)` },
++      { sql: `PRAGMA table_info(applied_tx)` },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_version (
++         collection_id TEXT PRIMARY KEY,
++         latest_row_version INTEGER NOT NULL,
++         key_set_evidence_available INTEGER NOT NULL DEFAULT 0,
++         key_set_evidence_incompatible INTEGER NOT NULL DEFAULT 0
++       )` },
++      { sql: `PRAGMA table_info(collection_version)` },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_expected_keys (
++         collection_id TEXT NOT NULL,
++         key TEXT NOT NULL,
++         PRIMARY KEY (collection_id, key)
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_metadata (
++         collection_id TEXT NOT NULL,
++         key TEXT NOT NULL,
++         value TEXT NOT NULL,
++         updated_at INTEGER NOT NULL,
++         PRIMARY KEY (collection_id, key)
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS leader_term (
++         collection_id TEXT PRIMARY KEY,
++         latest_term INTEGER NOT NULL
++       )` },
++      { sql: `CREATE TABLE IF NOT EXISTS schema_version (
++         scope TEXT PRIMARY KEY,
++         version INTEGER NOT NULL,
++         updated_at INTEGER NOT NULL
++       )` },
++      {
++        sql: `INSERT INTO schema_version (scope, version, updated_at)
++       VALUES ('global', ?, CAST(strftime('%s', 'now') AS INTEGER))
++       ON CONFLICT(scope) DO UPDATE SET
++         version = excluded.version,
++         updated_at = excluded.updated_at`,
++        params: [this.schemaVersion]
++      },
++      { sql: `CREATE TABLE IF NOT EXISTS collection_reset_epoch (
++         collection_id TEXT PRIMARY KEY,
++         reset_epoch INTEGER NOT NULL,
++         updated_at INTEGER NOT NULL
++       )` }
++    ]);
++    const has = (rows, column) => rows.some(({ name }) => name === column);
++    const addColumn = async (table, column, definition) => {
++      try {
++        await this.driver.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
++      } catch (error) {
++        if (!isDuplicateColumnAddError(error, column)) {
++          throw error;
++        }
++      }
++    };
++    const claimColumns = results[4];
++    if (!has(claimColumns, `logical_id`)) {
++      await this.driver.exec(
++        `ALTER TABLE cache_generation_claim
++         ADD COLUMN logical_id TEXT NOT NULL DEFAULT ''`
++      );
++    }
++    if (!has(claimColumns, `expires_at_ms`)) {
++      await this.driver.exec(
++        `ALTER TABLE cache_generation_claim
++         ADD COLUMN expires_at_ms INTEGER NOT NULL DEFAULT 0`
++      );
++    }
++    const appliedTxColumns = results[9];
++    if (!has(appliedTxColumns, `replay_json`)) {
++      await addColumn(`applied_tx`, `replay_json`, `TEXT`);
++    }
++    if (!has(appliedTxColumns, `replay_requires_full_reload`)) {
++      await addColumn(`applied_tx`, `replay_requires_full_reload`, `INTEGER NOT NULL DEFAULT 0`);
++    }
++    const collectionVersionColumns = results[11];
++    for (const columnName of [`key_set_evidence_available`, `key_set_evidence_incompatible`]) {
++      if (!has(collectionVersionColumns, columnName)) {
++        await addColumn(`collection_version`, columnName, `INTEGER NOT NULL DEFAULT 0`);
++      }
++    }
++  }
++  async initialize() {
++    if (typeof this.driver.batch === `function`) {
++      return this.initializeBatched();
++    }
+     await this.driver.exec(
+       `CREATE TABLE IF NOT EXISTS cache_generation (
+          logical_id TEXT NOT NULL,

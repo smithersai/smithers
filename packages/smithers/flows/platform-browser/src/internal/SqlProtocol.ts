@@ -6,6 +6,11 @@
  * - A tab posts `Execute` under its own client id and a request number, one
  *   request at a time; only the leader answers, with `Executed` or `Failed`
  *   addressed to that client and number.
+ * - A request with `batch` runs each of its statements in order, as one
+ *   request, and `Executed` answers each one's rows in `results`. Its `sql`
+ *   is {@link batchSql}, which an older leader that does not know `batch`
+ *   runs instead, returning no rows and no `results`, so the tab knows to send
+ *   the statements one at a time.
  * - `transaction` names the leader that holds the tab's open transaction, and
  *   `opened` the request that opened it. A statement for a transaction
  *   another leader held is never run outside it: the new leader answers it as
@@ -32,7 +37,28 @@ const addressed = {
 }
 
 /**
- * Run `sql` with `params` for `client`. `opened` is set with `transaction`.
+ * One statement of a batch: `sql` with `params`.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const Statement = Schema.Struct({
+  sql: Schema.String,
+  params: Schema.Array(Schema.Unknown)
+})
+
+/**
+ * What a batch request's `sql` says: nothing, so an older leader that runs it
+ * instead of `batch` changes nothing and returns no rows.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const batchSql = "SELECT 1 WHERE 0"
+
+/**
+ * Run `sql` with `params` for `client`, or each of `batch` in order, as one
+ * request. `opened` is set with `transaction`.
  *
  * @category protocol
  * @since 1.0.0
@@ -42,12 +68,14 @@ export const Execute = Schema.TaggedStruct("Execute", {
   sql: Schema.String,
   params: Schema.Array(Schema.Unknown),
   transaction: Schema.NullOr(Schema.String),
-  opened: Schema.optional(Schema.Number)
+  opened: Schema.optional(Schema.Number),
+  batch: Schema.optional(Schema.Array(Statement))
 })
 
 /**
  * The leader ran the statement. `leader` names the leader; `open` says
- * whether the statement left the client's transaction open.
+ * whether the statement left the client's transaction open. A batch's reply
+ * carries each statement's rows in `results`.
  *
  * @category protocol
  * @since 1.0.0
@@ -56,7 +84,8 @@ export const Executed = Schema.TaggedStruct("Executed", {
   ...addressed,
   leader: Schema.String,
   rows: Schema.Array(Schema.Unknown),
-  open: Schema.Boolean
+  open: Schema.Boolean,
+  results: Schema.optional(Schema.Array(Schema.Array(Schema.Unknown)))
 })
 
 /**
@@ -187,16 +216,19 @@ const restore = (value: Kept): unknown =>
     Number(value.real)
     : new Uint8Array(value.blob)
 
+const keepRows = (rows: ReadonlyArray<unknown>) =>
+  rows.map((row) => Object.fromEntries(Object.entries(row as Record<string, unknown>).map(([k, v]) => [k, keep(v)])))
+
+const restoreRows = (rows: ReadonlyArray<Record<string, Kept>>): Array<unknown> =>
+  rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, restore(v)])))
+
 /**
  * Encodes rows as {@link replies} keeps them.
  *
  * @category protocol
  * @since 1.0.0
  */
-export const encodeRows = (rows: ReadonlyArray<unknown>): string =>
-  JSON.stringify(
-    rows.map((row) => Object.fromEntries(Object.entries(row as Record<string, unknown>).map(([k, v]) => [k, keep(v)])))
-  )
+export const encodeRows = (rows: ReadonlyArray<unknown>): string => JSON.stringify(keepRows(rows))
 
 /**
  * Decodes rows {@link encodeRows} encoded.
@@ -204,7 +236,23 @@ export const encodeRows = (rows: ReadonlyArray<unknown>): string =>
  * @category protocol
  * @since 1.0.0
  */
-export const decodeRows = (text: string): Array<unknown> =>
-  (JSON.parse(text) as Array<Record<string, Kept>>).map((row) =>
-    Object.fromEntries(Object.entries(row).map(([k, v]) => [k, restore(v)]))
-  )
+export const decodeRows = (text: string): Array<unknown> => restoreRows(JSON.parse(text) as Array<Record<string, Kept>>)
+
+/**
+ * Encodes a batch's rows, one array per statement, as {@link replies} keeps
+ * them.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const encodeResults = (results: ReadonlyArray<ReadonlyArray<unknown>>): string =>
+  JSON.stringify(results.map(keepRows))
+
+/**
+ * Decodes a batch's rows {@link encodeResults} encoded.
+ *
+ * @category protocol
+ * @since 1.0.0
+ */
+export const decodeResults = (text: string): Array<Array<unknown>> =>
+  (JSON.parse(text) as Array<Array<Record<string, Kept>>>).map(restoreRows)

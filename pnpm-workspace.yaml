@@ -71,6 +71,13 @@ patchedDependencies:
   # release that fixes this upstream; apps/mvp/infra/WorkerBundles.test.ts's expected failure says when.
   # Local dev also preserves build through stripEffects and rehydrates deferred plugin module references after RPC.
   alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
+  # TanStack DB's SQLite persistence sends every statement on its own, about 35 to restore one collection, and each is
+  # a round trip to the engine worker over SharedSqlite (~2 ms). The patches give its driver `batch` and
+  # `transactionBatch` over the database's `executeBatch`, and restore a collection in about five batches: schema once
+  # per adapter, its tables in one, and each restore read in one transaction. Delete them when TanStack batches
+  # (~/Desktop/UPSTREAM.md); packages/smithers/flows/platform-browser/test/SharedSqliteRestore.test.ts counts requests.
+  "@tanstack/db-sqlite-persistence-core@0.4.11": patches/@tanstack__db-sqlite-persistence-core@0.4.11.patch
+  "@tanstack/browser-db-sqlite-persistence@0.2.36": patches/@tanstack__browser-db-sqlite-persistence@0.2.36.patch
 
 minimumReleaseAgeExclude:
   # VibeLang is ours (smithersai/vibelang), so its releases need no waiting

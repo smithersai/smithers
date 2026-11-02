@@ -420,6 +420,8 @@ interface Faults {
   refuseRecordRead: boolean
   /** The next statement with this SQL runs and is never answered, as when the leader's tab closes right then. */
   hangAfter?: string | undefined
+  /** The next batch runs and is never answered, as when the leader's tab closes right then. */
+  hangAfterBatch?: boolean
 }
 
 /**
@@ -439,6 +441,14 @@ const faultyLeaderOver = (name: string, pool: Effect.Success<typeof MemorySqlite
         SqlConnection.SqlConnection.of({
           abandon: connection.abandon,
           isOpen: connection.isOpen,
+          runBatch: (owner, statements, continuing, request) =>
+            connection.runBatch(owner, statements, continuing, request).pipe(
+              Effect.tap(() =>
+                faults.hangAfterBatch ?
+                  Deferred.succeed(committed, undefined).pipe(Effect.andThen(Effect.never))
+                  : Effect.void
+              )
+            ),
           run: ((
             owner: string,
             sql: string,
@@ -736,4 +746,170 @@ describe("SharedSqlite.open", () => {
       const state = yield* Effect.promise(() => navigator.locks.query())
       expect((state.held ?? []).some((lock) => lock.name?.startsWith(`${name}/sql/`))).toBe(false)
     }))
+})
+
+/** Counts the requests tabs send on `name`'s database channel. */
+const requests = (name: string) =>
+  Effect.gen(function*() {
+    const port = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(SqlProtocol.channel(name)))
+    const inbox = yield* port.subscribe
+    const sent: Array<SqlProtocol.Message> = []
+    yield* Queue.take(inbox).pipe(
+      Effect.map((input) => {
+        const message = SqlProtocol.decode(input)
+        if (message?._tag === "Execute") sent.push(message)
+      }),
+      Effect.forever,
+      Effect.forkScoped
+    )
+    return sent
+  }).pipe(Effect.provide(Engines.platform))
+
+/**
+ * A leader of a build that knows no batches: it runs a batch's `sql` and answers no `results`, and answers every
+ * other statement with its own SQL as its one row.
+ */
+const olderLeader = (name: string) =>
+  Effect.gen(function*() {
+    const port = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(SqlProtocol.channel(name)))
+    const inbox = yield* port.subscribe
+    yield* Queue.take(inbox).pipe(
+      Effect.flatMap((input) => {
+        const message = SqlProtocol.decode(input)
+        if (message?._tag !== "Execute") return Effect.void
+        return port.post(SqlProtocol.encode({
+          _tag: "Executed",
+          client: message.client,
+          id: message.id,
+          leader: "older",
+          rows: message.sql === SqlProtocol.batchSql ? [] : [{ sql: message.sql }],
+          open: false
+        }))
+      }),
+      Effect.forever,
+      Effect.forkScoped
+    )
+    yield* port.post(SqlProtocol.encode({ _tag: "Ready" }))
+  }).pipe(Effect.provide(Engines.platform))
+
+describe("SharedSqlite batches", () => {
+  it.live("runs a batch in one request and answers each statement's rows; an empty batch sends none", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      yield* leaderOver(name, yield* MemorySqlite.pool)
+      const database = yield* Effect.promise(() => SharedSqlite.open({ name }))
+      yield* Effect.promise(() => database.execute("CREATE TABLE log (v TEXT)"))
+      const sent = yield* requests(name)
+      const results = yield* Effect.promise(() =>
+        database.executeBatch([
+          { sql: "BEGIN IMMEDIATE" },
+          { sql: "INSERT INTO log (v) VALUES (?) RETURNING v", params: ["a"] },
+          { sql: "SELECT count(*) AS n FROM log" },
+          { sql: "COMMIT" }
+        ])
+      )
+      expect(results).toEqual([[], [{ v: "a" }], [{ n: 1 }], []])
+      expect(yield* Effect.promise(() => database.executeBatch([]))).toEqual([])
+      while (sent.length < 1) yield* Effect.sleep("5 millis")
+      expect(sent).toHaveLength(1)
+      yield* Effect.promise(() => database.close())
+    }).pipe(Effect.scoped))
+
+  it.live("fails with the first statement SQLite refuses, runs none after it, and commits nothing of a batch outside a transaction", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      yield* leaderOver(name, yield* MemorySqlite.pool)
+      const database = yield* Effect.promise(() => SharedSqlite.open({ name }))
+      yield* Effect.promise(() => database.execute("CREATE TABLE log (v TEXT)"))
+      const refused = yield* Effect.promise(() =>
+        database.executeBatch([
+          { sql: "INSERT INTO log (v) VALUES ('a')" },
+          { sql: "SELECT * FROM missing" },
+          { sql: "INSERT INTO log (v) VALUES ('b')" }
+        ]).then(() => undefined, (error: unknown) => error)
+      )
+      expect(refused).toBeInstanceOf(SharedSqlite.SqliteError)
+      expect(refused).toMatchObject({ message: "no such table: missing", code: 1 })
+      expect(yield* Effect.promise(() => database.execute("SELECT v FROM log"))).toEqual([])
+      // In a transaction the batch opened, the transaction stays open for the caller to roll back.
+      const inside = yield* Effect.promise(() =>
+        database.executeBatch([
+          { sql: "BEGIN IMMEDIATE" },
+          { sql: "INSERT INTO log (v) VALUES ('c')" },
+          { sql: "SELECT * FROM missing" },
+          { sql: "COMMIT" }
+        ]).then(() => undefined, (error: unknown) => error)
+      )
+      expect(inside).toMatchObject({ message: "no such table: missing" })
+      expect(yield* Effect.promise(() => database.execute("SELECT v FROM log"))).toEqual([{ v: "c" }])
+      yield* Effect.promise(() => database.execute("ROLLBACK"))
+      expect(yield* Effect.promise(() => database.execute("SELECT v FROM log"))).toEqual([])
+      yield* Effect.promise(() => database.close())
+    }).pipe(Effect.scoped))
+
+  it.live("sends a batch's statements one at a time to a leader that knows no batches", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      yield* olderLeader(name)
+      const tab = yield* Effect.promise(() => SharedSqlite.open({ name }))
+      const sent = yield* requests(name)
+      const results = yield* Effect.promise(() =>
+        tab.executeBatch([{ sql: "SELECT 1" }, { sql: "SELECT ?", params: [2] }])
+      )
+      expect(results).toEqual([[{ sql: "SELECT 1" }], [{ sql: "SELECT ?" }]])
+      while (sent.length < 3) yield* Effect.sleep("5 millis")
+      expect(sent.map((message) => message._tag === "Execute" && message.sql)).toEqual([
+        SqlProtocol.batchSql,
+        "SELECT 1",
+        "SELECT ?"
+      ])
+      yield* Effect.promise(() => tab.close())
+    }).pipe(Effect.scoped))
+
+  it.live("answers a batch the old leader committed with each statement's rows, and runs it once", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const pool = yield* MemorySqlite.pool
+      const faults: Faults = { hangAfterCommit: false, refuseRecordRead: false }
+      const first = yield* faultyLeaderOver(name, pool, faults)
+      const database = yield* Effect.promise(() => SharedSqlite.open({ name }))
+      yield* Effect.promise(() => database.execute("CREATE TABLE log (v TEXT)"))
+      faults.hangAfterBatch = true
+      const batch = (value: string) =>
+        Effect.promise(() =>
+          database.executeBatch([
+            { sql: "BEGIN IMMEDIATE" },
+            { sql: "INSERT INTO log (v) VALUES (?) RETURNING v", params: [value] },
+            { sql: "SELECT count(*) AS n FROM log" },
+            { sql: "COMMIT" }
+          ])
+        )
+      const work = yield* Effect.forkChild(batch("once"))
+      expect(yield* untilCommitted(work, first)).toBe("committed")
+      yield* Engines.close(first.fiber)
+      const second = yield* faultyLeaderOver(name, pool, {
+        hangAfterCommit: false,
+        refuseRecordRead: false,
+        hangAfterBatch: true
+      })
+      expect(yield* Fiber.join(work)).toEqual([[], [{ v: "once" }], [{ n: 1 }], []])
+      // A batch that returned no rows keeps no reply: the next leader answers each statement's rows as none.
+      const quiet = yield* Effect.forkChild(
+        Effect.promise(() =>
+          database.executeBatch([{ sql: "INSERT INTO log (v) VALUES ('a')" }, {
+            sql: "INSERT INTO log (v) VALUES ('b')"
+          }])
+        )
+      )
+      expect(yield* untilCommitted(quiet, second)).toBe("committed")
+      yield* Engines.close(second.fiber)
+      yield* leaderOver(name, pool)
+      expect(yield* Fiber.join(quiet)).toEqual([[], []])
+      expect(yield* Effect.promise(() => database.execute("SELECT v FROM log"))).toEqual([
+        { v: "once" },
+        { v: "a" },
+        { v: "b" }
+      ])
+      yield* Effect.promise(() => database.close())
+    }).pipe(Effect.scoped))
 })

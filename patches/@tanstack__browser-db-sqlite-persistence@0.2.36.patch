@@ -1,0 +1,152 @@
+diff --git a/dist/cjs/wa-sqlite-driver.cjs b/dist/cjs/wa-sqlite-driver.cjs
+index 6598de8c115963563b091c4eee1683f96a0eb52f..84dfb3fec2de8c95a86452e87c401a74869bdec0 100644
+--- a/dist/cjs/wa-sqlite-driver.cjs
++++ b/dist/cjs/wa-sqlite-driver.cjs
+@@ -76,6 +76,47 @@ class BrowserWASQLiteDriver {
+   transactionWithDriver(fn) {
+     return this.transaction(fn);
+   }
++  /**
++   * Smithers patch: runs `statements` in order with one call to the database's
++   * `executeBatch` when it has one (one round trip to a database in another
++   * thread), else with one `execute` each, and resolves with each one's rows.
++   */
++  batch(statements) {
++    return this.enqueue(() => this.executeStatements(statements));
++  }
++  /**
++   * Smithers patch: runs `statements` in one transaction, its BEGIN IMMEDIATE
++   * and COMMIT in the same batch, and resolves with each statement's rows. When
++   * any statement fails, it rolls back and rejects with that failure.
++   */
++  transactionBatch(statements) {
++    return this.enqueue(async () => {
++      try {
++        const results = await this.executeStatements([
++          { sql: `BEGIN IMMEDIATE` },
++          ...statements,
++          { sql: `COMMIT` }
++        ]);
++        return results.slice(1, -1);
++      } catch (error) {
++        try {
++          await this.database.execute(`ROLLBACK`);
++        } catch {
++        }
++        throw error;
++      }
++    });
++  }
++  async executeStatements(statements) {
++    if (typeof this.database.executeBatch === `function`) {
++      return this.database.executeBatch(statements);
++    }
++    const results = [];
++    for (const statement of statements) {
++      results.push(await this.database.execute(statement.sql, statement.params ?? []));
++    }
++    return results;
++  }
+   async close() {
+     if (this.closed) {
+       return;
+diff --git a/dist/cjs/wa-sqlite-driver.d.cts b/dist/cjs/wa-sqlite-driver.d.cts
+index f90d2cc875b452e417b45a19ccbef560e62946f7..de73fba7767bc7b4de4038ab3acdecff121d7851 100644
+--- a/dist/cjs/wa-sqlite-driver.d.cts
++++ b/dist/cjs/wa-sqlite-driver.d.cts
+@@ -1,6 +1,8 @@
+-import { SQLITE_DRIVER_SHARED_LOGICAL_SCHEDULING_KEY, SQLiteDriver } from '@tanstack/db-sqlite-persistence-core';
++import { SQLITE_DRIVER_SHARED_LOGICAL_SCHEDULING_KEY, SQLiteDriver, SQLiteStatement } from '@tanstack/db-sqlite-persistence-core';
+ export type BrowserWASQLiteDatabase = {
+     execute: <TRow = unknown>(sql: string, params?: ReadonlyArray<unknown>) => Promise<ReadonlyArray<TRow>>;
++    /** Smithers patch: runs each statement in order, in one call, and resolves with each one's rows. */
++    executeBatch?: (statements: ReadonlyArray<SQLiteStatement>) => Promise<ReadonlyArray<ReadonlyArray<unknown>>>;
+     close?: () => Promise<void> | void;
+ };
+ export type BrowserWASQLiteDriverOptions = {
+@@ -17,6 +19,9 @@ export declare class BrowserWASQLiteDriver implements SQLiteDriver {
+     run(sql: string, params?: ReadonlyArray<unknown>): Promise<void>;
+     transaction<T>(fn: (transactionDriver: SQLiteDriver) => Promise<T>): Promise<T>;
+     transactionWithDriver<T>(fn: (transactionDriver: SQLiteDriver) => Promise<T>): Promise<T>;
++    batch(statements: ReadonlyArray<SQLiteStatement>): Promise<ReadonlyArray<ReadonlyArray<unknown>>>;
++    transactionBatch(statements: ReadonlyArray<SQLiteStatement>): Promise<ReadonlyArray<ReadonlyArray<unknown>>>;
++    private executeStatements;
+     close(): Promise<void>;
+     getDatabase(): BrowserWASQLiteDatabase;
+     private createTransactionDriver;
+diff --git a/dist/esm/wa-sqlite-driver.d.ts b/dist/esm/wa-sqlite-driver.d.ts
+index f90d2cc875b452e417b45a19ccbef560e62946f7..de73fba7767bc7b4de4038ab3acdecff121d7851 100644
+--- a/dist/esm/wa-sqlite-driver.d.ts
++++ b/dist/esm/wa-sqlite-driver.d.ts
+@@ -1,6 +1,8 @@
+-import { SQLITE_DRIVER_SHARED_LOGICAL_SCHEDULING_KEY, SQLiteDriver } from '@tanstack/db-sqlite-persistence-core';
++import { SQLITE_DRIVER_SHARED_LOGICAL_SCHEDULING_KEY, SQLiteDriver, SQLiteStatement } from '@tanstack/db-sqlite-persistence-core';
+ export type BrowserWASQLiteDatabase = {
+     execute: <TRow = unknown>(sql: string, params?: ReadonlyArray<unknown>) => Promise<ReadonlyArray<TRow>>;
++    /** Smithers patch: runs each statement in order, in one call, and resolves with each one's rows. */
++    executeBatch?: (statements: ReadonlyArray<SQLiteStatement>) => Promise<ReadonlyArray<ReadonlyArray<unknown>>>;
+     close?: () => Promise<void> | void;
+ };
+ export type BrowserWASQLiteDriverOptions = {
+@@ -17,6 +19,9 @@ export declare class BrowserWASQLiteDriver implements SQLiteDriver {
+     run(sql: string, params?: ReadonlyArray<unknown>): Promise<void>;
+     transaction<T>(fn: (transactionDriver: SQLiteDriver) => Promise<T>): Promise<T>;
+     transactionWithDriver<T>(fn: (transactionDriver: SQLiteDriver) => Promise<T>): Promise<T>;
++    batch(statements: ReadonlyArray<SQLiteStatement>): Promise<ReadonlyArray<ReadonlyArray<unknown>>>;
++    transactionBatch(statements: ReadonlyArray<SQLiteStatement>): Promise<ReadonlyArray<ReadonlyArray<unknown>>>;
++    private executeStatements;
+     close(): Promise<void>;
+     getDatabase(): BrowserWASQLiteDatabase;
+     private createTransactionDriver;
+diff --git a/dist/esm/wa-sqlite-driver.js b/dist/esm/wa-sqlite-driver.js
+index 7c82fbfa1bc7bbb244bfac5dd4d33436c9c5dc7f..523171445f4d00a04b5176045129606af06bcc4d 100644
+--- a/dist/esm/wa-sqlite-driver.js
++++ b/dist/esm/wa-sqlite-driver.js
+@@ -74,6 +74,47 @@ class BrowserWASQLiteDriver {
+   transactionWithDriver(fn) {
+     return this.transaction(fn);
+   }
++  /**
++   * Smithers patch: runs `statements` in order with one call to the database's
++   * `executeBatch` when it has one (one round trip to a database in another
++   * thread), else with one `execute` each, and resolves with each one's rows.
++   */
++  batch(statements) {
++    return this.enqueue(() => this.executeStatements(statements));
++  }
++  /**
++   * Smithers patch: runs `statements` in one transaction, its BEGIN IMMEDIATE
++   * and COMMIT in the same batch, and resolves with each statement's rows. When
++   * any statement fails, it rolls back and rejects with that failure.
++   */
++  transactionBatch(statements) {
++    return this.enqueue(async () => {
++      try {
++        const results = await this.executeStatements([
++          { sql: `BEGIN IMMEDIATE` },
++          ...statements,
++          { sql: `COMMIT` }
++        ]);
++        return results.slice(1, -1);
++      } catch (error) {
++        try {
++          await this.database.execute(`ROLLBACK`);
++        } catch {
++        }
++        throw error;
++      }
++    });
++  }
++  async executeStatements(statements) {
++    if (typeof this.database.executeBatch === `function`) {
++      return this.database.executeBatch(statements);
++    }
++    const results = [];
++    for (const statement of statements) {
++      results.push(await this.database.execute(statement.sql, statement.params ?? []));
++    }
++    return results;
++  }
+   async close() {
+     if (this.closed) {
+       return;
