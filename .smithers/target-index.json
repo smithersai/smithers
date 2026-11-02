@@ -3238,6 +3238,10 @@
       },
       {
         "kind": "file",
+        "path": ".smithers/flows/test/coding-correct-change.test.ts"
+      },
+      {
+        "kind": "file",
         "path": ".smithers/flows/test/coding-host-policy.test.ts"
       },
       {

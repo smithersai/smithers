@@ -3,7 +3,7 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Digest from "@smthrs/core/Digest"
 import { Action, Flow, FlowRuntime, Interpreter, Stall } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Effect, Layer, Schema } from "effect"
+import { Cause, Effect, Layer, Schema, SchemaGetter } from "effect"
 import { atomError } from "./atoms.ts"
 import {
   ApplyNative,
@@ -26,7 +26,8 @@ import {
   Result,
   Revision,
   sameRevision,
-  ValidatedChange
+  ValidatedChange,
+  validatePlan
 } from "./schema.ts"
 export { CorrectionResult } from "./schema.ts"
 import {
@@ -129,14 +130,30 @@ const Context = Schema.Struct({
   // The plan's project memory; the repair's steps open with it.
   memory: Schema.optionalKey(ProjectMemory)
 })
-const Repair = Schema.Struct({
+// The edit step's whole payload: RepairPass passes it as one planned
+// reference, since a planned field cannot be tested for absence while planning.
+const RepairShape = Schema.Struct({
+  request: Implement.payloadSchema,
+  index: Schema.Int,
+  ordinal: Schema.Int
+})
+// A repair recorded before `request` held the payload's fields at its top
+// level; it decodes into the current shape, so an in-flight pass resumes.
+const LegacyRepair = Schema.Struct({
   change: Change,
   parent: Revision,
-  memoryRevision: Schema.String,
+  memoryRevision: Schema.NonEmptyString,
   memory: Schema.optionalKey(ProjectMemory),
   index: Schema.Int,
   ordinal: Schema.Int
 })
+export const Repair = Schema.Union([
+  RepairShape,
+  LegacyRepair.pipe(Schema.decodeTo(RepairShape, {
+    decode: SchemaGetter.transform(({ index, ordinal, ...request }) => ({ index, ordinal, request })),
+    encode: SchemaGetter.transform(({ index, ordinal, request }) => ({ index, ordinal, ...request }))
+  }))
+])
 const Error = Schema.Union([atomError, EarlyFeedback])
 const isStepFailure = Schema.is(atomError)
 
@@ -239,7 +256,9 @@ const reconstruct = (input: typeof Refresh.payloadSchema.Type): ReadonlyArray<Va
     throw stale("Correction returned a different Change or atom count")
   }
   if (!sameRevision(edited.atoms[0]!, edited.head)) throw stale("Correction head differs from its selected atom")
-  if (!sameRevision(edited.parent, repair.parent)) throw stale("Correction parent differs from the prepared parent")
+  if (!sameRevision(edited.parent, repair.request.parent)) {
+    throw stale("Correction parent differs from the prepared parent")
+  }
   if (edited.head.changeId !== oldOwner.atoms[repair.ordinal]?.changeId) {
     throw stale("Correction replaced the selected native identity")
   }
@@ -362,12 +381,7 @@ const RepairPass = Flow.make("coding/RepairPass", {
             )
           ))),
         Node.bindPlanned(Node.capture({}, (repair) =>
-          Implement.call({
-            change: repair.change,
-            parent: repair.parent,
-            memoryRevision: repair.memoryRevision,
-            ...(repair.memory === undefined ? {} : { memory: repair.memory })
-          }).pipe(
+          Implement.call(repair.request).pipe(
             Node.bindPlanned(Node.capture({}, (edited) =>
               ReadHistory.call({ changeIds: ids(plan, previous), phase: "edited", dependency: edited }).pipe(
                 Node.bindPlanned(Node.capture({}, (read) =>
@@ -444,6 +458,131 @@ export const CorrectPlan = Flow.make("coding/CorrectPlan", {
   )
 })
 
+/**
+ * A red Change already on the stack, and every Change above it in stack
+ * order up to the workspace's tip. `base` is the commit below the first Change;
+ * every finding belongs to that first Change, measured on its current head.
+ */
+export const ChangeCorrection = Schema.Struct({
+  base: Revision,
+  changes: Schema.Array(Change).check(Schema.isMinLength(1)),
+  findings: Schema.Array(Finding).check(Schema.isMinLength(1)),
+  memoryRevision: Schema.NonEmptyString,
+  maxRounds: MaxRounds,
+  stall: Schema.optionalKey(Stall.Policy)
+})
+const Adopt = Action.make("coding/adopt-stack-change", {
+  payload: { input: ChangeCorrection, read: ReadResult },
+  success: Cursor,
+  error: CodingError
+})
+const invalidRequest = (message: string) => new CodingError({ code: "invalid_request", message })
+const identity = ({ changeId, commitId, treeId, operationId, parentCommitIds }: Revision): Revision => ({
+  changeId,
+  commitId,
+  treeId,
+  operationId,
+  parentCommitIds: [...parentCommitIds]
+})
+
+/**
+ * Adopts existing stack Changes as a changes-requested result whose first
+ * Change owns the findings, so the next round is CorrectPlan's repair pass.
+ * No receipt is carried: the repair rewrites the whole suffix, which reruns
+ * every check. Refuses a moved base, a nonlinear or conflicted suffix, one that
+ * stops below the tip, and findings from another Change or an older commit.
+ */
+export const adoptChange = (
+  input: typeof ChangeCorrection.Type,
+  read: typeof ReadResult.Type
+): Cursor => {
+  const owner = input.changes[0]!
+  if (input.findings.some((finding) => finding.owner !== owner.id)) {
+    throw invalidRequest(`Every finding must belong to ${owner.id}, the first Change, which is the one corrected`)
+  }
+  const plan: Plan = {
+    prompt: `Correct ${owner.title}`,
+    memoryRevision: input.memoryRevision,
+    base: identity(input.base),
+    changes: input.changes
+  }
+  validatePlan(plan)
+  if (input.changes.some((change) => change.atoms.some((atom) => atom.changeId === input.base.changeId))) {
+    throw invalidRequest("The base is one of the corrected atoms; name the commit below the first Change")
+  }
+  if (!sameCode(resolved(read, input.base.changeId), input.base)) {
+    throw stale("The base below the corrected Change moved")
+  }
+  let parent: Revision = plan.base
+  const changes = input.changes.map((change): ValidatedChange => {
+    const below = parent
+    const atoms = change.atoms.map((atom) => {
+      if (atom.changeId === null) {
+        throw invalidRequest(`${change.id} names an atom without a JJ change id; only existing Changes are corrected`)
+      }
+      const current = identity(resolved(read, atom.changeId))
+      if (current.parentCommitIds.length !== 1 || current.parentCommitIds[0] !== parent.commitId) {
+        throw stale(`${change.id} is not linear on the commit below it`)
+      }
+      parent = current
+      return current
+    })
+    // Command checks receive these paths as the Change's files; nothing here can measure them.
+    const writes = [...new Set(change.atoms.flatMap((atom) => atom.writes))]
+    if (!writes.length) throw invalidRequest(`${change.id} declares no written paths`)
+    return {
+      implementation: {
+        change: change.id,
+        parent: below,
+        atoms,
+        head: atoms.at(-1)!,
+        reads: [...new Set(change.atoms.flatMap((atom) => atom.reads))],
+        writes
+      },
+      receipts: []
+    }
+  })
+  // A suffix that stops below the tip would leave later Changes restacked but unchecked.
+  if (read.head.kind !== "resolved" || !sameCode(read.head, parent)) {
+    throw stale("The corrected Changes must run up to the workspace's tip")
+  }
+  const head = changes[0]!.implementation.head
+  if (input.findings.some((finding) => finding.sourceCommitId !== head.commitId)) {
+    throw stale(`A finding was measured on another commit than ${owner.id}'s current head`)
+  }
+  return {
+    plan,
+    maxRounds: input.maxRounds,
+    stall: input.stall ?? defaultStall,
+    streaks: Stall.initial,
+    round: 1,
+    previous: { status: "changes-requested", changes, findings: input.findings }
+  }
+}
+
+/**
+ * Corrects any Change on the stack, whoever made it: edits it in place (its
+ * JJ change id survives), lets JJ restack every Change above it, returns the
+ * working copy to the tip and reruns the checks of the rewritten suffix.
+ */
+export const CorrectChange = Flow.make("coding/CorrectChange", {
+  payload: ChangeCorrection,
+  success: CorrectionResult,
+  error: atomError,
+  body: Node.capture({}, (input) =>
+    ReadHistory.call({
+      changeIds: [
+        input.base.changeId,
+        ...input.changes.flatMap((change) => change.atoms.flatMap((atom) => atom.changeId ?? []))
+      ],
+      phase: "before",
+      dependency: null
+    }).pipe(
+      Node.bindPlanned(Node.capture({}, (read) => Adopt.call({ input, read }))),
+      Node.bindPlanned(Node.capture({}, (cursor) => Round.child(cursor)))
+    ))
+})
+
 /** The owner and findings a repair corrects, checked against the native read; the plan's memory rides along. */
 export const repairContext = (
   { plan, previous, read }: typeof PrepareContext.payloadSchema.Type
@@ -495,16 +634,18 @@ export const ownerRepair = (
   return {
     index: context.index,
     ordinal,
-    memoryRevision,
-    ...(context.memory === undefined ? {} : { memory: context.memory }),
-    parent: ordinal === 0 ? context.implementation.parent : context.implementation.atoms[ordinal - 1]!,
-    change: {
-      ...context.owner,
-      atoms: [{
-        ...planned,
-        changeId: selection.changeId,
-        intent: `${planned.intent}\n\nCorrection: ${selection.intent}\n\n${findingsBlock(context.findings)}`
-      }]
+    request: {
+      memoryRevision,
+      ...(context.memory === undefined ? {} : { memory: context.memory }),
+      parent: ordinal === 0 ? context.implementation.parent : context.implementation.atoms[ordinal - 1]!,
+      change: {
+        ...context.owner,
+        atoms: [{
+          ...planned,
+          changeId: selection.changeId,
+          intent: `${planned.intent}\n\nCorrection: ${selection.intent}\n\n${findingsBlock(context.findings)}`
+        }]
+      }
     }
   }
 }
@@ -512,6 +653,7 @@ export const ownerRepair = (
 export const correctionLayers = Layer.mergeAll(
   feedbackLayers,
   Interpreter.layer(CorrectPlan),
+  Interpreter.layer(CorrectChange),
   Interpreter.layer(Round),
   Interpreter.layer(RepairPass),
   Interpreter.layer(Recheck),
@@ -534,6 +676,7 @@ export const correctionLayers = Layer.mergeAll(
       return outcome
     })
   ),
+  Adopt.toLayer(({ input, read }) => policy(() => adoptChange(input, read))),
   PrepareContext.toLayer((input) => policy(() => repairContext(input))),
   PrepareRepair.toLayer((input) => policy(() => ownerRepair(input))),
   ReturnTip.toLayer((input) =>

@@ -253,15 +253,15 @@ test("a repair carries the plan's block from the correction context to the re-im
     selection: { changeId: owner.changeId, intent: "handle empty" },
     memoryRevision: "m"
   })
-  assert.deepEqual(repair.memory, memory)
-  assert.match(repair.change.atoms[0]!.intent, /Correction: handle empty/)
+  assert.deepEqual(repair.request.memory, memory)
+  assert.match(repair.request.change.atoms[0]!.intent, /Correction: handle empty/)
   // A plan without a block repairs without one.
   const { memory: _, ...legacy } = plan
   const bare = repairContext({ plan: legacy, previous, read } as never)
   assert.equal("memory" in bare, false)
   assert.equal(
     "memory" in
-      ownerRepair({ context: bare, selection: { changeId: owner.changeId, intent: "x" }, memoryRevision: "m" }),
+      ownerRepair({ context: bare, selection: { changeId: owner.changeId, intent: "x" }, memoryRevision: "m" }).request,
     false
   )
 })

@@ -179,6 +179,8 @@ or `changes-requested`. The higher-level [CorrectPlan](correction.md) workflow
 selects the earliest owning Change, preserves its native atom IDs, edits and
 restacks through JJ, and reruns checks for the invalidated suffix within a
 bounded round limit. Missing or stale evidence cannot count as validation.
+Its sibling `CorrectChange` repairs any Change already on the stack the same
+way, starting from that Change's findings instead of a plan.
 History cleanup, marking work vibed, appending to main and shipment still need
 subsequent ordinary workflow stages. A receipt schema alone does not prove that
 an arbitrary delegate performed a real test: deployment adapters must measure

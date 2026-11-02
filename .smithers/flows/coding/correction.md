@@ -142,6 +142,52 @@ assessment still requires every configured receipt and validates source commits
 and finding ownership. A partial early result is always `changes-requested`,
 never `validated`, vibed or shipped.
 
+## Correcting any Change on the stack
+
+`CorrectChange` repairs a Change that is already on the stack, whoever made
+it: an earlier request, another author's admitted stack, or the first red
+Change a slow check found. It needs no plan of its own.
+
+```ts
+const result = yield * CorrectChange.execute({
+  base, // the commit below the red Change
+  changes, // the red Change first, then every Change above it, up to the tip
+  findings, // the red Change's findings, measured on its current head
+  memoryRevision,
+  maxRounds: 2
+})
+```
+
+Each Change names its existing atoms by JJ change id and carries its checks.
+Its atoms' `writes` must be the paths the Change really changes: command checks
+receive them as the Change's files, and adoption cannot measure them.
+`coding/adopt-stack-change` reads the native history once and adopts the
+Changes as a `changes-requested` result whose first Change owns the findings.
+The correction then runs the ordinary repair round described above: select an
+atom of that Change, edit it in place, let JJ restack every Change above it,
+return the working copy to the tip, and rerun the fast and slow checks of the
+rewritten suffix before assessment. `maxRounds` counts repair passes here; the
+result type, stall breaker and bounds are `CorrectPlan`'s.
+
+Adoption carries no receipt, so every Change of the suffix is checked again on
+its new commit. It refuses, as `stale_revision`, a base that moved, an atom that
+is missing, conflicted or not linear on the commit below it, a suffix that stops
+below the workspace's tip (later Changes would be restacked but unchecked), and
+a finding measured on another commit than the red Change's current head. It
+refuses, as `invalid_request`, a finding owned by another Change, an atom
+without a JJ change id, a Change that declares no written paths, and a base that
+is itself one of the atoms.
+
+A repair recorded before its edit payload moved under `request` still decodes,
+so a pass that was in flight across the upgrade resumes.
+
+The test `coding-correct-change.test.ts` builds a real JJ stack of three
+Changes on a base, corrects the bottom one, and checks that every change id
+survives, the descendants sit on the new commits, the working copy is back at
+the tip, each Change's checks ran once on its new commit only, and a reopened
+host replays the result without editing again. The NativeCoding service in that
+test drives the jj command line; it is not the packaged workspace helper.
+
 ## Outcomes and evidence
 
 `CorrectionResult` is a private workflow output, not a new store:

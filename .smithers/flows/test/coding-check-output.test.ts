@@ -125,7 +125,7 @@ test("a failing check's wrong import reaches the repair's input, and the finding
     selection: { changeId: owner.changeId, intent: "import the right name" },
     memoryRevision: "m"
   })
-  const intent = repair.change.atoms[0]!.intent
+  const intent = repair.request.change.atoms[0]!.intent
   assert.ok(intent.startsWith("Export greet\n\nCorrection: import the right name\n\n"), intent)
   assert.match(
     intent,
