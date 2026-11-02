@@ -36,3 +36,9 @@ export const admissions = Metric.counter("smithers_issue_write_admissions", {
 export const submissionFailures = Metric.counter("smithers_issue_submission_failures", {
   description: "Failed comment recovery storage", incremental: true,
 })
+
+/** Repositories whose issues the device evicted once this person lost read access, by `status` (`sign_in`, `forbidden`). */
+export const evictions = Metric.counter("smithers_issue_access_evictions", {
+  description: "Repositories whose issues the device evicted after read access was lost, by status",
+  incremental: true,
+})

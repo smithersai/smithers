@@ -62,6 +62,7 @@ again by itself within about 10 seconds of coming back.
 `reconnect` ends every wait at once: each request waiting out the policy is
 sent now. It also restarts a stopped shape where it stopped, keeping its rows.
 Call it when the device comes back online, or when a person asks to try again.
+After `evict`, the shape's next request asks from the start (`offset=-1`).
 
 ## When a schedule ends
 

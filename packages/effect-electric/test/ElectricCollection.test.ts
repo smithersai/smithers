@@ -562,6 +562,37 @@ describe.skipIf(!electricUp)("sync status and the sync policy", () => {
     }
   )
 
+  test("evict drops every row at once; once its source answers again, the shape syncs from the start", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const { faults, collection: notes } = yield* faulty(notesOf(table))
+      const events = yield* record(notes)
+      yield* write({ id: "a", text: "one", n: 1 })
+      yield* notes.preload
+      yield* faults.refuse(403)
+      yield* write({ id: "b", text: "two", n: 2 })
+      yield* eventually(() => events.includes("Stopped:403"))
+      yield* notes.evict
+      // Once is enough: a second evict before the shape syncs again does nothing.
+      yield* notes.evict
+      const evicted = ids(yield* notes.toArray)
+      const sent = (yield* faults.sent).length
+      yield* faults.heal
+      yield* notes.reconnect
+      yield* eventually(() => notes.tanstack.has("a") && notes.tanstack.has("b"))
+      // A collection nobody read holds nothing to drop.
+      const unread = yield* notesOf(table)
+      yield* unread.evict
+      return {
+        evicted,
+        rows: ids(yield* notes.toArray).sort(),
+        unread: ids(yield* unread.toArray),
+        resent: (yield* faults.sent).slice(sent).map((url) => url.searchParams.get("offset"))[0]
+      }
+    }))
+    expect(result).toEqual({ evicted: [], rows: ["a", "b"], unread: [], resent: "-1" })
+  })
+
   test("a subscriber that starts after the shape stopped still hears it stopped", async () => {
     const events = await run(Effect.gen(function*() {
       const { table } = yield* scratchTable
@@ -1112,6 +1143,121 @@ describe.skipIf(!electricUp)("persisted", () => {
     expect(result.online).toEqual(["a", "b"])
     expect(result.resumed.handle).toBe(true)
     expect(result.resumed.offset).not.toBe("-1")
+  })
+
+  test("evict drops the rows from the device too, and the next program syncs the shape from the start", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      yield* write({ id: "a", text: "one", n: 1 })
+      const path = databaseFile()
+      const id = `notes-${crypto.randomUUID()}`
+      // The first program syncs and stores the row, is refused, and evicts what it held.
+      const first = yield* program(
+        path,
+        Effect.gen(function*() {
+          const faults = yield* ShapeSource.Faults
+          const notes = yield* persisted(table, id)
+          const events = yield* record(notes)
+          yield* notes.preload
+          yield* eventually(() => storedRows(path, id) === 1)
+          yield* faults.refuse(401)
+          yield* write({ id: "b", text: "two", n: 2 })
+          yield* eventually(() => events.includes("Stopped:401"))
+          yield* notes.evict
+          yield* eventually(() => storedRows(path, id) === 0)
+          return ids(yield* notes.toArray)
+        })
+      )
+      return {
+        first,
+        second: yield* program(
+          path,
+          Effect.gen(function*() {
+            const faults = yield* ShapeSource.Faults
+            const notes = yield* persisted(table, id)
+            yield* notes.restored
+            const restored = ids(yield* notes.toArray)
+            yield* notes.preload
+            yield* eventually(() => notes.tanstack.has("b"))
+            return {
+              restored,
+              synced: ids(yield* notes.toArray).sort(),
+              offset: (yield* faults.sent)[0]!.searchParams.get("offset")
+            }
+          })
+        )
+      }
+    }))
+    expect(result).toEqual({ first: [], second: { restored: [], synced: ["a", "b"], offset: "-1" } })
+  })
+
+  test("evict aborts a request in flight: a batch held on the way lands neither in memory nor on the device", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      yield* write({ id: "a", text: "one", n: 1 })
+      const path = databaseFile()
+      const id = `notes-${crypto.randomUUID()}`
+      return yield* program(
+        path,
+        Effect.gen(function*() {
+          const faults = yield* ShapeSource.Faults
+          const notes = yield* persisted(table, id)
+          yield* notes.preload
+          yield* eventually(() => storedRows(path, id) === 1)
+          // The long poll's answer, carrying "b", is held on a slow link while a sibling shape's refusal evicts, and so is
+          // every answer after it.
+          yield* faults.stall()
+          yield* write({ id: "b", text: "two", n: 2 })
+          yield* Effect.sleep("500 millis")
+          yield* notes.evict
+          // Still on the slow link: what the held answer carried never lands, and nothing is stored.
+          yield* Effect.sleep("500 millis")
+          const evicted = { rows: ids(yield* notes.toArray), stored: storedRows(path, id) }
+          // The link heals: the shape syncs again from the start, "b" included.
+          yield* faults.heal
+          yield* eventually(() => notes.tanstack.has("a") && notes.tanstack.has("b"))
+          return { evicted, rows: ids(yield* notes.toArray).sort() }
+        })
+      )
+    }))
+    expect(result).toEqual({ evicted: { rows: [], stored: 0 }, rows: ["a", "b"] })
+  })
+
+  test("a collection nobody read yet evicts what the device stored, offline too", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      yield* write({ id: "a", text: "one", n: 1 })
+      const path = databaseFile()
+      const id = `notes-${crypto.randomUUID()}`
+      yield* program(
+        path,
+        Effect.flatMap(persisted(table, id), (notes) => notes.preload).pipe(
+          Effect.andThen(eventually(() => storedRows(path, id) === 1))
+        )
+      )
+      // The next program, offline, evicts before anything reads the collection.
+      const evicted = yield* program(
+        path,
+        Effect.gen(function*() {
+          const notes = yield* persisted(table, id)
+          yield* notes.evict
+          yield* eventually(() => storedRows(path, id) === 0)
+          return ids(yield* notes.toArray)
+        }),
+        (switches) => switches.down()
+      )
+      const restored = yield* program(
+        path,
+        Effect.gen(function*() {
+          const notes = yield* persisted(table, id)
+          yield* notes.restored
+          return ids(yield* notes.toArray)
+        }),
+        (switches) => switches.down()
+      )
+      return { evicted, restored }
+    }))
+    expect(result).toEqual({ evicted: [], restored: [] })
   })
 
   test("a new schemaVersion syncs the shape again from the start", async () => {

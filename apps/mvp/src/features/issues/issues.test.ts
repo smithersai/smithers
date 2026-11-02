@@ -54,7 +54,7 @@ import {
 } from "./contract"
 import { Issues } from "./issues"
 import { IssueWrites } from "./writes"
-import { pendingActions, sends } from "./metrics"
+import { evictions, pendingActions, sends } from "./metrics"
 import { shapeRetries, shapeTransitions } from "./shapeSync"
 import { IssuesStore } from "./store"
 import {
@@ -488,7 +488,7 @@ describe("a comment", () => {
 })
 
 describe("loading", () => {
-  test("a cached issue stays visible through transport failures; session authority hides it", async () => {
+  test("a cached issue stays visible through transport failures; session authority evicts it", async () => {
     const runtime = openFaultyApp()
     runtimes.push(runtime)
     const tab = await tabOf(runtime)
@@ -513,7 +513,8 @@ describe("loading", () => {
     await runtime.runPromise(tab.store.routed().reconnect)
     await runtime.runPromise(Effect.flatMap(AuthStore, (auth) => auth.session.update(SESSION, (row) => { row.role = null })))
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false }), 5_000)
-    expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 31 })
+    // Authority refused the person: the cached issue leaves the device, and the page says Not found.
+    await until(() => expect(tab.issues.queries.item.toArray).toEqual([]))
     expect(currentPage()).toBe("missing")
     await runtime.runPromise(faults.refuse(503))
     await runtime.runPromise(tab.store.routed().reconnect)
@@ -714,6 +715,42 @@ describe("who reads a repository's issues", () => {
     await until(() => expect(later.issues.queries.publicList.isReady()).toBe(true), 3_000)
     await until(() => expect(access(later)).toMatchObject({ installed: true }))
     expect(listProps(later.issues.queries.publicList.toArray, undefined, access(later)).unknown).toBe(false)
+  }, WITHIN)
+})
+
+describe("a refusal evicts what the device holds", () => {
+  test("a visitor's cached public issue: once GitHub says the repository is private, the reload asks to sign in and the device forgets it", async () => {
+    const visitor = await open({}, null)
+    await Effect.runPromise(visitor.api.github.run(Store.recordRepository(REPO_ID, { githubId: 1, private: false })))
+    await server(visitor.api).seed(4, "Public issue")
+    await Effect.runPromise(visitor.api.github.run(Store.upsertComment(REPO_ID, 4, comment(41, "A public comment", "ben"), Date.now())))
+    // The visitor reads it on this device, which keeps it.
+    const host = nodeDevice({})
+    const first = openTab(visitor.api, { host })
+    await confirmedSession(first, "signed_out")
+    const reader = await tabOf(first)
+    await first.runPromise(readRepositoryRole(OWNER, NAME))
+    await reader.actions.open(OWNER, NAME, 4)
+    await until(() => expect(reader.issues.queries.item.toArray[0]).toMatchObject({ number: 4, title: "Public issue" }))
+    await until(() => expect(reader.comments().map(({ body }) => body)).toEqual(["A public comment"]))
+    const kept = [`issue-summaries:${REPO_ID}`, `issue-items:${REPO_ID}#4`, `issue-comments:${REPO_ID}#4`]
+    await until(() => expect(kept.map((id) => host.stored(id))).toEqual([1, 1, 1]))
+    await first.dispose()
+
+    // GitHub says the repository is private now. The reload restores the cached issue, ChatApi answers that a visitor
+    // may not read it, and the device forgets what it kept: the page asks to sign in, with nothing behind it.
+    await Effect.runPromise(visitor.api.github.run(Store.recordRepository(REPO_ID, { githubId: 1, private: true })))
+    const again = openTab(visitor.api, { host })
+    runtimes.push(again)
+    await confirmedSession(again, "signed_out")
+    const reloaded = await tabOf(again)
+    await reloaded.actions.open(OWNER, NAME, 4)
+    const access = () => reloaded.issues.queries.access.toArray[0]
+    await until(() => expect(access()).toMatchObject({ status: "sign_in" }))
+    expect(pageOf(reloaded.issues.queries.item.toArray[0], undefined, false, false, access())).toBe("sign_in")
+    await until(() => expect(kept.map((id) => host.stored(id))).toEqual([0, 0, 0]))
+    await until(() => expect([reloaded.issues.queries.item.toArray, reloaded.comments()]).toEqual([[], []]))
+    expect(reloaded.count(evictions, { status: "sign_in" })).toBe(1)
   }, WITHIN)
 })
 

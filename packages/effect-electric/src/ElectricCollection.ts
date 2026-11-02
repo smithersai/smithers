@@ -13,7 +13,10 @@
  * - a retry policy, an Effect `Schedule` (`SyncPolicy`), in place of
  *   Electric's own backoff, and `reconnect`, which ends every wait and
  *   restarts a stopped shape;
- * - `awaitTxId` and `awaitMatch`, which wait for Electric to deliver a write.
+ * - `awaitTxId` and `awaitMatch`, which wait for Electric to deliver a write;
+ * - `evict`, which drops every row the collection holds, on the device too,
+ *   and syncs the shape again from the start: for a reader who may no longer
+ *   read it.
  *
  * With `persist`, the collection keeps its rows and Electric's resume state
  * (the shape's handle and offset) on the device through
@@ -45,6 +48,7 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import { rowsIn } from "./internal/Batch.ts"
+import { fenced, type SyncControls } from "./internal/fence.ts"
 import { RequestFailed, ShapeSource } from "./ShapeSource.ts"
 import * as SyncPolicy from "./SyncPolicy.ts"
 
@@ -168,6 +172,16 @@ export interface ElectricCollection<A extends object>
   readonly currentApplied: Effect.Effect<void>
   /** Sends every request waiting out the sync policy now, and restarts a stopped shape where it stopped. */
   readonly reconnect: Effect.Effect<void>
+  /**
+   * For a reader who may no longer read the shape: drops every row the collection holds, in memory and, with
+   * `persist`, on the device, in one sync transaction that also stores Electric's `reset` resume state. Every request
+   * in flight is aborted, and nothing Electric was still applying lands. The shape then syncs again from the start,
+   * when its `ShapeSource` next answers: keep a reader's requests waiting with `ShapeSource.gated` while they may not
+   * read. The next collection made over the same id restores nothing. A persisted collection nobody read yet evicts
+   * what the device stored too. In a program that watches (`Persistence`'s `lock`), the rows go once the program that
+   * stores them evicts too. Span `electric.shape.evict`.
+   */
+  readonly evict: Effect.Effect<void>
   /**
    * Waits until Electric delivers transaction `txid` and TanStack DB has applied it. It follows this program's own
    * stream: a persisted collection whose rows another program stores (`Persistence`'s `lock`) gets them from the
@@ -449,38 +463,75 @@ export function make<A extends Row<unknown>, E = never, R = never>(
       syncMode: options.syncMode ?? "eager",
       ...Object.fromEntries(Object.entries(handlers).filter(([, persist]) => persist !== undefined))
     } as never)
+    // The sync controls TanStack DB hands Electric's sync, kept for `evict`: with `persist`, the persisted collection's,
+    // so what `evict` writes reaches the device too. A program that watches gets controls that drop every write.
+    let controls: Parameters<typeof electricOptions.sync.sync>[0] | undefined
+    // Electric's sync session over them, which `evict` ends and starts again; each writes through a fence that closes
+    // when it ends, so a batch an ended session is still applying never lands.
+    let session: Session | undefined
+    let sessions = 0
+    // Set by `evict` on a persisted collection nobody read yet: its stored rows go once TanStack DB restores them and
+    // hands Electric's sync its controls (`controlled`).
+    let evicting = false
+    const controlled = yield* Latch.make(false)
+    // One transaction: every row goes, and the stored resume state says to start over (Electric's own `reset`, newer
+    // than any it stored before now). TanStack DB guards all four alike: once the collection is cleaned up, each does
+    // nothing.
+    const truncate = (sync: SyncControls) => {
+      sync.begin()
+      sync.truncate()
+      sync.metadata?.collection.set("electric:resume", { kind: "reset", updatedAt: Date.now() + 1 })
+      sync.commit()
+    }
+    const startSession = (params: Parameters<typeof electricOptions.sync.sync>[0]) => {
+      const current = ++sessions
+      session = electricOptions.sync.sync(fenced({
+        ...params,
+        markReady: () => {
+          params.markReady()
+          // A watcher has no resume metadata to write. For an empty up-to-date batch Electric therefore accepts
+          // no transaction at all, then marks ready after processing its messages. This is its decoding receipt.
+          if (params.metadata === undefined && decoded !== accepted) {
+            decoded = accepted
+            certify()
+          }
+        },
+        commit: (signal) => {
+          const batch = accepted
+          const receipt = params.commit(signal)
+          // Even a watcher's dropped source commit proves decoding finished, but it can certify recovery only
+          // against metadata installed by the real collection. That installation may have arrived first.
+          const delivered = () => {
+            if (batch === accepted) decoded = batch
+            certify()
+          }
+          if (receipt === true) {
+            delivered()
+            return true
+          }
+          return withAcceptedReceipt(receipt.then(delivered), whenSyncAccepted(receipt))
+        }
+      }, () => current === sessions)) as Session
+    }
     const collectionOptions = {
       ...electricOptions,
       sync: {
         ...electricOptions.sync,
-        sync: (params: Parameters<typeof electricOptions.sync.sync>[0]) =>
-          electricOptions.sync.sync({
-            ...params,
-            markReady: () => {
-              params.markReady()
-              // A watcher has no resume metadata to write. For an empty up-to-date batch Electric therefore accepts
-              // no transaction at all, then marks ready after processing its messages. This is its decoding receipt.
-              if (params.metadata === undefined && decoded !== accepted) {
-                decoded = accepted
-                certify()
-              }
-            },
-            commit: (signal) => {
-              const batch = accepted
-              const receipt = params.commit(signal)
-              // Even a watcher's dropped source commit proves decoding finished, but it can certify recovery only
-              // against metadata installed by the real collection. That installation may have arrived first.
-              const delivered = () => {
-                if (batch === accepted) decoded = batch
-                certify()
-              }
-              if (receipt === true) {
-                delivered()
-                return true
-              }
-              return withAcceptedReceipt(receipt.then(delivered), whenSyncAccepted(receipt))
-            }
-          })
+        sync: (params: Parameters<typeof electricOptions.sync.sync>[0]) => {
+          controls = params
+          if (evicting) {
+            evicting = false
+            truncate(params)
+          }
+          startSession(params)
+          Latch.openUnsafe(controlled)
+          const first = session!
+          return {
+            ...first,
+            ...(first.loadSubset === undefined ? {} : { loadSubset: (demand: never) => session!.loadSubset!(demand) }),
+            cleanup: () => session!.cleanup()
+          }
+        }
       },
       onSyncCommit: ({ getMetadata }: Collection.SyncCommit) => {
         // Watchers install their writer's transactions through the database, not through their own source. Recovery
@@ -507,6 +558,22 @@ export function make<A extends Row<unknown>, E = never, R = never>(
         return Effect.sync(() => waitingForApplied.delete(ready))
       }),
       reconnect: Effect.andThen(woken.release, restart.open).pipe(Effect.asVoid),
+      evict: Effect.gen(function*() {
+        accepted = undefined
+        if (controls === undefined) {
+          // A persisted collection nobody read yet still holds what the device stored: starting it hands Electric's
+          // sync its controls once the stored rows are restored, and they go before the shape syncs from the start.
+          if (options.persist === undefined) return
+          evicting = true
+          collection.tanstack.startSyncImmediate()
+          return yield* controlled.await
+        }
+        // The session ends first, its requests aborted; then the rows and the resume state go, and a new session, whose
+        // start closes the old one's fence, syncs from the start (`offset=-1`) once its `ShapeSource` answers.
+        session!.cleanup()
+        truncate(controls)
+        startSession(controls)
+      }).pipe(Effect.withSpan("electric.shape.evict", { attributes: { "electric.collection": options.id } })),
       awaitTxId: (txid, timeout) => awaiting(() => utils.awaitTxId(txid, Duration.toMillis(timeout))),
       awaitMatch: (match, timeout) =>
         awaiting(() =>
@@ -544,6 +611,12 @@ const nameOf = (cause: Error): string => "_tag" in cause ? String(cause._tag) : 
 
 const syncFailed = (cause: Error): SyncFailed =>
   new SyncFailed(cause instanceof FetchError ? { cause, status: cause.status } : { cause })
+
+// What Electric's sync answers TanStack DB for one session: its cleanup, and in progressive mode its subset loads.
+interface Session {
+  readonly cleanup: () => void
+  readonly loadSubset?: (demand: never) => unknown
+}
 
 // A 2xx whose body isn't a whole batch: cut short, empty, or not Electric's.
 class Unreadable extends Data.TaggedError("Unreadable")<{ readonly status: number; readonly bytes: number }> {}

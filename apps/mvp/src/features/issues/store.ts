@@ -2,7 +2,7 @@ import { observeInitialApplied } from "../../shapeApplied"
 import { admissionReceipt } from "../../writeAdmission"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
-import { Cache, Clock, Context, Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect"
+import { Cache, Clock, Context, Effect, Exit, Layer, Metric, Option, Ref, Scope, Stream } from "effect"
 import { signedInChanges, signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
@@ -55,6 +55,7 @@ import {
   VIEW,
   WriteRow,
 } from "./schema"
+import { evictions } from "./metrics"
 import { observeIssueShape } from "./shapeSync"
 import { ISSUE_WRITE, IssueWrites, keep } from "./writes"
 
@@ -301,6 +302,32 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     })
 
   /**
+   * Each time the session and repository `id`'s role come to refuse this person (`sign_in` or `forbidden`, decisions
+   * 0079 and 0110), what the device holds of the repository's issues goes, from memory and from the device
+   * (`ElectricCollection.evict`): no page shows a row they may no longer read. Their shapes wait at the authority gate
+   * and, if the person may read again, sync from the start. This device's own writes stay: they are the person's.
+   * `logged` logs and counts it by why, never a row.
+   */
+  const evictWhenRefused = (
+    authority: Stream.Stream<Access["status"]>,
+    shapes: ReadonlyArray<{ readonly evict: Effect.Effect<void> }>,
+    logged: boolean,
+  ) =>
+    authority.pipe(
+      Stream.changesWith((a, b) => refused(a) === refused(b)),
+      Stream.filter(refused),
+      Stream.runForEach((status) =>
+        Effect.gen(function* () {
+          yield* Effect.all(shapes.map((shape) => shape.evict), { discard: true })
+          if (!logged) return
+          yield* Metric.update(Metric.withAttributes(evictions, { status }), 1)
+          yield* Effect.logWarning("issues.access.refused").pipe(Effect.annotateLogs({ feature: "issues", status }))
+        }).pipe(Effect.withSpan("issues.access.evict", { attributes: { status } }))
+      ),
+      Effect.forkIn(scope, { startImmediately: true }),
+    )
+
+  /**
    * Opens repository `id`'s shapes, its access follower and its delivered follower, in the store's scope. Each request
    * waits for the device's authority on `id` (decision 0110), never another repository's.
    */
@@ -376,6 +403,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       for (const [shape, source] of [[items, "item-summaries"], [sync, "github-sync"], [triageSettings, "triage-settings"]] as const) {
         yield* observeInitialApplied(shape, source, id.slice("github/".length)).pipe(Effect.forkIn(scope, { startImmediately: true }))
       }
+      yield* evictWhenRefused(authority, [items, details, comments, sync, triageSettings], true)
       // Availability follows the shape the page reads. A summary receipt never certifies a missing detail body.
       yield* followAvailability(items, access, id)
       yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "detail" }), Effect.forkIn(scope, { startImmediately: true }))
@@ -444,6 +472,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       row.status = status
       if (status !== "allowed") row.installed = false
     }))), Effect.forkIn(scope, { startImmediately: true }))
+    yield* evictWhenRefused(authority, [details, comments], false)
     yield* followAvailability(details, access, id)
     yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "item" }), Effect.forkIn(scope, { startImmediately: true }))
     const delivered = yield* deliveredQuery(requested, repo.items, comments, writes)
@@ -525,6 +554,9 @@ export const repoIdOf = (repo: string): string => {
   const [owner, name] = repo.split("/") as [string, string]
   return repoId(owner, name)
 }
+
+/** Whether authority refuses the person: sign in, or no role. */
+const refused = (status: Access["status"]): status is "sign_in" | "forbidden" => status === "sign_in" || status === "forbidden"
 
 /**
  * What one of a shape's sync events says of its availability, never of authority (decision 0110): it answered; it

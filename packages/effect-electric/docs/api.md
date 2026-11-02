@@ -71,6 +71,15 @@ A collection synced from an Electric shape, cleaned up when the scope closes.
   one watches (`Collection.make`): a watcher's rows come from the database, so
   its `awaitTxId` and `awaitMatch`, which follow its own stream, can answer
   before the row shows there. Wait for a row with `awaitRow` instead.
+- `evict` is for a reader who may no longer read the shape, such as one whose
+  role was taken away: every row the collection holds goes from memory and
+  from the device in one sync transaction, which also stores Electric's
+  `reset` resume state. Electric's sync session ends, its requests aborted,
+  and a batch it was still applying never lands; a new session syncs the
+  shape from the start (`offset=-1`) once its `ShapeSource` answers: a
+  `ShapeSource.gated` source keeps the reader's requests waiting until they
+  may read again. The next collection made over the same id restores nothing.
+  A watcher's rows go once the program storing them evicts too.
 
 ### `ElectricCollection.Options<A, E, R>`
 
@@ -109,6 +118,7 @@ interface ElectricCollection<A extends object>
 {
   readonly sync: Stream.Stream<SyncEvent>
   readonly reconnect: Effect.Effect<void>
+  readonly evict: Effect.Effect<void>
   readonly awaitTxId: (txid: number, timeout: Duration.Input) => Effect.Effect<void, AwaitTimeout | SyncFailed>
   readonly awaitMatch: (
     match: (change: Delivered<A>) => boolean,
@@ -126,6 +136,7 @@ included, and:
 | `applied`        | Installed sync transactions whose resume cursor matches the latest accepted response, after schema decoding; no replay.                                                       |
 | `currentApplied` | Waits for the latest accepted response's rows and resume cursor to be installed, including an empty batch. A late caller also observes an already installed current response. |
 | `reconnect`      | Sends every request waiting out the policy now, and restarts a stopped shape where it stopped.                                                                                |
+| `evict`          | Drops every row, in memory and, with `persist`, on the device, resets the stored resume state, and syncs the shape again from the start. Span `electric.shape.evict`.         |
 | `awaitTxId`      | Waits until Electric delivers Postgres transaction `txid` and TanStack DB has applied it.                                                                                     |
 | `awaitMatch`     | Waits until Electric delivers a change `match` accepts and TanStack DB has applied it. A change already applied and still among the collection's recent messages counts.      |
 
