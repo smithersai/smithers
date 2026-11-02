@@ -1,6 +1,6 @@
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Duration, Effect, FiberHandle, Layer, Option, Ref, type Schedule, Stream } from "effect"
+import { Context, Deferred, Duration, Effect, FiberHandle, Layer, Option, Ref, Stream, type Schedule } from "effect"
 import { codeOf } from "../../errorCode"
 import { RepoRole } from "../auth/schema"
 import { AuthStore } from "../auth/store"
@@ -129,6 +129,8 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     loader: yield* FiberHandle.make<void, never>(),
     /** Where requests an action starts run, closed with the store. */
     scope: yield* Effect.scope,
+    /** Each repository's role read on its way, by id: a second ask while one is out waits for it (`role`). */
+    roleReads: new Map<string, Deferred.Deferred<void>>(),
     origin: config.origin,
     confirmWithin: config.confirmWithin ?? Duration.seconds(15),
     pageWait: config.pageWait ?? Duration.seconds(1),

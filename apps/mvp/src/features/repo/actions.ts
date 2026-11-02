@@ -1,5 +1,5 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
-import { Clock, Effect, FiberHandle, Metric, Option, Stream } from "effect"
+import { Clock, Deferred, Effect, FiberHandle, Metric, Option, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { mayAsk } from "../auth/contract"
 import { nearestManifest } from "../generated/detect"
@@ -282,6 +282,25 @@ export const role = (owner: string, name: string, reuse = false) =>
         return yield* Effect.logInfo("repo.role").pipe(Effect.annotateLogs({ outcome: "kept", role: held.value.role ?? "none" }))
       }
     }
+    // A read already on its way answers this ask too: a cold repository page asked once as it warmed the page and again
+    // as it opened, two reads of up to a second each for one answer (e2e/issue-waterfall.spec.ts).
+    const inFlight = store.roleReads.get(id)
+    if (inFlight !== undefined) {
+      yield* Deferred.await(inFlight)
+      yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "joined", role: "unknown" }), 1)
+      return yield* Effect.logInfo("repo.role").pipe(Effect.annotateLogs({ outcome: "joined" }))
+    }
+    const read = yield* Deferred.make<void>()
+    store.roleReads.set(id, read)
+    yield* readRole(owner, name, id).pipe(
+      Effect.ensuring(Effect.andThen(Effect.sync(() => store.roleReads.delete(id)), Deferred.succeed(read, undefined))),
+    )
+  }).pipe(Effect.withSpan("repo.role"))
+
+/** Asks ChatApi who the person is on `owner/name` and keeps the answer, or the refusal, in the tab's `roles` row. */
+const readRole = (owner: string, name: string, id: string) =>
+  Effect.gen(function* () {
+    const store = yield* RepoStore
     const startedAt = yield* Clock.currentTimeMillis
     const result = yield* Effect.result((yield* RepoClient).role(owner, name))
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt
@@ -298,7 +317,7 @@ export const role = (owner: string, name: string, reuse = false) =>
     yield* Effect.logInfo("repo.role").pipe(
       Effect.annotateLogs({ outcome: "answered", role: held ?? "none", own, durationMs }),
     )
-  }).pipe(Effect.withSpan("repo.role"))
+  })
 
 /**
  * What GitHub says of `owner/name`, once this tab has loaded it: loads it unless this tab has it or is loading it, then

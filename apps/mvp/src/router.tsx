@@ -132,8 +132,8 @@ const enter = async (load: Load, warm: () => unknown, open: () => unknown): Prom
 }
 
 /**
- * A repository route's `enter`: warms and opens the page as `enter` does, and once it opens asks ChatApi who the person
- * is on the repository (decision 0079), for the header's links and the page's buttons.
+ * A repository route's `enter`: warms and opens the page as `enter` does. A navigation, not a preload, asks ChatApi who
+ * the person is on the repository (decision 0079) as it starts, for the header's links and the page's buttons.
  */
 const enterRepo = (
   context: RouterContext,
@@ -143,15 +143,14 @@ const enterRepo = (
   open: () => unknown,
 ): Promise<void> =>
   enter(load, async () => {
+    // A navigation asks once, as it starts, beside the page's warm reads; a warm that needs the role joins this read.
+    if (!load.preload) context.repo.actions.role(params.owner, params.repo, staysInRepository(shownPath(context), params))
     await warm()
     const canonical = await context.repo.actions.canonicalName(params.owner, params.repo)
     const fileAtTree = load.location.pathname.split("/")[3] === "tree" && await context.repo.actions.fileAtTree(params)
     const href = canonicalRepoHref(load.location, params, canonical, fileAtTree)
     if (href !== undefined) throw redirect({ href, replace: true })
-  }, () => {
-    context.repo.actions.role(params.owner, params.repo, staysInRepository(shownPath(context), params))
-    return open()
-  })
+  }, open)
 
 /**
  * The path of the page the router shows until this navigation resolves. A navigation that stays in its repository,

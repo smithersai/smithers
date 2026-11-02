@@ -691,6 +691,39 @@ describe("who the person is on a repository (decision 0079)", () => {
     await waitFor(() => expect(tab.count(roleAnswers, { outcome: "kept", role: "none" })).toBe(1))
     expect(asked).toBe(3)
   })
+
+  // A cold repository page asked twice, as it warmed and as it opened: two reads of up to a second for one answer
+  // (e2e/issue-waterfall.spec.ts). An ask while a read is out waits for that read.
+  test("an ask while the repository's role read is on its way joins it: one request, one answer", async () => {
+    const h = await repoHarness(server, { roles: "octocat/Spoon-Knife" })
+    let asked = 0
+    let answer!: () => void
+    const held = new Promise<void>((resolve) => (answer = resolve))
+    const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    )
+    const client = Layer.effect(
+      RepoClient,
+      Effect.map(Effect.service(RepoClient), (client) =>
+        RepoClient.of({
+          ...client,
+          role: (owner, name) => Effect.andThen(Effect.andThen(Effect.sync(() => void asked++), Effect.promise(() => held)), client.role(owner, name)),
+        })),
+    ).pipe(Layer.provide(real))
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, client })
+    tabs.push(tab)
+    tab.repo.actions.role("octocat", "Spoon-Knife")
+    await waitFor(() => expect(asked).toBe(1))
+    tab.repo.actions.role("octocat", "Spoon-Knife")
+    answer()
+    await waitFor(() => expect(tab.count(roleAnswers, { outcome: "joined", role: "unknown" })).toBe(1))
+    expect(rolesOf(tab)).toEqual([{ id: "github/octocat/spoon-knife", role: "member", own: true }])
+    expect(asked).toBe(1)
+    // Once it answered, the next ask reads again.
+    tab.repo.actions.role("octocat", "Spoon-Knife")
+    await waitFor(() => expect(asked).toBe(2))
+  })
 })
 
 describe("what GitHub says, cloned or not", () => {
