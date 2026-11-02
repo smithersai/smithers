@@ -6,6 +6,7 @@ import { cleanupLayers } from "./vibe-cleanup.ts"
 import Vibe from "./vibe-flow.ts"
 import { landerLayer } from "./vibe-lander.ts"
 import { backendLandingLayers, landingLayers } from "./vibe-landing.ts"
+import { stackPublicationLayers } from "./vibe-publication.ts"
 
 export { Vibe }
 export { VibeError } from "./vibe-flow.ts"
@@ -14,7 +15,8 @@ export { VibeError } from "./vibe-flow.ts"
 const sharedRegistration = Layer.mergeAll(
   vibeAdmissionLayers,
   cleanupLayers,
-  landerLayer
+  landerLayer,
+  stackPublicationLayers
 )
 
 export const vibeRegistration = Layer.merge(sharedRegistration, landingLayers)

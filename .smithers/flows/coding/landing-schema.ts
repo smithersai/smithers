@@ -180,3 +180,31 @@ export const GreenPrefixOutcome = Schema.Union([
   Schema.Struct({ status: Schema.Literal("unchanged"), main: CommitId, reason: Schema.String })
 ])
 export type GreenPrefixOutcome = typeof GreenPrefixOutcome.Type
+/** One Change of a published stack: its jj change id and the commit it is now. */
+const StackChange = Schema.Struct({ changeId: ChangeId, commitId: CommitId })
+/**
+ * Publish a rewritten stack to a branch: `tip` replaces the branch's head only
+ * while the remote still holds `expected` (`null`: no branch yet). `changes`
+ * names every Change the publication must carry, at its rewritten commit.
+ */
+export const StackPublicationInput = Schema.Struct({
+  branch: Schema.String.check(Schema.isMaxLength(200)),
+  /** The jj remote; `origin` when absent. */
+  remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  expected: Schema.NullOr(CommitId),
+  tip: CommitId,
+  changes: Schema.Array(StackChange).check(Schema.isMinLength(1), Schema.isMaxLength(1024))
+})
+export type StackPublicationInput = typeof StackPublicationInput.Type
+/**
+ * The confirmed publication: the remote branch was fetched back at `head` and
+ * carries every Change at its commit. `previous` is the `expected` head the lease replaced.
+ */
+export const StackPublication = Schema.Struct({
+  remote: Schema.String,
+  branch: Schema.String,
+  previous: Schema.NullOr(CommitId),
+  head: CommitId,
+  changes: StackPublicationInput.fields.changes
+})
+export type StackPublication = typeof StackPublication.Type

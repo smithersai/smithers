@@ -786,7 +786,8 @@ for (const mode of localModes) {
               ? { status: "open" as const, reason: "review required" }
               : { status: "merged" as const, mainCommitId: "9".repeat(40) }
           )
-        })
+        }),
+      publishStack: () => Effect.die("coding/vibe never publishes a stack")
     }
     const native = Layer.succeed(NativeCoding, {
       sourcePublication: "local-only",
@@ -970,7 +971,8 @@ test("advance green prefix: the durable flow hands the stack to the local lander
     abandon: refuse,
     openPull: refuse,
     observeChecks: refuse,
-    merge: refuse
+    merge: refuse,
+    publishStack: refuse
   }
   const hostOf = (landing: LocalLanding | BackendLanding) => {
     const host = ManagedRuntime.make(

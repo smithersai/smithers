@@ -356,7 +356,52 @@ replay after the move recomputes the range above the new `main` and answers
 `unchanged` with the reason (`no passed commit above main` or `<commit> failed
 above main`). `advanced` names `from`, `to`, and how many stack commits stay
 `above` the new `main`. The move is local; publishing `main` and the rewritten
-stack is separate.
+stack is separate: see [Publish a rewritten stack](#publish-a-rewritten-stack).
+
+## Publish a rewritten stack
+
+Correcting an earlier Change rewrites it and every Change above it, so the
+stack's branch on GitHub (for example `vibe`) must be replaced, not appended
+to. `coding/PublishStack` (`vibe-publication.ts`) does that through a local
+lander's `publishStack`:
+
+```ts
+PublishStack.execute({
+  branch: "vibe",
+  remote: "origin", // optional; `origin` when absent
+  expected: oldHead, // the branch head this publication replaces; null for a new branch
+  tip, // the rewritten stack's tip commit
+  changes: [{ changeId, commitId }] // every Change it must carry, at its rewritten commit
+})
+```
+
+1. Before any push, `tip` must be a visible local commit (an abandoned or
+   rewritten tip is refused) and every Change must be exactly its named commit
+   among the tip's ancestors. A Change named at its pre-rewrite commit, or
+   missing from the stack, is `invalid_receipt`.
+2. `jj git fetch` reads the branch. Unless the remote holds `expected` (or no
+   branch when `expected` is null), the publication is `evicted` and nothing is
+   pushed over.
+3. A stack with a conflicted commit that no branch on the remote already has
+   is `invalid_receipt`.
+4. `git push --force-with-lease=refs/heads/<branch>:<expected>` replaces the
+   branch, run against the repository's own Git store (`jj git root`). The
+   remote checks the lease itself, so a writer that moves the branch between
+   the fetch and the push evicts the publication. jj's push lease is not used:
+   it is the remote-tracking ref, which any fetch in the repository can move.
+5. The lander fetches the branch again and confirms that the remote head is the
+   tip and that every Change is its exact commit there. It then tracks the
+   remote bookmark and sets the local bookmark to the tip, as `jj git push`
+   would: jj treats an untracked remote bookmark as immutable, and a later
+   correction must still amend the stack in place. The `StackPublication`
+   receipt `{ remote, branch, previous, head, changes }` is that confirmation;
+   `previous` is the `expected` head the lease replaced.
+
+A tip the remote already holds is confirmed without a push, so a retry after a
+lost reply succeeds. The flow journals the receipt: replaying an execution
+answers the original confirmation even after the branch moved on. A host
+bound to the backend lander refuses with `unavailable`. The push sees only
+the lander's selected environment, as above.
 
 ## Separate product states
 

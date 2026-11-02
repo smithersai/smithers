@@ -46,7 +46,8 @@ const localLanding: LocalLanding = {
   abandon: unusedLanding,
   openPull: unusedLanding,
   observeChecks: unusedLanding,
-  merge: unusedLanding
+  merge: unusedLanding,
+  publishStack: unusedLanding
 }
 
 const revision = (name: string, parent?: string): Revision => ({

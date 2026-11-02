@@ -51,7 +51,10 @@ Local accepted results carry `provenance: "pending"`: the existing head reporter
 asynchronously projects native operation metadata into Plue's `jj_operations`.
 This service cannot assert that the cloud acknowledged it or that all rewritten
 descendants were published. The publisher exports only `@`; after an older edit
-the workflow must explicitly `edit` back to its known mythical tip. The installed
+the workflow must explicitly `edit` back to its known mythical tip. A local
+lander publishes a whole rewritten stack to a branch with a lease and confirms
+every rewritten Change on it: see
+[Publish a rewritten stack](finalization.md#publish-a-rewritten-stack). The installed
 identity names the effective workspace execution principal. The initiating user
 of a shared run remains separately attributed by the control journal, and is not
 overridden by arbitrary flow input.

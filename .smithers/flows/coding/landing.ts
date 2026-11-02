@@ -23,6 +23,8 @@ import {
   type MergeOutcome,
   type PullChecks,
   type QueuedAppend,
+  type StackPublication,
+  type StackPublicationInput,
   StackState
 } from "./landing-schema.ts"
 import { ChangeId, Resolved, SourcePublication } from "./native-schema.ts"
@@ -95,6 +97,12 @@ export interface LocalLanding {
   readonly observeChecks: (pull: LocalPull) => Effect.Effect<PullChecks, CodingError>
   /** Squash-merge the candidate with the cleanup summary, or report why GitHub keeps the pull request open. */
   readonly merge: (pull: LocalPull, prepared: LandingCandidate) => Effect.Effect<MergeOutcome, CodingError>
+  /**
+   * Push a rewritten stack's tip to a branch with a git lease on the expected old
+   * head, then fetch it back and confirm every Change is its exact commit there.
+   * A moved branch is `evicted`; a replay already published confirms.
+   */
+  readonly publishStack: (input: StackPublicationInput) => Effect.Effect<StackPublication, CodingError>
 }
 export class Landing extends Context.Service<Landing, BackendLanding | LocalLanding>()("coding/Landing") {}
 /** The backend adapter when this host has one; a local lander is absent here, so repository automation never lands through it. */

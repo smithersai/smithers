@@ -19,7 +19,8 @@ import type {
   LandingCandidate,
   LocalLander,
   LocalPull,
-  PullChecks
+  PullChecks,
+  StackPublicationInput
 } from "./landing-schema.ts"
 import { Landing, type LocalLanding } from "./landing.ts"
 import { NativeCoding } from "./native.ts"
@@ -492,6 +493,128 @@ export const make = (options: Options) =>
         }
         return { status: "open" as const, reason: bounded(merged.stderr.text) }
       })
+    /** The remote branch's head as last fetched, or `null` when the remote has no such branch. */
+    const remoteHead = (remote: string, branch: string) =>
+      jj([
+        "log",
+        "--no-graph",
+        "-r",
+        `remote_bookmarks(exact:${JSON.stringify(branch)}, exact:${JSON.stringify(remote)})`,
+        "-T",
+        "commit_id ++ \"\\n\""
+      ]).pipe(Effect.flatMap((result) => {
+        const found = lines(result.stdout.text)
+        return found.length <= 1
+          ? Effect.succeed(found[0] ?? null)
+          : Effect.fail(invalid(`${branch}@${remote} is conflicted on the remote (${found.length} heads)`))
+      }))
+    const fetchBranch = (remote: string, branch: string) =>
+      jj(["git", "fetch", "--remote", remote, "--branch", `exact:${branch}`])
+    /** Every Change is exactly its named commit among `head`'s ancestors: an old or missing version refuses. */
+    const carries = (head: string, changes: StackPublicationInput["changes"], where: string) =>
+      Effect.forEach(changes, ({ changeId, commitId }) =>
+        jj(["log", "--no-graph", "-r", `change_id(${changeId}) & ::${head}`, "-T", "commit_id ++ \"\\n\""]).pipe(
+          Effect.flatMap((result) => {
+            const found = lines(result.stdout.text)
+            if (found.length === 1 && found[0] === commitId) {
+              return Effect.void
+            }
+            return Effect.fail(invalid(
+              found.length === 0
+                ? `${changeId} is not ${where}`
+                : `${changeId} is ${found.join(", ")} ${where}, not ${commitId}`
+            ))
+          })
+        ), { discard: true })
+    const publishStack = (input: StackPublicationInput) =>
+      Effect.gen(function*() {
+        const remote = input.remote ?? "origin", branch = input.branch
+        if (
+          !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(branch) || /\.\.|\/\/|\/$|\.lock$|^refs\//.test(branch)
+        ) {
+          return yield* invalid("The publication branch must be a bookmark name")
+        }
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(remote)) {
+          return yield* invalid("The publication remote must be a remote name")
+        }
+        const commits = [
+          input.tip,
+          ...input.changes.map((entry) =>
+            entry.commitId
+          )
+        ]
+        if (
+          commits.some((id) =>
+            !commit.test(id)
+          ) || input.changes.some((entry) => !change.test(entry.changeId)) ||
+          (input.expected !== null && !commit.test(input.expected))
+        ) {
+          return yield* invalid("A publication needs full commit and change IDs")
+        }
+        // A full commit id still resolves an abandoned commit: an obsolete tip is not the stack.
+        if ((yield* one(input.tip, "if(hidden, \"hidden\", \"visible\")", "The stack tip")) === "hidden") {
+          return yield* invalid(`The stack tip ${input.tip} was rewritten or abandoned`)
+        }
+        yield* carries(input.tip, input.changes, "on the stack")
+        const where = `${branch}@${remote}`
+        yield* fetchBranch(remote, branch)
+        const observed = yield* remoteHead(remote, branch)
+        if (observed !== input.tip) {
+          if (observed !== input.expected) {
+            return yield* evicted(
+              `${where} moved from ${input.expected ?? "no branch"} to ${
+                observed ?? "no branch"
+              }; it is not pushed over`
+            )
+          }
+          const conflicted = yield* jj([
+            "log",
+            "--no-graph",
+            "-r",
+            `(::${input.tip} ~ ::remote_bookmarks(remote=exact:${JSON.stringify(remote)})) & conflicts()`,
+            "-T",
+            "commit_id ++ \"\\n\""
+          ])
+          if (lines(conflicted.stdout.text).length !== 0) {
+            return yield* invalid(`The stack has conflicted commits: ${bounded(conflicted.stdout.text, 1_024)}`)
+          }
+          // The lease is git's, on the exact expected head (empty: no branch), checked by the remote
+          // itself. jj's own push lease is its remote-tracking ref, which any fetch in this
+          // repository can move.
+          const gitDir = (yield* jj(["git", "root"])).stdout.text.trim()
+          const pushed = yield* run([
+            "git",
+            "--git-dir",
+            gitDir,
+            "push",
+            "--porcelain",
+            `--force-with-lease=refs/heads/${branch}:${input.expected ?? ""}`,
+            remote,
+            `${input.tip}:refs/heads/${branch}`
+          ], gitMinutes)
+          if (pushed.exitCode !== 0) {
+            return yield* /stale info|\[rejected\]|non-fast-forward|fetch first/i.test(
+                `${pushed.stdout.text}\n${pushed.stderr.text}`
+              )
+              ? evicted(`${where} moved during publication; it is not pushed over`)
+              : unavailable(`git push refused: ${bounded(pushed.stderr.text, 1_024)}`)
+          }
+        }
+        // Confirmation reads the remote again, not anything local.
+        yield* fetchBranch(remote, branch)
+        const published = yield* remoteHead(remote, branch)
+        if (published !== input.tip) {
+          const message = `${where} is ${published ?? "absent"} after publication, not ${input.tip}`
+          // Another writer moved or deleted it after the push.
+          return yield* evicted(message)
+        }
+        yield* carries(published, input.changes, `on ${where}`)
+        // Track it, as a jj push would: jj treats an untracked remote bookmark as immutable, and a
+        // later correction must still amend the published stack in place.
+        yield* jj(["bookmark", "track", branch, "--remote", remote])
+        yield* jj(["bookmark", "set", branch, "-r", published, "--allow-backwards"])
+        return { remote, branch, previous: input.expected, head: published, changes: input.changes }
+      })
     const service: LocalLanding = {
       kind: options.kind,
       prepare,
@@ -500,7 +623,8 @@ export const make = (options: Options) =>
       abandon,
       openPull,
       observeChecks,
-      merge
+      merge,
+      publishStack
     }
     return service
   })
