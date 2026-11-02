@@ -82,9 +82,9 @@
       "default": "./src/app-operations/index.ts"
     },
     "./app-operations/wiki": {
-      "types": "./src/app-operations/wiki.d.vibe.ts",
-      "import": "./src/app-operations/wiki.vibe",
-      "default": "./src/app-operations/wiki.vibe"
+      "types": "./src/app-operations/wiki.ts",
+      "import": "./src/app-operations/wiki.ts",
+      "default": "./src/app-operations/wiki.ts"
     },
     "./app-operations/http": {
       "types": "./src/app-operations/http.d.vibe.ts",

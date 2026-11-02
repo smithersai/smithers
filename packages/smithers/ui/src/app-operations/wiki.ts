@@ -3,22 +3,20 @@
  * World to Wiki (2026-09-07). Only what a person reads or types says Wiki;
  * the GUI keeps its `world` ids so persisted sessions load unchanged.
  */
-import { NoInput, operation } from "./index.ts"
+import { Schema } from "effect"
+import { NoInput, operation } from "./index"
 
 /** The product name of Smithers' understanding of a repository. */
 export const WIKI_DISPLAY_NAME = "Wiki"
 
 /** Why `wiki.heading` is the human's alone: it scrolls their editor, which is focus. */
-export const WIKI_HEADING_USER_ONLY_REASON =
-  "scrolling the open note's editor to a heading is the human's viewport gesture; the agent reads a note with wiki.open"
+export const WIKI_HEADING_USER_ONLY_REASON = "scrolling the open note's editor to a heading is the human's viewport gesture; the agent reads a note with wiki.open"
 
 /** Why `wiki.attach` is the human's alone: the file comes from their own file dialog. */
-export const WIKI_ATTACH_USER_ONLY_REASON =
-  "the file comes from the human's own file dialog; a model has no file to give"
+export const WIKI_ATTACH_USER_ONLY_REASON = "the file comes from the human's own file dialog; a model has no file to give"
 
 /** Why `wiki.ask` is the human's alone: the question is their turn, as the composer is. */
-export const WIKI_ASK_USER_ONLY_REASON =
-  "the question is the human's turn; the model is already the turn, and asking would nest one — it reads a page with wiki.open"
+export const WIKI_ASK_USER_ONLY_REASON = "the question is the human's turn; the model is already the turn, and asking would nest one — it reads a page with wiki.open"
 
 /** Why answering the delete confirmation is the human's alone. */
 const CONFIRM_ANSWER_REASON = "a confirm-dialog answer is the human's"
@@ -29,35 +27,11 @@ const Space = Schema.Literals(["public", "private"])
 export const wikiSurfaceOperations = [
   operation({
     name: "wiki",
-    slash: "/wiki",
-    cli: ["wiki", "show"],
-    journey: ["J8"],
-    group: "Wiki",
-    visibility: "core",
-    actors: ["person", "app_agent", "external_agent"],
-    minimumRole: "member",
-    http: { method: "GET", path: "/api/repos/{owner}/{repo}/wiki", query: {} },
-    summary: "Open the wiki",
-    agent: "run",
-    input: Schema.Struct({
-      operation: Schema.optional(Schema.Literal("proposal")),
-      id: Schema.optional(Schema.NonEmptyString),
-      owner: Schema.optional(Schema.NonEmptyString),
-      repo: Schema.optional(Schema.NonEmptyString),
-    }),
-    grammar: (args?: string) => {
-      if (!args?.trim()) return { payload: {} }
-      try {
-        return { payload: JSON.parse(args) }
-      } catch {
-        return { error: "Enter a JSON object" }
-      }
-    },
-    form: {
-      fields: { operation: { hidden: true }, id: { hidden: true }, owner: { hidden: true }, repo: { hidden: true } },
-      args: payload => JSON.stringify(payload),
-    },
-  }),
+     slash: "/wiki", cli: ["wiki","show"], journey: ["J8"], group: "Wiki", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: { method: "GET", path: "/api/repos/{owner}/{repo}/wiki", query: {} }, summary: "Open the wiki",
+    agent: "run", input: Schema.Struct({ operation: Schema.optional(Schema.Literal("proposal")), id: Schema.optional(Schema.NonEmptyString), owner: Schema.optional(Schema.NonEmptyString), repo: Schema.optional(Schema.NonEmptyString) }),
+    grammar: (args?: string) => { if (!args?.trim()) return { payload: {} }; try { return { payload: JSON.parse(args) } } catch { return { error: "Enter a JSON object" } } },
+    form: { fields: { operation: { hidden: true }, id: { hidden: true }, owner: { hidden: true }, repo: { hidden: true } }, args: payload => JSON.stringify(payload) }
+  })
 ] as const
 
 /** The `wiki.*` operations: notes, repository Wiki pages and their confirmations. */
@@ -74,7 +48,7 @@ export const wikiOperations = [
     agentReason: WIKI_ASK_USER_ONLY_REASON,
     args: "<question>",
     form: { submitLabel: "Ask", fields: { question: { label: "Question" } } },
-    input: Schema.Struct({ question: Schema.String }),
+    input: Schema.Struct({ question: Schema.String })
   }),
   operation({
     /* The stack refreshes the Wiki; this door asks for it now and is the Retry of a failed refresh. */
@@ -85,63 +59,60 @@ export const wikiOperations = [
     confirm: "refresh the repository Wiki",
     input: Schema.Struct({ repo: Schema.NonEmptyString }),
     /* Typed owner/repo, with the loaded repositories offered: the grammar reads only that shape. */
-    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text", label: "Repository" } } },
+    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text", label: "Repository" } } }
   }),
   operation({
     name: "wiki.cloud",
     summary: "Browse the repository Wiki",
     args: "<owner/repo> [page] [--space public|private]",
     input: Schema.Struct({ repo: Schema.String, page: Schema.optional(Schema.Number), space: Schema.optional(Space) }),
-    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" }, space: { hidden: true } } },
+    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" }, space: { hidden: true } } }
   }),
   operation({
     name: "wiki.cloud.open",
     summary: "Open a collaborative repository Wiki page in the conversation",
     args: "<slug> <owner/repo> [--space public|private]",
     input: Schema.Struct({ slug: Schema.String, repo: Schema.String, space: Schema.optional(Space) }),
-    form: { fields: { space: { hidden: true } } },
+    form: { fields: { space: { hidden: true } } }
   }),
   operation({
     name: "wiki.sync",
     summary: "Refresh a cloud Wiki page and retry its saved edits",
     args: "<documentId>",
-    input: Schema.Struct({ documentId: Schema.String }),
+    input: Schema.Struct({ documentId: Schema.String })
   }),
   operation({
     name: "wiki.edit",
     summary: "Edit a Wiki page as Markdown",
     args: "<documentId> <JSON Markdown string>",
     input: Schema.Struct({ documentId: Schema.String, body: Schema.String }),
-    form: {
-      fields: { body: { label: "Markdown" } },
-      args: (payload) => `${payload.documentId} ${JSON.stringify(payload.body)}`,
-    },
+    form: { fields: { body: { label: "Markdown" } }, args: (payload) => `${payload.documentId} ${JSON.stringify(payload.body)}` }
   }),
   operation({
     name: "wiki.card.select",
     summary: "Select a page in an embedded Wiki card",
     hidden: true,
     args: "<cardId> <documentId>",
-    input: Schema.Struct({ cardId: Schema.String, documentId: Schema.String }),
+    input: Schema.Struct({ cardId: Schema.String, documentId: Schema.String })
   }),
   operation({
     name: "wiki.card.view",
     summary: "Show a Wiki page outline or its Markdown document",
     hidden: true,
     args: "<cardId> <outline|read|document>",
-    input: Schema.Struct({ cardId: Schema.String, view: Schema.Literals(["outline", "read", "document"]) }),
+    input: Schema.Struct({ cardId: Schema.String, view: Schema.Literals(["outline", "read", "document"]) })
   }),
   operation({
     name: "wiki.new-note",
     summary: `Create a ${WIKI_DISPLAY_NAME} note`,
-    input: NoInput,
+    input: NoInput
   }),
   operation({
     name: "wiki.select",
     summary: `Open a ${WIKI_DISPLAY_NAME} note`,
     hidden: true,
     args: "<documentId>",
-    input: Schema.Struct({ documentId: Schema.String }),
+    input: Schema.Struct({ documentId: Schema.String })
   }),
   /*
    * The vault kit's three reads (Librarian L5; wiki.open is the citation
@@ -152,19 +123,19 @@ export const wikiOperations = [
     name: "wiki.open",
     summary: `Open a ${WIKI_DISPLAY_NAME} note by path or title`,
     args: "<path>",
-    input: Schema.Struct({ path: Schema.String }),
+    input: Schema.Struct({ path: Schema.String })
   }),
   operation({
     name: "wiki.backlinks",
     summary: "Notes that link to a note, and where it links out",
     args: "<path>",
-    input: Schema.Struct({ path: Schema.String }),
+    input: Schema.Struct({ path: Schema.String })
   }),
   operation({
     name: "wiki.graph",
     summary: `The ${WIKI_DISPLAY_NAME} link graph, whole or around one note`,
     args: "[path]",
-    input: Schema.Struct({ path: Schema.optional(Schema.String) }),
+    input: Schema.Struct({ path: Schema.optional(Schema.String) })
   }),
   operation({
     /* Scrolling the human's own viewport is a focus gesture; a model reads a note with wiki.open. */
@@ -174,7 +145,7 @@ export const wikiOperations = [
     agent: "never" as const,
     agentReason: WIKI_HEADING_USER_ONLY_REASON,
     args: "<line> [cardId]",
-    input: Schema.Struct({ line: Schema.String, cardId: Schema.optional(Schema.String) }),
+    input: Schema.Struct({ line: Schema.String, cardId: Schema.optional(Schema.String) })
   }),
   operation({
     name: "wiki.delete",
@@ -182,18 +153,9 @@ export const wikiOperations = [
     visibility: "in-card",
     summary: `Delete a ${WIKI_DISPLAY_NAME} note`,
     agent: "confirm",
-    http: {
-      method: "DELETE",
-      path: "/api/repos/{owner}/{repo}/wiki/{documentId}",
-      query: { visibility: "visibility" },
-    },
+    http: { method: "DELETE", path: "/api/repos/{owner}/{repo}/wiki/{documentId}", query: { visibility: "visibility" } },
     args: "<documentId>",
-    input: Schema.Struct({
-      documentId: Schema.String,
-      owner: Schema.optional(Schema.String),
-      repo: Schema.optional(Schema.String),
-      visibility: Schema.optional(Schema.Literals(["public", "private"])),
-    }),
+    input: Schema.Struct({ documentId: Schema.String, owner: Schema.optional(Schema.String), repo: Schema.optional(Schema.String), visibility: Schema.optional(Schema.Literals(["public", "private"])) })
   }),
   operation({
     /* Deleting a note asks first; a model may ASK and may never answer for the human. */
@@ -202,7 +164,7 @@ export const wikiOperations = [
     hidden: true,
     agent: "never" as const,
     agentReason: CONFIRM_ANSWER_REASON,
-    input: NoInput,
+    input: NoInput
   }),
   operation({
     name: "wiki.delete.cancel",
@@ -210,7 +172,7 @@ export const wikiOperations = [
     hidden: true,
     agent: "never" as const,
     agentReason: CONFIRM_ANSWER_REASON,
-    input: NoInput,
+    input: NoInput
   }),
   operation({
     /*
@@ -222,13 +184,13 @@ export const wikiOperations = [
     summary: "Show the public or the private part of the repository Wiki",
     args: "public|private [owner/repo]",
     input: Schema.Struct({ space: Space, repo: Schema.optional(Schema.String) }),
-    form: { fields: { repo: { hidden: true } } },
+    form: { fields: { repo: { hidden: true } } }
   }),
   operation({
     name: "wiki.view",
     summary: "Show the Wiki page rendered, or its editor",
     args: "read|edit",
-    input: Schema.Struct({ view: Schema.Literals(["read", "edit"]) }),
+    input: Schema.Struct({ view: Schema.Literals(["read", "edit"]) })
   }),
   operation({
     name: "wiki.cloud.new",
@@ -236,7 +198,7 @@ export const wikiOperations = [
     args: "<title> [owner/repo]",
     requires: ["signed-in"],
     input: Schema.Struct({ title: Schema.String, repo: Schema.optional(Schema.String) }),
-    form: { submitLabel: "Create", fields: { title: { label: "Title" }, repo: { hidden: true } } },
+    form: { submitLabel: "Create", fields: { title: { label: "Title" }, repo: { hidden: true } } }
   }),
   operation({
     name: "wiki.cloud.rename",
@@ -244,19 +206,8 @@ export const wikiOperations = [
     args: "<slug> <path> [owner/repo]",
     requires: ["signed-in"],
     /* The page's button carries its slug; the form asks for the one thing it lacks, the path. */
-    input: Schema.Struct({
-      slug: Schema.optional(Schema.String),
-      path: Schema.String,
-      repo: Schema.optional(Schema.String),
-    }),
-    form: {
-      submitLabel: "Rename",
-      fields: {
-        slug: { hidden: true },
-        path: { label: "Path", placeholder: "Guides/Start.md" },
-        repo: { hidden: true },
-      },
-    },
+    input: Schema.Struct({ slug: Schema.optional(Schema.String), path: Schema.String, repo: Schema.optional(Schema.String) }),
+    form: { submitLabel: "Rename", fields: { slug: { hidden: true }, path: { label: "Path", placeholder: "Guides/Start.md" }, repo: { hidden: true } } }
   }),
   operation({
     /* Deleting a page is consequential: a model may ask, the human confirms. Its history stays. */
@@ -265,19 +216,14 @@ export const wikiOperations = [
     args: "<slug> [owner/repo]",
     requires: ["signed-in"],
     confirm: "delete the Wiki page",
-    input: Schema.Struct({ slug: Schema.String, repo: Schema.optional(Schema.String) }),
+    input: Schema.Struct({ slug: Schema.String, repo: Schema.optional(Schema.String) })
   }),
   operation({
     name: "wiki.history",
     summary: "Show a Wiki page's history: every revision, renames and the deletion included",
     args: "<slug> [owner/repo] [--space public|private]",
-    input: Schema.Struct({
-      slug: Schema.String,
-      repo: Schema.optional(Schema.String),
-      page: Schema.optional(Schema.Number),
-      space: Schema.optional(Space),
-    }),
-    form: { fields: { repo: { hidden: true }, page: { hidden: true }, space: { hidden: true } } },
+    input: Schema.Struct({ slug: Schema.String, repo: Schema.optional(Schema.String), page: Schema.optional(Schema.Number), space: Schema.optional(Space) }),
+    form: { fields: { repo: { hidden: true }, page: { hidden: true }, space: { hidden: true } } }
   }),
   operation({
     /* The file comes from the human's own dialog (the gesture); a model has no file to give. */
@@ -288,7 +234,7 @@ export const wikiOperations = [
     args: "[path] [owner/repo]",
     requires: ["signed-in"],
     /* No slug: a new attachment's slug is derived from its path and bytes, an existing one is read from the index. */
-    input: Schema.Struct({ path: Schema.optional(Schema.String), repo: Schema.optional(Schema.String) }),
+    input: Schema.Struct({ path: Schema.optional(Schema.String), repo: Schema.optional(Schema.String) })
   }),
   operation({
     /*
@@ -300,6 +246,6 @@ export const wikiOperations = [
     summary: `Open the ${WIKI_DISPLAY_NAME} beside the chat`,
     agent: "never" as const,
     agentReason: "a surface switch; the model reads the wiki with wiki and wiki.cloud, which answer as embedded cards",
-    input: NoInput,
-  }),
+    input: NoInput
+  })
 ] as const
