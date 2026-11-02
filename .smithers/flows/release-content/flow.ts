@@ -34,7 +34,7 @@ import {
   RecordUi,
   Revise,
   Score
-} from "./workflow.ts"
+} from "./workflow.vibe"
 
 const emptyCopy = { text: "", claimIds: [] }
 type Requirements = Action.Requirement<

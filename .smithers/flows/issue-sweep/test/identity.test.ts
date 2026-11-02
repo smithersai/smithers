@@ -2,7 +2,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Effect, Exit } from "effect"
 import assert from "node:assert/strict"
 import test from "node:test"
-import { terminalIdentityConflict } from "../identity.ts"
+import { terminalIdentityConflict } from "../identity.vibe"
 
 for (const status of ["pending", "running", "suspended", "completed", "failed", "cancelled", "unknown"] as const) {
   test(`terminal identity recovery: ${status}`, async () => {

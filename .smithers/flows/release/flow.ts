@@ -3,7 +3,7 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import { type Action, Flow, HumanTask } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { Collect } from "../release-content/workflow.ts"
+import { Collect } from "../release-content/workflow.vibe"
 import { ReleaseError, ReleaseInput, ReleaseResult } from "../release-support/schema.ts"
 import {
   AuditDocs,
@@ -17,7 +17,7 @@ import {
   Validate,
   VerifyCandidate,
   WritePreparation
-} from "./workflow.ts"
+} from "./workflow.vibe"
 
 type Requirements = Action.Requirement<
   (

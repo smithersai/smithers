@@ -23,7 +23,7 @@ import { capacity, perAccount, type Pools, readPools } from "./accounts.ts"
 import { configureDiskReaper, DiskAdmission, diskLayer, makeSettledWorkspaceReaper, workspaceBytes } from "./disk.ts"
 import { api, issue as readIssue, openIssues } from "./github.ts"
 import { HostFailed, repository, run, tail, workspaces } from "./host.ts"
-import { terminalIdentityConflict } from "./identity.ts"
+import { terminalIdentityConflict } from "./identity.vibe"
 import { landChange, LandFailed } from "./land.ts"
 import {
   cachePath,
