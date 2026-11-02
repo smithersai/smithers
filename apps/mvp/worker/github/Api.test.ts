@@ -37,6 +37,15 @@ import { comments, items, REPOSITORY, reset, rolesThatRead, signedIn, sql, write
 import { app, delivery, githubHarness, member, sign, WEBHOOK_SECRET } from "./test/harness.ts"
 import { type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
+/**
+ * Whether `requestedAtMs` is the start of a reconcile bucket some moment from `asked` to `answered` falls in. A test
+ * reads the clock around its request, never again at its assertion: a request just before a 5-minute boundary asked
+ * with the earlier bucket (2026-11-02, a landing run at 22:24:41Z).
+ */
+const isBucketBetween = (requestedAtMs: number, asked: number, answered: number) =>
+  reconcileBucketStart(requestedAtMs) === requestedAtMs &&
+  requestedAtMs >= reconcileBucketStart(asked) && requestedAtMs <= reconcileBucketStart(answered)
+
 const runtime = testFile("github_api")
 
 beforeAll(async () => {
@@ -888,14 +897,15 @@ describe("the shapes", () => {
   test("a read of stale issues starts github/Reconcile once per 5 minutes; fresh ones start nothing", async () => {
     const h = await githubHarness(runtime)
     // The read answers once the start is admitted: it is recorded before the response, with no waiting after it.
+    const readAt = Date.now()
     expect((await shape(h, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+    const answered = Date.now()
     expect(h.starts.map((start) => start.flow)).toEqual(["github/Reconcile"])
-    expect(h.starts[0]!.executionId).toBe(reconcileExecutionId(REPOSITORY.id, Date.now()))
     // Every read in the bucket asks with the bucket's start, so their starts are one intent.
-    expect(h.starts[0]!.payload).toEqual({
-      repo: `${REPOSITORY.owner}/${REPOSITORY.name}`,
-      requestedAtMs: reconcileBucketStart(Date.now()),
-    })
+    const requested = (h.starts[0]!.payload as { readonly requestedAtMs: number }).requestedAtMs
+    expect(h.starts[0]!.payload).toEqual({ repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, requestedAtMs: requested })
+    expect(isBucketBetween(requested, readAt, answered)).toBe(true)
+    expect(h.starts[0]!.executionId).toBe(reconcileExecutionId(REPOSITORY.id, requested))
     expect(h.line("github.reconcile.start").map((line) => ({ level: line.level, ...line.annotations }))).toMatchObject([
       { level: "INFO", repoId: REPOSITORY.id, outcome: "started", durationMs: expect.any(Number) },
     ])
@@ -1066,20 +1076,25 @@ describe("the shapes", () => {
       // A Member of acme/home, whose role on acme/gadgets is GitHub's read there.
       const h = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: { ...member(person.personId, person.sessionId), role: "member", login: "maya" } })
       h.github.roles.set("maya", "read")
+      const asked = Date.now()
       const listed = await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")
       expect([listed.status, values(listed.rows).map((row) => row.title)]).toEqual([200, ["Gadget"]])
       await expect.poll(() => h.starts.map((start) => start.payload), { timeout: 10_000 }).toEqual([
-        { repo: "acme/gadgets", requestedAtMs: reconcileBucketStart(Date.now()) },
+        { repo: "acme/gadgets", requestedAtMs: expect.any(Number) },
       ])
+      const gadgetsAt = (h.starts[0]!.payload as { readonly requestedAtMs: number }).requestedAtMs
+      expect(isBucketBetween(gadgetsAt, asked, Date.now())).toBe(true)
       for (const route of [COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, CHECKS_SHAPE_ROUTE]) {
         expect([route, (await shapeOf(h, route, "acme/gadgets")).status]).toEqual([route, 200])
       }
       // Without `?repo=`, the deployment's own.
+      const homeAsked = Date.now()
       expect(values((await shape(h, ITEMS_SHAPE_ROUTE)).rows).map((row) => row.title)).toEqual(["Home"])
       expect(h.starts.map((start) => start.payload)).toEqual([
-        { repo: "acme/gadgets", requestedAtMs: reconcileBucketStart(Date.now()) },
-        { repo: "acme/home", requestedAtMs: reconcileBucketStart(Date.now()) },
+        { repo: "acme/gadgets", requestedAtMs: gadgetsAt },
+        { repo: "acme/home", requestedAtMs: expect.any(Number) },
       ])
+      expect(isBucketBetween((h.starts[1]!.payload as { readonly requestedAtMs: number }).requestedAtMs, homeAsked, Date.now())).toBe(true)
       // Admitting one repository never suppresses another, and both completed buckets remain cached.
       expect((await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")).status).toBe(200)
       expect((await shape(h, ITEMS_SHAPE_ROUTE)).status).toBe(200)
