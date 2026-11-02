@@ -239,7 +239,7 @@
   "dependencies": {
     "@smthrs/control": "1.0.0-rc.16",
     "@smthrs/database": "1.0.0-rc.16",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-60bd29302ace.tgz"
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-587937650a6b.tgz"
   },
   "peerDependencies": {
     "effect": "4.1.0"
@@ -261,8 +261,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-6ea57b82a1dd.tgz",
-    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-128dc7493736.tgz",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-ef39e96004c2.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-7159373887c8.tgz",
     "vitest": "5.0.0"
   }
 }

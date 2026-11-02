@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "zod": "4.6.7",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-60bd29302ace.tgz"
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-587937650a6b.tgz"
   },
   "devDependencies": {
     "@smthrs/control": "workspace:*",
@@ -23,6 +23,6 @@
     "bun-types": "^1.4.0",
     "effect": "4.1.0",
     "typescript": "~5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-6ea57b82a1dd.tgz"
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-ef39e96004c2.tgz"
   }
 }
