@@ -734,7 +734,10 @@ export class TestChatApi extends Context.Service<
             Effect.sync(() => void bugStarts.push({ flow: flow._tag, executionId, payload })),
         })
         const modelEngine = yield* Effect.cached(
-          buildEngine(ModelFlows.registration(database), { maxConnections: 2 }).pipe(Scope.provide(layerScope), Effect.orDie),
+          buildEngine(ModelFlows.registration(
+            database,
+            Layer.unwrap(ModelFlows.captureCredentials).pipe(Layer.provide(ConfigProvider.layer(config)), Layer.orDie),
+          ), { maxConnections: 2 }).pipe(Scope.provide(layerScope), Effect.orDie),
         )
         const modelStarter = Flows.FlowStarter.of({
           start: (flow, { executionId, payload }) =>

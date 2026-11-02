@@ -1,6 +1,6 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
-import { Clock, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
+import { Clock, type Config, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { CONNECTION_KINDS, PROTOCOLS } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
@@ -264,12 +264,25 @@ export const keepStep = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>)
       return { change }
     }).pipe((effect) => recorded("link", effect))
 
-/** Registers `model/Put`, `model/Delete` and `model/CodexLink` with their steps over `database`. */
-export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+/** What steps holding credentials read: `SecretKeys` and `Codex.CodexAuth`. */
+export type Credentials = Layer.Layer<SecretKeys | Codex.CodexAuth>
+
+/**
+ * `Credentials` from configuration, read now: run it where a program builds, as a step can't read Config
+ * (tests/worker-config.test.ts).
+ */
+export const captureCredentials: Effect.Effect<Credentials, Config.ConfigError> = Effect.gen(function* () {
+  const keys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig))
+  const codex = yield* Codex.config
+  return Layer.merge(Layer.succeed(SecretKeys, keys), Layer.succeed(Codex.CodexAuth, codex))
+})
+
+/** Registers `model/Put`, `model/Delete` and `model/CodexLink` with their steps over `database`, under `credentials`. */
+export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, credentials: Credentials) => {
   const implementation = steps(database)
   return Layer.mergeAll(
     Interpreter.layerWithImplementations(Put, Store_.toLayer(implementation.store)),
     Interpreter.layerWithImplementations(Delete, Erase.toLayer(implementation.erase)),
     Interpreter.layerWithImplementations(CodexLink, Layer.merge(Poll.toLayer(pollStep), Keep.toLayer(keepStep(database)))),
-  ).pipe(Layer.provide(Layer.orDie(SecretKeys.layerConfig)), Layer.provideMerge(Action.layerImplementations))
+  ).pipe(Layer.provide(credentials), Layer.provideMerge(Action.layerImplementations))
 }

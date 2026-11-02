@@ -75,7 +75,10 @@ export const engine = async (runtime: Runtime, options: EngineOptions = {}) => {
     ...options.config,
   })
   // A step runs with the context its implementation was registered in: the host's own, so these go in there.
-  const registration = ModelFlows.registration(options.database ?? scratch.database).pipe(
+  const registration = ModelFlows.registration(
+    options.database ?? scratch.database,
+    Layer.unwrap(ModelFlows.captureCredentials).pipe(Layer.provide(ConfigProvider.layer(config)), Layer.orDie),
+  ).pipe(
     Layer.provide(ConfigProvider.layer(config)),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch)),
   )

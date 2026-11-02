@@ -324,9 +324,10 @@ export const withFleet = <ROut, E, R, DE, DR, SR>(
 export const withPersonalModels = <ROut, E, R, DE, DR>(
   flows: Flows<ROut, E, R>,
   database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+  credentials: ModelFlows.Credentials,
 ) => ({
   flows: [...flows.flows, ModelFlows.Put, ModelFlows.Delete, ModelFlows.CodexLink],
-  registration: Layer.merge(flows.registration, ModelFlows.registration(database)),
+  registration: Layer.merge(flows.registration, ModelFlows.registration(database, credentials)),
 })
 
 /**

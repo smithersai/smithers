@@ -1,4 +1,4 @@
-import { Config, Effect, Redacted, Schema } from "effect"
+import { Config, Context, Effect, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 
 // A Codex subscription's credential (decision 0132): OpenAI's device-code sign-in, the flow the Codex CLI's
@@ -17,6 +17,9 @@ export const config = Effect.gen(function* () {
   const clientId = yield* Config.String("CODEX_OAUTH_CLIENT_ID").pipe(Config.withDefault("app_EMoamEEZ73f0CkXaXp7hrann"))
   return { origin, clientId }
 }).pipe(Effect.orDie)
+
+/** `config`, read where a program builds: a request or a step reading it would bind nothing (tests/worker-config.test.ts). */
+export class CodexAuth extends Context.Service<CodexAuth, { readonly origin: string; readonly clientId: string }>()("@smthrs/mvp/personal/CodexAuth") {}
 
 /** OpenAI's code a person types, and the handle polling it. */
 export const UserCode = Schema.Struct({
@@ -103,7 +106,7 @@ const decoded = <A, I>(schema: Schema.Codec<A, I>, json: Effect.Effect<unknown, 
 
 /** Asks OpenAI for a code the person types at {@link verificationUrl}. */
 export const requestCode = Effect.gen(function* () {
-  const { origin, clientId } = yield* config
+  const { origin, clientId } = yield* CodexAuth
   const answer = yield* jsonTo(`${origin}/api/accounts/deviceauth/usercode`, { client_id: clientId })
   if (answer.status !== 200) return yield* new CodexAuthFailed({ reason: "refused", status: answer.status })
   const code = yield* decoded(UserCode, answer.json)
@@ -140,7 +143,7 @@ const credentialOf = (tokens: typeof Tokens.Type, earlier: Credential | undefine
  */
 export const poll = (deviceAuthId: string, userCode: string, now: number) =>
   Effect.gen(function* () {
-    const { origin, clientId } = yield* config
+    const { origin, clientId } = yield* CodexAuth
     const answer = yield* jsonTo(`${origin}/api/accounts/deviceauth/token`, { device_auth_id: deviceAuthId, user_code: userCode })
     if (answer.status === 403 || answer.status === 404) {
       return yield* new CodexAuthFailed({ reason: "pending", status: answer.status })
@@ -163,7 +166,7 @@ export const poll = (deviceAuthId: string, userCode: string, now: number) =>
 /** `credential` refreshed at OpenAI. Its refresh token may rotate: the caller seals the answer before anything else. */
 export const refresh = (credential: Credential, now: number) =>
   Effect.gen(function* () {
-    const { origin, clientId } = yield* config
+    const { origin, clientId } = yield* CodexAuth
     const answer = yield* form(`${origin}/oauth/token`, {
       grant_type: "refresh_token",
       refresh_token: credential.refreshToken,

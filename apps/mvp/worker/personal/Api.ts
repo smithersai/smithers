@@ -132,6 +132,7 @@ export const make = <E, R>(
   // What the database layer needs, captured here, so a test's ledger write needs nothing of the request.
   const context = yield* Effect.context<R>()
   const defaults = yield* connectionDefaults
+  const codexAuth = yield* Codex.config
 
   /** `GET /api/shapes/personal-model`: the person's own row; sessions unreadable, 503. */
   const shape = ShapeProxy.make({
@@ -179,6 +180,7 @@ export const make = <E, R>(
       }
       if (connection.kind === "codex_subscription") {
         const refreshed = yield* Subscriptions.fresh(personId, keys.value, true).pipe(
+          Effect.provideService(Codex.CodexAuth, codexAuth),
           Effect.provide(database),
           Effect.provideContext(context),
           Effect.result,
@@ -413,7 +415,7 @@ export const make = <E, R>(
       if (yield* refusesPersonOnly(actor.value, "model")) return refuse(403, "forbidden")
       if (Option.isNone(keys)) return refuse(503, "off")
       if (op === "link") {
-        const device = yield* Codex.requestCode.pipe(Effect.result)
+        const device = yield* Codex.requestCode.pipe(Effect.provideService(Codex.CodexAuth, codexAuth), Effect.result)
         if (device._tag === "Failure") {
           fields.outcome = "refused"
           if (device.failure.status !== null) fields.providerStatus = device.failure.status

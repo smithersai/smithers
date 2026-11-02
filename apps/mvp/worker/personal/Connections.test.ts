@@ -61,6 +61,9 @@ import {
 
 const runtime = testFile("personal_connections")
 
+/** OpenAI's auth server for a step or refresh run alone, as `model/CodexLink`'s host captures it. */
+const codexAuth = Layer.effect(Codex.CodexAuth, Codex.config)
+
 /** The network `model/CodexLink`'s steps reach: each test scripts its own. */
 let network: typeof globalThis.fetch = globalThis.fetch
 let host: Awaited<ReturnType<typeof engine>>
@@ -599,6 +602,7 @@ describe("POST /api/me/model/codex", () => {
         Effect.provide(keyed),
         Effect.provideService(Action.CurrentInvocationKey, crypto.randomUUID()),
         Effect.provideService(FetchHttpClient.Fetch, fetch),
+        Effect.provide(codexAuth),
         Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ CODEX_AUTH_ORIGIN })),
       ) as Effect.Effect<unknown, unknown>)
     const failed = (exit: Exit.Exit<unknown, unknown>) => JSON.stringify(exit)
@@ -683,6 +687,7 @@ describe("POST /api/me/model/codex", () => {
       effect.pipe(
         Effect.provide(SecretKeys.layer(KEY)),
         Effect.provideService(FetchHttpClient.Fetch, openai.fetch),
+        Effect.provide(codexAuth),
         Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ CODEX_AUTH_ORIGIN })),
       ) as Effect.Effect<A, E>
     const kept = {
@@ -742,9 +747,10 @@ describe("POST /api/me/model/codex", () => {
 })
 
 describe("a Codex token kept fresh", () => {
-  const onNetwork = <A, E>(fetch: typeof globalThis.fetch, effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+  const onNetwork = <A, E>(fetch: typeof globalThis.fetch, effect: Effect.Effect<A, E, SqlClient.SqlClient | Codex.CodexAuth>) =>
     runtime.runPromiseExit(effect.pipe(
       Effect.provideService(FetchHttpClient.Fetch, fetch),
+      Effect.provide(codexAuth),
       Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ CODEX_AUTH_ORIGIN })),
     ))
   const expiring = () => credentialOf({ expiresAt: Date.now() + 60_000 })

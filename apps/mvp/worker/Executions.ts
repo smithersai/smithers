@@ -33,6 +33,7 @@ import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubHost from "./github/Host.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
+import * as ModelFlows from "./personal/ModelFlows.ts"
 import { PersonalModels } from "./personal/Models.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as TodoMachine from "./flows/TodoMachine.ts"
@@ -190,6 +191,8 @@ const object = <E, R>(
       // which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default (docs/features/spend-alerts.md).
       // A person's own model answers their `todo` runs, its key opened under SECRETS_KEY for each call
       // (docs/features/personal-model.md#todo-runs).
+      // What steps holding a person's credentials read: Config, here, as a step can't.
+      const credentials = yield* ModelFlows.captureCredentials.pipe(Effect.orDie)
       const seats = yield* ModelEndpoint.local(appDatabase, {
         ...(options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts }),
         ...(options.hostedModel === undefined ? {} : { hosted: options.hostedModel }),
@@ -320,7 +323,7 @@ const object = <E, R>(
             idleMs,
           ),
           appDatabase,
-        ), appDatabase), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(machineObjects, keep)),
+        ), appDatabase, credentials), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(machineObjects, keep)),
           appDatabase), appDatabase, repoId(options.homeRepository.owner, options.homeRepository.name), fleet, raiser, alertChannels)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
@@ -375,6 +378,7 @@ const object = <E, R>(
             const sandboxes = yield* BranchSandboxes.sandboxesOver(sandboxObjects, keep)
             return {
               ...built,
+              credentials,
               fleet: { settings: fleet, raise },
               overflow: (due: Overflow.Due) => Effect.asVoid(sandboxes.wake(Overflow.boxBranch(due.repoId))),
               cancel: (executionId: string) => executions.getByName(executionId).cancel().pipe(Effect.provideService(RuntimeContext, runtime)),

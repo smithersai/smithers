@@ -14,6 +14,7 @@ import { HostModel } from "@smthrs/model-host"
 import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Schedule, Schema, Scope, Stream } from "effect"
+import * as ModelFlows from "../personal/ModelFlows.ts"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
@@ -174,6 +175,12 @@ const setup = async (
     http: services.http,
     apiBaseUrl: services.apiBaseUrl,
     ...(options.cancel === undefined ? {} : { cancel: options.cancel }),
+    ...(options.secrets === true
+      ? { credentials: Layer.unwrap(ModelFlows.captureCredentials).pipe(
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ SECRETS_KEY: Redacted.value(KEY) }))),
+          Layer.orDie,
+        ) }
+      : {}),
     start: (flow, start) => Effect.sync(() => void starts.push({ flow: flow._tag, ...start })),
   }
   const agent = cells(...(options.agent ?? [WRITES_README]))
@@ -185,11 +192,6 @@ const setup = async (
     TodoBaseClosed.registration(todoServices),
   ).pipe(
     Layer.provide(machine.layer),
-    Layer.provide(
-      options.secrets === true
-        ? ConfigProvider.layer(ConfigProvider.fromUnknown({ SECRETS_KEY: Redacted.value(KEY) }))
-        : Layer.empty,
-    ),
   )
   const run = (start: Stack.AttemptStart) =>
     runFlow(Todo.Todo, start, registration, {

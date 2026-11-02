@@ -41,7 +41,9 @@ import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import * as DomainFlows from "./domains/DomainFlows.ts"
 import { DomainProvider } from "./domains/Provider.ts"
 import * as SecretFlows from "./secrets/SecretFlows.ts"
+import { CodexAuth } from "./personal/Codex.ts"
 import * as ModelFlows from "./personal/ModelFlows.ts"
+import { SecretKeys } from "./secrets/Keys.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import { openExecutionId } from "../src/features/terminal/contract.ts"
 import { cookie, SECRET, signInHarness } from "./test/signIn.ts"
@@ -807,6 +809,7 @@ describe("ExecutionHost over the compose Postgres", () => {
           database,
         ),
         database,
+        Layer.merge(SecretKeys.off, Layer.succeed(CodexAuth, { origin: "", clientId: "" })),
       ),
       database,
       DomainProvider.off,

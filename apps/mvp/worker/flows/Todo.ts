@@ -414,6 +414,8 @@ export interface Services<E, R> {
   readonly fleet?: Jobs.Alerts
   /** Wakes a repository's overflow box when a job waited past its overflow's wait (decision 0144). None unless set. */
   readonly overflow?: Parameters<typeof Jobs.layer>[2]
+  /** What a subscription's run opens and refreshes its token with. Without it, no subscription can run. */
+  readonly credentials?: TodoCli.Credentials
 }
 
 /** Admissions requested by TODO steps, by flow and outcome; ids are confined to logs and spans. */
@@ -1003,7 +1005,12 @@ export const registration = <E, R, IE, IR>(
       Settle.toLayer(implementation.settle),
       Fail.toLayer(implementation.fail),
       implement,
-      TodoCli.registration(services.database, commandSeconds ?? COMMAND_LIMIT_SECONDS, stepWaitSeconds ?? COMMAND_LIMIT_SECONDS),
+      TodoCli.registration(
+        services.database,
+        commandSeconds ?? COMMAND_LIMIT_SECONDS,
+        stepWaitSeconds ?? COMMAND_LIMIT_SECONDS,
+        services.credentials,
+      ),
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))
 }

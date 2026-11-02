@@ -13,6 +13,7 @@ import { Notification, NotificationEvent, NotificationQueue, SteerPayload } from
 import { FlowRuntime, type Flow } from "@smthrs/flow"
 import { Scrub } from "@smthrs/secrets"
 import { ConfigProvider, Context, Effect, Exit, Layer, Option, Redacted, Scope, Stream } from "effect"
+import * as ModelFlows from "../personal/ModelFlows.ts"
 import { SqlClient } from "effect/sql"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process"
@@ -243,6 +244,12 @@ const setup = async (
     tokens: services.tokens,
     http: services.http,
     apiBaseUrl: services.apiBaseUrl,
+    ...(options.secrets === true
+      ? { credentials: Layer.unwrap(ModelFlows.captureCredentials).pipe(
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ SECRETS_KEY: Redacted.value(KEY) }))),
+          Layer.orDie,
+        ) }
+      : {}),
     start: () => Effect.void,
     ...(options.fleet === undefined ? {} : { fleet: options.fleet }),
     ...(options.overflow === undefined ? {} : { overflow: options.overflow }),
@@ -250,11 +257,6 @@ const setup = async (
   const registration = Todo.registration(todoServices, TodoAgent.registration(local("agent"), db, Agent.layerSandbox))
     .pipe(
       Layer.provide(machines(github, options.run).layer),
-      Layer.provide(
-        options.secrets === true
-          ? ConfigProvider.layer(ConfigProvider.fromUnknown({ SECRETS_KEY: Redacted.value(KEY) }))
-          : Layer.empty,
-      ),
     )
   github.onPullOpened = (number) => void github.merge(number, "maya")
   const run = (start: Stack.AttemptStart, signal?: AbortSignal) =>

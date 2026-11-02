@@ -69,11 +69,18 @@ const rules = SYSTEM.filter((line) => !line.startsWith("Every capability")).map(
 export const promptFor = (payload: Schema.Struct.Type<typeof ImplementPayload>) =>
   [...rules, "", promptOf(payload)].join("\n")
 
-/** `todo/Route` and `todo/ImplementCli` over `database`, the host's `Machines` and `SecretKeys`. */
+/** What `todo/ImplementCli` opens and refreshes a subscription's token with. */
+export type Credentials = Layer.Layer<SecretKeys | Codex.CodexAuth>
+
+/** Secrets off: a subscription's run ends `no_credential`. */
+const noCredentials: Credentials = Layer.merge(SecretKeys.off, Layer.succeed(Codex.CodexAuth, { origin: "", clientId: "" }))
+
+/** `todo/Route` and `todo/ImplementCli` over `database`, the host's `Machines` and `credentials`. */
 export const registration = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   commandSeconds: number,
   stepWaitSeconds: number,
+  credentials: Credentials = noCredentials,
 ) =>
   Layer.mergeAll(
     Route.toLayer(({ ownerId }) =>
@@ -86,6 +93,7 @@ export const registration = <E, R>(
     Layer.unwrap(Effect.gen(function* () {
       const machines = yield* Machines
       const keys = yield* SecretKeys
+      const codexAuth = yield* Codex.CodexAuth
       const context = yield* Effect.context<R>()
       const inDatabase = <A, E2>(effect: Effect.Effect<A, E2, SqlClient.SqlClient>) =>
         effect.pipe(Effect.provide(database), Effect.provideContext(context))
@@ -101,7 +109,7 @@ export const registration = <E, R>(
           const { branch, ownerId } = machine.value
           // Only Codex's token: a Claude run doesn't depend on a Codex connection further down the list.
           if (agent === "codex") {
-            yield* inDatabase(Subscriptions.fresh(ownerId, keys.value)).pipe(
+            yield* inDatabase(Subscriptions.fresh(ownerId, keys.value).pipe(Effect.provideService(Codex.CodexAuth, codexAuth))).pipe(
               Effect.mapError((failure): AgentCliFailed | RouteUnavailable =>
                 failure instanceof Codex.CodexAuthFailed && failure.reason === "refused"
                   ? new AgentCliFailed({ reason: "no_credential" })
@@ -155,5 +163,5 @@ export const registration = <E, R>(
         )
       )
     })),
-  ).pipe(Layer.provide(Layer.orDie(SecretKeys.layerConfig)))
+  ).pipe(Layer.provide(credentials))
 
