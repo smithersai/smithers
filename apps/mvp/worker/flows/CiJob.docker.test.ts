@@ -32,7 +32,10 @@ const sha = present ? spawnSync("git", ["ls-remote", `https://github.com/${REPO}
   .stdout.split("\t")[0]! : "0".repeat(40)
 
 const containers = new Map<string, string>()
-const spans: Array<{ readonly command: string; readonly started: number; readonly ended: number }> = []
+// Each container announces it reached the concurrent step, then waits on its own stdin. Setup may take
+// arbitrarily different amounts of time; only these real running commands release one another.
+const ready = new Map<string, () => void>()
+const overlaps: Array<ReadonlyArray<string>> = []
 afterAll(() => {
   for (const id of containers.values()) docker(["rm", "-f", id])
 })
@@ -54,12 +57,20 @@ const dockerMachines = Layer.succeed(
         const run = call as typeof SandboxTools.Run.Type
         const ran = yield* Effect.promise(() =>
           new Promise<number>((resolve) => {
-            const started = Date.now()
-            const child = spawn("docker", ["exec", "--user", BOX_USER, "-w", WORKSPACE, id, "sh", "-c", run.command])
-            child.on("exit", (code) => {
-              spans.push({ command: run.command, started, ended: Date.now() })
-              resolve(code ?? 1)
+            const rendezvous = run.command === "sleep 3" || run.command === "sleep 3; exit 1"
+            const command = rendezvous ? `printf 'ci-ready\\n'; read release; ${run.command}` : run.command
+            const child = spawn("docker", ["exec", "-i", "--user", BOX_USER, "-w", WORKSPACE, id, "sh", "-c", command])
+            let output = ""
+            child.stdout.on("data", (chunk: Buffer) => {
+              output += chunk.toString()
+              if (!rendezvous || !output.includes("ci-ready\n") || ready.has(run.command)) return
+              ready.set(run.command, () => child.stdin.end("release\n"))
+              if (ready.size === 2) {
+                overlaps.push([...ready.keys()])
+                for (const release of ready.values()) release()
+              }
             })
+            child.on("exit", (code) => resolve(code ?? 1))
           })
         )
         return {
@@ -130,9 +141,8 @@ describe.skipIf(!present)("CI jobs in real containers", () => {
         ],
       },
     }))
-    // At once: the two three-second commands overlapped.
-    const [wait, fail] = [spans.find((span) => span.command === "sleep 3")!, spans.find((span) => span.command.startsWith("sleep 3;"))!]
-    expect(wait.started < fail.ended && fail.started < wait.ended).toBe(true)
+    // Both real commands were running, awaiting release, before either could finish.
+    expect(overlaps.map((commands) => [...commands].sort())).toEqual([["sleep 3", "sleep 3; exit 1"]])
     // Released: nothing the steps started is left running in either box.
     for (const id of containers.values()) {
       const left = docker(["exec", "--user", "0:0", id, "sh", "-c", "cat /proc/[0-9]*/comm 2>/dev/null"]).stdout
