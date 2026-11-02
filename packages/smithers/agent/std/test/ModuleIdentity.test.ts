@@ -23,8 +23,24 @@ const manifest = JSON.parse(Fs.readFileSync(Path.join(packageRoot, "package.json
 }
 const prefix = `${manifest.name}/`
 
+/** A source module: TypeScript, or the same module migrated to VibeLang. */
+const sourceExtensions = [".ts", ".vibe"] as const
+
+/** A source module's file, and not the declaration sidecar a `.vibe` module may emit. */
+const isSourceFile = (file: string): boolean =>
+  sourceExtensions.some((extension) => file.endsWith(extension)) && !file.endsWith(".d.vibe.ts")
+
+/** The one file, among the paths `exists` accepts, that holds the module `name`. */
+const sourceFile = (exists: (file: string) => boolean, name: string): string => {
+  const found = sourceExtensions.map((extension) => `${name}${extension}`).filter(exists)
+  if (found.length !== 1) {
+    throw new Error(`${name} needs one source module, found ${found.length === 0 ? "none" : found.join(" and ")}`)
+  }
+  return found[0]!
+}
+
 const sources: ReadonlyArray<string> = Fs.readdirSync(sourceRoot, { recursive: true, encoding: "utf8" })
-  .filter((file) => file.endsWith(".ts"))
+  .filter(isSourceFile)
   .map((file) => Path.join(sourceRoot, file))
   .sort()
 const read = (file: string): string => Fs.readFileSync(file, "utf8")
@@ -42,7 +58,8 @@ const version = (text: string): ReadonlyArray<number> => text.split("-")[0]!.spl
 const compare = (left: ReadonlyArray<number>, right: ReadonlyArray<number>): number =>
   left.map((part, index) => part - right[index]!).find((difference) => difference !== 0) ?? 0
 
-const barrel = parse(Path.join(sourceRoot, "index.ts"))
+const barrelFile = Path.join(sourceRoot, sourceFile((file) => Fs.existsSync(Path.join(sourceRoot, file)), "index"))
+const barrel = parse(barrelFile)
 const modules: ReadonlyArray<{ readonly name: string; readonly file: string }> = barrel.statements.flatMap((
   statement
 ) =>
@@ -58,7 +75,7 @@ const namespaces = Std as unknown as Readonly<Record<string, Readonly<Record<str
 
 describe("the barrel header", () => {
   it("names the package it is the entry point of", () => {
-    expect(prose(header(Path.join(sourceRoot, "index.ts")))).toContain(`\`${manifest.name}\``)
+    expect(prose(header(barrelFile))).toContain(`\`${manifest.name}\``)
   })
 })
 
@@ -155,5 +172,33 @@ describe("flow modules", () => {
         .map((name) => `${module.name}.${name}`)
     })
     expect(missing).toEqual([])
+  })
+})
+
+describe("source modules", () => {
+  it.each([
+    ["a .ts module", ["M.ts"], "M.ts"],
+    ["a .vibe module", ["M.vibe"], "M.vibe"]
+  ])("finds %s", (_case, files, expected) => {
+    expect(sourceFile((file) => files.includes(file), "M")).toBe(expected)
+  })
+
+  it.each([
+    ["a missing module", ["Other.ts"], "none"],
+    ["a module in both languages", ["M.ts", "M.vibe"], "M.ts and M.vibe"],
+    ["a declaration sidecar only", ["M.d.vibe.ts"], "none"],
+    ["a module in another language", ["M.js"], "none"]
+  ])("refuses %s", (_case, files, found) => {
+    expect(() => sourceFile((file) => files.includes(file), "M")).toThrow(`M needs one source module, found ${found}`)
+  })
+
+  it.each([
+    ["M.ts", true],
+    ["internal/M.vibe", true],
+    ["M.d.vibe.ts", false],
+    ["M.js", false],
+    ["README.md", false]
+  ])("reads %s as a source file: %s", (file, expected) => {
+    expect(isSourceFile(file)).toBe(expected)
   })
 })
