@@ -15,7 +15,7 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0-rc.1
  */
-export const fireRunIndex: void!unknown!SqlClient.SqlClient = () => {
-  const sql = SqlClient.SqlClient()
-  sql`CREATE INDEX IF NOT EXISTS flows_trigger_fires_run_id ON flows_trigger_fires (run_id)`()
+export const fireRunIndex: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE INDEX IF NOT EXISTS flows_trigger_fires_run_id ON flows_trigger_fires (run_id)`
 }

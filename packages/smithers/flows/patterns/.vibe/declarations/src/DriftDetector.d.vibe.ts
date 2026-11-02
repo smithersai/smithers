@@ -18,7 +18,7 @@
 import * as Flow from "@smthrs/flow/Flow";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { Member } from "./internal/Member.ts";
+import type { Member } from "../../../src/internal/Member.ts";
 import { OpaqueInput } from "./internal/Payload.vibe";
 /**
  * Configuration for {@link make}.

@@ -4,7 +4,7 @@
  * @since 1.0.0-rc.0
  */
 import type { FileBoundary } from "@smthrs/flow/FileBoundary";
-import type * as StepBoundary from "../StepBoundary.ts";
+import type * as StepBoundary from "../../../../src/StepBoundary.ts";
 /** A typed refusal leaves both the evidence and the workspace intact.
  * @category models
  * @since 1.0.0-rc.0

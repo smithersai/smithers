@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect";
-import type { Cron } from "./Cron.ts";
+import type { Cron } from "../../../src/Cron.ts";
 import type { CatchUp as Policy } from "./Schedule.vibe";
 import { TriggerError } from "./TriggerError.vibe";
 /**

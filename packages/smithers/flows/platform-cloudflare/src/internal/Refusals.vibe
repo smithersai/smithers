@@ -74,7 +74,7 @@ export const layerFileSystem: Layer.Layer<FileSystem.FileSystem> = FileSystem.la
  */
 export const layerChildProcessSpawner: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> = Layer.succeed(
   ChildProcessSpawner.ChildProcessSpawner,
-)(ChildProcessSpawner.make(() =>
+)(ChildProcessSpawner.make(effect () =>
   throw PlatformError.systemError({
     _tag: "NotFound",
     module: "ChildProcess",

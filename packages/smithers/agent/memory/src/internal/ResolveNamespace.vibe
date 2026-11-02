@@ -45,7 +45,7 @@ export const namespaceForBank = (
  * @category constructors
  * @since 0.1.0
  */
-export const resolveNamespace = (
+export const resolveNamespace = effect (
   input: Namespace.Namespace | string,
 ): { readonly namespace: Namespace.Namespace; readonly bank: string }!MemoryError => {
   if (typeof input !== "string") {
@@ -55,7 +55,7 @@ export const resolveNamespace = (
           code: "invalid_namespace",
           message: "memory namespace is invalid",
         }))
-      |> Effect.map(%, (namespace) => ({ namespace, bank: bankForNamespace(namespace) }))
+      |> try Effect.map(%, (namespace) => ({ namespace, bank: bankForNamespace(namespace) }))
   }
   if (input.length === 0) {
     throw new MemoryError({ code: "invalid_namespace", message: "memory bank must not be empty" })

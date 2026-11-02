@@ -20,8 +20,8 @@
  * @since 1.0.0
  */
 import { Effect, Schema } from "effect";
-import { IntegrationError } from "../core/IntegrationError.ts";
-import { GitHubClient } from "./GitHubClient.ts";
+import { IntegrationError } from "../../../../src/core/IntegrationError.ts";
+import { GitHubClient } from "../../../../src/github/GitHubClient.ts";
 /**
  * The states GitHub takes: running (`pending`), passed (`success`), failed
  * (`failure`), or could not run (`error`).

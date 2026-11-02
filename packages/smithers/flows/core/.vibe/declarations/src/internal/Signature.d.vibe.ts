@@ -9,9 +9,9 @@ import type * as Duration from "effect/Duration";
 import { type Pipeable } from "effect/Pipeable";
 import * as Schema from "effect/Schema";
 import type * as Types from "effect/Types";
-import type * as Effects from "../Effects.ts";
-import * as Node from "../Node.ts";
-import type * as Placement from "../Placement.ts";
+import type * as Effects from "../../../../src/Effects.ts";
+import * as Node from "../../../../src/Node.ts";
+import type * as Placement from "../../../../src/Placement.ts";
 import type * as Limits from "./Limits.vibe";
 /**
  * Runtime type identifier carried by flow values.

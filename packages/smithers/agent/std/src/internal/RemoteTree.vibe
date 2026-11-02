@@ -122,7 +122,7 @@ const info = (type: FileSystem.File.Type, size: number): FileSystem.File.Info =>
  */
 export const fileSystem = (tree: Tree, path: Path.Path): FileSystem.FileSystem => {
   const kindOf = (value: string) => tree.kinds.get(path.resolve(value))
-  const readFile = (value: string) => {
+  const readFile = effect (value: string) => {
     const bytes = tree.contents.get(path.resolve(value))
     if (bytes !== undefined) return bytes
     const type = types[kindOf(value) ?? "L"]
@@ -133,19 +133,19 @@ export const fileSystem = (tree: Tree, path: Path.Path): FileSystem.FileSystem =
     )
   }
   return FileSystem.makeNoop({
-    stat: (value) => {
+    stat: effect (value) => {
       const type = types[kindOf(value) ?? "L"]
       return type === undefined
         ? throw refusal("NotFound", "stat", value)
         : info(type, tree.contents.get(path.resolve(value))?.length ?? 0)
     },
-    readDirectory: (value) => {
+    readDirectory: effect (value) => {
       const kind = kindOf(value)
       if (kind === "d") return [...tree.children.get(path.resolve(value)) ?? []]
       const tag = kind === "u" ? "PermissionDenied" : kind === undefined || kind === "L" ? "NotFound" : "BadResource"
       throw refusal(tag, "readDirectory", value)
     },
-    readLink: (value) => {
+    readLink: effect (value) => {
       const kind = kindOf(value)
       return kind === "D" || kind === "F" || kind === "L"
         ? ""

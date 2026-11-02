@@ -6,7 +6,7 @@
  */
 import * as RequestExecutor from "@smthrs/model/RequestExecutor";
 import { Layer } from "effect";
-import * as MeteredDispatch from "../../../packages/smithers/src/internal/MeteredDispatch.ts";
+import * as MeteredDispatch from "../../../../../packages/smithers/src/internal/MeteredDispatch.ts";
 /** The proxy reads this header only from a flow host credential. */
 export declare const header = "X-Smithers-Native-Step";
 /** `executor`, naming the current dispatch on every request to `proxy`. */

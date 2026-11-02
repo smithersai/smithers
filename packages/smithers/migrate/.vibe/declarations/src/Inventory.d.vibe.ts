@@ -16,9 +16,9 @@
  */
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
-import * as Detect from "./Detect.ts";
-import * as Ts from "./internal/Ts.ts";
-import type { MigrateError } from "./MigrateError.ts";
+import * as Detect from "../../../src/Detect.ts";
+import * as Ts from "../../../src/internal/Ts.ts";
+import type { MigrateError } from "../../../src/MigrateError.ts";
 /**
  * One construct hit.
  *

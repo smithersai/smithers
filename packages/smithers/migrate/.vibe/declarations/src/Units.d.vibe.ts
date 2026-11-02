@@ -16,13 +16,13 @@
  * @since 1.0.0-rc.0
  */
 import * as Schema from "effect/Schema";
-import type { Detection, SpecifierContext } from "./Detect.ts";
-import * as FlowNames from "./internal/FlowNames.ts";
-import * as Ts from "./internal/Ts.ts";
+import type { Detection, SpecifierContext } from "../../../src/Detect.ts";
+import * as FlowNames from "../../../src/internal/FlowNames.ts";
+import * as Ts from "../../../src/internal/Ts.ts";
 import type { InventoryEntry } from "./Inventory.vibe";
-import * as Mapping from "./Mapping.ts";
-import type { PromptHint } from "./PromptHints.ts";
-import type { ZodHint } from "./ZodSchemaHints.ts";
+import * as Mapping from "../../../src/Mapping.ts";
+import type { PromptHint } from "../../../src/PromptHints.ts";
+import type { ZodHint } from "../../../src/ZodSchemaHints.ts";
 /**
  * What a unit migrates.
  *

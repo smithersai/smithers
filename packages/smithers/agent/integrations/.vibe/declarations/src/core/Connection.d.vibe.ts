@@ -19,7 +19,7 @@
  */
 import type { Credential } from "@smthrs/control/Credential";
 import { Effect, type Redacted, Schema } from "effect";
-import { IntegrationError } from "./IntegrationError.ts";
+import { IntegrationError } from "../../../../src/core/IntegrationError.ts";
 /**
  * The shape a connection id must have: lowercase, digits, and single hyphens.
  *

@@ -5,7 +5,7 @@
  */
 import type * as Effect from "effect/Effect";
 import type { EngineSubject } from "./EngineSubject.vibe";
-import type { ConformanceViolation, EngineSubjectError } from "./TestingError.ts";
+import type { ConformanceViolation, EngineSubjectError } from "../../../src/TestingError.ts";
 /**
  * A black-box assertion over an {@link EngineSubject} implementation.
  *

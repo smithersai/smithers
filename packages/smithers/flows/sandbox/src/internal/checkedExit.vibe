@@ -14,7 +14,7 @@ import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
  * @category constructors
  * @since 0.1.0
  */
-export const checked = <R extends { readonly exitCode: number }>(
+export const checked = effect <R extends { readonly exitCode: number }>(
   result: R,
   code: ProviderError["code"],
   message: string,

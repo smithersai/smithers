@@ -107,7 +107,7 @@ export declare const Envelope: Context.Service<Declaration, Declaration>;
  * @category matching
  * @since 1.0.0-rc.0
  */
-export type { PathIndex, PreparedEnvelope, Ranked } from "./internal/effects.ts";
+export type { PathIndex, PreparedEnvelope, Ranked } from "../../../src/internal/effects.ts";
 /**
  * The prepared matching API. See the type re-exports above for what each member
  * is for.
@@ -115,7 +115,7 @@ export type { PathIndex, PreparedEnvelope, Ranked } from "./internal/effects.ts"
  * @category matching
  * @since 1.0.0-rc.0
  */
-export { boundedEffects, indexPaths, maximumGlobs, maximumPathLength, narrowPrepared, overlapRanks, prepareEnvelope, rankPaths } from "./internal/effects.ts";
+export { boundedEffects, indexPaths, maximumGlobs, maximumPathLength, narrowPrepared, overlapRanks, prepareEnvelope, rankPaths } from "../../../src/internal/effects.ts";
 /**
  * A normalized description of the resources a flow or step may read and
  * write. Build one with {@link make}.

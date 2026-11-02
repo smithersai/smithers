@@ -29,7 +29,7 @@
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as ArtifactStore from "./ArtifactStore.ts";
+export * as ArtifactStore from "../../../src/ArtifactStore.ts";
 /**
  * @category metrics
  * @since 1.0.0-rc.0
@@ -40,34 +40,34 @@ export * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe";
  * @category services
  * @since 1.0.0-rc.0
  */
-export * as ArtifactBackupLease from "./ArtifactBackupLease.ts";
+export * as ArtifactBackupLease from "../../../src/ArtifactBackupLease.ts";
 /**
  * @category services
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as ArtifactSweep from "./ArtifactSweep.ts";
+export * as ArtifactSweep from "../../../src/ArtifactSweep.ts";
 /**
  * @category services
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as CombinedArtifacts from "./CombinedArtifacts.ts";
+export * as CombinedArtifacts from "../../../src/CombinedArtifacts.ts";
 /**
  * @category coordination
  * @since 1.0.0-rc.1
  */
-export * as FileLease from "./FileLease.ts";
+export * as FileLease from "../../../src/FileLease.ts";
 /**
  * Bytes under an immutable content address, over any Web Cache API backend.
  *
  * @category services
  * @since 1.0.0
  */
-export * as ImmutableCache from "./ImmutableCache.ts";
+export * as ImmutableCache from "../../../src/ImmutableCache.ts";
 /**
  * @category services
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as RemoteArtifacts from "./RemoteArtifacts.ts";
+export * as RemoteArtifacts from "../../../src/RemoteArtifacts.ts";

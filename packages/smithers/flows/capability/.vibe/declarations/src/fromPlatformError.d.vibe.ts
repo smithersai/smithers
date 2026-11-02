@@ -5,7 +5,7 @@
  */
 import { Option } from "effect";
 import type { PlatformError } from "effect/PlatformError";
-import type { PermissionErrorPayload } from "./PermissionErrorPayload.ts";
+import type { PermissionErrorPayload } from "../../../src/PermissionErrorPayload.ts";
 /**
  * Recovers the structured permission failure a `toPlatformError`
  * projection carries, so an attended surface can still reply to the request

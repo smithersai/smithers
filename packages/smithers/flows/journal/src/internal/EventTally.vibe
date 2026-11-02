@@ -31,6 +31,6 @@ export const Current = Context.Reference<ReadonlyArray<Accumulator>>("@smthrs/jo
  * @category internal
  * @since 1.0.0
  */
-export const record = (events: number): void!! => {
-  for (const accumulator of Current()) accumulator.events += events
+export const record = effect (events: number): void!! => {
+  for (const accumulator of try Current) accumulator.events += events
 }

@@ -29,7 +29,7 @@ export const describeFailure = (failure: unknown): string | undefined =>
  *
  * @since 1.0.0
  */
-export function raiseFailure(): Effect<never, SmithersError, infer R> {
+export effect function raiseFailure(): Effect<never, SmithersError, infer R> {
   throw makeFailure()
 }
 

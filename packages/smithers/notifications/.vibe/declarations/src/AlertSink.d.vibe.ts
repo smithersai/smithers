@@ -8,7 +8,7 @@
  * @since 1.0.0
  */
 import { Context, Effect, Layer, Schema } from "effect";
-import type { Alert } from "./AlertPolicy.ts";
+import type { Alert } from "../../../src/AlertPolicy.ts";
 /**
  * Why a sink did not take an alert.
  *

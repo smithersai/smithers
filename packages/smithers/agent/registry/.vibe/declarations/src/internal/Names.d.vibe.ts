@@ -5,7 +5,7 @@
  * @since 0.1.0
  */
 import * as Option from "effect/Option";
-import type { DiscoveryWarning } from "../Descriptor.ts";
+import type { DiscoveryWarning } from "../../../../src/Descriptor.ts";
 /**
  * Derives an owned flow name from directory segments relative to its source root.
  *

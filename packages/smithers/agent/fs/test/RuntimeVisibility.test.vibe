@@ -28,7 +28,7 @@ const invoker = FlowInvoker.make({
 /** Runs a program with the recording invoker. */
 effect function invoking<A, E>(program: Effect<A, E, FlowInvoker.FlowInvoker>): Effect<A, E, infer R> {
   provide FlowInvoker.FlowInvoker = invoker {
-    return try program()
+    return try program
   }
 }
 

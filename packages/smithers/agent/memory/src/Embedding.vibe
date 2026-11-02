@@ -72,7 +72,7 @@ const validate = (
   inputs: ReadonlyArray<string>,
   vectors: ReadonlyArray<ReadonlyArray<number>>,
 ): EmbedManyResponse!MemoryError.MemoryError => {
-  const invalid = () => throw unavailable("embedding provider returned an invalid batch")
+  const invalid = effect () => throw unavailable("embedding provider returned an invalid batch")
   const dimensions = vectors[0]?.length
   if (vectors.length !== inputs.length || dimensions === undefined || dimensions === 0) return invalid()
   const embeddings: Array<EmbedResponse> = []
@@ -100,7 +100,7 @@ export const make = (embedMany: EmbedMany): Service => {
   const service: Service = {
     embed: (input) =>
       service.embedMany([input])
-      |> Effect.flatMap(%, (response) => {
+      |> Effect.flatMap(%, effect (response) => {
         const embedding = response.embeddings[0]
         return embedding === undefined
           ? throw unavailable("embedding provider returned an empty batch")
@@ -128,7 +128,7 @@ export const layer = (embedMany: EmbedMany): Layer.Layer<Embedding> => Layer.suc
  * @category constructors
  * @since 0.1.0
  */
-export const makeNoop = (): Service => make(() => throw unavailable("no embedding provider is configured"))
+export const makeNoop = (): Service => make(effect () => throw unavailable("no embedding provider is configured"))
 
 /**
  * Provides the unavailable embedding implementation.

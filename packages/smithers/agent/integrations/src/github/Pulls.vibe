@@ -200,12 +200,12 @@ const invalid = (field: string, message: string, value?: unknown): IntegrationEr
     retryable: false,
   })
 
-const requireNumber = (number: number): number!IntegrationError =>
+const requireNumber = effect (number: number): number!IntegrationError =>
   Schema.is(IssueNumber)(number)
     ? number
     : throw invalid("number", "A GitHub pull request number must be a positive integer.", number)
 
-const requireSha = (field: string, sha: string): string!IntegrationError =>
+const requireSha = effect (field: string, sha: string): string!IntegrationError =>
   typeof sha === "string" && SHA.test(sha)
     ? sha
     : throw invalid(field, "A commit SHA must be 40 lowercase hex digits.", sha)
@@ -218,27 +218,27 @@ const incomplete = (operation: string): IntegrationError =>
     { operation, incomplete: true, retryable: false },
   )
 
-const requireWriteId = (writeId: string): string!IntegrationError =>
+const requireWriteId = effect (writeId: string): string!IntegrationError =>
   typeof writeId === "string" && WRITE_ID_PATTERN.test(writeId)
     ? writeId
     : throw invalid("writeId", "A write id must be 1 to 100 letters, digits and hyphens.", writeId)
 
-const requireMethod = (method: MergeMethod): MergeMethod!IntegrationError =>
+const requireMethod = effect (method: MergeMethod): MergeMethod!IntegrationError =>
   method === "squash" || method === "merge" || method === "rebase"
     ? method
     : throw invalid("method", "A merge method is squash, merge or rebase.", method)
 
-const requireUpdateMethod = (method: UpdateMethod): UpdateMethod!IntegrationError =>
+const requireUpdateMethod = effect (method: UpdateMethod): UpdateMethod!IntegrationError =>
   method === "merge" || method === "rebase"
     ? method
     : throw invalid("method", "A branch update method is merge or rebase.", method)
 
-const requireNodeId = (field: string, nodeId: string): string!IntegrationError =>
+const requireNodeId = effect (field: string, nodeId: string): string!IntegrationError =>
   typeof nodeId === "string" && /^[A-Za-z0-9_=-]{1,100}$/.test(nodeId)
     ? nodeId
     : throw invalid(field, "A pull request's node id is 1 to 100 letters, digits, - and _.", nodeId)
 
-const requireEvent = (event: ReviewEvent): ReviewEvent!IntegrationError =>
+const requireEvent = effect (event: ReviewEvent): ReviewEvent!IntegrationError =>
   event === "COMMENT" || event === "APPROVE" || event === "REQUEST_CHANGES"
     ? event
     : throw invalid("event", "A review event is COMMENT, APPROVE or REQUEST_CHANGES.", event)

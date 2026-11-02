@@ -29,19 +29,19 @@
  * @since 0.1.0
  * @slop
  */
-export * from "./Canonical.ts";
-export { CanonicalError, canonicalize } from "./Serializer.ts";
-export type { CanonicalErrorCode } from "./Serializer.ts";
+export * from "../../../src/Canonical.ts";
+export { CanonicalError, canonicalize } from "../../../src/Serializer.ts";
+export type { CanonicalErrorCode } from "../../../src/Serializer.ts";
 /**
  * Object-shape guard for values crossing a wire boundary.
  *
  * @since 1.0.0
  * @category guards
  */
-export { isRecord } from "./Record.ts";
+export { isRecord } from "../../../src/Record.ts";
 /**
  * Bounded descriptor-only admission for untrusted durable JSON.
  * @category validation
  * @since 1.0.0
  */
-export * as BoundedJson from "./BoundedJson.ts";
+export * as BoundedJson from "../../../src/BoundedJson.ts";

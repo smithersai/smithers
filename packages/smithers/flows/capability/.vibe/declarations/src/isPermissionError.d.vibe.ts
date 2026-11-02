@@ -3,7 +3,7 @@
  *
  * @since 0.1.0
  */
-import type { PermissionErrorPayload } from "./PermissionErrorPayload.ts";
+import type { PermissionErrorPayload } from "../../../src/PermissionErrorPayload.ts";
 /**
  * Refines an unknown value to data-only permission fields, not a yieldable
  * error instance. Own accessors and inherited fields are rejected; metadata

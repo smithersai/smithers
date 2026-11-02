@@ -11,7 +11,7 @@
  * @since 1.0.0-rc.0
  */
 import type * as Effect from "effect/Effect";
-import type { FlowsConfig, ResolvedConfig } from "./Config.ts";
+import type { FlowsConfig, ResolvedConfig } from "../../../src/Config.ts";
 import type { ParallelHook, WaterfallHook } from "./Hooks.vibe";
 /**
  * The shared kernel's base hook catalog.
@@ -49,7 +49,7 @@ export interface FlowsHooks {
  * @since 1.0.0-rc.0
  * @category config
  */
-export * as Config from "./Config.ts";
+export * as Config from "../../../src/Config.ts";
 /**
  * @since 1.0.0-rc.0
  * @category hooks
@@ -59,7 +59,7 @@ export * from "./Hooks.vibe";
  * @since 1.0.0-rc.0
  * @category startup
  */
-export * as Kernel from "./Kernel.ts";
+export * as Kernel from "../../../src/Kernel.ts";
 /**
  * @since 1.0.0-rc.0
  * @category models
@@ -79,7 +79,7 @@ export * as Plugins from "./Plugins.vibe";
  * @since 1.0.0-rc.0
  * @category resolution
  */
-export * as Resolve from "./Resolve.ts";
+export * as Resolve from "../../../src/Resolve.ts";
 /**
  * @since 1.1.0
  * @category binding
@@ -94,12 +94,12 @@ export * as Contribution from "./Contribution.vibe";
  * @since 1.1.0
  * @category host
  */
-export * as Host from "./Host.ts";
+export * as Host from "../../../src/Host.ts";
 /**
  * @since 1.1.0
  * @category schemas
  */
-export * as JsonSchema from "./JsonSchema.ts";
+export * as JsonSchema from "../../../src/JsonSchema.ts";
 /**
  * @since 1.1.0
  * @category keymap
@@ -109,12 +109,12 @@ export * as Keys from "./Keys.vibe";
  * @since 1.1.0
  * @category loading
  */
-export * as Load from "./Load.ts";
+export * as Load from "../../../src/Load.ts";
 /**
  * @since 1.1.0
  * @category manifest
  */
-export * as Manifest from "./Manifest.ts";
+export * as Manifest from "../../../src/Manifest.ts";
 /**
  * @since 1.1.0
  * @category keymap

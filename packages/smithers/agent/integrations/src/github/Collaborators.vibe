@@ -47,7 +47,7 @@ const PermissionAnswer = Schema.Struct({
   user: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.Number }))),
 })
 
-const requireLogin = (login: string): string!IntegrationError =>
+const requireLogin = effect (login: string): string!IntegrationError =>
   typeof login === "string" && LOGIN_PATTERN.test(login)
     ? encodeURIComponent(login)
     : throw new IntegrationError("invalid-config", "A GitHub login is not a valid account name.", {
@@ -83,7 +83,7 @@ export const permission = (
       undefined,
       { schema: PermissionAnswer },
     )
-      |> Effect.map(%, (answer) =>
+      |> try Effect.map(%, (answer) =>
         Option.some<Permission>({
           permission: answer.permission,
           roleName: answer.role_name,

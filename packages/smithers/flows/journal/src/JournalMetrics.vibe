@@ -125,11 +125,11 @@ export interface JournalTally {
  * @category metrics
  * @since 1.0.0
  */
-export const tally = <A, E, R>(
+export const tally = effect <A, E, R>(
   effect: A!E!R,
 ): [tally: JournalTally, result: A]!E!R => {
   const accumulator: EventTally.Accumulator = { events: 0 }
-  const open = EventTally.Current()
-  const result = Effect.provideService(effect, EventTally.Current, [...open, accumulator])
+  const open = try EventTally.Current
+  const result = try Effect.provideService(effect, EventTally.Current, [...open, accumulator])
   return [{ events: accumulator.events }, result]
 }

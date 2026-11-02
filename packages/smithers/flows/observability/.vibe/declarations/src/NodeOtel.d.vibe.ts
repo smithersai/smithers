@@ -6,8 +6,8 @@
 import type * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Endpoint from "./Endpoint.vibe";
-import * as Resource from "./Resource.ts";
-import type { Configuration as ResourceConfiguration } from "./Resource.ts";
+import * as Resource from "../../../src/Resource.ts";
+import type { Configuration as ResourceConfiguration } from "../../../src/Resource.ts";
 /**
  * Node OTLP/HTTP layer options.
  *

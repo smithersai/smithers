@@ -9,8 +9,8 @@
  * @since 1.0.0
  */
 import { Effect, Option } from "effect";
-import { IntegrationError } from "../core/IntegrationError.ts";
-import { GitHubClient } from "./GitHubClient.ts";
+import { IntegrationError } from "../../../../src/core/IntegrationError.ts";
+import { GitHubClient } from "../../../../src/github/GitHubClient.ts";
 /**
  * A person's or App's access to a repository.
  *

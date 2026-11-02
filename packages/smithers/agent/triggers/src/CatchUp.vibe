@@ -24,7 +24,7 @@ import { TriggerError } from "./TriggerError.vibe"
  * @category computation
  * @since 0.1.0
  */
-export const occurrences = (
+export const occurrences = effect (
   policy: Policy,
   maxCatchUp: number,
   lastFiredAt: Date | undefined,
@@ -42,18 +42,18 @@ export const occurrences = (
   if (policy === "none") return []
   if (policy === "one") {
     return CronSchedule.previousAtOrBefore(cron, now)
-      |> Effect.flatMap(%, (latest) =>
+      |> try Effect.flatMap(%, effect (latest) =>
         latest.getTime() <= lastFiredAt.getTime()
-          ? Effect.succeed<ReadonlyArray<Date>>([])
+          ? try Effect.succeed<ReadonlyArray<Date>>([])
           : maxCatchUp < 1
           ? throw new TriggerError({
             code: "catch_up_bound_exceeded",
             message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`,
           })
-          : Effect.succeed<ReadonlyArray<Date>>([latest]))
+          : try Effect.succeed<ReadonlyArray<Date>>([latest]))
   }
   return CronSchedule.occurrencesBetween(cron, lastFiredAt, now, maxCatchUp + 1)
-    |> Effect.flatMap(%, (missed) =>
+    |> try Effect.flatMap(%, effect (missed) =>
       missed.length > maxCatchUp
         ? throw new TriggerError({
           code: "catch_up_bound_exceeded",

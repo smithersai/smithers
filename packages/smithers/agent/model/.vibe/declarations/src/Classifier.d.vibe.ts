@@ -18,7 +18,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import * as Evaluator from "./Evaluator.ts";
+import * as Evaluator from "../../../src/Evaluator.ts";
 declare const ClassifierError_base: Schema.Class<ClassifierError, Schema.TaggedStruct<"flows/model/ClassifierError", {
     readonly code: Schema.Literals<readonly ["unconfigured", "unreachable", "refused", "empty", "timeout", "invalid_answer", "invalid_question"]>;
     readonly status: Schema.optional<Schema.Number>;

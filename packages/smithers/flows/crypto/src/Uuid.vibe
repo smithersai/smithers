@@ -48,11 +48,11 @@ const format = (bytes: Uint8Array): string => {
  * @category constructors
  * @since 1.0.0-rc.17
  */
-export const v5 = (
+export const v5 = effect (
   namespace: string,
   name: string,
 ): string!PlatformError.PlatformError!Crypto.Crypto => {
-  if (!isUuid(namespace)) return Effect.die(new TypeError("Uuid.v5: namespace is not a UUID"))
+  if (!isUuid(namespace)) return try Effect.die(new TypeError("Uuid.v5: namespace is not a UUID"))
   const nameBytes = encoder.encode(name)
   const input = new Uint8Array(16 + nameBytes.length)
   input.set(bytesOf(namespace), 0)

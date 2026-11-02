@@ -14,8 +14,8 @@
  */
 import * as Model from "@smthrs/model/Model";
 import { type Layer } from "effect";
-import type { FixtureStore } from "./FixtureStore.ts";
-import type { RecordedRequestLike } from "./ModelLike.ts";
+import type { FixtureStore } from "../../../src/FixtureStore.ts";
+import type { RecordedRequestLike } from "../../../src/ModelLike.ts";
 /**
  * What a cached model is built from.
  *

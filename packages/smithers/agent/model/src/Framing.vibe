@@ -71,7 +71,7 @@ const bounded = <E, R>(stream: Stream.Stream<Uint8Array, E, R>, sse: boolean, li
     let recordBytes = 0
     let lineBytes = 0
     let afterCr = false
-    return stream.pipe(Stream.mapEffect((chunk) => {
+    return stream.pipe(Stream.mapEffect(effect (chunk) => {
       responseBytes += chunk.byteLength
       if (responseBytes > responseLimit) {
         throw new ModelError({
