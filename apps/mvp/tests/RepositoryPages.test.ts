@@ -1,5 +1,4 @@
 import { createElement } from "react"
-import { FlowsUi } from "../src/features/flows-ui/flowsUi"
 import { HomePage } from "../src/features/home/components/HomePage"
 import { RepoHeader } from "../src/features/repo/components/RepoHeader"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
@@ -7,6 +6,7 @@ import { Context, Effect, Layer, Scope, Exit, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test, vi } from "vitest"
 import { renderRepositoryPages } from "./fixtures/repository-pages"
+import { appViews } from "../src/test/appViews"
 import { openTestApp, TestChatApi } from "../src/test/chatApi"
 import { put } from "../src/features/repo/actions"
 import { FAILURE_COPY } from "../src/features/repo/contract"
@@ -22,19 +22,10 @@ import { StackScreen } from "../src/screens/stack/StackScreen"
 import { SecretsScreen } from "../src/screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "../src/screens/repo-settings/RepoSettingsScreen"
 import { ActionsScreen } from "../src/screens/actions/ActionsScreen"
-import { Auth } from "../src/features/auth/auth"
-import { Repo } from "../src/features/repo/repo"
 import { Home } from "../src/features/home/home"
 import { Issues } from "../src/features/issues/issues"
-import { Todos } from "../src/features/todos/todos"
-import { Pulls } from "../src/features/pulls/pulls"
 import { Runs } from "../src/features/runs/runs"
 import { Secrets } from "../src/features/secrets/secrets"
-import { Attention } from "../src/features/attention/attention"
-import { Chat } from "../src/features/chat/chat"
-import { Spend } from "../src/features/spend/spend"
-import { Views } from "../src/features/views/views"
-import { PluginsUi } from "../src/plugins/ui"
 
 // Real feature collections and views. These are stored row fixtures, with no module mocks or intercepted requests.
 test("direct feature pages keep navigation, fence the deployment's own repository, and name GitHub instead of an unobservable write", async () => {
@@ -44,22 +35,7 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
     const homeContext = await app.runPromise(Layer.buildWithScope(HomeStore.layer, scope))
     const homeStore = Context.get(homeContext, HomeStore)
     const homeView = await app.runPromise(Effect.service(Home).pipe(Effect.provide(Home.layer), Effect.provideContext(homeContext)))
-    const services = await app.runPromise(Effect.all({
-      flows: Effect.service(FlowsUi),
-      auth: Effect.service(Auth),
-      repo: Effect.service(Repo),
-      home: Effect.succeed(homeView),
-      issues: Effect.service(Issues),
-      todos: Effect.service(Todos),
-      pulls: Effect.service(Pulls),
-      runs: Effect.service(Runs),
-      secrets: Effect.service(Secrets),
-      attention: Effect.service(Attention),
-      chat: Effect.service(Chat),
-      spend: Effect.service(Spend),
-      views: Effect.service(Views),
-      plugins: Effect.service(PluginsUi),
-    }))
+    const services = { ...await app.runPromise(appViews), home: homeView }
     const [repo, auth, todos] = await app.runPromise(Effect.all([Effect.service(RepoStore), Effect.service(AuthStore), Effect.service(TodosStore)]))
     const home = homeStore
     const api = await app.runPromise(Effect.service(TestChatApi))
@@ -102,7 +78,7 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
         expect(html).toContain('aria-label="Repository"')
         expect(html.match(/>Back to chat<\/a>/g)).toHaveLength(1)
         expect(html).toContain("smithersai / vibelang")
-        expect(html).toContain('aria-label="Repository pages"')
+        expect(html).toContain('aria-label="Repository sections"')
       }
       expect(html).toContain(text)
       expect(html).not.toContain("Ask about this repository")
@@ -211,11 +187,7 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
 test.each(["queued", "missing"])("a %s Create URL has honest progress and recovery", async (state) => {
   const app = openTestApp({ sessionLifecycle: false })
   try {
-    const services = await app.runPromise(Effect.all({
-      flows: FlowsUi, auth: Auth, repo: Repo, home: Home, issues: Issues, todos: Todos,
-      pulls: Pulls, runs: Runs, secrets: Secrets, attention: Attention, chat: Chat, spend: Spend, views: Views,
-      plugins: PluginsUi,
-    }))
+    const services = await app.runPromise(appViews)
     const store = await app.runPromise(Effect.service(IssuesStore))
     const auth = await app.runPromise(Effect.service(AuthStore))
     await services.issues.actions.open("octo", "hello")

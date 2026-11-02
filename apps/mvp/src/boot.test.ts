@@ -20,6 +20,7 @@ import { Commands } from "./features/commands/commands"
 import { Views } from "./features/views/views"
 import { Status } from "./features/status/status"
 import { Branch } from "./features/branch/branch"
+import { Transcript } from "./features/transcript/transcript"
 import { Terminal } from "./features/terminal/terminal"
 import { Issues } from "./features/issues/issues"
 import { Runs } from "./features/runs/runs"
@@ -109,6 +110,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(Status),
       Effect.service(Branch),
       Effect.service(Terminal),
+      Effect.service(Transcript),
       Effect.service(Issues),
       Effect.service(Runs),
       Effect.service(FlowsUi),

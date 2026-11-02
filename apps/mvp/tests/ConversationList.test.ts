@@ -5,12 +5,12 @@ import { SqlClient } from "effect/sql"
 import { act, createElement } from "react"
 import { createRoot } from "react-dom/client"
 import { afterAll, expect, test, vi } from "vitest"
+import { AppProviders } from "../src/AppProviders"
 import { AuthStore, SESSION } from "../src/features/auth/store"
-import { Branch } from "../src/features/branch/branch"
-import { BranchProvider } from "../src/features/branch/components/BranchContext"
 import { Commands } from "../src/features/commands/commands"
 import { ConversationsStore } from "../src/features/conversations/store"
 import { ConversationsScreen } from "../src/screens/conversations/ConversationsScreen"
+import { appViews } from "../src/test/appViews"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../src/test/chatApi"
 import { shaOf } from "../worker/test/branch"
 
@@ -31,7 +31,8 @@ test("Conversations renders tracked and Smithers-only branches and archives thro
   document.body.append(container)
   const view = createRoot(container)
   try {
-    const branch = await device.runPromise(Effect.service(Branch))
+    const views = await device.runPromise(appViews)
+    const { branch } = views
     await branch.actions.open("octo", "hello", "feature/one")
     const commands = await device.runPromise(Effect.service(Commands))
     const { session } = await device.runPromise(Effect.service(AuthStore))
@@ -60,7 +61,7 @@ test("Conversations renders tracked and Smithers-only branches and archives thro
     const router = createRouter({ isServer: false, routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/app/conversations"] }) })
     await act(async () => {
       await router.load()
-      view.render(createElement(BranchProvider, { value: branch }, createElement(RouterProvider, { router })))
+      view.render(createElement(AppProviders, { views }, createElement(RouterProvider, { router })))
     })
     const list = () => container.querySelector('ul[aria-label="Conversations"]')
     await vi.waitFor(async () => {

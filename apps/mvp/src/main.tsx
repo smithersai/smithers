@@ -11,36 +11,10 @@ import { RouterProvider } from "@tanstack/react-router"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { registerSW } from "virtual:pwa-register"
-import { ChatProvider } from "./AppContext"
+import { AppProviders } from "./AppProviders"
 import { type BootOptions, type Host, realServices, start } from "./boot"
-import { AttentionProvider } from "./features/attention/components/AttentionContext"
-import { AuthProvider } from "./features/auth/components/AuthContext"
-import { BranchProvider } from "./features/branch/components/BranchContext"
-import { CodeIntelProvider } from "./features/code-intel/components/CodeIntelContext"
-import { CommandsProvider } from "./features/commands/components/CommandsContext"
-import { IssuesProvider } from "./features/issues/components/IssuesContext"
-import { PullsProvider } from "./features/pulls/components/PullsContext"
-import { FilesProvider } from "./features/files/components/FilesContext"
-import { SecretsProvider } from "./features/secrets/components/SecretsContext"
-import { RepoProvider } from "./features/repo/components/RepoContext"
-import { RunsProvider } from "./features/runs/components/RunsContext"
-import { FlowsUiProvider } from "./features/flows-ui/components/FlowsUiContext"
-import { DocsProvider } from "./features/docs/components/DocsContext"
-import { HomeProvider } from "./features/home/components/HomeContext"
 import { THEME_ATTRIBUTE, THEME_MIRROR_KEY } from "./features/theme/contract"
 import { ENGINE_NAME } from "./flows/contract"
-import { ThemeProvider } from "./features/theme/components/ThemeButton"
-import { StatusProvider } from "./features/status/components/StatusContext"
-import { SpendProvider } from "./features/spend/components/SpendContext"
-import { PluginsProvider } from "./plugins/components/PluginsContext"
-import { DomainsProvider } from "./features/domains/components/DomainsContext"
-import { PersonalModelProvider } from "./features/personal-model/components/PersonalModelContext"
-import { FirstRunProvider } from "./features/first-run/components/FirstRunContext"
-import { TerminalProvider } from "./features/terminal/components/TerminalContext"
-import { TranscriptProvider } from "./features/transcript/components/TranscriptContext"
-import { TodosProvider } from "./features/todos/components/TodosContext"
-import { ViewsProvider } from "./features/views/components/ViewsContext"
-import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
 import { navigateTo } from "./features/navigation/router"
 import { AppErrorBoundary } from "./screens/root/AppErrorBoundary"
@@ -477,68 +451,18 @@ const render: BootOptions["render"] = (
     <StrictMode>
       <SmithersUiStyles withTheme />
       <AppErrorBoundary reload={() => reloadWith("error_retry")}>
-      <ChatProvider value={chat}>
-        <AuthProvider value={auth}>
-          <ThemeProvider value={theme}>
-            <RepoProvider value={repo}>
-              <FilesProvider value={files}>
-              <CodeIntelProvider value={codeIntel}>
-              <CommandsProvider value={commands}>
-                <ViewsProvider value={views}>
-                  <WebProvider value={web}>
-                    <StatusProvider value={status}>
-                      <SpendProvider value={spend}>
-                        <DomainsProvider value={domains}>
-                          <PersonalModelProvider value={personalModel}>
-                          <FirstRunProvider value={firstRun}>
-                          <BranchProvider value={branch}>
-                            <TerminalProvider value={terminal}>
-                              {/* The routes' loaders open what they show through `repo`, `views`, `branch` and `terminal`
-                                  (src/router.tsx). */}
-                              <IssuesProvider value={issues}>
-                                <PullsProvider value={pulls}>
-                                <SecretsProvider value={secrets}>
-                                <TodosProvider value={todos}>
-                                <RunsProvider value={runs}>
-                                <TranscriptProvider value={transcript}>
-                                  <FlowsUiProvider value={flows}>
-                                    <HomeProvider value={home}>
-                                      <DocsProvider value={docs}>
-                                      {/* The one toast stack reads the feed (decision 0009). */}
-                                      <AttentionProvider value={attention}>
-                                        {/* The plugin host: its slots in the shell, its views' routes (src/plugins/). */}
-                                        <PluginsProvider value={plugins}>
-                                          <RouterProvider
-                                            router={router}
-                                            context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains, secrets }}
-                                          />
-                                        </PluginsProvider>
-                                      </AttentionProvider>
-                                      </DocsProvider>
-                                    </HomeProvider>
-                                  </FlowsUiProvider>
-                                </TranscriptProvider>
-                                </RunsProvider>
-                                </TodosProvider>
-                                </SecretsProvider>
-                                </PullsProvider>
-                              </IssuesProvider>
-                            </TerminalProvider>
-                          </BranchProvider>
-                          </FirstRunProvider>
-                          </PersonalModelProvider>
-                        </DomainsProvider>
-                      </SpendProvider>
-                    </StatusProvider>
-                  </WebProvider>
-                </ViewsProvider>
-              </CommandsProvider>
-              </CodeIntelProvider>
-              </FilesProvider>
-            </RepoProvider>
-          </ThemeProvider>
-        </AuthProvider>
-      </ChatProvider>
+        <AppProviders
+          views={{
+            chat, auth, theme, repo, commands, views, web, status, branch, terminal, transcript, issues, runs, flows, home,
+            spend, attention, todos, codeIntel, pulls, plugins, files, secrets, docs, domains, personalModel, firstRun,
+          }}
+        >
+          {/* The routes' loaders open what they show through these (src/router.tsx). */}
+          <RouterProvider
+            router={router}
+            context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains, secrets }}
+          />
+        </AppProviders>
       </AppErrorBoundary>
     </StrictMode>,
   )
