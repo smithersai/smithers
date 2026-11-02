@@ -1,7 +1,7 @@
 import { dom } from "./fixtures/dom"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router"
-import { Effect, Stream } from "effect"
+import { Deferred, Effect, Stream } from "effect"
 import { act, createElement } from "react"
 import { createRoot } from "react-dom/client"
 import { afterAll, expect, test, vi } from "vitest"
@@ -44,7 +44,13 @@ test("persisted keyboard close survives the real repository route reopening", as
     } }
   } })
   let navigate: (path: string) => void = () => { throw new Error("router not ready") }
-  const tab = await openTab({ origin: h.origin, fetch: h.fetch, persistence, navigate: (path) => navigate(path) })
+  const followerEntered = await Effect.runPromise(Deferred.make<void>())
+  const followerReleased = await Effect.runPromise(Deferred.make<void>())
+  let heldFollower = true
+  const fileFollower = Effect.suspend(() => heldFollower
+    ? Deferred.succeed(followerEntered, undefined).pipe(Effect.andThen(Deferred.await(followerReleased)))
+    : Effect.void)
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, persistence, fileFollower, navigate: (path) => navigate(path) })
   const store = await tab.runtime.runPromise(Effect.service(FilesStore))
   const repoStore = await tab.runtime.runPromise(Effect.service(RepoStore))
   const app = openTestApp({ sessionLifecycle: false })
@@ -66,6 +72,13 @@ test("persisted keyboard close survives the real repository route reopening", as
         Stream.filter((changes) => changes.some((change) => change.value.revision === "main" && change.value.path === path)),
         Stream.runHead,
       ), { signal })
+      if (heldFollower) {
+        await Effect.runPromise(Deferred.await(followerEntered), { signal })
+        // The resolved route is real while the independent file follower is still held: a view receipt alone is insufficient.
+        expect(tab.tabs()).toEqual([])
+        heldFollower = false
+        await Effect.runPromise(Deferred.succeed(followerReleased, undefined))
+      }
       await tab.runtime.runPromise(store.tabs.changes({ initial: true }).pipe(
         Stream.filter((changes) => changes.some((change) => change.value.path === path)),
         Stream.runHead,
@@ -121,6 +134,7 @@ test("persisted keyboard close survives the real repository route reopening", as
     expect(tab.lines("files.focus").map((line) => ({ phase: line.annotations.phase, reason: line.annotations.reason }))).toContainEqual({ phase: "dropped", reason: "disconnected" })
     expect(errors).toEqual([])
   } finally {
+    await Effect.runPromise(Deferred.succeed(followerReleased, undefined))
     write = undefined; releaseWrite?.(); releaseNavigation?.()
     await act(async () => view.unmount())
     container.remove()

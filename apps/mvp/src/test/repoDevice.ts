@@ -10,7 +10,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import { type Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { TabChannel } from "@smthrs/platform-browser"
-import { type Duration, Effect, Layer, Logger, ManagedRuntime, Metric, type Schedule } from "effect"
+import { type Duration, Effect, Layer, Logger, ManagedRuntime, Metric, type Schedule, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { build } from "../../worker/test/flowHost.ts"
 import type { AuthStore } from "../features/auth/store"
@@ -74,6 +74,8 @@ export interface DeviceOptions {
   readonly languageServers?: Layer.Layer<LanguageServers>
   /** The device store; memory unless a persistence or recovery test supplies SQLite. */
   readonly persistence?: Layer.Layer<Persistence.Persistence>
+  /** A scheduling fault before the real file-tab follower consumes each repository-view change. */
+  readonly fileFollower?: Effect.Effect<void>
 }
 
 /** The flows this device's engine runs, as the registry names them. */
@@ -122,6 +124,14 @@ export const openTab = async (options: DeviceOptions) => {
     Layer.provideMerge(Action.layerImplementations),
   )
   const engine = Layer.effectContext(Effect.map(build(registration, { maxConnections: 2 }), ({ context }) => context))
+  const fileStore = options.fileFollower === undefined ? FilesStore.layer : FilesStore.layer.pipe(
+    Layer.provide(Layer.effect(RepoStore, Effect.map(RepoStore, (store) => ({
+      ...store,
+      view: { ...store.view, changes: (config?: Parameters<RepoStore["Service"]["view"]["changes"]>[0]) => store.view.changes(config).pipe(
+        Stream.mapEffect((changes) => Effect.as(options.fileFollower!, changes)),
+      ) },
+    })))),
+  )
   // The router's location, as `at` sets it; file tabs' navigations go to `navigated` too, and move it.
   let pathname = "/"
   const runtime = ManagedRuntime.make(
@@ -129,7 +139,7 @@ export const openTab = async (options: DeviceOptions) => {
       Repo.layer,
       Files.layer.pipe(
         Layer.provideMerge(tabFiles({ name }).pipe(Layer.provide(TabChannel.layer))),
-        Layer.provideMerge(FilesStore.layer),
+        Layer.provideMerge(fileStore),
         Layer.provideMerge(
           FilesPage.layer({
             pathname: () => pathname,

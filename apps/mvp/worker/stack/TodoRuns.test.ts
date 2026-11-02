@@ -206,5 +206,8 @@ test("a TODO whose run died fails `crashed` and frees its lane, once; a run that
     yield* run(todoExecutionId(starts[0]!.attemptId), false).pipe(Effect.provide(context))
     expect(yield* settled(todoExecutionId(starts[0]!.attemptId))).toEqual([])
     expect(yield* settled(`repo-refresh:${crypto.randomUUID()}`)).toEqual([])
+    const missing = todoExecutionId(crypto.randomUUID())
+    yield* run(missing, true).pipe(Effect.provide(context))
+    expect(yield* settled(missing)).toEqual([])
     expect((yield* todos)[1]).toEqual({ number: 2, state: "working", failure: null })
   }))), 60_000)

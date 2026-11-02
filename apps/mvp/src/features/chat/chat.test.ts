@@ -44,6 +44,8 @@ import {
   unsentActions,
 } from "./metrics"
 import { revisionOf } from "../timeline/identity"
+import { followNotice } from "../timeline/notice"
+import { AttentionStore } from "../attention/store"
 import { chatShortcuts } from "./shortcuts"
 import { ChatStore } from "./store"
 import { PLACE } from "./schema"
@@ -1069,6 +1071,28 @@ describe("the window", () => {
     expect(tab.count(historyLoads)).toBe(1)
   })
 
+  test("a rail selection widens history to its message; missing and already visible selections change nothing", async () => {
+    const tab = await openChat({ pageSize: 2 })
+    const questions: Array<{ questionId: string; answerId: string }> = []
+    for (const text of ["one", "two", "three"]) {
+      const question = asked(await tab.actions.ask(text))
+      questions.push(question)
+      await until(() => expect(tab.synced(question.answerId)).toBe(true))
+    }
+    await until(() => expect(tab.history()).toMatchObject({ opened: true, earlier: true, limit: 2 }))
+    tab.actions.showMessage("missing")
+    tab.actions.showMessage(questions[2]!.answerId)
+    expect(tab.history()?.limit).toBe(2)
+    expect(tab.count(historyLoads)).toBe(0)
+    // The rail can still hold an unsent identity when that question has since reached the server.
+    tab.actions.showMessage(`unsent:${questions[0]!.questionId}`)
+    await until(() => expect(tab.ids()).toContain(questions[0]!.questionId))
+    expect(tab.history()).toMatchObject({ earlier: false, limit: 8 })
+    expect(tab.count(historyLoads)).toBe(1)
+    tab.actions.showMessage(questions[0]!.questionId)
+    expect(tab.count(historyLoads)).toBe(1)
+  })
+
   // The rail summarizes what the window shows. Before, a device that opened a long conversation started one
   // `timeline/summarize` run per message it held, in turn, which kept its engine and store busy for minutes and starved
   // its other tabs' sync (docs/work/local-first-conflicts.md, "stale tab").
@@ -1394,3 +1418,14 @@ test("cancelling an admitting Send wakes joined callers and releases its reserva
     expect(tab.composer()?.draft).toBe("Cancel admission")
   } finally { release(); if (joined !== undefined) await tab.runtime.runPromise(Fiber.interrupt(joined)) }
 }, 90_000)
+
+
+test("a summary lane that cannot proceed reaches the real chat rail and the shared notification store", async () => {
+  const tab = await openChat()
+  const attention = await tab.runtime.runPromise(Effect.service(AttentionStore))
+  await tab.runtime.runPromise(Effect.forkIn(followNotice(tab.store.summaryLane, tab.store.timelineNotices, attention.launches), tab.store.scope))
+  tab.queries.timelineNotice.startSyncImmediate()
+  await tab.runtime.runPromise(tab.store.summaryLane.stop("credit"))
+  await until(() => expect(tab.queries.timelineNotice.toArray).toMatchObject([{ code: "credit", text: "The summary model is out of credit" }]))
+  expect((await tab.runtime.runPromise(attention.launches.toArray)).map((row) => row.subject)).toContain("timeline-summaries:credit")
+})

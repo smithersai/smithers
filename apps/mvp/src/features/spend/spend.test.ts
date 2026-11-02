@@ -3,7 +3,7 @@
 // (src/test/chatApi.ts) against ChatApi's real handler over the compose Postgres and Electric. The alerts are recorded
 // by `ops/SpendAlert`'s own step over ChatApi's schema, as the flow records them once a window ends.
 import { Channels } from "@smthrs/notifications"
-import { Effect, Latch, Layer, type ManagedRuntime, Metric, Redacted, Stream } from "effect"
+import { Deferred, Effect, Latch, Layer, type ManagedRuntime, Metric, Redacted, Stream } from "effect"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { SqlClient } from "effect/sql"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
@@ -15,6 +15,8 @@ import { splitDestinations } from "./contract"
 import { ALERT_WORD, alertDetail, alertMessage, receiptText } from "./copy"
 import { RECEIPTS_SHOWN } from "./queries"
 import { Spend } from "./spend"
+import { setChannel } from "./actions"
+import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { check } from "../auth/actions"
 import type { AuthClient } from "../auth/api"
@@ -39,7 +41,7 @@ const openApi = async (actor: Actor, people?: Record<string, Actor>) => {
 
 /** A tab on `device` (a reload when the device had one open before), its open alerts syncing. */
 const openSpendTab = async (api: TestChatApi["Service"], device: NodeDevice = nodeDevice(), role: Actor["role"] = "admin", options: TabOptions = {}) => {
-  const runtime: ManagedRuntime.ManagedRuntime<Spend | SpendStore | AuthStore | AuthClient, unknown> = openTab(api, { ...options, host: device })
+  const runtime: ManagedRuntime.ManagedRuntime<Spend | SpendStore | AuthStore | AuthClient | FlowDispatch, unknown> = openTab(api, { ...options, host: device })
   runtimes.push(runtime)
   const auth = await runtime.runPromise(Effect.service(AuthStore))
   await until(() => expect(auth.session.tanstack.get(SESSION)?.status).not.toBe("loading"))
@@ -335,6 +337,32 @@ describe("an Admin's alert channels", { timeout: 90_000 }, () => {
     await until(() => expect(tab.channels()).toEqual({ email: ["ops@example.com"] }))
     await until(() => expect(tab.saves()).toEqual([]))
     await until(() => expect(other.saves()).toEqual([]))
+  })
+
+  test.each([{ destinations: ["ops@example.com"] }, { destinations: [] as Array<string> }])("a pending failed save yields to another device's newer channel $destinations", async ({ destinations }) => {
+    const api = await openApi(admin)
+    const tab = await openSettingsTab(api)
+    const other = await openSettingsTab(api)
+    other.spend.actions.setChannel("email", ["will@example.com"])
+    await until(() => expect(tab.channels()).toEqual({ email: ["will@example.com"] }))
+    const real = await tab.runtime.runPromise(Effect.service(FlowDispatch))
+    const entered = await Effect.runPromise(Deferred.make<void>())
+    const released = await Effect.runPromise(Deferred.make<void>())
+    const fault = FlowDispatch.of({ ...real, dispatch: () => Deferred.succeed(entered, undefined).pipe(
+      Effect.andThen(Deferred.await(released)),
+      Effect.andThen(Effect.fail(new DispatchFailed({ flow: "alert/channel", reason: "unavailable" }))),
+    ) })
+    try {
+      await tab.runtime.runPromise(setChannel("email", ["stale@example.com"]).pipe(Effect.provideService(FlowDispatch, fault)))
+      await Effect.runPromise(Deferred.await(entered))
+      expect(tab.saves()).toEqual(["email:saving"])
+      const next = destinations
+      other.spend.actions.setChannel("email", next)
+      await until(() => expect(tab.channels()).toEqual(next.length === 0 ? {} : { email: next }))
+      expect(tab.saves()).toEqual(["email:saving"])
+      await Effect.runPromise(Deferred.succeed(released, undefined))
+      await until(() => expect(tab.saves()).toEqual([]))
+    } finally { await Effect.runPromise(Deferred.succeed(released, undefined)) }
   })
 
   test("a Member's save is refused, and their tab syncs no setting", async () => {
