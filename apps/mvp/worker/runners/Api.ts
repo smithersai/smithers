@@ -1,6 +1,6 @@
 import { AgentRunner, Transcript } from "@smthrs/agent"
 import { digestSync, WebCrypto } from "@smthrs/crypto"
-import { Cause, Clock, Crypto, Effect, type Layer, Metric, Option, Schema } from "effect"
+import { Cause, Clock, Crypto, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { SUMMARY_EVERY_SECONDS } from "../../src/features/transcript/contract.ts"
@@ -68,6 +68,7 @@ const ROUTE_OF: Readonly<Record<string, Route>> = {
   [AgentRunner.ROUTES.heartbeat]: "heartbeat",
   [AgentRunner.ROUTES.settle]: "settle",
   [AgentRunner.ROUTES.events]: "events",
+  [AgentRunner.ROUTES.gitCredential]: "gitCredential",
 }
 
 /** The most often a runner's `seen_at` is written: the fleet reads Offline after 45 s unseen. */
@@ -82,6 +83,7 @@ const decodeClaim = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner
 const decodeHeartbeat = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.HeartbeatRequest))
 const decodeSettle = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.SettleRequest))
 const decodeEvents = Schema.decodeUnknownEffect(Schema.fromJsonString(Transcript.EventsRequest))
+const decodeGitCredential = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.GitCredentialRequest))
 const decodeTask = Schema.decodeUnknownEffect(AgentRunner.Task)
 const scrubShapes = Transcript.scrubber()
 const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
@@ -107,6 +109,14 @@ interface Runner {
   readonly name: string
   readonly repoId: string
   readonly tokenSha256: string
+}
+
+/** A credential for git over HTTPS to one repository, and when it stops working (epoch ms). */
+export interface GitCredential {
+  readonly remote: string
+  readonly username: string
+  readonly password: Redacted.Redacted<string>
+  readonly expiresAt: number
 }
 
 /** A claimed row, as the claim returns it. */
@@ -150,6 +160,11 @@ export const make = <E, R>(
     /** The run whose transcript a job's events belong to, from its task; none keeps no transcript. */
     readonly runOf: (task: AgentRunner.Task) => string | undefined
     readonly steering?: Steering<R>
+    /**
+     * A read-only credential for git over HTTPS to `repoId`, as the App mints it for that repository's contents alone
+     * (decision 0148); `none` where the App isn't configured or installed there. Absent: the route answers `404`.
+     */
+    readonly gitCredential?: (repoId: string) => Effect.Effect<Option.Option<GitCredential>, unknown, R>
   },
 ) => {
   const leaseSeconds = options.leaseSeconds ?? LEASE_SECONDS
@@ -446,6 +461,38 @@ export const make = <E, R>(
       return answer(fields, "stored", { next: appended.next })
     }).pipe(Effect.provide(database))
 
+  /**
+   * `POST /api/runners/git-credential { key, claim }` (decision 0148): for a job this runner holds now, a read-only
+   * credential for its repository, which must be the one the runner is registered on. Never logged: the record names
+   * the job and the outcome only.
+   */
+  const gitCredential = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
+    Effect.gen(function* () {
+      const asked = yield* bodyOf(request, decodeGitCredential)
+      if (asked._tag === "Refused") return refuse(fields, asked.status, "invalid")
+      fields.key = asked.value.key
+      if (options.gitCredential === undefined) return refuse(fields, 404, "not_configured")
+      const sql = yield* SqlClient.SqlClient
+      const [row] = isUuid(asked.value.claim)
+        ? yield* sql<{ readonly task: unknown }>`
+          SELECT task FROM agent_jobs
+          WHERE key = ${asked.value.key} AND claim = ${asked.value.claim}::uuid AND runner_id = ${runner.id}::uuid
+            AND status = 'claimed' AND deadline_at > now()`
+        : []
+      if (row === undefined) return refuse(fields, 409, "not_held")
+      const task = yield* decodeTask(row.task).pipe(Effect.option)
+      // A runner reads only the repository it is registered on, whatever a task names.
+      if (Option.isNone(task) || task.value.repository !== runner.repoId) return refuse(fields, 403, "other_repository")
+      const credential = yield* options.gitCredential(runner.repoId)
+      if (Option.isNone(credential)) return refuse(fields, 404, "app_not_installed")
+      return answer(fields, "issued", {
+        remote: credential.value.remote,
+        username: credential.value.username,
+        password: Redacted.value(credential.value.password),
+        expiresAt: credential.value.expiresAt,
+      })
+    }).pipe(Effect.provide(database))
+
   const fetch = Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const route = ROUTE_OF[request.url.split("?")[0]!]!
@@ -464,6 +511,8 @@ export const make = <E, R>(
           ? heartbeat(request, runner.value, fields)
           : route === "settle"
           ? settle(request, runner.value, fields)
+          : route === "gitCredential"
+          ? gitCredential(request, runner.value, fields)
           : events(request, runner.value, fields))
       }).pipe(
         Effect.catch((error) =>

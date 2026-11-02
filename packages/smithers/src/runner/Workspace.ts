@@ -90,7 +90,12 @@ const reasonOf = (stderr: string): string =>
  * @category constructors
  * @since 1.0.0
  */
-export const jj = (args: ReadonlyArray<string>, timeoutMs = 120_000, cwd?: string): Effect.Effect<Ran> =>
+export const jj = (
+  args: ReadonlyArray<string>,
+  timeoutMs = 120_000,
+  cwd?: string,
+  extraEnv: Readonly<Record<string, string>> = {}
+): Effect.Effect<Ran> =>
   Effect.callback<Ran>((resume, signal) => {
     // An empty configuration directory: jj reads no user or host settings.
     const config = join(tmpdir(), "smithers-runner-jj-config")
@@ -111,7 +116,7 @@ export const jj = (args: ReadonlyArray<string>, timeoutMs = 120_000, cwd?: strin
         timeout: timeoutMs,
         ...(cwd === undefined ? {} : { cwd }),
         maxBuffer: 64 * 1024 * 1024,
-        env: { ...process.env, JJ_CONFIG: config }
+        env: { ...process.env, ...extraEnv, JJ_CONFIG: config }
       },
       (error, stdout, stderr) => {
         const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1
@@ -129,17 +134,56 @@ const ok = (step: WorkspaceError["step"]) => (ran: Ran) =>
     )
 
 /**
- * Makes the checkout of `base` from `mirror`: fetches the mirror first when it
- * doesn't have the commit.
+ * A read credential for git over HTTPS to one repository (decision 0148), as
+ * the host issued it for a job.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface GitCredential {
+  readonly remote: string
+  readonly username: string
+  readonly password: string
+}
+
+/**
+ * What `git`, under jj, reads to authenticate to `credential.remote`'s host:
+ * an `Authorization` header through `GIT_CONFIG_*` in the command's own
+ * environment, never on its command line, in a file or in a log, and only for
+ * HTTPS URLs under that host.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const create = (mirror: string, base: string, checkout: Checkout) =>
+export const gitAuthEnv = (credential: GitCredential): Record<string, string> => {
+  const origin = new URL(credential.remote).origin
+  const basic = Buffer.from(`${credential.username}:${credential.password}`).toString("base64")
+  return {
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: `http.${origin}/.extraheader`,
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+    GIT_TERMINAL_PROMPT: "0"
+  }
+}
+
+/**
+ * Makes the checkout of `base` from `mirror`: fetches the mirror first when it
+ * doesn't have the commit, and clones it first when it doesn't exist yet. With
+ * a `credential`, a private repository's fetch and clone authenticate with it.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const create = (mirror: string, base: string, checkout: Checkout, credential?: GitCredential) =>
   exclusive(mirror)(Effect.gen(function*() {
+    const auth = credential === undefined ? {} : gitAuthEnv(credential)
+    if (!existsSync(join(mirror, ".jj")) && credential !== undefined) {
+      yield* Effect.sync(() => mkdirSync(dirname(mirror), { recursive: true }))
+      yield* jj(["git", "clone", credential.remote, mirror], 600_000, undefined, auth).pipe(Effect.flatMap(ok("fetch")))
+    }
     const known = yield* jj(["-R", mirror, "log", "--ignore-working-copy", "--no-graph", "-r", base, "-T", "commit_id"])
     if (known.code !== 0) {
-      yield* jj(["-R", mirror, "git", "fetch"], 600_000).pipe(Effect.flatMap(ok("fetch")))
+      yield* jj(["-R", mirror, "git", "fetch"], 600_000, undefined, auth).pipe(Effect.flatMap(ok("fetch")))
     }
     yield* Effect.sync(() => mkdirSync(dirname(checkout.dir), { recursive: true }))
     yield* jj(["-R", mirror, "workspace", "add", "--name", checkout.name, "-r", base, checkout.dir]).pipe(

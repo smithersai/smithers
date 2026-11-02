@@ -45,12 +45,17 @@ export class Host extends Context.Service<Host, {
   readonly events: (
     request: typeof Transcript.EventsRequest.Type
   ) => Effect.Effect<typeof Transcript.EventsResponse.Type, HostError>
+  /** A read credential for the repository of a job the runner holds (decision 0148). */
+  readonly gitCredential: (
+    request: typeof AgentRunner.GitCredentialRequest.Type
+  ) => Effect.Effect<typeof AgentRunner.GitCredentialResponse.Type, HostError>
 }>()("@smthrs/cli/Runner/Host") {}
 
 const decodeClaim = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.ClaimResponse))
 const decodeHeartbeat = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.HeartbeatResponse))
 const decodeSettle = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.SettleResponse))
 const decodeEvents = Schema.decodeUnknownEffect(Schema.fromJsonString(Transcript.EventsResponse))
+const decodeGitCredential = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.GitCredentialResponse))
 
 /**
  * The routes at `origin` with `token`, over the context's `HttpClient`. A
@@ -92,7 +97,8 @@ export const layer = (options: { readonly origin: string; readonly token: string
           post("claim", request, decodeClaim, request.waitSeconds).pipe(Effect.map((answer) => answer.job)),
         heartbeat: (request) => post("heartbeat", request, decodeHeartbeat),
         settle: (request) => post("settle", request, decodeSettle),
-        events: (request) => post("events", request, decodeEvents)
+        events: (request) => post("events", request, decodeEvents),
+        gitCredential: (request) => post("gitCredential", request, decodeGitCredential)
       })
     })
   )

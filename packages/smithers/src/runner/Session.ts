@@ -45,7 +45,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Option, Queue, Schema, Stream } f
 import { execFile } from "node:child_process"
 import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import type * as Config from "./Config.ts"
-import type * as Host from "./Host.ts"
+import * as Host from "./Host.ts"
 import * as Spool from "./Spool.ts"
 import * as Tree from "./Tree.ts"
 import * as Workspace from "./Workspace.ts"
@@ -274,7 +274,16 @@ export const work = (
     if (profile === undefined) return yield* report(failed("refused"))
     if (!Workspace.exists(checkout)) {
       if (job.generation > 1 || control.reclaimed) return yield* report(failed("machine_lost"))
-      const made = yield* Effect.exit(Workspace.create(repository.mirror, job.task.base, checkout))
+      // A private repository's mirror fetches with the host's read credential for this job (decision 0148). A public
+      // one, or a host without the route, fetches as before; a refusal leaves the fetch to fail on its own.
+      const host = yield* Host.Host
+      const credential = yield* host.gitCredential({ key: job.key, claim: job.claim }).pipe(Effect.option)
+      const made = yield* Effect.exit(Workspace.create(
+        repository.mirror,
+        job.task.base,
+        checkout,
+        Option.getOrUndefined(credential)
+      ))
       if (Exit.isFailure(made)) return yield* report(failed("workspace"))
     }
     if (Date.now() >= job.deadline) return yield* report(failed("timeout"))

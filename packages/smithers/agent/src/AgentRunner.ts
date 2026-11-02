@@ -395,6 +395,32 @@ export const SettleRequest = Schema.Struct({
 export const SettleResponse = Schema.Struct({ recorded: Schema.Boolean })
 
 /**
+ * A runner asks for a read credential for the repository of a job it holds,
+ * so its mirror can fetch a private repository (decision 0148).
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const GitCredentialRequest = Schema.Struct({ key: NonEmpty, claim: NonEmpty })
+
+/**
+ * A read-only, one-repository credential for git over HTTPS: `remote` is the
+ * repository's HTTPS URL, `username` and `password` what git sends for it,
+ * and `expiresAt` (epoch ms) when the runner must ask again. It reads the
+ * repository's contents and nothing else; the runner never logs it or puts it
+ * on a command line.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const GitCredentialResponse = Schema.Struct({
+  remote: NonEmpty,
+  username: NonEmpty,
+  password: NonEmpty,
+  expiresAt: Schema.Number
+})
+
+/**
  * The runner routes, relative to the host's origin. Each takes the runner's
  * own bearer token. `events` carries the agent's transcript
  * ({@link module:Transcript}).
@@ -406,7 +432,8 @@ export const ROUTES = {
   claim: "/api/runners/claim",
   heartbeat: "/api/runners/heartbeat",
   settle: "/api/runners/settle",
-  events: "/api/runners/events"
+  events: "/api/runners/events",
+  gitCredential: "/api/runners/git-credential"
 } as const
 
 /**

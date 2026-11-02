@@ -46,6 +46,7 @@ import * as DocsApi from "./docs/Api.ts"
 import * as DocsSource from "./docs/Source.ts"
 import * as HomeApi from "./home/Api.ts"
 import * as GitHubConfig from "./github/Config.ts"
+import * as GitCredential from "./runners/GitCredential.ts"
 import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as RepoApi from "./RepoApi.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
@@ -191,6 +192,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       // A TODO's agent writes its transcript to the TODO's run (decision 0141).
       runOf: TodoSession.runOf,
       steering: TodoSession.steering(engineWriter),
+      // A private repository's mirror fetches with the App's read-only token for that repository (decision 0148).
+      gitCredential: GitCredential.make(yield* GitHubConfig.configured, database),
     })
     const runnerAdmin = yield* RunnerAdmin.make(database)
     // Custom domains (docs/features/domains.md): a Maintainer's, through the deployment's provider; off without one.

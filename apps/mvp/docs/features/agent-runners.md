@@ -166,6 +166,7 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 | `POST /api/runners/heartbeat` | `{ key, claim, delivered?, account?, cpuSeconds?, usage? }` | `{ held, cancel, leaseSeconds: 45, steers? }`: the job's undelivered steers, `{ id, text }` |
 | `POST /api/runners/settle` | `{ key, claim, outcome, delivered? }` | `{ recorded }`; `false` when the claim no longer holds the job. `delivered` records the steers the agent read since the last heartbeat that reported them |
 | `POST /api/runners/events` | `{ key, claim, events }` | `{ next }`: the agent's transcript ([transcripts](agent-transcripts.md#the-events-route)) |
+| `POST /api/runners/git-credential` | `{ key, claim }` | `{ remote, username, password, expiresAt }`: a read-only token for the runner's own repository while it holds that job ([private repositories](#private-repositories)); `409 not_held`, `403 other_repository`, `404` without the App or where it isn't installed |
 
 A claim's `machine` is `{ version?, load1?, diskFreeGb?, held? }`, `held` saying why the runner takes no job by its
 own [admission](#admission) rule; a heartbeat's `account` is the label the profile's hook
@@ -173,6 +174,10 @@ chose, `cpuSeconds` the agent's process tree's CPU time and `usage` what the age
 [fleet](fleet.md). A job is `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`; its task is `{ agent, repository, base,
 system, prompt, limits }`. An outcome is `Done { changes, summary, usage }`, `Failed { reason }`, `Retryable {
 afterSeconds? }` or `Cancelled { processTreeGone }`. Usage an agent doesn't report stays absent, never zero.
+
+## Private repositories
+
+A runner fetches a private repository with a token the host mints for each job ([decision 0148](../decisions/0148-runner-git-credential.md)): the App's installation token for that one repository, `contents: read` only, spent 50 minutes after minting. The runner passes it to git in the command's own environment, never on a command line, in a file or a log, and clones a missing mirror with it, so a private repository's mirror needs no deploy key or person's token on the machine. A public repository, or a host without the App, fetches as before.
 
 ## Admission
 
