@@ -7,13 +7,13 @@
  * src/apiRoutes.test.ts fails when a route literal in src/ or worker/ has a word that isn't here.
  */
 export const ROUTE_WORDS: ReadonlySet<string> = new Set([
-  "about", "ack", "actions", "agent-runs", "alert-channels", "alert-deliveries", "answers", "api", "archive", "arrive", "auth", "blob",
+  "about", "ack", "actions", "agent-runs", "alert-channels", "alert-deliveries", "answers", "api", "archive", "arrive", "audit", "auth", "blob",
   "branch-publications", "branches", "bug-reports", "bugs", "call", "callback", "calls", "checks", "cloud-runs", "codex",
   "comments", "compare", "conversations", "create", "creation", "credential", "delete", "docs", "domains", "feeds", "file",
   "flow-drafts", "flows", "github", "github-sync", "github-writes", "handoff", "home", "item-summaries", "items", "jev", "launch", "logs", "machines", "me", "merge",
   "message-pin", "message-pins", "messages", "metrics", "model", "my-conversations", "notifications", "personal-model",
   "preview", "pull-commits", "pulls", "questions", "raw", "refs", "remote-runs", "renderer", "repos", "repositories",
-  "review", "reviews", "room", "run", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "shapes", "shares",
+  "review", "reviews", "room", "run", "runners", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "shapes", "shares",
   "sign-in", "sign-out", "source", "spend-alerts", "stack", "stamp", "state", "steers", "stop", "summaries",
   "telemetry", "terminals", "test", "texts", "timeline", "todo-requests", "todos", "traces", "tree", "triage-settings",
   "v1", "views", "watches", "web", "webhook", "work-links", "write", "writes",
