@@ -5,7 +5,7 @@
 import { AgentRunner } from "@smthrs/agent"
 import { digestSync } from "@smthrs/crypto"
 import { Effect, Logger, Option, Redacted } from "effect"
-import { HttpEffect } from "effect/http"
+import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -115,6 +115,9 @@ describe("a runner's git credential", () => {
     expect(await call("gitCredential", token, { key: job.key, claim: crypto.randomUUID() })).toMatchObject({ status: 409, body: { code: "not_held" } })
     expect(await call("gitCredential", token, { key: job.key, claim: "not-a-uuid" })).toMatchObject({ status: 409, body: { code: "not_held" } })
     expect((await call("gitCredential", token, { key: job.key })).status).toBe(400)
+    // A persisted task outside the public schema fails closed before any credential is requested.
+    await query(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE agent_jobs SET task = '{}'::jsonb`))
+    expect(await call("gitCredential", token, { key: job.key, claim: job.claim })).toMatchObject({ status: 403, body: { code: "other_repository" } })
     // A job of another repository, held by this runner as a row could say: never that repository's credential.
     await query(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE agent_jobs SET task = ${JSON.stringify(taskOf("github/acme/secret"))}::jsonb`))
     expect(await call("gitCredential", token, { key: job.key, claim: job.claim })).toMatchObject({ status: 403, body: { code: "other_repository" } })
@@ -153,6 +156,32 @@ describe("the App's token behind it", () => {
     expect(value.expiresAt).toBeGreaterThanOrEqual(before + GitCredential.CREDENTIAL_LIFETIME_MS)
     expect(value.expiresAt).toBeLessThan(before + 60 * 60 * 1000)
     expect(String(value.password)).not.toContain(Redacted.value(value.password))
+  })
+
+  test("missing contents permission refuses a credential; a provider outage remains unavailable", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const mint = GitCredential.make(Option.some(app({ privateKey: await appKey() })), await database(), github.http)
+    github.contentsGranted = false
+    expect(await Effect.runPromise(mint(REPO))).toEqual(Option.none())
+    expect(github.minted).toEqual([])
+    github.contentsGranted = true
+    github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/access_tokens"), status: 503 })
+    expect(await Effect.runPromise(Effect.result(mint(REPO)))).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable" } })
+    expect(github.minted).toEqual([])
+    // A later request can recover with the same persisted installation and still mints only contents: read.
+    expect(Option.isSome(await Effect.runPromise(mint(REPO)))).toBe(true)
+    expect(github.minted.at(-1)!.body).toEqual({ repositories: ["widgets"], permissions: { contents: "read" } })
+  })
+
+  test("the default HTTP transport refuses an invalid signing key before making a request", async () => {
+    let calls = 0
+    const mint = GitCredential.make(Option.some(app({ privateKey: Redacted.make("not a signing key") })), await database())
+    const result = await Effect.runPromise(Effect.result(mint(REPO).pipe(Effect.provideService(FetchHttpClient.Fetch, () => {
+      calls++
+      return Promise.reject(new Error("a bad signing key must never reach transport"))
+    }))))
+    expect(result).toMatchObject({ _tag: "Failure" })
+    expect(calls).toBe(0)
   })
 
   test("is none without the App or where it isn't installed", async () => {

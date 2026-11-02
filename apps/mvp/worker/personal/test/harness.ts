@@ -102,6 +102,8 @@ export const engine = async (runtime: Runtime, options: EngineOptions = {}) => {
 }
 
 export interface Options {
+  /** Inject a faulty database while retaining the real sessions and model services. */
+  readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
   /** Who is signed in: nobody unless set. */
   readonly actor?: Actor.Actor | null
   /** Where flows start: the file's engine unless set. */
@@ -125,7 +127,7 @@ export const personalHarness = async (
   options: Options = {},
 ) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
-  const database = scratch.database
+  const database = options.database ?? scratch.database
   const spans: Array<Tracer.NativeSpan> = []
   const tracer = Tracer.make({
     span(spanOptions) {

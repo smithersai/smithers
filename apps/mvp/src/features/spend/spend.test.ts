@@ -365,6 +365,19 @@ describe("an Admin's alert channels", { timeout: 90_000 }, () => {
     } finally { await Effect.runPromise(Deferred.succeed(released, undefined)) }
   })
 
+  test("a failed save of an existing channel clears when another device turns that channel off", async () => {
+    const api = await openApi(admin)
+    const tab = await openSettingsTab(api)
+    const other = await openSettingsTab(api)
+    other.spend.actions.setChannel("email", ["will@example.com"])
+    await until(() => expect(tab.channels()).toEqual({ email: ["will@example.com"] }))
+    tab.spend.actions.setChannel("email", ["invalid"])
+    await until(() => expect(tab.saves()).toEqual(["email:failed"]))
+    other.spend.actions.setChannel("email", [])
+    await until(() => expect(tab.channels()).toEqual({}))
+    await until(() => expect(tab.saves()).toEqual([]))
+  })
+
   test("a Member's save is refused, and their tab syncs no setting", async () => {
     const admins = await openApi(admin)
     const set = await openSettingsTab(admins)

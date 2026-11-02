@@ -128,7 +128,7 @@ const keepDraft = (draft: string, awaitPersistence = false) =>
 
 /**
  * Keeps `draft` on the device for conversation `key`, which this tab no longer shows: the composer and the shown
- * conversation's prompt stay as they are, and showing `key` again finds it.
+ * conversation's prompt stay as they are, and showing `key` again finds it. `submit` rejects an empty question.
  */
 const keepDraftAway = (key: string, draft: string) =>
   Effect.gen(function* () {
@@ -137,11 +137,12 @@ const keepDraftAway = (key: string, draft: string) =>
     const write = Option.isSome(kept)
       ? kept.value.text === draft
         ? undefined
-        : yield* draft === "" ? drafts.delete(key) : drafts.update(key, (row) => { row.text = draft; delete row.generation })
-      : draft === ""
-      ? undefined
+        : yield* drafts.update(key, (row) => { row.text = draft; delete row.generation })
       : yield* drafts.insert({ id: key, text: draft })
-    if (write !== undefined) yield* persistDraft(write, key).pipe(Effect.ignore, Effect.forkIn(scope))
+    const persisted = write === undefined
+      ? Effect.void
+      : persistDraft(write, key).pipe(Effect.ignore, Effect.forkIn(scope))
+    yield* persisted
   }).pipe(Effect.orDie)
 
 /** The draft the device kept for the conversation this tab shows; empty when none. */

@@ -36,6 +36,11 @@ beforeEach(() =>
 
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
 const query = <A>(effect: Effect.Effect<A, unknown, SqlClient.SqlClient>) => runtime.runPromise(effect)
+test("a claim or settlement delivered after its projection disappeared creates no phantom run", async () => {
+  await query(Fleet.claimed("absent#g1", "runner"))
+  await query(Fleet.settled("absent#g1", { _tag: "Cancelled", processTreeGone: true }))
+  expect(await sql("SELECT count(*)::int AS n FROM agent_runs")).toEqual([{ n: 0 }])
+})
 const sql = <A extends object = Record<string, unknown>>(statement: string) =>
   query(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe<A>(statement))))
 

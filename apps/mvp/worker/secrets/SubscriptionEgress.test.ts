@@ -5,6 +5,7 @@ import { Effect, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as Database from "../../db/Database.ts"
 import * as Agents from "../personal/Agents.ts"
 import type * as Codex from "../personal/Codex.ts"
 import * as Subscriptions from "../personal/Subscriptions.ts"
@@ -63,6 +64,16 @@ const audit = () =>
       SELECT host, outcome, names, scope FROM secret_events WHERE action = 'use' ORDER BY id`))
 
 describe("forwardSubscription", () => {
+  test("an unreadable repository policy fails closed before opening or sending the subscription", async () => {
+    const subscription = await claude()
+    const placeholder = await Effect.runPromise(SandboxEgress.subscriptionPlaceholder(guest, await keys(), subscription))
+    const upstream = vendor()
+    const database = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    const h = await open(upstream, { database })
+    const answer = await h.subscriptionEgress(guest, subscription)(bearer(placeholder))
+    expect([answer.status, await answer.text()]).toEqual([503, "unavailable"])
+    expect(upstream.seen).toEqual([])
+  })
   test("swaps the placeholder for the Claude token on the bound host, and the box never sees it", async () => {
     const subscription = await claude()
     const placeholder = await Effect.runPromise(SandboxEgress.subscriptionPlaceholder(guest, await keys(), subscription))

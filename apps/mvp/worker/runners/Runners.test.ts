@@ -5,13 +5,17 @@
 import { AgentRunner, Transcript } from "@smthrs/agent"
 import { digestSync } from "@smthrs/crypto"
 import { Action, Fault, type Flow, FlowRuntime } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Option, Scope } from "effect"
+import { Database as FlowsDatabase, Journal } from "@smthrs/flows"
+import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
+import { Context, Effect, Exit, Layer, Logger, Option, Scope } from "effect"
+import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
+import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Flows from "../Flows.ts"
 import * as FlowHost from "../test/flowHost.ts"
 import * as RunContentTest from "../test/runContent.ts"
@@ -104,6 +108,66 @@ const done = (changes: AgentRunner.Changes = { additions: [{ path: "NOTES.md", c
   ({ _tag: "Done", changes, summary: "Added alpha.", usage: {} }) as const
 
 describe("the job store and the runner routes", () => {
+  test("a fleet database outage after claiming preserves the claim and records its code", async () => {
+    const token = await register("projection-claim")
+    await Effect.runPromise((await jobs()).start(taskOf(), "todo:claim-projection#g1"))
+    const db = await database()
+    const failure = new SqlError({ reason: new ConnectionError({ cause: "injected outage", message: "unavailable", operation: "execute" }) })
+    let opened = 0
+    const flaky = Layer.fresh(Layer.unwrap(Effect.sync(() => ++opened === 4 ? Layer.effect(SqlClient.SqlClient, Effect.fail(failure)) : db)))
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const handler = HttpEffect.toWebHandler(RunnersApi.make(flaky, { runOf: TodoSession.runOf }).fetch.pipe(
+      Effect.provide(RunContentTest.transcripts().layer),
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((o) => void logs.push(Logger.formatStructured.log(o)))])),
+    ))
+    const response = await handler(new Request(`http://localhost${AgentRunner.ROUTES.claim}`, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ profiles: [agent.profile], free: 1, running: [], waitSeconds: 0 }),
+    }))
+    expect([response.status, await response.json()]).toEqual([200, { job: expect.objectContaining({ key: "todo:claim-projection#g1" }) }])
+    expect(await sql`SELECT status FROM agent_jobs WHERE key = 'todo:claim-projection#g1'`).toEqual([{ status: "claimed" }])
+    expect(logs).toContainEqual(expect.objectContaining({ message: "runner.claim", annotations: expect.objectContaining({ fleet: "sql:ConnectionError", outcome: "claimed" }) }))
+  })
+  test("a failed fleet projection preserves the admitted job and reports its code", async () => {
+    const db = await database()
+    let opened = 0
+    const fault = new SqlError({ reason: new ConnectionError({ cause: "injected outage", message: "unavailable", operation: "execute" }) })
+    const flaky = Layer.fresh(Layer.unwrap(Effect.sync(() => ++opened === 1 ? db : Layer.effect(SqlClient.SqlClient, Effect.fail(fault)))))
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const store = Jobs.make(flaky)
+    await Effect.runPromise(store.start(taskOf(), "todo:projection#g1").pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((o) => void logs.push(Logger.formatStructured.log(o)))])),
+    ))
+    expect(await sql`SELECT key, status FROM agent_jobs WHERE key = 'todo:projection#g1'`).toEqual([{ key: "todo:projection#g1", status: "queued" }])
+    expect(logs).toContainEqual(expect.objectContaining({ message: "fleet.project", annotations: expect.objectContaining({ outcome: "error", errorCode: "sql:ConnectionError" }) }))
+  })
+
+  test.each([false, true])("settlement acknowledges delivered steering even when its writer fails: %s", async (fails) => {
+    const token = await register("delivery")
+    const store = await jobs()
+    const task = taskOf({ context: { attemptId: "delivery" } })
+    await Effect.runPromise(store.start(task, "todo:delivery#g1"))
+    const scope = Effect.runSync(Scope.make())
+    try {
+      const { engine } = await Effect.runPromise(Scope.provide(FlowHost.build(Layer.empty), scope))
+      const server = (await runtime.runPromise(TestDatabase.serverUrl)).toString()
+      const writer = ExecutionHost.database(server, engine.schema)
+      const queue = NotificationQueue.layer.pipe(Layer.provideMerge(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 }).pipe(
+        Layer.provideMerge(Layer.provideMerge(FlowsDatabase.DurableWriter.layer(), writer)),
+      )))
+      await Effect.runPromise(Effect.scoped(Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) => notifications.admit("todo:delivery",
+        Notification.humanSteer({ runId: "todo:delivery", id: "steer-one", actor: "person:member", attribution: { login: "maya", via: "person" }, payload: SteerPayload.encode({ kind: "Message", body: "Inspect" }) }),
+      )).pipe(Effect.provide(queue))))
+      const real = TodoSession.steering(writer)
+      expect((await Effect.runPromise(real.pending(task))).map((steer) => steer.id)).toEqual(["steer-one"])
+      const steering = fails ? { ...real, delivered: () => Effect.fail("injected steering outage") } : real
+      const { call, claim } = await routes(undefined, undefined, steering)
+      const job = (await claim(token, { machine: {} })).body.job!
+      expect((await call("settle", token, { key: job.key, claim: job.claim, outcome: done(), delivered: ["steer-one"] })).body).toEqual({ recorded: true })
+      expect((await Effect.runPromise(real.pending(task))).map((steer) => steer.id)).toEqual(fails ? ["steer-one"] : [])
+      expect(await Effect.runPromise(store.status(job.key))).toMatchObject({ _tag: "Ended", outcome: { _tag: "Done" } })
+    } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+  })
   test("a steering store that can't answer hands out no steers and keeps the lease; a job asked to stop hands out none", async () => {
     const token = await register("nyc-01")
     const store = await jobs()
@@ -493,6 +557,7 @@ describe("the repository's runners and agents", () => {
       expect((await asAdmin.send("runners/NYC", "PUT", runner)).status).toBe(400)
       expect((await asAdmin.send("runners/nyc-01", "PUT", { ...runner, capacity: 65 })).status).toBe(400)
       expect((await asAdmin.send("runners/nyc-01", "GET")).status).toBe(405)
+      expect((await asAdmin.send("agents/coder", "POST")).status).toBe(405)
       expect(await asAdmin.send("runners/nyc-01", "PUT", runner)).toEqual({ status: 202, body: { name: "nyc-01" } })
       expect(await sql`SELECT name, labels, capacity, added_by AS "addedBy" FROM runners`).toEqual([
         { name: "nyc-01", labels: ["linux"], capacity: 4, addedBy: "person-admin" },

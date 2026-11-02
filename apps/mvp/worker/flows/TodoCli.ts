@@ -141,7 +141,7 @@ export const registration = <E, R>(
             Effect.annotateLogs({
               agent,
               outcome: failed ?? "done",
-              exitCode: ran.exitCode ?? -1,
+              exitCode: ran.exitCode,
               durationMs,
               inputTokens: report.inputTokens ?? 0,
               outputTokens: report.outputTokens ?? 0,

@@ -80,7 +80,7 @@ export const railMarkers = (messages: readonly RailMessage[], field: "phase" | "
   for (const [index, unit] of exchanges.entries()) {
     if (Option.isNone(unit.mark)) continue;
     const covered = unit.mark.value.covered;
-    const last = Number.isSafeInteger(covered) && covered > 0 ? exchanges[index + covered - 1] : undefined;
+    const last = exchanges[index + covered - 1];
     const end = last === undefined ? undefined : answers.get(last.id);
     if (end !== undefined) phaseEnds.set(unit.id, end);
   }
@@ -89,7 +89,7 @@ export const railMarkers = (messages: readonly RailMessage[], field: "phase" | "
     const mark = field === "phase" ? unit.mark : parseMark(messages.find(message => message.id === unit.id)?.arc);
     if (Option.isNone(mark)) return [];
     const { title, summary, closed, covered } = mark.value;
-    const last = Number.isSafeInteger(covered) && covered > 0 ? units[index + covered - 1] : undefined;
+    const last = units[index + covered - 1];
     const end = field === "phase" ? phaseEnds.get(unit.id) : last === undefined ? undefined : phaseEnds.get(last.id);
     if (end === undefined) return [];
     return [{ id: `${field}:${unit.id}`, start: unit.id, end, title: safeTimelineText(title), summary: safeTimelineText(summary), closed }];

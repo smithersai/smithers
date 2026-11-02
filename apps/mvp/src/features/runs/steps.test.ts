@@ -2,7 +2,23 @@ import { EngineStore } from "@smthrs/flows"
 import { Effect, Logger } from "effect"
 import { expect, test } from "vitest"
 import { FLOW_CODE } from "../flows-ui/reference"
-import { list, retry } from "./steps"
+import { list, retry, cancel } from "./steps"
+import { RemoteReadFailed, RemoteRunsClient, StopFailed, SteerFailed, RepoRunsFailed } from "./api"
+import { RunActRefused } from "./flows"
+
+test("a remote agent already stopped records settled and refuses cancellation as settled", async () => {
+  const remote = RemoteRunsClient.of({
+    inspect: () => Effect.fail(new RemoteReadFailed({})), list: Effect.fail(new RemoteReadFailed({})),
+    stop: () => Effect.fail(new StopFailed({ status: 409 })), steer: () => Effect.fail(new SteerFailed({})),
+    flows: () => Effect.fail(new RepoRunsFailed({})), inputs: () => Effect.fail(new RepoRunsFailed({})), start: () => Effect.fail(new RepoRunsFailed({})),
+  })
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  expect(await Effect.runPromise(Effect.flip(cancel({ runId: "todo:ended", seq: 0, host: "cloud" }) as Effect.Effect<unknown, unknown, RemoteRunsClient>).pipe(
+    Effect.provideService(RemoteRunsClient, remote),
+    Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((o) => void logs.push(Logger.formatStructured.log(o)))])),
+  ))).toEqual(new RunActRefused({ code: "settled" }))
+  expect(logs).toContainEqual(expect.objectContaining({ annotations: expect.objectContaining({ outcome: "settled" }) }))
+})
 
 // Inject the engine's bounded listing service: internal work fills a whole page.
 test("run/list fills its limit with eligible runs beyond pages of internal runs", async () => {

@@ -53,6 +53,7 @@ import { Rooms } from "../../worker/branch/Rooms.ts"
 import { TerminalSockets } from "../../worker/branch/Sandboxes.ts"
 import * as Chat from "../../worker/Chat.ts"
 import * as Flows from "../../worker/Flows.ts"
+import * as TodoSession from "../../worker/flows/TodoSession.ts"
 import * as Pause from "../../worker/flows/Pause.ts"
 import * as GitHubApi from "../../worker/github/Api.ts"
 import { repositoryOf } from "../../worker/github/Config.ts"
@@ -237,6 +238,12 @@ const Nested = Flow.make("test/Nested", {
   body: Node.capture({}, (payload) => Pause.Pause.child(payload)),
 })
 
+/** A genuine external-agent session: its job stays queued until a runner claims it or a person stops it. */
+const External = Flow.make("test/External", {
+  payload: TodoSession.SessionPayload, success: TodoSession.Session.successSchema, error: TodoSession.Session.errorSchema,
+  body: Node.capture({}, (payload) => TodoSession.Session.call(payload)),
+})
+
 /** A remote flow a route started: the git loop's routes start them, and no remote host runs here. */
 export interface Started {
   readonly flow: string
@@ -395,6 +402,7 @@ export class TestChatApi extends Context.Service<
      */
     readonly remote: {
       readonly todoRun: (title: string) => Effect.Effect<string>
+      readonly startExternal: (runId: string) => Effect.Effect<void>
       /** A repository's run of `flow` recorded on `TEST_REPOSITORY`, as a trigger records one: its execution id. */
       readonly repoRun: (flow: string) => Effect.Effect<string>
       /** The run's status in the engine. */
@@ -629,7 +637,7 @@ export class TestChatApi extends Context.Service<
         >()
         const remoteFibers = new Map<string, Fiber.Fiber<void>>()
         const remoteEngine = yield* Effect.cached(
-          buildEngine(Interpreter.layer(Nested, { callbackIdentity: "stable" }).pipe(Layer.provideMerge(Pause.registration((label) => Effect.gen(function* () {
+          buildEngine(Layer.mergeAll(Interpreter.layer(Nested, { callbackIdentity: "stable" }), Interpreter.layer(External), TodoSession.registration(database)).pipe(Layer.provideMerge(Pause.registration((label) => Effect.gen(function* () {
             const gate = [...remoteGates.values()].find((gate) => gate.label === label)
             if (gate !== undefined) {
               yield* Deferred.succeed(gate.ready, undefined)
@@ -657,7 +665,7 @@ export class TestChatApi extends Context.Service<
           }),
           writer: remoteWriter,
           schema: remoteSchema,
-          flows: [Pause.Pause],
+          flows: [Pause.Pause, External],
           // What the run's Durable Object does (`ExecutionObject.make`'s `cancel`): the engine's own interrupt of the run.
           stop: (runId) =>
             Effect.gen(function* () {
@@ -1092,6 +1100,21 @@ export class TestChatApi extends Context.Service<
                   Effect.map((rows) => Number(rows[0]!.progress_at_ms))
                 )
               }).pipe(Effect.orDie),
+            startExternal: (runId) => Effect.gen(function* () {
+              const { context } = yield* remoteEngine
+              const attemptId = runId.slice("todo:".length)
+              const [row] = yield* sql<{ id: string; number: number; title: string; prompt: string; acceptance: ReadonlyArray<string> }>`
+                SELECT t.id, t.number, t.title, r.prompt, r.acceptance FROM todos t JOIN todo_attempts a ON a.todo_id = t.id
+                JOIN todo_requests r ON r.todo_id = t.id AND r.revision = t.revision
+                WHERE a.id = ${attemptId}::uuid`
+              if (row === undefined) return yield* Effect.die("missing real TODO attempt")
+              const fiber = yield* Effect.forkIn(Effect.ignore(Context.get(context, FlowRuntime.FlowRuntime).execute(External, { executionId: runId, payload: {
+                attemptId, todoId: row.id, repoId: `github/${TEST_REPOSITORY}`, number: row.number, title: row.title,
+                prompt: row.prompt, acceptance: row.acceptance, baseSha: "a".repeat(40),
+                agent: { name: "coder", labels: [], profile: "coder", maxHours: 1, restarts: 0 }, limits: { files: 1, bytes: 100 },
+              } }).pipe(Effect.provide(context))), layerScope)
+              remoteFibers.set(runId, fiber)
+            }).pipe(Effect.orDie),
             todoRun: (title) =>
               Effect.gen(function*() {
                 yield* remoteEngine
@@ -1331,6 +1354,7 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
  * Each device has its own locks, as each browser has its own Web Locks.
  */
 export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceOptions = {}): NodeDevice => {
+  if (typeof navigator.locks?.request !== "function") throw new Error("nodeDevice requires native Web Locks; use the workspace's Node toolchain")
   const path = file ?? join(tempDirectory("mvp-device-"), "device.sqlite")
   const entries = outboxEntries ?? new Map<string, string>()
   const storage = {

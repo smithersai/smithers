@@ -8,6 +8,7 @@ import { Classifier, type ModelEvent, ModelRequest } from "@smthrs/model"
 import { ConfigProvider, Effect, Exit, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -723,6 +724,11 @@ describe("POST /api/me/model/codex", () => {
     )
     network = later.fetch
     expect((await refusing(later.fetch))[0]).toMatchObject([202, { userCode: "LATER" }])
+    const omitted = scriptedOpenAi((path) =>
+      path.endsWith("/usercode") ? { status: 200, body: { device_auth_id: "d", user_code: "OMITTED" } } : { status: 500 }
+    )
+    network = omitted.fetch
+    expect((await refusing(omitted.fetch))[0]).toMatchObject([202, { userCode: "OMITTED" }])
   })
 
   test("only the person links: signed out 401, an agent 403, keys off 503, a flow that can't start 503", async () => {
@@ -747,6 +753,17 @@ describe("POST /api/me/model/codex", () => {
 })
 
 describe("a Codex token kept fresh", () => {
+  test("Check Access reports an unreadable refresh without inventing a provider status", async () => {
+    const [id] = await seedKeys(runtime, "person-member", [{ kind: "codex_subscription", key: JSON.stringify(credentialOf()) }])
+    const db = (await scratch()).database
+    let opened = 0
+    const failure = new SqlError({ reason: new ConnectionError({ cause: "injected outage", operation: "execute", message: "unavailable" }) })
+    const failing = Layer.fresh(Layer.unwrap(Effect.sync(() => ++opened === 1 ? db : Layer.effect(SqlClient.SqlClient, Effect.fail(failure)))))
+    const h = await open({ actor: member, database: failing })
+    expect((await json(await h.fetch(`${PERSONAL_MODEL_TEST_ROUTE}?connection=${id}`, { method: "POST" })))[1])
+      .toMatchObject({ ok: false, code: "refused", status: null, host: "auth.openai.com" })
+    expect(opened).toBeGreaterThan(1)
+  })
   const onNetwork = <A, E>(fetch: typeof globalThis.fetch, effect: Effect.Effect<A, E, SqlClient.SqlClient | Codex.CodexAuth>) =>
     runtime.runPromiseExit(effect.pipe(
       Effect.provideService(FetchHttpClient.Fetch, fetch),

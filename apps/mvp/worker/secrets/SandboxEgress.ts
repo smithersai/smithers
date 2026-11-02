@@ -235,13 +235,12 @@ export const forwardOverflow = (guest: Guest, overflow: OverflowCredentials, all
           asked === OVERFLOW_TOKEN
             ? keys.value.cipher.open(overflow.token, Overflow.tokenContext(overflow.repoId, overflow.token.keyVersion))
               .pipe(Effect.catch(unavailable(asked)))
-            : asked === keyName
-            ? Subscriptions.reveal(overflow.personId, overflow.connectionId, keys.value).pipe(
+            // Egress.forward reveals exactly policy.secrets: this private vault has only the token and this key.
+            : Subscriptions.reveal(overflow.personId, overflow.connectionId, keys.value).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
               Effect.flatMap(Option.match({ onNone: unavailable(asked), onSome: Effect.succeed })),
               Effect.catch(unavailable(asked)),
-            )
-            : unavailable(asked)(),
+            ),
       }),
     )
     return yield* Egress.forward(request, policy).pipe(Effect.provide(Layer.merge(vault, audit(guest, sql))))

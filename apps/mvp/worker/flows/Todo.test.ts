@@ -435,6 +435,17 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(ledgers).toEqual([[{ n: 0 }], [{ personId: maya.id, role: "coding" }]])
   })
 
+  test("waiting reports the runner state; stale attempts and database failures keep their own failure types", async () => {
+    const ctx = await setup()
+    const request = (await commit("Wait", "Inspect"))!
+    expect(await Effect.runPromise(Effect.result(Todo.steps(ctx.services).wait({ request })))).toMatchObject({ _tag: "Success" })
+    expect(await sql(runtime, "SELECT waiting FROM todos")).toEqual([{ waiting: "runner" }])
+    const down = Layer.effect(SqlClient.SqlClient, Effect.fail(new SqlError({ reason: new ConnectionError({ cause: "injected outage", message: "unavailable", operation: "execute" }) })))
+    expect(await Effect.runPromise(Effect.result(Todo.steps({ ...ctx.services, database: down }).wait({ request })))).toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/todo/TodoUnavailable", step: "collect" } })
+    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: request.repoId, actor: maya, via: "person", op: { kind: "drop", number: request.number } }, { runs: true }))
+    expect(await Effect.runPromise(Effect.result(Todo.steps(ctx.services).wait({ request })))).toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/todo/TodoFailed" } })
+  })
+
   describe("a committer whose list puts a subscription first", () => {
     test("gets the vendor's agent in the box, not the Smithers agent, and a Codex row below it can't stop the run", async () => {
       await seedKeys(runtime, maya.id, [
@@ -1459,6 +1470,38 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     } finally {
       await Effect.runPromise(Scope.close(scope, Exit.void))
     }
+  })
+
+  test("cancelling a closed-base descendant frees a lane for an independent queued TODO", async () => {
+    let implementing = false
+    const ctx = await setup({ model: Model.make({ stream: () => Stream.suspend(() => { implementing = true; return Stream.never }) }) })
+    const first = (await commit("One", "First"))!
+    await commit("Two", "Second")
+    const branch = "smithers/base"
+    const headSha = ctx.github.push(branch, { "ONE.md": "one" })
+    const pull = ctx.github.openPull(branch)
+    await runtime.runPromise(Stack.report(first, { kind: "branch", branch, baseRef: "main", baseSha: ctx.github.refs.get("main")! }, { runs: true }))
+    const second = (await runtime.runPromise(Stack.report(first, { kind: "published", headSha, prNumber: pull.number, draft: false }, { runs: true }))).starts[0]!
+    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person",
+      op: { kind: "configure", lanes: 1, maxOpen: 50, base: "independent" } }, { runs: true }))
+    expect(await commit("Three", "Independent")).toBeUndefined()
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const { context, engine } = yield* build(ctx.registration)
+      const flows = Context.get(context, FlowRuntime.FlowRuntime)
+      yield* flows.execute(Todo.Todo, { executionId: todoExecutionId(second.attemptId), payload: second, discard: true }).pipe(Effect.provide(context))
+      yield* Effect.promise(() => eventually(() => implementing, 30_000))
+      const started: Array<string> = []
+      yield* TodoBaseClosed.stop({ ...ctx.services,
+        cancel: (id) => flows.interrupt(Todo.Todo, id).pipe(Effect.provide(context)),
+        start: (flow, run) => (flows.execute(flow as never, { ...run, payload: run.payload as never, discard: true }) as Effect.Effect<unknown, unknown>).pipe(
+          Effect.provide(context), Effect.mapError(() => new Stack.RunsUnavailable({ errorCode: "host" })), Effect.tap(() => Effect.sync(() => started.push(run.executionId))), Effect.asVoid,
+        ),
+      })({ descendants: [{ ...second, prNumber: null }] })
+      expect(started).toHaveLength(1)
+      expect(yield* engine.status(started[0]!)).toBeDefined()
+      expect(yield* Effect.promise(() => todo(3))).toMatchObject({ state: "working", failure: null })
+    })))
+    expect(await todo(2)).toMatchObject({ state: "failed", failure: "base_closed" })
   })
 
   test.each(["closed", "refused", "retry"] as const)("invalidation settles a parked published descendant before PR cleanup: %s", async (outcome) => {

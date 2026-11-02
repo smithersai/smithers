@@ -123,6 +123,8 @@ const routes = async (
     readonly starter?: FlowStarter["Service"]
     /** GitHub out of reach: no scripted GitHub, and a base URL nothing listens on. */
     readonly unreachable?: boolean
+    readonly roleFailure?: RepoRoles.Refusal
+    readonly contentsDown?: boolean
   } = {},
 ) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
@@ -131,7 +133,7 @@ const routes = async (
   const registry: Metric.MetricRegistry = new Map()
   const configured = options.app === false
     ? Option.none()
-    : Option.some(app({ privateKey: await appKey(), ...(options.unreachable === true ? { apiBaseUrl: "http://127.0.0.1:1" } : {}) }))
+    : Option.some(app({ privateKey: await appKey(), ...(options.unreachable === true || options.contentsDown === true ? { apiBaseUrl: "http://127.0.0.1:1" } : {}) }))
   const http = options.unreachable === true ? {} : { http: github.http }
   const roles = await runtime.runPromise(RepoRoles.make(scratch.database, {
     repository: repositoryOf("acme/home"),
@@ -142,10 +144,10 @@ const routes = async (
     repositories: new Set(options.repositories ?? ["acme/widgets"]),
     app: configured,
     repoFlows: options.repoFlows ?? true,
-    roles,
+    roles: options.roleFailure === undefined ? roles : { ...roles, resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code: options.roleFailure! })) },
     engine: ExecutionHost.readDatabase(server.toString(), options.engineSchema ?? "flows_none"),
     variant,
-    ...http,
+    ...(options.contentsDown ? {} : http),
   }))
   const starter = options.starter ?? FlowStarter.of({
     start: (flow, start) => Effect.sync(() => void starts.push({ flow: flow._tag, ...start })),
@@ -200,6 +202,13 @@ const repository = () => {
 }
 
 describe("GET /api/repos/<owner>/<name>/flows", () => {
+  test.each(["app_not_installed", "rate_limited", "unavailable"] as const)("repository admission fails closed for %s", async (roleFailure) => {
+    const { github } = repository()
+    const h = await routes(github, { roleFailure })
+    const code = roleFailure === "app_not_installed" ? "not_found" : roleFailure
+    expect(await answer(await h.fetch(repoFlowsRoute(REPOSITORY.owner, REPOSITORY.name))))
+      .toEqual([roleFailure === "app_not_installed" ? 404 : roleFailure === "rate_limited" ? 429 : 503, { code }])
+  })
   test("the flows a person runs by hand, once each, with their titles, and the default branch", async () => {
     const { github } = repository()
     const h = await routes(github)
@@ -232,6 +241,7 @@ describe("GET /api/repos/<owner>/<name>/flows", () => {
       [{ repoFlows: false }, path, 503, "off"],
       [{ app: false }, path, 503, "off"],
       [{ unreachable: true }, path, 503, "unavailable"],
+      [{ contentsDown: true }, path, 503, "unavailable"],
     ]
     for (const [options, target, status, code] of cases) {
       const h = await routes(github, options)
@@ -286,6 +296,15 @@ describe("GET /api/repos/<owner>/<name>/flows/<flow>?ref=", () => {
 })
 
 describe("POST /api/repos/<owner>/<name>/runs", () => {
+  test("a host defect refuses a manual start and records unavailable", async () => {
+    const { github } = repository()
+    const id = uuid()
+    const body = { id, flow: "release", ref: "main", input: { channel: "next" } }
+    const path = repoRunsRoute(REPOSITORY.owner, REPOSITORY.name)
+    const failed = await routes(github, { starter: FlowStarter.of({ start: () => Effect.die(new Error("host defect")) }) })
+    expect(await answer(await failed.fetch(path, post({ ...body, id: uuid() })))).toEqual([503, { code: "unavailable" }])
+  })
+
   test("a run by hand: recorded as the person's, started at the branch's head with its inputs, once", async () => {
     const { github, sha } = repository()
     const h = await routes(github)

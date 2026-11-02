@@ -2,7 +2,7 @@
 // compose Postgres and Electric, reach a plugin through the host's `core/feeds` and `core/feed`; a Maintainer's
 // `feed/answer` runs on the device's engine and reaches the collector's read. Only the model is scripted.
 import { type Host } from "@smthrs/plugin"
-import { Effect, Metric } from "effect"
+import { Deferred, Effect, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import queue from "../../../plugins/queue/plugin.json" with { type: "json" }
 import { FlowDispatch } from "../../flows/dispatch"
@@ -57,7 +57,16 @@ const open = async () => {
   const root = openTestApp({ answers: false }, { actor: { ...member, role: "maintainer", login: "maya" } })
   runtimes.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
-  const tab = openTab(api, { host: nodeDevice({ agent: api }) })
+  const requests: Array<{ path: string; status: number | null }> = []
+  const observed = { ...api, fetch: async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    const receipt = { path: url.pathname, status: null as number | null }
+    requests.push(receipt)
+    const response = await api.fetch(input, init)
+    receipt.status = response.status
+    return response
+  } }
+  const tab = openTab(observed, { host: nodeDevice({ agent: observed }) })
   runtimes.push(tab)
   /** A request as the collector sends it, with its feed key. */
   const collector = (path: string, init: RequestInit = {}) =>
@@ -65,12 +74,34 @@ const open = async () => {
       ...init,
       headers: { authorization: `Bearer ${TEST_FEED_KEY}`, "content-type": "application/json" },
     })
-  return { api, tab, collector }
+  return { api, tab, collector, requests }
 }
 
 const names = (live: Host.Live<FeedDocument>) => live.current().map((row) => row.name)
 
 describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
+  test("concurrent first reads join the same live index after both real shape reads begin", async () => {
+    const { tab, collector } = await open()
+    expect((await collector(feedsRoute(REPO.owner, REPO.name), {
+      method: "POST", body: JSON.stringify({ set: { lanes: { visibility: "public", body: [] } } }),
+    })).status).toBe(200)
+    await tab.runPromise(Effect.scoped(Effect.gen(function* () {
+      const plugins = yield* Plugins
+      const entered = yield* Deferred.make<void>()
+      let readers = 0
+      const concurrent = { ...plugins, feeds: { ...plugins.feeds, index: (repo: string) => Effect.gen(function* () {
+        if (++readers === 2) yield* Deferred.succeed(entered, undefined)
+        yield* Deferred.await(entered)
+        return yield* plugins.feeds.index(repo)
+      }) } }
+      const [first, second] = yield* Effect.all([
+        queryOf("core/feeds", ASKED), queryOf("core/feeds", ASKED),
+      ], { concurrency: "unbounded" }).pipe(Effect.provideService(Plugins, concurrent))
+      expect(readers).toBe(2)
+      expect(first).toBe(second)
+      expect(names(first as Host.Live<FeedDocument>)).toEqual(["lanes"])
+    })))
+  })
   test("a plugin reads a repository's index, one document only while it listens, and selects a row of the index", async () => {
     const { tab, collector } = await open()
     const written = await collector(feedsRoute(REPO.owner, REPO.name), {
@@ -225,8 +256,9 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
     }).pipe(Effect.provide(Plugins.layer([probe])))))
   })
 
-  test("a Maintainer's answer runs on the device and reaches the collector, once", async () => {
-    const { tab, collector } = await open()
+  test("a Maintainer's answer runs on the device and reaches the collector, once", async ({ onTestFailed }) => {
+    const { tab, collector, requests } = await open()
+    onTestFailed(() => console.error("feed.answer.receipts", JSON.stringify({ requests })))
     const id = crypto.randomUUID()
     const payload = { ...REPO, id, item: "decision-1", choice: "approve", text: "ship it" }
     const answered = await tab.runPromise(

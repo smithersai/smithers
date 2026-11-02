@@ -52,7 +52,7 @@ const seedKey = async (person = "person-admin") =>
   (await seedKeys(runtime, person, [{ kind: "api_key", protocol: PROTOCOLS[1], baseUrl: MODEL, key: API_KEY }]))[0]!
 
 /** The Admin routes as `actor`, with SECRETS_KEY unless `secrets` is false; flows run to their end before they answer. */
-const adminRoutes = async (actor: Actor.Actor | null, secrets = true) => {
+const adminRoutes = async (actor: Actor.Actor | null, secrets = true, unavailable = false) => {
   const db = await database()
   const scope = Effect.runSync(Scope.make())
   const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(db)), scope))
@@ -61,6 +61,7 @@ const adminRoutes = async (actor: Actor.Actor | null, secrets = true) => {
   const starter = Flows.FlowStarter.of({
     start: (flow: Flow.Any, { executionId, payload }) => {
       journal.push(JSON.stringify(payload))
+      if (unavailable) return Effect.fail(new Flows.StartUnavailable({ errorCode: "injected" }))
       return (flows.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown, unknown>).pipe(
         Effect.provide(built.context),
         Effect.orDie,
@@ -113,6 +114,18 @@ const setting = (connectionId: string) => ({
 })
 
 describe("an Admin's overflow setting", () => {
+  test("omitted optional settings use the declared defaults, and a refused durable start saves nothing", async () => {
+    const connectionId = await seedKey()
+    const body = { connectionId, profile: "coder-profile", argv: ["my-agent", "--acp"] }
+    const failed = await adminRoutes(admin, true, true)
+    const real = await adminRoutes(admin)
+    try {
+      expect((await failed.send("overflow/cloudflare", "PUT", body)).status).toBe(503)
+      expect(await runtime.runPromise(Overflow.read(REPO))).toEqual(Option.none())
+      expect((await real.send("overflow/cloudflare", "PUT", body)).status).toBe(202)
+      expect(Option.getOrThrow(await runtime.runPromise(Overflow.read(REPO)))).toMatchObject({ labels: [], minQueuedSeconds: 60, capacity: 2 })
+    } finally { await Promise.all([failed.close(), real.close()]) }
+  })
   test("mints and registers the overflow runner's token, which no person, table, journal or answer sees", async () => {
     const connectionId = await seedKey()
     const asAdmin = await adminRoutes(admin)
@@ -216,10 +229,10 @@ describe("an overflow box's egress", () => {
       return new Response(`saw ${request.headers.get("authorization") ?? request.headers.get("x-api-key")}`)
     }
     const db = await database()
-    const box = (generation: number) =>
+    const box = (generation: number, value = credentials, enabled = true) =>
       HttpEffect.toWebHandler(
-        SandboxEgress.forwardOverflow({ ...guest, generation }, credentials).pipe(
-          Effect.provide(SecretKeys.layer(KEY)),
+        SandboxEgress.forwardOverflow({ ...guest, generation }, value).pipe(
+          Effect.provide(enabled ? SecretKeys.layer(KEY) : SecretKeys.off),
           Effect.provide(db),
           Effect.provide(FetchHttpClient.layer),
           Effect.provideService(FetchHttpClient.Fetch, upstream),
@@ -262,6 +275,12 @@ describe("an overflow box's egress", () => {
       idleExitSeconds: Overflow.IDLE_EXIT_SECONDS,
       profiles: { "coder-profile": { argv: ["my-agent", "--acp"], secretEnv: ["SMITHERS_MODEL_KEY"] } },
     })
+    const request = () => new Request(`${MODEL}/v1/messages`, { headers: { "x-api-key": placeholders.key } })
+    expect((await box(1, credentials, false)(request())).status).toBe(503)
+    expect((await box(1, { ...credentials, token: { ...credentials.token, ciphertext: "broken" } })(request())).status).toBe(503)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DELETE FROM personal_models WHERE id = ${connectionId}::uuid`))
+    expect((await box(1)(request())).status).toBe(503)
+    expect(seen).toHaveLength(2)
   })
 })
 

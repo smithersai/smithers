@@ -463,7 +463,7 @@ describe("drafts and delivery stay in their own conversation", () => {
     expect(tab.composer()).toMatchObject({ draft: "shared draft" })
   }, 60_000)
 
-  test("a question taken back after the person showed another conversation goes to its own conversation's draft", async () => {
+  test.each([undefined, "take me back", "older draft"])("a question taken back after navigation restores its own draft over %s", async (kept) => {
     const { api, device } = await openOffline()
     let entered!: () => void
     let release!: () => void
@@ -483,11 +483,16 @@ describe("drafts and delivery stay in their own conversation", () => {
     try {
       await deleting
       await tab.run(show("another-conversation"))
-      tab.actions.setDraft("another draft")
+      await tab.actions.setDraft("another draft")
+      if (kept !== undefined) await tab.run(tab.store.drafts.insert({ id: HOME_DRAFT, text: kept, generation: "earlier" }))
     } finally { release() }
     expect(await editing).toBe("edited")
     expect(tab.composer()).toMatchObject({ draft: "another draft" })
     expect(Option.getOrThrow(await tab.run(tab.store.drafts.get("another-conversation"))).text).toBe("another draft")
+    const restored = Option.getOrThrow(await tab.run(tab.store.drafts.get(HOME_DRAFT)))
+    expect(restored.text).toBe("take me back")
+    // An identical saved draft keeps its generation; a replacement or new draft must not inherit stale identity.
+    expect(restored.generation).toBe(kept === "take me back" ? "earlier" : undefined)
     await tab.run(show(null))
     expect(tab.composer()).toMatchObject({ draft: "take me back" })
   }, 60_000)

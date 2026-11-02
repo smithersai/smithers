@@ -11,7 +11,7 @@ import { Database, EngineStore, Journal } from "@smthrs/flows"
 import { Notification, NotificationQueue } from "@smthrs/notifications"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Node } from "@smthrs/plan"
-import { ConfigProvider, Context, Effect, Layer, Logger, Metric, Option, Redacted, Schema, Tracer } from "effect"
+import { ConfigProvider, Context, Deferred, Effect, Fiber, Layer, Logger, Metric, Option, Redacted, Schema, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -1120,6 +1120,41 @@ describe("POST /api/remote-runs/<runId>/stop", () => {
         ["agent", "settled"],
       ])
     })
+  })
+
+  test("an attempt committed between access and Stop cannot inherit permission from an absent run", async () => {
+    const started = Effect.runSync(Deferred.make<Stack.AttemptStart>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const committed = Effect.runSync(Deferred.make<void>())
+    const writer = runtime.runFork(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+      const applied = yield* Stack.apply({ opId: uuid(), repoId: "github/private/other", actor: { id: member.subject.id, login: "maya" }, via: "person",
+        op: { kind: "commit", title: "Private", prompt: "Inspect", acceptance: [] } }, { runs: true })
+      if (applied.kind !== "applied") return yield* Effect.die("not applied")
+      yield* Deferred.succeed(started, applied.receipt.starts[0]!)
+      yield* Deferred.await(release)
+    }))).pipe(Effect.ensuring(Deferred.succeed(committed, undefined))))
+    try {
+      const request = await Effect.runPromise(Deferred.await(started))
+      const db = (await runtime.runPromise(TestDatabase.Scratch)).database
+      let reads = 0
+      const delayed = Layer.fresh(Layer.unwrap(Effect.gen(function* () {
+        if (++reads === 2) {
+          yield* Deferred.succeed(release, undefined)
+          yield* Deferred.await(committed)
+        }
+        return db
+      }))).pipe(Layer.orDie)
+      await withEngine(async (engine) => {
+        const h = await routes(engine, { actor: member, database: delayed })
+        const response = await h.fetch(stopRoute(todoExecutionId(request.attemptId)), { method: "POST" })
+        expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+        expect(h.line("run.stop").map((line) => line.annotations.outcome)).toEqual(["forbidden"])
+      })
+      expect(reads).toBe(2)
+    } finally {
+      await Effect.runPromise(Deferred.succeed(release, undefined))
+      await Effect.runPromise(Fiber.join(writer))
+    }
   })
 
   test("refuses who may not stop it, a job, a run no repository recorded, and an object that couldn't take it", async () => {

@@ -15,7 +15,7 @@ import { Scrub } from "@smthrs/secrets"
 import { ConfigProvider, Context, Effect, Exit, Layer, Option, Redacted, Scope, Stream } from "effect"
 import * as ModelFlows from "../personal/ModelFlows.ts"
 import { SqlClient } from "effect/sql"
-import { FetchHttpClient, HttpEffect } from "effect/http"
+import { FetchHttpClient, HttpEffect, HttpServerResponse } from "effect/http"
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type Server } from "node:http"
@@ -30,6 +30,10 @@ import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import * as Todo from "../flows/Todo.ts"
 import * as TodoAgent from "../flows/TodoAgent.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
+import * as RemoteRuns from "../RemoteRuns.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { repositoryOf } from "../github/Config.ts"
+import { stopRoute } from "../../src/features/runs/contract.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../github/test/fixtures.ts"
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
@@ -649,8 +653,18 @@ describe("steering and stopping a TODO's external agent", { timeout: 240_000 }, 
     const run = ctx.run(start)
     await eventually(async () => detached(ctx.state).length === 1, 60_000)
     const [sleeper] = detached(ctx.state)
+    const roles = await runtime.runPromise(RepoRoles.make(ctx.db, { repository: repositoryOf("acme/widgets"), app: Option.none() }))
+    const server = (await runtime.runPromise(TestDatabase.serverUrl)).toString()
+    const remote = await runtime.runPromise(RemoteRuns.make(ctx.db, {
+      schema: ctx.schema, database: ExecutionHost.readDatabase(server, ctx.schema), writer: await engineWriter(ctx.schema),
+      flows: [Todo.Todo], transcript: () => Effect.succeed(HttpServerResponse.empty({ status: 426 })),
+      stop: () => Effect.die("a TODO stops its external agent, not its host"),
+    }, roles))
+    const handler = HttpEffect.toWebHandler(remote.fetch.pipe(Effect.provide(signedIn({ subject: { kind: "person", id: maya.id }, role: "member", login: maya.login })), Effect.provide(FetchHttpClient.layer)))
+    const stopAgent = () => handler(new Request(`http://localhost${stopRoute(todoExecutionId(start.attemptId))}`, { method: "POST" }))
     const asked = Date.now()
-    expect(await runtime.runPromise(TodoSession.stop(start.attemptId))).toBe(1)
+    const stopping = await stopAgent()
+    expect([stopping.status, await stopping.json()]).toEqual([202, { outcome: "requested" }])
     // The runner learns it at its next heartbeat, ends the tree, and settles Cancelled with no process left.
     await eventually(async () => (await jobs())[0]?.status === "cancelled", 30_000)
     expect(Date.now() - asked).toBeLessThan(20_000)
@@ -674,7 +688,8 @@ describe("steering and stopping a TODO's external agent", { timeout: 240_000 }, 
     expect(ctx.github.pulls.size).toBe(0)
     expect([...ctx.github.refs.keys()]).toEqual(["main"])
     // A second Stop finds nothing open.
-    expect(await runtime.runPromise(TodoSession.stop(start.attemptId))).toBe(0)
+    const stopped = await stopAgent()
+    expect([stopped.status, await stopped.json()]).toEqual([409, { code: "not_working" }])
     // The TODO kept its place: Retry starts a new attempt.
     const retried = await runtime.runPromise(Stack.apply({
       opId: crypto.randomUUID(),

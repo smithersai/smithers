@@ -10,7 +10,8 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 // (worker/RemoteRuns.ts) and the compose Postgres and Electric (src/test/chatApi.ts). The run is the remote host's
 // `probe/Pause`, run under a TODO attempt's id by an engine on a schema of its own, as the Durable Object runs a TODO's
 // `todo` run: so what the tab reads, and when it reads it again, is what it does for a TODO's run.
-import { Context, Effect, Layer, Logger, ManagedRuntime, Option } from "effect"
+import { Context, Deferred, Effect, Layer, Logger, ManagedRuntime, Option } from "effect"
+import * as AgentJobs from "../../../worker/runners/Jobs.ts"
 import { FetchHttpClient } from "effect/http"
 import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"
@@ -92,6 +93,65 @@ const open = async (person?: string, engine = false) => {
 }
 
 describe("a TODO's run on Cloudflare", () => {
+  test("Stop racing another cancellation reports settled, without a second cancellation", async () => {
+    const t = await open(undefined, true)
+    const runId = await Effect.runPromise(t.api.remote.todoRun("Stop race"))
+    await Effect.runPromise(t.api.remote.startExternal(runId))
+    await t.runs.actions.openRun(runId)
+    await until(() => expect(actsOf(t.inspection()!, Date.now(), undefined, true).stop).toBe(true))
+    await until(async () => expect(await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT key FROM agent_jobs WHERE task->'context'->>'attemptId' = ${runId.slice(5)}`)))).toHaveLength(1))
+    const ready = Effect.runSync(Deferred.make<number>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const writer = Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+      const [row] = yield* sql<{ origin: string }>`SELECT origin FROM agent_jobs WHERE task->'context'->>'attemptId' = ${runId.slice(5)}`
+      expect(yield* AgentJobs.stop(row!.origin)).toBe(1)
+      const [backend] = yield* sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`
+      yield* Deferred.succeed(ready, backend!.pid)
+      yield* Deferred.await(release)
+    })))))
+    try {
+      const blocker = await Promise.race([Effect.runPromise(Deferred.await(ready)), writer.then(() => { throw new Error("cancellation ended before its lock receipt") })])
+      // The first cancellation holds its row lock. Stop reads the live step, then waits on that same job.
+      t.runs.actions.stop()
+      await until(async () => expect(await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ waiting: boolean }>`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+          WHERE ${blocker} = ANY(pg_blocking_pids(pid)) AND query LIKE '%UPDATE agent_jobs SET cancel_requested%') AS waiting`
+          .pipe(Effect.map((rows) => rows[0]!.waiting)))))).toBe(true))
+      await Effect.runPromise(Deferred.succeed(release, undefined))
+      await writer
+      await until(() => expect(t.runs.queries.view.toArray[0]?.refusal).toBe("settled"))
+      expect(t.api.spans.filter((span) => span.name === "run.stop")).toHaveLength(1)
+    } finally {
+      await Effect.runPromise(Deferred.succeed(release, undefined))
+      await writer
+    }
+  }, 60_000)
+
+  test("the public Stop action stops a real queued external-agent session", async () => {
+    const t = await open(undefined, true)
+    const runId = await Effect.runPromise(t.api.remote.todoRun("External"))
+    await Effect.runPromise(t.api.remote.startExternal(runId))
+    await t.runs.actions.openRun(runId)
+    await until(() => expect(actsOf(t.inspection()!, Date.now(), undefined, true).stop).toBe(true))
+    await until(async () => expect(await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT key FROM agent_jobs WHERE task->'context'->>'attemptId' = ${runId.slice(5)}`)))).toHaveLength(1))
+    t.runs.actions.stop()
+    await until(() => expect(t.api.spans.filter((span) => span.name === "run.stop")).toHaveLength(1))
+    await until(() => expect(t.inspection()?.run.status).toBe("failed"))
+    expect(t.runs.queries.view.toArray[0]?.refusal).toBeNull()
+  }, 60_000)
+
+  test("public Run controls before a repository is chosen preserve the empty form and start nothing", async () => {
+    const t = await open(undefined, true)
+    t.runs.actions.chooseRepoFlow("ci")
+    t.runs.actions.runRepoFlow({})
+    t.runs.actions.setRunRef("next")
+    t.runs.actions.reloadRepoFlow()
+    t.runs.actions.retryFailed()
+    await until(() => expect(t.runs.queries.form.toArray[0]).toMatchObject({ repo: null, flow: null, ref: "next" }))
+    expect(t.api.spans.filter((span) => span.name === "repo.run")).toEqual([])
+  })
   test("a subscription warmed before navigation stays live without inventing a route timing attempt", async () => {
     const t = await open()
     const runId = await Effect.runPromise(t.api.remote.todoRun("Warmed feed"))

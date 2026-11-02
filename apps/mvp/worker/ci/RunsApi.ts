@@ -252,7 +252,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         // Not new: its row is there, with the commit it recorded.
         const sha = fresh
           ? request.sha
-          : Option.getOrElse(yield* RepoRuns.recordedSha(request.run).pipe(Effect.provide(database)), () => request.sha)
+          : Option.getOrThrow(yield* RepoRuns.recordedSha(request.run).pipe(Effect.provide(database)))
         return yield* (yield* FlowStarter).start(RepoFlow.Run, { executionId: request.run, payload: { ...request, sha } }).pipe(
           Effect.as(fresh ? "started" as const : "existing" as const),
           Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.succeed("conflict" as const)),

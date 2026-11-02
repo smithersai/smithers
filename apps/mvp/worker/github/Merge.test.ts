@@ -520,6 +520,31 @@ test("an unknown merge outcome cannot claim a different GitHub person's merge", 
 
 // The repository's merge flow (ruling BR-7, decision 0134): `.smithers/merge.json` at the base the person saw.
 describe("pr/Merge through the repository's merge queue", { timeout: 60_000 }, () => {
+  test.each([undefined, 2_000])("an unreadable contents token keeps its retry delay: %s", async (retryAfterMillis) => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const { writeId } = await merging(github, opened(github))
+    const { services: built } = await services(runtime, github)
+    const failed = { ...built, tokens: { ...built.tokens, forInstallation: () => Effect.fail(new TokenUnavailable({ reason: "unavailable", ...(retryAfterMillis === undefined ? {} : { retryAfterMillis }) })) } }
+    const answer = await runtime.runPromise(Effect.flip(Merge.steps(failed).send({ writeId })))
+    expect(answer).toEqual(new Merge.MergeUnavailable(retryAfterMillis === undefined ? {} : { retryAfterMillis }))
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "pending" })
+  })
+
+  test.each(["directory", "forbidden", "limited"] as const)("an unreadable merge file: %s", async (fault) => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const { writeId } = await merging(github, opened(github))
+    const { services: built } = await services(runtime, github)
+    github.faults.push({ match: (method, path) => method === "GET" && path.includes("/contents/"),
+      ...(fault === "directory" ? { malformed: true } : { status: fault === "forbidden" ? 403 : 429, headers: { "retry-after": "2" } }),
+    })
+    const result = await runtime.runPromise(Effect.result(Merge.steps(built).send({ writeId })))
+    if (fault === "limited") expect(result).toMatchObject({ _tag: "Failure", failure: { retryAfterMillis: 2_000 } })
+    else {
+      expect(result).toMatchObject({ _tag: "Success", success: { status: "refused" } })
+      expect(await writeRow(runtime, writeId)).toMatchObject({ failure: fault === "directory" ? "invalid" : "not_allowed" })
+    }
+    expect(github.seen("PUT", /\/merge$/)).toEqual([])
+  })
   /** A repository whose main says `{ "flow": "queue" }` (or `text`), and a pull request opened on it. */
   const queueing = (text = `{ "flow": "queue" }\n`) => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)

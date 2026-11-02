@@ -575,6 +575,18 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
   }
   const mainRows = () => rows(`main:${REPOSITORY.id}`)
 
+  test("local development watchers without sessions hear events only while their fixed role may read", async () => {
+    for (const id of ["local-member", "local-guest", "local-roleless", "unknown"]) await watch(id, "all")
+    const event = Option.getOrThrow(Notifications.repoEventOf("push", push(SHA("a")), REPOSITORY, new Date()))
+    const written = await runtime.runPromise(Notifications.recordRepoEvent(event, [
+      { id: "local-member", role: "member" },
+      { id: "local-guest", role: "guest" },
+      { id: "local-roleless", role: null },
+    ]))
+    expect(written).toBe(1)
+    expect((await mainRows()).map((row) => row.recipient)).toEqual(["local-member"])
+  })
+
   test("distinct pushes in the same second advance the commit and version", async () => {
     await watchRepo()
     const h = await githubHarness(runtime)

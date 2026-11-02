@@ -24,6 +24,13 @@ test("the shipped plugin subscribes to run and machine changes, and unsubscribe 
     await query((sql) => sql`INSERT INTO agent_runs (key, repo_id, agent, generation, queued_at)
       VALUES ('live', 'github/octo/hello', 'coder', 1, now())`)
     const ui = await app.runPromise(Effect.service(PluginsUi))
+    // The shipped manifest's two component renders must resolve through the public lazy loader, and keep the
+    // same promise so React's `use` can settle when a repository opens its Fleet tab.
+    const components = ui.actions.components("fleet")
+    expect(ui.actions.components("fleet")).toBe(components)
+    const loaded = await components
+    expect(loaded.Fleet).toEqual(expect.any(Function))
+    expect(loaded.RepoTab).toEqual(expect.any(Function))
     const tab = await ui.actions.tab("fleet") as FleetTab
     const repo = { owner: "octo", name: "hello" }
     const runs = tab.queries.runs(repo)
