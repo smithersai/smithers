@@ -180,7 +180,11 @@ selects the earliest owning Change, preserves its native atom IDs, edits and
 restacks through JJ, and reruns checks for the invalidated suffix within a
 bounded round limit. Missing or stale evidence cannot count as validation.
 Its sibling `CorrectChange` repairs any Change already on the stack the same
-way, starting from that Change's findings instead of a plan.
+way, starting from that Change's findings instead of a plan. On a long stack
+of Changes from many authors, [FirstRed](first-red.md) runs the slow checks on
+the tip and bisects each failing one, by Change, to the first Change that
+breaks it; its `firstRed` names the Change and findings a correction starts
+from.
 History cleanup, marking work vibed, appending to main and shipment still need
 subsequent ordinary workflow stages; a host with a mythical stack moves main
 along its [green prefix](finalization.md#fast-forward-main-along-a-stacks-green-prefix)

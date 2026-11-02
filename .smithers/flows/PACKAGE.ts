@@ -254,6 +254,8 @@ const coding = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/learning.test.ts"),
     // The local landers over a real colocated jj repository and a recording `gh`.
     Smithers.file("//.smithers/flows/test/coding-local-landing.test.ts"),
+    // First red across a stack: bisects a real jj stack and replays after a restart.
+    Smithers.file("//.smithers/flows/test/coding-first-red.test.ts"),
     // The coding host's bundle shim, checked against every `bun:sqlite` import
     // under `packages/smithers` and `flows`. It reads more than this target's
     // srcs name, so it belongs to this uncached runner: a cached verdict would
