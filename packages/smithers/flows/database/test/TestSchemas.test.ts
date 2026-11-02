@@ -19,3 +19,13 @@ test("timestamped fixture prefixes preserve age and identity across separately n
   vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
   expect(Selection.location("/project/engine.db")?.schema).toBe(engine)
 })
+
+
+test("hyphenated caller prefixes normalize into bounded reaper identities", () => {
+  for (const prefix of ["who-may-ask", "creation-flow", "agent-views", "views-steps", "long-hyphenated-prefix".repeat(10)]) {
+    const name = TestSchemas.schemaName(prefix)
+    expect(name).toMatch(new RegExp(TestSchemas.NAME_PATTERN))
+    expect(name.startsWith(`${prefix.replaceAll("-", "_").slice(0, 19)}_`)).toBe(true)
+    expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(63)
+  }
+})

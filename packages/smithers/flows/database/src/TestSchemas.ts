@@ -15,10 +15,11 @@ export const NAME_PATTERN = "^[a-z][a-z0-9_]{0,18}_[1-9][0-9]{9}_[0-9a-f]{32}$"
  * @since 1.0.0
  */
 export const schemaName = (prefix: string, createdAt = Math.floor(Date.now() / 1_000)): string => {
-  if (!/^[a-z][a-z0-9_]*(?![\s\S])/.test(prefix) || !Number.isInteger(createdAt) || createdAt < 1_000_000_000 || createdAt > 9_999_999_999) {
+  const normalized = prefix.replaceAll("-", "_")
+  if (!/^[a-z][a-z0-9_]*(?![\s\S])/.test(normalized) || !Number.isInteger(createdAt) || createdAt < 1_000_000_000 || createdAt > 9_999_999_999) {
     throw new Error("Invalid test schema identity")
   }
-  return `${prefix.slice(0, 19)}_${createdAt}_${crypto.randomUUID().replaceAll("-", "")}`
+  return `${normalized.slice(0, 19)}_${createdAt}_${crypto.randomUUID().replaceAll("-", "")}`
 }
 
 /** Derive a store identity without losing the timestamp or exceeding Postgres' identifier limit.

@@ -25,7 +25,11 @@ test("schema identities contain their creation time, are unique and fit a Postgr
   expect(schemaName("flows")).toMatch(new RegExp(NAME_PATTERN))
   expect(schemaName("a".repeat(100))).toHaveLength(63)
   expect(schemaName("flows")).not.toBe(schemaName("flows"))
-  for (const prefix of ["", "public-", "UPPER", "é", "0bad", "flows\n", "flows\r", "flows\u2028"]) expect(() => schemaName(prefix)).toThrow("Invalid test schema")
+  const hyphenated = schemaName("who-may-ask")
+  expect(hyphenated).toMatch(/^who_may_ask_/)
+  expect(hyphenated).toMatch(new RegExp(NAME_PATTERN))
+  expect(Buffer.byteLength(schemaName("long-hyphenated-prefix".repeat(10)))).toBe(63)
+  for (const prefix of ["", "UPPER", "é", "0bad", "flows\n", "flows\r", "flows\u2028"]) expect(() => schemaName(prefix)).toThrow("Invalid test schema")
   for (const time of [0, 999_999_999, 10_000_000_000, 1_234_567_890.5, NaN]) expect(() => schemaName("flows", time)).toThrow()
 })
 
