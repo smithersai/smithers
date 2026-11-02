@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option } from "effect"
-import { readdirSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join, posix, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
@@ -9,12 +9,37 @@ import * as Root from "../src/index.ts"
 
 const sourceRoot = fileURLToPath(new URL("../src", import.meta.url))
 
+/** A source module: TypeScript, or the same module migrated to VibeLang. */
+const sourceExtensions = [".ts", ".vibe"] as const
+
+/** A source module's file, and not the declaration sidecar a `.vibe` module may emit. */
+const isSourceFile = (file: string): boolean =>
+  sourceExtensions.some((extension) => file.endsWith(extension)) && !file.endsWith(".d.vibe.ts")
+
+/** A module's path without its source extension, so a module keeps its name across the migration. */
+const stem = (file: string): string => {
+  const extension = sourceExtensions.find((extension) => file.endsWith(extension))
+  return extension === undefined ? file : file.slice(0, -extension.length)
+}
+
+/** The one file, among the paths `exists` accepts, that holds the module `name`. */
+const sourceFile = (exists: (file: string) => boolean, name: string): string => {
+  const found = sourceExtensions.map((extension) => `${name}${extension}`).filter(exists)
+  if (found.length !== 1) {
+    throw new Error(`${name} needs one source module, found ${found.length === 0 ? "none" : found.join(" and ")}`)
+  }
+  return found[0]!
+}
+
+/** The file under `src/` that holds the module `name`. */
+const moduleFile = (name: string): string => sourceFile((file) => existsSync(join(sourceRoot, file)), name)
+
 /** Every module under `src/`, as a path relative to it. */
 const modules = (directory = sourceRoot): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
       ? modules(join(directory, entry.name))
-      : entry.name.endsWith(".ts")
+      : isSourceFile(entry.name)
       ? [relative(sourceRoot, join(directory, entry.name)).split(sep).join("/")]
       : []
   )
@@ -40,7 +65,7 @@ const closure = (module: string): ReadonlySet<string> => {
     for (const loaded of runtimeImports(next)) {
       if (seen.has(loaded)) continue
       seen.add(loaded)
-      if (loaded.endsWith(".ts")) visit(loaded)
+      if (isSourceFile(loaded)) visit(loaded)
     }
   }
   visit(module)
@@ -145,22 +170,51 @@ describe("module layout", () => {
     // input boundary from the module that owned the SQL tier, and a schema,
     // admission, or SQL change all edited that one file. The barrel is the
     // SQL tier's only importer, so the tiers depend on the contract instead.
-    expect(modules().filter((module) => runtimeImports(module).some(isSqlStack)).sort()).toEqual([
-      "internal/SqlCacheStore.ts",
-      "migrations/0001_initial.ts",
-      "migrations/0002_created_at_index.ts"
+    expect(modules().filter((module) => runtimeImports(module).some(isSqlStack)).map(stem).sort()).toEqual([
+      "internal/SqlCacheStore",
+      "migrations/0001_initial",
+      "migrations/0002_created_at_index"
     ])
-    expect(modules().filter((module) => runtimeImports(module).includes("internal/SqlCacheStore.ts"))).toEqual([
-      "CacheStore.ts"
+    expect(
+      modules().filter((module) => runtimeImports(module).map(stem).includes("internal/SqlCacheStore")).map(stem)
+    ).toEqual([
+      "CacheStore"
     ])
   })
 
   it("keeps the shared admission policy free of every tier", () => {
-    const loaded = [...closure("internal/CacheAdmission.ts")]
-    expect(loaded.filter((specifier) => specifier.endsWith(".ts")).sort()).toEqual([
-      "internal/CacheEntry.ts",
-      "internal/CacheStoreError.ts"
+    const loaded = [...closure(moduleFile("internal/CacheAdmission"))]
+    expect(loaded.filter(isSourceFile).map(stem).sort()).toEqual([
+      "internal/CacheEntry",
+      "internal/CacheStoreError"
     ])
     expect(loaded.filter(isSqlStack)).toEqual([])
+  })
+
+  it.each([
+    ["a .ts module", ["M.ts"], "M.ts"],
+    ["a .vibe module", ["M.vibe"], "M.vibe"]
+  ])("finds %s", (_case, files, expected) => {
+    expect(sourceFile((file) => files.includes(file), "M")).toBe(expected)
+  })
+
+  it.each([
+    ["a missing module", ["Other.ts"], "none"],
+    ["a module in both languages", ["M.ts", "M.vibe"], "M.ts and M.vibe"],
+    ["a declaration sidecar only", ["M.d.vibe.ts"], "none"],
+    ["a module in another language", ["M.js"], "none"]
+  ])("refuses %s", (_case, files, found) => {
+    expect(() => sourceFile((file) => files.includes(file), "M")).toThrow(`M needs one source module, found ${found}`)
+  })
+
+  it.each([
+    ["internal/M.ts", true, "internal/M"],
+    ["internal/M.vibe", true, "internal/M"],
+    ["internal/M.d.vibe.ts", false, "internal/M.d.vibe"],
+    ["internal/M.js", false, "internal/M.js"],
+    ["effect/sql/SqlClient", false, "effect/sql/SqlClient"]
+  ])("reads %s as a source file: %s, module %s", (file, source, name) => {
+    expect(isSourceFile(file)).toBe(source)
+    expect(stem(file)).toBe(name)
   })
 })
