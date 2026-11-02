@@ -11,6 +11,7 @@ import { openTestApp, TestChatApi } from "../src/test/chatApi"
 import { put } from "../src/features/repo/actions"
 import { FAILURE_COPY } from "../src/features/repo/contract"
 import { RepoStore } from "../src/features/repo/store"
+import type { About } from "../src/features/repo/schema"
 import { HomeStore } from "../src/features/home/store"
 import { AuthStore } from "../src/features/auth/store"
 import { TodosStore } from "../src/features/todos/store"
@@ -27,6 +28,13 @@ import { Issues } from "../src/features/issues/issues"
 import { Runs } from "../src/features/runs/runs"
 import { Secrets } from "../src/features/secrets/secrets"
 
+/** What GitHub says of smithersai/vibelang, as an About read answers it. */
+const vibelangAbout: About = {
+  name: "smithersai/vibelang", description: "VibeLang", homepage: null, topics: [], stars: 0, forks: 0, watchers: 0,
+  license: null, defaultBranch: "main", archived: false, languages: [], release: null, releases: 0, contributors: [],
+  contributorCount: 0, commits: null, branches: null, tags: null, head: null, root: null, readme: null, installUrl: null,
+}
+
 // Real feature collections and views. These are stored row fixtures, with no module mocks or intercepted requests.
 test("direct feature pages keep navigation, fence the deployment's own repository, and name GitHub instead of an unobservable write", async () => {
   const app = openTestApp({ sessionLifecycle: false })
@@ -42,7 +50,15 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('github/smithersai/vibelang', now() + interval '1 hour')`)))
     const vibelangIssues = await app.runPromise(Effect.flatMap(Effect.service(IssuesStore), (store) => store.forRepo("github/smithersai/vibelang")))
+    // GitHub has answered what it says of the repository. The test's GitHub is offline, so a read of its own would fail,
+    // and a failed About hides the header's sections until metadata recovers (docs/features/repo.md): pages raced it.
+    await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", { key: "github/smithersai/vibelang", state: "ready", about: vibelangAbout, message: null }))
     services.repo.actions.openRoute("tree", { owner: "smithersai", repo: "vibelang" }, {})
+    // Every page renders after About has settled, the interleaving that failed when the read was the test's own.
+    await vi.waitFor(async () => {
+      const about = await app.runPromise(repo.abouts.get("github/smithersai/vibelang"))
+      expect(Option.getOrUndefined(about)?.state).toBeOneOf(["ready", "missing", "failed"])
+    }, { timeout: 10_000 })
     await app.runPromise(Effect.all([
       auth.session.update("session", row => { row.status = "signed_in"; row.role = "admin"; row.login = "reader" }),
       home.current.update("current", row => { row.owner = "smithersai"; row.name = "vibelang"; row.repoId = "github/smithersai/vibelang"; row.answering = false; row.defaultBranch = "main"; row.curatedDocs = "docs/index.md" }),
@@ -88,12 +104,6 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       expect(html).not.toContain('aria-label="Commitment"')
       })
     }
-    // Settle the initial real read before installing the pending-metadata fixture for header admission.
-    await vi.waitFor(async () => {
-      const about = await app.runPromise(repo.abouts.get("github/smithersai/vibelang"))
-      expect(Option.isSome(about)).toBe(true)
-      if (Option.isSome(about)) expect(about.value.state).not.toBe("loading")
-    }, { timeout: 10_000 })
     // Clone admission follows this repository's role, even when the session is an Admin elsewhere.
     await app.runPromise(repo.view.update("view", row => { row.answered = true; row.signedIn = true }))
     await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", { key: "github/smithersai/vibelang", state: "loading", about: null, message: null }))
