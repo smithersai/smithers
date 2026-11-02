@@ -21,7 +21,13 @@ import { NativeCoding, NativeCodingError } from "../coding/native.ts"
 import { checkInputDigest, CodingError, type Implementation, type Plan, type Revision } from "../coding/schema.ts"
 import { stackBaseLayer } from "../coding/stack.ts"
 import { landerLayer } from "../coding/vibe-lander.ts"
-import { backendLandingLayers, InstallLandVibe, landingLayers, LandVibe } from "../coding/vibe-landing.ts"
+import {
+  AdvanceGreenPrefix,
+  backendLandingLayers,
+  InstallLandVibe,
+  landingLayers,
+  LandVibe
+} from "../coding/vibe-landing.ts"
 import { publicationLayers } from "../coding/vibe-publication.ts"
 import type { VibeCleanup } from "../coding/vibe-schema.ts"
 import { RunCheck } from "../coding/workflow.ts"
@@ -747,6 +753,7 @@ for (const mode of localModes) {
             ? Effect.fail(new CodingError({ code: "evicted", message: "main moved after the candidate was verified" }))
             : reply("fast-forward", candidate.commitId)
         }),
+      advanceGreenPrefix: () => Effect.die("vibe landing never advances a stack's green prefix"),
       abandon: () =>
         Effect.sync(() => {
           calls.push("abandon")
@@ -937,3 +944,56 @@ for (const mode of localModes) {
     }
   })
 }
+
+test("advance green prefix: the durable flow hands the stack to the local lander, and a backend host refuses", async (t) => {
+  const tip = "vibe", required = ["test"]
+  const receipts = [{
+    checkId: "test",
+    target: "//:test",
+    tier: "slow" as const,
+    change: "stack",
+    commitId: "8".repeat(40),
+    treeId: "6".repeat(40),
+    inputDigest: "0".repeat(64),
+    status: "passed" as const,
+    evidence: "",
+    findings: []
+  }]
+  const calls: Array<unknown> = []
+  const outcome = { status: "advanced" as const, from: main, to: "8".repeat(40), above: 0 }
+  const refuse = () => Effect.die("only the green prefix runs")
+  const lander: LocalLanding = {
+    kind: "fast-forward",
+    prepare: refuse,
+    fastForward: refuse,
+    advanceGreenPrefix: (input) => Effect.sync(() => (calls.push(input), outcome)),
+    abandon: refuse,
+    openPull: refuse,
+    observeChecks: refuse,
+    merge: refuse
+  }
+  const hostOf = (landing: LocalLanding | BackendLanding) => {
+    const host = ManagedRuntime.make(
+      landingLayers.pipe(
+        Layer.provide(Layer.succeed(Landing, landing)),
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(FlowEngine.layerMemory),
+        Layer.provideMerge(NodeCrypto.layer)
+      )
+    )
+    t.after(() => host.dispose())
+    return host
+  }
+  const local = hostOf(lander)
+  assert.deepEqual(
+    await local.runPromise(AdvanceGreenPrefix.execute({ required, tip, receipts }, { executionId: "green-prefix" })),
+    outcome
+  )
+  assert.deepEqual(calls, [{ required, tip, receipts }])
+  const backend = hostOf({ kind: "backend" } as BackendLanding)
+  const error = await backend.runPromise(
+    Effect.flip(AdvanceGreenPrefix.execute({ required, tip, receipts }, { executionId: "green-prefix-backend" }))
+  )
+  assert.ok(error instanceof CodingError)
+  assert.equal(error.code, "unavailable")
+})

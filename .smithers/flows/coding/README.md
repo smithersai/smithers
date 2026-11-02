@@ -182,7 +182,9 @@ bounded round limit. Missing or stale evidence cannot count as validation.
 Its sibling `CorrectChange` repairs any Change already on the stack the same
 way, starting from that Change's findings instead of a plan.
 History cleanup, marking work vibed, appending to main and shipment still need
-subsequent ordinary workflow stages. A receipt schema alone does not prove that
+subsequent ordinary workflow stages; a host with a mythical stack moves main
+along its [green prefix](finalization.md#fast-forward-main-along-a-stacks-green-prefix)
+with `coding/AdvanceGreenPrefix`. A receipt schema alone does not prove that
 an arbitrary delegate performed a real test: deployment adapters must measure
 their native results rather than trust agent assertions.
 

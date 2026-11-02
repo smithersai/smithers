@@ -13,10 +13,17 @@
 import { Effect, type FileSystem, Layer, Schema } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { runSourceProcess } from "./immutable-source.ts"
-import type { LandingCandidate, LocalLander, LocalPull, PullChecks } from "./landing-schema.ts"
+import type {
+  GreenPrefixInput,
+  GreenPrefixOutcome,
+  LandingCandidate,
+  LocalLander,
+  LocalPull,
+  PullChecks
+} from "./landing-schema.ts"
 import { Landing, type LocalLanding } from "./landing.ts"
 import { NativeCoding } from "./native.ts"
-import { CodingError } from "./schema.ts"
+import { CodingError, type Receipt } from "./schema.ts"
 import { cleanedTipRefusal, type VibeCleanup } from "./vibe-schema.ts"
 
 export interface Options {
@@ -53,6 +60,67 @@ const PullView = Schema.Struct({
 const CheckRows = Schema.Array(Schema.Struct({ name: Schema.String, bucket: Schema.String })).check(
   Schema.isMaxLength(256)
 )
+
+/** A stack commit's slow-check verdict: no receipt, or only an outage, is `unknown`. */
+export type Verdict = "passed" | "failed" | "unknown"
+/**
+ * The newest commit of `stack` (oldest first) that passed with no failed
+ * commit at or below it. An untested commit inherits nothing and blocks
+ * nothing: a pass above it covered its tree too.
+ */
+export const greenPrefix = (
+  stack: ReadonlyArray<string>,
+  verdicts: ReadonlyMap<string, Verdict>
+): string | undefined => {
+  let green: string | undefined
+  for (const commitId of stack) {
+    const verdict = verdicts.get(commitId)
+    if (verdict === "failed") break
+    if (verdict === "passed") green = commitId
+  }
+  return green
+}
+/**
+ * Fold receipts into verdicts for the commits in `trees`. Only slow and
+ * delivery receipts of a `required` check count; superseded ones never do. A
+ * real failure of any required check fails the commit; a commit passes once
+ * every required check has a passed receipt; anything else, including a check
+ * whose only receipt is an outage (`fault`), is no verdict yet. A receipt for
+ * another tree refuses.
+ */
+const verdictsOf = (
+  receipts: ReadonlyArray<Receipt>,
+  trees: ReadonlyMap<string, string>,
+  required: ReadonlyArray<string>
+) => {
+  const failed = new Set<string>(), passed = new Map<string, Set<string>>()
+  for (const receipt of receipts) {
+    const tree = trees.get(receipt.commitId)
+    if (
+      tree === undefined || receipt.tier === "fast" || receipt.status === "superseded" ||
+      !required.includes(receipt.checkId)
+    ) continue
+    if (receipt.treeId !== tree) {
+      return invalid(`The receipt for ${receipt.commitId} names tree ${receipt.treeId}, not its commit's tree ${tree}`)
+    }
+    if (receipt.status === "passed") {
+      passed.set(receipt.commitId, (passed.get(receipt.commitId) ?? new Set()).add(receipt.checkId))
+    } else if (receipt.fault === undefined) failed.add(receipt.commitId)
+  }
+  const verdicts = new Map<string, Verdict>()
+  for (const commitId of trees.keys()) {
+    const checks = passed.get(commitId)
+    verdicts.set(
+      commitId,
+      failed.has(commitId)
+        ? "failed"
+        : checks !== undefined && required.every((check) => checks.has(check))
+        ? "passed"
+        : "unknown"
+    )
+  }
+  return verdicts
+}
 
 export const make = (options: Options) =>
   Effect.gen(function*() {
@@ -172,6 +240,19 @@ export const make = (options: Options) =>
         }
         return { lander: options.kind, main: base, summary: cleanup.summary, candidate }
       })
+    /** Move the bookmark forward only; jj refuses a backwards or sideways move. */
+    const moveTarget = (to: string, from: string) =>
+      Effect.gen(function*() {
+        const moved = yield* run(["jj", "--no-pager", "--color=never", "bookmark", "set", target, "-r", to], jjMinutes)
+        if (moved.exitCode !== 0) {
+          return yield* /backwards or sideways/.test(moved.stderr.text)
+            ? evicted(`${target} moved from ${from} while it was being advanced`)
+            : unavailable(`jj bookmark set refused: ${bounded(moved.stderr.text, 1_024)}`)
+        }
+        const landed = yield* readMain
+        if (landed !== to) return yield* invalid(`${target} is ${landed}, not ${to}`)
+        return landed
+      })
     const fastForward = (prepared: LandingCandidate) =>
       Effect.gen(function*() {
         const main = yield* readMain
@@ -181,20 +262,101 @@ export const make = (options: Options) =>
             `${target} moved from ${prepared.main.commitId} to ${main} after the candidate was verified`
           )
         }
+        return yield* moveTarget(prepared.candidate.commitId, main)
+      })
+    const advanceGreenPrefix = (input: GreenPrefixInput): Effect.Effect<GreenPrefixOutcome, CodingError> =>
+      Effect.gen(function*() {
+        if (options.kind !== "fast-forward") {
+          return yield* unavailable(`The ${options.kind} lander does not move ${target}; GitHub does`)
+        }
+        if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(input.tip)) {
+          return yield* invalid("The stack tip must be a bookmark name or a commit ID")
+        }
+        if (input.required.length === 0) return yield* invalid("Name at least one required check")
+        const main = yield* readMain
+        const tip = yield* one(`present(${input.tip})`, "commit_id", "The stack tip")
+        const below = yield* jj(["log", "--no-graph", "-r", `${main} & ::${tip}`, "-T", "commit_id ++ \"\\n\""])
+        if (lines(below.stdout.text).length !== 1) {
+          return yield* new CodingError({
+            code: "stale_revision",
+            message: `The stack tip ${tip} does not descend from ${target} ${main}; ${target} only fast-forwards`
+          })
+        }
+        const listed = yield* jj([
+          "log",
+          "--no-graph",
+          "--reversed",
+          "-r",
+          `${main}..${tip}`,
+          "-T",
+          "commit_id ++ \" \" ++ change_id ++ \" \" ++ parents.map(|p| p.commit_id()).join(\",\") ++ \"\\n\""
+        ])
+        if (listed.stdout.truncated) return yield* invalid("The stack listing was truncated")
+        const rows = lines(listed.stdout.text).map((line) => {
+          const [commitId = "", changeId = "", parents = ""] = line.split(" ")
+          return { commitId, changeId, parents: parents.split(",").filter((id) => id !== "") }
+        })
+        // The mythical history is one line: each commit's sole parent is the one below it.
+        const linear = rows.every((row, index) =>
+          commit.test(row.commitId) && change.test(row.changeId) && row.parents.length === 1 &&
+          row.parents[0] === (index === 0 ? main : rows[index - 1]!.commitId)
+        )
+        if (!linear) return yield* invalid(`The stack from ${target} to ${tip} is not one line of commits`)
+        const read = rows.length === 0 ? undefined : yield* native.read(rows.map((row) => row.changeId)).pipe(
+          Effect.mapError((error) => unavailable(`The stack could not be read: ${error.message}`))
+        )
+        const trees = new Map<string, string>()
+        for (const row of rows) {
+          const found = read?.revisions.find((entry) => entry.changeId === row.changeId)
+          if (found === undefined || found.kind !== "resolved" || found.commitId !== row.commitId) {
+            return yield* invalid(`The stack commit ${row.commitId} is not one resolved revision`)
+          }
+          trees.set(row.commitId, found.treeId)
+        }
+        const verdicts = verdictsOf(input.receipts, trees, input.required)
+        if (verdicts instanceof CodingError) return yield* verdicts
+        const stack = rows.map((row) => row.commitId)
+        const green = greenPrefix(stack, verdicts)
+        if (green === undefined) {
+          const failed = stack.find((commitId) => verdicts.get(commitId) === "failed")
+          return {
+            status: "unchanged" as const,
+            main,
+            reason: failed === undefined ? `no passed commit above ${target}` : `${failed} failed above ${target}`
+          }
+        }
+        // The stack may be rewritten while it is read: move only to a visible commit still under the tip.
+        const onStack = jj([
+          "log",
+          "--no-graph",
+          "-r",
+          `${green} & ::present(${input.tip}) & ::visible_heads()`,
+          "-T",
+          "commit_id ++ \"\\n\""
+        ]).pipe(Effect.map((result) => lines(result.stdout.text).length === 1))
+        if (!(yield* onStack)) {
+          return yield* evicted(`${green} left the stack under ${input.tip} while ${target} was being advanced`)
+        }
         const moved = yield* run(
-          ["jj", "--no-pager", "--color=never", "bookmark", "set", target, "-r", prepared.candidate.commitId],
+          ["jj", "--no-pager", "--color=never", "bookmark", "set", target, "-r", green],
           jjMinutes
         )
+        const now = yield* readMain
         if (moved.exitCode !== 0) {
-          return yield* /backwards or sideways/.test(moved.stderr.text)
-            ? evicted(`${target} moved after the candidate was verified`)
-            : unavailable(`jj bookmark set refused: ${bounded(moved.stderr.text, 1_024)}`)
+          if (!/backwards or sideways/.test(moved.stderr.text)) {
+            return yield* unavailable(`jj bookmark set refused: ${bounded(moved.stderr.text, 1_024)}`)
+          }
+          // Another advance got there first: main already holds the green commit.
+          const past = yield* jj(["log", "--no-graph", "-r", `${green} & ::${now}`, "-T", "commit_id ++ \"\\n\""])
+          return lines(past.stdout.text).length === 1
+            ? { status: "unchanged" as const, main: now, reason: `${target} already holds ${green}` }
+            : yield* evicted(`${target} moved from ${main} to ${now} while it was being advanced`)
         }
-        const landed = yield* readMain
-        if (landed !== prepared.candidate.commitId) {
-          return yield* invalid(`${target} is ${landed}, not the candidate ${prepared.candidate.commitId}`)
+        if (now !== green) return yield* invalid(`${target} is ${now}, not ${green}`)
+        if (!(yield* onStack)) {
+          return yield* evicted(`${target} moved to ${green}, which left the stack under ${input.tip} during the move`)
         }
-        return landed
+        return { status: "advanced" as const, from: main, to: green, above: stack.length - 1 - stack.indexOf(green) }
       })
     const abandon = (prepared: LandingCandidate) => abandonRevset(prepared.candidate.commitId)
     const gh = (args: ReadonlyArray<string>) => run(["gh", ...args], ghMinutes)
@@ -330,7 +492,16 @@ export const make = (options: Options) =>
         }
         return { status: "open" as const, reason: bounded(merged.stderr.text) }
       })
-    const service: LocalLanding = { kind: options.kind, prepare, fastForward, abandon, openPull, observeChecks, merge }
+    const service: LocalLanding = {
+      kind: options.kind,
+      prepare,
+      fastForward,
+      advanceGreenPrefix,
+      abandon,
+      openPull,
+      observeChecks,
+      merge
+    }
     return service
   })
 export const layer = (options: Options) => Layer.effect(Landing)(make(options))

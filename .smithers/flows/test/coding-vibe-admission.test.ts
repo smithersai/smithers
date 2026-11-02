@@ -42,6 +42,7 @@ const localLanding: LocalLanding = {
   kind: "fast-forward",
   prepare: unusedLanding,
   fastForward: unusedLanding,
+  advanceGreenPrefix: unusedLanding,
   abandon: unusedLanding,
   openPull: unusedLanding,
   observeChecks: unusedLanding,

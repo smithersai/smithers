@@ -313,6 +313,51 @@ The lander's `jj`, `git` and `gh` see only the selected environment
 selection variables), never the reserved repository credential. The repository
 automation jobs land only through the backend adapter and see no local lander.
 
+## Fast-forward main along a stack's green prefix
+
+A host that keeps a mythical stack above `main` (a line of Changes whose tip is
+a bookmark such as `vibe`) runs its slow and delivery checks on stack commits,
+not on one candidate. `coding/AdvanceGreenPrefix` moves `main` to the newest
+stack commit those checks passed on with no failed commit between it and
+`main`. Its payload is the stack `tip` (a bookmark or commit ID), the
+`required` check IDs, and the check `receipts`; it runs on the
+`"fast-forward"` lander only (`advanceGreenPrefix` in `local-landing.ts`).
+
+The lander lists `main..tip` and refuses unless it is one line of commits whose
+first parent is `main` (`stale_revision` when the tip does not descend from
+`main`). Each receipt must name its commit's exact tree, or the call refuses
+with `invalid_receipt`. Only slow and delivery receipts of a required check
+count; fast, superseded and unrequired receipts, and receipts for commits
+outside the range, are ignored. A commit's verdict:
+
+| Receipts of its required checks                        | Verdict |
+| ------------------------------------------------------ | ------- |
+| any failure without a `fault`                          | failed  |
+| a pass for every required check                        | passed  |
+| anything else (a check not run yet, or only an outage) | none    |
+
+An outage followed by the rerun's pass counts as a pass. A real failure stays
+a veto until its receipt is `superseded` or the commit is rewritten.
+
+```
+main ── c1 ── c2 ── c3 ── c4 (vibe)
+        pass  —     pass  fail     main → c3: c2 was covered by c3's pass
+        pass  fail  pass  —        main → c1: c2 blocks everything above it
+```
+
+An untested commit inherits nothing and blocks nothing: a pass above it was a
+pass on its tree too. Before it moves, the lander checks that the green commit
+is still visible under the tip, so a stack rewritten while it was read is
+`evicted`, never landed. The move is `jj bookmark set`, which refuses a
+backwards or sideways move. When another advance already moved `main` past the
+green commit, the call answers `unchanged`; a `main` that moved elsewhere is
+`evicted`, and any other jj refusal is `unavailable`. A
+replay after the move recomputes the range above the new `main` and answers
+`unchanged` with the reason (`no passed commit above main` or `<commit> failed
+above main`). `advanced` names `from`, `to`, and how many stack commits stay
+`above` the new `main`. The move is local; publishing `main` and the rewritten
+stack is separate.
+
 ## Separate product states
 
 A validated request can begin vibing: final history and context cleanup, repeated

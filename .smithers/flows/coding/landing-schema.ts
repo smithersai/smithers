@@ -1,7 +1,7 @@
 /** Private receipt projections of Plue's existing landing service. Browser safe. */
 import { Schema } from "effect"
 import { ChangeId, Resolved, SourcePublication } from "./native-schema.ts"
-import { Plan } from "./schema.ts"
+import { Plan, Receipt } from "./schema.ts"
 
 const CommitId = Resolved.fields.commitId
 const PositiveId = Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
@@ -156,3 +156,27 @@ export const MergeOutcome = Schema.Union([
   Schema.Struct({ status: Schema.Literal("open"), reason: Schema.String.check(Schema.isMaxLength(2048)) })
 ])
 export type MergeOutcome = typeof MergeOutcome.Type
+/**
+ * Move main along a mythical stack: `tip` names the stack's newest commit (a
+ * bookmark or a full commit ID), `required` the checks a commit must pass, and
+ * `receipts` the slow and delivery check receipts recorded for commits on it,
+ * each bound to its commit's tree.
+ */
+export const GreenPrefixInput = Schema.Struct({
+  tip: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/)),
+  /** The slow and delivery checks a commit must pass, each by its own receipt, to be green. */
+  required: Schema.Array(Receipt.fields.checkId).check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  receipts: Schema.Array(Receipt).check(Schema.isMaxLength(65_536))
+})
+export type GreenPrefixInput = typeof GreenPrefixInput.Type
+/** Main moved `from` one commit `to` a newer one, leaving `above` stack commits over it; or it stayed, and why. */
+export const GreenPrefixOutcome = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("advanced"),
+    from: CommitId,
+    to: CommitId,
+    above: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+  }),
+  Schema.Struct({ status: Schema.Literal("unchanged"), main: CommitId, reason: Schema.String })
+])
+export type GreenPrefixOutcome = typeof GreenPrefixOutcome.Type

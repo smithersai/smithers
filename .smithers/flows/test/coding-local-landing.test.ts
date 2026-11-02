@@ -15,9 +15,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import type { LocalLanding } from "../coding/landing.ts"
-import { make } from "../coding/local-landing.ts"
+import { greenPrefix, make } from "../coding/local-landing.ts"
 import { NativeCoding } from "../coding/native.ts"
-import { CodingError, type Revision } from "../coding/schema.ts"
+import { CodingError, type Receipt, type Revision } from "../coding/schema.ts"
 import type { VibeCleanup } from "../coding/vibe-schema.ts"
 
 const environment: Record<string, string> = {
@@ -53,19 +53,23 @@ const revisionOf = (cwd: string, revset: string): Revision => {
   }
 }
 /** The native helper is a packaged binary; its `read` is answered here from jj and the colocated git store. */
-const nativeOf = (root: string) =>
+const nativeOf = (root: string, afterRead: () => void = () => {}) =>
   Layer.succeed(NativeCoding, {
     sourcePublication: "local-only",
     read: (changeIds = []) =>
-      Effect.sync(() => ({
-        status: "read" as const,
-        operationId: jj(root, "op", "log", "-n", "1", "--no-graph", "-T", "id"),
-        head: { ...revisionOf(root, "@"), kind: "resolved" as const },
-        revisions: changeIds.map((changeId) => ({
-          ...revisionOf(root, `change_id("${changeId}")`),
-          kind: "resolved" as const
-        }))
-      })),
+      Effect.sync(() => {
+        const read = {
+          status: "read" as const,
+          operationId: jj(root, "op", "log", "-n", "1", "--no-graph", "-T", "id"),
+          head: { ...revisionOf(root, "@"), kind: "resolved" as const },
+          revisions: changeIds.map((changeId) => ({
+            ...revisionOf(root, `change_id("${changeId}")`),
+            kind: "resolved" as const
+          }))
+        }
+        afterRead()
+        return read
+      }),
     apply: () => Effect.die("a lander never applies native operations"),
     publishOriginalSource: () => Effect.die("a local lander never retains a source with the backend")
   })
@@ -145,10 +149,10 @@ const moveMain = async (root: string, file: string, text: string) => {
   await rm(scratch, { recursive: true, force: true })
   return commitOf(root, "main")
 }
-const landerOf = (root: string, kind: LocalLanding["kind"], env = environment) =>
+const landerOf = (root: string, kind: LocalLanding["kind"], env = environment, afterRead?: () => void) =>
   Effect.runPromise(
     Effect.flatMap(FileSystem.FileSystem, (fs) => make({ kind, repositoryPath: root, fs, environment: env })).pipe(
-      Effect.provide(Layer.mergeAll(NodeServices.layer, nativeOf(root)))
+      Effect.provide(Layer.mergeAll(NodeServices.layer, nativeOf(root, afterRead)))
     )
   )
 const failure = <A>(effect: Effect.Effect<A, CodingError>) =>
@@ -401,4 +405,215 @@ test("pull-request lander: needs a colocated git repository", async (t) => {
   const error = await failure(lander.openPull(prepared, requestId))
   assert.equal(error.code, "unavailable")
   assert.match(error.message, /colocated Git repository/)
+})
+
+/** main ← c1 ← c2 ← c3 ← c4, with `vibe` on c4: a mythical stack above main, @ elsewhere. */
+const stackRepository = async (t: Cleanup) => {
+  const root = await mkdtemp(join(tmpdir(), "coding-green-prefix-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  jj(root, "git", "init")
+  await writeFile(join(root, "a.txt"), "a\n")
+  jj(root, "commit", "-m", "base")
+  jj(root, "bookmark", "create", "main", "-r", "@-")
+  const main = commitOf(root, "main")
+  const stack: Array<Revision> = []
+  for (const index of [1, 2, 3, 4]) {
+    await writeFile(join(root, `c${index}.txt`), `${index}\n`)
+    jj(root, "commit", "-m", `✨ feat: c${index}`)
+    stack.push(revisionOf(root, "@-"))
+  }
+  jj(root, "bookmark", "create", "vibe", "-r", "@-")
+  return { root, main, stack }
+}
+const required = ["test"]
+/** A slow check's receipt, bound to the commit's exact tree unless `treeId` says otherwise. */
+const verdictOf = (
+  revision: Revision,
+  status: "passed" | "failed" | "superseded",
+  extra: { tier?: "fast" | "slow" | "delivery"; fault?: "infra" | "factory"; treeId?: string; checkId?: string } = {}
+): Receipt => ({
+  checkId: extra.checkId ?? "test",
+  target: "//:test",
+  tier: extra.tier ?? "slow",
+  change: "stack",
+  commitId: revision.commitId,
+  treeId: extra.treeId ?? revision.treeId,
+  inputDigest: "0".repeat(64),
+  status,
+  ...(extra.fault === undefined ? {} : { fault: extra.fault }),
+  evidence: "",
+  findings: []
+})
+
+test("green prefix: pure choice over a stack, oldest first", () => {
+  const verdicts = (entries: Record<string, "passed" | "failed" | "unknown">) => new Map(Object.entries(entries))
+  const stack = ["c1", "c2", "c3", "c4"]
+  // Untested commits inherit nothing and never block.
+  assert.equal(greenPrefix(stack, verdicts({ c1: "passed", c3: "passed" })), "c3")
+  // A failed commit blocks every newer pass.
+  assert.equal(greenPrefix(stack, verdicts({ c1: "passed", c2: "failed", c4: "passed" })), "c1")
+  // A failed tip keeps the green below it.
+  assert.equal(greenPrefix(stack, verdicts({ c3: "passed", c4: "failed" })), "c3")
+  // An outage is no verdict either way.
+  assert.equal(greenPrefix(stack, verdicts({ c1: "passed", c2: "unknown", c3: "passed" })), "c3")
+  assert.equal(greenPrefix(stack, verdicts({ c1: "failed", c3: "passed" })), undefined)
+  assert.equal(greenPrefix(stack, verdicts({})), undefined)
+  assert.equal(greenPrefix([], verdicts({ c1: "passed" })), undefined)
+})
+
+test("green prefix: main fast-forwards to the newest passed commit with nothing failed below it", async (t) => {
+  const { root, main, stack } = await stackRepository(t)
+  const workingCopy = commitOf(root, "@")
+  const lander = await landerOf(root, "fast-forward")
+  const [c1, , c3, c4] = stack as [Revision, Revision, Revision, Revision]
+  const receipts = [verdictOf(c1, "passed"), verdictOf(c3, "passed"), verdictOf(c4, "passed", { tier: "fast" })]
+  const outcome = await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts }))
+  assert.deepEqual(outcome, { status: "advanced", from: main, to: c3.commitId, above: 1 })
+  assert.equal(commitOf(root, "main"), c3.commitId)
+  assert.equal(git(root, "rev-parse", "refs/heads/main"), c3.commitId, "the colocated git main follows")
+  assert.equal(commitOf(root, "@"), workingCopy, "the working copy never moves")
+  assert.equal(commitOf(root, "vibe"), c4.commitId, "the stack tip is never touched")
+  // A replay, or receipts for commits main already holds, change nothing.
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts })), {
+    status: "unchanged",
+    main: c3.commitId,
+    reason: "no passed commit above main"
+  })
+  // Only a fast check passed on c4: it is not green yet.
+  assert.equal(commitOf(root, "main"), c3.commitId)
+})
+
+test("green prefix: a failed commit below holds main under it, never moving backwards", async (t) => {
+  const { root, main, stack } = await stackRepository(t)
+  const lander = await landerOf(root, "fast-forward")
+  const [c1, c2, c3, c4] = stack as [Revision, Revision, Revision, Revision]
+  const blocked = [verdictOf(c1, "passed"), verdictOf(c2, "failed"), verdictOf(c4, "passed")]
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: blocked })), {
+    status: "advanced",
+    from: main,
+    to: c1.commitId,
+    above: 3
+  })
+  // c1 failing a second check now does not pull main back.
+  const later = [...blocked, verdictOf(c1, "failed")]
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: later })), {
+    status: "unchanged",
+    main: c1.commitId,
+    reason: `${c2.commitId} failed above main`
+  })
+  assert.equal(commitOf(root, "main"), c1.commitId)
+  // An infra fault is no verdict: c2 now has only an outage, so the passes above count.
+  const outage = [verdictOf(c2, "failed", { fault: "infra" }), verdictOf(c3, "passed"), verdictOf(c4, "superseded")]
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: outage })), {
+    status: "advanced",
+    from: c1.commitId,
+    to: c3.commitId,
+    above: 1
+  })
+  // Nothing tested above main.
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: [] })), {
+    status: "unchanged",
+    main: c3.commitId,
+    reason: "no passed commit above main"
+  })
+})
+
+test("green prefix: refusals leave main where it is", async (t) => {
+  const { root, main, stack } = await stackRepository(t)
+  const lander = await landerOf(root, "fast-forward")
+  const [c1, c2] = stack as [Revision, Revision]
+  const before = jj(root, "op", "log", "-n", "1", "--no-graph", "-T", "id")
+  // A receipt whose tree is not its commit's tree is not this commit's verdict.
+  const foreign = await failure(
+    lander.advanceGreenPrefix({ required, tip: "vibe", receipts: [verdictOf(c2, "passed", { treeId: c1.treeId })] })
+  )
+  assert.equal(foreign.code, "invalid_receipt")
+  assert.match(foreign.message, new RegExp(`${c2.commitId} .*tree`))
+  assert.equal(
+    (await failure(lander.advanceGreenPrefix({ required, tip: "no-such", receipts: [] }))).code,
+    "invalid_receipt"
+  )
+  assert.equal(jj(root, "op", "log", "-n", "1", "--no-graph", "-T", "id"), before, "nothing was written")
+  // A tip that does not descend from main: main only fast-forwards.
+  jj(root, "new", "main-", "--no-edit", "-m", "elsewhere")
+  jj(root, "bookmark", "create", "side", "-r", "description(exact:\"elsewhere\\n\")")
+  const sideways = await failure(lander.advanceGreenPrefix({ required, tip: "side", receipts: [] }))
+  assert.equal(sideways.code, "stale_revision")
+  // A stack with a merge in it is not one line above main.
+  jj(root, "new", "vibe", "side", "--no-edit", "-m", "merge")
+  jj(root, "bookmark", "create", "merged", "-r", "description(exact:\"merge\\n\")")
+  const merged = await failure(
+    lander.advanceGreenPrefix({ required, tip: "merged", receipts: [verdictOf(c1, "passed")] })
+  )
+  assert.equal(merged.code, "invalid_receipt")
+  assert.match(merged.message, /one line/)
+  assert.equal(commitOf(root, "main"), main)
+  const pullRequest = await landerOf(root, "pull-request")
+  assert.equal(
+    (await failure(pullRequest.advanceGreenPrefix({ required, tip: "vibe", receipts: [] }))).code,
+    "unavailable"
+  )
+})
+
+test("green prefix: a commit is green once every required check passed on it", async (t) => {
+  const { root, main, stack } = await stackRepository(t)
+  const lander = await landerOf(root, "fast-forward")
+  const [c1, c2, c3] = stack as [Revision, Revision, Revision]
+  const both = ["test", "lint"]
+  const lint = { checkId: "lint" }
+  // Only one of two required checks has run on c1: not green yet.
+  assert.deepEqual(
+    await Effect.runPromise(
+      lander.advanceGreenPrefix({ required: both, tip: "vibe", receipts: [verdictOf(c1, "passed")] })
+    ),
+    { status: "unchanged", main, reason: "no passed commit above main" }
+  )
+  const receipts = [
+    verdictOf(c1, "passed"),
+    verdictOf(c1, "passed", { ...lint, tier: "delivery" }),
+    // An outage, then the rerun's pass: the check passed.
+    verdictOf(c2, "failed", { fault: "infra" }),
+    verdictOf(c2, "passed"),
+    verdictOf(c2, "passed", lint),
+    // A check nobody requires does not block.
+    verdictOf(c2, "failed", { checkId: "bench" }),
+    // An outage alone is no verdict: c3 is untested for lint.
+    verdictOf(c3, "passed"),
+    verdictOf(c3, "failed", { ...lint, fault: "factory" })
+  ]
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required: both, tip: "vibe", receipts })), {
+    status: "advanced",
+    from: main,
+    to: c2.commitId,
+    above: 2
+  })
+  assert.equal(
+    (await failure(lander.advanceGreenPrefix({ required: [], tip: "vibe", receipts }))).code,
+    "invalid_receipt"
+  )
+})
+
+test("green prefix: a stack that changes while it is read never pulls main wrongly", async (t) => {
+  const { root, main, stack } = await stackRepository(t)
+  const c3 = stack[2]!
+  const receipts = [verdictOf(c3, "passed")]
+  // The green commit is rewritten after its tree was read: its old commit is hidden.
+  const rewritten = await landerOf(root, "fast-forward", environment, () => {
+    jj(root, "describe", "-r", c3.commitId, "-m", "✨ feat: c3, reworded")
+  })
+  const gone = await failure(rewritten.advanceGreenPrefix({ required, tip: "vibe", receipts }))
+  assert.equal(gone.code, "evicted")
+  assert.match(gone.message, /left the stack/)
+  assert.equal(commitOf(root, "main"), main)
+  // Another advance moved main past the green commit first: nothing to do.
+  const { root: other, stack: second } = await stackRepository(t)
+  const raced = await landerOf(other, "fast-forward", environment, () => {
+    jj(other, "bookmark", "set", "main", "-r", second[3]!.commitId)
+  })
+  assert.deepEqual(
+    await Effect.runPromise(
+      raced.advanceGreenPrefix({ required, tip: "vibe", receipts: [verdictOf(second[2]!, "passed")] })
+    ),
+    { status: "unchanged", main: second[3]!.commitId, reason: `main already holds ${second[2]!.commitId}` }
+  )
 })

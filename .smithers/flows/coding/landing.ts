@@ -12,6 +12,8 @@ import {
   type AppendRequest,
   type Delivery,
   GitHubPull,
+  type GreenPrefixInput,
+  type GreenPrefixOutcome,
   type LandingCandidate,
   type LandingIdentity,
   LaneReceipt,
@@ -81,6 +83,12 @@ export interface LocalLanding {
   readonly fastForward: (prepared: LandingCandidate) => Effect.Effect<string, CodingError>
   /** Drop an evicted candidate from the repository. */
   readonly abandon: (prepared: LandingCandidate) => Effect.Effect<void, CodingError>
+  /**
+   * Fast-forward main to the newest stack commit below `tip` whose slow checks
+   * passed with no failed commit between it and main; never backwards. The
+   * pull-request lander refuses: GitHub moves its main.
+   */
+  readonly advanceGreenPrefix: (input: GreenPrefixInput) => Effect.Effect<GreenPrefixOutcome, CodingError>
   /** Push the candidate as `smithers/landing-<request>` and open, or find again, its pull request. */
   readonly openPull: (prepared: LandingCandidate, requestId: string) => Effect.Effect<LocalPull, CodingError>
   /** One observation of the pull request's required checks. */

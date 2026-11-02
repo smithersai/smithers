@@ -13,6 +13,8 @@ import {
   AppendObservation,
   AppendPreparation,
   Delivery,
+  GreenPrefixInput,
+  GreenPrefixOutcome,
   LandingCandidate,
   LandingIdentity,
   LocalPull,
@@ -149,6 +151,28 @@ const FastForward = Action.make("coding/fast-forward-vibe", {
   success: VibeFastForwarded,
   error: CodingError,
   nondeterministic: true
+})
+/**
+ * Move main along the mythical stack's green prefix. A replay after a lost
+ * reply recomputes the range above the moved main and answers `unchanged`.
+ */
+const AdvanceGreenPrefixStep = Action.make("coding/advance-green-prefix", {
+  tier: "irreversible",
+  idempotencyKey: ({ tip }) => tip,
+  retryPolicy: once,
+  payload: GreenPrefixInput,
+  success: GreenPrefixOutcome,
+  error: CodingError,
+  nondeterministic: true
+})
+/** Fast-forward main to the newest stack commit whose slow checks passed with no failed commit below it. */
+export const AdvanceGreenPrefix = Flow.make("coding/AdvanceGreenPrefix", {
+  description:
+    "Fast-forward main to the newest commit on the mythical stack whose slow checks passed with no failed commit between it and main; never backwards.",
+  payload: GreenPrefixInput,
+  success: GreenPrefixOutcome,
+  error: CodingError,
+  body: Node.capture({}, (input) => AdvanceGreenPrefixStep.call(input))
 })
 const OpenLocalPull = Action.make("coding/open-vibe-local-pull", {
   tier: "irreversible",
@@ -585,6 +609,10 @@ const localLandingLayers = Layer.mergeAll(
       )
       return { cleanup, prepared, mainCommitId, receipts }
     })
+  ),
+  Interpreter.layer(AdvanceGreenPrefix),
+  AdvanceGreenPrefixStep.toLayer((input) =>
+    Effect.flatMap(requireLocal, (landing) => landing.advanceGreenPrefix(input))
   ),
   OpenLocalPull.toLayer(({ prepared }) =>
     Effect.gen(function*() {
