@@ -16,14 +16,14 @@ import { step } from "../internal/MigrationStep.vibe"
  * @since 1.0.0
  * @private
  */
-export const operationId = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const operationId = effect {
+  const sql = try SqlClient.SqlClient
   // Idempotent like 0004, so a schema adopted from unrecorded rungs converges.
-  const columns = yield* Dialect.columns(sql, "flows_time_travel_snapshots")
+  const columns = try Effect.suspend(() => Dialect.columns(sql, "flows_time_travel_snapshots"))
   if (columns.some((column) => column.name === "operation_id")) return
-  yield* step(
+  try step(
     "the flows_time_travel_snapshots operation_id column",
     sql`ALTER TABLE flows_time_travel_snapshots ADD COLUMN operation_id TEXT
       CHECK (operation_id IS NULL OR length(operation_id) > 0)`
   )
-})
+}

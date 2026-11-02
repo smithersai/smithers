@@ -16,8 +16,8 @@ import * as Layer from "effect/Layer"
 import { initial } from "./migrations/0001_initial.ts"
 import { archiveGeneration } from "./migrations/0002_archive_generation.ts"
 import { lineageProbes } from "./migrations/0003_lineage_probes.ts"
-import { planDigest } from "./migrations/0004_plan_digest.ts"
-import { operationId } from "./migrations/0005_operation_id.ts"
+import { planDigest } from "./migrations/0004_plan_digest.vibe"
+import { operationId } from "./migrations/0005_operation_id.vibe"
 import { forkIntentForgotten } from "./migrations/0006_fork_intent_forgotten.ts"
 
 /**
