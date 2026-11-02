@@ -145,6 +145,10 @@ if [ "$E2E" = 1 ]; then
   CLEAN+=(CHAT_MODEL='{"protocol":"openai-chat","baseUrl":"http://127.0.0.1:9","modelId":"no-model-on-the-mini","credential":"MINI_FARM_NO_MODEL"}'
     SMITHERS_MODEL_KEY_MINI_FARM_NO_MODEL=none SMITHERS_MODEL_KEY_MINI_FARM_NO_MODEL_ORIGIN=http://127.0.0.1:9)
   (cd apps/mvp && "${CLEAN[@]}" pnpm -s db:migrate >"$FARM/slot$SLOT.migrate.log" 2>&1) || { cat "$FARM/slot$SLOT.migrate.log" >&2; say "db:migrate failed"; exit 6; }
+  # A cold slot's first `pnpm dev` packs the CLI closure, which outlasts the ready wait below: do it before that clock.
+  t=$(now)
+  (cd apps/mvp && "${CLEAN[@]}" node infra/sandbox/pack-cli.mjs --if-missing >"$FARM/slot$SLOT.pack.log" 2>&1) || { tail -30 "$FARM/slot$SLOT.pack.log" >&2; say "pack-cli failed"; exit 6; }
+  say "slot $SLOT: sandbox CLI pack ready in $(dt "$t" "$(now)") s"
   # The dev server, started here rather than by Playwright: Playwright waits only for the site, and ChatApi answers
   # about 30 s later on the mini, so the first specs would see 503s. Playwright reuses this server.
   t=$(now)
