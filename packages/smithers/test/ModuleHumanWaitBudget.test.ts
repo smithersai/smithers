@@ -6,8 +6,9 @@
  * makes a second step. Nothing parks a harness at the question: the native
  * execution suspends on its own wait. The latency allowance is 12 s with
  * `onExceeded: fail`. Composition A runs until the question is open and
- * closes. After a wait longer than the whole allowance, composition B opens
- * the same root and answers.
+ * closes. An injected wall clock advances past the whole allowance while
+ * parked, then composition B opens the same root and answers. Provider calls
+ * each cost one second; host scheduling and process startup keep real sleeps.
  *
  * The second step's admission must see only the time the run spent
  * executing, so the run completes (#2120). A budget that charged the wait
@@ -17,18 +18,20 @@ import { NodeHttpClient } from "@effect/platform-node"
 import { MockAgent } from "@effect/platform-node/Undici"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
-import { Control } from "@smthrs/control"
+import { Control, ControlRuntime } from "@smthrs/control"
 import { Flow, HumanTask, Interpreter } from "@smthrs/flow"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
-import { Effect, Layer, Schedule, Schema, Stream } from "effect"
+import { Ownership } from "@smthrs/run-store"
+import { Duration, Effect, Layer, Schedule, Schema, Stream } from "effect"
+import * as Clock from "effect/Clock"
 import * as HttpClient from "effect/http/HttpClient"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFailed } from "vitest"
 
 import * as Application from "../src/Application.ts"
 import * as NodeControl from "../src/NodeControl.ts"
@@ -100,6 +103,14 @@ const task = (body: string): string | undefined => /Report step \d\./.exec(body)
 
 const terminal = new Set(["control.run.completed", "control.run.failed", "control.run.cancelled"])
 
+/** The budget refusals a run's failure reports; never provider bodies or human answers. */
+const budgetRefusals = (value: unknown): Array<string> =>
+  typeof value === "string"
+    ? [...value.matchAll(/flows\/agent\/BudgetExceeded: [^\n]*/g)].map((match) => match[0])
+    : value !== null && typeof value === "object"
+    ? Object.values(value).flatMap(budgetRefusals)
+    : []
+
 /** One process's production executor over `root`, answering the provider from `bodies`. */
 const composition = async (root: string, agent: MockAgent) => {
   const client = await Effect.runPromise(
@@ -123,7 +134,10 @@ const composition = async (root: string, agent: MockAgent) => {
     ),
     modules
   })
-  return Application.layer({ root }, registry, engine, runs) as Layer.Layer<Control.Control>
+  return Layer.merge(
+    Application.layer({ root }, registry, engine, runs),
+    engine.runtime
+  ) as Layer.Layer<Control.Control | ControlRuntime.ControlRuntime>
 }
 
 const summary = (runId: string) =>
@@ -135,8 +149,23 @@ const summary = (runId: string) =>
 
 describe("a module run's native human wait", () => {
   it("is not charged to the task allowance across a restart", async () => {
+    const started = Date.now()
+    const stages: Array<{ stage: string; elapsedMs: number }> = []
+    const mark = (stage: string) => stages.push({ stage, elapsedMs: Date.now() - started })
+    onTestFailed(() => console.error("Human wait budget progress", JSON.stringify(stages)))
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-module-wait-budget-")))
     const agent = new MockAgent()
+    const liveClock = await Effect.runPromise(Clock.Clock)
+    let now = Date.now()
+    const clock: Clock.Clock = {
+      currentTimeMillisUnsafe: () => now,
+      currentTimeMillis: Effect.sync(() => now),
+      currentTimeNanosUnsafe: () => liveClock.currentTimeNanosUnsafe(),
+      currentTimeNanos: liveClock.currentTimeNanos,
+      monotonicTimeNanosUnsafe: () => liveClock.monotonicTimeNanosUnsafe(),
+      monotonicTimeNanos: liveClock.monotonicTimeNanos,
+      sleep: (duration) => liveClock.sleep(duration)
+    }
     try {
       await mkdir(join(root, ".smithers", "flows", "steps"), { recursive: true })
       await writeFile(join(root, ".smithers", "flows", "steps", "flow.ts"), source)
@@ -146,12 +175,14 @@ describe("a module run's native human wait", () => {
         200,
         (options) => {
           bodies.push(new TextDecoder().decode(options.body as Uint8Array))
+          now += 1_000
           return sse(`\`\`\`cell\nctx.done(JSON.stringify({ n: ${bodies.length} }))\n\`\`\``)
         },
         { headers: { "content-type": "text/event-stream" } }
       ).persist()
 
       // Composition A: runs the first step and parks on the question.
+      mark("first composition")
       const first = await composition(root, agent)
       const parked = await Effect.runPromise(
         Effect.gen(function*() {
@@ -179,36 +210,77 @@ describe("a module run's native human wait", () => {
             Effect.orDie
           )
           return { runId, run }
-        }).pipe(Effect.provide(first), Effect.scoped, Effect.orDie)
+        }).pipe(Effect.provide(first), Effect.provideService(Clock.Clock, clock), Effect.scoped, Effect.orDie)
       )
 
       expect(bodies.map(task).filter((line) => line !== undefined).at(-1)).toBe("Report step 1.")
+      mark("parked")
       const callsWhileParked = bodies.length
 
       // The wait alone outlasts the whole allowance.
-      await new Promise((resolve) => setTimeout(resolve, betweenProcessesMillis))
+      now += betweenProcessesMillis
 
       // Composition B: answers the question and follows the run to its end.
+      mark("second composition")
       const second = await composition(root, agent)
       const settled = await Effect.runPromise(
         Effect.gen(function*() {
           const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
           yield* control.signal({
             runId: parked.runId,
             signal: { name: "clarify", payload: "the scheduler owns it" },
             idempotencyKey: `signal:${parked.runId}`
           })
+          mark("answer committed")
+          // The old composition has closed. The new host adopts its unanswered
+          // delegation only after the public ownership grace, and the host can
+          // record a newer delegation before it does. That grace is still parked
+          // time, but nothing advances the controlled clock while parked: age
+          // every pending delegation past the grace, until none is left.
+          yield* Effect.forkScoped(
+            Effect.gen(function*() {
+              const pending = (yield* runtime.pendingResumes).find((entry) => entry.runId === parked.runId)
+              if (pending !== undefined) {
+                now = Math.max(now, pending.requestedAtMs + Duration.toMillis(Ownership.heartbeatStaleAfter))
+              }
+            }).pipe(Effect.repeat(Schedule.spaced("50 millis")))
+          )
           const events = yield* control.watch({ runId: parked.runId, follow: true }).pipe(
             Stream.filter((event) => terminal.has(event.kind)),
             Stream.take(1),
             Stream.runCollect,
-            Effect.timeout("60 seconds")
+            Effect.timeout("60 seconds"),
+            Effect.tapCause(() =>
+              Effect.gen(function*() {
+                const pending = (yield* runtime.pendingResumes).find((entry) => entry.runId === parked.runId)
+                const run = yield* summary(parked.runId)
+                yield* Effect.sync(() =>
+                  console.error(
+                    "Human wait handoff",
+                    JSON.stringify({
+                      now,
+                      requestedAtMs: pending?.requestedAtMs,
+                      sequence: pending?.sequence,
+                      status: run?.status,
+                      waitingReason: run?.waitingReason,
+                      pendingResume: run?.pendingResume
+                    })
+                  )
+                )
+              })
+            )
           )
-          return { kind: events[0]?.kind, run: yield* summary(parked.runId) }
-        }).pipe(Effect.provide(second), Effect.scoped, Effect.orDie)
+          return {
+            kind: events[0]?.kind,
+            failure: budgetRefusals(events[0]?.payload),
+            run: yield* summary(parked.runId)
+          }
+        }).pipe(Effect.provide(second), Effect.provideService(Clock.Clock, clock), Effect.scoped, Effect.orDie)
       )
 
-      expect(settled.kind).toBe("control.run.completed")
+      mark("settled")
+      expect(settled.kind, JSON.stringify(settled.failure)).toBe("control.run.completed")
       expect(settled.run?.status).toBe("completed")
       // The first step replayed; only the second reached the provider again.
       expect(bodies.slice(callsWhileParked).map(task)).not.toContain("Report step 1.")
