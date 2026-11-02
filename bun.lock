@@ -1339,7 +1339,7 @@
         "@smthrs/targets": "1.0.0-rc.16",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "5.20260903.1",
+        "@cloudflare/workers-types": "5.20261019.1",
         "@smthrs/build-cli": "1.0.0-rc.16",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
@@ -3294,7 +3294,7 @@
 
     "@cloudflare/workerd-windows-64": ["@cloudflare/workerd-windows-64@1.20261019.1", "", { "os": "win32", "cpu": "x64" }, "sha512-z49fvKTETMCnG6wnMcQwxx9CpryFceiKz04FRjq26EkhCyzRNJ6c3UXhyZz3r5f1CXnnBZc5DcU8ZouPkUJCqw=="],
 
-    "@cloudflare/workers-types": ["@cloudflare/workers-types@5.20260903.1", "", {}, "sha512-Dgm28XJqMYj3VCNK14Xwo9UPtSPWL8Izo0emiyeQLZCRXWuhc3GnlKENF4Pf3ot+3NaWosq+yq8OIa531dCr6g=="],
+    "@cloudflare/workers-types": ["@cloudflare/workers-types@5.20261019.1", "", {}, "sha512-llvvy7WBVhK+OfykyBkG9A7OgsGvgwHSNyU40XGVkiy/xVFy0t/xflyhEBHT+U59yQECZQbmcZsJtqCNnLpIRg=="],
 
     "@codemirror/autocomplete": ["@codemirror/autocomplete@6.20.3", "", { "dependencies": { "@codemirror/language": "6.12.4", "@codemirror/state": "6.7.2", "@codemirror/view": "6.43.11", "@lezer/common": "1.5.2" } }, "sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g=="],
 
@@ -6878,7 +6878,6 @@
 
     "@smthrs/migrate/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
-    "@smthrs/mvp/@cloudflare/workers-types": ["@cloudflare/workers-types@5.20261019.1", "", {}, "sha512-llvvy7WBVhK+OfykyBkG9A7OgsGvgwHSNyU40XGVkiy/xVFy0t/xflyhEBHT+U59yQECZQbmcZsJtqCNnLpIRg=="],
 
     "@smthrs/mvp/alchemy": ["alchemy@2.0.0-beta.83", "", { "dependencies": { "@alchemy.run/cloudflare-runtime": "2.0.0-beta.83", "@alchemy.run/floci": "2.0.0-beta.83", "@alchemy.run/node-utils": "2.0.0-beta.83", "@alchemy.run/sigil": "0.1.0-alpha.1", "@distilled.cloud/acme": "1.0.0-rc.15", "@distilled.cloud/aws": "1.0.0-rc.15", "@distilled.cloud/axiom": "1.0.0-rc.15", "@distilled.cloud/cloudflare": "1.0.0-rc.15", "@distilled.cloud/core": "1.0.0-rc.15", "@distilled.cloud/doppler": "1.0.0-rc.15", "@distilled.cloud/fly-io": "1.0.0-rc.15", "@distilled.cloud/gcp": "1.0.0-rc.15", "@distilled.cloud/hetzner": "1.0.0-rc.15", "@distilled.cloud/iceberg": "1.0.0-rc.15", "@distilled.cloud/infisical": "1.0.0-rc.15", "@distilled.cloud/neon": "1.0.0-rc.15", "@distilled.cloud/planetscale": "1.0.0-rc.15", "@distilled.cloud/prisma": "1.0.0-rc.15", "@distilled.cloud/railway": "1.0.0-rc.15", "@distilled.cloud/stripe": "1.0.0-rc.15", "@distilled.cloud/turso": "1.0.0-rc.15", "@distilled.cloud/zerossl": "1.0.0-rc.15", "@effect/sql-d1": "4.0.5", "@effect/sql-sqlite-do": "4.0.5", "@libsql/client": "0.17.4", "@neon/functions": "0.11.0", "@octokit/rest": "22.0.1", "@octokit/webhooks": "14.2.0", "@prisma/dev": "0.20.0", "@types/aws-lambda": "8.10.163", "capnweb": "0.12.0", "fflate": "0.8.3", "libsodium-wrappers": "0.8.4", "pathe": "2.0.3", "picomatch": "4.0.7", "rolldown": "1.2.5", "tinyglobby": "0.2.17", "yaml": "2.9.0" }, "peerDependencies": { "@alchemy.run/frontend-frameworks": "2.0.0-beta.83", "@aws/durable-execution-sdk-js": "^2.1.0", "@effect/platform-bun": "4.0.5", "@effect/platform-node": "4.0.5", "@effect/sql-libsql": "^4.0.0", "@effect/sql-mysql2": "^4.0.0", "@effect/sql-pg": "^4.0.0", "@effect/vitest": "4.0.5", "@prisma/orm-postgres": "^8.0.0-rc.11", "@vercel/nft": "^1.10.2", "drizzle-kit": "1.0.0-rc.5-ab785fc", "drizzle-orm": "1.0.0-rc.5-ab785fc", "effect": "4.0.5", "mongodb": "^6.10.0", "mysql2": "^3.24.2", "pg": "^8.22.0", "prisma": "^8.0.0-rc.15", "vite": "^8.0.7", "ws": "^8.21.0" }, "optionalPeers": ["@alchemy.run/frontend-frameworks", "@aws/durable-execution-sdk-js", "@effect/platform-bun", "@effect/platform-node", "@effect/sql-libsql", "@effect/sql-mysql2", "@effect/sql-pg", "@effect/vitest", "@prisma/orm-postgres", "@vercel/nft", "drizzle-kit", "drizzle-orm", "mongodb", "mysql2", "pg", "prisma", "vite", "ws"], "bin": { "alchemy": "./bin/cli.js" } }, "sha512-t0N4FwLU1JxLnKZGdsBNdqiycWDM5HEYmmIguMImplE07Vh+FPpMR8ypk3K3TY5Tg0sFFppXFVwtwiDp6xlX9w=="],
 
@@ -7098,7 +7097,6 @@
 
     "workbox-build/source-map": ["source-map@0.8.0", "", {}, "sha512-d8EqvL+k/SOXCreS/SUzg2ciyHqBBLcN/yuRjFsbvVhHTE2pgei7oAhmPM7kWFbkX6OSMQfUq4KbkF3au9lhYQ=="],
 
-    "wrangler/@cloudflare/workers-types": ["@cloudflare/workers-types@5.20261019.1", "", {}, "sha512-llvvy7WBVhK+OfykyBkG9A7OgsGvgwHSNyU40XGVkiy/xVFy0t/xflyhEBHT+U59yQECZQbmcZsJtqCNnLpIRg=="],
 
     "wrangler/fsevents": ["fsevents@2.3.3", "", { "os": "darwin" }, "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw=="],
 

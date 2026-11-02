@@ -3101,8 +3101,8 @@ importers:
         version: link:../targets
     devDependencies:
       '@cloudflare/workers-types':
-        specifier: 5.20260903.1
-        version: 5.20260903.1
+        specifier: 5.20261019.1
+        version: 5.20261019.1
       '@smthrs/build-cli':
         specifier: 1.0.0-rc.16
         version: link:../build-cli
@@ -7661,9 +7661,6 @@ packages:
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
-
-  '@cloudflare/workers-types@5.20260903.1':
-    resolution: {integrity: sha512-Dgm28XJqMYj3VCNK14Xwo9UPtSPWL8Izo0emiyeQLZCRXWuhc3GnlKENF4Pf3ot+3NaWosq+yq8OIa531dCr6g==}
 
   '@cloudflare/workers-types@5.20261019.1':
     resolution: {integrity: sha512-llvvy7WBVhK+OfykyBkG9A7OgsGvgwHSNyU40XGVkiy/xVFy0t/xflyhEBHT+U59yQECZQbmcZsJtqCNnLpIRg==}
@@ -17364,8 +17361,6 @@ snapshots:
 
   '@cloudflare/workerd-windows-64@1.20261019.1':
     optional: true
-
-  '@cloudflare/workers-types@5.20260903.1': {}
 
   '@cloudflare/workers-types@5.20261019.1': {}
 
