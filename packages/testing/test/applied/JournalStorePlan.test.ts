@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import type { JournalEntryLike } from "../../src/EngineSubject.vibe"
-import { expectJournal } from "../../src/JournalAssertions.vibe"
+import { expectJournal } from "../../src/JournalAssertions.ts"
 import * as Plan from "../../src/Plan.ts"
 import { expectPlan } from "../../src/PlanAssertions.ts"
 

@@ -33,7 +33,7 @@ export * as Plan from "./Plan.ts"
 export * as PlanAssertions from "./PlanAssertions.ts"
 
 /** @since 0.0.0 @category assertions */
-export * as JournalAssertions from "./JournalAssertions.vibe"
+export * as JournalAssertions from "./JournalAssertions.ts"
 
 /** @since 0.0.0 @category assertions */
 export * as Divergence from "./Divergence.ts"
