@@ -3,7 +3,8 @@
 // (tree.mjs). It reads, scrubs, deduplicates and places; it posts nothing. The plan is a mode-600 JSONL file that
 // may hold private text in its dropped rows, so it never goes in a repository.
 //
-//   node ops/issues/import.mjs --out <plan.jsonl> [--host <lane host>] [--draft <source>=<file>]... [--pending-ref main]
+//   node ops/issues/import.mjs --out <plan.jsonl> [--host <lane host>] [--draft <source>=<file or host:path>]...
+//                              [--replace-findings <repo>]... [--pending-ref main]
 //
 // Sources, read at run time:
 // - the lane host, over SSH, read-only: the merge queue (`~/vibe/mq/queue.jsonl`, latest state per id), the latest
@@ -12,14 +13,17 @@
 //   counted and dated only, since they hold no open/fixed finding records;
 // - main's pending fuzz gaps (`typescript/tsc/internal/vibelangfuzz/testdata/pending/*.txt` on smithersai/vibelang),
 //   through `gh api`;
-// - the agents' issue drafts, `--draft <source>=<file>` (a JSON array or JSONL).
+// - the agents' issue drafts, `--draft <source>=<file>` (a JSON array or JSONL; `host:path` reads over SSH). A
+//   source whose drafts cover its whole migration inbox, `--replace-findings <repo>`, stands in for that inbox's
+//   parsed findings. A repository's tracking draft becomes its tree node's issue.
 // Private repository names for the scrub come from `gh repo list <owner> --visibility private`, held in memory.
 //
-// Plan rows: `{"type":"node"|"issue", key, repo, title, body, labels, links, parent, depth}`, then
+// Plan rows, in filing order: `{"type":"node", ...}` (the tree), then `{"type":"issue", ...}` (drafts, queue entries,
+// findings; each with key, repo, title, body, labels, links, parent, depth), then
 // `{"type":"dropped", key, kind, problems}` for each record the scrub refused (field and rule, plus its source title
 // for the operator), then `{"type":"summary", ...}` with counts per kind, repo, parent and drop rule.
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { cleanRecord } from "./scrub.mjs"
@@ -33,6 +37,7 @@ const { values } = parseArgs({
     out: { type: "string" },
     draft: { type: "string", multiple: true, default: [] },
     "pending-ref": { type: "string", default: "main" },
+    "replace-findings": { type: "string", multiple: true, default: [] },
   },
 })
 if (values.out === undefined) throw new Error("--out <plan.jsonl> is required")
@@ -87,8 +92,12 @@ const privateRepos = ["smithersai", "roninjin10"].flatMap((owner) => {
 })
 if (privateRepos.length === 0) throw new Error("no private repository names: the scrub would miss them, so nothing is planned")
 
+/** A draft file: local, or `<host>:<path>` read over SSH (read-only) when no local file has that name. */
 const readDrafts = (file) => {
-  const text = readFileSync(file, "utf8").trim()
+  const remotePath = /^([\w.-]+):((?:~|\/).*)$/.exec(file)
+  const text = (remotePath !== null && !existsSync(file)
+    ? execFileSync("ssh", ["-o", "BatchMode=yes", remotePath[1], "cat", "--", remotePath[2].replace(/^~\//, "")], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 })
+    : readFileSync(file, "utf8")).trim()
   if (text.startsWith("[")) return JSON.parse(text)
   if (text.startsWith("{") && !text.includes("\n{")) {
     const value = JSON.parse(text)
@@ -99,16 +108,19 @@ const readDrafts = (file) => {
 
 const fuzz = fuzzRecords(pending)
 const round = remote.filter((row) => row.kind === "round")
+// Filing order: the tree, then the agents' drafts and the queue, then the findings. Drafts come first so they win a
+// title match against a finding of the same thing.
+const replaced = new Set(values["replace-findings"])
 const records = [
+  ...values.draft.flatMap((spec) => {
+    const [source, file] = [spec.slice(0, spec.indexOf("=")), spec.slice(spec.indexOf("=") + 1)]
+    return draftRecords(source, readDrafts(file))
+  }),
   ...queueRecords(remote.filter((row) => row.kind === "queue").map((row) => row.entry)),
   ...reviewRoundRecords(round.map((row) => ({ reviewer: row.reviewer, round: row.round, text: row.text }))),
   ...remote.filter((row) => row.kind === "scoped").flatMap((row) => scopedRecords(row.scope, row.text)),
-  ...remote.filter((row) => row.kind === "migration").flatMap((row) => migrationRecords(row.repo, row.text)),
+  ...remote.filter((row) => row.kind === "migration" && !replaced.has(row.repo)).flatMap((row) => migrationRecords(row.repo, row.text)),
   ...fuzz.records,
-  ...values.draft.flatMap((spec) => {
-    const [source, file] = spec.split("=")
-    return draftRecords(source, readDrafts(file))
-  }),
 ]
 
 // Deduplicate by key, then by normalized title within a repository (an agent's draft and an imported finding of the
@@ -149,6 +161,9 @@ const summary = {
   nodes: tree.nodes.length,
   issues: tree.records.length,
   byKind: count(tree.records, (row) => row.kind),
+  bySource: count(tree.records, (row) => (row.kind === "draft" ? `draft:${row.source}` : row.kind)),
+  trackingDraftsAsNodes: tree.nodes.filter((node) => node.draft !== undefined).map((node) => node.key),
+  replacedFindings: [...replaced],
   byRepo: count([...tree.nodes, ...tree.records], (row) => row.repo),
   byParent: count(tree.records, (row) => row.parent),
   maxDepth: Math.max(...tree.records.map((row) => row.depth), ...tree.nodes.map((row) => row.depth)),
@@ -164,7 +179,7 @@ const summary = {
 const out = resolve(values.out)
 mkdirSync(dirname(out), { recursive: true, mode: 0o700 })
 const rows = [
-  ...tree.nodes.map((node) => ({ type: "node", ...node, labels: ["tree"] })),
+  ...tree.nodes.map((node) => ({ type: "node", ...node, labels: node.labels ?? ["tree"] })),
   ...tree.records.map((record) => ({ type: "issue", ...record })),
   ...dropped,
   ...duplicates.map((row) => ({ type: "duplicate", ...row })),

@@ -289,16 +289,52 @@ export const fuzzRecords = (files) => {
 
 // ── Agents' drafts ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Issue drafts the agents prepared, `{ title, body, labels, parent, repo?, draft_id? }`, filed under their parent. */
+/** Where a draft with no parent text goes, by its labels: a spec or ruling item, docs, else the implementation. */
+const nodeOfLabels = (labels) =>
+  labels.includes("spec") || labels.includes("ruling") ? "tree:spec" : labels.includes("docs") ? "tree:docs" : labels.includes("tooling") ? "tree:tooling" : undefined
+
+/** A draft's own links: an array as the work-links route takes them, or `{ lane, mq: [ids], commit }`. */
+const draftLinks = (links) => {
+  if (Array.isArray(links)) return links.filter((link) => typeof link?.kind === "string" && typeof link?.ref === "string")
+  if (links === null || typeof links !== "object") return []
+  return [
+    ...(typeof links.lane === "string" && links.lane !== "" ? [{ kind: "session", ref: `lane:${links.lane}`, label: `lane ${links.lane}` }] : []),
+    ...(Array.isArray(links.mq) ? links.mq.filter((id) => typeof id === "string" && id !== "").map((id) => ({ kind: "queue", ref: id, label: `queue ${id}` })) : []),
+  ]
+}
+
+/**
+ * A repository's tracking draft ("Migrate <repo>'s Effect modules to VibeLang", "Migrate <repo> to VibeLang (tracking)", or
+ * one whose parent or role says it is the node) is that repository's tree node.
+ */
+const TRACKING = /^migrate\b.*\b(?:effect modules to vibelang\b|to vibelang \(tracking\))/i
+
+/**
+ * Issue drafts the agents prepared, `{ title, body, labels, parent, repo?, draft_id? | id? | key?, status? | state?,
+ * links? }`, filed under the node their parent text names, else by their labels, else their source's node. A draft
+ * marked closed is left out. A repository's tracking draft carries `asNode`: it becomes that node's issue instead of a
+ * child of it.
+ */
 export const draftRecords = (source, drafts) =>
-  drafts.map((draft) => ({
-    key: `draft:${source}:${draft.draft_id ?? short(draft.title)}`,
-    kind: "draft",
-    repo: draft.repo ?? VIBELANG,
-    title: oneLine(draft.title),
-    body: body([String(draft.body ?? "")]),
-    labels: [...new Set([...(draft.labels ?? []), ...migrateLabels(source)])],
-    links: [],
-    parent: nodeOfParentText(draft.parent) ?? (migrateLabels(source)[0] === undefined ? "tree:impl" : `tree:repos:${source}`),
-    parentText: draft.parent ?? null,
-  }))
+  drafts
+    .filter((draft) => draft.status !== "closed" && draft.state !== "closed")
+    .map((draft) => {
+      const labels = [...new Set([...(draft.labels ?? []), ...migrateLabels(source)])]
+      const repoNode = migrateLabels(source)[0] === undefined ? undefined : `tree:repos:${source}`
+      const parent = nodeOfParentText(draft.parent) ?? nodeOfLabels(labels) ?? repoNode ?? "tree:impl"
+      const tracking = TRACKING.test(String(draft.title)) || /this is the .*node/i.test(String(draft.parent ?? "")) || /\bnode\b/i.test(String(draft.role ?? ""))
+      const asNode = tracking ? (MIGRATED_REPOS.map((repo) => `tree:repos:${repo}`).find((key) => key === parent || key === repoNode) ?? undefined) : undefined
+      return {
+        key: `draft:${source}:${draft.draft_id ?? draft.id ?? draft.key ?? short(draft.title)}`,
+        kind: "draft",
+        source,
+        repo: draft.repo ?? VIBELANG,
+        title: oneLine(draft.title),
+        body: body([String(draft.body ?? "")]),
+        labels,
+        links: draftLinks(draft.links),
+        parent,
+        parentText: draft.parent ?? null,
+        ...(asNode === undefined ? {} : { asNode }),
+      }
+    })

@@ -79,7 +79,8 @@ export const nodeOfLane = (lane) => {
  * Places `records` (each with `key`, `title` and `parent`, a node key) in the tree: the fixed nodes, area nodes the
  * records ask for (`areaNodes`: `[key, title, parent]`), and part nodes wherever a node would hold more than GitHub's
  * 100 sub-issues. Returns `{ nodes, records }`: every node and record with its final `parent` and `depth` (the root
- * is 1). Throws when a depth would pass GitHub's eight levels.
+ * is 1). A record with `asNode` naming a node becomes that node's issue. Throws when a depth would pass GitHub's eight
+ * levels.
  */
 export const place = (records, areaNodes = []) => {
   const nodes = new Map()
@@ -89,7 +90,12 @@ export const place = (records, areaNodes = []) => {
   const children = new Map()
   const childrenOf = (key) => children.get(key) ?? children.set(key, { nodes: [], items: [] }).get(key)
   for (const node of nodes.values()) if (node.parent !== undefined) childrenOf(node.parent).nodes.push(node)
-  const placed = records.map((record) => {
+  // A tracking draft is its node's issue: the node takes its title, body and labels, and it is not a child.
+  for (const record of records) {
+    const node = record.asNode === undefined ? undefined : nodes.get(record.asNode)
+    if (node !== undefined) Object.assign(node, { title: record.title, about: record.body, labels: record.labels, draft: record.key, repo: record.repo })
+  }
+  const placed = records.filter((record) => record.asNode === undefined || !nodes.has(record.asNode)).map((record) => {
     const parent = nodes.has(record.parent) ? record.parent : nodes.has(record.parentHint) ? record.parentHint : "tree:impl"
     const out = { ...record, parent }
     childrenOf(parent).items.push(out)

@@ -103,6 +103,30 @@ describe("the importer's records", () => {
     expect(nodeOfParentText("The vibe and main workflow")).toBe("tree:workflow")
     expect(nodeOfLane("core-land")).toBe("tree:explicit-effects")
   })
+
+  test("drafts: closed ones skip, their own keys and links carry over, labels place an unparented one", () => {
+    const rows = draftRecords("spec", [
+      { key: "lane-x", title: "Retire a form", body: "b", labels: ["spec", "compiler"], links: { lane: "class1", mq: ["4cff70"], commit: "" }, state: "open" },
+      { key: "lane-y", title: "Done already", body: "b", labels: ["compiler"], state: "closed" },
+      { id: "foldkit-4", title: "Docs page", body: "b", labels: ["docs"], status: "draft" },
+      { title: "A compiler gap", body: "b", labels: ["compiler"] },
+    ])
+    expect(keys(rows)).toEqual(["draft:spec:lane-x", "draft:spec:foldkit-4", expect.stringMatching(/^draft:spec:[0-9a-f]{12}$/)])
+    expect(rows[0].links).toEqual([{ kind: "session", ref: "lane:class1", label: "lane class1" }, { kind: "queue", ref: "4cff70", label: "queue 4cff70" }])
+    expect(rows.map((row: Row) => row.parent)).toEqual(["tree:spec", "tree:docs", "tree:impl"])
+  })
+
+  test("drafts: a repository's tracking draft becomes its tree node's issue, not a child of it", () => {
+    const rows = [
+      ...draftRecords("t3code", [{ title: "Migrate t3code's Effect modules to VibeLang", body: "scope", parent: "Example repos / t3code (this is the t3code node)" }]),
+      ...draftRecords("alchemy", [{ title: "Migrate alchemy to VibeLang (tracking)", body: "scope", parent: "Example repos", role: "the alchemy node under Example repos" }]),
+      ...draftRecords("t3code", [{ title: "t3code: a codemod gap", body: "b", parent: "Example repos / t3code" }]),
+    ]
+    expect(rows.map((row: { asNode?: string }) => row.asNode)).toEqual(["tree:repos:t3code", "tree:repos:alchemy", undefined])
+    const tree = place(rows)
+    expect(tree.records.map((row: Row) => row.title)).toEqual(["t3code: a codemod gap"])
+    expect(tree.nodes.find((node: { key: string }) => node.key === "tree:repos:t3code")).toMatchObject({ title: "Migrate t3code's Effect modules to VibeLang", about: "scope" })
+  })
 })
 
 describe("the issue tree", () => {
