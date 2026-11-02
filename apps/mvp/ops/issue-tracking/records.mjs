@@ -5,7 +5,7 @@
 const MAX_TITLE = 200
 const MAX_BODY = 8000
 
-const CREDENTIAL_SHAPES = [
+export const CREDENTIAL_SHAPES = [
   /\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/g,
   /\bsk-[A-Za-z0-9_-]{16,}/g,
   /\bAKIA[0-9A-Z]{16}\b/g,

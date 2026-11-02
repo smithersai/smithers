@@ -1,0 +1,304 @@
+// The importer's pure parts (import.mjs): one issue record per open item, from the text the collector read. Each
+// record is `{ key, kind, repo, title, body, labels, links, parent }`: `key` is `<kind>:<id>`, stable across runs,
+// and becomes the body's `key:` marker line, which `track.mjs open` matches to reuse an issue. Tested by
+// sources.test.ts with synthetic input only.
+import { createHash } from "node:crypto"
+import { MIGRATED_REPOS, nodeOfLane, nodeOfParentText } from "./tree.mjs"
+
+const VIBELANG = "smithersai/vibelang"
+const MAX_TITLE = 200
+const MAX_BODY = 8000
+const PENDING_URL = "https://github.com/smithersai/vibelang/blob/main/typescript/tsc/internal/vibelangfuzz/testdata/pending"
+
+const short = (text) => createHash("sha1").update(text).digest("hex").slice(0, 12)
+const clip = (text, limit) => (text.length <= limit ? text : `${text.slice(0, limit - 1)}…`)
+const oneLine = (text) => clip(String(text).replace(/\s+/g, " ").trim(), MAX_TITLE)
+const body = (lines) => clip(lines.filter((line) => line !== undefined).join("\n").trim(), MAX_BODY)
+
+/** `migrate:<repo>` when a name names an example repository. */
+export const migrateLabels = (...names) => {
+  const text = names.join(" ").toLowerCase()
+  const repo = MIGRATED_REPOS.find((name) => text.includes(name))
+  return repo === undefined ? [] : [`migrate:${repo}`]
+}
+
+/** A line that says the item is fixed. "fixed, queued" is not: a fix waiting in the queue is still open. */
+export const FIXED = /\bFIXED\b|\b(?:fixed|landed|resolved) (?:in|on|as|by)\b|\bwithdrawn\b|\bsuperseded\b|\bno longer (?:reproduces|fails)\b|\ball fixed\b/
+
+// ── Merge-queue entries ───────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Open queue entries from the queue's rows (latest state per id): `queued` and `held`, and a `rejected` entry that is
+ * its lane's latest, since nothing replaced it. Landed, withdrawn and superseded entries are closed: a superseded
+ * entry's work moved to the entry that replaced it.
+ */
+export const queueRecords = (entries) => {
+  const latest = new Map()
+  for (const entry of entries) {
+    const before = latest.get(entry.lane)
+    if (before === undefined || String(entry.at) > String(before.at)) latest.set(entry.lane, entry)
+  }
+  const open = entries.filter((entry) => entry.state === "queued" || entry.state === "held" || (entry.state === "rejected" && latest.get(entry.lane) === entry))
+  return open.map((entry) => ({
+    key: `queue:${entry.id}`,
+    kind: "queue",
+    repo: VIBELANG,
+    title: oneLine(`Merge queue: ${entry.lane} ${entry.rev ?? ""} is ${entry.state}`),
+    body: body([
+      `Merge-queue entry \`${entry.id}\` of lane \`${entry.lane}\`.`,
+      "",
+      `- revision: \`${entry.rev ?? "?"}\`, ${entry.commits ?? "?"} commit(s)`,
+      `- queued: ${entry.at ?? "?"}`,
+      `- state: ${entry.state}${entry.state === "rejected" ? " (the lane's latest entry; nothing replaced it)" : ""}`,
+      entry.reason ? `- reason: ${clip(String(entry.reason), 3000)}` : undefined,
+      "",
+      `Fix status: open until the entry lands or is withdrawn.`,
+    ]),
+    labels: ["queue", ...migrateLabels(entry.lane)],
+    links: [
+      { kind: "queue", ref: entry.id, label: `${entry.id} (${entry.state})`, state: entry.state === "rejected" ? "failed" : "queued" },
+      { kind: "session", ref: `lane:${entry.lane}`, label: `lane ${entry.lane}` },
+    ],
+    parent: nodeOfLane(entry.lane),
+  }))
+}
+
+// ── Spec review rounds ────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Sections of a Markdown text that open with a heading matching `heading`: `{ match, text }`. */
+const sections = (text, heading) => {
+  const lines = text.split("\n")
+  const out = []
+  for (let i = 0; i < lines.length; i++) {
+    const match = heading.exec(lines[i])
+    if (match === null) continue
+    let end = i + 1
+    while (end < lines.length && !/^#{1,3} /.test(lines[end])) end++
+    out.push({ match, text: lines.slice(i, end).join("\n"), line: i + 1 })
+  }
+  return out
+}
+
+/** The canonical id of a review finding: `r2-OPUS-2`. */
+const findingIds = (label, round) => {
+  const ids = []
+  let current = round
+  for (const match of label.matchAll(/(?:\b[Rr](\d+)\s+)?\b((?:OPUS|ASTRA|FABLE|SOL)-\d+)\b/g)) {
+    if (match[1] !== undefined) current = match[1]
+    if (current !== undefined) ids.push(`r${current}-${match[2]}`)
+  }
+  return ids
+}
+
+/**
+ * Open findings of the latest spec-review round: the round's new findings not marked FIXED, and the rows of each
+ * reviewer's "Still open from earlier rounds" table, one record per finding (a row naming two reviewers' ids is one).
+ * `files` is `[{ reviewer, round, text }]` of that round.
+ */
+export const reviewRoundRecords = (files) => {
+  const records = new Map()
+  const seen = new Map()
+  const add = (ids, make) => {
+    const known = ids.map((id) => seen.get(id)).find((key) => key !== undefined)
+    if (known !== undefined) {
+      const record = records.get(known)
+      record.body = body([record.body, "", `Also reported as ${ids.join(", ")}.`])
+      for (const id of ids) seen.set(id, known)
+      return
+    }
+    const record = make()
+    records.set(record.key, record)
+    for (const id of ids) seen.set(id, record.key)
+  }
+  for (const { reviewer, round, text } of files) {
+    for (const { match, text: section } of sections(text, /^### ((?:OPUS|ASTRA|FABLE|SOL)-\d+) \[(\w+)\] (.*)$/)) {
+      if (FIXED.test(match[3])) continue
+      const id = `r${round}-${match[1]}`
+      add([id], () => ({
+        key: `review:spec:${id}`,
+        kind: "review",
+        repo: VIBELANG,
+        title: oneLine(`Spec review r${round} ${match[1]} [${match[2]}]: ${match[3].replace(/\s+—.*$/, "")}`),
+        body: body([`Spec review round ${round}, ${reviewer}: ${match[1]} [${match[2]}].`, "", section.split("\n").slice(1).join("\n"), "", "Fix status: open."]),
+        labels: ["review-finding", "spec", `severity:${match[2].toLowerCase()}`],
+        links: [{ kind: "review", ref: `spec-review:r${round}:${reviewer}`, label: `spec review r${round} (${reviewer})` }],
+        parent: "tree:spec",
+      }))
+    }
+    const table = /## Still open from earlier rounds\n([\s\S]*)$/.exec(text)?.[1] ?? ""
+    for (const line of table.split("\n")) {
+      const cells = line.split("|").slice(1, -1).map((cell) => cell.trim())
+      if (cells.length < 4 || !/^\d+$/.test(cells[0])) continue
+      const [, label, evidence, status] = cells
+      const ids = findingIds(label.split(":")[0], undefined)
+      if (ids.length === 0) continue
+      const severity = /\[(blocker|major|minor)\]/i.exec(label)?.[1]?.toLowerCase()
+      const what = label.slice(label.indexOf(":") + 1).trim()
+      add(ids, () => ({
+        key: `review:spec:${ids[0]}`,
+        kind: "review",
+        repo: VIBELANG,
+        title: oneLine(`Spec review ${ids[0].replace("-", " ")}: ${what}`),
+        body: body([
+          `Spec review finding ${ids.join(" / ")}, still open in round ${round} (${reviewer}).`,
+          "",
+          `- finding: ${what}`,
+          `- where on main: ${evidence}`,
+          `- queue status: ${status}`,
+          "",
+          "Fix status: open.",
+        ]),
+        labels: ["review-finding", "spec", ...(severity === undefined ? [] : [`severity:${severity}`])],
+        links: [{ kind: "review", ref: `spec-review:r${round}:${reviewer}`, label: `spec review r${round} (${reviewer})` }],
+        parent: "tree:spec",
+      }))
+    }
+  }
+  return [...records.values()]
+}
+
+/** Where a scoped review's findings belong. */
+const scopedParent = (scope) => (/doc/.test(scope) ? "tree:docs" : /preview|queue/.test(scope) ? "tree:workflow" : "tree:impl")
+
+/**
+ * Open findings of a scoped review (`### RC-1 [major] ...`, `### RD-001 ...`): those that no heading or line naming
+ * them marks fixed.
+ */
+export const scopedRecords = (scope, text) => {
+  const records = []
+  const done = new Set()
+  for (const { match, text: section } of sections(text, /^### ([A-Z]+-\d+)\b\s*(?:\[(\w+)\]|—\s*(\w+)\s*—)?\s*(.*)$/)) {
+    const id = match[1]
+    if (done.has(id)) continue
+    done.add(id)
+    const mentions = text.split("\n").filter((line) => new RegExp(`\\b${id}\\b`).test(line))
+    if (FIXED.test(section.split("\n")[0]) || mentions.some((line) => FIXED.test(line))) continue
+    const severity = (match[2] ?? match[3])?.toLowerCase()
+    records.push({
+      key: `review:${scope}:${id}`,
+      kind: "review",
+      repo: VIBELANG,
+      title: oneLine(`Review ${scope} ${id}: ${match[4].replace(/^[—-]\s*/, "")}`),
+      body: body([`Finding ${id} of the scoped review \`${scope}\`${severity === undefined ? "" : ` [${severity}]`}.`, "", section.split("\n").slice(1).join("\n"), "", "Fix status: open (no line marks it fixed)."]),
+      labels: ["review-finding", ...(severity === undefined ? [] : [`severity:${severity}`])],
+      links: [{ kind: "review", ref: `review:${scope}`, label: `review ${scope}` }],
+      parent: scopedParent(scope),
+    })
+  }
+  return records
+}
+
+// ── Example-repo migration findings ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Open findings of one example repository's migration inbox (`migrate-<repo>.md`): `### <repo>-<n>: title` entries
+ * (an addendum, correction or count is part of its finding), and dated `## 2026-10-31: title` entries. A finding is
+ * fixed when its own section, or another heading naming its id, says so.
+ */
+export const migrationRecords = (repo, text) => {
+  const records = []
+  const seen = new Set()
+  const headings = text.split("\n").filter((line) => /^#{2,4} /.test(line))
+  const idHeading = new RegExp(`^###? (${repo}-\\d+[a-z]?)\\b(.*)$`)
+  for (const { match, text: section } of sections(text, idHeading)) {
+    const id = match[1]
+    const rest = match[2]
+    if (seen.has(id) || /addendum|correction|count|root cause|follow-up|update|proof succeeds/i.test(rest.split(":")[0])) continue
+    seen.add(id)
+    const elsewhere = headings.filter((line) => new RegExp(`\\b${id}\\b(?![\\w-])`).test(line))
+    if (FIXED.test(section) || elsewhere.some((line) => FIXED.test(line))) continue
+    const title = rest.replace(/^\s*(\([^)]*\))?\s*:?\s*/, "")
+    records.push(migrationRecord(repo, id, title, section))
+  }
+  const dated = /^## (?:drive-[\w-]+,\s*)?(20\d\d-\d\d-\d\d)(?:[ T]\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|\+00:00)?)?:\s*(.+)$/
+  for (const { match, text: section } of sections(text, dated)) {
+    const title = match[2]
+    if (/^note\b/i.test(title) || FIXED.test(section)) continue
+    const id = `${match[1]}-${short(title)}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    records.push(migrationRecord(repo, id, title, section))
+  }
+  return records
+}
+
+const migrationRecord = (repo, id, title, section) => ({
+  key: `migrate:${repo}:${id}`,
+  kind: "migration",
+  repo: VIBELANG,
+  title: oneLine(`${repo} migration: ${title}`),
+  body: body([`Found migrating ${repo} to VibeLang (${id}).`, "", section.split("\n").slice(1).join("\n"), "", "Fix status: open (no line marks it fixed)."]),
+  labels: ["migration-finding", `migrate:${repo}`],
+  links: [{ kind: "review", ref: `migrate-${repo}:${id}`, label: `migration finding ${id}` }],
+  parent: `tree:repos:${repo}`,
+})
+
+// ── Fuzz findings: the pending gaps on main ───────────────────────────────────────────────────────────────────────
+
+/**
+ * Open fuzz findings from main's `testdata/pending/<area>.txt` (`<target> <key> <owner> <reason>`): each oracle line
+ * not superseded, grouped by area, target and the reason before its first `;`, since one disagreement often has
+ * several keys. Corpus lines only mark reproductions. `files` is `[{ name, text }]`. Returns `{ records, areas }`,
+ * `areas` the tree's area nodes.
+ */
+export const fuzzRecords = (files) => {
+  const groups = new Map()
+  for (const { name, text } of files) {
+    const area = name.replace(/\.txt$/, "")
+    for (const line of text.split("\n")) {
+      if (line.trim() === "" || line.startsWith("#")) continue
+      const match = /^(\S+)\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line)
+      if (match === null) continue
+      const [, target, key, owner, reason] = match
+      if (owner === "superseded" || key.startsWith("corpus:")) continue
+      const head = reason.split(";")[0].trim()
+      const id = `${area}:${target}:${short(`${area}\n${target}\n${head}`)}`
+      const group = groups.get(id) ?? { id, area, target, owner, head, keys: [], lanes: new Set() }
+      group.keys.push(key)
+      for (const lane of reason.matchAll(/\blane ([\w-]+)/g)) group.lanes.add(lane[1])
+      groups.set(id, group)
+    }
+  }
+  const areas = new Map()
+  const records = [...groups.values()].map((group) => {
+    const cite = /^((?:VIP-\d+|D\d+|crash|hang)[^:]*):\s*(.*)$/.exec(group.head)
+    const what = cite === null ? group.head : `${cite[2]} (${cite[1]})`
+    const parent = `tree:fuzz:${group.area}`
+    areas.set(parent, [parent, `Fuzz findings: ${group.area}`, "tree:fuzz"])
+    return {
+      key: `fuzz:${group.id}`,
+      kind: "fuzz",
+      repo: VIBELANG,
+      title: oneLine(`${group.target}: ${what}`),
+      body: body([
+        `${group.target} disagrees with the specification; the gap is pending on main in [\`testdata/pending/${group.area}.txt\`](${PENDING_URL}/${group.area}.txt).`,
+        "",
+        `- what: ${group.head}`,
+        `- owner: ${group.owner}${group.lanes.size === 0 ? "" : `, lane ${[...group.lanes].join(", ")}`}`,
+        `- keys (${group.keys.length}): ${group.keys.slice(0, 40).map((key) => `\`${key}\``).join(", ")}${group.keys.length > 40 ? ", …" : ""}`,
+        "",
+        "Fix status: open. The change that fixes it deletes these pending lines; the reproductions then pass.",
+      ]),
+      labels: ["fuzz-finding", ...migrateLabels(group.area, ...group.lanes)],
+      links: [...group.lanes].map((lane) => ({ kind: "session", ref: `lane:${lane}`, label: `lane ${lane}` })),
+      parent,
+    }
+  })
+  return { records, areas: [...areas.values()] }
+}
+
+// ── Agents' drafts ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Issue drafts the agents prepared, `{ title, body, labels, parent, repo?, draft_id? }`, filed under their parent. */
+export const draftRecords = (source, drafts) =>
+  drafts.map((draft) => ({
+    key: `draft:${source}:${draft.draft_id ?? short(draft.title)}`,
+    kind: "draft",
+    repo: draft.repo ?? VIBELANG,
+    title: oneLine(draft.title),
+    body: body([String(draft.body ?? "")]),
+    labels: [...new Set([...(draft.labels ?? []), ...migrateLabels(source)])],
+    links: [],
+    parent: nodeOfParentText(draft.parent) ?? (migrateLabels(source)[0] === undefined ? "tree:impl" : `tree:repos:${source}`),
+    parentText: draft.parent ?? null,
+  }))

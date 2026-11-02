@@ -18,6 +18,23 @@ a lane, the merge queue, a reviewer                  ChatApi                    
 
 A TODO made from an issue links its own work there, with no post: the stack's writer (`worker/stack/Stack.ts`, `linkWork`), in the same transaction as each change to the TODO, writes its links with `source` `todo:<number>`. The TODO itself is a `session` link, `TODO #<n>` (`working`, `done` once merged, `closed` once dropped, `failed`; no state while queued or in review); its pull request a `pr` link, `#<p>` to GitHub (`open`, `merged`, `closed`); and once merged, its merge commit a `merge` link (`merged`). So an issue a TODO took to a merged pull request reads Merged, with the TODO, the pull request and the merge one click away. No one else may post as `todo:<n>`: it is the server's own write, not a route.
 
+## Our own work: the lane helper and the importer
+
+Our lanes track their work as issues on the public repositories smithersai/vibelang and smithersai/smithers, as a tree under **Ship VibeLang** on smithersai/vibelang (`ops/issues/tree.mjs`), filed as GitHub sub-issues.
+
+```sh
+node ops/issues/track.mjs open    --repo smithersai/vibelang --title "<title>" --body-file <f> --key fuzz:<id> --label migrate:alchemy --parent smithersai/vibelang#<N> --dry-run
+node ops/issues/track.mjs link    --repo smithersai/vibelang --issue <N> --kind lane --ref <lane> --state working
+node ops/issues/track.mjs comment --repo smithersai/vibelang --issue <N> --body-file <f>
+node ops/issues/track.mjs parent  --repo smithersai/smithers --issue <N> --parent smithersai/vibelang#<M>
+```
+
+- **Who writes.** The identity file at `--identity` or `$SMITHERS_ISSUE_IDENTITY`: JSON with `login`, and `cookie` plus `personId` (issues and comments), `runnerToken` (links) and `githubToken` (sub-issues). It refuses to write without the file or as a person's login. `--dry-run` sends nothing and prints each request with each secret named, not shown.
+- **Reuse.** `open` reads the repository's issues shape and reuses an open issue whose body has the same `key: <kind>:<id>` line, or whose normalized title matches; otherwise it creates one with a write id derived from the key. Labels go in the body's marker block, since the writes route takes none.
+- **Public content.** Everything sent goes through `ops/issues/scrub.mjs`: it redacts credentials, home and internal paths, machine names, account names, emails and private repository names (passed at run time, never committed), and fails closed, exit 2, on a title, label or ref that needs a redaction.
+- **Sub-issues.** GitHub's, with its limits checked first: 100 children per parent, eight levels, the same owner (any repository of it).
+- **The importer.** `node ops/issues/import.mjs --out <plan.jsonl> [--draft <source>=<file>]...` reads the open merge-queue entries, the open spec-review and scoped-review findings and the example-repository migration findings on the lane host (read-only), main's pending fuzz gaps, and the agents' drafts; deduplicates by key and title; scrubs; places each in the tree; and writes a mode-600 plan with every dropped record and why. It posts nothing.
+
 ## Routes
 
 | Route | Answers |
@@ -68,6 +85,9 @@ Settings: `E2E_TRACKING_REPOSITORY`, `E2E_TRACKING_RECORDS`, `E2E_TRACKING_SEED_
 | `src/features/issues/workView.test.ts` | links grouped per issue, the row chip and links, the page's sections, `?work=` |
 | `worker/github/WorkLinks.test.ts` | the route: a Member's and a runner's posts, out-of-order posts, refusals, the list's status and filter, the shape's authorization |
 | `ops/work-links/link.test.ts` | the client's request, its token handling and its waits |
+| `ops/issues/scrub.test.ts` | the public-content scrub: what it redacts, what it keeps, and failing closed |
+| `ops/issues/track.test.ts` | the lane helper: identity refusals, dry runs without secrets, reuse, links, sub-issues and GitHub's limits |
+| `ops/issues/sources.test.ts` | the importer's records per source, and the tree's placement, parts and depth |
 | `ops/issue-tracking/records.test.ts` | the import's scrubbing, its records and links, and their order |
 | `e2e/issue-tracking.spec.ts` | production: volume, import, links and status, above |
 | `e2e/issue-waterfall.spec.ts` | production: the cold list's and the cold issue page's stages, above |
