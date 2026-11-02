@@ -30,6 +30,7 @@
  */
 
 import * as Context from "effect/Context"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
@@ -45,7 +46,7 @@ export interface Service {
    * currently parked on `executionId` resumes; with no waiters the wake is
    * dropped and the polling fallback covers the run.
    */
-  readonly wake: (executionId: string) => void!!
+  readonly wake: (executionId: string) => Effect.Effect<void>
   /**
    * Parks until the next {@link wake} for `executionId`. Registration is
    * removed when the waiting fiber is interrupted — including scope closure
@@ -55,13 +56,13 @@ export interface Service {
    * The wait is keyed by execution id alone: execution ids are unique
    * across flows, so the flow tag adds no discrimination.
    */
-  readonly awaitWake: (executionId: string) => void!!
+  readonly awaitWake: (executionId: string) => Effect.Effect<void>
   /**
    * How many waiters are currently parked on `executionId`. This is
    * observability for tests and diagnostics, not a coordination primitive:
    * a count observed now says nothing about a moment later.
    */
-  readonly waiters: (executionId: string) => number!!
+  readonly waiters: (executionId: string) => Effect.Effect<number>
 }
 
 /**
@@ -80,7 +81,7 @@ export class WakeBus extends Context.Service<WakeBus, Service>()("@smthrs/engine
  * @since 0.1.0
  */
 export const makeUnsafe = (): Service => {
-  const parked = new Map<string, Set<Deferred<void>>>()
+  const parked = new Map<string, Set<Deferred.Deferred<void>>>()
   return WakeBus.of({
     wake: (executionId) =>
       Effect.suspend(() => {
@@ -91,12 +92,12 @@ export const makeUnsafe = (): Service => {
         return Effect.forEach(
           Array.from(waiters),
           (waiter) => Deferred.succeed(waiter, undefined),
-          { discard: true },
+          { discard: true }
         )
       }),
     awaitWake: (executionId) =>
       Effect.acquireUseRelease(
-        effect {
+        Effect.sync(() => {
           const waiter = Deferred.makeUnsafe<void>()
           let waiters = parked.get(executionId)
           if (waiters === undefined) {
@@ -105,18 +106,18 @@ export const makeUnsafe = (): Service => {
           }
           waiters.add(waiter)
           return { waiter, waiters }
-        },
+        }),
         ({ waiter }) => Deferred.await(waiter),
         // The registration's own set is closed over rather than re-fetched:
         // the map entry can only be deleted by the release that empties it,
         // so the set this waiter joined is the set it must leave.
-        effect ({ waiter, waiters }) =>
-          {
+        ({ waiter, waiters }) =>
+          Effect.sync(() => {
             waiters.delete(waiter)
             if (waiters.size === 0) parked.delete(executionId)
-          },
+          })
       ),
-    waiters: effect (executionId) => parked.get(executionId)?.size ?? 0,
+    waiters: (executionId) => Effect.sync(() => parked.get(executionId)?.size ?? 0)
   })
 }
 
@@ -127,7 +128,7 @@ export const makeUnsafe = (): Service => {
  * @category constructors
  * @since 0.1.0
  */
-export const make: Service!! = Effect.sync(makeUnsafe)
+export const make: Effect.Effect<Service> = Effect.sync(makeUnsafe)
 
 /**
  * A bus that never delivers: wakes are dropped and waiters park forever.
@@ -141,8 +142,8 @@ export const makeNoop = (overrides?: Partial<Service>): Service =>
   WakeBus.of({
     wake: () => Effect.void,
     awaitWake: () => Effect.never,
-    waiters: () => 0,
-    ...overrides,
+    waiters: () => Effect.succeed(0),
+    ...overrides
   })
 
 /**

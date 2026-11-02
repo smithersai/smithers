@@ -139,7 +139,7 @@ export * as StepSandbox from "./StepSandbox.ts"
  * @since 0.1.0
  * @category services
  */
-export * as WakeBus from "./WakeBus.vibe"
+export * as WakeBus from "./WakeBus.ts"
 
 /**
  * @since 0.1.0
