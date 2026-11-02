@@ -14,7 +14,11 @@ Mobile layout audits retain full-document PNG evidence and original recordings.
 Full-page capture can temporarily resize Chromium's recorded surface. The
 `fullPageScreenshot` helper records these tool intervals as `captures` in the
 media manifest; `gifs.mjs` excludes them before allocating scene and chapter
-holds. It never infers exclusions from visual glitches. Unmarked flashes,
+holds. It never infers exclusions from visual glitches. Chromium's screencast
+sends a recorded frame only when the compositor draws, and restoring the
+viewport draws nothing, so the helper ends each interval with a viewport
+screenshot (`recordCurrentPicture`): the recording then holds the restored page,
+not the tall surface's gray margin, after the cut. Unmarked flashes,
 blank pages, frozen previews and missing chapters still fail validation.
 The helper and teardown await renderer paint acknowledgments spanning two
 recording sample slots, so short audits retain their final visible screen.

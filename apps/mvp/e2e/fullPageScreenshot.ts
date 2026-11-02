@@ -14,6 +14,15 @@ export const waitForRecordingPaints = (fps: number): Promise<void> => new Promis
 
 export const painted = (page: Page): Promise<void> => page.evaluate(waitForRecordingPaints, FPS)
 
+/** Make the page's video recording receive the page's current picture now. Chromium's screencast, which Playwright
+ * records, sends a frame only when the compositor draws; a paint acknowledgment with nothing changed draws nothing.
+ * A viewport screenshot always draws, so the recording holds this picture from here until the page next changes.
+ * Measured on the Mac mini, 2026-11-01: after a full-page capture restored the viewport, no frame came until the
+ * next draw, so the recording kept the tall surface's gray margin past the capture interval. */
+export const recordCurrentPicture = async (page: Page, timeout?: number): Promise<void> => {
+  await page.screenshot({ caret: "initial", ...(timeout === undefined ? {} : { timeout }) })
+}
+
 const captures = new WeakMap<Page, Array<Capture>>()
 
 /** Screenshot work is evidence collection, rather than a person's action. Keep
@@ -31,7 +40,8 @@ export const fullPageScreenshot = async (
   try {
     return await page.screenshot({ ...options, ...(path === undefined ? {} : { path }), fullPage: true, animations: "disabled" })
   } finally {
-    // End the tool interval only after the restored viewport has painted.
+    // End the tool interval only after the recording holds the restored viewport, not the tall surface.
+    await recordCurrentPicture(page, options.timeout)
     await painted(page)
     capture.end = Date.now()
   }
