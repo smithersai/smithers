@@ -49,6 +49,9 @@ describe("the fleet's shapes", () => {
       const out = await fleetHarness(runtime)
       expect((await out.fetch(shape(path))).status).toBe(401)
       expect(out.electric).toEqual([])
+      const missing = await fleetHarness(runtime, { actor: maintainer })
+      expect((await missing.fetch(`${path}?offset=-1`)).status).toBe(403)
+      expect(missing.electric).toEqual([])
       for (const repo of ["", "one", "a/b/c", "a/b?bad"]) {
         const h = await fleetHarness(runtime, { actor: maintainer })
         expect((await h.fetch(shape(path, repo))).status).toBe(403)

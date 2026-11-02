@@ -44,8 +44,8 @@ export const handles = (path: string): boolean => path === AGENT_RUNS_SHAPE_ROUT
 
 /** The repository a shape request names in `?repo=<owner>/<name>`, or `undefined`. */
 const repositoryOf = (url: string) => {
-  const [owner = "", name = "", ...rest] = (new URL(url, "http://localhost").searchParams.get("repo") ?? "").split("/")
-  return rest.length === 0 && isRepository(owner, name) ? repositoryNamed(`${owner}/${name}`) : undefined
+  const [owner, name = "", ...rest] = (new URL(url, "http://localhost").searchParams.get("repo") ?? "").split("/")
+  return rest.length === 0 && isRepository(owner!, name) ? repositoryNamed(`${owner}/${name}`) : undefined
 }
 
 /** A refusal for a role `RepoRoles` couldn't give: GitHub or Postgres not answering is `503`, the rest `403`. */

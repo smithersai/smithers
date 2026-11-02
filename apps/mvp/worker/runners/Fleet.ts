@@ -391,7 +391,7 @@ export const probe = (key: string, settings: Settings) =>
         transcriptBytes: toNumber(row.r_transcriptBytes),
         cpuSeconds: toNumber(row.r_cpuSeconds),
         cpuMark: toNumber(row.r_cpuMark),
-        alerted: (row.r_alerted as ReadonlyArray<string>) ?? [],
+        alerted: row.r_alerted as ReadonlyArray<string>,
       }
       const { next, due, recovered } = project(job, run, settings)
       if (changed(run, next)) {

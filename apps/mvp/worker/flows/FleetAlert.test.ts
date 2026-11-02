@@ -73,3 +73,28 @@ test("a long Unicode TODO title is clipped within the alert bound without cuttin
     expect(described.title.endsWith("🟢…")).toBe(true)
   }
 })
+
+
+test("a projection with a missing title or no reported cost still describes its incident", async () => {
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    INSERT INTO agent_runs (key, repo_id, agent, generation, queued_at, number, title)
+    VALUES ('untitled', 'github/acme/widgets', 'coder', 1, now(), 42, NULL),
+      ('cost', 'github/acme/widgets', 'coder', 1, now(), NULL, NULL)`))
+  const describe = async (subject: string, kind: Fleet.Kind) => Option.getOrThrow(await runtime.runPromise(FleetAlert.describe({
+    alertId: `alert-${subject}`, subject, kind, repoId: "github/acme/widgets",
+  })))
+  expect((await describe("untitled", "waiting")).title).toBe("T42 · Waiting for a runner")
+  expect((await describe("cost", "cost")).title).toBe("Agent run · Cost · coder")
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE agent_runs SET cost_usd = 6.5 WHERE key = 'cost'`))
+  expect((await describe("cost", "cost")).title).toBe("Agent run · Cost · $6.50")
+})
+
+test("an alert that cannot be admitted never fails the probe or marks its incident as raised", async () => {
+  const registry: Metric.MetricRegistry = new Map()
+  const unavailable = Flows.FlowStarter.of({ start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "unreachable" })) })
+  await Effect.runPromise(Fleet.raiseAll("missing", [alert], FleetAlert.startWith(unavailable), (effect) => Effect.provide(effect, down)).pipe(
+    Effect.provideService(Metric.MetricRegistry, registry),
+  ))
+  expect(Effect.runSync(Metric.value(Metric.withAttributes(Fleet.raised, { kind: "offline", outcome: "not_started" })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count).toBe(1)
+  expect(Effect.runSync(Metric.value(Metric.withAttributes(Fleet.raised, { kind: "offline", outcome: "started" })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count).toBe(0)
+})
