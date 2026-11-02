@@ -94,7 +94,7 @@ The Issues list offers Enable or Pause triage only after that repository's issue
 
 A lost answer is found by its marker in the same attempt. A rate limit, a 5xx or Postgres failing fails the step for its policy; every attempt finds the marker before writing, so a write reaches GitHub once. The marker stays hidden: the projection stores the body without it and its write id in `write_id`.
 
-A write's transaction admits it only under the role row its request read, or a newer one with the same role, fresh by the database's clock at the check (`clock_timestamp()`, so a lock wait can't stretch decision 0079's five minutes). When the row expired or changed meanwhile, the route reads the role from GitHub again, once (`RepoRoles.refresh`), and admits the write only under that answer; a refresh that returns a row already older than five minutes decides nothing (`503 unavailable`). Before 2026-11-02 the expired row refused the write `403 forbidden`, though the role hadn't changed: production's issue seed met it every few minutes.
+A write's transaction keeps the role row its request read for `HOLD_GRACE_SECONDS` (30) past its 5 minutes: a request that read the row in its last fresh second and inserted after it was refused `403 forbidden` though the role hadn't changed (production, 2026-11-02, every few minutes for an Admin's issue writes). A newer read that changed the role still refuses it.
 
 ### Tokens
 
