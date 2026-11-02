@@ -92,7 +92,8 @@ test("fleet: lists every run: the oldest of 53, live on a desktop and a phone", 
     await step("People commit 53 TODOs: one silent, one busy, 51 that end at once", async () => {
       await running.commit(`Oldest ${running.word}`, "refuse")
       await running.commit(`Silent ${running.word}`, "run `sleep 900`")
-      await running.commit(`Busy ${running.word}`, "run `busy 600`")
+      // Busy outlasts the 30-minute budget: listing 53 runs has taken 12 to 23 minutes, and the phone step reads it working.
+      await running.commit(`Busy ${running.word}`, "run `busy 2400`")
       for (let index = 0; index < 50; index++) await running.commit(`Quick ${index} ${running.word}`, "refuse")
     })
     await step("The fleet lists every run, live", async () => {

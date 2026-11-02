@@ -154,8 +154,10 @@ test("todo-from-issue: Make TODO from an issue's menu drafts it linked; the issu
     .first()
   await expect(issueRow, "Ann: an open issue to make a TODO from").toBeVisible({ timeout: 120_000 })
   const number = (await issueRow.locator(".sui-issues-number").textContent())!.slice(1)
-  const title = (await issueRow.locator(".sui-issues-title").textContent())!
-  await issueRow.getByRole("button", { name: `#${number} actions` }).click()
+  // Pin the row by its number: `.first()` resolves again on each use, and rows arriving from sync reorder the list.
+  const pinned = issues.locator("[data-slot=issues-row]").filter({ has: page.getByRole("button", { name: `#${number} actions` }) })
+  const title = (await pinned.locator(".sui-issues-title").textContent())!
+  await pinned.getByRole("button", { name: `#${number} actions` }).click()
   await page.getByRole("menuitem", { name: "Make TODO" }).click()
   await expect(page).toHaveURL(new RegExp(`/${repo}/stack$`))
   const draft = page.getByRole("form", { name: "TODO draft" }).filter({ hasText: `#${number}` })
