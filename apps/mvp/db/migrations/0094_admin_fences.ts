@@ -1,0 +1,32 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// One fence for every Admin action on a repository's runners, agents and overflow (decision 0148,
+// worker/runners/Fence.ts).
+//
+// - `admin_generations`: a counter per resource an Admin action changes (`runners:<repo>:<name>`,
+//   `agents:<repo>:<name>`, and `coding:<repo>` for which agent TODOs code with), bumped by every write and never reset,
+//   a deleted agent's included, so an action admitted against one generation never overwrites a newer one.
+// - `admin_receipts`: how each Admin action ended, by its execution id, for the Admin who asked, and what a replay of the
+//   same action answers: written, nothing to change, or refused (`authorization_expired`: the authority it was admitted
+//   by no longer holds, or the fence it carried expired or was missing; `superseded`: the resource changed since).
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`
+    CREATE TABLE admin_generations (
+      key text PRIMARY KEY CHECK (char_length(key) BETWEEN 1 AND 400),
+      generation bigint NOT NULL CHECK (generation >= 1)
+    )`
+  yield* sql`
+    CREATE TABLE admin_receipts (
+      execution text PRIMARY KEY CHECK (char_length(execution) BETWEEN 1 AND 200),
+      repo_id text NOT NULL,
+      kind text NOT NULL CHECK (kind IN ('runners', 'agents', 'overflow')),
+      name text NOT NULL,
+      op text NOT NULL CHECK (op IN ('put', 'delete')),
+      outcome text NOT NULL
+        CHECK (outcome IN ('set', 'removed', 'missing', 'authorization_expired', 'superseded')),
+      actor_id text NOT NULL,
+      recorded_at timestamptz NOT NULL DEFAULT now()
+    )`
+})

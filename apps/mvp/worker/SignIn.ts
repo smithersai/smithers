@@ -411,7 +411,8 @@ export const make = <E, R>(
           subject: { kind: "person", id: live.value.personId },
           role: live.value.role,
           session: live.value.home ?? live.value.id,
-          // The alias session itself, which signing out at its host ends (worker/SocketAccess.ts checks both).
+          // The alias session itself, which signing out at its host ends (worker/SocketAccess.ts and
+          // worker/runners/Fence.ts check both).
           ...(live.value.home === undefined ? {} : { alias: live.value.id }),
         },
         login: live.value.login,

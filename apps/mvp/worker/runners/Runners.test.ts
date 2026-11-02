@@ -14,6 +14,8 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
+import { BranchRoles } from "../branch/Access.ts"
+import type * as RepoRoles from "../github/RepoRoles.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Flows from "../Flows.ts"
@@ -21,6 +23,7 @@ import * as FlowHost from "../test/flowHost.ts"
 import * as RunContentTest from "../test/runContent.ts"
 import { branchRoles, signedIn, signedOut, testFile } from "../test/harness.ts"
 import * as Admin from "./Admin.ts"
+import type * as Fence from "./Fence.ts"
 import * as AdminFlows from "./AdminFlows.ts"
 import * as RunnersApi from "./Api.ts"
 import * as Jobs from "./Jobs.ts"
@@ -33,7 +36,8 @@ const BASE = "0123456789abcdef0123456789abcdef01234567"
 
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes, github_repositories RESTART IDENTITY CASCADE`)))
+    sql`TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes, github_repositories, github_repo_roles,
+      admin_receipts, admin_generations RESTART IDENTITY CASCADE`)))
 
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
 const query = <A>(effect: Effect.Effect<A, unknown, SqlClient.SqlClient>) => runtime.runPromise(effect)
@@ -550,6 +554,426 @@ describe("the repository's runners and agents", () => {
     return { send, close: () => Effect.runPromise(Scope.close(scope, Exit.void)) }
   }
 
+  /**
+   * The Admin routes as `actor` on `repo`: on `acme/private` its role GitHub gives is read from its `github_repo_roles`
+   * row as RepoRoles would (with the row it came from); elsewhere the session's. Each flow starts only once `gate`
+   * resolves, after `starting` says it was asked to (a flow run late).
+   */
+  const fencedRoutes = async (options: {
+    readonly actor?: Actor.Actor
+    readonly repo?: string
+    readonly gate?: () => Promise<void>
+    readonly starting?: () => void
+  } = {}) => {
+    const actor = options.actor ?? admin
+    const db = await database()
+    const scope = Effect.runSync(Scope.make())
+    const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(db)), scope))
+    const flows = Context.get(built.context, FlowRuntime.FlowRuntime)
+    const starter = Flows.FlowStarter.of({
+      start: (flow: Flow.Any, { executionId, payload }) =>
+        Effect.sync(() => options.starting?.()).pipe(
+          Effect.andThen(Effect.promise(options.gate ?? (async () => {}))),
+          Effect.andThen(flows.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown, unknown>),
+          Effect.provide(built.context),
+          Effect.orDie,
+          Effect.asVoid,
+        ),
+    })
+    const roles = Layer.succeed(BranchRoles, BranchRoles.of({
+      roleOn: (who) => Effect.succeed(who.role),
+      repoRoleOn: (who, repoId) =>
+        repoId !== "github/acme/private"
+          ? Effect.succeed({ role: who.role, held: Option.none() })
+          : Effect.promise(async (): Promise<RepoRoles.Resolved> => {
+            const [row] = await sql<{ readonly role: "admin" | "member" | null; readonly checkedAt: string }>`
+              SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles
+              WHERE repo_id = ${repoId} AND person_id = ${who.subject.id}`
+            return row === undefined
+              ? { role: null, held: Option.none() }
+              : { role: row.role, held: Option.some({ repoId, personId: who.subject.id, role: row.role, checkedAt: row.checkedAt }) }
+          }),
+    }))
+    const api = await Effect.runPromise(Admin.make(db))
+    const handler = HttpEffect.toWebHandler(api.fetch.pipe(
+      Effect.provideService(Flows.FlowStarter, starter),
+      Effect.provide(signedIn(actor)),
+      Effect.provide(roles),
+    ))
+    const send = async (path: string, method: string, body?: BodyInit) => {
+      const response = await handler(new Request(`http://localhost/api/repos/${options.repo ?? "acme/private"}/${path}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        ...(body === undefined ? {} : { body, duplex: "half" }),
+      } as RequestInit))
+      return { status: response.status, body: (await response.json().catch(() => null)) as { readonly execution?: string } | null }
+    }
+    const receipt = async (execution: string) => {
+      const response = await handler(new Request(`http://localhost/api/runners/admin-receipts/${encodeURIComponent(execution)}`))
+      return { status: response.status, body: await response.json() }
+    }
+    return { send, receipt, close: () => Effect.runPromise(Scope.close(scope, Exit.void)) }
+  }
+
+  /** The Admin's role on `acme/private` as GitHub gave it, recorded now. */
+  const recordRole = (role: "admin" | "member") =>
+    sql`INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at) VALUES ('github/acme/private', 'person-admin', ${role}, now())
+      ON CONFLICT (repo_id, person_id) DO UPDATE SET role = EXCLUDED.role, checked_at = EXCLUDED.checked_at`
+
+  /** A body that sends its first bytes, says so (`started`), then waits for `finish` to send the rest. */
+  const stalledBody = (text: string) => {
+    let started = () => {}
+    const reading = new Promise<void>((done) => (started = done))
+    let finish = () => {}
+    const finished = new Promise<void>((done) => (finish = done))
+    let sentHead = false
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (!sentHead) {
+          sentHead = true
+          controller.enqueue(new TextEncoder().encode(text.slice(0, 5)))
+          started()
+          return
+        }
+        await finished
+        controller.enqueue(new TextEncoder().encode(text.slice(5)))
+        controller.close()
+      },
+    })
+    return { body, reading, finish }
+  }
+
+  /** A flow gate: `starting` resolves `asked` when the route starts the flow; the flow runs once `release` is called. */
+  const gated = () => {
+    let release = () => {}
+    const released = new Promise<void>((done) => (release = done))
+    let starting = () => {}
+    const asked = new Promise<void>((done) => (starting = done))
+    return { gate: () => released, starting, asked, release }
+  }
+
+  const RUNNER_BODY = JSON.stringify({ tokenSha256: "b".repeat(64), labels: [], capacity: 1 })
+
+  // Astra's reviews of cef761ee and 9e90a48a: the route read the role before the body, and the flows wrote whatever
+  // the authority was by then, so a body held open, or a flow run late, wrote after its registrant's role was revoked.
+  // Every Admin action now carries one fence (worker/runners/Fence.ts), checked again where it writes.
+  describe("the Admin action fence", () => {
+    test("a registration whose body arrives after the registrant's repository role was revoked is refused, and writes nothing", async () => {
+      await recordInstallation("github/acme/private")
+      await recordRole("admin")
+      const routes = await fencedRoutes()
+      try {
+        const stalled = stalledBody(RUNNER_BODY)
+        const putting = routes.send("runners/nyc-01", "PUT", stalled.body)
+        await stalled.reading
+        await recordRole("member")
+        stalled.finish()
+        expect((await putting).status).toBe(403)
+      } finally {
+        await routes.close()
+      }
+      expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+    })
+
+    test("a runner or agent write whose flow runs after the repository role was revoked writes nothing, and says why", async () => {
+      await recordInstallation("github/acme/private")
+      for (const [path, body] of [
+        ["runners/nyc-01", RUNNER_BODY],
+        ["agents/coder", JSON.stringify({ labels: [], profile: "p", coding: true })],
+      ] as const) {
+        await recordRole("admin")
+        const flow = gated()
+        const routes = await fencedRoutes(flow)
+        try {
+          const putting = routes.send(path, "PUT", body)
+          await flow.asked
+          await recordRole("member")
+          flow.release()
+          const answer = await putting
+          expect(answer.status).toBe(202)
+          expect(await routes.receipt(answer.body!.execution!)).toMatchObject({
+            status: 200,
+            body: { outcome: "authorization_expired", op: "put" },
+          })
+        } finally {
+          await routes.close()
+        }
+      }
+      expect(await sql`SELECT (SELECT count(*)::int FROM runners) + (SELECT count(*)::int FROM agents) AS n`).toEqual([{ n: 0 }])
+    })
+
+    test("on the deployment's own repository, a sign-in session revoked while the body arrives writes nothing", async () => {
+      const person = crypto.randomUUID()
+      const session = crypto.randomUUID()
+      await sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}::uuid, 4242, 'octo-session')`
+      await sql`
+        INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at)
+        VALUES (${session}::uuid, ${`digest-${session}`}, ${person}::uuid, 'admin', now(), now() + interval '1 day')`
+      await recordInstallation()
+      const routes = await fencedRoutes({
+        actor: { subject: { kind: "person", id: person }, role: "admin", session },
+        repo: "acme/widgets",
+      })
+      try {
+        const stalled = stalledBody(RUNNER_BODY)
+        const putting = routes.send("runners/nyc-01", "PUT", stalled.body)
+        await stalled.reading
+        await sql`UPDATE sessions SET revoked_at = now(), revoked_reason = 'sign_out' WHERE id = ${session}::uuid`
+        stalled.finish()
+        const answer = await putting
+        expect(answer.status).toBe(202)
+        expect((await routes.receipt(answer.body!.execution!)).body).toMatchObject({ outcome: "authorization_expired" })
+      } finally {
+        await routes.close()
+      }
+      expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+      await sql`DELETE FROM sessions WHERE id = ${session}::uuid`
+      await sql`DELETE FROM people WHERE id = ${person}::uuid`
+    })
+
+    test("an action with no fence, started before fences, writes nothing and records authorization_expired", async () => {
+      const db = await database()
+      const scope = Effect.runSync(Scope.make())
+      try {
+        const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(db)), scope))
+        const flows = Context.get(built.context, FlowRuntime.FlowRuntime)
+        const payload = { repoId: REPO, name: "legacy", tokenSha256: "c".repeat(64), labels: ["linux"], capacity: 1, actorId: "person-admin" }
+        await Effect.runPromise((flows.execute(AdminFlows.AddRunner, { executionId: "admin:legacy", payload }) as Effect.Effect<unknown, unknown>)
+          .pipe(Effect.provide(built.context)))
+      } finally {
+        await Effect.runPromise(Scope.close(scope, Exit.void))
+      }
+      expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+      expect(await sql`SELECT kind, name, op, outcome FROM admin_receipts`).toEqual([
+        { kind: "runners", name: "legacy", op: "put", outcome: "authorization_expired" },
+      ])
+    })
+
+    test("an action whose fence expired writes nothing, though the role was granted again since", async () => {
+      await recordInstallation("github/acme/private")
+      await recordRole("admin")
+      const [held] = await sql<{ readonly checkedAt: string }>`SELECT checked_at::text AS "checkedAt" FROM github_repo_roles`
+      // Admitted days ago, demoted and granted again since: the role row is fresh and Admin, the fence long expired.
+      await recordRole("member")
+      await recordRole("admin")
+      const change = await query(Store.addRunner(
+        { repoId: "github/acme/private", name: "nyc-01", tokenSha256: "d".repeat(64), labels: [], capacity: 1 },
+        {
+          actorId: "person-admin",
+          invocationKey: crypto.randomUUID(),
+          fenced: {
+            kind: "runners",
+            op: "put",
+            fence: {
+              execution: "runners-put:days-old",
+              expiresAt: Date.now() - 3 * 86_400_000,
+              generation: 0,
+              authority: { _tag: "Repo", held: { repoId: "github/acme/private", personId: "person-admin", role: "admin", checkedAt: held!.checkedAt } },
+            },
+          },
+        },
+      ))
+      expect(change).toBe("authorization_expired")
+      expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+    })
+
+    test("a DELETE admitted before the runner was registered again is superseded, and the runner stays", async () => {
+      await recordInstallation("github/acme/private")
+      await recordRole("admin")
+      const plain = await fencedRoutes()
+      const flow = gated()
+      const late = await fencedRoutes(flow)
+      try {
+        expect((await plain.send("runners/nyc-01", "PUT", RUNNER_BODY)).status).toBe(202)
+        const deleting = late.send("runners/nyc-01", "DELETE")
+        await flow.asked
+        // Registered again (a token rotation) while the DELETE waited.
+        expect((await plain.send("runners/nyc-01", "PUT", JSON.stringify({ tokenSha256: "e".repeat(64), labels: [], capacity: 1 }))).status)
+          .toBe(202)
+        flow.release()
+        const answer = await deleting
+        expect((await late.receipt(answer.body!.execution!)).body).toMatchObject({ outcome: "superseded", op: "delete" })
+      } finally {
+        await Promise.all([plain.close(), late.close()])
+      }
+      expect(await sql`SELECT token_sha256 AS sha, removed_at IS NULL AS live FROM runners`).toEqual([{ sha: "e".repeat(64), live: true }])
+    })
+
+    /** Holds `key`'s transaction lock in another connection until `release`: a write waits on it. */
+    const holdKey = async (key: string) => {
+      let release = () => {}
+      const released = new Promise<void>((done) => (release = done))
+      let locked = () => {}
+      const locking = new Promise<void>((done) => (locked = done))
+      const holder = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client.withTransaction(Effect.gen(function* () {
+          yield* client`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`
+          yield* Effect.sync(locked)
+          yield* Effect.promise(() => released)
+        }))))
+      await locking
+      return { release: async () => (release(), await holder) }
+    }
+
+    /** A person signed in with an Admin session (and an alias of it on another host), as sign-in records them. */
+    const signedInAdmin = async () => {
+      const person = crypto.randomUUID()
+      const session = crypto.randomUUID()
+      const alias = crypto.randomUUID()
+      await sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}::uuid, ${Math.floor(Math.random() * 1e9)}, 'octo-fence')`
+      await sql`
+        INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at)
+        VALUES (${session}::uuid, ${`digest-${session}`}, ${person}::uuid, 'admin', now(), now() + interval '1 day')`
+      await sql`INSERT INTO host_sessions (id, token_digest, parent_id, host) VALUES (${alias}::uuid, ${`alias-${alias}`}, ${session}::uuid, 'pr-1.example')`
+      const actor: Actor.Actor = { subject: { kind: "person", id: person }, role: "admin", session, alias }
+      return { person, session, alias, actor }
+    }
+
+    /** A write's `By` under a fence admitted now, `Local` unless `authority` says otherwise. */
+    const fencedBy = (fence: Partial<Fence.Fence> & { readonly execution: string }, kind: "runners" | "agents" = "runners"): Store.By => ({
+      actorId: "person-admin",
+      invocationKey: crypto.randomUUID(),
+      fenced: {
+        kind,
+        op: "put",
+        fence: { expiresAt: Date.now() + 60_000, generation: 0, authority: { _tag: "Local" as const }, ...fence },
+      },
+    })
+
+    // Astra's review of 29cacd16: the session was read unlocked and before the write's own wait, so a sign-out that
+    // committed meanwhile went unseen; and an alias session's end didn't end what it admitted.
+    test("a session, or its alias, ended while the write waits on its resource is seen, and writes nothing", async () => {
+      await recordInstallation()
+      for (const end of ["session", "alias"] as const) {
+        const who = await signedInAdmin()
+        const routes = await fencedRoutes({ actor: who.actor, repo: "acme/widgets" })
+        const name = `nyc-${end}`
+        const held = await holdKey(Store.resourceKey("runners", REPO, name))
+        try {
+          const putting = routes.send(`runners/${name}`, "PUT", RUNNER_BODY)
+          if (end === "session") await sql`UPDATE sessions SET revoked_at = now(), revoked_reason = 'sign_out' WHERE id = ${who.session}::uuid`
+          else await sql`UPDATE host_sessions SET revoked_at = now() WHERE id = ${who.alias}::uuid`
+          await held.release()
+          const answer = await putting
+          expect((await routes.receipt(answer.body!.execution!)).body).toMatchObject({ outcome: "authorization_expired" })
+        } finally {
+          await routes.close()
+        }
+      }
+      expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+    })
+
+    // Astra's review of 29cacd16: two first registrations of one name were both admitted against generation 0, and the
+    // later overwrote the first.
+    test("two registrations of a new name admitted at once: one writes, the other is superseded", async () => {
+      await recordInstallation("github/acme/private")
+      await recordRole("admin")
+      const first = gated()
+      const second = gated()
+      const a = await fencedRoutes(first)
+      const b = await fencedRoutes(second)
+      try {
+        const putA = a.send("runners/nyc-01", "PUT", JSON.stringify({ tokenSha256: "a".repeat(64), labels: [], capacity: 1 }))
+        const putB = b.send("runners/nyc-01", "PUT", JSON.stringify({ tokenSha256: "b".repeat(64), labels: [], capacity: 1 }))
+        await Promise.all([first.asked, second.asked])
+        first.release()
+        second.release()
+        const outcomes = await Promise.all([putA, putB].map(async (putting, n) =>
+          ((await (n === 0 ? a : b).receipt((await putting).body!.execution!)).body as { readonly outcome: string }).outcome))
+        expect(outcomes.sort()).toEqual(["set", "superseded"])
+      } finally {
+        await Promise.all([a.close(), b.close()])
+      }
+      expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 1 }])
+    })
+
+    // Astra's review of 29cacd16: "make A the coding agent" admitted before B was made it cleared B when it ran late,
+    // since only A's own generation was compared.
+    test("a coding selection admitted before another agent was made the coding agent is superseded", async () => {
+      await recordInstallation("github/acme/private")
+      await recordRole("admin")
+      const plain = await fencedRoutes()
+      expect((await plain.send("agents/alpha", "PUT", JSON.stringify({ labels: [], profile: "p" }))).status).toBe(202)
+      const flow = gated()
+      const late = await fencedRoutes(flow)
+      try {
+        const selecting = late.send("agents/alpha", "PUT", JSON.stringify({ labels: [], profile: "p", coding: true }))
+        await flow.asked
+        expect((await plain.send("agents/beta", "PUT", JSON.stringify({ labels: [], profile: "p", coding: true }))).status).toBe(202)
+        flow.release()
+        expect((await late.receipt((await selecting).body!.execution!)).body).toMatchObject({ outcome: "superseded" })
+      } finally {
+        await Promise.all([plain.close(), late.close()])
+      }
+      expect(await sql`SELECT name FROM agents WHERE coding`).toEqual([{ name: "beta" }])
+    })
+
+    // Astra's review of 29cacd16: the expiry was judged before the write waited on its resource, so a write that waited
+    // past it still wrote.
+    test("a fence that expires while the write waits on its resource writes nothing", async () => {
+      const held = await holdKey(Store.resourceKey("runners", REPO, "nyc-waits"))
+      const writing = query(Store.addRunner(
+        { repoId: REPO, name: "nyc-waits", tokenSha256: "a".repeat(64), labels: [], capacity: 1 },
+        fencedBy({ execution: "runners-put:waits", expiresAt: Date.now() + 300 }),
+      ))
+      await new Promise((done) => setTimeout(done, 600))
+      await held.release()
+      expect(await writing).toBe("authorization_expired")
+      expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+    })
+
+    // Astra's review of 29cacd16: a refusal's receipt committed but its acknowledgement lost, the replay was admitted
+    // again, and wrote, once the authority was granted again.
+    test("a replay of a refused action answers its recorded refusal, and writes nothing", async () => {
+      const write = { repoId: REPO, name: "nyc-replay", tokenSha256: "a".repeat(64), labels: [], capacity: 1 }
+      expect(await query(Store.addRunner(write, fencedBy({ execution: "runners-put:replay", expiresAt: Date.now() - 1 }))))
+        .toBe("authorization_expired")
+      // The same action again, as a replay, now with a fence that would hold.
+      expect(await query(Store.addRunner(write, fencedBy({ execution: "runners-put:replay" })))).toBe("authorization_expired")
+      expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+    })
+
+    // Astra's review of 29cacd16: an agent's generation lived on its row, so one removed and added again started over,
+    // and an action admitted before wrote the new agent.
+    test("an action admitted before an agent was removed and added again is superseded", async () => {
+      const agentWrite = { repoId: REPO, agent: { ...agent, name: "gamma" }, coding: false }
+      expect(await query(Store.setAgent(agentWrite, { actorId: "person-admin", invocationKey: crypto.randomUUID() }))).toBe("set")
+      const admitted = await query(Store.generationOf(Store.resourceKey("agents", REPO, "gamma")))
+      expect(await query(Store.removeAgent({ repoId: REPO, name: "gamma" }, { actorId: "person-admin", invocationKey: crypto.randomUUID() })))
+        .toBe("removed")
+      expect(await query(Store.setAgent(agentWrite, { actorId: "person-admin", invocationKey: crypto.randomUUID() }))).toBe("set")
+      expect(await query(Store.removeAgent(
+        { repoId: REPO, name: "gamma" },
+        fencedBy({ execution: "agents-delete:late", generation: admitted, coding: 0 }, "agents"),
+      ))).toBe("superseded")
+      expect(await sql`SELECT name FROM agents`).toEqual([{ name: "gamma" }])
+    })
+
+    test("a receipt is read by the person who started the action, never an agent acting for them", async () => {
+      const routes = await fencedRoutes({ actor: { ...admin, act: { kind: "agent", id: "agent-1" } } })
+      try {
+        expect((await routes.receipt("runners-put:any")).status).toBe(403)
+      } finally {
+        await routes.close()
+      }
+    })
+
+    test("a write whose authority still holds is written, and its receipt says so", async () => {
+      await recordInstallation("github/acme/private")
+      await recordRole("admin")
+      const routes = await fencedRoutes()
+      try {
+        const answer = await routes.send("runners/nyc-01", "PUT", RUNNER_BODY)
+        expect(answer.status).toBe(202)
+        expect(await routes.receipt(answer.body!.execution!)).toMatchObject({ status: 200, body: { kind: "runners", name: "nyc-01", op: "put", outcome: "set" } })
+        expect((await routes.receipt("runners-put:nobody")).status).toBe(404)
+      } finally {
+        await routes.close()
+      }
+      expect(await sql`SELECT repo_id AS "repoId", name FROM runners`).toEqual([{ repoId: "github/acme/private", name: "nyc-01" }])
+    })
+  })
+
   test("an Admin in person registers a runner and names the coding agent; anyone else is refused", async () => {
     await recordInstallation()
     const asAdmin = await adminRoutes(admin)
@@ -565,7 +989,7 @@ describe("the repository's runners and agents", () => {
       expect((await asAdmin.send("runners/nyc-01", "PUT", { ...runner, capacity: 65 })).status).toBe(400)
       expect((await asAdmin.send("runners/nyc-01", "GET")).status).toBe(405)
       expect((await asAdmin.send("agents/coder", "POST")).status).toBe(405)
-      expect(await asAdmin.send("runners/nyc-01", "PUT", runner)).toEqual({ status: 202, body: { name: "nyc-01" } })
+      expect(await asAdmin.send("runners/nyc-01", "PUT", runner)).toMatchObject({ status: 202, body: { name: "nyc-01" } })
       expect(await sql`SELECT name, labels, capacity, added_by AS "addedBy" FROM runners`).toEqual([
         { name: "nyc-01", labels: ["linux"], capacity: 4, addedBy: "person-admin" },
       ])
@@ -677,11 +1101,16 @@ describe("unhappy paths, through a database that is down or a starter that refus
   })
 
   test("an Admin step fails StoreUnavailable over a database that is down, and dies without an invocation key", async () => {
-    const step = AdminFlows.step("admin/SetAgent", down, (p: { readonly repoId: string; readonly actorId: string }) => p.repoId, () => Effect.die("unused"))
-    const payload = { repoId: REPO, actorId: "person-admin" }
+    const action = { kind: "agents", op: "put" } as const
+    const payload = {
+      repoId: REPO,
+      actorId: "person-admin",
+      fence: { execution: "agents-put:down", expiresAt: Date.now() + 60_000, generation: 0, authority: { _tag: "Local" as const } },
+    }
+    const step = AdminFlows.step("admin/SetAgent", down, (p: typeof payload) => p.repoId, action, () => Effect.die("unused"))
     expect(failure(await Effect.runPromise(Effect.exit(step(payload).pipe(Effect.provideService(Action.CurrentInvocationKey, "k"))))))
       .toEqual(new AdminFlows.StoreUnavailable())
-    const failing = AdminFlows.step("admin/SetAgent", await database(), (p: typeof payload) => p.repoId, () => Effect.fail("down"))
+    const failing = AdminFlows.step("admin/SetAgent", await database(), (p: typeof payload) => p.repoId, action, () => Effect.fail("down"))
     expect(failure(await Effect.runPromise(Effect.exit(failing(payload).pipe(Effect.provideService(Action.CurrentInvocationKey, "k"))))))
       .toEqual(new AdminFlows.StoreUnavailable())
     const exit = await Effect.runPromise(Effect.exit(failing(payload)))

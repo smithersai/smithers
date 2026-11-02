@@ -135,7 +135,7 @@ describe("an Admin's overflow setting", () => {
     const asAdmin = await adminRoutes(admin)
     try {
       const answer = await asAdmin.send("overflow/cloudflare", "PUT", setting(connectionId))
-      expect(answer).toEqual({ status: 202, body: { name: "cloudflare" } })
+      expect(answer).toMatchObject({ status: 202, body: { name: "cloudflare" } })
       expect(await sql(`SELECT name, labels, capacity, token_sha256 AS sha FROM runners`)).toEqual([
         { name: "cloudflare-overflow", labels: ["linux", "cloudflare"], capacity: 2, sha: expect.stringMatching(/^[0-9a-f]{64}$/) },
       ])

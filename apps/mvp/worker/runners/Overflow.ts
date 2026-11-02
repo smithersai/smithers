@@ -97,7 +97,8 @@ export const set = (
         labels: labelsOf(write),
         capacity: write.capacity,
       }, by)
-      if (change === "repeat") return change
+      // Written again, or refused by its fence: the setting stays as it is.
+      if (change !== "set") return change
       yield* sql`
         INSERT INTO repo_overflow (repo_id, person_id, connection_id, origin, profile, argv, labels, min_queued_seconds,
           capacity, token_ciphertext, token_nonce, key_version, updated_by)
@@ -121,6 +122,8 @@ export const remove = (
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
       const change = yield* Store.removeRunner({ repoId: write.repoId, name: RUNNER }, by)
+      // Written again, or refused by its fence: the setting stays as it is.
+      if (change !== "removed" && change !== "missing") return change
       yield* sql`DELETE FROM repo_overflow WHERE repo_id = ${write.repoId}`
       return change
     })))

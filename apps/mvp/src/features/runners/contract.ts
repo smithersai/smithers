@@ -38,6 +38,13 @@ export const parseAdminRoute = (
 /** The execution id of one Admin write: its kind, its op and a fresh id. */
 export const adminExecutionId = (kind: AdminKind, op: "put" | "delete", id: string): string => `${kind}-${op}:${id}`
 
+/**
+ * `GET <ADMIN_RECEIPTS_ROUTE><execution>`: how the Admin action whose 202 named `execution` ended, for the Admin who
+ * started it: `{ kind, name, op, outcome }`, `outcome` one of `set`, `removed`, `missing`, `authorization_expired`
+ * or `superseded` (decision 0148); `404` while it hasn't ended.
+ */
+export const ADMIN_RECEIPTS_ROUTE = "/api/runners/admin-receipts/"
+
 /** Why a write was refused: one code per answer. */
 export const REFUSALS = ["authentication", "forbidden", "not_found", "invalid", "too_large", "unavailable"] as const
 export type Refusal = (typeof REFUSALS)[number]

@@ -4,6 +4,7 @@ import { Node } from "@smthrs/plan"
 import { Effect, Layer, Metric, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
+import * as Fence from "./Fence.ts"
 import * as Overflow from "./Overflow.ts"
 import * as Store from "./Store.ts"
 
@@ -38,6 +39,12 @@ export const TokenSha256 = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/
 /** How many jobs one runner may run at once. */
 export const Capacity = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 64 }))
 
+/**
+ * The fence every Admin action carries (worker/runners/Fence.ts): optional in the payload only so an action started
+ * before fences still decodes, and is refused `authorization_expired`, writing nothing.
+ */
+const fence = Schema.optional(Fence.Fence)
+
 const addPayload = {
   repoId: Schema.String,
   name: AgentRunner.Name,
@@ -45,9 +52,16 @@ const addPayload = {
   labels: Schema.Array(AgentRunner.Label),
   capacity: Capacity,
   actorId: Schema.String,
+  fence,
 }
-const removePayload = { repoId: Schema.String, name: AgentRunner.Name, actorId: Schema.String }
-const setAgentPayload = { repoId: Schema.String, agent: AgentRunner.Agent, coding: Schema.Boolean, actorId: Schema.String }
+const removePayload = { repoId: Schema.String, name: AgentRunner.Name, actorId: Schema.String, fence }
+const setAgentPayload = {
+  repoId: Schema.String,
+  agent: AgentRunner.Agent,
+  coding: Schema.Boolean,
+  actorId: Schema.String,
+  fence,
+}
 
 const setOverflowPayload = {
   repoId: Schema.String,
@@ -57,10 +71,13 @@ const setOverflowPayload = {
   tokenSha256: TokenSha256,
   token: Schema.Struct({ ciphertext: Schema.String, nonce: Schema.String, keyVersion: Schema.Int }),
   actorId: Schema.String,
+  fence,
 }
-const removeOverflowPayload = { repoId: Schema.String, actorId: Schema.String }
+const removeOverflowPayload = { repoId: Schema.String, actorId: Schema.String, fence }
 
-const Changed = Schema.Struct({ change: Schema.Literals(["set", "removed", "missing", "repeat"]) })
+const Changed = Schema.Struct({
+  change: Schema.Literals(["set", "removed", "missing", "repeat", "authorization_expired", "superseded"]),
+})
 
 const write = <const Name extends string, P extends Schema.Struct.Fields>(name: Name, payload: P) =>
   Action.make(name, {
@@ -142,17 +159,35 @@ export const flows = [AddRunner, RemoveRunner, SetAgent, RemoveAgent, SetOverflo
  * One step's implementation: its write under the step's invocation key, recorded by flow and change, never a token. A
  * database failure is `StoreUnavailable`, which the step's policy retries; a step with no invocation key is a defect.
  */
-export const step = <P extends { readonly repoId: string; readonly actorId: string }, E, R>(
+export const step = <
+  P extends { readonly repoId: string; readonly actorId: string; readonly fence?: Fence.Fence | undefined },
+  E,
+  R,
+>(
   flowName: string,
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   name: (payload: P) => string,
+  action: Omit<Store.Fenced, "fence">,
   run: (payload: P, by: Store.By) => Effect.Effect<Store.Change, unknown, SqlClient.SqlClient>,
 ) =>
 (payload: P) =>
   Effect.gen(function* () {
     const invocationKey = yield* Action.CurrentInvocationKey
     if (invocationKey === undefined) return yield* Effect.die(new NoInvocationKey())
-    const change = yield* run(payload, { actorId: payload.actorId, invocationKey }).pipe(
+    // An action with no fence was started before fences: refused, writing nothing but its receipt.
+    const write = payload.fence === undefined
+      ? Effect.as(
+        Fence.receipt(
+          invocationKey,
+          { repoId: payload.repoId, kind: action.kind, name: name(payload) },
+          action.op,
+          "authorization_expired",
+          payload.actorId,
+        ),
+        "authorization_expired" as const,
+      )
+      : run(payload, { actorId: payload.actorId, invocationKey, fenced: { ...action, fence: payload.fence } })
+    const change = yield* write.pipe(
       Effect.provide(database),
       Effect.catch((error) =>
         Effect.andThen(
@@ -175,26 +210,26 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
   Layer.mergeAll(
     Interpreter.layerWithImplementations(
       AddRunner,
-      WriteRunner.toLayer(step(AddRunner._tag, database, (p) => p.name, (p, by) => Store.addRunner(p, by))),
+      WriteRunner.toLayer(step(AddRunner._tag, database, (p) => p.name, { kind: "runners", op: "put" }, (p, by) => Store.addRunner(p, by))),
     ),
     Interpreter.layerWithImplementations(
       RemoveRunner,
-      RetireRunner.toLayer(step(RemoveRunner._tag, database, (p) => p.name, (p, by) => Store.removeRunner(p, by))),
+      RetireRunner.toLayer(step(RemoveRunner._tag, database, (p) => p.name, { kind: "runners", op: "delete" }, (p, by) => Store.removeRunner(p, by))),
     ),
     Interpreter.layerWithImplementations(
       SetAgent,
-      WriteAgent.toLayer(step(SetAgent._tag, database, (p) => p.agent.name, (p, by) => Store.setAgent(p, by))),
+      WriteAgent.toLayer(step(SetAgent._tag, database, (p) => p.agent.name, { kind: "agents", op: "put" }, (p, by) => Store.setAgent(p, by))),
     ),
     Interpreter.layerWithImplementations(
       RemoveAgent,
-      EraseAgent.toLayer(step(RemoveAgent._tag, database, (p) => p.name, (p, by) => Store.removeAgent(p, by))),
+      EraseAgent.toLayer(step(RemoveAgent._tag, database, (p) => p.name, { kind: "agents", op: "delete" }, (p, by) => Store.removeAgent(p, by))),
     ),
     Interpreter.layerWithImplementations(
       SetOverflow,
-      WriteOverflow.toLayer(step(SetOverflow._tag, database, () => Overflow.RUNNER, (p, by) => Overflow.set(p, by))),
+      WriteOverflow.toLayer(step(SetOverflow._tag, database, () => Overflow.RUNNER, { kind: "overflow", op: "put" }, (p, by) => Overflow.set(p, by))),
     ),
     Interpreter.layerWithImplementations(
       RemoveOverflow,
-      EraseOverflow.toLayer(step(RemoveOverflow._tag, database, () => Overflow.RUNNER, (p, by) => Overflow.remove(p, by))),
+      EraseOverflow.toLayer(step(RemoveOverflow._tag, database, () => Overflow.RUNNER, { kind: "overflow", op: "delete" }, (p, by) => Overflow.remove(p, by))),
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))

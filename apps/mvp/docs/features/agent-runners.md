@@ -21,8 +21,18 @@ todo/Begin ─▶ todo/Agent ─┬─ none: todo/Implement (Smithers' agent)
 An Admin of the repository does each step in person; an agent, a flow or a sandbox acting for them is refused.
 Registering a runner, naming an agent or turning overflow on hands a machine the repository's jobs, so it needs the
 App's recorded installation on the repository and the Admin role GitHub gives there; the deployment's own role never
-stands in for it ([decision 0148](../decisions/0148-runner-git-credential.md)). A runner claims a job only while the
-App's installation on its repository is recorded.
+stands in for it ([decision 0148](../decisions/0148-runner-git-credential.md)). Every Admin action on a repository's runners, agents
+and overflow, `PUT` and `DELETE` alike, carries one fence (`worker/runners/Fence.ts`): the route reads the body
+whole, then who is asking and their authority (the repository's role row, or on the deployment's own repository the
+sign-in session and the alias it came through), and the flow's transaction takes the resource's lock (even for a name
+not written yet), answers a replay with the outcome already recorded, then checks that authority under lock, the
+fence's own expiry (5 minutes) by the clock as it stands then, and the generations it was admitted against: the
+runner's or agent's, which a removal doesn't reset, and for an agent, the repository's coding selection's. An action refused there writes nothing.
+Each `202` answers `{ name, execution }`; `GET /api/runners/admin-receipts/<execution>` answers how it ended, for the
+Admin who started it: `set`, `removed`, `missing`, `authorization_expired` (its authority no longer holds, or it
+waited past its expiry, or it was started before fences) or `superseded` (the runner or agent changed since), and
+`404` until it ends. A refused action is sent again. While a deploy brings fences in, a Worker still on the release before them writes
+unfenced until it is replaced. A runner claims a job only while the App's installation on its repository is recorded.
 
 1. On the runner machine, make its token. Only its SHA-256 leaves the machine:
 

@@ -105,10 +105,10 @@ export class BranchRoles extends Context.Service<
     readonly uninstalled?: (actor: Actor, repoId: string) => Role | null
     /**
      * The role GitHub gives `actor` on `repoId` (`RepoRoles.resolve`), with no fallback: none where the deployment can't
-     * act on it (`RepoRoles.CANT_ACT`). What grants a machine access to the repository asks this (decision 0148).
-     * Absent, nobody holds one.
+     * act on it (`RepoRoles.CANT_ACT`), and the row it came from (`held`), which the write that grants a machine access
+     * to the repository checks again in its own transaction (`RepoRoles.holds`, decision 0148). Absent, nobody holds one.
      */
-    readonly repoRoleOn?: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused>
+    readonly repoRoleOn?: (actor: Actor, repoId: string) => Effect.Effect<RepoRoles.Resolved, RepoRoles.RoleRefused>
   }
 >()("@smthrs/mvp/branch/BranchRoles") {
   /** `BranchRoles` over `roles`, with what its database needs taken from where the layer is built. */
@@ -122,8 +122,7 @@ export class BranchRoles extends Context.Service<
           uninstalled: (actor, repoId) => RepoRoles.uninstalledRole(roles, actor, repositoryOf(repoId.replace(/^github\//, ""))),
           repoRoleOn: (actor, repoId) =>
             roles.resolve(actor, repositoryOf(repoId.replace(/^github\//, ""))).pipe(
-              Effect.map((resolved) => resolved.role),
-              Effect.catch((refused) => RepoRoles.CANT_ACT.has(refused.code) ? Effect.succeed(null) : Effect.fail(refused)),
+              Effect.catch((refused) => RepoRoles.CANT_ACT.has(refused.code) ? Effect.succeed(NO_ROLE) : Effect.fail(refused)),
               Effect.provideContext(context),
             ),
         })),
@@ -147,16 +146,19 @@ export const roleOn = (
   })
 
 /**
- * The role `actor` holds on repository `repoId` for granting a machine access to it (decision 0148): only where Smithers
- * recorded the App's installation, and only the role GitHub gives there (`BranchRoles.repoRoleOn`), never the
- * deployment's session role standing in for it.
+ * The role `actor` holds on repository `repoId` for granting a machine access to it (decision 0148), and the row it came
+ * from: only where Smithers recorded the App's installation, and only the role GitHub gives there
+ * (`BranchRoles.repoRoleOn`), never the deployment's session role standing in for it.
  */
 export const repoRoleOn = (actor: Actor, repoId: string) =>
   Effect.gen(function* () {
-    if (!(yield* installedOn(repoId))) return null
+    if (!(yield* installedOn(repoId))) return NO_ROLE
     const roles = yield* BranchRoles
-    return roles.repoRoleOn === undefined ? null : yield* roles.repoRoleOn(actor, repoId)
+    return roles.repoRoleOn === undefined ? NO_ROLE : yield* roles.repoRoleOn(actor, repoId)
   })
+
+/** No role, from no row. */
+const NO_ROLE: RepoRoles.Resolved = { role: null, held: Option.none() }
 
 /** Whether Smithers recorded the App's installation on repository `repoId`. */
 export const installedOn = (repoId: string) =>

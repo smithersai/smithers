@@ -50,7 +50,10 @@ export interface Actor {
    * session's GitHub token (decision 0012 §5). Absent for local development's developer and in tests that need none.
    */
   readonly session?: string
-  /** The alias session the request came with at an alias host (decision 0130), under `session`; absent at home. */
+  /**
+   * The alias session the request came with at an alias host (decision 0130), when it did: `session` is then its home
+   * session. Ending the alias ends what it admitted (worker/SocketAccess.ts, worker/runners/Fence.ts).
+   */
   readonly alias?: string
 }
 

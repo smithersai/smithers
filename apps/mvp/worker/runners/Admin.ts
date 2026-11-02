@@ -5,6 +5,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { repoId } from "../../src/features/repo/contract.ts"
 import {
+  ADMIN_RECEIPTS_ROUTE,
   adminExecutionId,
   MAX_ADMIN_BODY_BYTES,
   parseAdminRoute,
@@ -18,6 +19,8 @@ import * as Flows from "../Flows.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import * as AdminFlows from "./AdminFlows.ts"
 import * as Overflow from "./Overflow.ts"
+import type * as RepoRoles from "../github/RepoRoles.ts"
+import * as Fence from "./Fence.ts"
 import * as Store from "./Store.ts"
 
 // The Admin routes for a repository's runners and agents (decision 0136, docs/features/agent-runners.md#admin):
@@ -45,7 +48,8 @@ export const requests = Metric.counter("smithers_runner_admin_requests", {
 })
 
 /** Whether a path is one of the Admin routes. */
-export const handles = (path: string): boolean => parseAdminRoute(path) !== undefined
+export const handles = (path: string): boolean =>
+  parseAdminRoute(path) !== undefined || path.startsWith(ADMIN_RECEIPTS_ROUTE)
 
 const noStore = { "cache-control": "no-store" }
 
@@ -89,8 +93,25 @@ type Fields = Record<string, string | number | boolean>
  * the flows through `Flows.FlowStarter`.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => Effect.gen(function* () {
+  /** `GET /api/runners/admin-receipts/<execution>`: the receipt of an action the person asking started. */
+  const receipt = (request: HttpServerRequest.HttpServerRequest, execution: string) =>
+    Effect.gen(function* () {
+      const noStoreJson = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: noStore })
+      if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
+      const actor = yield* (yield* Sessions).resolve
+      if (Option.isNone(actor)) return noStoreJson({ code: "authentication" }, 401)
+      // The person who started the action, acting directly: never an agent, flow or sandbox acting for them.
+      if (actor.value.act !== undefined) return noStoreJson({ code: "forbidden" }, 403)
+      const found = yield* Fence.receiptOf(decodeURIComponent(execution), actor.value.subject.id).pipe(Effect.provide(database))
+      return found === undefined ? noStoreJson({ code: "not_found" }, 404) : noStoreJson(found)
+    }).pipe(Effect.catchCause(() => Effect.succeed(HttpServerResponse.jsonUnsafe({ code: "unavailable" }, { status: 503, headers: noStore }))))
+
   const fetch = Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
+    const path = request.url.split("?")[0]!
+    if (path.startsWith(ADMIN_RECEIPTS_ROUTE)) {
+      return yield* receipt(request, path.slice(ADMIN_RECEIPTS_ROUTE.length))
+    }
     const sessions = yield* Sessions
     const starter = yield* Flows.FlowStarter
     const startedAt = yield* Clock.currentTimeMillis
@@ -106,6 +127,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       if (request.method !== "PUT" && request.method !== "DELETE" && !(op === "get" && readable)) {
         return HttpServerResponse.empty({ status: 405, headers: { allow: readable ? "GET, PUT, DELETE" : "PUT, DELETE" } })
       }
+      // A write's body is read whole before who is asking and their role are: a body that arrives slowly can't carry
+      // an authority read before it past a change to that authority (decision 0148).
+      const body = op === "put" ? yield* readBounded(request, MAX_ADMIN_BODY_BYTES).pipe(Effect.result) : undefined
       const actor = yield* sessions.resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
       if (yield* refusesPersonOnly(actor.value, route.kind === "agents" ? "agent" : "runner")) {
@@ -114,11 +138,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       const repo = repoId(route.owner, route.name)
       // A write grants a machine the repository's jobs, their prompts and code, and a pull request the App writes: it
       // needs the App's recorded installation there and the Admin role GitHub gives there, never the deployment's
-      // (decision 0148). Reading an agent, or retiring a runner or agent, takes the role the person works with.
-      const role = op === "put"
+      // (decision 0148). Retiring a runner or agent takes that role where the installation is recorded, else the role
+      // the person works with; reading an agent, the role the person works with. A write carries the authority it was
+      // admitted by in its fence (worker/runners/Fence.ts), which its own transaction checks again.
+      const installed = yield* installedOn(repo).pipe(Effect.provide(database))
+      const resolved = op === "put" || (op === "delete" && installed)
         ? yield* repoRoleOn(actor.value, repo).pipe(Effect.provide(database))
-        : yield* roleOn(actor.value, repo, yield* installedOn(repo).pipe(Effect.provide(database)))
-      if (role !== "admin") return refuse(403, "forbidden")
+        : { role: yield* roleOn(actor.value, repo, installed), held: Option.none<RepoRoles.Held>() }
+      if (resolved.role !== "admin") return refuse(403, "forbidden")
       if (!isName(route.item)) return refuse(400, "invalid")
       if (route.kind === "overflow" && route.item !== "cloudflare") return refuse(404, "not_found")
       fields.repoId = repo
@@ -131,22 +158,54 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       }
       const executionId = adminExecutionId(route.kind, op, crypto.randomUUID())
       const actorId = actor.value.subject.id
+      const authority = Option.isSome(resolved.held)
+        ? { _tag: "Repo" as const, held: resolved.held.value }
+        : actor.value.session === undefined
+        ? { _tag: "Local" as const }
+        : {
+          _tag: "Session" as const,
+          personId: actorId,
+          sessionId: actor.value.session,
+          ...(actor.value.alias === undefined ? {} : { alias: actor.value.alias }),
+        }
+      const generation = yield* Store.generationOf(Store.resourceKey(
+        route.kind === "agents" ? "agents" : "runners",
+        repo,
+        route.kind === "overflow" ? Overflow.RUNNER : route.item,
+      )).pipe(Effect.provide(database))
+      // An agent's write may change which agent TODOs code with: it is admitted against that selection's generation too.
+      const coding = route.kind === "agents"
+        ? { coding: yield* Store.generationOf(Store.codingKey(repo)).pipe(Effect.provide(database)) }
+        : {}
+      const fence: Fence.Fence = {
+        execution: executionId,
+        expiresAt: (yield* Clock.currentTimeMillis) + Fence.FENCE_SECONDS * 1000,
+        generation,
+        ...coding,
+        authority,
+      }
       const start = (flow: (typeof AdminFlows.flows)[number], payload: unknown) =>
         starter.start(flow, { executionId, payload }).pipe(Effect.result)
+      /** The answer to an action started: its name and the execution whose receipt says how it ended. */
+      const started = (outcome: string) => {
+        fields.outcome = outcome
+        fields.execution = executionId
+        return HttpServerResponse.jsonUnsafe({ name: route.item, execution: executionId }, { status: 202, headers: noStore })
+      }
       if (op === "delete") {
         const flow = route.kind === "runners"
           ? AdminFlows.RemoveRunner
           : route.kind === "agents"
           ? AdminFlows.RemoveAgent
           : AdminFlows.RemoveOverflow
-        if ((yield* start(flow, { repoId: repo, name: route.item, actorId }))._tag === "Failure") {
+        if ((yield* start(flow, { repoId: repo, name: route.item, actorId, fence }))._tag === "Failure") {
           return refuse(503, "unavailable")
         }
-        fields.outcome = "removing"
-        return HttpServerResponse.jsonUnsafe({ name: route.item }, { status: 202, headers: noStore })
+        return started("removing")
       }
-      const body = yield* readBounded(request, MAX_ADMIN_BODY_BYTES).pipe(Effect.result)
-      if (body._tag === "Failure") return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
+      if (body === undefined || body._tag === "Failure") {
+        return body?._tag === "Failure" && body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
+      }
       if (route.kind === "overflow") {
         const wanted = yield* decodeOverflow(body.success).pipe(Effect.option)
         if (Option.isNone(wanted)) return refuse(400, "invalid")
@@ -172,12 +231,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
           tokenSha256: digestSync(token),
           token: { ciphertext: sealed.ciphertext, nonce: sealed.nonce, keyVersion: keys.value.version },
           actorId,
+          fence,
         }
         if ((yield* start(AdminFlows.SetOverflow, payload))._tag === "Failure") return refuse(503, "unavailable")
       } else if (route.kind === "runners") {
         const runner = yield* decodeRunner(body.success).pipe(Effect.option)
         if (Option.isNone(runner)) return refuse(400, "invalid")
-        const payload = { repoId: repo, name: route.item, ...runner.value, actorId }
+        const payload = { repoId: repo, name: route.item, ...runner.value, actorId, fence }
         if ((yield* start(AdminFlows.AddRunner, payload))._tag === "Failure") return refuse(503, "unavailable")
       } else {
         const settings = yield* decodeAgentBody(body.success).pipe(Effect.option)
@@ -190,11 +250,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
           restarts: settings.value.restarts ?? 1,
         }).pipe(Effect.option)
         if (Option.isNone(agent) || route.item === "smithers") return refuse(400, "invalid")
-        const payload = { repoId: repo, agent: agent.value, coding: settings.value.coding ?? false, actorId }
+        const payload = { repoId: repo, agent: agent.value, coding: settings.value.coding ?? false, actorId, fence }
         if ((yield* start(AdminFlows.SetAgent, payload))._tag === "Failure") return refuse(503, "unavailable")
       }
-      fields.outcome = "setting"
-      return HttpServerResponse.jsonUnsafe({ name: route.item }, { status: 202, headers: noStore })
+      return started("setting")
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {
