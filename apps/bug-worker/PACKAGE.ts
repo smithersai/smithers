@@ -77,7 +77,7 @@ const workerDeployQualification = Smithers.NodeTest({
 /** Security review of anonymous intake and authenticated report retrieval. */
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["src/**", "alchemy.run.ts"],
+  include: ["src/**", "alchemy.run.vibe"],
   checks: [
     {
       id: "operator-gate",
@@ -116,7 +116,7 @@ const securityReview = Smithers.SecurityReview({
         "The admin token uses a literal or plaintext Config instead of requireSecret.",
         "workersDev is enabled, a domain alias escapes smithers.sh, or a missing token defaults to an empty value."
       ],
-      paths: ["alchemy.run.ts"]
+      paths: ["alchemy.run.vibe"]
     }
   ]
 })
