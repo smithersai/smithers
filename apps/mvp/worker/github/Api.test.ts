@@ -477,6 +477,63 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     expect(h.count(RepoRoles.reads, { source: "cached", outcome: "member" })).toBe(1)
   })
 
+  // Production, 2026-11-02: a request read the cached role row in its last fresh second, and the write's transaction
+  // found it expired and refused an Admin's write. The route asks GitHub again, once, and admits under that answer.
+  const expiringAfterRead = (afterRead: () => Promise<void>) => (roles: RepoRoles.RepoRoles<never>): RepoRoles.RepoRoles<never> => ({
+    ...roles,
+    resolve: (actor, repository) => Effect.tap(roles.resolve(actor, repository), () => Effect.promise(afterRead)),
+  })
+  const expire = () => sql(runtime, `UPDATE github_repo_roles SET checked_at = checked_at - interval '${RepoRoles.FRESH_SECONDS + 1} seconds'`)
+
+  test("a row that expires between the role's read and the write is read again from GitHub, and the write admitted", async () => {
+    const actor = await maya("guest")
+    const h = await githubHarness(runtime, { own: OWN, actor, wrapRoles: expiringAfterRead(async () => void await expire()) })
+    h.github.roles.set("maya", "write")
+    const response = await h.fetch(route, post(createWrite()))
+    expect(response.status).toBe(202)
+    // Read twice from GitHub: once for the request, once again for its write.
+    expect(permissionReads(h)).toHaveLength(2)
+    expect(h.count(RepoRoles.reads, { source: "refresh", outcome: "member" })).toBe(1)
+    expect(await sql(runtime, `SELECT op FROM github_writes`)).toEqual([{ op: "issue/create" }])
+  })
+
+  // Codex review of 816fa5a3: the row the refresh answered expired again before the second insert. The role may well
+  // still allow the write, so the answer is a retry, never the outbox's terminal 403.
+  test("a write whose row expires again after the refresh is answered 503 unavailable, to retry", async () => {
+    const actor = await maya("guest")
+    const h = await githubHarness(runtime, {
+      own: OWN,
+      actor,
+      wrapRoles: (roles) => ({
+        ...expiringAfterRead(async () => void await expire())(roles),
+        refresh: (actor, repository, read) => Effect.tap(roles.refresh!(actor, repository, read), () => Effect.promise(async () => void await expire())),
+      }),
+    })
+    h.github.roles.set("maya", "write")
+    const response = await h.fetch(route, post(createWrite()))
+    expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
+    expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
+  })
+
+  test("a downgrade GitHub says when the role is read again refuses the write", async () => {
+    const actor = await maya("guest")
+    let github: ScriptedGitHub | undefined
+    const h = await githubHarness(runtime, {
+      own: OWN,
+      actor,
+      wrapRoles: expiringAfterRead(async () => {
+        await expire()
+        github!.roles.set("maya", "write")
+      }),
+    })
+    github = h.github
+    h.github.roles.set("maya", "maintain")
+    const commitment = { writeId: crypto.randomUUID(), op: "issue/commitment", number: 1, commitment: "now" }
+    const response = await h.fetch(route, post(commitment))
+    expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+    expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
+  })
+
   test("the session's role on the deployment's own repository never decides another's", async () => {
     // An Admin of acme/home whom GitHub knows nothing of on acme/widgets has no role there.
     const h = await githubHarness(runtime, { own: OWN, actor: await maya("admin") })
@@ -549,11 +606,16 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
   test("a stale role is read again, and GitHub down never lets it decide", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "write")
-    const h = await githubHarness(runtime, { own: OWN, actor: await maya(), github })
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya(), github, roleOptions: { refreshCooldownSeconds: 1 } })
     expect((await h.fetch(route, post(createWrite()))).status).toBe(202)
     await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes'`)
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
     expect((await h.fetch(route, post(createWrite()))).status).toBe(503)
+    // Within the cooldown after GitHub failed: refused with the wait, asking no one.
+    const cooled = await h.fetch(route, post(createWrite()))
+    expect([cooled.status, cooled.headers.get("retry-after")]).toEqual([503, "1"])
+    expect(permissionReads(h)).toHaveLength(2)
+    await new Promise((done) => setTimeout(done, 1_100))
     // Removed on GitHub: the next read says so.
     github.roles.delete("maya")
     expect((await h.fetch(route, post(createWrite()))).status).toBe(403)

@@ -111,6 +111,7 @@ export interface Fault {
   readonly lost?: boolean
   /** Applies the request, then returns a successful response with an invalid schema. */
   readonly malformed?: boolean
+  /** Waits for this before answering: with `status`, then that status; without, then the request's real answer. */
   readonly hold?: () => Promise<void>
 }
 
@@ -1009,7 +1010,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     armed: Fault | undefined,
   ) =>
     Effect.suspend(() => {
-      if (armed !== undefined && armed.lost !== true && armed.malformed !== true && armed.hold === undefined) {
+      if (armed !== undefined && armed.lost !== true && armed.malformed !== true && (armed.hold === undefined || armed.status !== undefined)) {
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, json({ message: "scripted fault" }, armed.status ?? 502, { ...armed.headers })),
         )

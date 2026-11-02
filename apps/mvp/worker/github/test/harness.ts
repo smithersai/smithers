@@ -109,6 +109,10 @@ export interface Options {
   readonly allowed?: ReadonlySet<string>
   /** Who has which role where: the real `RepoRoles` unless set, as a test of a faulty one sets it. */
   readonly roles?: RepoRoles.RepoRoles<never>
+  /** The real `RepoRoles`, changed: a test that interleaves something between a role's read and its write. */
+  readonly wrapRoles?: (roles: RepoRoles.RepoRoles<never>) => RepoRoles.RepoRoles<never>
+  /** Options for the real `RepoRoles` the harness makes, such as a shorter refresh cooldown. */
+  readonly roleOptions?: Partial<Pick<RepoRoles.Options, "refreshCooldownSeconds" | "refreshDeadline">>
   readonly repoFlows?: boolean
   /** Exercise the production fetch transport against a test HTTP server. */
   readonly metadata?: { readonly url: string; readonly token: string }
@@ -190,12 +194,14 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   const configured = options.app === null
     ? Option.none<GitHubApp>()
     : Option.some(options.app ?? app({ privateKey: await (harnessKey ??= appKey()) }))
-  const roles = options.roles ?? await runtime.runPromise(observed(RepoRoles.make(database, {
+  const real = options.roles ?? await runtime.runPromise(observed(RepoRoles.make(database, {
     repository: own,
     app: configured,
     allowed: Option.fromUndefinedOr(options.allowed),
     http: github.http,
+    ...options.roleOptions,
   })))
+  const roles = options.wrapRoles === undefined ? real : options.wrapRoles(real)
   const routes = await runtime.runPromise(
     observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true, allowed: Option.fromUndefinedOr(options.allowed) })),
   )

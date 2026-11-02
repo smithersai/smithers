@@ -204,6 +204,8 @@ describe("roles per repository (decision 0079)", () => {
       repository: repositoryOf("acme/home"),
       app: Option.some(app({ privateKey: key })),
       http: github.http,
+      // The next request after GitHub failed asks again: RepoRoles.test.ts tests the cooldown.
+      refreshCooldownSeconds: 0,
     }))
     return BranchRoles.layer(roles)
   }

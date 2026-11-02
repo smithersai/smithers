@@ -1,5 +1,5 @@
 import { GitHub } from "@smthrs/integrations"
-import { Clock, Config, Effect, Function, type Layer, Metric, Option, Schema } from "effect"
+import { Clock, Config, Duration, Effect, Function, type Layer, Metric, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import * as SchemaIssue from "effect/SchemaIssue"
 import { SqlClient } from "effect/sql"
@@ -20,6 +20,33 @@ import * as Tokens from "./Tokens.ts"
 
 /** How long a role read from GitHub decides, in seconds (decision 0079 §5). */
 export const FRESH_SECONDS = 5 * 60
+
+/**
+ * After GitHub failed a write's second read (`refresh`) for a person on a repository, how long this isolate refuses
+ * another for them without asking, in seconds: writes that all found the row expired don't each ask a GitHub that just
+ * failed.
+ */
+export const REFRESH_COOLDOWN_SECONDS = 10
+
+/**
+ * How long one read of an expired row may take in all, its wait for another request's read included (at most 5 s of
+ * it): it holds a Postgres transaction and connection while GitHub answers, and GitHub's own client waits up to 30 s.
+ */
+export const READ_DEADLINE: Duration.Input = "10 seconds"
+
+/** How soon a request waiting for another's read of the same row first looks again; it waits twice as long each time. */
+const READ_POLL_MILLIS = 150
+/** The longest a waiting request goes between looks. */
+const READ_POLL_MAX_MILLIS = 1_000
+/**
+ * Postgres' own bounds on a cleanup's statements. The request waits for a cleanup only as long as its deadline leaves
+ * (`readExpired`); one that outlives the request finishes or fails on its own, and its lease expires regardless.
+ */
+const CLEANUP_LOCK_MILLIS = 2_000
+const CLEANUP_STATEMENT_MILLIS = 3_000
+/** What a read keeps of its deadline for recording what happened: this, or a quarter of a shorter deadline. */
+const CLEANUP_MILLIS = 1_000
+
 
 /** Why `resolve` gave no role: each with its status, and GitHub's wait when it said one (decision 0079 §7). */
 export const REFUSALS = {
@@ -52,6 +79,8 @@ export interface Held {
   readonly repoId: string
   readonly personId: string
   readonly role: Role | null
+  /** When the row the request read was checked (Postgres text): a write admits only that read or a newer one. */
+  readonly checkedAt?: string
 }
 
 /** A person's role on a repository, and the row that role came from, when it came from one. */
@@ -112,18 +141,24 @@ export const permissionOf = (answer: GitHub.Collaborators.Permission): Permissio
 const decodeRole = Schema.decodeUnknownSync(Schema.NullOr(Schema.Literals(ROLES)))
 
 /**
- * Inside a write's transaction: whether the person's `github_repo_roles` row still holds `held.role` and is fresh,
- * locked `FOR SHARE`, so a refresh that changes it waits for the write, or the write sees the change (decision 0079 §6).
+ * Inside a write's transaction: whether the person's `github_repo_roles` row still holds `held.role`, is the read the
+ * request decided with or a newer one, and is fresh now. Locked `FOR SHARE` first, so a refresh that changes it waits
+ * for the write, or the write sees the change (decision 0079 §6). Freshness is a second statement, by the database's
+ * clock once the lock is granted (`clock_timestamp()`): Postgres computes a locking `SELECT`'s columns before it waits
+ * for the row, so one statement would judge a row released unchanged after it expired by the clock before the wait.
  */
 export const holds = (held: Held) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly role: string | null }>`
-      SELECT role FROM github_repo_roles
+    const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string }>`
+      SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles
       WHERE repo_id = ${held.repoId} AND person_id = ${held.personId}
-        AND checked_at > now() - make_interval(secs => ${FRESH_SECONDS})
       FOR SHARE`
-    return row !== undefined && row.role === held.role
+    if (row === undefined || row.role !== held.role) return false
+    const [now] = yield* sql<{ readonly fresh: boolean; readonly same: boolean }>`
+      SELECT ${row.checkedAt}::timestamptz > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS}) AS fresh,
+        ${held.checkedAt === undefined ? sql`true` : sql`${row.checkedAt}::timestamptz >= ${held.checkedAt}::timestamptz`} AS same`
+    return now!.fresh && now!.same
   })
 
 /** What `make` needs: the deployment's own repository, the App when it is configured, and how far it may act. */
@@ -142,6 +177,10 @@ export interface Options {
   readonly local?: boolean
   /** With `local`, local development's people's roles on other repositories (`LocalRoles`). */
   readonly localRoles?: LocalRoles
+  /** `REFRESH_COOLDOWN_SECONDS` unless set. */
+  readonly refreshCooldownSeconds?: number
+  /** `READ_DEADLINE` unless set. */
+  readonly refreshDeadline?: Duration.Input
 }
 
 /**
@@ -157,6 +196,12 @@ export interface RepoRoles<R = never> {
   readonly repository: Repository
   /** `actor`'s role on `repository`, or why there is none to give. */
   readonly resolve: (actor: Actor, repository: Repository) => Effect.Effect<Resolved, RoleRefused, R>
+  /**
+   * What a write does once its transaction found the row it `read` expired or changed: the row a newer read recorded,
+   * when one is fresh, else GitHub asked again. One refresh per person and repository at a time: the others wait for
+   * it and take its row. Absent: the write is refused, as before.
+   */
+  readonly refresh?: (actor: Actor, repository: Repository, read: Held) => Effect.Effect<Resolved, RoleRefused, R>
   /**
    * `actor`'s role on a repository Smithers recorded no App installation on, asking no one: the session's, as before
    * decision 0079, or local development's own (`localRoles`). Absent, the session's.
@@ -223,8 +268,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const inDatabase = <A, X>(effect: Effect.Effect<A, X, SqlClient.SqlClient>) =>
       Effect.mapError(effect, () => new RoleRefused({ code: "unavailable" }))
 
-    /** The role and where it came from (`session`, `cached`, `github`). */
-    const decide = (actor: Actor, repository: Repository) =>
+    /** The role and where it came from (`session`, `cached`, `github`, `refresh`, `reused`). */
+    const decide = (actor: Actor, repository: Repository, read?: Held) =>
       Effect.gen(function* () {
         // The deployment's own repository: the session's role, as it always was.
         if (repository.id === options.repository.id) {
@@ -239,7 +284,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         }
         // One Postgres client for the reads, the App's installation and the record; one that can't be had is
         // `unavailable`.
-        return yield* fromRow(actor, repository, app.value).pipe(
+        return yield* (read === undefined
+          ? fromRow(actor, repository, app.value)
+          : Effect.flatMap(deadlineFromNow, (endsAt) => readExpired(actor, repository, app.value, read.checkedAt, "refresh", endsAt))).pipe(
           Effect.provide(database),
           Effect.mapError((error) => (error instanceof RoleRefused ? error : new RoleRefused({ code: "unavailable" }))),
         )
@@ -248,10 +295,103 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     /** The role on another repository: the fresh row, else GitHub's answer, recorded. */
     const fromRow = (actor: Actor, repository: Repository, configured: NonNullable<Option.Option.Value<typeof app>>) =>
       Effect.gen(function* () {
+        const endsAt = yield* deadlineFromNow
+        const budget = yield* budgetOf(endsAt)
+        const cached = yield* within(endsAt, inDatabase(bounded(cachedRole(repository.id, actor.subject.id), budget, budget)))
+        if (Option.isSome(cached)) return { source: "cached", resolved: heldBy(repository, actor, cached.value) }
+        return yield* readExpired(actor, repository, configured, undefined, "github", endsAt)
+      })
+
+    /** When a request that starts now must have answered: `READ_DEADLINE`, or the deadline `options` set. */
+    const deadlineFromNow = Effect.map(
+      Clock.currentTimeMillis,
+      (now) => now + Duration.toMillis(options.refreshDeadline ?? READ_DEADLINE),
+    )
+
+    /**
+     * Every read of a row that isn't fresh, a request's (`github`) or a write's second (`refresh`, newer than `after`,
+     * the row its transaction refused). One request per repository and person claims the read (`claimRead`), asks
+     * GitHub outside any transaction and records the answer; the others poll for a fresh row newer than theirs and take
+     * it (`reused`), holding no transaction or lock meanwhile, so a burst for one expired row holds no Postgres
+     * connection while GitHub answers. A read GitHub failed or overran keeps its claim for the cooldown, counted from the
+     * failure, and the next is refused with that wait (`503 unavailable`, `Retry-After`); the App not installed there,
+     * and a rate limit, which carries GitHub's own wait, don't cool. A request waits `READ_DEADLINE` in all.
+     */
+    const readExpired = (
+      actor: Actor,
+      repository: Repository,
+      configured: NonNullable<Option.Option.Value<typeof app>>,
+      after: string | undefined,
+      source: "github" | "refresh",
+      endsAt: number,
+    ) =>
+      Effect.gen(function* () {
+        const deadline = Duration.toMillis(options.refreshDeadline ?? READ_DEADLINE)
+        const cooldownSeconds = options.refreshCooldownSeconds ?? REFRESH_COOLDOWN_SECONDS
+        const repoId = repository.id
         const personId = actor.subject.id
-        const held = (role: Role | null): Resolved => ({ role, held: Option.some({ repoId: repository.id, personId, role }) })
-        const cached = yield* inDatabase(cachedRole(repository.id, personId))
-        if (Option.isSome(cached)) return { source: "cached", resolved: held(cached.value) }
+        // One deadline for the whole request, from its first look at the row: looking, claiming, GitHub and the cleanup
+        // after it, each wait on Postgres included (`within`).
+        const cleanup = Math.min(CLEANUP_MILLIS, deadline / 4)
+        const left = Effect.map(Clock.currentTimeMillis, (now) => endsAt - now)
+        const unavailable = new RoleRefused({ code: "unavailable", retryAfterSeconds: 1 })
+        let pause = READ_POLL_MILLIS
+        while (true) {
+          // One read of the row: a fresh read newer than this request's, or the claim another holds.
+          const budget = yield* budgetOf(endsAt)
+          const state = yield* within(endsAt, inDatabase(bounded(readState(repoId, personId, after), budget, budget)))
+          if (Option.isSome(state.fresh)) return { source: "reused", resolved: heldBy(repository, actor, state.fresh.value) }
+          if (state.claim?.failed === true) {
+            return yield* new RoleRefused({ code: "unavailable", retryAfterSeconds: Math.max(1, Math.ceil(state.claim.remainingSeconds)) })
+          }
+          if (state.claim === undefined) {
+            const remaining = yield* left
+            if (remaining <= cleanup) return yield* unavailable
+            // Claimed only while the row still needs reading, its lease from when the claim got the row, outliving this
+            // request's deadline a little so a worker that died mid-read frees the row soon after.
+            const claimed = yield* within(endsAt, inDatabase(claimRead(repoId, personId, after, remaining + 2_000)))
+            if (Option.isSome(claimed)) {
+              const lease = claimed.value
+              const read = yield* fromGitHubRecorded(actor, repository, configured).pipe(
+                Effect.timeoutOrElse({
+                  duration: Duration.millis(Math.max(0, (yield* left) - cleanup)),
+                  orElse: () => Effect.fail(new RoleRefused({ code: "unavailable" })),
+                }),
+                Effect.result,
+              )
+              const cools = read._tag === "Failure" && (read.failure.code === "github_unavailable" || read.failure.code === "unavailable")
+              // The cleanup has what is left of the deadline, at least a moment: one that can't finish leaves the lease
+              // to expire on its own.
+              yield* inDatabase(cools ? coolRead(repoId, personId, lease, cooldownSeconds) : releaseRead(repoId, personId, lease)).pipe(
+                Effect.timeoutOrElse({ duration: Duration.millis(Math.max(100, yield* left)), orElse: () => Effect.void }),
+                Effect.ignore,
+              )
+              if (read._tag === "Failure") {
+                // The next request for this person and repository is refused for the cooldown: say so.
+                return yield* cools && read.failure.retryAfterSeconds === undefined && cooldownSeconds > 0
+                  ? new RoleRefused({ code: read.failure.code, retryAfterSeconds: Math.ceil(cooldownSeconds) })
+                  : read.failure
+              }
+              return { source, resolved: read.success }
+            }
+            // Another request claimed it, or read it, first: look again.
+            continue
+          }
+          const remaining = yield* left
+          if (remaining <= 0) return yield* unavailable
+          yield* Effect.sleep(Duration.millis(Math.min(pause, remaining)))
+          pause = Math.min(pause * 2, READ_POLL_MAX_MILLIS)
+        }
+      })
+
+    /** GitHub's answer for the person on `repository`, recorded, as the row that decides after the record. */
+    const fromGitHubRecorded = (
+      actor: Actor,
+      repository: Repository,
+      configured: NonNullable<Option.Option.Value<typeof app>>,
+    ) =>
+      Effect.gen(function* () {
+        const personId = actor.subject.id
         // Who the person is on GitHub is sign-in's `people` row to say, never a request: their login to ask about and
         // their account's id, which the answer must name, because a login can change hands after a rename. `asOf` is
         // when this read began: an older read never overwrites a newer one.
@@ -267,17 +407,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           )
         }
         // What decides is the row as it stands after this read: a later read's, when one already landed.
-        const role = yield* inDatabase(
+        const kept = yield* inDatabase(
           remember(repository.id, personId, sameAccount ? roleOf(permissionOf(answer.value)) : null, asOf),
         )
-        return { source: "github", resolved: held(role) }
+        // A read slow enough that its row expired before it returned decides nothing: decision 0079's five minutes run
+        // from when the read began.
+        if (!kept.fresh) return yield* new RoleRefused({ code: "unavailable" })
+        return heldBy(repository, actor, kept)
       })
 
     /** `decide`, logged (`github.repo_role`: source, outcome, duration; never a login) and counted. */
-    const resolve = (actor: Actor, repository: Repository): Effect.Effect<Resolved, RoleRefused, R> =>
+    const resolve = (actor: Actor, repository: Repository, read?: Held): Effect.Effect<Resolved, RoleRefused, R> =>
       Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis
-        const decided = yield* decide(actor, repository).pipe(Effect.result)
+        const decided = yield* decide(actor, repository, read).pipe(Effect.result)
         const source = decided._tag === "Success" ? decided.success.source : "refused"
         const outcome = decided._tag === "Success" ? decided.success.resolved.role ?? "none" : decided.failure.code
         yield* Metric.update(Metric.withAttributes(reads, { source, outcome }), 1)
@@ -293,7 +436,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         return decided.success.resolved
       }).pipe(Effect.withSpan("github.repo_role"))
 
-    return { repository: options.repository, resolve, uninstalled } satisfies RepoRoles<R>
+    return {
+      repository: options.repository,
+      resolve: (actor, repository) => resolve(actor, repository),
+      refresh: (actor, repository, read) => resolve(actor, repository, read),
+      uninstalled,
+    } satisfies RepoRoles<R>
   })
 
 /**
@@ -328,15 +476,107 @@ const refusedFor = (error: unknown) =>
     ? new RoleRefused({ code: "rate_limited", ...waitOf(waitOfError(error)) })
     : new RoleRefused({ code: "github_unavailable" })
 
+/** `row` as what decides: its role, and the row a write's transaction must still find. */
+const heldBy = (repository: Repository, actor: Actor, row: { readonly role: Role | null; readonly checkedAt: string }): Resolved => ({
+  role: row.role,
+  held: Option.some({ repoId: repository.id, personId: actor.subject.id, role: row.role, checkedAt: row.checkedAt }),
+})
+
+/** `effect` by `endsAt` (epoch milliseconds), its waits on Postgres included; past it, `unavailable` with a 1 s wait. */
+const within = <A, R>(endsAt: number, effect: Effect.Effect<A, RoleRefused, R>) =>
+  Effect.flatMap(Clock.currentTimeMillis, (now) =>
+    effect.pipe(Effect.timeoutOrElse({
+      duration: Duration.millis(Math.max(0, endsAt - now)),
+      orElse: () => Effect.fail(new RoleRefused({ code: "unavailable", retryAfterSeconds: 1 })),
+    })))
+
+/**
+ * Runs `statement` in its own short transaction whose statements Postgres itself ends past `lockMillis` waiting for a
+ * lock and `statementMillis` in all, whatever the client's cancellation does: no request waits long on a role row, or
+ * holds a connection while it waits. The defaults bound a claim; a read passes what is left of its deadline.
+ */
+const bounded = <A, E, R>(statement: Effect.Effect<A, E, R>, lockMillis = 1_000, statementMillis = 2_000) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql.withTransaction(Effect.gen(function* () {
+      yield* sql`SELECT set_config('lock_timeout', ${`${Math.max(1, Math.round(lockMillis))}ms`}, true),
+        set_config('statement_timeout', ${`${Math.max(1, Math.round(statementMillis))}ms`}, true)`
+      return yield* statement
+    })))
+
+/** What is left of a deadline at `endsAt` for Postgres to end a read at, at least 100 ms. */
+const budgetOf = (endsAt: number) => Effect.map(Clock.currentTimeMillis, (now) => Math.max(100, endsAt - now))
+
+/**
+ * One read of the person's row on `repoId`, taking no lock: its role when a fresh read newer than `after` made it, and
+ * another request's unexpired claim on reading it, whether that failed and how long it has left.
+ */
+const readState = (repoId: string, personId: string, after: string | undefined) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{
+      readonly role: string | null
+      readonly checkedAt: string
+      readonly fresh: boolean
+      readonly claimed: boolean
+      readonly failed: boolean
+      readonly remainingSeconds: number | null
+    }>`
+      SELECT role, checked_at::text AS "checkedAt",
+        checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS})
+          ${after === undefined ? sql`` : sql`AND checked_at > ${after}::timestamptz`} AS fresh,
+        coalesce(read_until > clock_timestamp(), false) AS claimed, read_failed AS failed,
+        EXTRACT(EPOCH FROM read_until - clock_timestamp())::float8 AS "remainingSeconds"
+      FROM github_repo_roles WHERE repo_id = ${repoId} AND person_id = ${personId}`
+    return {
+      fresh: row !== undefined && row.fresh
+        ? Option.some({ role: decodeRole(row.role), checkedAt: row.checkedAt })
+        : Option.none<{ readonly role: Role | null; readonly checkedAt: string }>(),
+      claim: row !== undefined && row.claimed ? { failed: row.failed, remainingSeconds: row.remainingSeconds ?? 0 } : undefined,
+    }
+  })
+
+/**
+ * Claims the read of the person's role on `repoId` for `leaseMillis` from when the claim gets the row, only while it
+ * still needs reading (no fresh read newer than `after`) and nobody holds an unexpired claim: the claim's end, which
+ * releasing it names, or `None`. A person with no row gets one that decides nothing until the read records its answer
+ * (migration 0090). Bounded (`bounded`): a lock it can't get soon is `None`'s refusal, `unavailable`.
+ */
+export const claimRead = (repoId: string, personId: string, after: string | undefined, leaseMillis: number) =>
+  bounded(Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly readUntil: string }>`
+      INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at, read_until, read_failed)
+      VALUES (${repoId}, ${personId}, NULL, '-infinity', clock_timestamp() + make_interval(secs => ${leaseMillis / 1000}), false)
+      ON CONFLICT (repo_id, person_id) DO UPDATE
+      SET read_until = clock_timestamp() + make_interval(secs => ${leaseMillis / 1000}), read_failed = false
+      WHERE (github_repo_roles.read_until IS NULL OR github_repo_roles.read_until <= clock_timestamp())
+        AND NOT (github_repo_roles.checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS})
+          ${after === undefined ? sql`` : sql`AND github_repo_roles.checked_at > ${after}::timestamptz`})
+      RETURNING read_until::text AS "readUntil"`
+    return Option.map(Option.fromNullishOr(row), (claimed) => claimed.readUntil)
+  }))
+
+/** Ends the claim `lease` named, unless another request has claimed the read since. */
+const releaseRead = (repoId: string, personId: string, lease: string) =>
+  bounded(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    UPDATE github_repo_roles SET read_until = NULL, read_failed = false
+    WHERE repo_id = ${repoId} AND person_id = ${personId} AND read_until = ${lease}::timestamptz`), CLEANUP_LOCK_MILLIS, CLEANUP_STATEMENT_MILLIS)
+
+/** Keeps the claim `lease` named for the cooldown from now, as failed: the next read is refused with the wait. */
+const coolRead = (repoId: string, personId: string, lease: string, cooldownSeconds: number) =>
+  bounded(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    UPDATE github_repo_roles SET read_until = clock_timestamp() + make_interval(secs => ${cooldownSeconds}), read_failed = true
+    WHERE repo_id = ${repoId} AND person_id = ${personId} AND read_until = ${lease}::timestamptz`), CLEANUP_LOCK_MILLIS, CLEANUP_STATEMENT_MILLIS)
+
 /** The person's fresh role on `repoId`, no role included; `None` when there is no fresh row. */
 const cachedRole = (repoId: string, personId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly role: string | null }>`
-      SELECT role FROM github_repo_roles
+    const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string }>`
+      SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles
       WHERE repo_id = ${repoId} AND person_id = ${personId}
-        AND checked_at > now() - make_interval(secs => ${FRESH_SECONDS})`
-    return Option.map(Option.fromNullishOr(row), (found) => decodeRole(found.role))
+        AND checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS})`
+    return Option.map(Option.fromNullishOr(row), (found) => ({ role: decodeRole(found.role), checkedAt: found.checkedAt }))
   })
 
 /** Postgres' clock now, and the person's GitHub account as sign-in recorded it, when there is one. */
@@ -359,22 +599,25 @@ const observe = (personId: string) =>
 /**
  * Records the person's role on `repoId` as a read that began at `asOf` found it, unless a read that began later
  * already recorded one: a slow read that saw a role never overwrites a quicker one that saw it removed. Answers the
- * role the row holds afterwards, which is the one that decides.
+ * row afterwards, which is the one that decides: its role, when it was checked, and whether that is still fresh. The
+ * row is read in a second statement of the same transaction: when the record waited for another read's and then
+ * declined, the first statement's snapshot predates that read, so it would answer the row it replaced, or no row.
  */
 export const remember = (repoId: string, personId: string, role: Role | null, asOf: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly role: string | null }>`
-      WITH written AS (
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* sql`
         INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
         VALUES (${repoId}, ${personId}, ${role}, ${asOf}::timestamptz)
         ON CONFLICT (repo_id, person_id) DO UPDATE SET role = EXCLUDED.role, checked_at = EXCLUDED.checked_at
-        WHERE github_repo_roles.checked_at < EXCLUDED.checked_at
-        RETURNING role
-      )
-      SELECT role FROM written
-      UNION ALL
-      SELECT role FROM github_repo_roles
-      WHERE repo_id = ${repoId} AND person_id = ${personId} AND NOT EXISTS (SELECT 1 FROM written)`
-    return decodeRole(row!.role)
+        WHERE github_repo_roles.checked_at < EXCLUDED.checked_at`
+      const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string; readonly fresh: boolean }>`
+        SELECT role, checked_at::text AS "checkedAt",
+          checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS}) AS fresh
+        FROM github_repo_roles WHERE repo_id = ${repoId} AND person_id = ${personId}`
+      // The insert or the row it conflicted with is there; nothing deletes a role row inside this transaction.
+      if (row === undefined) return yield* Effect.die(new Error("github_repo_roles: the row just recorded is gone"))
+      return { role: decodeRole(row.role), checkedAt: row.checkedAt, fresh: row.fresh }
+    }))
   })

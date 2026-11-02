@@ -84,6 +84,8 @@ const route = async (options: RouteOptions = {}) => {
     app: options.github === undefined ? Option.none() : Option.some(app({ privateKey: key })),
     ...(options.github === undefined ? {} : { http: options.github.http }),
     ...(options.local === undefined ? {} : { local: options.local }),
+    // Each refusal here is GitHub's own and the next request asks again: RepoRoles.test.ts tests the cooldown.
+    refreshCooldownSeconds: 0,
   }))
   const handler = HttpEffect.toWebHandler(
     make({

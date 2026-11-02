@@ -87,6 +87,7 @@ import m0086 from "./migrations/0086_repo_overflow.ts"
 import m0087 from "./migrations/0087_flow_draft_receipts.ts"
 import m0088 from "./migrations/0088_work_links.ts"
 import m0089 from "./migrations/0089_runner_git_credentials.ts"
+import m0090 from "./migrations/0090_github_repo_role_reads.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -178,4 +179,5 @@ export const migrations = {
   "0087_flow_draft_receipts": m0087,
   "0088_work_links": m0088,
   "0089_runner_git_credentials": m0089,
+  "0090_github_repo_role_reads": m0090,
 }

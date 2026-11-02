@@ -300,12 +300,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
             return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
           }
           const scopedActor = { ...who, role: resolved.success.role }
-          const allowed = admitted.op === "retry"
-            ? mayRead(Option.some(scopedActor))
-            : admitted.op === "configure"
-            ? mayConfigure(scopedActor)
-            : mayChange(scopedActor)
-          if (!allowed) return refused("forbidden")
+          const allows = (actor: typeof scopedActor) =>
+            admitted.op === "retry"
+              ? mayRead(Option.some(actor))
+              : admitted.op === "configure"
+              ? mayConfigure(actor)
+              : mayChange(actor)
+          if (!allows(scopedActor)) return refused("forbidden")
           if (!canAsk(who)) return refused("forbidden")
           const held = resolved.success.held
           let stoppedAttemptId: string | undefined
@@ -313,13 +314,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
             const candidate = yield* Stack.retryCandidate(repoId(target.owner, target.name), admitted.number).pipe(Effect.provide(database))
             if (candidate !== undefined && (yield* runs.value.isStopped(candidate))) stoppedAttemptId = candidate
           }
-          const applied = yield* Stack.apply(
+          const apply = (actor: typeof scopedActor, held: Option.Option<RepoRoles.Held>) => Stack.apply(
             {
               opId: admitted.opId.toLowerCase(),
               repoId: repoId(target.owner, target.name),
               actor: { id: who.subject.id, login: who.login ?? who.subject.id },
               via,
-              retryAny: mayRetryAny(scopedActor),
+              retryAny: mayRetryAny(actor),
               op: admitted.op === "commit"
                 ? {
                   kind: "commit",
@@ -335,6 +336,27 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
             },
             { runs: Option.isSome(runs), ...(Option.isSome(held) ? { holds: RepoRoles.holds(held.value) } : {}), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
           ).pipe(Effect.provide(database), Effect.catchTag("@smthrs/mvp/stack/RetryForbidden", () => Effect.succeed({ kind: "forbidden" as const })))
+          let applied = yield* apply(scopedActor, held)
+          // The row the request read expired, or changed, while the change waited: GitHub decides again, once, as for
+          // an issue write (decision 0079 §6), and the change is admitted only under that answer.
+          if (applied.kind === "stale" && Option.isSome(held) && roles.refresh !== undefined) {
+            fields.refreshed = 1
+            const again = yield* roles.refresh(who, repositoryNamed(`${target.owner}/${target.name}`), held.value).pipe(Effect.result)
+            if (again._tag === "Failure") {
+              const { code, retryAfterSeconds } = again.failure
+              fields.outcome = code
+              return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
+            }
+            const now = { ...who, role: again.success.role }
+            if (!allows(now)) return refused("forbidden")
+            applied = yield* apply(now, again.success.held)
+            // Expired or changed again by this change: the role GitHub just gave allows it, so the outbox sends it
+            // again (`503`), never the terminal 403.
+            if (applied.kind === "stale") {
+              fields.outcome = "unavailable"
+              return refusal(503, "unavailable", 1)
+            }
+          }
           if (applied.kind === "forbidden") return refused("forbidden")
           if (applied.kind === "conflict") return refused("conflict")
           // The role changed between the read and the change: decided again on the next send.

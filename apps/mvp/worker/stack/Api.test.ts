@@ -484,10 +484,10 @@ describe("another repository's stack (decision 0079)", () => {
       ON CONFLICT (id) DO NOTHING`)
   )
   let key: Awaited<ReturnType<typeof appKey>> | undefined
-  const onGitHub = async (github: ScriptedGitHub, actor: Actor = maya) =>
+  const onGitHub = async (github: ScriptedGitHub, actor: Actor = maya, roles: Partial<RepoRoles.Options> = {}) =>
     stackHarness(runtime, {
       actor,
-      roles: { app: Option.some(app({ privateKey: key ??= await appKey() })), http: github.http },
+      roles: { app: Option.some(app({ privateKey: key ??= await appKey() })), http: github.http, ...roles },
     })
 
   test.each([null, "guest"] as const)("a Member on their own repository with deployment role %s cannot start or retry TODO machines", async role => {
@@ -518,6 +518,39 @@ describe("another repository's stack (decision 0079)", () => {
     const before = github.calls.length
     expect((await post(h, commitBody())).status).toBe(202)
     expect(github.calls.length).toBe(before)
+  })
+
+  // Codex review of d99f8a07, 2026-11-02: a role row that expires while the change waits is read again, as an issue
+  // write's is, and a second expiry is a retry, never the outbox's terminal 403.
+  const expire = () => sql(`UPDATE github_repo_roles SET checked_at = checked_at - interval '${RepoRoles.FRESH_SECONDS + 1} seconds'`)
+  const expiring = (again: boolean) => async (github: ScriptedGitHub) =>
+    stackHarness(runtime, {
+      actor: maya,
+      roles: { app: Option.some(app({ privateKey: key ??= await appKey() })), http: github.http },
+      wrapRoles: (roles) => ({
+        ...roles,
+        resolve: (actor, repository) => Effect.tap(roles.resolve(actor, repository), () => Effect.promise(expire)),
+        refresh: (actor, repository, read) =>
+          again ? Effect.tap(roles.refresh!(actor, repository, read), () => Effect.promise(expire)) : roles.refresh!(actor, repository, read),
+      }),
+    })
+
+  test("a change whose role row expired before its transaction is read again from GitHub, and admitted", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const h = await expiring(false)(github)
+    expect((await post(h, commitBody(), {}, OTHER)).status).toBe(202)
+    expect(github.seen("GET", /\/permission$/)).toHaveLength(2)
+    expect(await sql(`SELECT repo_id AS "repoId" FROM todos`)).toEqual([{ repoId: "github/acme/widgets" }])
+  })
+
+  test("a change whose row expires again after the refresh is answered 503 unavailable, to retry", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const h = await expiring(true)(github)
+    const response = await post(h, commitBody(), {}, OTHER)
+    expect([response.status, response.headers.get("retry-after"), await response.json()]).toEqual([503, "1", { code: "unavailable" }])
+    expect(await sql(`SELECT * FROM todos`)).toEqual([])
   })
 
   test("retry authority comes from the target repository, including ownership and Maintainer overrides", async () => {
@@ -576,7 +609,8 @@ describe("another repository's stack (decision 0079)", () => {
   test("the TODO shapes: another repository's rows only for a Member there", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "read")
-    const h = await onGitHub(github)
+    // No cooldown after GitHub fails: each refusal below is GitHub's own (RepoRoles.test.ts tests the cooldown).
+    const h = await onGitHub(github, maya, { refreshCooldownSeconds: 0 })
     for (const route of [TODOS_SHAPE_ROUTE, TODO_REQUESTS_SHAPE_ROUTE]) {
       expect([route, (await h.fetch(`${route}?repo=acme/widgets&offset=-1`)).status]).toEqual([route, 403])
     }

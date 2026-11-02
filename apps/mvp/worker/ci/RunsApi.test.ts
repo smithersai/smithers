@@ -139,6 +139,8 @@ const routes = async (
     repository: repositoryOf("acme/home"),
     app: configured,
     ...http,
+    // Each case's refusal is GitHub's own, on a fresh route: RepoRoles.test.ts tests the cooldown after a failure.
+    refreshCooldownSeconds: 0,
   }))
   const api = await runtime.runPromise(RunsApi.make(scratch.database, {
     repositories: new Set(options.repositories ?? ["acme/widgets"]),

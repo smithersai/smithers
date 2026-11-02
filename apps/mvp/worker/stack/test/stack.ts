@@ -72,6 +72,8 @@ export interface StackOptions {
   readonly roles?: Partial<RepoRoles.Options>
   /** A faulty `RepoRoles` in place of the real one. */
   readonly faultyRoles?: RepoRoles.RepoRoles<never>
+  /** The real `RepoRoles`, changed: a test that interleaves something between a role's read and its change. */
+  readonly wrapRoles?: (roles: RepoRoles.RepoRoles<never>) => RepoRoles.RepoRoles<never>
   /** A faulty database service for the status read's unavailable and privacy path. */
   readonly faultyDatabase?: Layer.Layer<SqlClient.SqlClient, unknown>
 }
@@ -113,7 +115,7 @@ export const stackHarness = async (runtime: Runtime, options: StackOptions = {})
   const roles = options.faultyRoles ?? await runtime.runPromise(
     observed(RepoRoles.make(scratch.database, { repository: OWN_REPOSITORY, app: Option.none(), ...options.roles })),
   )
-  const api = await runtime.runPromise(observed(Api.make(options.faultyDatabase ?? scratch.database, roles)))
+  const api = await runtime.runPromise(observed(Api.make(options.faultyDatabase ?? scratch.database, options.wrapRoles === undefined ? roles : options.wrapRoles(roles))))
   const routes = options.runs === undefined ? api.fetch : api.fetch.pipe(Effect.provide(options.runs.layer))
   const handler = HttpEffect.toWebHandler(
     observed(

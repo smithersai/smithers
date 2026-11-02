@@ -3,9 +3,9 @@
 // deployment's own repository, GitHub's, read with the App and kept for 5 minutes, on any other; every refusal; and the
 // row a write's transaction locks. Unhappy paths give it a faulty GitHub or an unreachable Postgres; nothing intercepts
 // a request.
-import { ConfigProvider, Effect, Exit, Layer, Option, Redacted } from "effect"
+import { ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
-import { beforeEach, describe, expect, test } from "vitest"
+import { beforeEach, describe, expect, test, vi } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { Actor } from "../Actor.ts"
@@ -112,7 +112,8 @@ describe("resolve", () => {
     const resolved = await resolve(await roles(github))
     expect(resolved._tag === "Success" && resolved.success).toEqual({
       role,
-      held: Option.some({ repoId: OTHER.id, personId: MAYA, role }),
+      // The row's check time ties a write to this very read (decision 0079 §6).
+      held: Option.some({ repoId: OTHER.id, personId: MAYA, role, checkedAt: expect.any(String) }),
     })
   })
 
@@ -145,37 +146,41 @@ describe("resolve", () => {
     expect(roleOf(await resolve(await roles(github, { allowed: Option.some(new Set([OTHER.id])) })))).toBe("member")
     await sql(runtime, `TRUNCATE github_repo_roles, github_repositories`)
 
+    // Each refusal is GitHub's own here: no cooldown after one (tested below).
+    const uncooled = () => roles(github, { refreshCooldownSeconds: 0 })
     github.installed = false
-    expect(refusal(await resolve(await roles(github)))).toEqual({ code: "app_not_installed" })
+    expect(refusal(await resolve(await uncooled()))).toEqual({ code: "app_not_installed" })
     github.installed = true
 
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "30" } })
-    expect(refusal(await resolve(await roles(github)))).toEqual({ code: "rate_limited", retryAfterSeconds: 30 })
+    expect(refusal(await resolve(await uncooled()))).toEqual({ code: "rate_limited", retryAfterSeconds: 30 })
     github.faults.push({
       match: (_, path) => path.endsWith("/permission"),
       status: 403,
       headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.ceil(Date.now() / 1000) + 60) },
     })
-    expect(refusal(await resolve(await roles(github)))?.code).toBe("rate_limited")
+    expect(refusal(await resolve(await uncooled()))?.code).toBe("rate_limited")
     // GitHub's rate limit on minting the token says so too, never "not allowed".
     github.faults.push({ match: (_, path) => path.endsWith("/access_tokens"), status: 429, headers: { "retry-after": "7" } })
-    expect(refusal(await resolve(await roles(github)))).toEqual({ code: "rate_limited", retryAfterSeconds: 7 })
+    expect(refusal(await resolve(await uncooled()))).toEqual({ code: "rate_limited", retryAfterSeconds: 7 })
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
-    expect(refusal(await resolve(await roles(github)))).toEqual({ code: "github_unavailable" })
+    expect(refusal(await resolve(await uncooled()))).toEqual({ code: "github_unavailable" })
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), lost: true })
-    expect(refusal(await resolve(await roles(github)))).toEqual({ code: "github_unavailable" })
-    expect(await sql(runtime, `SELECT * FROM github_repo_roles`)).toEqual([])
+    expect(refusal(await resolve(await uncooled()))).toEqual({ code: "github_unavailable" })
+    // No row that decides: a failed read leaves at most its claim, no role and never fresh.
+    expect(await sql(runtime, `SELECT * FROM github_repo_roles WHERE checked_at > '-infinity'`)).toEqual([])
 
     // The mint failing for GitHub, or for its rate limit as a 403, says which.
     github.faults.push({ match: (_, path) => path.endsWith("/access_tokens"), status: 502 })
-    expect(refusal(await resolve(await roles(github)))).toEqual({ code: "github_unavailable" })
+    expect(refusal(await resolve(await uncooled()))).toEqual({ code: "github_unavailable" })
     github.faults.push({
       match: (_, path) => path.endsWith("/access_tokens"),
       status: 403,
       headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.ceil(Date.now() / 1000) + 60) },
     })
-    expect(refusal(await resolve(await roles(github)))?.code).toBe("rate_limited")
-    expect(await sql(runtime, `SELECT * FROM github_repo_roles`)).toEqual([])
+    expect(refusal(await resolve(await uncooled()))?.code).toBe("rate_limited")
+    // No row that decides: a failed read leaves at most its claim, no role and never fresh.
+    expect(await sql(runtime, `SELECT * FROM github_repo_roles WHERE checked_at > '-infinity'`)).toEqual([])
 
     expect(refusal(await resolve(await roles(github, { database: unreachable })))).toEqual({ code: "unavailable" })
     // A client that can't even be built, as when a host's connection string fails to resolve.
@@ -209,12 +214,12 @@ describe("resolve", () => {
       `SELECT (now() - interval '2 seconds')::text AS earlier, now()::text AS later, (now() + interval '1 second')::text AS after`,
     ) as unknown as [{ earlier: string; later: string; after: string }]
     // The quicker read saw the role removed; the slower one, begun before it, saw Member.
-    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, null, later))).toBeNull()
+    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, null, later)).then((kept) => kept.role)).toBeNull()
     // The slower read is told what decides: the removal, never the Member it saw.
-    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", earlier))).toBeNull()
+    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", earlier)).then((kept) => kept.role)).toBeNull()
     expect(await sql(runtime, `SELECT role FROM github_repo_roles`)).toEqual([{ role: null }])
     // A later read replaces it.
-    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", after))).toBe("member")
+    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", after)).then((kept) => kept.role)).toBe("member")
     expect(await sql(runtime, `SELECT role FROM github_repo_roles`)).toEqual([{ role: "member" }])
   })
 
@@ -226,7 +231,8 @@ describe("resolve", () => {
       // Nothing listens there.
       app: Option.some(app({ privateKey: key, apiBaseUrl: "http://127.0.0.1:9" })),
     }))
-    expect(refusal(await resolve(made))).toEqual({ code: "github_unavailable" })
+    // With the cooldown's wait: the next request is refused that long without asking.
+    expect(refusal(await resolve(made))).toEqual({ code: "github_unavailable", retryAfterSeconds: RepoRoles.REFRESH_COOLDOWN_SECONDS })
   })
 
   test("local development without the App: the developer's role holds on every repository; a deploy's never does", async () => {
@@ -301,6 +307,44 @@ describe("holds: the row a write's transaction locks (decision 0079 §6)", () =>
     expect(await holds({ ...held, role: null })).toBe(false)
   })
 
+  test("a write admits only the read its request decided with, or a newer one, and only while it is fresh now", async () => {
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '10 seconds')`)
+    const [{ checkedAt }] = await sql(runtime, `SELECT checked_at::text AS "checkedAt" FROM github_repo_roles`) as Array<{ checkedAt: string }>
+    const read: RepoRoles.Held = { ...held, checkedAt }
+    expect(await holds(read)).toBe(true)
+    // A newer read of the same role still admits it; a newer read of another role doesn't.
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now()`)
+    expect(await holds(read)).toBe(true)
+    await sql(runtime, `UPDATE github_repo_roles SET role = 'guest'`)
+    expect(await holds(read)).toBe(false)
+    // A row older than the request's read is not the read it decided with.
+    await sql(runtime, `UPDATE github_repo_roles SET role = 'member', checked_at = timestamptz '${checkedAt}' - interval '1 second'`)
+    expect(await holds(read)).toBe(false)
+    // The very read, expired: refused, whatever it said (the route asks GitHub again).
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds'`)
+    expect(await holds({ ...held, checkedAt: undefined })).toBe(false)
+  })
+
+  test("freshness is the database's clock at the check, so a transaction that waited can't stretch it", async () => {
+    // Fresh when the transaction starts, expired by the time it checks: transaction-start now() admitted it.
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS - 1} seconds')`)
+    const waited = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.andThen(Effect.promise(() => new Promise((done) => setTimeout(done, 1_500))), RepoRoles.holds(held)))))
+    expect(waited).toBe(false)
+  })
+
+  test("a refresh slow enough that its row expired before it returned decides nothing", async () => {
+    const kept = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      Effect.flatMap(client<{ asOf: string }>`SELECT (now() - make_interval(secs => ${RepoRoles.FRESH_SECONDS + 1}))::text AS "asOf"`, ([row]) =>
+        RepoRoles.remember(OTHER.id, MAYA, "maintainer", row!.asOf))))
+    expect(kept).toMatchObject({ role: "maintainer", fresh: false })
+    const fresh = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      Effect.flatMap(client<{ asOf: string }>`SELECT now()::text AS "asOf"`, ([row]) => RepoRoles.remember(OTHER.id, MAYA, "member", row!.asOf))))
+    expect(fresh).toMatchObject({ role: "member", fresh: true })
+  })
+
   test("a write is recorded only while the role holds; one already recorded answers as it stands", async () => {
     await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('${OTHER.id}', '${MAYA}', 'member')`)
     const write = (id: string) => ({
@@ -363,5 +407,356 @@ describe("holds: the row a write's transaction locks (decision 0079 §6)", () =>
     }))
     expect(Exit.isFailure(blocked)).toBe(true)
     expect(await sql(runtime, `SELECT role FROM github_repo_roles`)).toEqual([{ role: "member" }])
+  })
+})
+
+// Codex review of 6009e4fa, 2026-11-02: each race below on two Postgres connections, as two requests run it.
+describe("two requests at once", () => {
+  const held: RepoRoles.Held = { repoId: OTHER.id, personId: MAYA, role: "member" }
+  const scratchDatabase = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
+
+  /** Runs `first` on one connection until it signals, then `second` on another, and `first` to its end. */
+  const interleave = <A, B>(
+    first: (signal: Effect.Effect<void>) => Effect.Effect<A, unknown, SqlClient.SqlClient>,
+    second: Effect.Effect<B, unknown, SqlClient.SqlClient>,
+  ) =>
+    scratchDatabase().then((database) =>
+      runtime.runPromise(Effect.gen(function* () {
+        const signalled = yield* Deferred.make<void>()
+        const one = yield* Effect.forkChild(first(Deferred.succeed(signalled, undefined).pipe(Effect.asVoid)))
+        yield* Deferred.await(signalled)
+        const startedAt = Date.now()
+        const two = yield* Effect.provide(second, database)
+        const waitedMillis = Date.now() - startedAt
+        return { first: yield* Fiber.join(one), second: two, waitedMillis }
+      }))
+    )
+  const pause = (millis: number) => Effect.promise(() => new Promise((done) => setTimeout(done, millis)))
+
+  test("a write that waited for the row judges its freshness after the wait: a row released unchanged after expiry fails", async () => {
+    // Fresh for one more second when the write starts waiting; expired when the other transaction lets go of it.
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS - 1} seconds')`)
+    const raced = await interleave(
+      (signal) =>
+        Effect.flatMap(SqlClient.SqlClient, (client) =>
+          client.withTransaction(Effect.gen(function* () {
+            yield* client`SELECT 1 FROM github_repo_roles FOR UPDATE`
+            yield* signal
+            yield* pause(1_500)
+          }))),
+      Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(RepoRoles.holds(held))),
+    )
+    expect(raced.waitedMillis).toBeGreaterThanOrEqual(1_000)
+    expect(raced.second).toBe(false)
+  })
+
+  test("a read that overlaps another's first record of the row answers the row as recorded, never no row", async () => {
+    const [{ earlier, later }] = await sql(
+      runtime,
+      `SELECT (now() - interval '1 second')::text AS earlier, now()::text AS later`,
+    ) as unknown as [{ earlier: string; later: string }]
+    // The later read records the first row and holds its transaction open; the earlier read's insert waits for it.
+    const raced = await interleave(
+      (signal) =>
+        Effect.flatMap(SqlClient.SqlClient, (client) =>
+          client.withTransaction(Effect.gen(function* () {
+            const kept = yield* RepoRoles.remember(OTHER.id, MAYA, "maintainer", later)
+            yield* signal
+            yield* pause(700)
+            return kept
+          }))),
+      RepoRoles.remember(OTHER.id, MAYA, "member", earlier),
+    )
+    expect(raced.first).toMatchObject({ role: "maintainer", fresh: true })
+    expect(raced.second).toMatchObject({ role: "maintainer", fresh: true, checkedAt: raced.first.checkedAt })
+  })
+
+  test("a read that overlaps a newer one's update answers the newer role, never the row it replaced", async () => {
+    const [{ first, earlier, later }] = await sql(
+      runtime,
+      `SELECT (now() - interval '3 seconds')::text AS first, (now() - interval '1 second')::text AS earlier, now()::text AS later`,
+    ) as unknown as [{ first: string; earlier: string; later: string }]
+    await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "guest", first))
+    const raced = await interleave(
+      (signal) =>
+        Effect.flatMap(SqlClient.SqlClient, (client) =>
+          client.withTransaction(Effect.gen(function* () {
+            const kept = yield* RepoRoles.remember(OTHER.id, MAYA, "maintainer", later)
+            yield* signal
+            yield* pause(700)
+            return kept
+          }))),
+      RepoRoles.remember(OTHER.id, MAYA, "member", earlier),
+    )
+    expect(raced.second).toMatchObject({ role: "maintainer", checkedAt: raced.first.checkedAt })
+  })
+})
+
+describe("refresh: a write's second read of GitHub, once per person and repository", () => {
+  const permissionReads = (github: ScriptedGitHub) => github.seen("GET", /\/permission$/).length
+  /** The read a write decided with, expired: what each write's transaction refused. */
+  const expiredRead = async (): Promise<RepoRoles.Held> => {
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
+    const [{ checkedAt }] = await sql(runtime, `SELECT checked_at::text AS "checkedAt" FROM github_repo_roles`) as Array<{ checkedAt: string }>
+    return { repoId: OTHER.id, personId: MAYA, role: "member", checkedAt }
+  }
+  const refresh = (made: RepoRoles.RepoRoles, read: RepoRoles.Held) =>
+    Effect.runPromise(Effect.result(made.refresh!(maya, OTHER, read)))
+
+  test("writes refused at once ask GitHub once, and each is decided by that answer", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const made = await roles(github)
+    const read = await expiredRead()
+    const results = await Promise.all(Array.from({ length: 6 }, () => refresh(made, read)))
+    expect(results.map(roleOf)).toEqual(Array(6).fill("member"))
+    expect(permissionReads(github)).toBe(1)
+    // Every write is held to the one row that answer recorded.
+    const held = results.map((result) => result._tag === "Success" && Option.getOrUndefined(result.success.held)?.checkedAt)
+    expect(new Set(held).size).toBe(1)
+    expect(held[0]).not.toBe(read.checkedAt)
+  })
+
+  test("a row newer than the write's read, and fresh, decides without asking GitHub", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const made = await roles(github)
+    const read = await expiredRead()
+    await sql(runtime, `UPDATE github_repo_roles SET role = 'guest', checked_at = now()`)
+    expect(roleOf(await refresh(made, read))).toBe("guest")
+    expect(permissionReads(github)).toBe(0)
+  })
+
+  test("after GitHub failed a refresh, another within the cooldown is refused with its wait, asking no one", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+    const made = await roles(github)
+    const read = await expiredRead()
+    expect(refusal(await refresh(made, read))).toEqual({ code: "github_unavailable", retryAfterSeconds: RepoRoles.REFRESH_COOLDOWN_SECONDS })
+    const again = refusal(await refresh(made, read))
+    expect(again?.code).toBe("unavailable")
+    expect(again?.retryAfterSeconds).toBeGreaterThanOrEqual(1)
+    expect(again?.retryAfterSeconds).toBeLessThanOrEqual(RepoRoles.REFRESH_COOLDOWN_SECONDS)
+    expect(permissionReads(github)).toBe(1)
+  })
+})
+
+// Codex review of 816fa5a3, 2026-11-02: the cooldown runs from GitHub's failure, every read of an expired row goes
+// through the same lock and cooldown, and a read has an overall deadline.
+describe("reading an expired row: one GitHub read at a time, its failures cooled, and a deadline", () => {
+  const permissionReads = (github: ScriptedGitHub) => github.seen("GET", /\/permission$/).length
+  const expire = () => sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+    VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
+  const slowFailure = (millis: number) => ({
+    match: (_: string, path: string) => path.endsWith("/permission"),
+    status: 502,
+    hold: () => new Promise<void>((done) => setTimeout(done, millis)),
+  })
+
+  test("the cooldown starts when GitHub's failure arrives, so a slow failure still cools the next read", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    // The failure takes longer than the cooldown, which still has seconds left when the next request comes.
+    github.faults.push(slowFailure(6_000))
+    const made = await roles(github, { refreshCooldownSeconds: 5 })
+    await expire()
+    expect(refusal(await resolve(made))?.code).toBe("github_unavailable")
+    expect(refusal(await resolve(made))?.code).toBe("unavailable")
+    expect(permissionReads(github)).toBe(1)
+  })
+
+  test("requests that find the row expired ask GitHub once, and after its failure resolve asks no one", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const made = await roles(github)
+    await expire()
+    const results = await Promise.all(Array.from({ length: 6 }, () => resolve(made)))
+    expect(results.map(roleOf)).toEqual(Array(6).fill("member"))
+    expect(permissionReads(github)).toBe(1)
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds'`)
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+    expect(refusal(await resolve(made))?.code).toBe("github_unavailable")
+    const cooled = refusal(await resolve(made))
+    expect(cooled?.code).toBe("unavailable")
+    expect(cooled?.retryAfterSeconds).toBeGreaterThanOrEqual(1)
+    expect(permissionReads(github)).toBe(2)
+  })
+
+  test("a read GitHub holds past the deadline is unavailable, and the next is cooled", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), hold: () => new Promise<void>((done) => setTimeout(done, 3_000)) })
+    const made = await roles(github, { refreshDeadline: "300 millis" })
+    await expire()
+    const startedAt = Date.now()
+    expect(refusal(await resolve(made))?.code).toBe("unavailable")
+    expect(Date.now() - startedAt).toBeLessThan(2_000)
+    expect(refusal(await resolve(made))?.code).toBe("unavailable")
+    expect(permissionReads(github)).toBe(1)
+  })
+})
+
+// Codex review of d99f8a07, 2026-11-02: no request waits in a Postgres transaction while GitHub answers, and what the
+// token mint learns about the App's installation stays learned when the read fails.
+describe("reading an expired row holds no transaction across GitHub", () => {
+  const permissionReads = (github: ScriptedGitHub) => github.seen("GET", /\/permission$/).length
+  const expire = () => sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+    VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
+
+  test("an installation the App lost is forgotten though the read failed, so the next finds the new one", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const made = await roles(github)
+    // The installation Smithers recorded before the App was installed again: GitHub mints nothing for it now.
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, installation_id) VALUES ('${OTHER.id}', 999)`)
+    expect(refusal(await resolve(made))?.code).toBe("app_not_installed")
+    expect(await sql(runtime, `SELECT installation_id FROM github_repositories`)).toEqual([{ installation_id: null }])
+    expect(roleOf(await resolve(made))).toBe("member")
+  })
+
+  test("a burst for one expired row waits outside any transaction while one request asks GitHub", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    let answer: () => void = () => {}
+    const answered = new Promise<void>((done) => { answer = done })
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), hold: () => answered })
+    // A deadline well past the test's own waits, so a slow machine measures the waiting, never the deadline.
+    const made = await roles(github, { refreshDeadline: "30 seconds" })
+    await expire()
+    const burst = Promise.all(Array.from({ length: 12 }, () => resolve(made)))
+    await vi.waitFor(() => expect(permissionReads(github)).toBe(1), { timeout: 10_000 })
+    await new Promise((done) => setTimeout(done, 300))
+    // Nobody holds a transaction open or waits on a lock while GitHub answers.
+    // Nobody holds or waits for a lock on this person's role, or holds a transaction open, while GitHub answers.
+    const parked = await sql(runtime, `
+      WITH k AS (SELECT hashtextextended('github_repo_roles:${OTHER.id}:${MAYA}', 0) AS h)
+      SELECT (SELECT count(*)::int FROM pg_locks, k WHERE locktype = 'advisory'
+          AND classid::bigint = ((h >> 32) & 4294967295) AND objid::bigint = (h & 4294967295)) AS locks,
+        (SELECT count(*)::int FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
+          AND state LIKE 'idle in transaction%' AND (query ILIKE '%github_repo_role%' OR query ILIKE '%people%')) AS open`)
+    expect(parked).toEqual([{ locks: 0, open: 0 }])
+    answer()
+    const answered12 = await burst
+    expect(answered12.map((result) => refusal(result)?.code ?? roleOf(result))).toEqual(Array(12).fill("member"))
+    expect(permissionReads(github)).toBe(1)
+  })
+})
+
+// Codex review of 08f12722, 2026-11-02: a waiter only reads while another request holds the read, a claim is taken only
+// while the row still needs reading, and its lease runs from when the claim got the row.
+describe("claiming the read of an expired row", () => {
+  const scratchDatabase = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
+  const claim = (after: string | undefined, leaseMillis: number) =>
+    runtime.runPromise(RepoRoles.claimRead(OTHER.id, MAYA, after, leaseMillis))
+  /** Holds the role row `FOR UPDATE` on another connection for `millis`: answers once it has the lock, with `done`. */
+  const holdRow = async (millis: number): Promise<{ readonly done: Promise<void> }> => {
+    const database = await scratchDatabase()
+    const locked = Effect.runSync(Deferred.make<void>())
+    const done = runtime.runPromise(Effect.provide(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`SELECT 1 FROM github_repo_roles FOR UPDATE`
+        yield* Deferred.succeed(locked, undefined)
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, millis)))
+      }))), database))
+    await Effect.runPromise(Deferred.await(locked))
+    return { done }
+  }
+  const expired = () => sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+    VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
+
+  test("a claim that waited for the row gets a lease counted from when it got it", async () => {
+    await expired()
+    const { done } = await holdRow(700)
+    const startedAt = Date.now()
+    const claiming = claim(undefined, 300)
+    await done
+    const claimed = await claiming
+    // The claim waited for the row: longer than its lease, which still runs from when it got the row.
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(500)
+    expect(claimed._tag).toBe("Some")
+    const [{ live }] = await sql(runtime, `SELECT read_until > clock_timestamp() AS live FROM github_repo_roles`) as Array<{ live: boolean }>
+    expect(live).toBe(true)
+  })
+
+  test("no claim while the row holds a fresh read newer than the claimant's, or while another holds the claim", async () => {
+    await expired()
+    const [{ stale }] = await sql(runtime, `SELECT checked_at::text AS stale FROM github_repo_roles`) as Array<{ stale: string }>
+    // Another request read GitHub after this one looked: the row is fresh and newer, so nothing is left to read.
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now()`)
+    expect((await claim(stale, 5_000))._tag).toBe("None")
+    // Expired again: claimable once, then held.
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds'`)
+    expect((await claim(stale, 5_000))._tag).toBe("Some")
+    expect((await claim(stale, 5_000))._tag).toBe("None")
+  })
+
+  // Codex review of 0ed61559: the deadline bounds every wait on Postgres, the first look at the row and the cleanup.
+  test("a read blocked on the role table answers 503 with its wait by the deadline", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const made = await roles(github, { refreshDeadline: "800 millis" })
+    await expired()
+    const database = await scratchDatabase()
+    const locked = Effect.runSync(Deferred.make<void>())
+    const done = runtime.runPromise(Effect.provide(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`LOCK TABLE github_repo_roles IN ACCESS EXCLUSIVE MODE`
+        yield* Deferred.succeed(locked, undefined)
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 3_000)))
+      }))), database))
+    await Effect.runPromise(Deferred.await(locked))
+    const startedAt = Date.now()
+    const answered = await resolve(made)
+    const tookMillis = Date.now() - startedAt
+    await done
+    expect(refusal(answered)).toEqual({ code: "unavailable", retryAfterSeconds: 1 })
+    expect(tookMillis).toBeLessThan(1_600)
+  })
+
+  test("a failed read whose cleanup is held answers 503 with the cooldown's wait at the deadline, not the cleanup's", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    let failNow: () => void = () => {}
+    const failing = new Promise<void>((resolve) => { failNow = resolve })
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502, hold: () => failing })
+    const made = await roles(github, { refreshDeadline: "3 seconds", refreshCooldownSeconds: 5 })
+    await expired()
+    const startedAt = Date.now()
+    const answering = resolve(made)
+    await vi.waitFor(() => expect(github.seen("GET", /\/permission$/)).toHaveLength(1), { timeout: 5_000 })
+    // A write holds the row from before GitHub fails until well past the deadline: the cleanup that records the
+    // failure waits for it, and Postgres would end that wait only after 2 s.
+    const { done } = await holdRow(6_000)
+    // GitHub fails with under a second of the deadline left.
+    await new Promise((wait) => setTimeout(wait, Math.max(0, startedAt + 2_100 - Date.now())))
+    failNow()
+    const answered = await answering
+    const tookMillis = Date.now() - startedAt
+    await done
+    expect(refusal(answered)).toEqual({ code: "github_unavailable", retryAfterSeconds: 5 })
+    // At the deadline: the cleanup had what was left of it, never Postgres' own 2 s.
+    expect(tookMillis).toBeGreaterThanOrEqual(2_700)
+    expect(tookMillis).toBeLessThan(3_600)
+  })
+
+  test("waiters for another's read only read the row: none waits on its lock, and each gives up by its deadline", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const made = await roles(github, { refreshDeadline: "800 millis" })
+    await expired()
+    // Another request's live claim, and a write's transaction holding the row the while.
+    await sql(runtime, `UPDATE github_repo_roles SET read_until = clock_timestamp() + interval '1 minute'`)
+    const { done: held } = await holdRow(2_000)
+    const startedAt = Date.now()
+    const waiting = Promise.all(Array.from({ length: 5 }, () => resolve(made)))
+    await new Promise((done) => setTimeout(done, 400))
+    const blocked = await sql(runtime, `SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%github_repo_roles%'`)
+    const results = await waiting
+    const tookMillis = Date.now() - startedAt
+    await held
+    expect(blocked).toEqual([{ n: 0 }])
+    expect(results.map((result) => refusal(result)?.code)).toEqual(Array(5).fill("unavailable"))
+    expect(tookMillis).toBeLessThan(1_800)
+    expect(github.seen("GET", /\/permission$/)).toEqual([])
   })
 })
