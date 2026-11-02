@@ -301,6 +301,17 @@ describe("holds: the row a write's transaction locks (decision 0079 §6)", () =>
     expect(await holds({ ...held, role: null })).toBe(false)
   })
 
+  test("a row that expired while its request ran still holds the role that request read", async () => {
+    // Production, 2026-11-02: the request read the cached row in its last fresh second, and the write's transaction,
+    // a moment later, found it expired and refused an Admin's write 403.
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
+    expect(await holds()).toBe(true)
+    expect(await holds({ ...held, role: "admin" })).toBe(false)
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '${RepoRoles.FRESH_SECONDS + RepoRoles.HOLD_GRACE_SECONDS + 1} seconds'`)
+    expect(await holds()).toBe(false)
+  })
+
   test("a write is recorded only while the role holds; one already recorded answers as it stands", async () => {
     await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('${OTHER.id}', '${MAYA}', 'member')`)
     const write = (id: string) => ({
