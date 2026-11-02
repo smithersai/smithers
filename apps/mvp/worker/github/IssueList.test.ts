@@ -1,10 +1,14 @@
 // `GET /api/repos/<owner>/<name>/issues` (worker/github/IssueList.ts, docs/features/issues.md#routes): a repository's
 // issues one page at a time, through the real handler over this file's schema of the compose Postgres.
+import { Effect, Redacted } from "effect"
 import { beforeEach, describe, expect, test } from "vitest"
+import * as Database from "../../db/Database.ts"
 import { issuesRoute } from "../../src/features/issues/contract.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
-import { decodeCursor, encodeCursor } from "./IssueList.ts"
+import { decodeCursor, encodeCursor, parseIssuesPath } from "./IssueList.ts"
+import * as Metrics from "./Metrics.ts"
+import { scriptedGitHub } from "./test/scriptedGitHub.ts"
 import { member, githubHarness } from "./test/harness.ts"
 import { REPOSITORY, reset, sql } from "./test/fixtures.ts"
 
@@ -45,6 +49,10 @@ describe("the issues list", () => {
     expect(handles(route)).toBe(true)
     expect(handles(`${route}/7`)).toBe(false)
     expect(handles("/api/repos/acme/widgets/issuez")).toBe(false)
+    expect(parseIssuesPath("/api/repos/%E0%A4%A/widgets/issues")).toBeUndefined()
+    expect(parseIssuesPath("/api/repos/-bad/widgets/issues")).toBeUndefined()
+    expect(parseIssuesPath("/api/other/acme/widgets/issues")).toBeUndefined()
+    expect([decodeCursor("@@"), decodeCursor("a"), decodeCursor(btoa("{}"))]).toEqual([undefined, undefined, undefined])
   })
 
   test("pages a repository's open issues, latest update first, with a next link until the last page", async () => {
@@ -107,5 +115,30 @@ describe("the issues list", () => {
     const insider = await githubHarness(runtime)
     expect(((await (await insider.fetch(route)).json()) as Array<Listed>).map((issue) => issue.number)).toEqual([3, 2, 1])
     expect((await insider.fetch(issuesRoute("someone", "else"), { method: "POST" })).status).toBe(405)
+  })
+
+  test("answers 404 where the deployment doesn't act or found the App absent, and 503 when Postgres fails", async () => {
+    const OWN = { owner: "acme", name: "home", id: "github/acme/home" } as const
+    const gadgets = () => scriptedGitHub("acme", "gadgets")
+    const notActed = await githubHarness(runtime, { own: OWN, github: gadgets(), allowed: new Set([OWN.id]) })
+    const refused = await notActed.fetch(issuesRoute("acme", "gadgets"))
+    expect([refused.status, await refused.json()]).toEqual([404, { code: "not_found" }])
+    await sql(runtime, `INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('github/acme/gadgets', now() + interval '1 hour')`)
+    try {
+      const absent = await githubHarness(runtime, { own: OWN, github: gadgets() })
+      const answer = await absent.fetch(issuesRoute("acme", "gadgets"))
+      expect([answer.status, await answer.json()]).toEqual([404, { code: "app_not_installed" }])
+      expect(absent.count(Metrics.issueLists, { outcome: "app_not_installed" })).toBe(1)
+    } finally {
+      await sql(runtime, `TRUNCATE repo_about`)
+    }
+    const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    const offline = await githubHarness(runtime, { database: unreachable })
+    const down = await offline.fetch(route)
+    expect([down.status, await down.json()]).toEqual([503, { code: "unavailable" }])
+    expect(offline.line("github.issues.list")[0]!.annotations).toMatchObject({ status: 503 })
+    // Another repository with Postgres down: the App-absent check leaves it to the read, which can't answer either.
+    const otherOffline = await githubHarness(runtime, { own: OWN, github: gadgets(), database: unreachable })
+    expect((await otherOffline.fetch(issuesRoute("acme", "gadgets"))).status).toBe(503)
   })
 })
