@@ -16,6 +16,7 @@ import { branchAccess, branchAccessAs, type BranchRoles, canView, isMember, poli
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
+import * as FeedLocks from "./FeedLocks.ts"
 import * as SessionStore from "./SessionStore.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 
@@ -124,11 +125,18 @@ interface Existing {
 
 /** Repair only existing live notices when the run index is gone, from a terminal answer or its missing record.
  * A streaming answer is still live. No recipient or scope is invented, and settled notices never change again. */
-const foldMissingRun = (runId: string) => Effect.gen(function* () {
+const foldMissingRun = (runId: string, held: ReadonlySet<string>) => Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
-  const existing = yield* sql<{ readonly recipient: string; readonly mine: boolean; readonly conversationId: string | null }>`
-    SELECT recipient, mine, conversation_id AS "conversationId" FROM notifications
+  const locked = yield* sql<{
+    readonly recipient: string
+    readonly mine: boolean
+    readonly conversationId: string | null
+    readonly repoId: string | null
+  }>`
+    SELECT recipient, mine, conversation_id AS "conversationId", repo_id AS "repoId" FROM notifications
     WHERE run_id = ${runId} AND state IN ('working', 'waiting', 'needs_you') FOR UPDATE`
+  // Only the rows of people whose feed locks this transaction holds (`lockRuns`).
+  const existing = locked.filter((row) => FeedLocks.holds(held, { repoId: row.repoId, personId: row.recipient }))
   const allowed = yield* Effect.filter(existing, (row) => row.conversationId === null
     ? Effect.succeed(row.mine)
     : branchAccessAs(Option.some({ subject: { kind: "person", id: row.recipient }, role: "member" }), row.conversationId, "conversation").pipe(
@@ -156,6 +164,33 @@ const foldMissingRun = (runId: string) => Effect.gen(function* () {
 })
 
 /**
+ * The (repository, person) pairs folding `runIds` may touch: each run's launcher, its branch's watchers and everyone
+ * holding a row of it, on the run's repository; for a run whose row is gone, its rows' recipients on theirs. Read
+ * without locking anything, before the locks.
+ */
+const pairsOf = (runIds: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    if (runIds.length === 0) return []
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql<FeedLocks.Pair>`
+      WITH run AS (SELECT id, repo_id, launched_by, branch_id FROM runs WHERE ${sql.in("id", runIds)})
+      SELECT repo_id AS "repoId", launched_by AS "personId" FROM run
+      UNION SELECT run.repo_id, w.principal_id FROM run JOIN watches w ON w.subject = 'branch:' || run.branch_id
+      UNION SELECT run.repo_id, n.recipient FROM run JOIN notifications n ON n.run_id = run.id
+      UNION SELECT n.repo_id, n.recipient FROM notifications n
+        WHERE ${sql.in("n.run_id", runIds)} AND NOT EXISTS (SELECT 1 FROM run WHERE run.id = n.run_id)`
+  })
+
+/**
+ * Takes, for the rest of the caller's transaction, the feed lock (worker/FeedLocks.ts) of everyone folding `runIds`
+ * may touch, sorted and all at once, before any notification row: what a transaction that folds several runs takes
+ * first, then passes to each `foldRun`. A role read that denies one of them takes the same lock before it deletes
+ * their rows, so neither waits on the other in a cycle. Answers the keys it holds.
+ */
+export const lockRuns = (runIds: ReadonlyArray<string>) =>
+  Effect.flatMap(pairsOf(runIds), (pairs) => Effect.flatMap(SqlClient.SqlClient, (sql) => FeedLocks.lock(sql, pairs)))
+
+/**
  * Routes run `runId`'s current state to its recipients, inside the caller's transaction (worker/Runs.ts writes the
  * run's row first; worker/Answers.ts and `chat/Expire` settle its answer first): its launcher, branch watchers
  * (`Inbox.route`) and existing recipients, each subject to current branch access. Accessible existing rows still
@@ -163,9 +198,12 @@ const foldMissingRun = (runId: string) => Effect.gen(function* () {
  * would show the same thing is left alone. `launcherLogin` names the launcher on other people's rows. Records a span
  * `runs.fold` and a count per row written; never a title.
  */
-export const foldRun = (runId: string, launcherLogin: string | undefined) =>
+export const foldRun = (runId: string, launcherLogin: string | undefined, locked?: ReadonlySet<string>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    // Everyone this fold may touch, locked before any notification row (`lockRuns`); a transaction that folds several
+    // runs locked them all already. Someone who started watching since is left for the next fold.
+    const held = locked ?? (yield* lockRuns([runId]))
     const [run] = yield* sql<RunFacts>`
       SELECT r.status, r.answered_at IS NOT NULL AS answered, a.status AS answer, r.launched_by AS "launchedBy",
         r.conversation_id AS "conversationId", r.branch_id AS "branchId", r.repo_id AS "repoId",
@@ -175,7 +213,7 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
       LEFT JOIN messages q ON q.id = a.question_id
       LEFT JOIN branches b ON b.id = r.branch_id
       WHERE r.id = ${runId}`
-    if (run === undefined) return yield* foldMissingRun(runId)
+    if (run === undefined) return yield* foldMissingRun(runId, held)
     const state = runState(run.status, run.answered, run.answer)
     const subject = runSubject(runId)
     const watchers = run.branchId === null
@@ -183,8 +221,10 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
       : yield* sql<Inbox.Watcher>`
         SELECT principal_id AS principal, level FROM watches WHERE subject = ${`branch:${run.branchId}`}
         ORDER BY created_at, principal_id`
-    const existing = yield* sql<Existing>`
-      SELECT recipient, state, mine, quiet, title, version FROM notifications WHERE subject = ${subject} FOR UPDATE`
+    const ownRow = (recipient: string) => FeedLocks.holds(held, { repoId: run.repoId, personId: recipient })
+    const existing = (yield* sql<Existing>`
+      SELECT recipient, state, mine, quiet, title, version FROM notifications WHERE subject = ${subject} FOR UPDATE`)
+      .filter((row) => ownRow(row.recipient))
     const before = new Map(existing.map((row) => [row.recipient, row]))
     // Every recipient hears only of a branch they may still open (worker/branch/Access.ts): only a Member follows one
     // (`watch`), so each is checked as one, against the branch's shares as they are now. Their role on the branch's
@@ -219,7 +259,7 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
         quiet: row.quiet,
         state: !row.mine && state === "needs_you" ? "waiting" : state,
       })),
-    ].filter((delivery) => mayRead(delivery.recipient))
+    ].filter((delivery) => mayRead(delivery.recipient) && ownRow(delivery.recipient))
     const home = run.conversationId === null ? undefined : yield* Conversations.home
     const href = run.conversationId !== null && run.conversationId === home
       ? HOME_HREF

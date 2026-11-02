@@ -96,10 +96,12 @@ const abandonEarlier = (answerId: string, liveSeconds: number) => Effect.gen(fun
         <= now() - make_interval(secs => ${liveSeconds})
       AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.id = e.id AND r.status = 'needs_you')
     RETURNING e.id`
+  // Several runs fold in this transaction: everyone they may touch is locked first, in one order (`lockRuns`).
+  const held = yield* Notifications.lockRuns(rows.map((row) => row.id))
   for (const row of rows) {
     yield* sql`UPDATE runs SET status = 'failed', waiting = NULL, updated_at = now()
       WHERE id = ${row.id} AND status NOT IN ('done', 'failed')`
-    yield* Notifications.foldRun(row.id, undefined)
+    yield* Notifications.foldRun(row.id, undefined, held)
   }
   return rows.length
 })

@@ -14,6 +14,7 @@ import type { Actor } from "./Actor.ts"
 import { REPOSITORY } from "./github/test/fixtures.ts"
 import { delivery, githubHarness } from "./github/test/harness.ts"
 import * as Notifications from "./Notifications.ts"
+import * as RepoRoles from "./github/RepoRoles.ts"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
 
 const runtime = testFile("notifications")
@@ -782,6 +783,94 @@ describe("a run on a repository's branch quotes its question only to its launche
       title: "Ship the acquisition sentinel-5e2f?",
       actor: "lena",
     })
+  })
+
+  /** Holds `statement` in a transaction of its own for `holdMs`, then commits. */
+  const holding = (statement: string, params: ReadonlyArray<unknown>, holdMs: number) =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
+      yield* client.unsafe(statement, params)
+      yield* Effect.sleep(holdMs)
+    }))))
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+  /** Folds `runIds` in one transaction, in that order, as a turn that abandons its silent predecessors does. */
+  const foldAll = (runIds: ReadonlyArray<string>) =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
+      const held = yield* Notifications.lockRuns(runIds)
+      for (const runId of runIds) yield* Notifications.foldRun(runId, undefined, held)
+    }))))
+  const deny = (person: string) =>
+    runtime.runPromise(RepoRoles.remember("github/acme/gizmos", person, null, new Date().toISOString()))
+
+  test("a denial recorded while the real fold settles the launcher's existing notice: no deadlock, and the row goes", async () => {
+    await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/gizmos', 'person-dex', 'member')
+      ON CONFLICT (repo_id, person_id) DO UPDATE SET role = 'member', checked_at = now()`)
+    const { runId } = await run("person-dex", "person-wes")
+    expect(await rowOf(Notifications.runSubject(runId), "person-dex")).toBeDefined()
+    await sql(`UPDATE runs SET status = 'done', waiting = NULL WHERE id = $1`, runId)
+    // The role row held: the denial takes its feed lock, then waits there.
+    const blocker = holding(`SELECT 1 FROM github_repo_roles WHERE repo_id = 'github/acme/gizmos' AND person_id = $1 FOR UPDATE`,
+      ["person-dex"], 400)
+    await pause(50)
+    const denial = deny("person-dex")
+    await pause(100)
+    const folding = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Notifications.foldRun(runId, "dex"))))
+    await Promise.all([blocker, denial, folding])
+    expect(await rowOf(Notifications.runSubject(runId), "person-dex")).toBeUndefined()
+    expect(await rowOf(Notifications.runSubject(runId), "person-wes")).toMatchObject({ state: "done" })
+  })
+
+  test("a denial that commits while a fold writes the launcher's first row deletes it once the fold commits", async () => {
+    await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/gizmos', 'person-fay', 'member')
+      ON CONFLICT (repo_id, person_id) DO UPDATE SET role = 'member', checked_at = now()`)
+    const { branchId, conversationId } = await branch("github/acme/gizmos")
+    const runId = crypto.randomUUID()
+    await sql(`INSERT INTO runs (id, flow, status, waiting, wait, version, launched_by, conversation_id, branch_id, repo_id)
+      VALUES ($1, 'agent', 'needs_you', 'input', $2::jsonb, 1, 'person-fay', $3, $4, 'github/acme/gizmos')`,
+      runId, JSON.stringify({ ...wait(), prompt: "the private question" }), conversationId, branchId)
+    // The fold writes her row and holds its transaction open a while.
+    const folding = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
+      yield* Notifications.foldRun(runId, "fay")
+      yield* Effect.sleep(400)
+    }))))
+    await pause(100)
+    await deny("person-fay")
+    await folding
+    expect(await rowOf(Notifications.runSubject(runId), "person-fay")).toBeUndefined()
+  })
+
+  test("a watcher denied while one transaction folds two runs they watch: no deadlock, and their rows go", async () => {
+    // One launcher's two runs, one watcher on both branches.
+    const first = await run("person-lane", "person-wade")
+    const second = await run("person-lane", "person-wade")
+    await sql(`UPDATE runs SET status = 'done', waiting = NULL WHERE id IN ($1, $2)`, first.runId, second.runId)
+    // The launcher's row of the second run held: the fold settles the first, then stops at the second.
+    const blocker = holding(`SELECT 1 FROM notifications WHERE run_id = $1 AND recipient = 'person-lane' FOR UPDATE`,
+      [second.runId], 500)
+    await pause(50)
+    const folding = foldAll([first.runId, second.runId])
+    await pause(100)
+    // The watcher's denial: with only the launcher's lock taken, it would delete the second run's row and wait on the
+    // first's, which the fold holds, while the fold waits on that second row.
+    const denial = deny("person-wade")
+    await Promise.all([blocker, folding, denial])
+    expect(await rowOf(Notifications.runSubject(first.runId), "person-wade")).toBeUndefined()
+    expect(await rowOf(Notifications.runSubject(second.runId), "person-wade")).toBeUndefined()
+    expect(await rowOf(Notifications.runSubject(second.runId), "person-lane")).toMatchObject({ state: "done" })
+  })
+
+  test("two transactions folding the same people's runs in opposite orders finish", async () => {
+    const first = await run("person-ava", "person-wes")
+    const second = await run("person-bo", "person-wes")
+    await sql(`UPDATE runs SET status = 'done', waiting = NULL WHERE id IN ($1, $2)`, first.runId, second.runId)
+    const blocker = holding(`SELECT 1 FROM notifications WHERE run_id = $1 FOR UPDATE`, [first.runId], 500)
+    await pause(50)
+    const forward = foldAll([first.runId, second.runId])
+    await pause(100)
+    const backward = foldAll([second.runId, first.runId])
+    await Promise.all([blocker, forward, backward])
+    expect((await rows(Notifications.runSubject(first.runId))).map((row) => row.state)).toEqual(["done", "done"])
+    expect((await rows(Notifications.runSubject(second.runId))).map((row) => row.state)).toEqual(["done", "done"])
   })
 
   test("a launcher whose first role read never heard from GitHub still hears of their run", async () => {
