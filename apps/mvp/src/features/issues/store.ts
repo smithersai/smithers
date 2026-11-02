@@ -113,6 +113,11 @@ export interface RepoIssues {
    * once nothing asked, or the route refused.
    */
   readonly first: Query<typeof itemQuery>
+  /**
+   * The repository's first page of issues as the issues route answered it, before its summaries synced: what a cold
+   * list shows first, in memory only. Empty once nothing asked, or the route refused.
+   */
+  readonly firstPage: LiveRows<ItemSummary>
   readonly conversation: Query<typeof conversationQuery>
   readonly synced: Query<typeof syncedQuery>
   readonly unsynced: Query<typeof unsyncedQuery>
@@ -271,6 +276,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     triageSettings: emptyTriage,
     access: emptyAccess,
     workLinks: emptyWork,
+    firstPage: yield* rowsQuery(emptyItems),
     ...(yield* queriesOf(emptyItems, emptyDetails, emptyComments, emptySync, emptyTriage, emptyAccess, emptyWork)),
     reconnect: Effect.void,
   }
@@ -440,8 +446,41 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         Stream.runForEach((rows) => Effect.forEach(rows, ({ id }) => Effect.ignore(requested.delete(id)), { discard: true })),
         Effect.forkIn(scope, { startImmediately: true }),
       )
+      // A cold list asks the issues route for its first page beside its summaries: the server authorizes it as it does
+      // them, and the page shows it, with no counts, until the summaries arrive.
+      const firstPage = yield* Collection.local<ItemSummary, string>({ id: `issue-first-page:${id}`, schema: ItemSummary, getKey: byId })
+      if (client.issues !== undefined) {
+        const [owner, name] = id.slice("github/".length).split("/") as [string, string]
+        yield* client.issues(owner, name).pipe(
+          Effect.flatMap((page) =>
+            items.tanstack.size > 0 ? Effect.void : firstPage.insert(page.map((issue) => ({
+              id: `${id}#${issue.number}`,
+              repoId: id,
+              number: issue.number,
+              kind: "issue" as const,
+              title: issue.title,
+              state: issue.state,
+              authorLogin: issue.author.login,
+              comments: issue.comments,
+              createdAt: issue.created_at,
+              updatedAt: issue.updated_at,
+              deletedAt: null,
+              writeId: null,
+              triage: (TRIAGE_STATES as ReadonlyArray<string>).includes(issue.triage) ? issue.triage as ItemSummary["triage"] : "proposed",
+              commitment: null,
+            })))
+          ),
+          // A refused read leaves the list to its summaries, as before.
+          Effect.tapError((refused) =>
+            Effect.logInfo("issues.first_page").pipe(Effect.annotateLogs({ feature: "issues", outcome: "refused", status: "status" in refused ? refused.status ?? 0 : 0 }))
+          ),
+          Effect.ignore,
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+      }
       const repo: RepoIssues = {
         id,
+        firstPage: yield* rowsQuery(firstPage),
         items,
         details,
         requestDetails: Effect.ignore(requestedDetails.insert({ id })),

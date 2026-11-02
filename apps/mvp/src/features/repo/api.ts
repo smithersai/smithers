@@ -206,6 +206,26 @@ export const OneIssue = Schema.Struct({
 })
 export type OneIssue = typeof OneIssue.Type
 
+/** One row of the issues route's page (`GET /api/repos/<owner>/<name>/issues`): a list's facts, no body. */
+export const ListedIssue = OneIssue.mapFields(({ body: _body, closed_at: _closed, ...rest }) => rest)
+export type ListedIssue = typeof ListedIssue.Type
+
+/** The first page of `GET .../issues?state=all&limit=100`, latest update first: what a cold list shows first. */
+export const getIssues = Effect.fn("repo.issues.get")(function* (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string },
+  within: Duration.Input,
+) {
+  return yield* exchange(
+    HttpClientRequest.get(
+      `${origin}${REPOS_ROUTE}/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/issues?state=all&limit=100`,
+    ),
+    within,
+    (status) => status === 200,
+    json(Schema.Array(ListedIssue)),
+  )
+})
+
 /** `GET .../issues/<number>`, read as the list is; any refusal, a 404 included, is `RepoRefused`. */
 export const getIssue = Effect.fn("repo.issue.get")(function* (
   origin: string,
@@ -239,6 +259,8 @@ export class RepoClient extends Context.Service<
     readonly role: (owner: string, name: string) => Effect.Effect<RepoRoleAnswer, RepoRefused>
     /** One issue with its body, from the issues route; absent in a client that doesn't read it. */
     readonly issue?: (owner: string, name: string, number: number) => Effect.Effect<OneIssue, RepoRefused>
+    /** The first page of a repository's issues, from the issues route; absent in a client that doesn't read it. */
+    readonly issues?: (owner: string, name: string) => Effect.Effect<ReadonlyArray<ListedIssue>, RepoRefused>
   }
 >()("@smthrs/mvp/repo/RepoClient") {
   /** The real client: RepoApi at `origin`, with `within` for each whole request. */
@@ -257,6 +279,7 @@ export class RepoClient extends Context.Service<
           about: (owner, name) => withClient(getAbout(options.origin, { owner, name }, options.within)),
           role: (owner, name) => withClient(getRole(options.origin, { owner, name }, options.within)),
           issue: (owner, name, number) => withClient(getIssue(options.origin, { owner, name, number }, options.within)),
+          issues: (owner, name) => withClient(getIssues(options.origin, { owner, name }, options.within)),
         })
       }),
     )
