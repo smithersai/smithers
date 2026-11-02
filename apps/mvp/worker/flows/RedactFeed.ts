@@ -1,5 +1,4 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
-import * as Cloudflare from "alchemy/Cloudflare"
 import { Node } from "@smthrs/plan"
 import { Cause, Clock, Effect, Layer, Metric, Ref, Schema } from "effect"
 import { SqlClient } from "effect/sql"
@@ -382,9 +381,3 @@ export const launcher = Effect.map(Ref.make<number | undefined>(undefined), (loo
     ),
   ))
 
-/**
- * `look` registered with the request's execution context to run after the response (workerd's `ctx.waitUntil`): what
- * ChatApi runs on each request, so no request waits on a claim or a start, however slow the host answers.
- */
-export const inBackground = <R>(look: Effect.Effect<void, never, R>) =>
-  Effect.flatMap(Cloudflare.WorkerExecutionContext, (context) => context.waitUntil(look))

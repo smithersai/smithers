@@ -13,6 +13,7 @@ import * as FeedLocks from "../FeedLocks.ts"
 import * as Flows from "../Flows.ts"
 import { incarnation, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
+import * as RequestBackground from "../RequestBackground.ts"
 import * as RedactFeed from "./RedactFeed.ts"
 
 const runtime = testFile("redact_feed")
@@ -342,7 +343,7 @@ test("the request path hands the look to the request's background: a host that n
   } as never)
   const look = await Effect.runPromise(RedactFeed.launcher)
   const began = Date.now()
-  await Effect.runPromise(RedactFeed.inBackground(look.pipe(Effect.provideService(Flows.FlowStarter, hung), Effect.provide(db), Effect.ignore)).pipe(
+  await Effect.runPromise(RequestBackground.inBackground(look.pipe(Effect.provideService(Flows.FlowStarter, hung), Effect.provide(db), Effect.ignore)).pipe(
     Effect.provideService(Cloudflare.WorkerExecutionContext, context),
   ) as Effect.Effect<void>)
   expect(Date.now() - began).toBeLessThan(200)

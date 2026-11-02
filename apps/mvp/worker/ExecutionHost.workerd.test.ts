@@ -6,34 +6,12 @@ import { TestSchemas } from "@smthrs/database"
 import * as Pg from "@effect/sql-pg"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
-import { build } from "esbuild"
 import { Miniflare } from "miniflare"
-import { fileURLToPath } from "node:url"
-import vibelang from "vibelang-unplugin/esbuild"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Pause from "./flows/Pause.ts"
-
-const entry = fileURLToPath(new URL("./test/workerd/worker.ts", import.meta.url))
-
-/** The harness Worker as one ES module, with workerd's own modules left to it. */
-const bundle = async () => {
-  const result = await build({
-    entryPoints: [entry],
-    bundle: true,
-    write: false,
-    format: "esm",
-    platform: "browser",
-    target: "es2022",
-    conditions: ["workerd", "worker", "browser"],
-    external: ["node:*", "cloudflare:*"],
-    logLevel: "silent",
-    // Workspace packages export their source, which can hold `.vibe` modules.
-    plugins: [vibelang()],
-  })
-  return result.outputFiles[0]!.text
-}
+import { bundle } from "./test/workerd/executionBundle.ts"
 
 interface Mark {
   readonly incarnation: string

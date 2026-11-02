@@ -64,6 +64,7 @@ import * as RunnerAdmin from "./runners/Admin.ts"
 import * as RunnerAudit from "./runners/Audit.ts"
 import * as RunnersApi from "./runners/Api.ts"
 import * as RedactFeed from "./flows/RedactFeed.ts"
+import * as RequestBackground from "./RequestBackground.ts"
 import * as FleetApi from "./runners/FleetApi.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
@@ -407,7 +408,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         const signedIn = Layer.mergeAll(checks, signIn.sessions.pipe(Layer.provide(checks)), BranchRoles.layer(roles))
         const starter = yield* flowStarter
         // After the response, never before it: no request waits on a claim or a start (ctx.waitUntil).
-        yield* RedactFeed.inBackground(
+        yield* RequestBackground.inBackground(
           launchFeedRedaction.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(database), Effect.ignore),
         )
         if (request.url.startsWith(`${AUTH_ROUTE}/`)) {
