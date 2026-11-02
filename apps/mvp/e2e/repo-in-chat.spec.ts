@@ -107,12 +107,19 @@ for (const live of [false, true]) {
     if (!live) await a.page.goto(scriptedAgent("show-issues"))
     await a.ready()
     const chat = a.page.url()
-    const issues = appViews(a.page, "issues", "smithersai/smithers issues")
-    const before = await issues.count()
+    // Electric may still be delivering older views: identify this ask's view by its write's receipt, not by a count.
+    const receipt = a.page.context().waitForEvent("response", {
+      timeout: 120_000,
+      predicate: (response) => {
+        const request = response.request()
+        return response.ok() && request.method() === "POST" && new URL(request.url()).pathname === "/api/views" &&
+          request.postDataJSON().template === "issues"
+      },
+    })
 
     const question = `Show me the issues of smithersai/smithers in the chat, ${word}`
     await a.askAndWaitTaken(question)
-    const view = issues.nth(before)
+    const view = a.page.locator(`.conversation-view[data-view="${(await receipt).request().postDataJSON().id}"]`)
     await step("the issues view shows in the chat", () => expect(view).toBeVisible({ timeout: 120_000 }))
     await expect(a.answerTo(question)).toHaveAttribute("data-role", "assistant", { timeout: 60_000 })
 
@@ -121,6 +128,6 @@ for (const live of [false, true]) {
     await step("A: Back to chat", () => backToChat(a.page).click())
     // Back where the view was opened from, the scripted agent's page included.
     await expect(a.page).toHaveURL(chat)
-    await expect(issues).toHaveCount(before + 1)
+    await expect(view).toHaveCount(1)
   })
 }

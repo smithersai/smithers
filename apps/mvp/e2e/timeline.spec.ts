@@ -156,8 +156,10 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
   })
 })
 
-test("Branch timeline: question, reply, run and TODO name their objects", {
-  annotation: { type: "summary", description: "Every branch entry identifies the question, flow or TODO while summaries arrive." },
+// Only questions and answers join the rail: a TODO draft, its run and its tool calls add no entries (FE-16,
+// docs/features/timeline.md#entry-text).
+test("Branch timeline: a TODO draft's question and answer name themselves, and the draft adds no entry", {
+  annotation: { type: "summary", description: "On a branch, the rail holds the question and its answer, each named, and no row for the TODO draft." },
 }, async ({ devices }) => {
   test.setTimeout(180_000)
   const [a] = await devices.open("Branch timeline")
@@ -182,8 +184,8 @@ test("Branch timeline: question, reply, run and TODO name their objects", {
       return first === -1 ? [] : buttons.slice(first).map((button) => button.textContent ?? "")
     }, `todo-draft octocat/Spoon-Knife ${word}`)
     await expect.poll(async () => (await ours()).length, { timeout: 30_000 }).toBeGreaterThan(1)
-    await expect(rows.filter({ hasText: `README release ${word} · draft` })).toHaveCount(1)
-    await expect.poll(async () => (await ours()).length).toBe(4)
+    await expect.poll(async () => (await ours()).length).toBe(2)
+    await expect(rows.filter({ hasText: `README release ${word}` })).toHaveCount(0)
     for (const label of await rows.allTextContents()) {
       expect(label.trim()).not.toMatch(/^(?:(?:Reply|Question|Answer|Tool|Run|TODO) (?:sent|completed|done|failed|queued|opened)|Working|Waiting(?: to send| for reply)?|Needs you|Not sent|Done|Failed|Queued)$/i)
       expect(label.trim().length).toBeGreaterThan(0)

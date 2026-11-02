@@ -10,7 +10,8 @@ import { devReload } from "./devReload"
 import { faultyApp, faults } from "./faults"
 import { allServerRows, type Row } from "./shape"
 import { appHome, atOwnPlace, guard, requires, target, UndeclaredNeed, writeHeaders } from "./target"
-import { expectOfflineErrors, problems, UNDECLARED, type Watched } from "./watch"
+import type { OfflineTransport } from "./offlineTransport"
+import { expectConsoleError, expectOfflineErrors, expectServerError, problems, UNDECLARED, type Watched } from "./watch"
 import {
   COULDNT_ANSWER,
   expect,
@@ -126,19 +127,27 @@ export class Device {
     readonly context: BrowserContext,
     // Its tabs run the app on its faulty services (`/app?faults`), healthy until the test throws a switch.
     readonly faulty: boolean,
+    // WebKit's emulation also blocks a controlled document's navigation: a device with a relay loses its real sockets.
+    readonly transport?: OfflineTransport,
   ) {}
 
   // The device loses its network: no sync and no asking. What it then logs offline is the test's doing (e2e/watch.ts).
   offline() {
     return step(`${this.name} goes offline`, async () => {
       expectOfflineErrors()
-      await this.context.setOffline(true)
+      if (this.transport === undefined) await this.context.setOffline(true)
+      else {
+        expectServerError("failed", "/api/*")
+        expectConsoleError("kCFErrorDomainCFNetwork error 310.")
+        this.transport.disconnect()
+      }
       await this.paint("offline")
     })
   }
 
   online() {
     return step(`${this.name} comes back online`, async () => {
+      this.transport?.reconnect()
       await this.context.setOffline(false)
       await this.paint("")
     })
@@ -439,9 +448,13 @@ export const serverRows = async (request: APIRequestContext, word: string): Prom
 class Devices {
   private extraHTTPHeaders: Record<string, string> = {}
   private proxy: BrowserContextOptions["proxy"]
+  private transport: OfflineTransport | undefined
 
   /** This device reaches the real server through a transport the test can disconnect. */
   withProxy(proxy: NonNullable<BrowserContextOptions["proxy"]>) { this.proxy = proxy }
+
+  /** Devices opened after this lose their network by `transport`'s sockets, not the browser's emulation. */
+  withTransport(transport: OfflineTransport) { this.transport = transport; this.proxy = transport.proxy }
 
   /** Content-free capture headers, applied before any device starts its worker. */
   withRequestHeaders(headers: Record<string, string>) { this.extraHTTPHeaders = { ...headers } }
@@ -540,7 +553,7 @@ class Devices {
           const secure = url.startsWith("https:")
           await context.addCookies(cookies.map((each) => ({ name: `${secure ? "__Host-" : ""}${each.name}`, value: each.value, url, secure })))
         }
-        const device = new Device(name, context, faulty)
+        const device = new Device(name, context, faulty, this.transport)
         this.all.push(device)
         return path === undefined ? this.tab(device, name) : this.openTab(device, name, path)
       }),
@@ -639,6 +652,7 @@ class Devices {
     // the video paths while the connection is live, then wait for close to finish them.
     const recordings = tabs.map((tab) => ({ name: tab.name, video: tab.page.video()?.path(), openedAt: tab.openedAt }))
     await Promise.all(this.all.map((device) => device.context.close().catch(() => undefined)))
+    await this.transport?.close()
     const videos = await Promise.all(recordings.map(async (recording) => ({ ...recording, video: await recording.video })))
     await writeManifest(this.testInfo, "devices.json", this.startedAt, videos, { word: this.word })
   }

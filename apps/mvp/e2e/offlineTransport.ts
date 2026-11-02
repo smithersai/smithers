@@ -5,6 +5,8 @@ import { connect, type Socket } from "node:net"
  * which also blocks service-worker navigation responses. TLS stays end to end; the relay never reads content.
  * Tests can select an owned local port for CONNECT authorities that omit theirs.
  */
+export type OfflineTransport = Awaited<ReturnType<typeof offlineTransport>>
+
 export const offlineTransport = async ({ defaultPort = 443 }: { readonly defaultPort?: number } = {}) => {
   const sockets = new Set<Socket>()
   let cut = false
@@ -33,9 +35,11 @@ export const offlineTransport = async ({ defaultPort = 443 }: { readonly default
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
   const address = server.address() as import("node:net").AddressInfo
   const disconnect = () => { cut = true; for (const socket of sockets) socket.destroy() }
+  const reconnect = () => { cut = false }
   return {
     proxy: { server: `http://127.0.0.1:${address.port}`, bypass: "<-loopback>" },
     disconnect,
+    reconnect,
     forwarded: () => forwarded,
     close: async () => { disconnect(); await new Promise<void>(resolve => server.close(() => resolve())) },
   }

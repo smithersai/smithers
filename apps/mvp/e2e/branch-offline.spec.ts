@@ -1,5 +1,6 @@
 import { expect, test } from "./devices"
 import { step } from "./fixtures"
+import { offlineTransport } from "./offlineTransport"
 import { OWN_BRANCH, ownPlace, requires } from "./target"
 
 // A branch's page opened offline (docs/features/branch-workspace.md#the-page): the device can't say whether this person
@@ -22,6 +23,8 @@ test("branch offline: a branch's page opened offline shows at once, and opens it
 }, async ({ devices, browserName }) => {
   test.setTimeout(180_000)
   const { path, name } = branch()
+  const transport = browserName === "webkit" ? await offlineTransport() : undefined
+  if (transport !== undefined) devices.withTransport(transport)
   const [tab] = await devices.open("Laptop")
   const { page } = tab
   // The log lines before going offline: tracking's run settling after them is this page's.

@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test"
 import { expect, test } from "./fixtures"
 import { requires, signedOut } from "./target"
+import { expectConsoleError } from "./watch"
 
 // Local coverage: the service-worker routing test below runs under alchemy dev. The docs-content test needs docsSite because alchemy dev does not serve the separate Starlight Worker or custom-domain routes.
 //
@@ -20,9 +21,13 @@ const underServiceWorker = async (page: Page) => {
   })
   await page.reload()
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
+  // Leaving before the app's modules finish loading cancels them, which WebKit reports as console errors.
+  await expect(page.locator("main#main-content")).toBeVisible({ timeout: 60_000 })
 }
 
-test("docs beside the app: the app's service worker leaves the docs site's pages to the network", { annotation: { type: "summary", description: "Once the app's service worker controls the origin, a docs page still comes from the network, while the app's own pages come from its shell." } }, async ({ page }) => {
+test("docs beside the app: the app's service worker leaves the docs site's pages to the network", { annotation: { type: "summary", description: "Once the app's service worker controls the origin, a docs page still comes from the network, while the app's own pages come from its shell." } }, async ({ page, browserName }) => {
+  // This test leaves pages at once; WebKit words each module load it cancels as an access-control failure.
+  if (browserName === "webkit") expectConsoleError("due to access control checks.")
   await underServiceWorker(page)
 
   const docs = await page.goto("/docs/installation/")
@@ -30,6 +35,7 @@ test("docs beside the app: the app's service worker leaves the docs site's pages
 
   const app = await page.goto("/app/flows")
   expect(app?.fromServiceWorker()).toBe(true)
+  await expect(page.locator("main#main-content")).toBeVisible({ timeout: 60_000 })
 })
 
 test("docs beside the app: /docs is the docs site, and every other path is the app", { annotation: { type: "summary", description: "On the deployment's domain, /docs and llms.txt answer from the docs site, and / is the app's landing." } }, async ({ page }) => {
