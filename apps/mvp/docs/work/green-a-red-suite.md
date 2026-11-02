@@ -15,3 +15,5 @@ Uses the catalog's @smthrs/database fixture identities and @smthrs/ui timeline. 
 Schema fix: shared identities normalize hyphens before truncation. All 55 stranded tests and 10 schema/reaper tests pass; library regressions 2/2 and all four typecheck projects pass on the mini.
 
 Desktop cleanup: viewport redraw consumes the full-page capture’s remaining budget; expired captures finalize their evidence interval without a second font wait. The real blocked-font regression retains the 15-second bound and verifies no later output or interval mutation.
+
+Gate bindings: `JobMachines.declared` reads `GATE_IMAGE` during ChatApi planning and the hosted sandbox layer reads it too. Infrastructure docs correctly name its consumers. The plan fixture now supplies a digest-pinned image so both documented inventory and real offline binding checks cover the gate-enabled deployment.
