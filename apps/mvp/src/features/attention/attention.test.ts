@@ -18,6 +18,7 @@ import { show } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Status } from "../status/status"
+import { RUNS_SHAPE_ROUTE } from "../status/contract"
 import { StatusStore } from "../status/store"
 import { dropped, hide, retry } from "./actions"
 import { Attention } from "./attention"
@@ -229,16 +230,25 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
 
   test("an act a device can't send yet shows at once and keeps up with a newer version", async () => {
     const api = await openApi()
-    const ann = await openDevice(api)
+    const ann = await openDevice(api, { faulty: true })
     // Ann's tablet: its engine never leads, so what it dispatches never runs, and its acts stay its own.
     const tablet = await openDevice(api, { answers: false })
     const answerId = await ask(ann, "Clean up old previews")
     const subject = `run:${answerId}`
     const first = await Effect.runPromise(api.answerTo("Clean up old previews"))
+    // Ann's status shape can lag behind the tablet's independent feed. Hold its actual response to pin that order.
+    const status = () => ann.status.queries.of(null).statuses.toArray.find((row) => row.id === answerId)
+    await until(() => expect(status()).toMatchObject({ state: "working" }))
+    const pause = await Effect.runPromise((await ann.shapes()).pause(RUNS_SHAPE_ROUTE))
     first.cell(askCell(`{ kind: "approval", prompt: "Delete the stale preview docs-v1?" }`))
     await until(() => expect(tablet.entry(subject)).toMatchObject({ state: "needs_you" }))
     tablet.attention.actions.dismiss(subject)
     await until(() => expect(tablet.entry(subject)).toBeUndefined())
+    await Effect.runPromise(pause.entered)
+    expect(status()?.state).not.toBe("needs_you")
+    await Effect.runPromise(pause.resume)
+    // Answer on the device whose card actually shows the question; another device's feed is no sync receipt.
+    await until(() => expect(status()).toMatchObject({ state: "needs_you" }))
     ann.status.actions.answer(answerId, true)
     ;(await Effect.runPromise(api.answerTo("Clean up old previews", 1))).cell(`ctx.done("Deleted docs-v1.")`)
     // Done is a new version: it shows on the tablet again until dismissed there too.

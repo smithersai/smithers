@@ -2,7 +2,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import type { Persistence } from "@smthrs/effect-tanstack-db"
 import { Interpreter } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Context, Duration, Effect, Exit, Latch, Layer, Ref, Stream, SubscriptionRef } from "effect"
+import { Context, Deferred, Duration, Effect, Exit, Latch, Layer, Ref, Stream, SubscriptionRef } from "effect"
 import { AuthClient } from "../features/auth/api"
 import { ChatClient, type Question, QuestionNotTaken } from "../features/chat/api"
 import { type AppOptions, realServices } from "../boot"
@@ -225,6 +225,8 @@ export class ShapeRecovery extends Context.Service<ShapeRecovery, {
   readonly withhold: (route: string) => Effect.Effect<void>
   readonly release: (route: string) => Effect.Effect<void>
   readonly lag: (route: string, duration: Duration.Input) => Effect.Effect<void>
+  /** Holds real responses after Electric answers, including a long poll already in flight. */
+  readonly pause: (route: string) => Effect.Effect<{ readonly entered: Effect.Effect<void>; readonly resume: Effect.Effect<void> }>
 }>()(
   "@smthrs/mvp/test/ShapeRecovery",
 ) {}
@@ -234,6 +236,7 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
   const failed = yield* Ref.make(0)
   const withheld = yield* Ref.make<ReadonlySet<string>>(new Set())
   const lagged = yield* Ref.make<ReadonlyMap<string, Duration.Duration>>(new Map())
+  const paused = new Map<string, { readonly entered: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> }>()
   const source = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.gen(function* () {
     const target = new URL(url)
     if ((yield* Ref.get(withheld)).has(target.pathname)) return new Response(null, { status: 503 })
@@ -243,6 +246,11 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
       return new Response(null, { status: 503 })
     }
     const response = yield* real.request(url, init)
+    const pause = paused.get(target.pathname)
+    if (pause !== undefined) {
+      yield* Deferred.succeed(pause.entered, undefined)
+      yield* Deferred.await(pause.release)
+    }
     // After Electric answered: a live request's change waits too, not only the request that asks for it.
     const lag = (yield* Ref.get(lagged)).get(target.pathname)
     if (lag !== undefined) yield* Effect.sleep(lag)
@@ -253,6 +261,15 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
       failures: Ref.get(failed),
       withhold: (route) => Ref.update(withheld, (routes) => new Set([...routes, route])),
       release: (route) => Ref.update(withheld, (routes) => new Set([...routes].filter((held) => held !== route))),
+      pause: (route) => Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        paused.set(route, { entered, release })
+        return {
+          entered: Deferred.await(entered),
+          resume: Effect.sync(() => paused.delete(route)).pipe(Effect.andThen(Deferred.succeed(release, undefined)), Effect.asVoid),
+        }
+      }),
       lag: (route, duration) =>
         Ref.update(lagged, (routes) => {
           const next = new Map(routes)
