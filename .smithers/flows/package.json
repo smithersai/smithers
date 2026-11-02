@@ -43,7 +43,7 @@
     "mermaid": "^11.17.2",
     "@smthrs/platform-bun": "workspace:*",
     "@smthrs/jj": "workspace:*",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-587937650a6b.tgz"
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
@@ -58,7 +58,7 @@
     "typescript-eslint": "8.69.0",
     "happy-dom": "20.13.2",
     "@types/bun": "1.4.4",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-ef39e96004c2.tgz",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz",
     "@smthrs/crypto": "workspace:*"
   }
 }

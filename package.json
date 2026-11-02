@@ -94,8 +94,8 @@
     "tinyglobby": "0.2.17",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:./.vibelang-toolchain/vibelang-0.0.11-ef39e96004c2.tgz",
-    "vibelang-unplugin": "file:./.vibelang-toolchain/vibelang-unplugin-0.0.11-0cd78f8e2c0c.tgz",
+    "vibelang": "file:./.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz",
+    "vibelang-unplugin": "file:./.vibelang-toolchain/vibelang-unplugin-0.0.11-4bdd892db92b.tgz",
     "vite": "^8.2.2",
     "ws": "8.22.0",
     "yaml": "2.9.0"
@@ -114,6 +114,6 @@
     "@effect/vitest": "4.1.0"
   },
   "dependencies": {
-    "vibelang-runtime": "file:./.vibelang-toolchain/vibelang-runtime-0.0.11-587937650a6b.tgz"
+    "vibelang-runtime": "file:./.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
   }
 }
