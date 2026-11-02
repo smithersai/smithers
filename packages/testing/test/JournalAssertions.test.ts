@@ -3,7 +3,7 @@ import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
 import { assertNoDivergence, firstDivergence } from "../src/Divergence.ts"
 import type { JournalEntryLike } from "../src/EngineSubject.vibe"
-import { expectJournal } from "../src/JournalAssertions.ts"
+import { expectJournal } from "../src/JournalAssertions.vibe"
 import { ExactlyOnceUnsupportedError, FixtureDivergenceError, JournalAssertionError } from "../src/TestingError.ts"
 
 const entries: ReadonlyArray<JournalEntryLike> = [

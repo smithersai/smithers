@@ -24,15 +24,15 @@ export type TerminalStatus = JournalEntryLike["outcome"]
  * @since 0.0.0
  */
 export interface JournalExpectations {
-  readonly executed: (stepKey: string) => Effect.Effect<void, JournalAssertionError>
+  readonly executed: (stepKey: string) => void!JournalAssertionError
   /**
    * Asserts the keys appear as a **subsequence** of the journal: every key in
    * turn, in this relative order, with any other entries allowed between and
    * around them. It is not a contiguous or an exhaustive match.
    */
-  readonly executedInOrder: (keys: ReadonlyArray<string>) => Effect.Effect<void, JournalAssertionError>
+  readonly executedInOrder: (keys: ReadonlyArray<string>) => void!JournalAssertionError
   /** Asserts the outcome of the entry with the highest `index`. */
-  readonly terminal: (status: TerminalStatus) => Effect.Effect<void, JournalAssertionError>
+  readonly terminal: (status: TerminalStatus) => void!JournalAssertionError
   /**
    * Assertions about the journaled external **effect** entries under `key`.
    * An ordinary step entry sharing the key never satisfies them: it fails with
@@ -50,9 +50,9 @@ export interface JournalExpectations {
  * @since 0.0.0
  */
 export interface EffectExpectations {
-  readonly atLeastOnce: () => Effect.Effect<void, JournalAssertionError>
-  readonly journaledAtMostOnce: () => Effect.Effect<void, JournalAssertionError>
-  readonly idempotencyKey: (key: string) => Effect.Effect<void, JournalAssertionError>
+  readonly atLeastOnce: () => void!JournalAssertionError
+  readonly journaledAtMostOnce: () => void!JournalAssertionError
+  readonly idempotencyKey: (key: string) => void!JournalAssertionError
   /**
    * Always fails: an engine can prove at-least-once delivery and at-most-once
    * journaling, but it cannot prove exactly-once external effect execution.
@@ -62,7 +62,7 @@ export interface EffectExpectations {
    * @since 0.0.0
    * @category assertions
    */
-  readonly exactlyOnce: () => Effect.Effect<void, ExactlyOnceUnsupportedError>
+  readonly exactlyOnce: () => void!ExactlyOnceUnsupportedError
 }
 
 const failure = (
@@ -70,7 +70,7 @@ const failure = (
   message: string,
   expected: unknown,
   actual?: unknown
-): Effect.Effect<never, JournalAssertionError> =>
+): never!JournalAssertionError =>
   Effect.fail(
     new JournalAssertionError({
       code,
