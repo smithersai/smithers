@@ -17,6 +17,10 @@
 .issues-schedule-label { align-self: center; }
 
 .issues-status-line { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+/* A link on this line is often the page's only action: on a touch screen it's a 32 px target, as every control is. */
+@media (max-width: 960px) {
+  .issues-status-line > a { display: inline-flex; align-items: center; min-height: 32px; }
+}
 .issues-syncing { margin: 0; }
 
 .issues-sign-in [data-slot="card-content"] { display: flex; justify-content: center; }

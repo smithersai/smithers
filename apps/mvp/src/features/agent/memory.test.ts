@@ -180,7 +180,8 @@ test.each(["judged", "unavailable"] as const)("a nonempty opening is %s through 
   if (mode === "unavailable") {
     // An outage outlasted the judge's every durable attempt: the turn opens with no memory, and says so.
     expect(result.exit).toEqual(Exit.succeed({ ...turn, memoryDebug: { recalled: 2, inserted: 0, filtered: 2, skillsInserted: 0 }, opening: [] }))
-    expect(attempts).toBe(6)
+    // Their own Jev's lookup, which has no answer either, and the seat's six.
+    expect(attempts).toBe(7)
     expect(Effect.runSync(Metric.value(skipped)).count - before).toBe(1)
   } else {
     expect(result.exit).toEqual(Exit.succeed({ ...turn, memoryDebug: { recalled: 2, inserted: 1, filtered: 1, skillsInserted: 0 },

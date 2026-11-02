@@ -68,14 +68,16 @@ export class JudgeSeat extends Context.Service<
 }
 
 /**
- * Asks the person's own Jev through ChatApi, which holds their key: `404` means they have none. A failure keeps Jev's
- * code; one with no code is `unreachable`.
+ * Asks the person's own Jev through ChatApi, which holds their key: `404` means they have none. So does no answer at all:
+ * this request has no durable retries, and the seat's do, so a dropped connection doesn't cost every judgment its
+ * attempts, whoever has a Jev connection. A refusal keeps Jev's code; an answer with no code is `unreachable`.
  */
 const ownJev = (url: string, client: HttpClient.HttpClient) => (request: Evaluator.Request) =>
   Effect.gen(function* () {
     const body = { state: request.state, questions: request.questions }
-    const answer = yield* client.execute(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body))
-    if (answer.status === 404) return Option.none<Evaluator.Response>()
+    const sent = yield* client.execute(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body)).pipe(Effect.option)
+    if (Option.isNone(sent) || sent.value.status === 404) return Option.none<Evaluator.Response>()
+    const answer = sent.value
     const json = yield* answer.json
     if (answer.status !== 200) {
       const { code } = yield* decodeJevFailure(json)

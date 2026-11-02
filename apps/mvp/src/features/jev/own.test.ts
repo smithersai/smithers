@@ -100,12 +100,15 @@ describe("JudgeSeat.layer's own Jev", () => {
     expect(JSON.stringify(await ask())).toContain('"code":"refused"')
   })
 
-  test("an answer with no code of Jev's, or none at all, is unreachable", async () => {
+  test("no answer at all leaves the judgment to the seat, whose attempts are durable", async () => {
+    const { ask } = await seat(() => Promise.reject(new Error("no route")))
+    expect(await ask()).toEqual(Exit.succeed(Option.none()))
+  })
+
+  test("an answer with no code of Jev's, or that doesn't read, is unreachable", async () => {
     const unknown = await seat(() => Response.json({ code: "unavailable" }, { status: 503 }))
     expect(JSON.stringify(await unknown.ask())).toContain('"code":"unreachable"')
     const unreadable = await seat(() => new Response("oops", { status: 500 }))
     expect(JSON.stringify(await unreadable.ask())).toContain('"code":"unreachable"')
-    const down = await seat(() => Promise.reject(new Error("no route")))
-    expect(JSON.stringify(await down.ask())).toContain('"code":"unreachable"')
   })
 })

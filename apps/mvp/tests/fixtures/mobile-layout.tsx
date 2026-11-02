@@ -63,7 +63,7 @@ createRoot(document.getElementById("app")!).render(screen === null ? <>
       {["Issues", "Pull requests", "Runs", "Stack", "Secrets"].map(name => <Button key={name} variant="ghost">{name}</Button>)}
       <span className="repo-header-bell"><NotificationBell /></span>
     </header>
-    <p><a href="https://github.com/smithersai/smithers/issues/new">Open an issue on GitHub</a></p>
+    <p className="issues-status-line"><a href="https://github.com/smithersai/smithers/issues/new">Open an issue on GitHub</a></p>
     <RepositoryHome sections={[{ blocks: [{ type: "hero", title: "VibeLang", announcement: { label: "v0: the language will change", url: "https://example.com/announcement" } }] }]} />
   </main> : <><main className={`${screen}-screen`}><Button asChild><a href="/api/auth/sign-in">Sign in with GitHub</a></Button></main><div className="root-bell"><NotificationBell /></div></>}
 </>)
