@@ -147,7 +147,8 @@ export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [
   const [preview, setPreview] = useState<{ readonly title: string; readonly summary?: string; readonly detail: string; readonly left: number; readonly top: number } | undefined>();
   const show = (element: HTMLElement, title: string, detail: string, summary?: string) => {
     const box = element.getBoundingClientRect();
-    setPreview({ title, detail, left: Math.min(window.innerWidth - 250, box.left + 20), top: box.bottom + 4, ...(summary === undefined ? {} : { summary }) });
+    const right = Math.min(window.innerWidth - 10, rail.current?.getBoundingClientRect().right ?? window.innerWidth - 10);
+    setPreview({ title, detail, left: Math.max(0, Math.min(right - 240, box.left + 20)), top: box.bottom + 4, ...(summary === undefined ? {} : { summary }) });
   };
   const hide = () => setPreview(undefined);
   const jump = (id: string) => {
