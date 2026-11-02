@@ -301,8 +301,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // The first read of the row, bounded by Postgres itself at the request's deadline (`bounded`), so a lock on the
         // table can't hold it past the deadline whatever the client's cancellation does. Only a row that isn't fresh goes
         // on to `readExpired`.
-        const budget = yield* budgetOf(endsAt)
-        const state = yield* within(endsAt, inDatabase(bounded(readState(repository.id, actor.subject.id, undefined), budget, budget)))
+        const state = yield* within(endsAt, inDatabase(readState(repository.id, actor.subject.id, undefined)))
         if (Option.isSome(state.fresh)) return { source: "cached", resolved: heldBy(repository, actor, state.fresh.value) }
         return yield* readExpired(actor, repository, configured, undefined, "github", endsAt)
       })
@@ -343,8 +342,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         let pause = READ_POLL_MILLIS
         while (true) {
           // One read of the row: a fresh read newer than this request's, or the claim another holds.
-          const budget = yield* budgetOf(endsAt)
-          const state = yield* within(endsAt, inDatabase(bounded(readState(repoId, personId, after), budget, budget)))
+          const state = yield* within(endsAt, inDatabase(readState(repoId, personId, after)))
           if (Option.isSome(state.fresh)) return { source: "reused", resolved: heldBy(repository, actor, state.fresh.value) }
           if (state.claim?.failed === true) {
             return yield* new RoleRefused({ code: state.claim.refusal, retryAfterSeconds: Math.max(1, Math.ceil(state.claim.remainingSeconds)) })
@@ -528,12 +526,11 @@ const bounded = <A, E, R>(statement: Effect.Effect<A, E, R>, lockMillis = 1_000,
       return yield* statement
     })))
 
-/** What is left of a deadline at `endsAt` for Postgres to end a read at, at least 100 ms. */
-const budgetOf = (endsAt: number) => Effect.map(Clock.currentTimeMillis, (now) => Math.max(100, endsAt - now))
-
 /**
- * One read of the person's row on `repoId`, taking no lock: its role when a fresh read newer than `after` made it, and
- * another request's unexpired claim on reading it, whether that failed and how long it has left.
+ * One look at the person's row on `repoId`: its role when a fresh read newer than `after` made it, and another
+ * request's unexpired claim on reading it, whether that failed and how long it has left. One statement, outside any
+ * transaction, through `github_repo_role_state` (migration 0096), whose own `lock_timeout` lets Postgres end a wait
+ * behind a migration's lock on the table: the look holds a pooled connection for one round trip.
  */
 const readState = (repoId: string, personId: string, after: string | undefined) =>
   Effect.gen(function* () {
@@ -547,12 +544,8 @@ const readState = (repoId: string, personId: string, after: string | undefined) 
       readonly refusal: "unavailable" | "rate_limited" | null
       readonly remainingSeconds: number | null
     }>`
-      SELECT role, checked_at::text AS "checkedAt",
-        checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS})
-          ${after === undefined ? sql`` : sql`AND checked_at > ${after}::timestamptz`} AS fresh,
-        coalesce(read_until > clock_timestamp(), false) AS claimed, read_failed AS failed, read_refusal AS refusal,
-        EXTRACT(EPOCH FROM read_until - clock_timestamp())::float8 AS "remainingSeconds"
-      FROM github_repo_roles WHERE repo_id = ${repoId} AND person_id = ${personId}`
+      SELECT role, checked_at AS "checkedAt", fresh, claimed, failed, refusal, remaining_seconds AS "remainingSeconds"
+      FROM github_repo_role_state(${repoId}, ${personId}, ${after ?? null}::timestamptz, ${FRESH_SECONDS})`
     return {
       fresh: row !== undefined && row.fresh
         ? Option.some({ role: decodeRole(row.role), checkedAt: row.checkedAt })

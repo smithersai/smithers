@@ -415,6 +415,22 @@ describe("GET /api/repos/<owner>/<name>/role (decision 0079)", () => {
     expect(await roleOf(await r.get(ROLE_WIDGETS))).toEqual([200, { role: "maintainer", own: false }])
   })
 
+  // /role took 1.0-3.0 s on production after 265e9898 and held a pooled connection for each of two role looks: one for
+  // the answer and one for `readable`. Any role there reads the shapes; only a person with none needs the shapes' check.
+  test("readable asks the shapes' own check only for a person with no role there", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    let asked = 0
+    const mayRead = () => Effect.sync(() => { asked++; return false })
+    const r = await route({ sessions: signedIn(person("admin")), github, mayRead })
+    expect(await roleOf(await r.get(ROLE_WIDGETS))).toEqual([200, { role: "guest", own: false, readable: true }])
+    expect(asked).toBe(0)
+    github.roles.delete("maya")
+    await sql(runtime, `TRUNCATE github_repo_roles`)
+    expect(await roleOf(await r.get(ROLE_WIDGETS))).toEqual([200, { role: null, own: false, readable: false }])
+    expect(asked).toBe(1)
+  })
+
   test("where the deployment can't act, no role; GitHub failing is its refusal with a wait; sessions down 503", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "admin")

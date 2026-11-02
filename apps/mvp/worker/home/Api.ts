@@ -229,7 +229,11 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
       : decided.success.role
     const answer: RepoRoleAnswer = { role: decided.success.role, own,
       ...(workspaceRole === decided.success.role ? {} : { workspaceRole }),
-      ...(mayRead === undefined ? {} : { readable: yield* mayRead(repositoryOf(`${target.owner}/${target.name}`)) }),
+      // Any role there reads its shapes: only a person with none needs the shapes' own check (a public repository),
+      // which resolves the role again.
+      ...(mayRead === undefined ? {} : {
+        readable: decided.success.role !== null ? true : yield* mayRead(repositoryOf(`${target.owner}/${target.name}`)),
+      }),
       ...(maySync === undefined ? {} : { synced: yield* maySync(repositoryOf(`${target.owner}/${target.name}`)) }),
     }
     return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), { outcome: "answered", own, ...decided.success })

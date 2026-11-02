@@ -3,7 +3,7 @@
 // deployment's own repository, GitHub's, read with the App and kept for 5 minutes, on any other; every refusal; and the
 // row a write's transaction locks. Unhappy paths give it a faulty GitHub or an unreachable Postgres; nothing intercepts
 // a request.
-import { Clock, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted } from "effect"
+import { Clock, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -911,5 +911,87 @@ describe("a cooling hold in the database's clock", () => {
     const answered = refusal(await resolve(made))
     expect(answered?.retryAfterSeconds).toBeLessThanOrEqual(60)
     expect(await heldFor()).toBeLessThanOrEqual(60_000)
+  })
+})
+
+// Production, 2026-11-02: Hyperdrive's pool ran out (10 of 10 per slice, up to 30 waiting) while every role look was a
+// transaction of four round trips. The look is one statement now, and Postgres still bounds it: the function's own
+// lock_timeout ends a wait behind a migration's lock.
+describe("a role look is one statement, bounded by Postgres", () => {
+  const fresh = () => sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('${OTHER.id}', '${MAYA}', 'member')`)
+
+  test("a fresh row is read in one statement and no transaction", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const made = await roles(github)
+    await fresh()
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      },
+    })
+    const answered = await Effect.runPromise(Effect.result(made.resolve(maya, OTHER).pipe(Effect.provideService(Tracer.Tracer, tracer))))
+    expect(roleOf(answered)).toBe("member")
+    expect(spans.filter((span) => span.kind === "client").map((span) => span.name)).toHaveLength(1)
+    expect(spans.filter((span) => span.name === "sql.transaction")).toEqual([])
+  })
+
+  test("a look waiting behind a migration's lock on the table ends at Postgres' own bound, long before the deadline", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const made = await roles(github)
+    await fresh()
+    const database = await runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
+    const locked = Effect.runSync(Deferred.make<void>())
+    const done = runtime.runPromise(Effect.provide(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`LOCK TABLE github_repo_roles IN ACCESS EXCLUSIVE MODE`
+        yield* Deferred.succeed(locked, undefined)
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 4_000)))
+      }))), database))
+    await Effect.runPromise(Deferred.await(locked))
+    const startedAt = Date.now()
+    const answered = await resolve(made)
+    const tookMillis = Date.now() - startedAt
+    await done
+    // The request's deadline is 10 s; Postgres ended the wait at its 1 s lock_timeout.
+    expect(refusal(answered)?.code).toBe("unavailable")
+    expect(tookMillis).toBeLessThan(2_500)
+  })
+
+  // Astra on 9c62dff9: a STABLE function reads under its caller's snapshot, taken before any wait for the table's lock,
+  // so a role the lock's holder took away came back as the old one, fresh.
+  test("a look that waited behind the lock reads the role its holder committed", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const made = await roles(github)
+    await fresh()
+    const database = await runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
+    const locked = Effect.runSync(Deferred.make<void>())
+    const done = runtime.runPromise(Effect.provide(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`LOCK TABLE github_repo_roles IN ACCESS EXCLUSIVE MODE`
+        yield* Deferred.succeed(locked, undefined)
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 500)))
+        yield* client`UPDATE github_repo_roles SET role = NULL, checked_at = now() WHERE repo_id = ${OTHER.id} AND person_id = ${MAYA}`
+      }))), database))
+    await Effect.runPromise(Deferred.await(locked))
+    const answered = await resolve(made)
+    await done
+    expect(roleOf(answered)).toBeNull()
+    expect(github.calls).toEqual([])
+  })
+
+  // Astra on 9c62dff9: the function named its table through the caller's search_path, where a temporary table comes
+  // first.
+  test("the look reads its own schema's table, never one a session's search_path puts first", async () => {
+    await fresh()
+    const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`CREATE TEMPORARY TABLE github_repo_roles (repo_id text, person_id text, role text, checked_at timestamptz, read_until timestamptz, read_failed boolean, read_refusal text) ON COMMIT DROP`
+        yield* client`INSERT INTO pg_temp.github_repo_roles VALUES (${OTHER.id}, ${MAYA}, 'admin', now(), NULL, false, NULL)`
+        return yield* client<{ readonly role: string | null }>`SELECT role FROM github_repo_role_state(${OTHER.id}, ${MAYA}, NULL, 300)`
+      }))))
+    expect(row?.role).toBe("member")
   })
 })
