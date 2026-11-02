@@ -18,7 +18,7 @@ const pack = Smithers.NodeTest({
 })
 
 const cwd = ".smithers/flows"
-const sources = Smithers.glob("//.smithers/flows/**/*.ts")
+const sources = Smithers.glob("//.smithers/flows/**/*.{ts,vibe}")
 // The repository automation modules flows import and run (release, evidence,
 // issue claims, landing).
 const automationModules = Smithers.Filegroup({ cwd: ".smithers/flows", srcs: [Smithers.glob("**/*.mjs")] })
@@ -61,7 +61,7 @@ const suite = Smithers.NodeTest({
 
 // Lints flow sources; suites and fixtures are formatted, not linted.
 const lint = Smithers.EsLint({
-  sources: [Smithers.glob("**/*.ts")],
+  sources: [Smithers.glob("**/*.{ts,vibe}")],
   configs: [Smithers.file("eslint.config.js"), Smithers.file("//eslint.invariants.js")],
   deps: [],
   maxWarnings: 0,
@@ -206,7 +206,7 @@ const codingBackend = codingPackages.map((cwd) =>
   })
 )
 const codingScripts = automationModules
-const codingWiki = Smithers.Filegroup({ cwd: ".smithers/flows/wiki", srcs: [Smithers.glob("**/*.ts")] })
+const codingWiki = Smithers.Filegroup({ cwd: ".smithers/flows/wiki", srcs: [Smithers.glob("**/*.{ts,vibe}")] })
 const codingFiles = [
   sources,
   Smithers.glob("//.smithers/flows/**/*.mjs"),

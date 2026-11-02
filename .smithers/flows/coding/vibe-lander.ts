@@ -1,7 +1,7 @@
 /** Which lander this host delivers `coding/vibe` through, recorded once per flow so a restart never switches it. */
 import { Action } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
-import { Lander } from "./landing-schema.ts"
+import { Lander } from "./landing-schema.vibe"
 import { Landing } from "./landing.ts"
 import { CodingError } from "./schema.ts"
 

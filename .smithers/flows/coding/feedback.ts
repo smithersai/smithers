@@ -7,10 +7,10 @@ import { RunStore } from "@smthrs/run-store"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
 import * as RunLifecycle from "../../../packages/smithers/flows/engine-store/src/internal/RunLifecycle.ts"
 import { atomError } from "./atoms.ts"
-import { EarlyFeedback } from "./feedback-schema.ts"
+import { EarlyFeedback } from "./feedback-schema.vibe"
 import { Check, CodingError, Implementation, Plan, Receipt, receiptMatches, Result, ValidatedChange } from "./schema.ts"
 import { Assess, FastGate, Implement, recalled, receiptFindings, RunCheck, ValidatePlan } from "./workflow.ts"
-export { EarlyFeedback } from "./feedback-schema.ts"
+export { EarlyFeedback } from "./feedback-schema.vibe"
 
 export const FeedbackError = Schema.Union([atomError, EarlyFeedback])
 const Ready = DurableDeferred.make("coding/feedback/implementations-ready", { success: Schema.Boolean })

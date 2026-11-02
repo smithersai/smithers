@@ -20,7 +20,7 @@ import {
   LocalPull,
   PullChecks,
   QueuedAppend
-} from "./landing-schema.ts"
+} from "./landing-schema.vibe"
 import { Landing, requireBackend } from "./landing.ts"
 import { NativeCodingError, requestIdFor } from "./native.ts"
 import { type Check, CodingError, type Implementation, Receipt } from "./schema.ts"

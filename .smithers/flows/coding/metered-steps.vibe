@@ -17,9 +17,9 @@ export const attribute = MeteredDispatch.attributeExecutor
 /** `base`, attributed to the proxy the host's environment names. */
 export const layer = (
   base: Layer.Layer<RequestExecutor.RequestExecutor>,
-  proxy: string | undefined
+  proxy: string | undefined,
 ): Layer.Layer<RequestExecutor.RequestExecutor> =>
   proxy === undefined || proxy.trim() === "" ? base : Layer.effect(
     RequestExecutor.RequestExecutor,
-    Effect.map(RequestExecutor.RequestExecutor, (executor) => attribute(executor, proxy))
+    Effect.map(RequestExecutor.RequestExecutor, (executor) => attribute(executor, proxy)),
   ).pipe(Layer.provide(base))

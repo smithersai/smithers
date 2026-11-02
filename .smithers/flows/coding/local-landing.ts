@@ -21,7 +21,7 @@ import type {
   LocalPull,
   PullChecks,
   StackPublicationInput
-} from "./landing-schema.ts"
+} from "./landing-schema.vibe"
 import { Landing, type LocalLanding } from "./landing.ts"
 import { NativeCoding } from "./native.ts"
 import { CodingError, type Receipt } from "./schema.ts"

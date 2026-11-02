@@ -2,7 +2,7 @@
 import { Action, Flow, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Schema } from "effect"
-import { AppendObservation, AppendPreparation, LandingIdentity, QueuedAppend } from "../coding/landing-schema.ts"
+import { AppendObservation, AppendPreparation, LandingIdentity, QueuedAppend } from "../coding/landing-schema.vibe"
 import { backendLanding } from "../coding/landing.ts"
 import { NativeCoding, requestIdFor, SourceCreation } from "../coding/native.ts"
 import { CodingError, Revision } from "../coding/schema.ts"
