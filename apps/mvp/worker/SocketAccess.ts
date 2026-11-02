@@ -133,7 +133,9 @@ export const admit = (actor: Actor, basis: Basis, access: Admission["access"]) =
       const found = yield* SessionStore.authority(actor.session, actor.alias ?? null)
       if (Option.isNone(found) || found.value.personId !== actor.subject.id) return { _tag: "ended" } as Admitted
       if (!roleFresh(found.value.roleVerifiedAt, now, yield* roleFreshMs)) return { _tag: "stale" } as Admitted
-      expiresAt = found.value.expiresAt
+      // The end on this Worker's clock: the lookup started at `now`, and the database said how long was left then
+      // (decision 0151 rule 9), so a Worker clock skewed from the database's never lengthens the lease.
+      expiresAt = now + (found.value.expiresAt - found.value.serverNow)
     }
     return {
       _tag: "admitted",

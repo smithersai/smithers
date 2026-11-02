@@ -138,6 +138,11 @@ export interface Live {
    * (`host_sessions` has none), so its parent's.
    */
   readonly expiresAt: number
+  /**
+   * The database's `clock_timestamp()` when this lookup read `expiresAt`, epoch milliseconds: the one clock a tab
+   * counts `expiresAt` down against (decision 0151 rule 9), never the Worker's.
+   */
+  readonly serverNow: number
 }
 
 /** The live session `which` picks: not signed out, not revoked and not past its end. */
@@ -145,22 +150,25 @@ const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<
-      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt"> & {
+      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt" | "serverNow"> & {
         readonly roleCheckedAt: string
         readonly roleVerifiedAt: string | null
         readonly expiresAt: string
+        readonly serverNow: string
       }
     >`
       SELECT s.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
         (extract(epoch FROM s.role_verified_at) * 1000)::bigint::text AS "roleVerifiedAt",
-        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt"
+        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
       FROM sessions s JOIN people p ON p.id = s.person_id
       WHERE ${which(sql)} AND s.revoked_at IS NULL AND s.expires_at > now()`
     return Option.map(Option.fromNullishOr(row), (found): Live => ({
       ...found,
       roleCheckedAt: Number(found.roleCheckedAt),
       expiresAt: Number(found.expiresAt),
+      serverNow: Number(found.serverNow),
       roleVerifiedAt: found.roleVerifiedAt === null ? null : Number(found.roleVerifiedAt),
     }))
   })
@@ -172,6 +180,8 @@ export interface Authority {
   /** The newest confirmation of the person's role on any session of theirs, epoch ms; `null` never. */
   readonly roleVerifiedAt: number | null
   readonly expiresAt: number
+  /** The database's `clock_timestamp()` when the lookup read `expiresAt`, epoch ms: the clock `expiresAt` is on. */
+  readonly serverNow: number
 }
 
 /**
@@ -187,11 +197,13 @@ export const authority = (id: string, alias: string | null) =>
       readonly role: Role | null
       readonly roleVerifiedAt: string | null
       readonly expiresAt: string
+      readonly serverNow: string
     }>`
       SELECT s.person_id AS "personId", ${latestRole(sql, sql`s.person_id`)} AS role,
         (SELECT (extract(epoch FROM max(v.role_verified_at)) * 1000)::bigint::text FROM sessions v
           WHERE v.person_id = s.person_id) AS "roleVerifiedAt",
-        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt"
+        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
       FROM sessions s
       WHERE s.id = ${id} AND s.revoked_at IS NULL AND s.expires_at > now()
         AND (${alias}::uuid IS NULL OR EXISTS (
@@ -201,6 +213,7 @@ export const authority = (id: string, alias: string | null) =>
       role: found.role,
       roleVerifiedAt: found.roleVerifiedAt === null ? null : Number(found.roleVerifiedAt),
       expiresAt: Number(found.expiresAt),
+      serverNow: Number(found.serverNow),
     }))
   })
 
@@ -239,17 +252,19 @@ export const findHostLive = (tokenDigest: string, host: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<
-      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt"> & {
+      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt" | "serverNow"> & {
         readonly roleCheckedAt: string
         readonly roleVerifiedAt: string | null
         readonly home: string
         readonly expiresAt: string
+        readonly serverNow: string
       }
     >`
       SELECT h.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
         (extract(epoch FROM s.role_verified_at) * 1000)::bigint::text AS "roleVerifiedAt", s.id AS home,
-        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt"
+        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
       FROM host_sessions h JOIN sessions s ON s.id = h.parent_id JOIN people p ON p.id = s.person_id
       WHERE h.token_digest = ${tokenDigest} AND h.host = ${host} AND h.revoked_at IS NULL
         AND s.revoked_at IS NULL AND s.expires_at > now()`
@@ -258,6 +273,7 @@ export const findHostLive = (tokenDigest: string, host: string) =>
       roleCheckedAt: Number(found.roleCheckedAt),
       roleVerifiedAt: found.roleVerifiedAt === null ? null : Number(found.roleVerifiedAt),
       expiresAt: Number(found.expiresAt),
+      serverNow: Number(found.serverNow),
     }))
   })
 

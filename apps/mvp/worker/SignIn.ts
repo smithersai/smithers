@@ -86,6 +86,8 @@ export interface Signed {
    * which an alias session shares. None for local development's people, who have no session.
    */
   readonly expiresAt?: number
+  /** The database's `clock_timestamp()` when the lookup read `expiresAt`, epoch ms; present exactly when it is. */
+  readonly serverNow?: number
 }
 
 /** Sign-in's services when it is configured: what `auth/RecheckRole` needs, and the lifetimes. */
@@ -417,6 +419,7 @@ export const make = <E, R>(
         },
         login: live.value.login,
         expiresAt: live.value.expiresAt,
+        serverNow: live.value.serverNow,
       })
     }).pipe(Effect.withSpan("auth.resolve"))
 
@@ -931,9 +934,10 @@ export const make = <E, R>(
           role: signed.value.actor.role,
           hostedModel: hostedModel && Actor.canAsk(signed.value.actor),
           ...(install === undefined ? {} : { install }),
-          // Until when the session is live, and this server's now, so a tab counts down from when it asked.
+          // Until when the session is live, and the database's now read beside it, so a tab counts down on one clock
+          // from when it asked. Local development's people have no session: the Worker's now, with no end to compare.
           ...(signed.value.expiresAt === undefined ? {} : { expiresAt: signed.value.expiresAt }),
-          serverNow: yield* Clock.currentTimeMillis,
+          serverNow: signed.value.serverNow ?? (yield* Clock.currentTimeMillis),
         }
         : { signedIn: false, available: Option.isSome(setup) || options.fallback !== undefined, hostedModel }
       return HttpServerResponse.jsonUnsafe(state, { status: 200, headers: noStore })
