@@ -85,7 +85,7 @@ export const connectionOf = (personId: string, connectionId: string) =>
  * transaction under the step's invocation key.
  */
 export const set = (
-  write: Overflow & { readonly tokenSha256: string },
+  write: Overflow & { readonly tokenSha256: string; readonly repoAuthorized: boolean },
   by: Store.By,
 ): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -96,6 +96,7 @@ export const set = (
         tokenSha256: write.tokenSha256,
         labels: labelsOf(write),
         capacity: write.capacity,
+        repoAuthorized: write.repoAuthorized,
       }, by)
       // Written again, or refused by its fence: the setting stays as it is.
       if (change !== "set") return change

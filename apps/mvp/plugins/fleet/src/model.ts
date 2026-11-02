@@ -40,6 +40,11 @@ export interface Machine {
   readonly diskFreeGb: number | null
   /** Why the runner takes no job by its own admission rule (`load 31/24`); null or absent while it admits. */
   readonly held?: string | null | undefined
+  /**
+   * When a registration through the repository's Admin role authorized it (decision 0148). Null: it claims nothing
+   * until an Admin registers it again. Absent from a host that doesn't serve it.
+   */
+  readonly repoAuthorizedAt?: string | null | undefined
 }
 
 /** A state's tone, as `@smthrs/ui`'s badges tint it. */
@@ -143,9 +148,10 @@ export const runsOf = (runs: ReadonlyArray<AgentRun>, nowMs: number): ReadonlyAr
 
 /**
  * A machine's state: Online, Held (online, but its runner takes no job by its own admission rule, decision 0144),
- * Offline (unseen 45 s), Never seen, or Removed.
+ * Offline (unseen 45 s), Never seen, Removed, or Needs re-registration (no registration through the repository's Admin
+ * role authorized it, decision 0148, so the host refuses its claims whether it answers or not).
  */
-export type MachineState = "online" | "held" | "offline" | "unseen" | "removed"
+export type MachineState = "online" | "held" | "offline" | "unseen" | "removed" | "unauthorized"
 
 /** One machine as a row of the view. */
 export interface MachineRow {
@@ -172,6 +178,7 @@ const MACHINE_WORDS: Readonly<Record<MachineState, { readonly word: string; read
   offline: { word: "Offline", tone: "bad" },
   unseen: { word: "Never seen", tone: "muted" },
   removed: { word: "Removed", tone: "muted" },
+  unauthorized: { word: "Needs re-registration", tone: "bad" },
 }
 
 /** The machines as the view lists them, with each one's live jobs from `runs`, at `nowMs`: removed ones last. */
@@ -184,6 +191,8 @@ export const machinesOf = (
     const seenMs = at(machine.seenAt)
     const state: MachineState = machine.removedAt !== null
       ? "removed"
+      : machine.repoAuthorizedAt === null
+      ? "unauthorized"
       : seenMs === null
       ? "unseen"
       : nowMs - seenMs >= UNREACHABLE_MS

@@ -32,6 +32,11 @@ export interface RunnerWrite {
   readonly tokenSha256: string
   readonly labels: ReadonlyArray<string>
   readonly capacity: number
+  /**
+   * Whether the route that admitted the write took the Admin role GitHub gives on the repository (decision 0148). A
+   * write without it registers the runner unauthorized: it claims nothing until an Admin registers it again.
+   */
+  readonly repoAuthorized: boolean
 }
 
 /** An agent as an Admin sets it: its settings, and whether it is the repository's coding agent. */
@@ -146,8 +151,9 @@ const written = <C extends "set" | "removed" | "missing">(repoId: string, name: 
 
 /**
  * Registers runner `write.name` on its repository with its token's SHA-256, labels and capacity. Adding a name again
- * replaces them and brings a removed runner back; its old token is refused from then on. Fenced, only as `admit`
- * allows.
+ * replaces them and brings a removed runner back; its old token is refused from then on. The runner is marked
+ * authorized (`repo_authorized_at`, decision 0148) only when `write.repoAuthorized` says the route took the Admin role
+ * GitHub gives on the repository; else it is cleared. Fenced, only as `admit` allows.
  */
 export const addRunner = (write: RunnerWrite, by: By): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -156,12 +162,12 @@ export const addRunner = (write: RunnerWrite, by: By): Effect.Effect<Change, unk
       if (admitted !== "admitted") return admitted
       if ((yield* once("runner_changes", "add", write.repoId, write.name, by)) === "repeat") return "repeat" as const
       yield* sql`
-        INSERT INTO runners (repo_id, name, labels, capacity, token_sha256, added_by)
+        INSERT INTO runners (repo_id, name, labels, capacity, token_sha256, added_by, repo_authorized_at)
         VALUES (${write.repoId}, ${write.name}, ARRAY(SELECT jsonb_array_elements_text(${textArray(write.labels)}::jsonb)),
-          ${write.capacity}, ${write.tokenSha256}, ${by.actorId})
+          ${write.capacity}, ${write.tokenSha256}, ${by.actorId}, CASE WHEN ${write.repoAuthorized}::boolean THEN now() END)
         ON CONFLICT (repo_id, name) DO UPDATE SET labels = EXCLUDED.labels, capacity = EXCLUDED.capacity,
           token_sha256 = EXCLUDED.token_sha256, added_by = EXCLUDED.added_by, added_at = now(), seen_at = NULL,
-          removed_at = NULL`
+          removed_at = NULL, repo_authorized_at = EXCLUDED.repo_authorized_at`
       yield* bump(resourceKey("runners", write.repoId, write.name))
       return yield* written(write.repoId, write.name, by, "set")
     })))

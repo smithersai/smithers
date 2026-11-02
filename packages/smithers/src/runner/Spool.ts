@@ -94,6 +94,12 @@ export const open = (options: {
   readonly key: string
   readonly claim: string
   readonly scrub: (text: string) => string
+  /**
+   * Until when (epoch ms) events the host refuses for want of authorization
+   * are kept to send again (decision 0148); past it they are refused, as the
+   * host has ended the job itself. Always, unless set.
+   */
+  readonly keepUnauthorizedUntil?: number
 }): Effect.Effect<Spool, never, Scope.Scope> =>
   Effect.gen(function*() {
     const file = fileOf(options.stateDir, options.key)
@@ -164,7 +170,13 @@ export const open = (options: {
         yield* Effect.logWarning("runner.events").pipe(
           Effect.annotateLogs({ job: options.key, outcome: answer.failure.code, pending: pending.length })
         )
-        return answer.failure.code === "unavailable" ? "unavailable" as const : "refused" as const
+        // A host that refuses this runner for want of authorization or authentication (decision 0148) may take the
+        // events once it is registered again: kept, as for a host that can't be reached.
+        return answer.failure.code === "unavailable" ||
+            (Host.authorizationLost(answer.failure) &&
+              Date.now() < (options.keepUnauthorizedUntil ?? Number.POSITIVE_INFINITY))
+          ? "unavailable" as const
+          : "refused" as const
       }
       const acked = answer.success.next
       while (pending.length > 0 && pending[0]!.event.seq < acked) pending.shift()

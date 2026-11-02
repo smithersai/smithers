@@ -18,7 +18,7 @@ import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import * as Transcript from "@smthrs/agent/Transcript"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Deferred, Effect, Layer, Option, Schema } from "effect"
 import type * as Config from "./Config.ts"
 import * as Host from "./Host.ts"
 import * as Session from "./Session.ts"
@@ -35,6 +35,17 @@ export class SettleUnavailable extends Schema.TaggedError<SettleUnavailable>()(
   "@smthrs/cli/Runner/SettleUnavailable",
   {}
 ) {}
+
+/**
+ * How long past a job's deadline the runner asks again to settle it while
+ * the host refuses the runner for want of authorization: the host ends a
+ * claimed job `SETTLE_GRACE_SECONDS` (300 s) past its deadline itself, so
+ * past this nothing is recorded.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const SETTLE_GRACE_MS = 10 * 60 * 1000
 
 /**
  * What `runner/Settle` answers: whether the host recorded the outcome.
@@ -143,7 +154,12 @@ export const registration = (config: Config.Checked, controls: ReadonlyMap<strin
       SendTranscript.toLayer(({ job, outcome }) =>
         Effect.scoped(Effect.gen(function*() {
           // The host scrubs again; the spool's strings were scrubbed when they were written.
+          // Events refused for want of authorization are kept to send again, until the host has ended the job: past the
+          // grace after its deadline, or at once for a job the host stopped itself.
+          const control = controls.get(job.key)
+          const stopped = control !== undefined && (yield* Deferred.isDone(control.hostEnded))
           const spool = yield* Spool.open({
+            keepUnauthorizedUntil: stopped ? 0 : job.deadline + SETTLE_GRACE_MS,
             stateDir: config.stateDir,
             key: job.key,
             claim: job.claim,
@@ -163,26 +179,61 @@ export const registration = (config: Config.Checked, controls: ReadonlyMap<strin
           // The steers the agent read since the last heartbeat that reported them: a job that ended between two
           // heartbeats reports them here. After a restart that replays this step, none are known: they stay unread.
           const delivered = [...controls.get(job.key)?.delivered ?? []]
-          const answer = yield* host.settle({
+          const settle = host.settle({
             key: job.key,
             claim: job.claim,
             outcome,
             ...(delivered.length === 0 ? {} : { delivered })
-          }).pipe(
-            Effect.map((settled) => settled.recorded),
-            Effect.catchTag("@smthrs/cli/Runner/HostError", (error) =>
-              error.code === "unavailable" ? Effect.fail(new SettleUnavailable()) : Effect.succeed(false))
-          )
+          }).pipe(Effect.map((settled) => settled.recorded))
+          // Refused for want of authorization or authentication (decision 0148): the outcome and the checkout are
+          // kept, and the settlement asked again (1 s doubling to a minute), until the host takes it, the claim is
+          // lost, or `SETTLE_GRACE_MS` past the job's deadline, by when the host has ended the job itself. The bound is
+          // the payload's deadline, so it holds across restarts.
+          const control = controls.get(job.key)
+          const dropped = control?.dropped
+          let wait = 1000
+          let answer: boolean
+          while (true) {
+            const settled = yield* Effect.result(settle)
+            if (settled._tag === "Success") {
+              answer = settled.success
+              break
+            }
+            const error = settled.failure
+            if (error.code === "unavailable") return yield* new SettleUnavailable()
+            // A job the host ended itself while it refused the runner (its heartbeat said `cancel`) is ended there. Any
+            // other Stop is the runner's to settle: retried like any outcome.
+            const stopped = control !== undefined && (yield* Deferred.isDone(control.hostEnded))
+            if (!Host.authorizationLost(error) || stopped || Date.now() >= job.deadline + SETTLE_GRACE_MS) {
+              answer = false
+              break
+            }
+            yield* Effect.logWarning("runner.settle").pipe(
+              Effect.annotateLogs({ job: job.key, outcome: "not_authorized", waitMs: wait })
+            )
+            const lost = yield* Effect.sleep(Math.min(wait, Math.max(0, job.deadline + SETTLE_GRACE_MS - Date.now())))
+              .pipe(
+                Effect.as(false),
+                Effect.raceFirst(dropped === undefined ? Effect.never : Deferred.await(dropped).pipe(Effect.as(true)))
+              )
+            if (lost) {
+              answer = false
+              break
+            }
+            wait = Math.min(60_000, wait * 2)
+          }
           yield* Effect.logInfo("runner.settle").pipe(
             Effect.annotateLogs({ job: job.key, outcome: outcomeCode(outcome), recorded: answer })
           )
+          // A final outcome owes the checkout's removal, written down now and done by the serve loop's sweep, so the
+          // job's slot is freed without waiting for the mirror another job may hold.
           if (outcome._tag !== "Retryable") {
             const repository = config.repositories[job.task.repository]
             if (repository !== undefined) {
-              yield* Workspace.remove(
+              yield* Workspace.scheduleRemoval(
                 repository.mirror,
                 Workspace.of(config.stateDir, AgentRunner.parseKey(job.key).origin)
-              ).pipe(Effect.ignore)
+              )
             }
           }
           return { recorded: answer, outcome: outcomeCode(outcome) }

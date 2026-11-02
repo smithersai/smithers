@@ -42,8 +42,10 @@ nyc-02   Online             9/26   12.4   340G  1.0.0-rc.16  1 s ago
   Done, Retried (a generation that ended retryable; the next generation is its own row).
 - **Machines.** Every runner the repository registered, with no run too: Online, Held (online, but its runner takes no
   job by its own [admission](agent-runners.md#admission) rule, with its reason: `Held · load 31/24`, `Held · disk
-  31G/40G`), Offline (no request for 45 s), Never seen, Removed; its jobs of its capacity, load, free disk, version and
-  last request. The header counts Held runners as online and adds `· 1 held`.
+  31G/40G`), Offline (no request for 45 s), Never seen, Removed, or Needs re-registration (no registration through the
+  repository's Admin role authorized it, so the host refuses its claims: [registering a runner
+  again](agent-runners.md#registering-a-runner-again)); its jobs of its capacity, load, free disk, version and last
+  request. The header counts Held runners as online and adds `· 1 held`.
 - **Accounts.** The account label the runner's hook chose shows to Maintainers and Admins only; the shape leaves it out
   for anyone else. Never an email, a path or a token.
 - **Phone.** At 40 rem and below the runner, account, last event, usage and the machines' facts columns hide.
@@ -57,7 +59,7 @@ never both.
 | Query | Params | Rows |
 |---|---|---|
 | `core/agent-runs` | `{ repo: "owner/name" }` | `agent_runs` of the repository, newest first: `key`, `agent`, `generation`, `runId`, `number`, `title`, `runner`, `accountLabel` (Maintainers only), `state`, `reason`, `queuedAt`, `claimedAt`, `firstEventAt`, `lastEventAt`, `activityAt`, `endedAt`, `contextTokens`, `costUsd`, `transcriptBytes` |
-| `core/machines` | `{ repo: "owner/name" }` | `runners` of the repository, by name: `id`, `name`, `labels`, `capacity`, `seenAt`, `removedAt`, `version`, `load1`, `diskFreeGb`, `held` |
+| `core/machines` | `{ repo: "owner/name" }` | `runners` of the repository, by name: `id`, `name`, `labels`, `capacity`, `seenAt`, `removedAt`, `version`, `load1`, `diskFreeGb`, `held`, `repoAuthorizedAt` |
 
 Each is one Electric shape per repository, opened once a tab asks and kept while it lives (`src/features/fleet/store.ts`),
 never kept on the device. A first read answers once its first sync arrived, or after 30 s (`INDEX_FIRST_SYNC`), so rows

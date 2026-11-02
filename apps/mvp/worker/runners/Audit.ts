@@ -6,10 +6,10 @@ import { codeOf } from "../ErrorCode.ts"
 
 // The runner audit (decision 0148, docs/features/agent-runners.md#audit): `GET /api/runners/audit`, for an Admin of
 // the deployment's own repository (the session's role) acting in person. It lists every live runner on every
-// repository with who registered it, when, and the App's installation on its repository as Smithers recorded it, and
-// flags each runner registered where no installation was recorded, or before the installation record was last written:
-// before 2026-11-02 such a registration could take the deployment-wide role instead of the role GitHub gives on the
-// repository. Never a token or a token's digest.
+// repository with who registered it, when, whether a registration through the repository's Admin role authorized it,
+// and the App's installation on its repository as Smithers recorded it. It flags each runner that claims nothing until
+// someone acts: `needs_registration` (no registration through the route that takes the Admin role GitHub gives on the
+// repository; migration 0093 cleared every earlier one) and `no_installation`. Never a token or a token's digest.
 
 /** The route's path. */
 export const ROUTE = "/api/runners/audit"
@@ -17,14 +17,8 @@ export const ROUTE = "/api/runners/audit"
 /** Whether a path is the audit route. */
 export const handles = (path: string): boolean => path === ROUTE
 
-/**
- * The column a runner's registration is compared with: `github_repositories` keeps no time the installation was first
- * recorded, and `checked_at` is set by every write of the row (worker/github/Store.ts).
- */
-export const INSTALLATION_TIME = "github_repositories.checked_at"
-
-/** Why a runner's registration may not have proved access to its repository. */
-export type Flag = "no_installation" | "installation_recorded_after_added"
+/** Why a runner claims nothing until someone acts. */
+export type Flag = "needs_registration" | "no_installation"
 
 /** One live runner as the audit lists it. */
 export interface Row {
@@ -34,6 +28,8 @@ export interface Row {
   readonly addedBy: string
   readonly addedByLogin: string | null
   readonly addedAt: string
+  /** When a registration through the repository's Admin role authorized it (decision 0148), or null. */
+  readonly authorizedAt: string | null
   readonly labels: ReadonlyArray<string>
   readonly seenAt: string | null
   readonly installation: { readonly recorded: boolean; readonly checkedAt: string | null }
@@ -65,17 +61,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
         readonly addedBy: string
         readonly addedByLogin: string | null
         readonly addedAt: string
+        readonly authorizedAt: string | null
         readonly labels: ReadonlyArray<string>
         readonly seenAt: string | null
         readonly recorded: boolean
         readonly checkedAt: string | null
-        readonly recordedAfter: boolean
       }>`
         SELECT r.repo_id AS "repoId", r.name, r.added_by AS "addedBy", p.github_login AS "addedByLogin",
-          to_json(r.added_at)#>>'{}' AS "addedAt", r.labels, to_json(r.seen_at)#>>'{}' AS "seenAt",
+          to_json(r.added_at)#>>'{}' AS "addedAt", to_json(r.repo_authorized_at)#>>'{}' AS "authorizedAt",
+          r.labels, to_json(r.seen_at)#>>'{}' AS "seenAt",
           coalesce(g.installation_id IS NOT NULL, false) AS recorded,
-          to_json(g.checked_at)#>>'{}' AS "checkedAt",
-          coalesce(g.checked_at > r.added_at, false) AS "recordedAfter"
+          to_json(g.checked_at)#>>'{}' AS "checkedAt"
         FROM runners r
         LEFT JOIN github_repositories g ON g.repo_id = r.repo_id
         LEFT JOIN people p ON p.id::text = r.added_by
@@ -87,18 +83,19 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
         addedBy: row.addedBy,
         addedByLogin: row.addedByLogin,
         addedAt: row.addedAt,
+        authorizedAt: row.authorizedAt,
         labels: row.labels,
         seenAt: row.seenAt,
         installation: { recorded: row.recorded, checkedAt: row.checkedAt },
         flags: [
+          ...(row.authorizedAt === null ? ["needs_registration" as const] : []),
           ...(row.recorded ? [] : ["no_installation" as const]),
-          ...(row.recorded && row.recordedAfter ? ["installation_recorded_after_added" as const] : []),
         ],
       }))
       fields.runners = runners.length
       fields.flagged = runners.filter((runner) => runner.flags.length > 0).length
       fields.outcome = "listed"
-      return HttpServerResponse.jsonUnsafe({ installationTime: INSTALLATION_TIME, runners }, { headers: noStore })
+      return HttpServerResponse.jsonUnsafe({ runners }, { headers: noStore })
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {

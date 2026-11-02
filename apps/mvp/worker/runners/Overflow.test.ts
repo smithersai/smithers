@@ -142,7 +142,7 @@ describe("an Admin's overflow setting", () => {
       // Replaying the same durable writer invocation leaves the registration and setting unchanged.
       const kept = Option.getOrThrow(await runtime.runPromise(Overflow.read(REPO)))
       const invocation = { actorId: admin.subject.id, invocationKey: "repeat-overflow" }
-      const write = { ...kept, tokenSha256: digestSync(await tokenNow()) }
+      const write = { ...kept, tokenSha256: digestSync(await tokenNow()), repoAuthorized: true }
       expect(await runtime.runPromise(Overflow.set(write, invocation))).toBe("set")
       expect(await runtime.runPromise(Overflow.set(write, invocation))).toBe("repeat")
       const token = await tokenNow()
@@ -317,7 +317,7 @@ describe("the overflow wake", () => {
     expect(woken).toEqual([REPO])
     // A job pinned to an attached runner (a retry) never overflows, and a wake that fails fails no probe.
     await sql(`UPDATE runners SET seen_at = now() - interval '1 hour'`)
-    await runtime.runPromise(Store.addRunner({ repoId: REPO, name: "nyc-01", tokenSha256: "c".repeat(64), labels: ["linux"], capacity: 1 }, {
+    await runtime.runPromise(Store.addRunner({ repoId: REPO, name: "nyc-01", tokenSha256: "c".repeat(64), labels: ["linux"], capacity: 1, repoAuthorized: true }, {
       actorId: "person-admin",
       invocationKey: crypto.randomUUID(),
     }))

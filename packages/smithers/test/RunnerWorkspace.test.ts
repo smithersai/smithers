@@ -2,10 +2,25 @@
 // operations, refs and worktrees in files, and ten `jj workspace add`s at once on one colocated mirror fail some of
 // themselves ("Could not commit packed-ref transaction", or git's config lock). A runner with capacity above one starts
 // jobs at once, so every command that changes a mirror runs one at a time per mirror.
-import { Effect, Exit } from "effect"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { resolveJjBinary } from "@smthrs/jj/node/resolveJjBinary"
+import { Effect, Exit, Fiber, Option } from "effect"
+import { execFile, execFileSync, spawn } from "node:child_process"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
+import { createServer } from "node:http"
+import { devNull, tmpdir } from "node:os"
 import { join } from "node:path"
+import { promisify } from "node:util"
 import { afterEach, beforeEach, expect, test } from "vitest"
 import * as Workspace from "../src/runner/Workspace.ts"
 import * as Host from "./fixtures/runner/host.ts"
@@ -46,26 +61,33 @@ test("ten checkouts of one mirror at once are each made, read and forgotten", as
 // A private repository (decision 0148): the mirror is cloned and fetched over HTTPS with the host's credential, which
 // git sends as a header from the command's own environment, never in its arguments or the URL. A real git smart-HTTP
 // server on loopback (`git http-backend`) refuses any request without it.
-test("a missing mirror is cloned with the job's credential; without it, or with a wrong one, nothing is fetched", async () => {
-  const { execFileSync, spawn } = await import("node:child_process")
-  const { createServer } = await import("node:http")
+const secret = "ghs_runner_workspace_secret"
+const basic = Buffer.from(`x-access-token:${secret}`).toString("base64")
+
+/** Plain git, for the fixtures: no system or global configuration. */
+const git = (args: Array<string>, cwd?: string) =>
+  execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull }
+  }).trim()
+
+/** A private repository served at `remote`, which answers only `basic`; its first commit and its second. */
+const serve = async () => {
   const source = join(root, "source")
-  const git = (args: Array<string>, cwd?: string) =>
-    execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", HOME: root } }).trim()
   git(["init", "-q", "-b", "main", source])
-  writeFileSync(join(source, "README.md"), "private\n")
   git(["-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-q", "--allow-empty", "-m", "base"], source)
+  const first = git(["rev-parse", "HEAD"], source)
+  writeFileSync(join(source, "README.md"), "private\n")
   git(["add", "README.md"], source)
   git(["-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-q", "-m", "readme"], source)
   const base = git(["rev-parse", "HEAD"], source)
   git(["clone", "-q", "--bare", source, join(root, "served", "private.git")])
-  const secret = "ghs_runner_workspace_secret"
-  const expected = `Basic ${Buffer.from(`x-access-token:${secret}`).toString("base64")}`
   const seen: Array<string> = []
   const server = createServer((request, response) => {
     seen.push(request.url ?? "")
-    if (request.headers.authorization?.toLowerCase() !== expected.toLowerCase()) {
-      response.writeHead(401, { "www-authenticate": 'Basic realm="test"' }).end()
+    if (request.headers.authorization?.toLowerCase() !== `basic ${basic}`.toLowerCase()) {
+      response.writeHead(401, { "www-authenticate": "Basic realm=\"test\"" }).end()
       return
     }
     const url = new URL(request.url ?? "/", "http://localhost")
@@ -103,29 +125,609 @@ test("a missing mirror is cloned with the job's credential; without it, or with 
     cgi.stdout.on("end", () => response.end())
   })
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
+  const remote = `http://127.0.0.1:${(server.address() as { port: number }).port}/private.git`
+  const credential = { remote, username: "x-access-token", password: secret }
+  const close = () => new Promise<void>((done) => server.close(() => done()))
+  /** A new commit on the served repository, which a mirror cloned before lacks: its id. */
+  const advance = () => {
+    git(["-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-q", "--allow-empty", "-m", "later"], source)
+    git(["push", "-q", join(root, "served", "private.git"), "main"], source)
+    return git(["rev-parse", "HEAD"], source)
+  }
+  return { remote, first, base, seen, credential, close, advance }
+}
+
+/** A credential the checkout asks for, counted. */
+const counted = (credential: Workspace.GitCredential | undefined) => {
+  const asked = { count: 0 }
+  const effect = Effect.sync(() => {
+    asked.count++
+    return Option.fromNullishOr(credential)
+  })
+  return { asked, effect }
+}
+
+const made = (exit: Exit.Exit<unknown, unknown>) => Exit.isSuccess(exit) ? "made" : String(exit.cause)
+
+/** Runs `body` with `env` set on this process, as the runner's own environment, then puts it back. */
+const withEnv = async <A>(env: Record<string, string>, body: () => Promise<A>): Promise<A> => {
+  const before = Object.fromEntries(Object.keys(env).map((name) => [name, process.env[name]]))
+  Object.assign(process.env, env)
   try {
-    const remote = `http://127.0.0.1:${(server.address() as { port: number }).port}/private.git`
-    const stateDir = join(root, "state")
-    const missing = (name: string) => join(root, `mirror-${name}`)
-    // No credential: a missing mirror is never cloned.
-    expect(Exit.isFailure(await Effect.runPromise(Effect.exit(Workspace.create(missing("none"), base, Workspace.of(stateDir, "none")))))).toBe(true)
-    // A wrong credential: git is refused.
-    const wrong = { remote, username: "x-access-token", password: "wrong" }
-    expect(Exit.isFailure(await Effect.runPromise(Effect.exit(Workspace.create(missing("wrong"), base, Workspace.of(stateDir, "wrong"), wrong))))).toBe(true)
-    // The job's credential: cloned, checked out at the base.
-    const credential = { remote, username: "x-access-token", password: secret }
-    const checkout = Workspace.of(stateDir, "right")
-    const made = await Effect.runPromise(Effect.exit(Workspace.create(missing("right"), base, checkout, credential)))
-    expect(Exit.isSuccess(made) ? "made" : String(made.cause)).toBe("made")
-    expect(readFileSync(join(checkout.dir, "README.md"), "utf8")).toBe("private\n")
-    expect(seen.every((path) => !path.includes(secret))).toBe(true)
-    expect(Workspace.gitAuthEnv(credential)).toEqual({
-      GIT_CONFIG_COUNT: "1",
-      GIT_CONFIG_KEY_0: `http.${new URL(remote).origin}/.extraheader`,
-      GIT_CONFIG_VALUE_0: `AUTHORIZATION: ${expected.replace("Basic", "basic")}`,
-      GIT_TERMINAL_PROMPT: "0"
-    })
+    return await body()
   } finally {
-    await new Promise<void>((done) => server.close(() => done()))
+    for (const [name, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+}
+
+test(
+  "a missing mirror is cloned with the job's credential; without it, or with a wrong one, nothing is fetched",
+  async () => {
+    const served = await serve()
+    try {
+      const stateDir = join(root, "state")
+      const missing = (name: string) => join(root, `mirror-${name}`)
+      // No credential: a missing mirror is never cloned.
+      const none = counted(undefined)
+      expect(
+        made(
+          await Effect.runPromise(
+            Effect.exit(Workspace.create(missing("none"), served.base, Workspace.of(stateDir, "none"), none.effect))
+          )
+        )
+      )
+        .not.toBe("made")
+      expect(none.asked.count).toBe(1)
+      // A wrong credential: git is refused.
+      const wrong = counted({ ...served.credential, password: "wrong" })
+      expect(
+        made(
+          await Effect.runPromise(
+            Effect.exit(Workspace.create(missing("wrong"), served.base, Workspace.of(stateDir, "wrong"), wrong.effect))
+          )
+        )
+      )
+        .not.toBe("made")
+      // The job's credential: cloned, checked out at the base, never in a URL.
+      const right = counted(served.credential)
+      const checkout = Workspace.of(stateDir, "right")
+      expect(
+        made(
+          await Effect.runPromise(Effect.exit(Workspace.create(missing("right"), served.base, checkout, right.effect)))
+        )
+      ).toBe("made")
+      expect(readFileSync(join(checkout.dir, "README.md"), "utf8")).toBe("private\n")
+      expect(served.seen.every((path) => !path.includes(secret))).toBe(true)
+    } finally {
+      await served.close()
+    }
+  },
+  120_000
+)
+
+test("the credential is asked for only when the mirror must fetch, and a refusal stops the fetch", async () => {
+  const served = await serve()
+  try {
+    const stateDir = join(root, "state")
+    const mirror = join(root, "mirror")
+    // A missing mirror is cloned with it.
+    const cloned = counted(served.credential)
+    expect(
+      made(
+        await Effect.runPromise(
+          Effect.exit(Workspace.create(mirror, served.first, Workspace.of(stateDir, "a"), cloned.effect))
+        )
+      )
+    )
+      .toBe("made")
+    expect(cloned.asked.count).toBe(1)
+    // A base the mirror has: no credential is asked for, so a host that would refuse is never asked.
+    const unused = Effect.sync(() => {
+      throw new Error("never asked")
+    })
+    expect(
+      made(
+        await Effect.runPromise(
+          Effect.exit(Workspace.create(mirror, served.first, Workspace.of(stateDir, "b"), unused))
+        )
+      )
+    )
+      .toBe("made")
+    // A refusal: the error is the refusal's, and nothing is fetched.
+    const before = served.seen.length
+    const refused = await Effect.runPromise(
+      Effect.exit(
+        Workspace.create(mirror, "f".repeat(40), Workspace.of(stateDir, "c"), Effect.fail("refused" as const))
+      )
+    )
+    expect(refused).toEqual(Exit.fail("refused"))
+    expect(served.seen.length).toBe(before)
+  } finally {
+    await served.close()
   }
 }, 120_000)
+
+// Astra's finding: with GIT_TRACE2_EVENT and GIT_TRACE2_ENV_VARS=GIT_CONFIG_VALUE_0 in the runner's environment, git
+// wrote the reversible header to the trace file. The control proves the same environment makes plain git write it.
+test("git tracing in the runner's environment or git's global configuration never records the credential", async () => {
+  const served = await serve()
+  const traces = join(root, "traces")
+  mkdirSync(traces)
+  const home = join(root, "home")
+  mkdirSync(home)
+  writeFileSync(
+    join(home, ".gitconfig"),
+    `[trace2]\n\teventTarget = ${join(traces, "global-event")}\n\tenvVars = GIT_CONFIG_VALUE_0\n`
+  )
+  const tracing = {
+    HOME: home,
+    GIT_TRACE: join(traces, "trace"),
+    GIT_TRACE2: join(traces, "trace2"),
+    GIT_TRACE2_EVENT: join(traces, "event"),
+    GIT_TRACE2_PERF: join(traces, "perf"),
+    GIT_TRACE2_ENV_VARS: "GIT_CONFIG_VALUE_0,GIT_CONFIG_PARAMETERS",
+    GIT_TRACE_CURL: join(traces, "curl"),
+    GIT_TRACE_CURL_NO_DATA: "0",
+    GIT_TRACE_REDACT: "0",
+    GIT_CURL_VERBOSE: "1",
+    GIT_TRACE_PACKET: join(traces, "packet")
+  }
+  const recorded = () => readdirSync(traces).map((name) => readFileSync(join(traces, name), "utf8")).join("\n")
+  try {
+    // The control: plain git, with the credential's environment, records it.
+    // Asynchronously: the server answering it runs on this process's event loop.
+    await promisify(execFile)("git", ["ls-remote", served.remote], {
+      env: { ...process.env, ...tracing, ...Workspace.gitAuthEnv(served.credential) }
+    })
+    expect(recorded()).toContain(basic)
+    rmSync(traces, { recursive: true, force: true })
+    mkdirSync(traces)
+    const exit = await withEnv(
+      tracing,
+      () =>
+        Effect.runPromise(
+          Effect.exit(
+            Workspace.create(
+              join(root, "mirror"),
+              served.base,
+              Workspace.of(join(root, "state"), "t"),
+              Effect.succeed(Option.some(served.credential))
+            )
+          )
+        )
+    )
+    expect(made(exit)).toBe("made")
+    const written = recorded()
+    expect(written).not.toContain(secret)
+    expect(written).not.toContain(basic)
+  } finally {
+    await served.close()
+  }
+}, 120_000)
+
+// Sol's finding: an agent running as the runner's user can set `git.executable-path` in the mirror's jj configuration
+// (`jj config set --repo` from its checkout) to a wrapper that reads the next fetch's environment.
+test(
+  "jj configuration an agent writes for the mirror can't run another git, or a hook, with the credential",
+  async () => {
+    const served = await serve()
+    const xdg = join(root, "xdg")
+    const captured = join(root, "captured")
+    const evil = join(root, "evil-git")
+    writeFileSync(evil, `#!/bin/sh\nenv > "${captured}"\nexec git "$@"\n`)
+    chmodSync(evil, 0o755)
+    try {
+      await withEnv({ XDG_CONFIG_HOME: xdg }, async () => {
+        const mirror = join(root, "mirror")
+        const stateDir = join(root, "state")
+        expect(
+          made(
+            await Effect.runPromise(
+              Effect.exit(
+                Workspace.create(
+                  mirror,
+                  served.first,
+                  Workspace.of(stateDir, "a"),
+                  Effect.succeed(Option.some(served.credential))
+                )
+              )
+            )
+          )
+        )
+          .toBe("made")
+        // The agent, from its checkout, with the runner's own user configuration directory.
+        execFileSync(resolveJjBinary().path, ["config", "set", "--repo", "git.executable-path", evil], {
+          cwd: Workspace.of(stateDir, "a").dir,
+          env: { ...process.env, XDG_CONFIG_HOME: xdg },
+          stdio: "ignore"
+        })
+        // The control: the mirror's jj configuration does name the wrapper.
+        expect(
+          execFileSync(resolveJjBinary().path, ["config", "get", "git.executable-path"], {
+            cwd: mirror,
+            env: { ...process.env, XDG_CONFIG_HOME: xdg },
+            encoding: "utf8"
+          }).trim()
+        ).toBe(evil)
+        // A fetch for a commit the mirror lacks: the runner's own git, whatever the mirror's jj configuration names.
+        const later = served.advance()
+        const exit = await Effect.runPromise(
+          Effect.exit(
+            Workspace.create(
+              mirror,
+              later,
+              Workspace.of(stateDir, "b"),
+              Effect.succeed(Option.some(served.credential))
+            )
+          )
+        )
+        expect(made(exit)).toBe("made")
+        expect(existsSync(captured)).toBe(false)
+        // A hook in the mirror's git store, which a fetch's ref updates would run with the credential's environment.
+        // The mirror is colocated (`.git`) or keeps its git store under `.jj`: a hook in whichever it has.
+        for (const store of [join(mirror, ".git"), join(mirror, ".jj", "repo", "store", "git")]) {
+          if (!existsSync(join(store, "HEAD"))) continue
+          mkdirSync(join(store, "hooks"), { recursive: true })
+          writeFileSync(join(store, "hooks", "reference-transaction"), `#!/bin/sh\nenv > "${captured}"\n`)
+          chmodSync(join(store, "hooks", "reference-transaction"), 0o755)
+        }
+        const again = served.advance()
+        const second = await Effect.runPromise(
+          Effect.exit(
+            Workspace.create(
+              mirror,
+              again,
+              Workspace.of(stateDir, "c"),
+              Effect.succeed(Option.some(served.credential))
+            )
+          )
+        )
+        expect(made(second)).toBe("made")
+        // jj may run git for its own bookkeeping, which runs the hook; never a command with the credential.
+        const seen = existsSync(captured) ? readFileSync(captured, "utf8") : ""
+        expect(seen).not.toContain(secret)
+        expect(seen).not.toContain(basic)
+      })
+    } finally {
+      await served.close()
+    }
+  },
+  120_000
+)
+
+test("a credentialed command's environment has none of the runner's GIT_* or jj's; any other keeps the runner's", () => {
+  const base = {
+    PATH: "/bin",
+    HTTPS_PROXY: "http://proxy.internal:3128",
+    GIT_TRACE2_EVENT: "/tmp/e",
+    GIT_CURL_VERBOSE: "0",
+    GIT_CONFIG_PARAMETERS: "'core.hooksPath'='/x'",
+    GIT_EXEC_PATH: "/x",
+    GIT_SSH_COMMAND: "ssh -i key",
+    GIT_ASKPASS: "/x/askpass",
+    GIT_SSL_NO_VERIFY: "1",
+    SSH_ASKPASS: "/x/askpass",
+    JJ_USER: "u",
+    RUST_LOG: "trace"
+  }
+  const credentialed = Workspace.commandEnv(base, { GIT_CONFIG_COUNT: "1" }, true)
+  expect(credentialed).toEqual({
+    PATH: "/bin",
+    HTTPS_PROXY: "http://proxy.internal:3128",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_COUNT: "1"
+  })
+  // Astra: git turns curl's tracing on when GIT_CURL_VERBOSE is set at all, "0" included; it is never set.
+  expect(Object.keys(credentialed)).not.toContain("GIT_CURL_VERBOSE")
+  // A public repository's fetch keeps the runner's own git setup, such as a deploy key's.
+  expect(Workspace.commandEnv(base, {}, false)).toMatchObject({
+    GIT_SSH_COMMAND: "ssh -i key",
+    GIT_CONFIG_PARAMETERS: base.GIT_CONFIG_PARAMETERS
+  })
+})
+
+test("a credential goes only to an HTTPS remote, or HTTP on loopback, with nothing but a host and path", () => {
+  expect(Workspace.trustedRemote("https://github.com/acme/app.git")?.href).toBe("https://github.com/acme/app.git")
+  expect(Workspace.trustedRemote("http://127.0.0.1:8080/app.git")?.href).toBe("http://127.0.0.1:8080/app.git")
+  for (
+    const remote of [
+      "http://github.com/acme/app.git",
+      "ssh://git@github.com/acme/app.git",
+      "git@github.com:acme/app.git",
+      "file:///tmp/app.git",
+      "https://user:pass@github.com/acme/app.git",
+      "https://github.com/acme/app.git?x=1",
+      "https://github.com/acme/app.git#x",
+      "not a url"
+    ]
+  ) expect(Workspace.trustedRemote(remote)).toBeUndefined()
+})
+
+/** A server that records each request's path and Authorization header, and answers 401. */
+const capturing = async () => {
+  const requests: Array<string> = []
+  const server = createServer((request, response) => {
+    requests.push(`${request.method} ${request.url} ${request.headers.authorization ?? ""}`)
+    response.writeHead(401, { "www-authenticate": "Basic realm=\"capture\"" }).end()
+  })
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  return { url, requests, close: () => new Promise<void>((done) => server.close(() => done())) }
+}
+
+/** The mirror's git store, colocated (`.git`) or under `.jj`. */
+const gitStoreOf = (mirror: string) =>
+  [join(mirror, ".git"), join(mirror, ".jj", "repo", "store", "git")].find((store) => existsSync(join(store, "HEAD")))!
+
+// Astra's review of 5fc33348: the credentialed fetch ran in the mirror, whose git configuration an agent writes from its
+// checkout. A remote changed to SSH with `core.sshCommand`, a remote that answers 401 with `credential.helper`, a proxy,
+// a CA, a URL rewrite or an included file each ran a program with the credential's environment or sent the header
+// elsewhere. The fetch now runs in a store only the runner writes, against the credential's own remote.
+test("git configuration an agent plants in the mirror or the fetch store never sees the credential", async () => {
+  const served = await serve()
+  const capture = await capturing()
+  const captured = join(root, "captured")
+  mkdirSync(captured)
+  const spy = (name: string) => {
+    const path = join(root, `spy-${name}`)
+    writeFileSync(path, `#!/bin/sh\nenv > "${join(captured, name)}"\nexit 1\n`)
+    chmodSync(path, 0o755)
+    return path
+  }
+  try {
+    const mirror = join(root, "mirror")
+    const stateDir = join(root, "state")
+    expect(
+      made(
+        await Effect.runPromise(
+          Effect.exit(
+            Workspace.create(
+              mirror,
+              served.first,
+              Workspace.of(stateDir, "a"),
+              Effect.succeed(Option.some(served.credential))
+            )
+          )
+        )
+      )
+    ).toBe("made")
+    const store = gitStoreOf(mirror)
+    const plant = (file: string, key: string, value: string) => git(["config", "--file", file, "--add", key, value])
+    const included = join(root, "included.gitconfig")
+    writeFileSync(included, `[core]\n\tsshCommand = ${spy("included-ssh")}\n`)
+    const mirrorConfig = join(store, "config")
+    git(["config", "--file", mirrorConfig, "remote.origin.url", `ssh://git@127.0.0.1:1/private.git`])
+    plant(mirrorConfig, "core.sshCommand", spy("ssh"))
+    plant(mirrorConfig, "credential.helper", spy("helper"))
+    plant(mirrorConfig, "core.askPass", spy("askpass"))
+    plant(mirrorConfig, "http.proxy", capture.url)
+    plant(mirrorConfig, "http.sslCAInfo", join(root, "evil-ca.pem"))
+    plant(mirrorConfig, "include.path", included)
+    plant(mirrorConfig, "core.fsmonitor", spy("fsmonitor"))
+    // The control: plain git in the mirror, with the credential's environment, sends the header to the capture's
+    // proxy, and on its 401 runs the planted helper with the credential in its environment.
+    await promisify(execFile)("git", [`--git-dir=${store}`, "ls-remote", served.remote], {
+      env: {
+        ...process.env,
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: devNull,
+        ...Workspace.gitAuthEnv(served.credential)
+      }
+    }).catch(() => undefined)
+    expect(capture.requests.join("\n")).toContain(basic)
+    expect(readFileSync(join(captured, "helper"), "utf8")).toContain(basic)
+    capture.requests.length = 0
+    rmSync(captured, { recursive: true, force: true })
+    mkdirSync(captured)
+    // A rewrite of the credential's remote to the capture, after the control so it doesn't hide the proxy there.
+    plant(mirrorConfig, `url.${capture.url}/.insteadOf`, served.remote.replace(/private\.git$/, ""))
+    // The fetch store, as an agent that found it would leave it.
+    const fetchStore = Workspace.fetchStoreOf(realpathSync(stateDir), mirror)
+    expect(existsSync(join(fetchStore, "HEAD"))).toBe(true)
+    plant(join(fetchStore, "config"), "http.proxy", capture.url)
+    plant(join(fetchStore, "config"), "credential.helper", spy("store-helper"))
+    plant(join(fetchStore, "config"), "include.path", included)
+    mkdirSync(join(fetchStore, "hooks"), { recursive: true })
+    writeFileSync(join(fetchStore, "hooks", "reference-transaction"), `#!/bin/sh\nenv > "${join(captured, "hook")}"\n`)
+    chmodSync(join(fetchStore, "hooks", "reference-transaction"), 0o755)
+    mkdirSync(join(fetchStore, "objects", "info"), { recursive: true })
+    writeFileSync(join(fetchStore, "objects", "info", "alternates"), `${join(root, "nowhere")}\n`)
+    // A fetch for a commit the mirror lacks: the credential's own remote, the runner's configuration.
+    const later = served.advance()
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Workspace.create(mirror, later, Workspace.of(stateDir, "b"), Effect.succeed(Option.some(served.credential)))
+      )
+    )
+    expect(made(exit)).toBe("made")
+    expect(capture.requests).toEqual([])
+    const seen = readdirSync(captured).map((name) => readFileSync(join(captured, name), "utf8")).join("\n")
+    expect(seen).not.toContain(secret)
+    expect(seen).not.toContain(basic)
+    expect(served.seen.every((path) => !path.includes(secret))).toBe(true)
+    // The mirror's own configuration is the agent's still: the runner leaves it as it found it.
+    expect(git(["config", "--file", mirrorConfig, "http.proxy"])).toBe(capture.url)
+  } finally {
+    await Promise.all([served.close(), capture.close()])
+  }
+}, 120_000)
+
+/** Every link under `dir`, walked without following one. */
+const linksUnder = (dir: string): Array<string> =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isSymbolicLink()
+      ? [join(dir, entry.name)]
+      : entry.isDirectory()
+      ? linksUnder(join(dir, entry.name))
+      : []
+  )
+
+// Astra's review of 4cd69527: only the store's own directory was checked, so a link planted on the way to it, or in its
+// retained objects, `objects/info` or refs, made the cleanup remove files elsewhere and the fetch write there.
+test(
+  "a link planted on the way to the fetch store or inside it is never followed: removed, and the store made anew",
+  async () => {
+    const served = await serve()
+    const outside = join(root, "outside")
+    mkdirSync(join(outside, "fetch-target"), { recursive: true })
+    mkdirSync(join(outside, "info-target"), { recursive: true })
+    mkdirSync(join(outside, "refs-target", "heads"), { recursive: true })
+    writeFileSync(join(outside, "fetch-target", "keep"), "keep\n")
+    writeFileSync(join(outside, "info-target", "alternates"), "keep\n")
+    writeFileSync(join(outside, "info-target", "http-alternates"), "keep\n")
+    writeFileSync(join(outside, "refs-target", "heads", "keep"), "keep\n")
+    const snapshot = () =>
+      ["fetch-target/keep", "info-target/alternates", "info-target/http-alternates", "refs-target/heads/keep"].map(
+        (path) => existsSync(join(outside, path)) ? readFileSync(join(outside, path), "utf8") : "gone"
+      )
+    try {
+      const mirror = join(root, "mirror")
+      const stateDir = join(root, "state")
+      // On the way: the stores' own directory is a link to elsewhere before the first fetch.
+      mkdirSync(stateDir, { recursive: true })
+      symlinkSync(join(outside, "fetch-target"), join(stateDir, "fetch"))
+      const first = await Effect.runPromise(
+        Effect.exit(
+          Workspace.create(
+            mirror,
+            served.first,
+            Workspace.of(stateDir, "a"),
+            Effect.succeed(Option.some(served.credential))
+          )
+        )
+      )
+      expect(made(first)).toBe("made")
+      expect(readdirSync(join(outside, "fetch-target"))).toEqual(["keep"])
+      const store = Workspace.fetchStoreOf(realpathSync(stateDir), mirror)
+      expect(existsSync(join(store, "HEAD"))).toBe(true)
+      // Inside: `objects/info` and `refs` are links to elsewhere.
+      rmSync(join(store, "objects", "info"), { recursive: true, force: true })
+      symlinkSync(join(outside, "info-target"), join(store, "objects", "info"))
+      rmSync(join(store, "refs"), { recursive: true, force: true })
+      symlinkSync(join(outside, "refs-target"), join(store, "refs"))
+      const later = served.advance()
+      const second = await Effect.runPromise(
+        Effect.exit(
+          Workspace.create(mirror, later, Workspace.of(stateDir, "b"), Effect.succeed(Option.some(served.credential)))
+        )
+      )
+      expect(made(second)).toBe("made")
+      expect(snapshot()).toEqual(["keep\n", "keep\n", "keep\n", "keep\n"])
+      expect(readdirSync(join(outside, "refs-target", "heads"))).toEqual(["keep"])
+      expect(linksUnder(join(realpathSync(stateDir), "fetch"))).toEqual([])
+    } finally {
+      await served.close()
+    }
+  },
+  120_000
+)
+
+test("a remote that isn't HTTPS, or HTTP on loopback, is never fetched with a credential", async () => {
+  const capture = await capturing()
+  try {
+    for (const remote of [capture.url.replace("127.0.0.1", "localhost.invalid"), "ssh://git@127.0.0.1:1/x.git"]) {
+      const exit = await Effect.runPromise(
+        Effect.exit(
+          Workspace.create(
+            join(root, `mirror-${capture.requests.length}-${remote.length}`),
+            "f".repeat(40),
+            Workspace.of(join(root, "state"), remote),
+            Effect.succeed(Option.some({ remote, username: "x-access-token", password: secret }))
+          )
+        )
+      )
+      expect(made(exit)).not.toBe("made")
+    }
+    expect(capture.requests).toEqual([])
+  } finally {
+    await capture.close()
+  }
+})
+
+/** Whether `name` is a workspace of `mirror`, as jj lists them. */
+const listed = (mirror: string, name: string) =>
+  execFileSync(resolveJjBinary().path, ["-R", mirror, "workspace", "list", "-T", "name ++ \"\\n\""], {
+    encoding: "utf8",
+    env: { ...process.env, JJ_CONFIG: join(root, "jj-config-for-listing") }
+  }).split("\n").includes(name)
+
+const until = async (condition: () => boolean, timeoutMs: number) => {
+  const deadline = Date.now() + timeoutMs
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error(`not within ${timeoutMs} ms`)
+    await new Promise((done) => setTimeout(done, 25))
+  }
+}
+
+// Astra's review of 8ff1df66: the forget's exit code was ignored, so a forget that failed (the mirror's lock held, or
+// out of time) still deleted the checkout and the owed removal's record, and the mirror kept the workspace for good.
+test("a removal whose forget fails stays owed, and a later sweep, after a restart too, does it", async () => {
+  const mirror = Host.mirror(root)
+  const stateDir = join(root, "state")
+  const checkout = Workspace.of(stateDir, "owed")
+  expect(made(await Effect.runPromise(Effect.exit(Workspace.create(mirror.path, mirror.base, checkout))))).toBe("made")
+  await Effect.runPromise(Workspace.scheduleRemoval(mirror.path, checkout))
+  const record = join(stateDir, "removals", `${checkout.name}.json`)
+  const failing = join(root, "failing")
+  const fake = join(root, "fake-jj")
+  writeFileSync(
+    fake,
+    `#!/bin/sh\nif [ -f "${failing}" ] && [ "$3" = workspace ] && [ "$4" = forget ]; then echo "lock held" >&2; exit 1; fi\nexec "${resolveJjBinary().path}" "$@"\n`
+  )
+  chmodSync(fake, 0o755)
+  writeFileSync(failing, "")
+  await withEnv({ SMITHERS_JJ_PATH: fake }, async () => {
+    await Effect.runPromise(Workspace.sweep(stateDir))
+    expect(existsSync(record)).toBe(true)
+    expect(existsSync(checkout.dir)).toBe(true)
+    expect(listed(mirror.path, checkout.name)).toBe(true)
+    // The lock let go; a runner started again sweeps what is owed from disk.
+    rmSync(failing)
+    await Effect.runPromise(Workspace.sweep(stateDir))
+  })
+  expect(existsSync(record)).toBe(false)
+  expect(existsSync(checkout.dir)).toBe(false)
+  expect(listed(mirror.path, checkout.name)).toBe(false)
+}, 120_000)
+
+// Astra's review of 8ff1df66: a checkout was deleted with a synchronous `rmSync`, so a large one, or a slow filesystem,
+// stopped the runner's event loop (Stop, lost claims, deadlines, every job's heartbeat) and no timeout could interrupt it.
+test("a slow deletion leaves the event loop free, and an interrupted one is killed whole and stays owed", async () => {
+  const mirror = Host.mirror(root)
+  const stateDir = join(root, "state")
+  const checkout = Workspace.of(stateDir, "slow")
+  expect(made(await Effect.runPromise(Effect.exit(Workspace.create(mirror.path, mirror.base, checkout))))).toBe("made")
+  const bin = join(root, "bin")
+  mkdirSync(bin)
+  const pids = join(root, "rm-pids")
+  writeFileSync(join(bin, "rm"), `#!/bin/sh\necho $$ >> "${pids}"\nsleep 60\nexec /bin/rm "$@"\n`)
+  chmodSync(join(bin, "rm"), 0o755)
+  await withEnv({ PATH: `${bin}:${process.env.PATH ?? ""}` }, async () => {
+    const removing = Effect.runFork(Workspace.remove(mirror.path, checkout))
+    await until(() => existsSync(pids), 30_000)
+    // The loop answers a timer on time while `rm` runs.
+    const asked = Date.now()
+    await new Promise((done) => setTimeout(done, 100))
+    expect(Date.now() - asked).toBeLessThan(1_000)
+    const interrupted = Date.now()
+    await Effect.runPromise(Fiber.interrupt(removing))
+    expect(Date.now() - interrupted).toBeLessThan(15_000)
+  })
+  const pid = Number(readFileSync(pids, "utf8").trim().split("\n")[0])
+  expect(alive(pid)).toBe(false)
+  // Interrupted, nothing was deleted: the removal is done again later.
+  expect(existsSync(checkout.dir)).toBe(true)
+}, 120_000)
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}

@@ -41,10 +41,24 @@ import * as Acp from "@smthrs/agent/Acp"
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import * as Transcript from "@smthrs/agent/Transcript"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
-import { Cause, Deferred, Effect, Exit, Fiber, Option, Queue, Schema, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, type Latch, Option, Queue, Schema, Stream } from "effect"
 import { execFile } from "node:child_process"
-import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  writeSync
+} from "node:fs"
+import { dirname } from "node:path"
 import type * as Config from "./Config.ts"
+import * as Credential from "./Credential.ts"
 import * as Host from "./Host.ts"
 import * as Spool from "./Spool.ts"
 import * as Tree from "./Tree.ts"
@@ -85,6 +99,22 @@ export type JobPayload = typeof JobPayload.Type
 export interface Control {
   readonly cancel: Deferred.Deferred<void>
   readonly dropped: Deferred.Deferred<void>
+  /**
+   * Whether the host takes this runner's requests (decision 0148), as its
+   * heartbeats find: `latch` is open while it does; `suspended` completes when
+   * a heartbeat is refused `403 not_authorized` and is replaced by a fresh one
+   * when a heartbeat is taken again. While suspended, the work stops the agent,
+   * keeps the checkout and its checkpoint, and waits on `latch` to resume the
+   * session; the job's execution is never ended for it.
+   */
+  readonly authorization: { suspended: Deferred.Deferred<void>; readonly latch: Latch.Latch }
+  /**
+   * Completed when the host, refusing the runner, said it ended the job
+   * itself for a Stop (a heartbeat's `403 { cancel: true }`). Unlike
+   * `cancel`, which any Stop completes, only this says no settlement or
+   * transcript can be recorded any more.
+   */
+  readonly hostEnded: Deferred.Deferred<void>
   readonly reclaimed: boolean
   /** The messages people sent the agent, each once, as the host handed them out. */
   readonly steers: Queue.Queue<AgentRunner.Steer>
@@ -272,20 +302,32 @@ export const work = (
     if (repository === undefined) return yield* report(failed("workspace"))
     const profile = config.profiles[job.task.agent.profile]
     if (profile === undefined) return yield* report(failed("refused"))
-    if (!Workspace.exists(checkout)) {
-      if (job.generation > 1 || control.reclaimed) return yield* report(failed("machine_lost"))
-      // A private repository's mirror fetches with the host's read credential for this job (decision 0148). A public
-      // one, or a host without the route, fetches as before; a refusal leaves the fetch to fail on its own.
-      const host = yield* Host.Host
-      const credential = yield* host.gitCredential({ key: job.key, claim: job.claim }).pipe(Effect.option)
-      const made = yield* Effect.exit(Workspace.create(
-        repository.mirror,
-        job.task.base,
-        checkout,
-        Option.getOrUndefined(credential)
-      ))
-      if (Exit.isFailure(made)) return yield* report(failed("workspace"))
+    // A checkout whose mark says it was still being made when the runner stopped is incomplete, whatever its
+    // directory holds: it is made again. No agent ran in it, since the mark goes, durably, only once it is complete,
+    // before the record that an agent is about to run is written. Both there (a machine that lost the mark's removal
+    // but kept the record) is never discarded: the record wins, and the mark goes.
+    const incomplete = existsSync(checkout.provisioning) && !existsSync(checkout.started)
+    if (!Workspace.exists(checkout) || incomplete) {
+      // Gone after an agent was about to run in it (its record, or its session checkpoint): that work is lost. Else
+      // no agent ran (a claim handed back before the checkout was begun, or one whose making was cut short), so the
+      // checkout is made, costing no generation or restart; an incomplete one's directory is discarded first, as part
+      // of the same controlled attempt.
+      if (!incomplete && (existsSync(checkout.started) || existsSync(checkout.checkpoint))) {
+        return yield* report(failed("machine_lost"))
+      }
+      const ended = yield* provision(repository.mirror, job, checkout, control).pipe(
+        Effect.ensuring(Effect.sync(() => Credential.forget(job)))
+      )
+      // Not made: the mark stays until the job's settlement forgets the checkout, so a runner that stops before then
+      // discards whatever `jj workspace add` left rather than taking it for a checkout.
+      if (ended !== undefined) return yield* report(ended.outcome, ended.fields)
     }
+    // The checkout is complete: its mark goes, then the record that an agent is about to run in it is kept, each
+    // through to disk (the directory entry included) before the next.
+    yield* Effect.sync(() => {
+      durablyRemove(checkout.provisioning)
+      durably(checkout.started, `${job.key}\n`)
+    })
     if (Date.now() >= job.deadline) return yield* report(failed("timeout"))
     const saved = readCheckpoint(checkout)
     const same = saved !== undefined && saved.generation === job.generation
@@ -312,31 +354,195 @@ export const work = (
       ...(profile.secretEnv ?? []).flatMap((name) => base[name] === undefined ? [] : [base[name]]),
       ...Object.values(chosen.env)
     ])
-    const outcome = yield* Effect.scoped(Effect.gen(function*() {
-      const spool = yield* Spool.open({ stateDir: config.stateDir, key: job.key, claim: job.claim, scrub })
-      yield* Effect.forkScoped(spool.upload)
-      return yield* session({
-        profile,
-        job,
-        checkout,
-        mirror: repository.mirror,
-        control,
-        env: { ...base, ...chosen.env },
-        resume: same ? saved.sessionId : undefined,
-        checkpoint: {
-          generation: job.generation,
-          env: chosen.env,
-          ...account,
-          // A later generation keeps the ledger: a steer handed to an earlier one is never handed over again.
-          ...(saved?.steers === undefined ? {} : { steers: saved.steers })
-        },
-        scrub,
-        spool
-      })
-    }))
+    // Suspended for want of authorization (decision 0148), the agent is stopped and its session kept: once the host
+    // takes the runner again, the session resumes from its checkpoint, as after a restart.
+    let resume = same ? saved.sessionId : undefined
+    let outcome: { readonly outcome: AgentRunner.Outcome; readonly stop: string }
+    while (true) {
+      // Suspended, the work waits for the host to take the runner again, a stop, the claim lost, or the deadline.
+      const waited = yield* control.authorization.latch.await.pipe(
+        Effect.as("open" as const),
+        Effect.raceFirst(Deferred.await(control.cancel).pipe(Effect.as("cancel" as const))),
+        Effect.raceFirst(Deferred.await(control.dropped).pipe(Effect.as("dropped" as const))),
+        Effect.raceFirst(
+          Effect.suspend(() => Effect.sleep(Math.max(0, job.deadline - Date.now()))).pipe(
+            Effect.as("deadline" as const)
+          )
+        )
+      )
+      if (waited === "deadline") {
+        outcome = { outcome: failed("timeout"), stop: "deadline" }
+        break
+      }
+      if (waited !== "open") {
+        outcome = {
+          outcome: { _tag: "Cancelled", processTreeGone: true },
+          stop: waited === "cancel" ? "cancelled" : "dropped"
+        }
+        break
+      }
+      outcome = yield* Effect.scoped(Effect.gen(function*() {
+        const spool = yield* Spool.open({ stateDir: config.stateDir, key: job.key, claim: job.claim, scrub })
+        yield* Effect.forkScoped(spool.upload)
+        const kept = readCheckpoint(checkout)
+        return yield* session({
+          profile,
+          job,
+          checkout,
+          mirror: repository.mirror,
+          control,
+          env: { ...base, ...chosen.env },
+          resume,
+          checkpoint: {
+            generation: job.generation,
+            env: chosen.env,
+            ...account,
+            // A later generation keeps the ledger: a steer handed to an earlier one is never handed over again.
+            ...(kept?.steers === undefined ? {} : { steers: kept.steers }),
+            ...(kept?.sessionId === undefined || kept.generation !== job.generation
+              ? {}
+              : { sessionId: kept.sessionId })
+          },
+          scrub,
+          spool
+        })
+      }))
+      if (outcome.stop !== "suspended") break
+      const kept = readCheckpoint(checkout)
+      resume = kept !== undefined && kept.generation === job.generation ? kept.sessionId : resume
+      yield* Effect.logWarning("runner.session").pipe(Effect.annotateLogs({ job: job.key, outcome: "suspended" }))
+    }
     const fields: Record<string, string> = { stop: outcome.stop }
     if (chosen.account !== undefined) fields.account = chosen.account
     return yield* report(outcome.outcome, fields)
+  })
+
+/**
+ * How long a checkout waits for a credential the host couldn't issue, when
+ * the host said no wait: 15 s, doubling, to 5 minutes.
+ */
+const provisionWaitSeconds = (attempt: number): number => Math.min(300, 15 * 2 ** (attempt - 1))
+
+/** Time left before the deadline below which a checkout isn't tried again: the job ends `timeout`. */
+const PROVISION_LAST_TRY_MS = 1000
+
+/** Writes `text` to `path` (mode `0600`, its directory made), and through to disk, the directory's entry too. */
+const durably = (path: string, text: string): void => {
+  mkdirSync(dirname(path), { recursive: true })
+  const file = openSync(path, "w", 0o600)
+  try {
+    writeSync(file, text)
+    fsyncSync(file)
+  } finally {
+    closeSync(file)
+  }
+  const dir = openSync(dirname(path), "r")
+  try {
+    fsyncSync(dir)
+  } finally {
+    closeSync(dir)
+  }
+}
+
+/** Removes `path`, if there, and writes the removal of its directory's entry through to disk. */
+const durablyRemove = (path: string): void => {
+  if (!existsSync(path)) return
+  rmSync(path, { force: true })
+  const dir = openSync(dirname(path), "r")
+  try {
+    fsyncSync(dir)
+  } finally {
+    closeSync(dir)
+  }
+}
+
+/** How a job ended before its agent ran, and what its log line adds. */
+interface Ended {
+  readonly outcome: AgentRunner.Outcome
+  readonly fields: Record<string, string | number>
+}
+
+/**
+ * Makes the job's checkout: `undefined` once it exists, else how the job
+ * ends. First the mark (`checkout.provisioning`) is written: a runner that
+ * stops before the checkout is complete finds it on the claim handed back,
+ * discards whatever the directory holds, and makes the checkout again. A private repository's mirror fetches with
+ * the host's read credential for this job (decision 0148), asked for only
+ * when the mirror must fetch or clone: a `404` fetches as before; a refusal
+ * fails `workspace` without fetching. A host or GitHub that can't answer now
+ * costs the job no generation and none of its agent's restarts: the same
+ * claim waits (the host's wait, else `provisionWaitSeconds`, at most half the
+ * time left) and makes the checkout again, until the job's deadline passes, a
+ * stop the host asked for, or the claim lost.
+ */
+const provision = (
+  mirror: string,
+  job: JobPayload,
+  checkout: Workspace.Checkout,
+  control: Control
+): Effect.Effect<Ended | undefined, never, Host.Host> =>
+  Effect.gen(function*() {
+    const ended = (outcome: AgentRunner.Outcome, fields: Record<string, string | number> = {}): Ended => ({
+      outcome,
+      fields
+    })
+    const host = yield* Host.Host
+    yield* Effect.sync(() => durably(checkout.provisioning, `${job.key}\n`))
+    for (let attempt = 1;; attempt++) {
+      // The whole attempt, its wait for the mirror and a fetch that stalls included, gives way to a Stop, the claim
+      // lost, or the deadline: interrupted, its git or jj is killed (decision 0148).
+      // A directory an attempt cut short left (the mark says no agent ran in it) is discarded within the attempt.
+      const once = Effect.suspend(() => {
+        const make = Workspace.create(mirror, job.task.base, checkout, Credential.forJob(host, job))
+        return Workspace.exists(checkout) && !existsSync(checkout.started)
+          ? Workspace.discard(mirror, checkout).pipe(Effect.andThen(make))
+          : make
+      })
+      const attempted = yield* Effect.exit(once).pipe(
+        Effect.map((exit) => ({ _tag: "attempted" as const, exit })),
+        Effect.raceFirst(Deferred.await(control.cancel).pipe(Effect.as({ _tag: "cancel" as const }))),
+        Effect.raceFirst(Deferred.await(control.dropped).pipe(Effect.as({ _tag: "dropped" as const }))),
+        Effect.raceFirst(
+          Effect.suspend(() => Effect.sleep(Math.max(0, job.deadline - Date.now()))).pipe(
+            Effect.as({ _tag: "deadline" as const })
+          )
+        )
+      )
+      if (attempted._tag === "deadline") return ended(failed("timeout"), {})
+      if (attempted._tag !== "attempted") {
+        return ended({ _tag: "Cancelled", processTreeGone: true }, { stop: attempted._tag })
+      }
+      const made = attempted.exit
+      if (Exit.isSuccess(made)) return undefined
+      const error = Cause.findErrorOption(made.cause)
+      // Refused for want of authorization or authentication (decision 0148): waited out like a host that can't issue
+      // one now.
+      const unauthorized = Option.isSome(error) && error.value instanceof Credential.CredentialRefused &&
+        (error.value.status === 401 || error.value.status === 403)
+      if (!unauthorized && (Option.isNone(error) || !(error.value instanceof Credential.CredentialUnavailable))) {
+        const refused = Option.isSome(error) && error.value instanceof Credential.CredentialRefused
+        return ended(failed("workspace"), refused ? { credential: "refused" } : {})
+      }
+      const said = Option.getOrUndefined(error)
+      const waitSeconds = (said instanceof Credential.CredentialUnavailable ? said.afterSeconds : undefined) ??
+        provisionWaitSeconds(attempt)
+      // A wait the host asked for that would run past the deadline is cut to half the time left, so the checkout is
+      // tried again while it can still be used; the job times out only once its deadline has passed.
+      const left = job.deadline - Date.now()
+      if (left <= PROVISION_LAST_TRY_MS) return ended(failed("timeout"), { credential: "unavailable" })
+      const waitMs = Math.min(waitSeconds * 1000, Math.floor(left / 2))
+      yield* Effect.logInfo("runner.workspace").pipe(
+        Effect.annotateLogs({ job: job.key, credential: "unavailable", attempt, waitMs })
+      )
+      const waited = yield* Effect.sleep(waitMs).pipe(
+        Effect.as("waited" as const),
+        Effect.raceFirst(Deferred.await(control.cancel).pipe(Effect.as("cancel" as const))),
+        Effect.raceFirst(Deferred.await(control.dropped).pipe(Effect.as("dropped" as const)))
+      )
+      if (waited !== "waited") {
+        return ended({ _tag: "Cancelled", processTreeGone: true }, { stop: waited })
+      }
+    }
   })
 
 /** One agent process and its session, in the caller's scope: how it ended, and the stop reason or end code. */
@@ -453,15 +659,17 @@ const session = (options: {
         : error.code === "remote"
         ? ended(retry("error") ?? failed("refused"), "error")
         : ended(failed("agent"), "protocol")
-    // A cancel from the host, a claim the host no longer holds, or the step's deadline.
+    // A cancel from the host, a claim the host no longer holds, the step's deadline, or the host refusing the runner
+    // for want of authorization (decision 0148).
     const signal = Effect.raceAll([
       Deferred.await(control.cancel).pipe(Effect.as("cancel" as const)),
       Deferred.await(control.dropped).pipe(Effect.as("dropped" as const)),
-      Effect.suspend(() => Effect.sleep(Math.max(0, job.deadline - Date.now()))).pipe(Effect.as("deadline" as const))
+      Effect.suspend(() => Effect.sleep(Math.max(0, job.deadline - Date.now()))).pipe(Effect.as("deadline" as const)),
+      Effect.suspend(() => Deferred.await(control.authorization.suspended)).pipe(Effect.as("suspended" as const))
     ])
-    type Signal = "cancel" | "dropped" | "deadline"
+    type Signal = "cancel" | "dropped" | "deadline" | "suspended"
     const isSignal = (value: unknown): value is Signal =>
-      value === "cancel" || value === "dropped" || value === "deadline"
+      value === "cancel" || value === "dropped" || value === "deadline" || value === "suspended"
     const stopped = (cause: Signal, sessionId: string | undefined, turn: Fiber.Fiber<unknown, unknown> | undefined) =>
       Effect.gen(function*() {
         // Seen before the cancel: an agent may end its own helpers on a cancel and orphan the commands they ran
@@ -474,9 +682,12 @@ const session = (options: {
         // A stop a person asked for: tools that ignore SIGINT (S3's real agents' commands did) get SIGKILL after 5 s,
         // so the tree is gone within a heartbeat and about 10 s.
         const gone = yield* Tree.stop(tree, { graceMs: STOP_GRACE_MS, settleMs: 5000 })
-        // A dropped claim settles nothing the host keeps: its settlement is fenced off.
+        // A dropped claim settles nothing the host keeps: its settlement is fenced off. A suspended one settles
+        // nothing yet: the work resumes the session once the host takes the runner again.
         return cause === "deadline"
           ? ended(failed("timeout"), "deadline")
+          : cause === "suspended"
+          ? ended({ _tag: "Cancelled", processTreeGone: gone }, "suspended")
           : ended({ _tag: "Cancelled", processTreeGone: gone }, cause === "cancel" ? "cancelled" : "dropped")
       })
     const opened = yield* Effect.raceFirst(
@@ -486,7 +697,9 @@ const session = (options: {
           loading = true
           const loaded = yield* Effect.exit(client.loadSession(options.resume, checkout.dir))
           loading = false
-          if (Exit.isSuccess(loaded)) return { sessionId: options.resume, text: CONTINUE, steering: initialized.steering }
+          if (Exit.isSuccess(loaded)) {
+            return { sessionId: options.resume, text: CONTINUE, steering: initialized.steering }
+          }
         }
         const sessionId = yield* client.newSession(checkout.dir)
         checkpoint = { ...checkpoint, sessionId }
@@ -524,7 +737,11 @@ const session = (options: {
           if (taken) {
             awaiting = [...awaiting, steer.id]
             yield* options.spool.append(Transcript.KINDS.steer, { id: steer.id, mode: "steering" })
-            return yield* steerLog(steer.id, { mode: "steering", outcome: "handed", durationMs: Date.now() - startedAt })
+            return yield* steerLog(steer.id, {
+              mode: "steering",
+              outcome: "handed",
+              durationMs: Date.now() - startedAt
+            })
           }
         }
         // No turn in flight: the steer starts the next one. Else the only way every ACP agent takes it: cancel the
@@ -586,7 +803,9 @@ const session = (options: {
         while (Date.now() - lastUpdate < QUIET.afterMs && Date.now() - endedAt < QUIET.maxMs) {
           yield* Effect.sleep(Math.max(10, Math.min(QUIET.afterMs - (Date.now() - lastUpdate), 1000)))
         }
-        yield* Effect.logInfo("runner.quiet").pipe(Effect.annotateLogs({ job: job.key, waitedMs: Date.now() - endedAt }))
+        yield* Effect.logInfo("runner.quiet").pipe(
+          Effect.annotateLogs({ job: job.key, waitedMs: Date.now() - endedAt })
+        )
       })
       const settled = yield* Effect.raceAll([
         quiet.pipe(Effect.as("quiet" as const)),

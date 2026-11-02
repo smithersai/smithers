@@ -32,7 +32,8 @@ Each `202` answers `{ name, execution }`; `GET /api/runners/admin-receipts/<exec
 Admin who started it: `set`, `removed`, `missing`, `authorization_expired` (its authority no longer holds, or it
 waited past its expiry, or it was started before fences) or `superseded` (the runner or agent changed since), and
 `404` until it ends. A refused action is sent again. While a deploy brings fences in, a Worker still on the release before them writes
-unfenced until it is replaced. A runner claims a job only while the App's installation on its repository is recorded.
+unfenced until it is replaced. A runner claims a job only when it was registered that way, and
+while the App's installation on its repository is recorded.
 
 1. On the runner machine, make its token. Only its SHA-256 leaves the machine:
 
@@ -176,11 +177,11 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 
 | Route | Body | Answer |
 |---|---|---|
-| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25, machine?, minQueuedSeconds? }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
+| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25, machine?, minQueuedSeconds? }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true`; `403 not_authorized` for a runner not registered by GitHub's role ([decision 0148](../decisions/0148-runner-git-credential.md)) |
 | `POST /api/runners/heartbeat` | `{ key, claim, delivered?, account?, cpuSeconds?, usage? }` | `{ held, cancel, leaseSeconds: 45, steers? }`: the job's undelivered steers, `{ id, text }` |
 | `POST /api/runners/settle` | `{ key, claim, outcome, delivered? }` | `{ recorded }`; `false` when the claim no longer holds the job. `delivered` records the steers the agent read since the last heartbeat that reported them |
 | `POST /api/runners/events` | `{ key, claim, events }` | `{ next }`: the agent's transcript ([transcripts](agent-transcripts.md#the-events-route)) |
-| `POST /api/runners/git-credential` | `{ key, claim }` | Off: `404 not_found` to every runner until its security review's fixes land ([private repositories](#private-repositories)) |
+| `POST /api/runners/git-credential` | `{ key, claim }` | `{ remote, username, password, expiresAt }`: a read-only token for the runner's own repository while it holds that job ([private repositories](#private-repositories)); `409 not_held`, `403 other_repository`, `403 not_authorized` (needs [registering again](#registering-a-runner-again)), `503 unavailable` with `retry-after` when GitHub can't mint now, `429 busy` with `retry-after`, `404` without the App or a recorded installation |
 
 A claim's `machine` is `{ version?, load1?, diskFreeGb?, held? }`, `held` saying why the runner takes no job by its
 own [admission](#admission) rule; a heartbeat's `account` is the label the profile's hook
@@ -191,19 +192,44 @@ afterSeconds? }` or `Cancelled { processTreeGone }`. Usage an agent doesn't repo
 
 ## Private repositories
 
-The route is off: it answers `404 not_found`, which the runner reads as no credential, so a public repository fetches as before and a private one fails `workspace` as it did before the route. It stays off until the security review's findings on decision 0148 are fixed. As designed, a runner fetches a private repository with a token the host mints for each job ([decision 0148](../decisions/0148-runner-git-credential.md)): the App's installation token for that one repository, `contents: read` only, spent 50 minutes after minting. The runner passes it to git in the command's own environment, never on a command line, in a file or a log, and clones a missing mirror with it, so a private repository's mirror needs no deploy key or person's token on the machine. A public repository, or a host without the App, fetches as before.
+Off in production until the review of decision 0148's fixes passes (`GIT_CREDENTIAL_ON` in `worker/runners/Api.ts`): the route answers `404 not_configured` and a runner fetches as before.
+
+A runner fetches a private repository with a token the host mints for the job it holds ([decision 0148](../decisions/0148-runner-git-credential.md)): the App's installation token for that one repository, `contents: read` only. The host hands one only to a runner an Admin registered by the role GitHub gives on the repository, only where the App's installation is recorded, one mint in flight per job, at most one started every 30 seconds and 3 issued an hour, a failed one waiting 30 seconds or GitHub's own wait, and it checks the hold again as it counts a mint, revoking a token it won't deliver.
+
+The runner asks only when the mirror must clone or fetch the base, while it holds the mirror's lock, and reuses the token for that claim until 10 minutes before its `expiresAt`. A `404` fetches as before (a public repository, or a host without the App); on `429`, `5xx` or no answer the same claim waits the host's wait and tries again until the job's deadline, spending no generation or restart; any other refusal fails `workspace`. The token goes to git in the command's own environment, never on a command line, in a file or a log. That command never runs in the mirror, whose configuration the agent can write: it fetches the token's exact remote into a bare repository under the runner's state directory (`<state>/fetch/<16 hex>.git`), following no link on the way to it or inside it, whose configuration the runner rewrites before each fetch, with no hook, no global or system git file, none of the runner's `GIT_*`, and the `git` on the runner's own `PATH`; the mirror then fetches from it without the token. The agent runs as the runner's user and shares its trust ([decision 0136](../decisions/0136-external-agents-on-runners.md)): decision 0148 lists what this does and doesn't stop.
+
+## Registering a runner again
+
+Migration 0093 (decision 0148) cleared every runner's authorization: before 2026-11-02 the registration route could take the deployment's Admin role instead of the one GitHub gives on the repository, and no earlier registration can be told apart. From that deploy each runner's claims, reclaims, heartbeats, settlements, transcript events, credential requests and work-link posts get `403 not_authorized`, and its token reads no issues list, until an Admin of its repository registers it again. A runner whose repository has no recorded App installation is refused the same way. Its queued jobs wait. A job it holds is suspended: a refused heartbeat (`403`, or `401` after its token was rotated) stops its agent and keeps its checkout, session and unsent transcript, a refused settlement keeps its outcome and asks again, and once the runner is registered again (restarted with the new token, if it was rotated) the job goes on where it stopped. A suspended job still ends at its deadline, on a Stop (which the host tells a runner it refuses, and ends itself), or when the host no longer holds it, which frees its slot. A claim ends the runner's own claimed jobs past their deadline and the five-minute settlement grace (`timeout`) before it hands anything back. A job whose hours run out first ends `timeout`, so register runners again soon after the deploy. The fleet shows the runner `Needs re-registration`, the [audit](#audit) flags it `needs_registration`, and the runner logs on every refused claim:
+
+```
+runner.claim outcome=not_authorized hint="this runner needs re-registration: an Admin of its repository registers it again ..."
+```
+
+To register it again, keep the runner running and its token as it is:
+
+1. On the runner machine, print the SHA-256 of its existing token (`smthrs runner token` refuses to replace one, and `--rotate` would make a new one):
+
+   ```sh
+   printf %s "$(cat ~/.smithers/runner/runner-token)" | shasum -a 256   # the 64 hex before the "-"
+   ```
+
+2. An Admin of the repository, in person, sends the same `PUT` as [step 2 of setting it up](#setting-it-up), with the runner's name, that SHA-256, its labels and its capacity. The next claim after the write lands is served.
+
+A machine that posts issue work links with `ops/work-links/link.mjs` ([work links](work-links.md#posting-links-the-client)) posts with a runner's token, so that runner is registered again the same way, with the SHA-256 of the token file the script reads (`--token-file`, `$SMITHERS_WORK_TOKEN_FILE`, else `~/.smithers/runner/runner-token`). Until then each post exits non-zero with `403 not_authorized`.
+
+A repository's Cloudflare overflow runner is registered again by turning the overflow on again with its `PUT` (`/overflow/cloudflare`), which also rotates its token. A runner that an end-to-end run registers is registered on each run, so it needs nothing.
 
 ## Audit
 
 `GET /api/runners/audit`, for an Admin of the deployment's own repository acting in person (`403` for anyone else,
 an Admin of another repository included), lists every live runner on every repository: `repoId`, `name`, `addedBy`
-(the registrant's person id) and `addedByLogin`, `addedAt`, `labels`, `seenAt`, and its repository's
-`installation: { recorded, checkedAt }`. `github_repositories` keeps no time an installation was first recorded;
-`checkedAt` is its `checked_at`, which every write of that row sets (the answer names it in `installationTime`). A
-runner is flagged `no_installation` where none is recorded, and `installation_recorded_after_added` where the
-installation's row was last written after the runner was added: before 2026-11-02 such a registration could take the
-deployment-wide role instead of the role GitHub gives on the repository
-([decision 0148](../decisions/0148-runner-git-credential.md)). It never answers a token or a token's digest.
+(the registrant's person id) and `addedByLogin`, `addedAt`, `authorizedAt` (when a registration through the
+repository's Admin role authorized it, or null), `labels`, `seenAt`, and its repository's
+`installation: { recorded, checkedAt }`. A runner is flagged `needs_registration` where nothing authorized it
+([registering a runner again](#registering-a-runner-again)) and `no_installation` where no installation is recorded:
+either way it claims nothing until someone acts ([decision 0148](../decisions/0148-runner-git-credential.md)). It never
+answers a token or a token's digest.
 
 ## Admission
 
@@ -257,6 +283,16 @@ Migration `0078_agent_runners`:
 | `agent_jobs` | one row per generation, `<origin>#g<n>`: its task, `status` (`queued`, `claimed`, `done`, `failed`, `cancelled`, `retryable`), its runner and claim, `pinned_runner`, `not_before`, `deadline_at`, `cancel_requested`, `outcome` |
 | `runner_changes`, `agent_changes` | each Admin change once, by invocation key |
 
+Migration `0089_runner_git_credentials` adds `runners.repo_authorized_at` (when a registration through the
+repository's Admin role authorized the runner, decision 0148) and `agent_jobs.git_credentials`, `git_credentials_since`
+and `git_credential_at`: credentials issued in the hour since the first, and when the last mint started. Its backfill of
+`repo_authorized_at` proved nothing, so migration `0095_runner_reauthorization` clears it on every runner
+([registering a runner again](#registering-a-runner-again)) and adds `agent_jobs.git_credential_reservation` and
+`git_credential_reserved_at` (the one mint in flight, by its request's id), `git_credential_retry_at` (the soonest
+the next may start after one failed) and `stopped_claim` (the claim of a job the host ended for a Stop while it
+refused the runner, whose heartbeats keep hearing `cancel`) and `claimed_token_sha256` (the token that claimed the job,
+so a runner whose token was since rotated or retired still hears a Stop on it).
+
 Migration `0082_agent_transcripts` adds `agent_jobs.first_event_at`, `last_event_at`, `transcript_events` and
 `transcript_bytes`, a job's [transcript](agent-transcripts.md) summary; the transcript itself is in the run's
 `RunContent` Durable Object.
@@ -294,6 +330,12 @@ which does, with each runner's machine facts on `runners`.
   GitHub, Retry); `worker/runners/Runners.test.ts` covers a faulty steering store and `Jobs.stop`;
   `e2e/agent-runner.spec.ts` "steers" and "stops" run the same through the browser;
   `packages/smithers/evals/agent-steer-cli.eval.ts` steers and stops real agents through a real runner.
+- Private repositories (decision 0148): `worker/runners/GitCredential.ts` and the `git-credential` route in `Api.ts`,
+  tested in `worker/runners/GitCredential.test.ts` (holds, registration, caps, races, revocation) and
+  `Runners.test.ts` (registration needs GitHub's role and a recorded installation); the runner's side in
+  `packages/smithers/src/runner/{Credential,Workspace}.ts`, tested in `packages/smithers/test/RunnerCredential.test.ts`,
+  `RunnerWorkspace.test.ts` (a real smart-HTTP server: laziness, tracing, a planted jj `git.executable-path` and hook)
+  and `Runner.test.ts` (retryable and refused credentials).
 - The agent's transcript, live on the run page: [Transcripts of external agents](agent-transcripts.md).
 - The fleet view and its alerts: [fleet.md](fleet.md).
 - Not built yet: choosing an agent per TODO, and a Settings page for runners and agents.

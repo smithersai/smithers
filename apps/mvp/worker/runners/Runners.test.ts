@@ -12,6 +12,7 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
+import * as Migration0093 from "../../db/migrations/0095_runner_reauthorization.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
 import { BranchRoles } from "../branch/Access.ts"
@@ -70,7 +71,7 @@ const by = (): Store.By => ({ actorId: "person-admin", invocationKey: `test-${++
 const register = async (name: string, labels: ReadonlyArray<string> = ["linux", "nyc"], capacity = 2) => {
   const token = `token-${name}-${crypto.randomUUID()}`
   await recordInstallation()
-  await query(Store.addRunner({ repoId: REPO, name, tokenSha256: digestSync(token), labels, capacity }, by()))
+  await query(Store.addRunner({ repoId: REPO, name, tokenSha256: digestSync(token), labels, capacity, repoAuthorized: true }, by()))
   return token
 }
 
@@ -502,7 +503,7 @@ describe("the runner events route", () => {
 describe("the repository's runners and agents", () => {
   test("each Admin write records its change once per invocation key", async () => {
     const key = by()
-    const write = { repoId: REPO, name: "nyc-01", tokenSha256: "a".repeat(64), labels: ["linux"], capacity: 4 }
+    const write = { repoId: REPO, name: "nyc-01", tokenSha256: "a".repeat(64), labels: ["linux"], capacity: 4, repoAuthorized: true }
     expect(await query(Store.addRunner(write, key))).toBe("set")
     expect(await query(Store.addRunner({ ...write, capacity: 8 }, key))).toBe("repeat")
     expect(await sql`SELECT capacity FROM runners`).toEqual([{ capacity: 4 }])
@@ -757,7 +758,7 @@ describe("the repository's runners and agents", () => {
       await recordRole("member")
       await recordRole("admin")
       const change = await query(Store.addRunner(
-        { repoId: "github/acme/private", name: "nyc-01", tokenSha256: "d".repeat(64), labels: [], capacity: 1 },
+        { repoId: "github/acme/private", name: "nyc-01", tokenSha256: "d".repeat(64), labels: [], capacity: 1, repoAuthorized: true },
         {
           actorId: "person-admin",
           invocationKey: crypto.randomUUID(),
@@ -913,7 +914,7 @@ describe("the repository's runners and agents", () => {
     test("a fence that expires while the write waits on its resource writes nothing", async () => {
       const held = await holdKey(Store.resourceKey("runners", REPO, "nyc-waits"))
       const writing = query(Store.addRunner(
-        { repoId: REPO, name: "nyc-waits", tokenSha256: "a".repeat(64), labels: [], capacity: 1 },
+        { repoId: REPO, name: "nyc-waits", tokenSha256: "a".repeat(64), labels: [], capacity: 1, repoAuthorized: true },
         fencedBy({ execution: "runners-put:waits", expiresAt: Date.now() + 300 }),
       ))
       await new Promise((done) => setTimeout(done, 600))
@@ -925,7 +926,7 @@ describe("the repository's runners and agents", () => {
     // Astra's review of 29cacd16: a refusal's receipt committed but its acknowledgement lost, the replay was admitted
     // again, and wrote, once the authority was granted again.
     test("a replay of a refused action answers its recorded refusal, and writes nothing", async () => {
-      const write = { repoId: REPO, name: "nyc-replay", tokenSha256: "a".repeat(64), labels: [], capacity: 1 }
+      const write = { repoId: REPO, name: "nyc-replay", tokenSha256: "a".repeat(64), labels: [], capacity: 1, repoAuthorized: true }
       expect(await query(Store.addRunner(write, fencedBy({ execution: "runners-put:replay", expiresAt: Date.now() - 1 }))))
         .toBe("authorization_expired")
       // The same action again, as a replay, now with a fence that would hold.
@@ -990,8 +991,8 @@ describe("the repository's runners and agents", () => {
       expect((await asAdmin.send("runners/nyc-01", "GET")).status).toBe(405)
       expect((await asAdmin.send("agents/coder", "POST")).status).toBe(405)
       expect(await asAdmin.send("runners/nyc-01", "PUT", runner)).toMatchObject({ status: 202, body: { name: "nyc-01" } })
-      expect(await sql`SELECT name, labels, capacity, added_by AS "addedBy" FROM runners`).toEqual([
-        { name: "nyc-01", labels: ["linux"], capacity: 4, addedBy: "person-admin" },
+      expect(await sql`SELECT name, labels, capacity, added_by AS "addedBy", repo_authorized_at IS NOT NULL AS authorized FROM runners`).toEqual([
+        { name: "nyc-01", labels: ["linux"], capacity: 4, addedBy: "person-admin", authorized: true },
       ])
       expect((await asAdmin.send("agents/smithers", "PUT", { labels: [], profile: "p" })).status).toBe(400)
       expect((await asAdmin.send("agents/coder", "PUT", { labels: [], profile: "p", maxHours: 13 })).status).toBe(400)
@@ -1047,6 +1048,319 @@ describe("the repository's runners and agents", () => {
     expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
   })
 
+  // Astra's review of 5fc33348: migration 0089 marked a runner authorized where its repository's installation record was
+  // older than its registration, but the old route's role also fell back to the deployment's on `not_found` (a
+  // repository outside GITHUB_ALLOWED_REPOSITORIES, say). Migration 0093 trusts no earlier registration.
+  test("migration 0093 leaves every runner unauthorized until an Admin registers it again through the route", async () => {
+    await recordInstallation()
+    const token = await register("legacy")
+    const backfilled = await register("backfilled")
+    // As 0089's backfill left it: authorized from its registration time.
+    await sql`UPDATE runners SET repo_authorized_at = added_at WHERE name = 'backfilled'`
+    await Effect.runPromise((await jobs()).start(taskOf(), "todo:legacy#g1"))
+    await query(Migration0093.clearAuthorization)
+    expect(await sql`SELECT count(*)::int AS n FROM runners WHERE repo_authorized_at IS NOT NULL`).toEqual([{ n: 0 }])
+    const { claim } = await routes()
+    expect(await claim(token)).toEqual({ status: 403, body: { code: "not_authorized" } })
+    expect(await claim(backfilled)).toEqual({ status: 403, body: { code: "not_authorized" } })
+    // Registered again by an Admin through the route, with the same token's SHA-256.
+    const asAdmin = await adminRoutes(admin)
+    try {
+      expect((await asAdmin.send("runners/legacy", "PUT", { tokenSha256: digestSync(token), labels: ["linux", "nyc"], capacity: 2 }))
+        .status).toBe(202)
+    } finally {
+      await asAdmin.close()
+    }
+    expect((await claim(token)).body).toMatchObject({ job: { key: "todo:legacy#g1" } })
+    expect((await claim(backfilled)).status).toBe(403)
+  })
+
+  // Astra's review of 4cd69527: a runner holding a job across migration 0093 kept renewing its lease, reading steers,
+  // settling and appending transcript, since only claim and reclaim checked it was current.
+  test("a runner holding a job heartbeats, settles and sends events only while current: authorized, installed, its token", async () => {
+    const outcome = { _tag: "Done", changes: { additions: [], deletions: [] }, summary: "done", usage: {} }
+    const cases: ReadonlyArray<readonly [string, () => Promise<unknown>, () => Promise<unknown>]> = [
+      ["authorization cleared", () => query(Migration0093.clearAuthorization), () => sql`UPDATE runners SET repo_authorized_at = now()`],
+      ["installation forgotten", () => sql`UPDATE github_repositories SET installation_id = NULL`, () => recordInstallation()],
+    ]
+    for (const [, end, restore] of cases) {
+      await sql`TRUNCATE agent_jobs, runners, runner_changes RESTART IDENTITY CASCADE`
+      const token = await register("nyc-01")
+      const key = `todo:held-${crypto.randomUUID()}#g1`
+      await Effect.runPromise((await jobs()).start(taskOf({ context: { attemptId: crypto.randomUUID() } }), key))
+      const { call, claim } = await routes()
+      const job = (await claim(token)).body.job!
+      const [before] = await sql<{ readonly lease: string }>`SELECT lease_until::text AS lease FROM agent_jobs`
+      await end()
+      expect(await call("heartbeat", token, { key: job.key, claim: job.claim })).toEqual({ status: 403, body: { code: "not_authorized" } })
+      const event: Transcript.Event = {
+        seq: 0,
+        at: Date.now(),
+        kind: "agent_message_chunk",
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
+      }
+      expect(await call("events", token, { key: job.key, claim: job.claim, events: [event] }))
+        .toEqual({ status: 403, body: { code: "not_authorized" } })
+      expect(await call("settle", token, { key: job.key, claim: job.claim, outcome })).toEqual({ status: 403, body: { code: "not_authorized" } })
+      expect(await sql`SELECT status, lease_until::text AS lease, transcript_events AS events FROM agent_jobs`)
+        .toEqual([{ status: "claimed", lease: before!.lease, events: null }])
+      // Current again: the same job goes on.
+      await restore()
+      expect((await call<{ readonly held: boolean }>("heartbeat", token, { key: job.key, claim: job.claim })).body.held).toBe(true)
+      expect((await call("settle", token, { key: job.key, claim: job.claim, outcome })).body).toEqual({ recorded: true })
+    }
+    // The token rotated after the request authenticated, before the settlement: a transaction holds the runner's row
+    // with the new token while the request's mark of the runner seen waits for it.
+    await sql`TRUNCATE agent_jobs, runners, runner_changes RESTART IDENTITY CASCADE`
+    const token = await register("nyc-01")
+    await Effect.runPromise((await jobs()).start(taskOf(), "todo:rotated#g1"))
+    const { call, claim } = await routes()
+    const job = (await claim(token)).body.job!
+    for (const route of ["heartbeat", "settle"] as const) {
+      await sql`UPDATE runners SET seen_at = now() - interval '1 hour', token_sha256 = ${digestSync(token)}`
+      let commit = () => {}
+      const committed = new Promise<void>((done) => (commit = done))
+      let rotated = () => {}
+      const rotating = new Promise<void>((done) => (rotated = done))
+      const locker = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client.withTransaction(Effect.gen(function* () {
+          yield* client`UPDATE runners SET token_sha256 = ${digestSync("rotated")} WHERE name = 'nyc-01'`
+          yield* Effect.sync(rotated)
+          yield* Effect.promise(() => committed)
+        }))))
+      await rotating
+      const asked = call(route, token, route === "settle" ? { key: job.key, claim: job.claim, outcome } : { key: job.key, claim: job.claim })
+      await new Promise((done) => setTimeout(done, 500))
+      commit()
+      await locker
+      expect(await asked).toEqual({ status: 403, body: { code: "not_authorized" } })
+    }
+    expect(await sql`SELECT status FROM agent_jobs`).toEqual([{ status: "claimed" }])
+  })
+
+  // Astra's review of f42f8b6b: the check sat in a statement that locked no runner or installation row, so a
+  // revocation that committed while the operation waited went unseen.
+  test("a revocation that commits while the acting operation waits on it is seen: refused, nothing written", async () => {
+    const outcome = { _tag: "Done", changes: { additions: [], deletions: [] }, summary: "done", usage: {} }
+    const revocations = [
+      ["authorization cleared", `UPDATE runners SET repo_authorized_at = NULL`],
+      ["installation forgotten", `UPDATE github_repositories SET installation_id = NULL`],
+    ] as const
+    for (const route of ["heartbeat", "settle", "events"] as const) {
+      for (const [, revoke] of revocations) {
+        await sql`TRUNCATE agent_jobs, runners, runner_changes RESTART IDENTITY CASCADE`
+        const token = await register("nyc-01")
+        const key = `todo:fence-${crypto.randomUUID()}#g1`
+        await Effect.runPromise((await jobs()).start(taskOf({ context: { attemptId: crypto.randomUUID() } }), key))
+        const { call, claim } = await routes()
+        const job = (await claim(token)).body.job!
+        const [before] = await sql<{ readonly lease: string }>`SELECT lease_until::text AS lease FROM agent_jobs`
+        // The revocation holds its row, uncommitted, while the operation (its runner seen moments ago, so its request
+        // authenticates without waiting) reaches its own check.
+        let commit = () => {}
+        const committed = new Promise<void>((done) => (commit = done))
+        let held = () => {}
+        const holding = new Promise<void>((done) => (held = done))
+        const revoker = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
+          client.withTransaction(Effect.gen(function* () {
+            yield* client.unsafe(revoke)
+            yield* Effect.sync(held)
+            yield* Effect.promise(() => committed)
+          }))))
+        await holding
+        const event: Transcript.Event = {
+          seq: 0,
+          at: Date.now(),
+          kind: "agent_message_chunk",
+          update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "hi" } },
+        }
+        const body = route === "settle"
+          ? { key: job.key, claim: job.claim, outcome }
+          : route === "events"
+          ? { key: job.key, claim: job.claim, events: [event] }
+          : { key: job.key, claim: job.claim }
+        const acting = call(route, token, body)
+        await new Promise((done) => setTimeout(done, 500))
+        commit()
+        await revoker
+        expect([route, await acting]).toEqual([route, { status: 403, body: { code: "not_authorized" } }])
+        expect(await sql`SELECT status, lease_until::text AS lease, transcript_events AS events FROM agent_jobs`)
+          .toEqual([{ status: "claimed", lease: before!.lease, events: null }])
+      }
+    }
+  })
+
+  // Astra's review of 99f0dc17: only the job store's probe ended a claimed job past its hours, so with the probe
+  // stalled, a runner that gave up settling locally got the same overdue claim back for good, and it filled its slot.
+  test("a claim ends the runner's overdue claims itself, without the probe, and frees its capacity", async () => {
+    const token = await register("nyc-01", ["linux", "nyc"], 1)
+    const store = await jobs()
+    await Effect.runPromise(store.start(taskOf(), "todo:overdue#g1"))
+    const { claim } = await routes()
+    expect((await claim(token)).body.job?.key).toBe("todo:overdue#g1")
+    // Past its deadline and the grace to settle it; nothing probed it.
+    await sql`UPDATE agent_jobs SET deadline_at = now() - interval '6 minutes' WHERE key = 'todo:overdue#g1'`
+    await Effect.runPromise(store.start(taskOf(), "todo:next#g1"))
+    expect((await claim(token)).body.job).toMatchObject({ key: "todo:next#g1", reclaimed: false })
+    expect(await sql`SELECT key, status, outcome->>'reason' AS reason FROM agent_jobs ORDER BY key`).toEqual([
+      { key: "todo:next#g1", status: "claimed", reason: null },
+      { key: "todo:overdue#g1", status: "failed", reason: "timeout" },
+    ])
+  })
+
+  // Astra's review of 99f0dc17: the heartbeat refused a runner no longer current before reading a Stop, so a suspended
+  // job could not be stopped while the refusal lasted, and held its slot to its deadline.
+  test("a Stop reaches a runner no longer current through its own claim's heartbeat, and the host ends the job", async () => {
+    const token = await register("nyc-01")
+    const store = await jobs()
+    await Effect.runPromise(store.start(taskOf(), "todo:stopped#g1"))
+    const { call, claim } = await routes()
+    const job = (await claim(token)).body.job!
+    await query(Migration0093.clearAuthorization)
+    expect(await call("heartbeat", token, { key: job.key, claim: job.claim })).toEqual({ status: 403, body: { code: "not_authorized" } })
+    await Effect.runPromise(store.cancel(job.key))
+    // Another claim id of the same job is no one's: refused, nothing more.
+    expect(await call("heartbeat", token, { key: job.key, claim: crypto.randomUUID() }))
+      .toEqual({ status: 403, body: { code: "not_authorized" } })
+    // The answer is lost on its way after the host committed: the runner beats again with the same claim, and hears
+    // it again (Astra's review of 5ac18ab4), and still nothing else.
+    for (let n = 0; n < 2; n++) {
+      expect(await call("heartbeat", token, { key: job.key, claim: job.claim }))
+        .toEqual({ status: 403, body: { code: "not_authorized", cancel: true } })
+    }
+    expect(await call("heartbeat", token, { key: job.key, claim: crypto.randomUUID() }))
+      .toEqual({ status: 403, body: { code: "not_authorized" } })
+    expect(await sql`SELECT status, outcome, lease_until AS lease FROM agent_jobs`).toEqual([
+      { status: "cancelled", outcome: { _tag: "Cancelled", processTreeGone: false }, lease: null },
+    ])
+  })
+
+  // Astra's review of cef761ee: a runner whose token was rotated, or that was retired, got 401 before the Stop path,
+  // so its suspended job held its slot to the deadline.
+  test("a Stop reaches a runner whose token was rotated, or that was retired, on its own claim's heartbeat, and nothing else", async () => {
+    for (const revoke of [`UPDATE runners SET token_sha256 = '${"e".repeat(64)}'`, `UPDATE runners SET removed_at = now()`]) {
+      await sql`TRUNCATE agent_jobs, runners, runner_changes RESTART IDENTITY CASCADE`
+      const token = await register("nyc-01")
+      const store = await jobs()
+      await Effect.runPromise(store.start(taskOf(), "todo:past#g1"))
+      const { call, claim } = await routes()
+      const job = (await claim(token)).body.job!
+      await query(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(revoke)))
+      // No Stop yet: nobody, as before.
+      expect(await call("heartbeat", token, { key: job.key, claim: job.claim })).toEqual({ status: 401, body: { code: "authentication" } })
+      await Effect.runPromise(store.cancel(job.key))
+      // Another claim id, or another route, hears nothing.
+      expect(await call("heartbeat", token, { key: job.key, claim: crypto.randomUUID() }))
+        .toEqual({ status: 401, body: { code: "authentication" } })
+      expect((await call("settle", token, { key: job.key, claim: job.claim, outcome: { _tag: "Cancelled", processTreeGone: true } })).status)
+        .toBe(401)
+      for (let n = 0; n < 2; n++) {
+        expect(await call("heartbeat", token, { key: job.key, claim: job.claim }))
+          .toEqual({ status: 401, body: { code: "authentication", cancel: true } })
+      }
+      expect(await sql`SELECT status, outcome, lease_until AS lease FROM agent_jobs`).toEqual([
+        { status: "cancelled", outcome: { _tag: "Cancelled", processTreeGone: false }, lease: null },
+      ])
+    }
+  })
+
+  // Astra's review of ad7d1be9: a job claimed before the deploy had no claiming token's digest, so a Stop never reached
+  // its runner once its token was rotated. The migration backfills it, and a heartbeat sets one still missing.
+  test("a job claimed before the deploy hears a Stop after a rotation: backfilled by the migration, or set by a heartbeat", async () => {
+    for (const how of ["migration", "heartbeat"] as const) {
+      await sql`TRUNCATE agent_jobs, runners, runner_changes RESTART IDENTITY CASCADE`
+      const token = await register("nyc-01")
+      const store = await jobs()
+      await Effect.runPromise(store.start(taskOf(), "todo:upgraded#g1"))
+      const { call, claim } = await routes()
+      const job = (await claim(token)).body.job!
+      // As it stood before the deploy.
+      await sql`UPDATE agent_jobs SET claimed_token_sha256 = NULL`
+      if (how === "migration") await query(Migration0093.backfillClaimedTokens)
+      else expect((await call<{ readonly held: boolean }>("heartbeat", token, { key: job.key, claim: job.claim })).body.held).toBe(true)
+      expect(await sql`SELECT claimed_token_sha256 AS sha FROM agent_jobs`).toEqual([{ sha: digestSync(token) }])
+      await sql`UPDATE runners SET token_sha256 = ${"e".repeat(64)}`
+      await Effect.runPromise(store.cancel(job.key))
+      expect(await call("heartbeat", token, { key: job.key, claim: job.claim }))
+        .toEqual({ status: 401, body: { code: "authentication", cancel: true } })
+    }
+  })
+
+  // Astra's review of 4cd69527: the migration took its locks with no bound, so a long reader of `agent_jobs` would queue
+  // the runner routes behind it. It fails within its lock timeout, rewrites no runner already clear, and puts the
+  // transaction's timeouts back for the migrations after it.
+  test("migration 0093 fails fast behind a held reader, rewrites no row already clear, and restores the timeouts", async () => {
+    await recordInstallation()
+    await register("authorized")
+    await register("clear")
+    await sql`UPDATE runners SET repo_authorized_at = NULL WHERE name = 'clear'`
+    const [clear] = await sql<{ readonly xmin: string }>`SELECT xmin::text FROM runners WHERE name = 'clear'`
+    const db = await database()
+    const run = Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        const [before] = yield* client<{ readonly lock: string }>`SELECT current_setting('lock_timeout') AS lock`
+        yield* Migration0093.migration
+        const [after] = yield* client<{ readonly lock: string }>`SELECT current_setting('lock_timeout') AS lock`
+        return [before!.lock, after!.lock]
+      }))).pipe(Effect.provide(db))
+    // A reader holding `agent_jobs` for longer than the migration may wait.
+    let release = () => {}
+    const released = new Promise<void>((done) => (release = done))
+    let reading = () => {}
+    const read = new Promise<void>((done) => (reading = done))
+    const reader = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`SELECT count(*) FROM agent_jobs`
+        yield* Effect.sync(reading)
+        yield* Effect.promise(() => released)
+      }))))
+    await read
+    const startedAt = Date.now()
+    const blocked = await Effect.runPromise(Effect.exit(run))
+    expect(Exit.isFailure(blocked)).toBe(true)
+    expect(Date.now() - startedAt).toBeLessThan(15_000)
+    release()
+    await reader
+    // Nothing held: it runs, and leaves the transaction's timeouts as it found them.
+    const [before, after] = await Effect.runPromise(run)
+    expect(after).toBe(before)
+    expect(await sql`SELECT name FROM runners WHERE repo_authorized_at IS NOT NULL`).toEqual([])
+    expect(await sql`SELECT xmin::text FROM runners WHERE name = 'clear'`).toEqual([clear])
+  }, 60_000)
+
+  // Astra's review of 5fc33348: an `admin/AddRunner` admitted by the old route's fallback, whose write resumes after a
+  // deploy, was stamped authorized whatever admitted it.
+  // A fenced registration that doesn't say the route took the repository's Admin role (`repoAuthorized`) registers its
+  // runner unauthorized. One with no fence at all is refused outright (the Admin action fence's own test).
+  test("an admin/AddRunner that doesn't say the route proved the repository's Admin role registers its runner unauthorized", async () => {
+    await recordInstallation()
+    const db = await database()
+    const scope = Effect.runSync(Scope.make())
+    try {
+      const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(db)), scope))
+      const flows = Context.get(built.context, FlowRuntime.FlowRuntime)
+      const token = "token-pending-legacy"
+      const payload = {
+        repoId: REPO,
+        name: "pending",
+        tokenSha256: digestSync(token),
+        labels: ["linux"],
+        capacity: 1,
+        actorId: "person-admin",
+        fence: { execution: "runners-put:pending", expiresAt: Date.now() + 60_000, generation: 0, authority: { _tag: "Local" as const } },
+      }
+      await Effect.runPromise((flows.execute(AdminFlows.AddRunner, { executionId: "admin:legacy", payload }) as Effect.Effect<unknown, unknown>)
+        .pipe(Effect.provide(built.context)))
+      expect(await sql`SELECT name, repo_authorized_at IS NOT NULL AS authorized FROM runners`).toEqual([
+        { name: "pending", authorized: false },
+      ])
+      const { claim } = await routes()
+      expect(await claim(token)).toEqual({ status: 403, body: { code: "not_authorized" } })
+    } finally {
+      await Effect.runPromise(Scope.close(scope, Exit.void))
+    }
+  })
+
   test("a runner on a repository with no recorded installation claims none of its jobs", async () => {
     const token = await register("nyc-01")
     await sql`DELETE FROM github_repositories`
@@ -1055,6 +1369,41 @@ describe("the repository's runners and agents", () => {
     expect((await claim(token)).body).toEqual({ job: null })
     await recordInstallation()
     expect((await claim(token)).body.job?.key).toBe("todo:uninstalled#g1")
+  })
+
+  // Astra's review of 5fc33348: a claim with `running: []` handed back a held job by its runner id alone, though a new
+  // claim checks the token, the authorization and the recorded installation.
+  test("a runner reclaims a held job only while its token, its authorization and the repository's installation hold", async () => {
+    const token = await register("nyc-01")
+    await Effect.runPromise((await jobs()).start(taskOf(), "todo:held#g1"))
+    const { claim } = await routes()
+    expect((await claim(token)).body.job?.reclaimed).toBe(false)
+    expect((await claim(token)).body.job?.reclaimed).toBe(true)
+    // The installation forgotten.
+    await sql`UPDATE github_repositories SET installation_id = NULL`
+    expect((await claim(token)).body).toEqual({ job: null })
+    await recordInstallation()
+    expect((await claim(token)).body.job?.reclaimed).toBe(true)
+    // The token rotated after the request authenticated, before it reclaimed: a transaction holds the runner's row with
+    // the new token while the request's mark of the runner seen waits for it.
+    await sql`UPDATE runners SET seen_at = now() - interval '1 hour'`
+    let commit = () => {}
+    const committed = new Promise<void>((done) => (commit = done))
+    let rotated = () => {}
+    const rotating = new Promise<void>((done) => (rotated = done))
+    const locker = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`UPDATE runners SET token_sha256 = ${digestSync("rotated")} WHERE name = 'nyc-01'`
+        yield* Effect.sync(rotated)
+        yield* Effect.promise(() => committed)
+      }))))
+    await rotating
+    const reclaiming = claim(token)
+    await new Promise((done) => setTimeout(done, 500))
+    commit()
+    await locker
+    expect((await reclaiming).body).toEqual({ job: null })
+    expect((await claim(token)).status).toBe(401)
   })
 })
 
@@ -1119,7 +1468,7 @@ describe("unhappy paths, through a database that is down or a starter that refus
 
   test("each Admin write again under its invocation key changes nothing", async () => {
     const again = by()
-    await query(Store.addRunner({ repoId: REPO, name: "nyc-01", tokenSha256: "c".repeat(64), labels: [], capacity: 1 }, by()))
+    await query(Store.addRunner({ repoId: REPO, name: "nyc-01", tokenSha256: "c".repeat(64), labels: [], capacity: 1, repoAuthorized: true }, by()))
     expect(await query(Store.removeRunner({ repoId: REPO, name: "nyc-01" }, again))).toBe("removed")
     expect(await query(Store.removeRunner({ repoId: REPO, name: "nyc-01" }, again))).toBe("repeat")
     const set = by()

@@ -205,7 +205,7 @@ const setup = async (
   const db = await database()
   const token = `runner-token-${crypto.randomUUID()}`
   await runtime.runPromise(Store.addRunner(
-    { repoId: REPOSITORY.id, name: "test-runner", tokenSha256: digestSync(token), labels: ["linux"], capacity: options.capacity ?? 2 },
+    { repoId: REPOSITORY.id, name: "test-runner", tokenSha256: digestSync(token), labels: ["linux"], capacity: options.capacity ?? 2, repoAuthorized: true },
     { actorId: "person-admin", invocationKey: crypto.randomUUID() },
   ))
   await runtime.runPromise(Store.setAgent(
@@ -417,7 +417,7 @@ describe("half load and overflow (decision 0144)", { timeout: 240_000 }, () => {
     // label, taking only a job that waited 3 s.
     const token = `runner-token-${crypto.randomUUID()}`
     await runtime.runPromise(Store.addRunner(
-      { repoId: REPOSITORY.id, name: "overflow", tokenSha256: digestSync(token), labels: ["linux", "cloudflare"], capacity: 2 },
+      { repoId: REPOSITORY.id, name: "overflow", tokenSha256: digestSync(token), labels: ["linux", "cloudflare"], capacity: 2, repoAuthorized: true },
       { actorId: "person-admin", invocationKey: crypto.randomUUID() },
     ))
     const state = join(scratch, `overflow-${crypto.randomUUID()}`)

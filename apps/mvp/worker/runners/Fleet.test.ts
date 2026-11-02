@@ -65,7 +65,7 @@ const by = (): Store.By => ({ actorId: "person-admin", invocationKey: `fleet-${+
 /** Registers runner `name` and answers its token. */
 const register = async (name: string) => {
   const token = `token-${name}-${crypto.randomUUID()}`
-  await query(Store.addRunner({ repoId: REPO, name, tokenSha256: digestSync(token), labels: ["linux"], capacity: 2 }, by()))
+  await query(Store.addRunner({ repoId: REPO, name, tokenSha256: digestSync(token), labels: ["linux"], capacity: 2, repoAuthorized: true }, by()))
   return token
 }
 
@@ -473,7 +473,7 @@ describe("ops/FleetAlert and ops/RunnerHealth on the Node host", () => {
     await sql(`
       INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at)
       VALUES ('${crypto.randomUUID()}', '${crypto.randomUUID()}', '${person}', 'maintainer', now(), now() + interval '1 day')`)
-    await query(Store.addRunner({ repoId: HOME, name: "nyc-02", tokenSha256: digestSync("t"), labels: [], capacity: 1 }, by()))
+    await query(Store.addRunner({ repoId: HOME, name: "nyc-02", tokenSha256: digestSync("t"), labels: [], capacity: 1, repoAuthorized: true }, by()))
     await Effect.runPromise(Jobs.make(await database()).start({ ...taskOf(), repository: HOME }, "home#g1"))
     const alert: Fleet.Alert = { alertId: "fleet-waiting-home", kind: "waiting", repoId: HOME, subject: "home#g1" }
     await runFlow(FleetAlert.FleetAlert, alert, FleetAlert.registration(await database(), HOME))

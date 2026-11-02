@@ -7,6 +7,7 @@ import * as Database from "../../db/Database.ts"
 import { issuesRoute } from "../../src/features/issues/contract.ts"
 import { MAX_LINKS_PER_POST, WORK_LINKS_SHAPE_ROUTE, workLinksRoute } from "../../src/features/issues/work.ts"
 import * as Actor from "../Actor.ts"
+import * as Store from "../runners/Store.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
 import * as RepoRoles from "./RepoRoles.ts"
@@ -29,7 +30,7 @@ const post = (body: unknown, headers: Record<string, string> = {}) => ({
 })
 const asRunner = { authorization: `Bearer ${RUNNER_TOKEN}` }
 
-/** Issues #1 to #3, open; and a runner `lane-host` registered on the repository. */
+/** Issues #1 to #3, open; and a runner `lane-host` registered on the repository through its Admin role (decision 0148). */
 const seed = async () => {
   await sql(
     runtime,
@@ -39,8 +40,8 @@ const seed = async () => {
   )
   await sql(
     runtime,
-    `INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by)
-    VALUES ('${REPOSITORY.id}', 'lane-host', 1, '${digestSync(RUNNER_TOKEN)}', 'test')`,
+    `INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by, repo_authorized_at)
+    VALUES ('${REPOSITORY.id}', 'lane-host', 1, '${digestSync(RUNNER_TOKEN)}', 'test', now())`,
   )
 }
 
@@ -100,7 +101,7 @@ describe("work links", () => {
 
   test("a runner registered on the repository posts and reads with its token; any other token is nobody", async () => {
     await seed()
-    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, true)`)
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private, installation_id) VALUES ('${REPOSITORY.id}', 1, true, 42)`)
     const h = await githubHarness(runtime, { actor: null })
     const posted = await h.fetch(route(3), post({ links: [{ kind: "queue", ref: "q-9", state: "queued" }] }, asRunner))
     expect([posted.status, await posted.json()]).toEqual([200, { links: 1, changed: 1 }])
@@ -115,6 +116,61 @@ describe("work links", () => {
     }
     await sql(runtime, `UPDATE runners SET removed_at = now()`)
     expect((await h.fetch(route(3), post({ links: [{ kind: "queue", ref: "q-9" }] }, asRunner))).status).toBe(401)
+  })
+
+  // Decision 0148, migration 0093: a runner token posts and reads only while its runner is current as a claim requires.
+  test("a runner no registration through the repository's Admin role authorized, or without a recorded installation, posts and reads nothing until registered again", async () => {
+    await seed()
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private, installation_id) VALUES ('${REPOSITORY.id}', 1, true, 42)`)
+    await sql(runtime, `UPDATE runners SET repo_authorized_at = NULL`)
+    const h = await githubHarness(runtime, { actor: null })
+    const links = () => h.fetch(route(3), post({ links: [{ kind: "queue", ref: "q-9", state: "queued" }] }, asRunner))
+    const legacy = await links()
+    expect([legacy.status, await legacy.json()]).toEqual([403, { code: "not_authorized" }])
+    expect((await h.fetch(list, { headers: asRunner })).status).toBe(401)
+    expect(await sql(runtime, `SELECT source FROM work_links`)).toEqual([])
+    // Registered again by an Admin, with the same token's SHA-256.
+    await runtime.runPromise(Store.addRunner({
+      repoId: REPOSITORY.id, name: "lane-host", tokenSha256: digestSync(RUNNER_TOKEN), labels: [], capacity: 1, repoAuthorized: true,
+    }, { actorId: "person-admin", invocationKey: crypto.randomUUID() }))
+    expect((await links()).status).toBe(200)
+    expect((await h.fetch(list, { headers: asRunner })).status).toBe(200)
+    // The installation forgotten: refused again.
+    await sql(runtime, `UPDATE github_repositories SET installation_id = NULL`)
+    expect((await links()).status).toBe(403)
+    expect((await h.fetch(list, { headers: asRunner })).status).toBe(401)
+  })
+
+  // Astra's review of f42f8b6b: the runner was authorized before its body arrived, and the write didn't check it again,
+  // so a body held open past a revocation still wrote.
+  test("a runner whose authorization is cleared while its body arrives writes nothing", async () => {
+    await seed()
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private, installation_id) VALUES ('${REPOSITORY.id}', 1, true, 42)`)
+    const h = await githubHarness(runtime, { actor: null })
+    let finish = () => {}
+    const finished = new Promise<void>((done) => (finish = done))
+    const encoder = new TextEncoder()
+    const text = JSON.stringify({ links: [{ kind: "queue", ref: "q-late", state: "queued" }] })
+    let sentHead = false
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (!sentHead) {
+          sentHead = true
+          controller.enqueue(encoder.encode(text.slice(0, 5)))
+          return
+        }
+        await finished
+        controller.enqueue(encoder.encode(text.slice(5)))
+        controller.close()
+      },
+    })
+    const posting = h.fetch(route(3), { method: "POST", headers: { "content-type": "application/json", ...asRunner }, body, duplex: "half" } as RequestInit)
+    await new Promise((done) => setTimeout(done, 300))
+    await sql(runtime, `UPDATE runners SET repo_authorized_at = NULL`)
+    finish()
+    const answer = await posting
+    expect([answer.status, await answer.json()]).toEqual([403, { code: "not_authorized" }])
+    expect(await sql(runtime, `SELECT source FROM work_links`)).toEqual([])
   })
 
   test("filters the list to issues whose work reaches a pull request or a queue entry, or that have any link", async () => {

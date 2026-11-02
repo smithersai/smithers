@@ -18,15 +18,32 @@
  */
 
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
-import { Cause, Clock, Deferred, Effect, type Fiber, Queue, Schema } from "effect"
+import { Cause, Clock, Deferred, Effect, type Fiber, Latch, Queue, Schema } from "effect"
 import * as Admission from "./Admission.ts"
 import type * as Config from "./Config.ts"
 import * as Host from "./Host.ts"
 import * as Job from "./Job.ts"
 import * as Machine from "./Machine.ts"
 import type * as Session from "./Session.ts"
+import * as Workspace from "./Workspace.ts"
 
 const isAccount = Schema.is(AgentRunner.Profile)
+
+/** How often the serve loop does the checkout removals owed (`Workspace.sweep`). */
+const SWEEP_SECONDS = 2
+
+/**
+ * What the runner logs while the host refuses its claims `403`: no registration
+ * through its repository's Admin role authorized it (decision 0148; migration
+ * 0093 cleared every earlier one), so it claims nothing until an Admin of the
+ * repository registers it again with its token's SHA-256.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const NOT_AUTHORIZED_HINT = "this runner needs re-registration: an Admin of its repository registers it again " +
+  "with PUT /api/repos/<owner>/<name>/runners/<runner> and its token's SHA-256 " +
+  "(apps/mvp/docs/features/agent-runners.md#registering-a-runner-again)"
 
 /**
  * Runs the claim loop under `config`, forever or until it served no job for
@@ -66,6 +83,18 @@ export const loop = (
             ...(usage === undefined ? {} : { usage })
           }))
           if (beat._tag === "Failure") {
+            // Refused for want of authorization or authentication (decision 0148: cleared, uninstalled, or a token
+            // rotated or retired): suspended, never ended, and beating on until the host takes the runner again. Only
+            // an authenticated answer that the claim no longer holds ends the job's work.
+            if (Host.authorizationLost(beat.failure)) {
+              yield* suspend(job, control)
+              // A Stop the host still tells a runner it no longer takes: it ended the job, so the work ends too.
+              if (beat.failure.cancel === true) {
+                yield* Deferred.succeed(control.hostEnded, undefined)
+                yield* Deferred.succeed(control.cancel, undefined)
+              }
+              continue
+            }
             if (beat.failure.code === "refused") return yield* drop(job, control)
             // An unreachable host doesn't prove the claim is gone: keep working, and keep asking.
             yield* Effect.logWarning("runner.heartbeat").pipe(
@@ -74,6 +103,7 @@ export const loop = (
             continue
           }
           if (!beat.success.held) return yield* drop(job, control)
+          yield* authorized(job, control)
           if (beat.success.cancel) yield* Deferred.succeed(control.cancel, undefined)
           const steers = beat.success.steers ?? []
           // A delivered steer the host no longer lists was recorded there; one it still lists is acknowledged again.
@@ -84,6 +114,29 @@ export const loop = (
             yield* Queue.offer(control.steers, steer)
           }
         }
+      })
+
+    /**
+     * Suspends a job the host refuses `403 not_authorized` (decision 0148): its work stops the agent and keeps
+     * everything, and waits; nothing of the job ends or is deleted.
+     */
+    const suspend = (job: AgentRunner.Job, control: Session.Control) =>
+      Effect.gen(function*() {
+        if (yield* Deferred.isDone(control.authorization.suspended)) return
+        yield* control.authorization.latch.close
+        yield* Deferred.succeed(control.authorization.suspended, undefined)
+        yield* Effect.logError("runner.job").pipe(
+          Effect.annotateLogs({ job: job.key, outcome: "suspended", hint: NOT_AUTHORIZED_HINT })
+        )
+      })
+
+    /** Resumes a suspended job once the host takes the runner's heartbeat again. */
+    const authorized = (job: AgentRunner.Job, control: Session.Control) =>
+      Effect.gen(function*() {
+        if (!(yield* Deferred.isDone(control.authorization.suspended))) return
+        control.authorization.suspended = yield* Deferred.make<void>()
+        yield* control.authorization.latch.open
+        yield* Effect.logInfo("runner.job").pipe(Effect.annotateLogs({ job: job.key, outcome: "resumed" }))
       })
 
     const drop = (job: AgentRunner.Job, control: Session.Control) =>
@@ -98,6 +151,8 @@ export const loop = (
         const control: Session.Control = {
           cancel: yield* Deferred.make<void>(),
           dropped: yield* Deferred.make<void>(),
+          authorization: { suspended: yield* Deferred.make<void>(), latch: yield* Latch.make(true) },
+          hostEnded: yield* Deferred.make<void>(),
           reclaimed: job.reclaimed,
           steers: yield* Queue.unbounded<AgentRunner.Steer>(),
           delivered: new Set(),
@@ -143,6 +198,13 @@ export const loop = (
         )
       })
 
+    // The removals owed for checkouts whose jobs ended (`Workspace.scheduleRemoval`), done apart from any job's slot,
+    // every few seconds, after a restart too.
+    yield* Workspace.sweep(config.stateDir).pipe(
+      Effect.andThen(Effect.sleep(`${SWEEP_SECONDS} seconds`)),
+      Effect.forever,
+      Effect.forkChild
+    )
     let backoff = 1
     let admission = Admission.initial
     let busyAt = yield* Clock.currentTimeMillis
@@ -174,7 +236,16 @@ export const loop = (
         })
       )
       if (claimed._tag === "Failure") {
-        yield* Effect.logWarning("runner.claim").pipe(Effect.annotateLogs({ outcome: claimed.failure.code }))
+        if (Host.authorizationLost(claimed.failure)) {
+          // No registration through its repository's Admin role authorized this runner, or its token is no longer
+          // the registered one (decision 0148).
+          yield* Effect.logError("runner.claim").pipe(Effect.annotateLogs({
+            outcome: "not_authorized",
+            hint: NOT_AUTHORIZED_HINT
+          }))
+        } else {
+          yield* Effect.logWarning("runner.claim").pipe(Effect.annotateLogs({ outcome: claimed.failure.code }))
+        }
         yield* Effect.sleep(`${backoff} seconds`)
         backoff = Math.min(30, backoff * 2)
         continue

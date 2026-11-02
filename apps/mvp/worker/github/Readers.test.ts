@@ -165,9 +165,18 @@ const seed = async (cell: Cell) => {
   if (cell.runnerOn !== undefined) {
     await sql(
       runtime,
-      `INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by)
-      VALUES ('${cell.runnerOn.id}', 'readers-runner', 1, '${digestSync(RUNNER_TOKEN)}', 'test')`,
+      `INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by, repo_authorized_at)
+      VALUES ('${cell.runnerOn.id}', 'readers-runner', 1, '${digestSync(RUNNER_TOKEN)}', 'test', now())`,
     )
+    // A runner reads only while it is current as a claim requires (decision 0148): registered through the
+    // repository's Admin role, with the App's installation on its repository recorded, where the App is there.
+    if (cell.appAbsent !== true) {
+      await sql(
+        runtime,
+        `INSERT INTO github_repositories (repo_id, github_id, installation_id) VALUES ('${cell.runnerOn.id}', 2, 42)
+        ON CONFLICT (repo_id) DO UPDATE SET installation_id = 42`,
+      )
+    }
   }
 }
 

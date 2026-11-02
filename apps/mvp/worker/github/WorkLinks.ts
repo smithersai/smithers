@@ -79,23 +79,67 @@ export const MAX_SKEW_MS = 5 * 60 * 1000
 export const fromTheFuture = (post: Post, now: number): boolean =>
   post.links.some((link) => link.at !== undefined && Date.parse(link.at) > now + MAX_SKEW_MS)
 
-/** The runner whose token a request carries, when it is one registered on `repoId` and not removed. */
+/**
+ * The runner whose token a request carries, on `repoId`: `none` when the token names no unremoved runner there;
+ * `NotAuthorized` when it does, but the runner isn't current as a claim requires (decision 0148): no registration
+ * through the repository's Admin role authorized it (it needs registering again), or Smithers recorded no App
+ * installation on the repository; else the runner's name.
+ */
 export const runnerOf = (request: HttpServerRequest.HttpServerRequest, repoId: string) =>
   Effect.gen(function* () {
     const token = bearerOf(request)
-    if (Option.isNone(token)) return Option.none<string>()
+    if (Option.isNone(token)) return Option.none<RunnerAccess>()
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly name: string }>`
-      SELECT name FROM runners WHERE token_sha256 = ${digestSync(token.value)} AND repo_id = ${repoId} AND removed_at IS NULL`
-    return Option.map(Option.fromNullishOr(row), (found) => found.name)
+    const [row] = yield* sql<{ readonly name: string; readonly current: boolean }>`
+      SELECT r.name, r.repo_authorized_at IS NOT NULL
+          AND EXISTS (SELECT 1 FROM github_repositories g WHERE g.repo_id = r.repo_id AND g.installation_id IS NOT NULL)
+          AS current
+      FROM runners r
+      WHERE r.token_sha256 = ${digestSync(token.value)} AND r.repo_id = ${repoId} AND r.removed_at IS NULL`
+    if (row === undefined) return Option.none<RunnerAccess>()
+    return Option.some<RunnerAccess>(
+      row.current ? { _tag: "Runner", name: row.name, tokenSha256: digestSync(token.value) } : { _tag: "NotAuthorized" },
+    )
   })
+
+/** A runner token's standing on a repository (`runnerOf`). */
+export type RunnerAccess =
+  | { readonly _tag: "Runner"; readonly name: string; readonly tokenSha256: string }
+  | { readonly _tag: "NotAuthorized" }
 
 /**
  * Writes `post`'s links of issue `number` as `source`, in one statement. A link already there changes for a newer `at`,
  * even with the same state: a lane that starts working again after its queue entry failed is the newest word. The same
  * `at` changes it only when something differs, so a post sent again changes nothing. Answers how many rows changed.
+ *
+ * With `runner` (a runner's post, by its token's SHA-256), the write is one transaction that first holds the runner
+ * current as a claim requires (decision 0148): its row `FOR SHARE` where its token still names it, unremoved and
+ * authorized, then the repository's installation row. `none` when it isn't, and nothing is written.
  */
-export const write = (repoId: string, number: number, post: Post, source: string, now: number) =>
+export const write = (
+  repoId: string,
+  number: number,
+  post: Post,
+  source: string,
+  now: number,
+  runner?: { readonly tokenSha256: string },
+) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql.withTransaction(Effect.gen(function* () {
+      if (runner !== undefined) {
+        const [held] = yield* sql`
+          SELECT 1 FROM runners
+          WHERE token_sha256 = ${runner.tokenSha256} AND repo_id = ${repoId} AND removed_at IS NULL
+            AND repo_authorized_at IS NOT NULL
+          FOR SHARE`
+        const [installed] = held === undefined ? [] : yield* sql`
+          SELECT 1 FROM github_repositories WHERE repo_id = ${repoId} AND installation_id IS NOT NULL FOR SHARE`
+        if (installed === undefined) return Option.none<{ readonly links: number; readonly changed: number }>()
+      }
+      return Option.some(yield* writeLinks(repoId, number, post, source, now))
+    })))
+
+const writeLinks = (repoId: string, number: number, post: Post, source: string, now: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const received = new Date(now).toISOString()

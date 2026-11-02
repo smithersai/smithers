@@ -116,6 +116,26 @@ describe("machines and the counts", () => {
     ])
     expect(summaryOf([], machines, NOW)).toMatchObject({ online: 2, held: 1, machines: 3 })
   })
+
+  // Migration 0093 cleared every runner's authorization (decision 0148): one that still answers claims nothing, so the
+  // fleet names what to do rather than reading Online.
+  test("a runner no registration through the repository's Admin role authorized reads Needs re-registration", () => {
+    const machines = machinesOf([
+      machine("nyc-01", { repoAuthorizedAt: null }),
+      machine("nyc-02", { repoAuthorizedAt: null, seenAt: null }),
+      machine("nyc-03", { repoAuthorizedAt: ago(1000) }),
+      machine("nyc-04"),
+      machine("old", { repoAuthorizedAt: null, removedAt: ago(1000) }),
+    ], [], NOW)
+    expect(machines.map((each) => [each.name, each.word, each.tone])).toEqual([
+      ["nyc-01", "Needs re-registration", "bad"],
+      ["nyc-02", "Needs re-registration", "bad"],
+      ["nyc-03", "Online", "ok"],
+      ["nyc-04", "Online", "ok"],
+      ["old", "Removed", "muted"],
+    ])
+    expect(summaryOf([], machines, NOW)).toMatchObject({ online: 2, machines: 4 })
+  })
 })
 
 

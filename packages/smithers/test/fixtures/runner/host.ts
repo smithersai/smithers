@@ -34,6 +34,8 @@ export interface Row {
   readonly received: Map<number, number>
   /** When the job was claimed, in epoch ms. */
   claimedAt?: number
+  /** The token that claimed it. */
+  claimToken?: string
   /** Events requests: how many were answered, and how many were refused while events were blocked. */
   posts: number
   refusedPosts: number
@@ -68,6 +70,8 @@ const json = (response: ServerResponse, status: number, body: unknown) => {
 
 /** Starts the host on a loopback port, accepting `token` as the runner's bearer. */
 export const start = async (token: string) => {
+  /** The token the host takes: `rotate` replaces it, as an Admin registering the runner again with a new one. */
+  const accepted = { token }
   const rows = new Map<string, Row>()
   // Until when the events route answers 503, as a host that can't be reached.
   let blockedUntil = 0
@@ -75,11 +79,72 @@ export const start = async (token: string) => {
   const machines: Array<AgentRunner.Machine | undefined> = []
   /** Every claim request, in order. */
   const claimRequests: Array<typeof AgentRunner.ClaimRequest.Type> = []
+  /**
+   * How the git-credential route answers (decision 0148): each of `sequence` in turn, then `status` (`404` unless a
+   * test sets another) with `retryAfter`; its asks.
+   */
+  const credential = {
+    status: 404,
+    retryAfter: undefined as number | undefined,
+    asks: 0,
+    sequence: [] as Array<
+      { readonly status: number; readonly retryAfter?: number; readonly issue?: Record<string, unknown> }
+    >
+  }
+  /** The claim route's refusal while set: `403` answers as a host that no registration authorized the runner on. */
+  const refusal = {
+    claim: undefined as number | undefined,
+    /**
+     * The routes refused `403 not_authorized`, as a host after migration 0093 refuses them all until the runner is
+     * registered again.
+     */
+    notAuthorized: new Set<"claim" | "heartbeat" | "settle" | "events" | "gitCredential">(),
+    /** The status those routes are refused with: `403` unless a test sets `401`. */
+    status: 403,
+    /** How many heartbeats, settlements and events requests were refused so. */
+    refused: { heartbeat: 0, settle: 0, events: 0 }
+  }
+  /**
+   * How long the claim route holds its answer after it marked a job claimed (a runner may die before it hears it),
+   * and how long the settle route holds its answer.
+   */
+  const hold = { claimMs: 0, settleMs: 0 }
   const server = createServer(async (request, response) => {
     const body = await read(request)
-    if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { code: "authentication" })
+    if (request.headers.authorization !== `Bearer ${accepted.token}`) {
+      // As the host does: a token rotated since it claimed a job still hears a Stop on that job's heartbeat, and the
+      // host ends the job; nothing else.
+      const asked = JSON.parse(body || "{}") as Record<string, unknown>
+      const past = request.url === AgentRunner.ROUTES.heartbeat ? rows.get(String(asked.key)) : undefined
+      if (
+        past !== undefined && past.claim === asked.claim && past.claimToken !== undefined &&
+        request.headers.authorization === `Bearer ${past.claimToken}` && past.cancel &&
+        (past.state === "claimed" || past.outcome?._tag === "Cancelled")
+      ) {
+        past.state = "settled"
+        past.outcome = { _tag: "Cancelled", processTreeGone: false }
+        return json(response, 401, { code: "authentication", cancel: true })
+      }
+      return json(response, 401, { code: "authentication" })
+    }
     const value = JSON.parse(body) as Record<string, unknown>
+    for (const route of refusal.notAuthorized) {
+      if (request.url !== AgentRunner.ROUTES[route]) continue
+      if (route === "heartbeat" || route === "settle" || route === "events") refusal.refused[route]++
+      // As the host does: a runner it no longer takes hears of a Stop on its own claim, and the host ends that job.
+      const stopping = rows.get(String((JSON.parse(body) as Record<string, unknown>).key))
+      if (
+        route === "heartbeat" && refusal.status === 403 && stopping !== undefined && stopping.state === "claimed" &&
+        stopping.cancel && stopping.claim === (JSON.parse(body) as Record<string, unknown>).claim
+      ) {
+        stopping.state = "settled"
+        stopping.outcome = { _tag: "Cancelled", processTreeGone: false }
+        return json(response, 403, { code: "not_authorized", cancel: true })
+      }
+      return json(response, refusal.status, { code: refusal.status === 401 ? "authentication" : "not_authorized" })
+    }
     if (request.url === AgentRunner.ROUTES.claim) {
+      if (refusal.claim !== undefined) return json(response, refusal.claim, { code: "not_authorized" })
       const wants = value as unknown as typeof AgentRunner.ClaimRequest.Type
       machines.push(wants.machine)
       claimRequests.push(wants)
@@ -92,6 +157,14 @@ export const start = async (token: string) => {
         leaseSeconds: 45,
         reclaimed
       })
+      // As the host does in the claim's own transaction: a claimed job past its deadline and the grace to settle it
+      // (`SETTLE_GRACE_SECONDS`) ends `timeout`, and is never handed back.
+      for (const row of rows.values()) {
+        if (row.state === "claimed" && row.deadline + 300_000 <= Date.now()) {
+          row.state = "settled"
+          row.outcome = { _tag: "Failed", reason: "timeout" }
+        }
+      }
       const held = [...rows.values()].find((row) =>
         row.state === "claimed" && row.held && !wants.running.includes(row.key)
       )
@@ -104,10 +177,27 @@ export const start = async (token: string) => {
       queued.claim = randomUUID()
       queued.claims++
       queued.claimedAt = Date.now()
+      queued.claimToken = accepted.token
+      if (hold.claimMs > 0) await new Promise((done) => setTimeout(done, hold.claimMs))
       return json(response, 200, { job: asJob(queued, false) })
     }
     const row = rows.get(String(value.key))
     const holds = row !== undefined && row.state === "claimed" && row.claim === value.claim && row.held
+    if (request.url === AgentRunner.ROUTES.gitCredential) {
+      credential.asks++
+      const answer: {
+        readonly status: number
+        readonly retryAfter?: number
+        readonly issue?: Record<string, unknown>
+      } = credential.sequence.shift() ??
+        {
+          status: credential.status,
+          ...(credential.retryAfter === undefined ? {} : { retryAfter: credential.retryAfter })
+        }
+      if (answer.issue !== undefined) return json(response, 200, answer.issue)
+      if (answer.retryAfter !== undefined) response.setHeader("retry-after", String(answer.retryAfter))
+      return json(response, answer.status, { code: answer.status === 404 ? "not_found" : "refused" })
+    }
     if (request.url === AgentRunner.ROUTES.heartbeat) {
       if (row !== undefined) {
         row.heartbeats++
@@ -143,6 +233,7 @@ export const start = async (token: string) => {
       return json(response, 200, { next })
     }
     if (request.url === AgentRunner.ROUTES.settle) {
+      if (hold.settleMs > 0) await new Promise((done) => setTimeout(done, hold.settleMs))
       if (!holds) return json(response, 200, { recorded: false })
       row.delivered.push(...((value.delivered ?? []) as ReadonlyArray<string>))
       row.state = "settled"
@@ -159,6 +250,11 @@ export const start = async (token: string) => {
     rows,
     machines,
     claimRequests,
+    credential,
+    refusal,
+    hold,
+    /** Takes `token` from now on, and refuses the one before `401`. */
+    rotate: (token: string) => void (accepted.token = token),
     /** Queues generation `generation` of the step `origin` with `task`. */
     enqueue: (
       task: AgentRunner.Task,
@@ -216,7 +312,7 @@ export const start = async (token: string) => {
 }
 
 /** The jj flags every fixture call passes: no user configuration, a fixed identity. */
-const jjFlags = [
+export const jjFlags = [
   "--no-pager",
   "--color=never",
   "--config",

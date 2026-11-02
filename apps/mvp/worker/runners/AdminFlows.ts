@@ -45,6 +45,12 @@ export const Capacity = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum:
  */
 const fence = Schema.optional(Fence.Fence)
 
+/**
+ * Set by the route that admitted a registration by the Admin role GitHub gives on the repository (decision 0148). A
+ * flow started before that route has none, so its runner is registered unauthorized and must be registered again.
+ */
+const RepoAuthorized = Schema.optional(Schema.Literal(true))
+
 const addPayload = {
   repoId: Schema.String,
   name: AgentRunner.Name,
@@ -52,6 +58,7 @@ const addPayload = {
   labels: Schema.Array(AgentRunner.Label),
   capacity: Capacity,
   actorId: Schema.String,
+  repoAuthorized: RepoAuthorized,
   fence,
 }
 const removePayload = { repoId: Schema.String, name: AgentRunner.Name, actorId: Schema.String, fence }
@@ -71,6 +78,7 @@ const setOverflowPayload = {
   tokenSha256: TokenSha256,
   token: Schema.Struct({ ciphertext: Schema.String, nonce: Schema.String, keyVersion: Schema.Int }),
   actorId: Schema.String,
+  repoAuthorized: RepoAuthorized,
   fence,
 }
 const removeOverflowPayload = { repoId: Schema.String, actorId: Schema.String, fence }
@@ -210,7 +218,8 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
   Layer.mergeAll(
     Interpreter.layerWithImplementations(
       AddRunner,
-      WriteRunner.toLayer(step(AddRunner._tag, database, (p) => p.name, { kind: "runners", op: "put" }, (p, by) => Store.addRunner(p, by))),
+      WriteRunner.toLayer(step(AddRunner._tag, database, (p) => p.name, { kind: "runners", op: "put" }, (p, by) =>
+        Store.addRunner({ ...p, repoAuthorized: p.repoAuthorized === true }, by))),
     ),
     Interpreter.layerWithImplementations(
       RemoveRunner,
@@ -226,7 +235,8 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
     ),
     Interpreter.layerWithImplementations(
       SetOverflow,
-      WriteOverflow.toLayer(step(SetOverflow._tag, database, () => Overflow.RUNNER, { kind: "overflow", op: "put" }, (p, by) => Overflow.set(p, by))),
+      WriteOverflow.toLayer(step(SetOverflow._tag, database, () => Overflow.RUNNER, { kind: "overflow", op: "put" }, (p, by) =>
+        Overflow.set({ ...p, repoAuthorized: p.repoAuthorized === true }, by))),
     ),
     Interpreter.layerWithImplementations(
       RemoveOverflow,

@@ -22,7 +22,14 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 export class HostError extends Schema.TaggedError<HostError>()("@smthrs/cli/Runner/HostError", {
   code: Schema.Literals(["unavailable", "refused", "invalid"]),
   route: Schema.String,
-  status: Schema.optional(Schema.Int)
+  status: Schema.optional(Schema.Int),
+  /** The wait the host's `retry-after` said, in seconds, on a `429` or `503`. */
+  retryAfterSeconds: Schema.optional(Schema.Int),
+  /**
+   * On a heartbeat refused `403`: the host ended the job for a Stop, which is
+   * all it tells a runner it no longer takes (decision 0148).
+   */
+  cancel: Schema.optional(Schema.Boolean)
 }) {}
 
 /**
@@ -58,9 +65,20 @@ const decodeEvents = Schema.decodeUnknownEffect(Schema.fromJsonString(Transcript
 const decodeGitCredential = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.GitCredentialResponse))
 
 /**
+ * The longest the runner reads a refusal's body for its `cancel`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const REFUSAL_BODY_MS = 5000
+
+/**
  * The routes at `origin` with `token`, over the context's `HttpClient`. A
  * claim may wait for `waitSeconds` on the host, so each request's own bound is
- * that wait and 30 seconds more.
+ * that wait and 30 seconds more, its answer's body included. A `401` or `403`
+ * is a refusal whatever its body; the body is read, within the same bound and
+ * at most `REFUSAL_BODY_MS`, only for the `cancel` a Stop adds (decision
+ * 0148), and one that doesn't arrive whole or doesn't parse says none.
  *
  * @category layers
  * @since 1.0.0
@@ -81,15 +99,36 @@ export const layer = (options: { readonly origin: string; readonly token: string
             HttpClientRequest.bearerToken(options.token),
             HttpClientRequest.bodyJsonUnsafe(body)
           )
+          const deadline = Date.now() + Duration.toMillis(Duration.seconds(waitSeconds + 30))
+          const left = () => Math.max(0, deadline - Date.now())
           const response = yield* client.execute(request).pipe(
-            Effect.timeout(Duration.seconds(waitSeconds + 30)),
+            Effect.timeout(left()),
             Effect.mapError(() => new HostError({ code: "unavailable", route }))
           )
           const status = response.status
-          if (status === 401 || status === 403) return yield* new HostError({ code: "refused", route, status })
-          if (status >= 500 || status === 429) return yield* new HostError({ code: "unavailable", route, status })
+          if (status === 401 || status === 403) {
+            const said = yield* response.json.pipe(
+              Effect.timeout(Math.min(left(), REFUSAL_BODY_MS)),
+              Effect.orElseSucceed(() => undefined)
+            )
+            const cancel = typeof said === "object" && said !== null &&
+              (said as { readonly cancel?: unknown }).cancel === true
+            return yield* new HostError({ code: "refused", route, status, ...(cancel ? { cancel } : {}) })
+          }
+          if (status >= 500 || status === 429) {
+            const wait = Number(response.headers["retry-after"])
+            return yield* new HostError({
+              code: "unavailable",
+              route,
+              status,
+              ...(Number.isInteger(wait) && wait > 0 ? { retryAfterSeconds: wait } : {})
+            })
+          }
           if (status !== 200) return yield* new HostError({ code: "invalid", route, status })
-          const text = yield* response.text.pipe(Effect.mapError(() => new HostError({ code: "unavailable", route })))
+          const text = yield* response.text.pipe(
+            Effect.timeout(left()),
+            Effect.mapError(() => new HostError({ code: "unavailable", route }))
+          )
           return yield* decode(text).pipe(Effect.mapError(() => new HostError({ code: "invalid", route, status })))
         })
       return Host.of({
@@ -102,3 +141,16 @@ export const layer = (options: { readonly origin: string; readonly token: string
       })
     })
   )
+
+/**
+ * Whether the host refused a request for want of authorization (`403`:
+ * cleared, or its repository's installation forgotten) or authentication
+ * (`401`: the token rotated or the runner retired), as opposed to answering
+ * that a claim no longer holds (decision 0148). A job's work is suspended for
+ * it, never ended.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+export const authorizationLost = (error: HostError): boolean =>
+  error.code === "refused" && (error.status === 401 || error.status === 403)

@@ -27,7 +27,7 @@ const admin: Actor.Actor = { subject: { kind: "person", id: ADMIN_ID }, role: "a
 const repoAdmin: Actor.Actor = { subject: { kind: "person", id: "person-repo-admin" }, role: "member" }
 
 const register = (repoId: string, name: string, token: string) =>
-  runtime.runPromise(Store.addRunner({ repoId, name, tokenSha256: digestSync(token), labels: ["linux"], capacity: 1 }, {
+  runtime.runPromise(Store.addRunner({ repoId, name, tokenSha256: digestSync(token), labels: ["linux"], capacity: 1, repoAuthorized: true }, {
     actorId: ADMIN_ID,
     invocationKey: crypto.randomUUID(),
   }))
@@ -47,32 +47,35 @@ test("only an Admin of the deployment's own repository, in person, reads it", as
   expect((await audit(admin)).status).toBe(200)
 })
 
-test("lists each live runner with its registrant and its repository's installation, flags the unproven, and no token", async () => {
+// Migration 0093 cleared every runner's authorization: the audit names each one that needs registering again.
+test("lists each live runner with its registrant, its authorization and installation, flags what needs acting on, and no token", async () => {
   await sql`INSERT INTO people (id, github_id, github_login) VALUES (${ADMIN_ID}::uuid, 1, 'octo-admin')`
-  // Installed before the runner was registered: proven.
-  await sql`INSERT INTO github_repositories (repo_id, installation_id, checked_at) VALUES ('github/acme/old', 7, now() - interval '1 day')`
-  // Installation recorded after the runner was registered, and none recorded at all.
-  await sql`INSERT INTO github_repositories (repo_id, installation_id, checked_at) VALUES ('github/acme/later', 8, now() + interval '1 day')`
-  const tokens = ["token-old-secret", "token-later-secret", "token-none-secret", "token-gone-secret"]
-  await register("github/acme/old", "a", tokens[0]!)
-  await register("github/acme/later", "b", tokens[1]!)
+  await sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/acme/ok', 7)`
+  await sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/acme/legacy', 8)`
+  const tokens = ["token-ok-secret", "token-legacy-secret", "token-none-secret", "token-gone-secret"]
+  await register("github/acme/ok", "a", tokens[0]!)
+  // Registered before the route proved the repository's Admin role: cleared by migration 0093.
+  await register("github/acme/legacy", "b", tokens[1]!)
+  await sql`UPDATE runners SET repo_authorized_at = NULL WHERE name = 'b'`
   await register("github/acme/none", "c", tokens[2]!)
-  await register("github/acme/old", "gone", tokens[3]!)
+  await register("github/acme/ok", "gone", tokens[3]!)
   await sql`UPDATE runners SET removed_at = now(), seen_at = now() WHERE name = 'gone'`
   const answer = await audit(admin)
   expect(answer.status).toBe(200)
-  const body = JSON.parse(answer.text) as { installationTime: string; runners: ReadonlyArray<Audit.Row> }
-  expect(body.installationTime).toBe("github_repositories.checked_at")
+  const body = JSON.parse(answer.text) as { runners: ReadonlyArray<Audit.Row> }
+  expect(Object.keys(body)).toEqual(["runners"])
   expect(body.runners.map((row) => [row.repoId, row.name, row.addedBy, row.addedByLogin, row.installation.recorded, row.flags]))
     .toEqual([
-      ["github/acme/later", "b", ADMIN_ID, "octo-admin", true, ["installation_recorded_after_added"]],
+      ["github/acme/legacy", "b", ADMIN_ID, "octo-admin", true, ["needs_registration"]],
       ["github/acme/none", "c", ADMIN_ID, "octo-admin", false, ["no_installation"]],
-      ["github/acme/old", "a", ADMIN_ID, "octo-admin", true, []],
+      ["github/acme/ok", "a", ADMIN_ID, "octo-admin", true, []],
     ])
+  expect(body.runners[0]!.authorizedAt).toBeNull()
+  expect(typeof body.runners[2]!.authorizedAt).toBe("string")
   expect(body.runners[0]!.labels).toEqual(["linux"])
   expect(typeof body.runners[0]!.addedAt).toBe("string")
   for (const row of body.runners) expect(Object.keys(row).sort()).toEqual(
-    ["addedAt", "addedBy", "addedByLogin", "flags", "installation", "labels", "name", "repoId", "seenAt"],
+    ["addedAt", "addedBy", "addedByLogin", "authorizedAt", "flags", "installation", "labels", "name", "repoId", "seenAt"],
   )
   for (const token of tokens) {
     expect(answer.text).not.toContain(token)

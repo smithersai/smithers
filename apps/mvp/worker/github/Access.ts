@@ -118,14 +118,15 @@ export const make = <E, R>(options: Options<E, R>) => {
     Effect.gen(function* () {
       const decided = yield* personAccess(target, source)
       if (decided._tag === "Readable" || source !== "session_or_runner") return decided
-      // A runner registered on the repository reads its issues with its own token, as it reads its jobs.
+      // A runner registered on the repository reads its issues with its own token, as it reads its jobs, only while it
+      // is current as a claim requires (decision 0148); any other reads as nobody.
       const request = yield* HttpServerRequest.HttpServerRequest
       const runner = yield* WorkLinks.runnerOf(request, target.id).pipe(
         Effect.provide(database),
-        Effect.orElseSucceed(() => Option.none<string>()),
+        Effect.orElseSucceed(() => Option.none<WorkLinks.RunnerAccess>()),
       )
-      return Option.isSome(runner)
-        ? { _tag: "Readable", target, viewer: { kind: "runner", runner: runner.value }, role: null, via: "runner" } satisfies Proof
+      return Option.isSome(runner) && runner.value._tag === "Runner"
+        ? { _tag: "Readable", target, viewer: { kind: "runner", runner: runner.value.name }, role: null, via: "runner" } satisfies Proof
         : decided
     })
 

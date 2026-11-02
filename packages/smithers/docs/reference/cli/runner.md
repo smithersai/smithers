@@ -28,6 +28,21 @@ commit. The runner settles the files the agent changed.
 3. Write `runner.json` and run `smthrs runner serve --config runner.json`
    under a service manager that restarts it.
 
+A runner the host refuses `403 not_authorized` logs that it needs
+re-registration: no registration through its repository's Admin role
+authorized it. An admin registers it again with the same SHA-256, which
+`printf %s "$(cat <state>/runner-token)" | shasum -a 256` prints without
+replacing the token. While refused, a job the runner holds is suspended: a
+refused heartbeat stops its agent and keeps its checkout, session checkpoint
+and unsent transcript, and the runner beats on; the first heartbeat taken
+again resumes the session, after a restart with a rotated token too. A `401`
+counts the same as a `403`; only a heartbeat that says the claim no longer
+holds ends the job. A suspended job still ends at its deadline, on a Stop
+(a refused heartbeat that says `cancel: true`: the host ended the job), or
+when the host no longer holds it. A refused settlement keeps the outcome
+and asks again, 1 s doubling to a minute, for at most 10 minutes past the
+job's deadline.
+
 ## runner.json
 
 ```json
@@ -215,8 +230,27 @@ time, so a quiet build isn't mistaken for a stuck agent.
   journal, and its session resumes from the checkpoint beside the checkout:
   same account, `session/load` of the agent's own session, then a prompt to
   continue. An agent that can't load a session gets a fresh one told that the
-  checkout holds earlier work. A reclaimed job whose checkout is gone fails
-  `machine_lost`; nothing fails over to another machine.
+  checkout holds earlier work. A checkout whose `<checkout>.provisioning`
+  mark says it was still being made is incomplete: it is discarded and made
+  again within the same controlled attempt (a Stop, the claim lost or the
+  deadline ends it too), unless `<state>/started/<checkout>` is there too,
+  when it is kept. A job that ended frees its slot at once: its checkout's
+  removal is written to `<state>/removals/` and done by the serve loop,
+  every 2 s and after a restart, each try bounded to 5 minutes. A removal
+  is done only when `jj workspace forget` succeeded, or the mirror no longer
+  lists the workspace, and its directory is gone; otherwise it stays owed.
+  The directory is deleted by `rm -rf` in a process group of its own, killed
+  whole when the try is cut short, so a large checkout never stalls the
+  runner's other jobs.
+  A failed provisioning keeps the mark until the settlement forgets the
+  checkout. A reclaimed job whose checkout is gone fails `machine_lost` only
+  when `<state>/started/<checkout>` or its session checkpoint says an agent
+  was to run in it; otherwise no agent ran, and the checkout is made.
+  Nothing fails over to another machine.
+- **Credential not issued now.** A private repository's fetch whose read
+  credential the host can't issue now (`429`, `5xx`, no answer) waits on the
+  same claim, the host's wait or 15 s doubling to 5 minutes, and tries again
+  until the deadline: no generation or restart is spent.
 - **Deadline.** At the job's deadline the runner stops the agent and fails
   `timeout`.
 

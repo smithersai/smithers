@@ -231,13 +231,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
           tokenSha256: digestSync(token),
           token: { ciphertext: sealed.ciphertext, nonce: sealed.nonce, keyVersion: keys.value.version },
           actorId,
+          // Admitted above by the Admin role GitHub gives on the repository (decision 0148).
+          repoAuthorized: true,
           fence,
         }
         if ((yield* start(AdminFlows.SetOverflow, payload))._tag === "Failure") return refuse(503, "unavailable")
       } else if (route.kind === "runners") {
         const runner = yield* decodeRunner(body.success).pipe(Effect.option)
         if (Option.isNone(runner)) return refuse(400, "invalid")
-        const payload = { repoId: repo, name: route.item, ...runner.value, actorId, fence }
+        // Admitted above by the Admin role GitHub gives on the repository (decision 0148).
+        const payload = { repoId: repo, name: route.item, ...runner.value, actorId, repoAuthorized: true, fence }
         if ((yield* start(AdminFlows.AddRunner, payload))._tag === "Failure") return refuse(503, "unavailable")
       } else {
         const settings = yield* decodeAgentBody(body.success).pipe(Effect.option)

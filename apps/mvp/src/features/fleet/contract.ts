@@ -46,6 +46,7 @@ export const MACHINE_COLUMNS = [
   "load1",
   "disk_free_gb",
   "held",
+  "repo_authorized_at",
 ] as const
 
 /** How long after its last request a runner reads Offline (worker/runners/Fleet.ts `UNREACHABLE_SECONDS`). */

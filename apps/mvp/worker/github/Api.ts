@@ -942,6 +942,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
           if (Option.isNone(actor)) return refused(503, "unavailable")
           let source: string
+          let byRunner: { readonly tokenSha256: string } | undefined
+          // The body is read before a runner is authorized: the write then checks the runner again, in its own
+          // transaction, so a token revoked while the body arrived writes nothing (decision 0148).
+          const text = yield* readBounded(request, WorkLinks.MAX_POST_BYTES).pipe(Effect.result)
           if (Option.isSome(actor.value)) {
             fields.by = "person"
             const resolved = yield* options.roles.resolve(actor.value.value, target).pipe(Effect.result)
@@ -957,24 +961,30 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             const runner = yield* WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database), Effect.result)
             if (runner._tag === "Failure") return refused(503, "unavailable")
             if (Option.isNone(runner.success)) return refused(401, "authentication")
-            source = `runner:${runner.success.value}`
+            // Registered, but not current as a claim requires (decision 0148): it needs registering again.
+            if (runner.success.value._tag !== "Runner") return refused(403, "not_authorized")
+            source = `runner:${runner.success.value.name}`
+            byRunner = { tokenSha256: runner.success.value.tokenSha256 }
           }
-          const text = yield* readBounded(request, WorkLinks.MAX_POST_BYTES).pipe(Effect.result)
           if (text._tag === "Failure") {
             return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
           }
           const post = WorkLinks.decode(text.success)
           const now = yield* Clock.currentTimeMillis
           if (post === undefined || WorkLinks.fromTheFuture(post, now)) return refused(400, "invalid")
-          const written = yield* WorkLinks.write(target.id, named.number, post, source, now).pipe(Effect.provide(database), Effect.result)
+          const written = yield* WorkLinks.write(target.id, named.number, post, source, now, byRunner).pipe(
+            Effect.provide(database),
+            Effect.result,
+          )
           if (written._tag === "Failure") {
             fields.errorCode = codeOf(written.failure)
             return refused(503, "unavailable")
           }
+          if (Option.isNone(written.success)) return refused(403, "not_authorized")
           fields.outcome = "written"
-          fields.links = written.success.links
-          fields.changed = written.success.changed
-          return HttpServerResponse.jsonUnsafe(written.success, { headers: noStore })
+          fields.links = written.success.value.links
+          fields.changed = written.success.value.changed
+          return HttpServerResponse.jsonUnsafe(written.success.value, { headers: noStore })
         })
         const outcome = String(fields.outcome)
         yield* Metric.update(Metric.withAttributes(Metrics.workLinkPosts, { outcome, by: String(fields.by ?? "none") }), 1)
