@@ -393,7 +393,9 @@ test("(e) VibeLang end to end: an issue becomes a TODO, an agent's pull request,
     const committed = await stackChange(page, vibe, {
       op: "commit",
       title: `Export a proof constant ${word}`,
-      prompt: `add the line \`export const proof = "${word}"\` to \`src/proof.vibe\``,
+      // A name of this run's own: the file keeps every earlier run's merged line, and a second `proof` failed CI
+      // ("Cannot redeclare block-scoped variable", 2026-11-02).
+      prompt: `add the line \`export const proof_${word} = "${word}"\` to \`src/proof.vibe\``,
       issue,
     })
     expect(committed).toMatchObject({ status: 202, body: { outcome: "committed" } })
@@ -403,15 +405,23 @@ test("(e) VibeLang end to end: an issue becomes a TODO, an agent's pull request,
     const pr = ((await (await page.request.get(`/api/repos/${vibe}/stack/${todo}`)).json()) as { prNumber: number }).prNumber
     expect(pr).toBeGreaterThan(0)
     // CI on the pull request's head, as GitHub reports it to anyone: the project builds and its tests pass.
+    // Anonymous GitHub allows 60 requests an hour: the head is read once, the check runs every 30 s, and the wait ends
+    // at CI's first finished answer, a failure included, instead of polling a failure until the limit refuses it.
     let ciMs = 0
+    const github = async <A>(path: string): Promise<A> => {
+      const response = await page.request.get(`https://api.github.com/repos/${vibe}/${path}`)
+      if (!response.ok()) throw new Error(`GitHub ${path}: ${response.status()} ${(await response.text()).slice(0, 200)}`)
+      return (await response.json()) as A
+    }
+    const head = (await github<{ head: { sha: string } }>(`pulls/${pr}`)).head.sha
+    let conclusions = "pending"
     await expect.poll(async () => {
-      const head = ((await (await page.request.get(`https://api.github.com/repos/${vibe}/pulls/${pr}`)).json()) as { head: { sha: string } }).head.sha
-      const runs = ((await (await page.request.get(`https://api.github.com/repos/${vibe}/commits/${head}/check-runs`)).json()) as {
-        check_runs: ReadonlyArray<{ status: string; conclusion: string | null }>
-      }).check_runs
+      const runs = (await github<{ check_runs: ReadonlyArray<{ status: string; conclusion: string | null }> }>(`commits/${head}/check-runs`)).check_runs
       ciMs = Date.now() - started
-      return runs.length > 0 && runs.every((run) => run.status === "completed") ? runs.map((run) => run.conclusion).join(",") : "pending"
-    }, { timeout: 15 * 60_000, intervals: [15_000] }).toMatch(/^success(,success)*$/)
+      conclusions = runs.length > 0 && runs.every((run) => run.status === "completed") ? runs.map((run) => run.conclusion).join(",") : "pending"
+      return conclusions
+    }, { timeout: 15 * 60_000, intervals: [30_000] }).not.toBe("pending")
+    expect(conclusions, `CI on ${vibe}@${head}`).toMatch(/^success(,success)*$/)
     // A person merges it in Smithers, in person.
     await page.goto(`/${vibe}/pull/${pr}`)
     await page.getByRole("button", { name: "Squash and merge" }).click({ timeout: 120_000 })
