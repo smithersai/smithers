@@ -5,8 +5,8 @@
  * @since 0.1.0
  */
 
-import type { EffectTier } from "./EffectTier.ts"
-import type { Capability } from "./ExactCapability.ts"
+import type { EffectTier } from "./EffectTier.vibe"
+import type { Capability } from "./ExactCapability.vibe"
 import type { TierOptions } from "./TierOptions.ts"
 
 const lexicalPath = (path: string): string => {

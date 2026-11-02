@@ -4,9 +4,8 @@
  * @since 0.1.0
  */
 
-import { Option } from "effect"
-import { CapabilityPattern } from "./CapabilityPattern.ts"
-import type { Capability } from "./ExactCapability.ts"
+import { CapabilityPattern } from "./CapabilityPattern.vibe"
+import type { Capability } from "./ExactCapability.vibe"
 import { isLiteralResource } from "./isLiteralResource.ts"
 import { maxResourceLength } from "./maxResourceLength.ts"
 
@@ -25,7 +24,7 @@ import { maxResourceLength } from "./maxResourceLength.ts"
  * @category constructors
  * @slop
  */
-export const patternFromCapability = (capability: Capability): Option.Option<CapabilityPattern> =>
+export const patternFromCapability = (capability: Capability): Option<CapabilityPattern> =>
   capability.resource.length > maxResourceLength || !isLiteralResource(capability.resource)
     ? Option.none()
     : Option.some(new CapabilityPattern({ action: capability.action, resource: capability.resource }))

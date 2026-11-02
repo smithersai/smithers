@@ -4,8 +4,8 @@
  * @since 0.1.0
  */
 
-import type { Action } from "./Action.ts"
-import { Capability } from "./ExactCapability.ts"
+import type { Action } from "./Action.vibe"
+import { Capability } from "./ExactCapability.vibe"
 
 /**
  * Constructs an exact capability.

@@ -4,9 +4,9 @@
  * @since 0.1.0
  */
 
-import { type Brand, Schema } from "effect"
+import { type Brand } from "effect"
 import { PatternResource } from "./internal/PatternResource.vibe"
-import { PatternAction } from "./PatternAction.ts"
+import { PatternAction } from "./PatternAction.vibe"
 
 /**
  * An action and resource glob used to grant or deny a family of capabilities.

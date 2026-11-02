@@ -108,7 +108,7 @@ const securityReview = Smithers.SecurityReview({
         "Last-match-wins order broken by early returns other than the budget veto.",
         "A deny or ask rule matched with matches (every dot-segment form) instead of any form, so `x/../secrets/key` evades a deny on `secrets/key`."
       ],
-      paths: ["src/evaluate.ts", "src/Rule.ts", "src/RuleEffect.ts", "src/internal/hasDotSegment.ts"]
+      paths: ["src/evaluate.ts", "src/Rule.vibe", "src/RuleEffect.vibe", "src/internal/hasDotSegment.ts"]
     },
     {
       id: "subsumes-overlap-conservative",
@@ -133,7 +133,7 @@ const securityReview = Smithers.SecurityReview({
         "The bare `*` sentinel expanding to `**` for any input other than exactly `*`.",
         "format emitting text that parsePattern reads back as a different action or resource."
       ],
-      paths: ["src/parse.ts", "src/parsePattern.ts", "src/format.ts", "src/Action.ts", "src/PatternAction.ts"]
+      paths: ["src/parse.vibe", "src/parsePattern.vibe", "src/format.ts", "src/Action.vibe", "src/PatternAction.vibe"]
     },
     {
       id: "tier-classification",
@@ -148,7 +148,7 @@ const securityReview = Smithers.SecurityReview({
         "A new Action added without a tierOf case, or net:post, proc:spawn, memory:write below irreversible.",
         "requiresIdempotencyKey returning false for the irreversible tier."
       ],
-      paths: ["src/tierOf.ts", "src/requiresIdempotencyKey.ts", "src/EffectTier.ts", "src/TierOptions.ts"]
+      paths: ["src/tierOf.ts", "src/requiresIdempotencyKey.ts", "src/EffectTier.vibe", "src/TierOptions.ts"]
     },
     {
       id: "permission-error-decoding",
@@ -161,9 +161,9 @@ const securityReview = Smithers.SecurityReview({
         "decodePermissionError or fromPlatformError constructing an error from fields isPermissionError did not check."
       ],
       paths: [
-        "src/isPermissionError.ts",
+        "src/isPermissionError.vibe",
         "src/decodePermissionError.ts",
-        "src/fromPlatformError.ts",
+        "src/fromPlatformError.vibe",
         "src/internal/isPlainObject.ts",
         "src/internal/permissionMetaSnapshot.ts",
         "src/internal/capabilitySnapshot.ts"
@@ -181,7 +181,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/formatError.ts",
-        "src/toPlatformError.ts",
+        "src/toPlatformError.vibe",
         "src/internal/displayField.ts",
         "src/maxDisplayFieldLength.ts"
       ]

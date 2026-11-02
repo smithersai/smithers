@@ -4,8 +4,7 @@
  * @since 0.1.0
  */
 
-import { Schema } from "effect"
-import { GrantStoreErrorCode } from "./GrantStoreErrorCode.ts"
+import { GrantStoreErrorCode } from "./GrantStoreErrorCode.vibe"
 
 /**
  * A failure to register, persist, or resolve a grant request.

@@ -4,8 +4,8 @@
  * @since 0.1.0
  */
 
-import type { CapabilityPattern } from "./CapabilityPattern.ts"
-import type { Capability } from "./ExactCapability.ts"
+import type { CapabilityPattern } from "./CapabilityPattern.vibe"
+import type { Capability } from "./ExactCapability.vibe"
 import { dotSegmentForms } from "./internal/hasDotSegment.ts"
 import { matchesAction } from "./internal/matchesAction.ts"
 import { matchesResource } from "./internal/matchesResource.ts"

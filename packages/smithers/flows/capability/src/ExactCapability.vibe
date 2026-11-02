@@ -8,8 +8,8 @@
  * @since 0.1.0
  */
 
-import { type Brand, Schema } from "effect"
-import { Action } from "./Action.ts"
+import { type Brand } from "effect"
+import { Action } from "./Action.vibe"
 import { PatternResource } from "./internal/PatternResource.vibe"
 
 /**

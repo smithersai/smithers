@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { CapabilityPattern } from "./CapabilityPattern.ts"
+import type { CapabilityPattern } from "./CapabilityPattern.vibe"
 import { actionSubsumes } from "./internal/actionSubsumes.ts"
 import { metacharacters } from "./internal/metacharacters.ts"
 import { isLiteralResource } from "./isLiteralResource.ts"

@@ -4,10 +4,10 @@
  * @since 0.1.0
  */
 
-import type { Action } from "./Action.ts"
+import type { Action } from "./Action.vibe"
 import { isPatternAction } from "./internal/isPatternAction.ts"
-import { InvalidCapabilityAction } from "./InvalidCapabilityAction.ts"
-import type { PatternAction } from "./PatternAction.ts"
+import { InvalidCapabilityAction } from "./InvalidCapabilityAction.vibe"
+import type { PatternAction } from "./PatternAction.vibe"
 
 /**
  * Formats a capability or a capability pattern for storage, display, and

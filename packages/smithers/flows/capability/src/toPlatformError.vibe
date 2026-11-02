@@ -7,7 +7,7 @@
 import { type PlatformError, systemError } from "effect/PlatformError"
 import { formatError } from "./formatError.ts"
 import { displayField } from "./internal/displayField.ts"
-import type { PermissionError } from "./PermissionError.ts"
+import type { PermissionError } from "./PermissionError.vibe"
 
 /**
  * Projects a permission failure into Effect's `PlatformError` channel.

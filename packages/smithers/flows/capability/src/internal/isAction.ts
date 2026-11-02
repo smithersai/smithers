@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { Action } from "../Action.ts"
+import { Action } from "../Action.vibe"
 
 const actions: ReadonlySet<string> = new Set(Action.literals)
 

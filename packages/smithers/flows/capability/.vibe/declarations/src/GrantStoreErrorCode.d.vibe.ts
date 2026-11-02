@@ -3,9 +3,7 @@
  *
  * @since 0.1.0
  */
-
-import { Schema } from "effect"
-
+import { Schema } from "effect";
 /**
  * Stable grant-store failure codes.
  *
@@ -13,14 +11,7 @@ import { Schema } from "effect"
  * @since 0.1.0
  * @slop
  */
-export const GrantStoreErrorCode = Schema.Literals([
-  "duplicate_request",
-  "request_not_found",
-  "journal_failed",
-  "store_closed",
-  "invalid_resolution"
-])
-
+export declare const GrantStoreErrorCode: Schema.Literals<readonly ["duplicate_request", "request_not_found", "journal_failed", "store_closed", "invalid_resolution"]>;
 /**
  * Stable grant-store failure codes.
  *
@@ -28,4 +19,4 @@ export const GrantStoreErrorCode = Schema.Literals([
  * @since 0.1.0
  * @slop
  */
-export type GrantStoreErrorCode = typeof GrantStoreErrorCode.Type
+export type GrantStoreErrorCode = typeof GrantStoreErrorCode.Type;

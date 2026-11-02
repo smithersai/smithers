@@ -4,8 +4,8 @@
  * @since 0.1.0
  */
 
-import type { Action } from "../Action.ts"
-import type { PatternAction } from "../PatternAction.ts"
+import type { Action } from "../Action.vibe"
+import type { PatternAction } from "../PatternAction.vibe"
 
 /**
  * @since 0.1.0
