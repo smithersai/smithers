@@ -112,7 +112,8 @@ describe("resolve", () => {
     const resolved = await resolve(await roles(github))
     expect(resolved._tag === "Success" && resolved.success).toEqual({
       role,
-      held: Option.some({ repoId: OTHER.id, personId: MAYA, role }),
+      // The row's check time ties a write to this very read (decision 0079 §6).
+      held: Option.some({ repoId: OTHER.id, personId: MAYA, role, checkedAt: expect.any(String) }),
     })
   })
 
@@ -209,12 +210,12 @@ describe("resolve", () => {
       `SELECT (now() - interval '2 seconds')::text AS earlier, now()::text AS later, (now() + interval '1 second')::text AS after`,
     ) as unknown as [{ earlier: string; later: string; after: string }]
     // The quicker read saw the role removed; the slower one, begun before it, saw Member.
-    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, null, later))).toBeNull()
+    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, null, later)).then((kept) => kept.role)).toBeNull()
     // The slower read is told what decides: the removal, never the Member it saw.
-    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", earlier))).toBeNull()
+    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", earlier)).then((kept) => kept.role)).toBeNull()
     expect(await sql(runtime, `SELECT role FROM github_repo_roles`)).toEqual([{ role: null }])
     // A later read replaces it.
-    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", after))).toBe("member")
+    expect(await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", after)).then((kept) => kept.role)).toBe("member")
     expect(await sql(runtime, `SELECT role FROM github_repo_roles`)).toEqual([{ role: "member" }])
   })
 
@@ -301,15 +302,42 @@ describe("holds: the row a write's transaction locks (decision 0079 §6)", () =>
     expect(await holds({ ...held, role: null })).toBe(false)
   })
 
-  test("a row that expired while its request ran still holds the role that request read", async () => {
-    // Production, 2026-11-02: the request read the cached row in its last fresh second, and the write's transaction,
-    // a moment later, found it expired and refused an Admin's write 403.
+  test("a write admits only the read its request decided with, or a newer one, and only while it is fresh now", async () => {
     await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
-      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
-    expect(await holds()).toBe(true)
-    expect(await holds({ ...held, role: "admin" })).toBe(false)
-    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '${RepoRoles.FRESH_SECONDS + RepoRoles.HOLD_GRACE_SECONDS + 1} seconds'`)
-    expect(await holds()).toBe(false)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '10 seconds')`)
+    const [{ checkedAt }] = await sql(runtime, `SELECT checked_at::text AS "checkedAt" FROM github_repo_roles`) as Array<{ checkedAt: string }>
+    const read: RepoRoles.Held = { ...held, checkedAt }
+    expect(await holds(read)).toBe(true)
+    // A newer read of the same role still admits it; a newer read of another role doesn't.
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now()`)
+    expect(await holds(read)).toBe(true)
+    await sql(runtime, `UPDATE github_repo_roles SET role = 'guest'`)
+    expect(await holds(read)).toBe(false)
+    // A row older than the request's read is not the read it decided with.
+    await sql(runtime, `UPDATE github_repo_roles SET role = 'member', checked_at = timestamptz '${checkedAt}' - interval '1 second'`)
+    expect(await holds(read)).toBe(false)
+    // The very read, expired: refused, whatever it said (the route asks GitHub again).
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds'`)
+    expect(await holds({ ...held, checkedAt: undefined })).toBe(false)
+  })
+
+  test("freshness is the database's clock at the check, so a transaction that waited can't stretch it", async () => {
+    // Fresh when the transaction starts, expired by the time it checks: transaction-start now() admitted it.
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS - 1} seconds')`)
+    const waited = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.andThen(Effect.promise(() => new Promise((done) => setTimeout(done, 1_500))), RepoRoles.holds(held)))))
+    expect(waited).toBe(false)
+  })
+
+  test("a refresh slow enough that its row expired before it returned decides nothing", async () => {
+    const kept = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      Effect.flatMap(client<{ asOf: string }>`SELECT (now() - make_interval(secs => ${RepoRoles.FRESH_SECONDS + 1}))::text AS "asOf"`, ([row]) =>
+        RepoRoles.remember(OTHER.id, MAYA, "maintainer", row!.asOf))))
+    expect(kept).toMatchObject({ role: "maintainer", fresh: false })
+    const fresh = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      Effect.flatMap(client<{ asOf: string }>`SELECT now()::text AS "asOf"`, ([row]) => RepoRoles.remember(OTHER.id, MAYA, "member", row!.asOf))))
+    expect(fresh).toMatchObject({ role: "member", fresh: true })
   })
 
   test("a write is recorded only while the role holds; one already recorded answers as it stands", async () => {

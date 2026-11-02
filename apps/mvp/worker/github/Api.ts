@@ -646,16 +646,31 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           }
           const payload = payloadOf(write)
           const payloadHash = digestSync(JSON.stringify({ via, ...payload }))
-          const held = resolved.success.held
-          const inserted = yield* Store.insertWrite({
-            id: write.writeId,
-            repoId: repo.id,
-            actorId: who.subject.id,
-            sessionId: via === "person" ? who.session ?? null : null,
-            via,
-            payload,
-            payloadHash,
-          }, Option.isSome(held) ? RepoRoles.holds(held.value) : undefined).pipe(Effect.provide(database))
+          const insert = (held: Option.Option<RepoRoles.Held>) =>
+            Store.insertWrite({
+              id: write.writeId,
+              repoId: repo.id,
+              actorId: who.subject.id,
+              sessionId: via === "person" ? who.session ?? null : null,
+              via,
+              payload,
+              payloadHash,
+            }, Option.isSome(held) ? RepoRoles.holds(held.value) : undefined).pipe(Effect.provide(database))
+          let inserted = yield* insert(resolved.success.held)
+          // The row the request read expired, or changed, before the write's transaction: GitHub decides again, once,
+          // and the write is admitted only under that answer (decision 0079 §6). The five minutes still hold.
+          if (inserted.kind === "stale" && options.roles.refresh !== undefined) {
+            fields.refreshed = 1
+            const again = yield* options.roles.refresh(signed, repo).pipe(Effect.result)
+            if (again._tag === "Failure") {
+              const { code, retryAfterSeconds } = again.failure
+              fields.outcome = code
+              return refuse(RepoRoles.REFUSALS[code], code, retryAfterSeconds)
+            }
+            const now: Actor = { ...signed, role: again.success.role }
+            if (now.role === null || !mayWrite(now, write) || (via === "agent" && !canAsk(now))) return refused(403, "forbidden")
+            inserted = yield* insert(again.success.held)
+          }
           // The role changed between the read and the write: decided again on the next send.
           if (inserted.kind === "stale") return refused(403, "forbidden")
           // Another repository's or another person's write id is never theirs to resend.

@@ -21,12 +21,6 @@ import * as Tokens from "./Tokens.ts"
 /** How long a role read from GitHub decides, in seconds (decision 0079 §5). */
 export const FRESH_SECONDS = 5 * 60
 
-/**
- * How much longer a write's transaction keeps the row its request read: a request that read the role in its last
- * fresh second inserts its write after it, and its role hasn't changed (production, 2026-11-02: an Admin's issue
- * writes were refused `403 forbidden` every few minutes, each when the cached row expired mid-request).
- */
-export const HOLD_GRACE_SECONDS = 30
 
 /** Why `resolve` gave no role: each with its status, and GitHub's wait when it said one (decision 0079 §7). */
 export const REFUSALS = {
@@ -59,6 +53,8 @@ export interface Held {
   readonly repoId: string
   readonly personId: string
   readonly role: Role | null
+  /** When the row the request read was checked (Postgres text): a write admits only that read or a newer one. */
+  readonly checkedAt?: string
 }
 
 /** A person's role on a repository, and the row that role came from, when it came from one. */
@@ -119,18 +115,22 @@ export const permissionOf = (answer: GitHub.Collaborators.Permission): Permissio
 const decodeRole = Schema.decodeUnknownSync(Schema.NullOr(Schema.Literals(ROLES)))
 
 /**
- * Inside a write's transaction: whether the person's `github_repo_roles` row still holds `held.role` and is fresh,
- * locked `FOR SHARE`, so a refresh that changes it waits for the write, or the write sees the change (decision 0079 §6).
+ * Inside a write's transaction: whether the person's `github_repo_roles` row still holds `held.role`, is the read the
+ * request decided with or a newer one, and is fresh now, by the database's clock at the check (`clock_timestamp()`, not
+ * the transaction's start, so a lock wait can't stretch the five minutes). Locked `FOR SHARE`, so a refresh that
+ * changes it waits for the write, or the write sees the change (decision 0079 §6).
  */
 export const holds = (held: Held) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly role: string | null }>`
-      SELECT role FROM github_repo_roles
+    const [row] = yield* sql<{ readonly role: string | null; readonly fresh: boolean; readonly same: boolean }>`
+      SELECT role,
+        checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS}) AS fresh,
+        ${held.checkedAt === undefined ? sql`true` : sql`checked_at >= ${held.checkedAt}::timestamptz`} AS same
+      FROM github_repo_roles
       WHERE repo_id = ${held.repoId} AND person_id = ${held.personId}
-        AND checked_at > now() - make_interval(secs => ${FRESH_SECONDS + HOLD_GRACE_SECONDS})
       FOR SHARE`
-    return row !== undefined && row.role === held.role
+    return row !== undefined && row.fresh && row.same && row.role === held.role
   })
 
 /** What `make` needs: the deployment's own repository, the App when it is configured, and how far it may act. */
@@ -164,6 +164,11 @@ export interface RepoRoles<R = never> {
   readonly repository: Repository
   /** `actor`'s role on `repository`, or why there is none to give. */
   readonly resolve: (actor: Actor, repository: Repository) => Effect.Effect<Resolved, RoleRefused, R>
+  /**
+   * `resolve` asking GitHub again whatever the cache holds: what a write does once its transaction found the row it
+   * read expired. Absent: the write is refused, as before.
+   */
+  readonly refresh?: (actor: Actor, repository: Repository) => Effect.Effect<Resolved, RoleRefused, R>
   /**
    * `actor`'s role on a repository Smithers recorded no App installation on, asking no one: the session's, as before
    * decision 0079, or local development's own (`localRoles`). Absent, the session's.
@@ -231,7 +236,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       Effect.mapError(effect, () => new RoleRefused({ code: "unavailable" }))
 
     /** The role and where it came from (`session`, `cached`, `github`). */
-    const decide = (actor: Actor, repository: Repository) =>
+    const decide = (actor: Actor, repository: Repository, force = false) =>
       Effect.gen(function* () {
         // The deployment's own repository: the session's role, as it always was.
         if (repository.id === options.repository.id) {
@@ -246,18 +251,26 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         }
         // One Postgres client for the reads, the App's installation and the record; one that can't be had is
         // `unavailable`.
-        return yield* fromRow(actor, repository, app.value).pipe(
+        return yield* fromRow(actor, repository, app.value, force).pipe(
           Effect.provide(database),
           Effect.mapError((error) => (error instanceof RoleRefused ? error : new RoleRefused({ code: "unavailable" }))),
         )
       })
 
     /** The role on another repository: the fresh row, else GitHub's answer, recorded. */
-    const fromRow = (actor: Actor, repository: Repository, configured: NonNullable<Option.Option.Value<typeof app>>) =>
+    const fromRow = (
+      actor: Actor,
+      repository: Repository,
+      configured: NonNullable<Option.Option.Value<typeof app>>,
+      force: boolean,
+    ) =>
       Effect.gen(function* () {
         const personId = actor.subject.id
-        const held = (role: Role | null): Resolved => ({ role, held: Option.some({ repoId: repository.id, personId, role }) })
-        const cached = yield* inDatabase(cachedRole(repository.id, personId))
+        const held = (row: { readonly role: Role | null; readonly checkedAt: string }): Resolved => ({
+          role: row.role,
+          held: Option.some({ repoId: repository.id, personId, role: row.role, checkedAt: row.checkedAt }),
+        })
+        const cached = force ? Option.none() : yield* inDatabase(cachedRole(repository.id, personId))
         if (Option.isSome(cached)) return { source: "cached", resolved: held(cached.value) }
         // Who the person is on GitHub is sign-in's `people` row to say, never a request: their login to ask about and
         // their account's id, which the answer must name, because a login can change hands after a rename. `asOf` is
@@ -274,17 +287,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           )
         }
         // What decides is the row as it stands after this read: a later read's, when one already landed.
-        const role = yield* inDatabase(
+        const kept = yield* inDatabase(
           remember(repository.id, personId, sameAccount ? roleOf(permissionOf(answer.value)) : null, asOf),
         )
-        return { source: "github", resolved: held(role) }
+        // A read slow enough that its row expired before it returned decides nothing: decision 0079's five minutes run
+        // from when the read began.
+        if (!kept.fresh) return yield* new RoleRefused({ code: "unavailable" })
+        return { source: force ? "refresh" : "github", resolved: held(kept) }
       })
 
     /** `decide`, logged (`github.repo_role`: source, outcome, duration; never a login) and counted. */
-    const resolve = (actor: Actor, repository: Repository): Effect.Effect<Resolved, RoleRefused, R> =>
+    const resolve = (actor: Actor, repository: Repository, force = false): Effect.Effect<Resolved, RoleRefused, R> =>
       Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis
-        const decided = yield* decide(actor, repository).pipe(Effect.result)
+        const decided = yield* decide(actor, repository, force).pipe(Effect.result)
         const source = decided._tag === "Success" ? decided.success.source : "refused"
         const outcome = decided._tag === "Success" ? decided.success.resolved.role ?? "none" : decided.failure.code
         yield* Metric.update(Metric.withAttributes(reads, { source, outcome }), 1)
@@ -300,7 +316,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         return decided.success.resolved
       }).pipe(Effect.withSpan("github.repo_role"))
 
-    return { repository: options.repository, resolve, uninstalled } satisfies RepoRoles<R>
+    return {
+      repository: options.repository,
+      resolve: (actor, repository) => resolve(actor, repository),
+      refresh: (actor, repository) => resolve(actor, repository, true),
+      uninstalled,
+    } satisfies RepoRoles<R>
   })
 
 /**
@@ -339,11 +360,11 @@ const refusedFor = (error: unknown) =>
 const cachedRole = (repoId: string, personId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly role: string | null }>`
-      SELECT role FROM github_repo_roles
+    const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string }>`
+      SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles
       WHERE repo_id = ${repoId} AND person_id = ${personId}
-        AND checked_at > now() - make_interval(secs => ${FRESH_SECONDS})`
-    return Option.map(Option.fromNullishOr(row), (found) => decodeRole(found.role))
+        AND checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS})`
+    return Option.map(Option.fromNullishOr(row), (found) => ({ role: decodeRole(found.role), checkedAt: found.checkedAt }))
   })
 
 /** Postgres' clock now, and the person's GitHub account as sign-in recorded it, when there is one. */
@@ -366,22 +387,26 @@ const observe = (personId: string) =>
 /**
  * Records the person's role on `repoId` as a read that began at `asOf` found it, unless a read that began later
  * already recorded one: a slow read that saw a role never overwrites a quicker one that saw it removed. Answers the
- * role the row holds afterwards, which is the one that decides.
+ * row afterwards, which is the one that decides: its role, when it was checked, and whether that is still fresh.
  */
 export const remember = (repoId: string, personId: string, role: Role | null, asOf: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly role: string | null }>`
+    const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string; readonly fresh: boolean }>`
       WITH written AS (
         INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
         VALUES (${repoId}, ${personId}, ${role}, ${asOf}::timestamptz)
         ON CONFLICT (repo_id, person_id) DO UPDATE SET role = EXCLUDED.role, checked_at = EXCLUDED.checked_at
         WHERE github_repo_roles.checked_at < EXCLUDED.checked_at
-        RETURNING role
+        RETURNING role, checked_at
+      ), kept AS (
+        SELECT role, checked_at FROM written
+        UNION ALL
+        SELECT role, checked_at FROM github_repo_roles
+        WHERE repo_id = ${repoId} AND person_id = ${personId} AND NOT EXISTS (SELECT 1 FROM written)
       )
-      SELECT role FROM written
-      UNION ALL
-      SELECT role FROM github_repo_roles
-      WHERE repo_id = ${repoId} AND person_id = ${personId} AND NOT EXISTS (SELECT 1 FROM written)`
-    return decodeRole(row!.role)
+      SELECT role, checked_at::text AS "checkedAt",
+        checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS}) AS fresh
+      FROM kept`
+    return { role: decodeRole(row!.role), checkedAt: row!.checkedAt, fresh: row!.fresh }
   })
