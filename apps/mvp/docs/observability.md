@@ -928,6 +928,37 @@ content, a prompt, a token or an account.
 | `run_content.append`, `run_content.join`, `run_content.forget` | span, log | `RunContent` | generation, after, events |
 | `transcript.live`, `transcript.closed`, `transcript_event_lag_ms`, `transcript_dials`, `transcript_replays` | browser | the tab | events, verified, outcome, code |
 
+### Socket leases
+
+Every socket host keeps who ChatApi admitted with the socket under a lease (`worker/SocketAccess.ts`): the person,
+their session and the alias session they came through at an alias host, the session's end, and what they were let in
+on. A lease runs at most 60 s ahead and never past the session's end. Every frame checks it, and the session's end,
+where it is and right before it goes, with no query: a transcript event or replay page, a room roster or a member's
+message, a terminal's output and its input. A check that answers after the session's end renews nothing. Only a good
+check renews it, by the rules the route admitted with (`worker/SocketChecks.ts`): the session and the alias live, the
+role confirmed by GitHub within `ROLE_RECHECK_MINUTES` plus 10 minutes (`sessions.role_verified_at`, which a failed check
+never moves, null for every session from before it, whose next request starts a real check, at most once a minute), and the role on the run's repository (`RepoRoles`, whose rows decide for 5 minutes) or the branch's
+sharing still enough. Hosts renew 10 s before a lease lapses (an alarm for the transcript and the rooms, a fiber for the
+terminal's machine, which never hibernates with a socket open, whose loop a new viewer's sooner deadline wakes), and
+renew a lapsed lease before a frame passes, one renewal at a time per host, so a burst of frames costs one, and a
+terminal's frames on a lapsed lease start at most one renewal for the whole machine. A lease the session's end caps is acted on at that end,
+closing it with no query, never renewed in a loop before it. A renewal checks once per person, session and basis, 4 at a time, each within 5 s and all within 10 s, opening its one
+Postgres client included. Anything else ends the lease: every socket that lost it leaves its host's sending set before
+any of them closes, with `4401` (session ended, expired or alias signed out), `1008` (no access) or `1012` (access
+changed, or unverified: a check that failed or didn't answer, or a role GitHub hasn't confirmed lately). A route
+refuses a role GitHub hasn't confirmed lately with `503` (its own session read has started the check); a host refuses a
+session that ended on the way (`401`) or a person's 51st socket on it (`429`). A socket from before leases is closed
+`1012` before its host sends or handles anything. A transcript stores new events and moves its retention together,
+before any wait, and its retention alarm never forgets it beside that. A share change still closes room and terminal
+sockets at once (`enforce`).
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `smithers_socket_leases` | counter | `RunContent`, `RoomObject`, `SandboxObject` | `host` (`transcript`, `room`, `terminal`), `outcome` (`keep`, `session`, `revoked`, `changed`, `unverified`, `legacy`) |
+| `socket.lease` | log, span | the same | host, sockets, checks, a count per outcome; never a person |
+| `socket.verdict` | span | the same | none |
+| `run_content.renew`, `room.renew`, `sandbox.renew` | log (warn) | the same | `errorCode`, when a renewal failed |
+
 ### Flow usage
 
 Which flows run, and how (Will, 2026-10-20: "Everything is a flow so the most obvious metrics are just what flows are being ran and how"). The durable engine records them for every run on every host, so a flow gets them without declaring anything: `@smthrs/flow` `RunMetrics`, recorded by `@smthrs/engine-store` and by `@smthrs/agent`'s model steps ([its API](../../../packages/smithers/flows/flow/docs/api.md#runmetrics)).

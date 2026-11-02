@@ -90,6 +90,7 @@ import m0089 from "./migrations/0089_runner_git_credentials.ts"
 import m0090 from "./migrations/0090_github_repo_role_reads.ts"
 import m0091 from "./migrations/0091_github_repo_role_read_refusal.ts"
 import m0092 from "./migrations/0092_feed_barriers.ts"
+import m0093 from "./migrations/0093_session_role_verified.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -184,4 +185,5 @@ export const migrations = {
   "0090_github_repo_role_reads": m0090,
   "0091_github_repo_role_read_refusal": m0091,
   "0092_feed_barriers": m0092,
+  "0093_session_role_verified": m0093,
 }

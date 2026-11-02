@@ -239,7 +239,7 @@ Migration `0005_sign_in`. None of these tables is synced to browsers.
 | `sign_in_attempts` | `state_digest` (key), `verifier` (sealed), `redirect_uri`, `return_to`, `expires_at` | sign-ins in progress; expired rows are deleted when the next one starts |
 | `sign_in_handoffs` | `code_digest` (key), `session_id`, `host`, `nonce_digest`, `return_to`, `expires_at` | codes `APP_DOMAIN` handed to an alias, 60 s, deleted as read (migration `0074_host_sessions`) |
 | `host_sessions` | `id`, `token_digest` (unique), `parent_id` (the home session), `host`, `created_at`, `revoked_at` | one per alias sign-in; live while it and its home session are (migration `0074_host_sessions`) |
-| `sessions` | `id`, `token_digest` (unique), `person_id`, `role`, `role_checked_at`, `github_access` and `github_refresh` (sealed), `github_access_expires_at`, `github_refresh_digest`, `created_at`, `expires_at`, `revoked_at`, `revoked_reason` (`sign_out`, `github_refused`, `unreadable`) | one per browser sign-in |
+| `sessions` | `id`, `token_digest` (unique), `person_id`, `role`, `role_checked_at`, `role_verified_at` (when GitHub last confirmed the role; a failed check never moves it, null until one confirms it, migration `0093_session_role_verified`; what a socket's lease trusts, [socket leases](../observability.md#socket-leases)), `github_access` and `github_refresh` (sealed), `github_access_expires_at`, `github_refresh_digest`, `created_at`, `expires_at`, `revoked_at`, `revoked_reason` (`sign_out`, `github_refused`, `unreadable`) | one per browser sign-in |
 
 ## Configuration
 

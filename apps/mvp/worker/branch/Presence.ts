@@ -3,6 +3,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
+import * as SocketAccess from "../SocketAccess.ts"
 import { branchAccess, canView } from "./Access.ts"
 import { Rooms } from "./Rooms.ts"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
@@ -51,7 +52,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       if (branch === undefined) return refuse(404, "not_found")
       if (!canView(branch.access)) return refuse(403, "forbidden")
       fields.access = branch.access
+      const admission = yield* SocketAccess.admit(actor.value, { kind: "branch", branchId: branch.branchId }, branch.access)
+        .pipe(Effect.provide(database))
+      if (admission._tag === "ended") return refuse(401, "authentication")
+      if (admission._tag === "stale") return refuse(503, "unavailable")
       const joined = yield* (yield* Rooms).join(branch.branchId, {
+        admission: admission.admission,
         principal: actor.value.subject.id,
         name: actor.value.login ?? actor.value.subject.id,
         // The role on the branch's repository the room re-checks shares with (decision 0079).

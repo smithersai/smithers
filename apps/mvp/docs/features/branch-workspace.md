@@ -188,6 +188,7 @@ Everyone on a branch's page is in its room: one hibernating `RoomObject` Durable
 - **Avatars** (`PresenceAvatars`, `@smthrs/ui`'s `AvatarStack`): everyone else, once each, titled with where they are; choosing one follows them to their place, as in Google Docs and Figma.
 - **Live cursors:** the prompt, a file in the live editor and a run's answer box show everyone's carets, each through its own text's room ([co-editing](coedit.md)); the terminal shows everyone tmux's one screen and cursor. Following someone in the live editor (`edit`) opens the same file.
 - **Live access:** the room's roster says what this person may do (`read` or `write`); the screen follows it (`accessNow`), and a room closed with 1008 is `revoked`.
+- **Leased access:** a change of sharing closes room and terminal sockets at once (`enforce`). Everything else that ends access (signing out, a session's end, a lower role on the repository, a branch removed) ends an open socket's 60 s lease, which every roster, message and terminal frame checks ([socket leases](../observability.md#socket-leases)): `4401` for the session, `1008` for no access, `1012` for changed or unverified access.
 - **Seams with notifications (0009):** a run on a branch reaches only watchers who may still view it (`worker/Notifications.ts` reads `policyOf` and `underPolicy`), and a watch is recorded only for someone who may view the branch. The runs other people start on a branch show through notifications, not presence.
 
 ## Postgres

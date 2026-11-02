@@ -26,6 +26,7 @@ import { Directory } from "./branch/People.ts"
 import { TerminalSockets } from "./branch/Sandboxes.ts"
 import * as BranchRooms from "./BranchRooms.ts"
 import * as RunContent from "./RunContent.ts"
+import * as SocketChecks from "./SocketChecks.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import * as BugsApi from "./bugs/Api.ts"
 import * as FeedsApi from "./feeds/Api.ts"
@@ -153,6 +154,12 @@ export const program = (options: ProgramOptions = {}) =>
   })
 
 /** All deployment choices below are already captured before Alchemy builds the handlers. */
+/** How the socket hosts' rechecks read roles in local development, as `RepoRoles` does here (worker/SocketChecks.ts). */
+const socketChecks = (options: ProgramOptions): SocketChecks.Options => ({
+  local: options.fallback !== undefined,
+  ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles }),
+})
+
 const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, homeRepository, machines }: {
   readonly repoFlows: boolean
   readonly repositories: ReadonlySet<string>
@@ -302,7 +309,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       // A repository's run stops on the Durable Object that holds it (docs/features/actions.md#acts).
       stop: (runId) => executions.getByName(runId).cancel(),
       // A TODO run's transcript, on its own Durable Object (worker/RunContent.ts).
-      transcript: (runId) => RunContent.connect(runContents, runId),
+      transcript: (runId, admission) => RunContent.connect(runContents, runId, admission),
     }, roles)
     // A repository's flows run by hand, and its runs run again (docs/features/actions.md#running-a-flow-by-hand), on the
     // repositories REPO_FLOWS_REPOSITORIES allows, by the asker's role there, read as the App and in the QuickJS realm.
@@ -521,10 +528,18 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
       ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
     })),
-    Effect.provide(BranchSandboxes.live(DatabaseRoutes.route(pools, "SandboxObject"))),
-    Effect.provide(BranchSandboxes.gateLive(DatabaseRoutes.route(pools, "GateObject"))),
-    Effect.provide(BranchRooms.live),
-    Effect.provide(RunContent.live),
+    Effect.provide(BranchSandboxes.live(
+      DatabaseRoutes.route(pools, "SandboxObject"),
+      socketChecks(options),
+      DatabaseRoutes.route(pools, "SocketChecks"),
+    )),
+    Effect.provide(BranchSandboxes.gateLive(
+      DatabaseRoutes.route(pools, "GateObject"),
+      socketChecks(options),
+      DatabaseRoutes.route(pools, "SocketChecks"),
+    )),
+    Effect.provide(BranchRooms.live(DatabaseRoutes.route(pools, "RoomObject"), socketChecks(options))),
+    Effect.provide(RunContent.live(DatabaseRoutes.route(pools, "RunContent"), socketChecks(options))),
     Effect.provide(
       Layer.mergeAll(
         HostModel.layerConfig("CHAT_MODEL", DEFAULT_CHAT_MODEL),

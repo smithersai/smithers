@@ -51,6 +51,22 @@ describe("GET /api/branches/<id>/room", () => {
     }
   })
 
+  test("hands the room who it admitted on the branch, for the room to recheck (worker/SocketAccess.ts)", async () => {
+    const branch = await tracked(runtime, REPO, "feature/admitted", "open", "person-maya")
+    const h = await open()
+    expect((await join(h, branch.branchId)).status).toBe(200)
+    expect(h.rooms.joined.map((each) => each.member.admission)).toEqual([{
+      session: null,
+      alias: null,
+      expiresAt: null,
+      admittedAt: expect.any(Number),
+      principal: "person-maya",
+      role: "member",
+      basis: { kind: "branch", branchId: branch.branchId },
+      access: "owner",
+    }])
+  })
+
   test("joins the owner, and someone it is shared with, as the session says, with what they may do", async () => {
     const branch = await tracked(runtime, REPO, "feature/room", "open", "person-maya")
     await shared(runtime, branch.branchId, "person-gus", "edit")
@@ -68,7 +84,7 @@ describe("GET /api/branches/<id>/room", () => {
     expect(owner.rooms.joined).toEqual([
       {
         branchId: branch.branchId,
-        member: { principal: "person-maya", name: "maya", role: "member", access: "owner" },
+        member: { principal: "person-maya", name: "maya", role: "member", access: "owner", admission: expect.anything() },
       },
     ])
     expect(owner.only("branch.room")).toMatchObject({

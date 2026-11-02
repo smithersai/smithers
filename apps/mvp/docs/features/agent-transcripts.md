@@ -86,6 +86,11 @@ The same request without `Upgrade` answers `426 { code: "upgrade" }` to a Member
 `401 authentication`, `403 forbidden` (not a Member, or another site's page as `origin`), `404 not_found` (no TODO's
 attempt started that run), `503 unavailable`.
 
+The route checks once; the run's `RunContent` keeps who it admitted with the socket and holds them to it while it stays
+open under a 60 s lease ([socket leases](../observability.md#socket-leases)). An event reaches only a watcher whose lease
+holds, and only a good check renews it: signed out or expired closes `4401`, no longer a Member closes `1008`, a check
+that failed closes `1012`. The panel then dials again and the route's refusal closes it with why.
+
 ## The panel
 
 A run whose steps include `agent/Session` shows the Transcript panel on its page (`src/features/transcript/`). It

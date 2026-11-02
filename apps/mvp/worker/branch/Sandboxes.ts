@@ -1,6 +1,7 @@
 import { Fault } from "@smthrs/flow"
 import { Context, type Effect, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { Admission } from "../SocketAccess.ts"
 import type { Role } from "../Actor.ts"
 import type { Policy } from "./Access.ts"
 
@@ -70,6 +71,8 @@ export interface Attachment {
   readonly access: "write" | "read"
   readonly principal: string
   readonly role: Role | null
+  /** Who ChatApi admitted, which the machine rechecks while the socket stays open (worker/SocketAccess.ts). */
+  readonly admission: Admission
 }
 
 /** A terminal whose owner lost the branch: it ends, and its shell with it. */

@@ -383,6 +383,7 @@ describe("GET /api/terminals/<id>: the socket", () => {
     access,
     principal: actor.subject.id,
     role: actor.role,
+    admission: expect.objectContaining({ principal: actor.subject.id, basis: { kind: "terminal", branchId: expect.any(String) }, access }),
   })
 
   test("attaches with the role on the branch's repository, which the host re-checks shares with (decision 0079)", async () => {

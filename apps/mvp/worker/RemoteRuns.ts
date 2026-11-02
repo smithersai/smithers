@@ -34,6 +34,7 @@ import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { repositoryOf } from "./github/Config.ts"
 import { mayRead } from "./stack/Access.ts"
+import * as SocketAccess from "./SocketAccess.ts"
 import { isUpgrade, sameOrigin } from "./branch/Upgrade.ts"
 
 // Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and
@@ -114,8 +115,14 @@ export interface Engine<E, R, RS = never> {
   readonly schema: string
   /** The flows whose runs render through their own schemas: the remote flows a TODO and a repository start. */
   readonly flows: ReadonlyArray<Flow.Any>
-  /** Hands the request's socket, already admitted, to run `runId`'s transcript (worker/RunContent.ts `connect`). */
-  readonly transcript: (runId: string) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, RS>
+  /**
+   * Hands the request's socket, already admitted as `admission`, to run `runId`'s transcript (worker/RunContent.ts
+   * `connect`), which rechecks it while it stays open (worker/SocketAccess.ts).
+   */
+  readonly transcript: (
+    runId: string,
+    admission: SocketAccess.Admission,
+  ) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, RS>
   /**
    * Stops a repository's run on the Durable Object that holds it (`ExecutionObject.make`'s `cancel`): a durable
    * tombstone, then the engine's cancellation of the run and every run it started. A run its object hasn't begun is
@@ -375,8 +382,14 @@ export const make = <E, R, EE, ER, RS>(
           if (!isUpgrade(request)) return refused(426, "upgrade")
           // A cookie rides along on a cross-site WebSocket: the `Origin` keeps another site's page out.
           if (!sameOrigin(request)) return refused(403, "origin")
+          const admission = yield* SocketAccess.admit(actor.value.value, {
+            kind: "run",
+            repoId: attempt.value.repoId,
+          }, "member").pipe(Effect.provide(database))
+          if (admission._tag === "ended") return refused(401, "authentication")
+          if (admission._tag === "stale") return refused(503, "unavailable")
           fields.outcome = "connected"
-          return yield* engine.transcript(runId)
+          return yield* engine.transcript(runId, admission.admission)
         }).pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {

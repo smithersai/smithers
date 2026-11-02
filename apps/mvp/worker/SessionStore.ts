@@ -107,9 +107,9 @@ export const createSession = (session: {
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* sql`SELECT id FROM people WHERE id = ${session.personId} FOR UPDATE`
       yield* sql`
-      INSERT INTO sessions (id, token_digest, person_id, role, role_generation, role_checked_at, github_access, github_access_expires_at,
+      INSERT INTO sessions (id, token_digest, person_id, role, role_generation, role_checked_at, role_verified_at, github_access, github_access_expires_at,
         github_refresh, github_refresh_digest, expires_at)
-      VALUES (${session.id}, ${session.tokenDigest}, ${session.personId}, ${session.role}, ${session.roleGeneration}::bigint, clock_timestamp(),
+      VALUES (${session.id}, ${session.tokenDigest}, ${session.personId}, ${session.role}, ${session.roleGeneration}::bigint, clock_timestamp(), clock_timestamp(),
         ${json(session.access)}::jsonb,
         ${session.accessExpiresAt === null ? null : new Date(session.accessExpiresAt).toISOString()}::timestamptz,
         ${json(session.refresh)}::jsonb, ${session.refreshDigest},
@@ -130,6 +130,8 @@ export interface Live {
   readonly login: string
   readonly role: Role | null
   readonly roleCheckedAt: number
+  /** When GitHub last confirmed the home session's role (epoch ms); `null` never: a failed check never moves it. */
+  readonly roleVerifiedAt: number | null
   readonly home?: string
   /**
    * When the session ends, epoch milliseconds: the home session's `expires_at`. An alias session has no end of its own
@@ -142,15 +144,62 @@ export interface Live {
 const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<Omit<Live, "roleCheckedAt" | "expiresAt"> & { readonly roleCheckedAt: string; readonly expiresAt: string }>`
+    const [row] = yield* sql<
+      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt"> & {
+        readonly roleCheckedAt: string
+        readonly roleVerifiedAt: string | null
+        readonly expiresAt: string
+      }
+    >`
       SELECT s.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
+        (extract(epoch FROM s.role_verified_at) * 1000)::bigint::text AS "roleVerifiedAt",
         (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt"
       FROM sessions s JOIN people p ON p.id = s.person_id
       WHERE ${which(sql)} AND s.revoked_at IS NULL AND s.expires_at > now()`
     return Option.map(Option.fromNullishOr(row), (found): Live => ({
       ...found,
       roleCheckedAt: Number(found.roleCheckedAt),
+      expiresAt: Number(found.expiresAt),
+      roleVerifiedAt: found.roleVerifiedAt === null ? null : Number(found.roleVerifiedAt),
+    }))
+  })
+
+/** What a socket's lease renews on (worker/SocketAccess.ts): the person's role, when GitHub last confirmed it, and the end. */
+export interface Authority {
+  readonly personId: string
+  readonly role: Role | null
+  /** The newest confirmation of the person's role on any session of theirs, epoch ms; `null` never. */
+  readonly roleVerifiedAt: number | null
+  readonly expiresAt: number
+}
+
+/**
+ * Session `id`, and alias session `alias` under it when the socket came through one (decision 0130), both live: the
+ * person, their newest role receipt, when GitHub last confirmed a role of theirs (a failed check never counts) and when
+ * the session ends. One statement.
+ */
+export const authority = (id: string, alias: string | null) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{
+      readonly personId: string
+      readonly role: Role | null
+      readonly roleVerifiedAt: string | null
+      readonly expiresAt: string
+    }>`
+      SELECT s.person_id AS "personId", ${latestRole(sql, sql`s.person_id`)} AS role,
+        (SELECT (extract(epoch FROM max(v.role_verified_at)) * 1000)::bigint::text FROM sessions v
+          WHERE v.person_id = s.person_id) AS "roleVerifiedAt",
+        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt"
+      FROM sessions s
+      WHERE s.id = ${id} AND s.revoked_at IS NULL AND s.expires_at > now()
+        AND (${alias}::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM host_sessions h WHERE h.id = ${alias}::uuid AND h.parent_id = s.id AND h.revoked_at IS NULL))`
+    return Option.map(Option.fromNullishOr(row), (found): Authority => ({
+      personId: found.personId,
+      role: found.role,
+      roleVerifiedAt: found.roleVerifiedAt === null ? null : Number(found.roleVerifiedAt),
       expiresAt: Number(found.expiresAt),
     }))
   })
@@ -190,10 +239,16 @@ export const findHostLive = (tokenDigest: string, host: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<
-      Omit<Live, "roleCheckedAt" | "expiresAt"> & { readonly roleCheckedAt: string; readonly home: string; readonly expiresAt: string }
+      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt"> & {
+        readonly roleCheckedAt: string
+        readonly roleVerifiedAt: string | null
+        readonly home: string
+        readonly expiresAt: string
+      }
     >`
       SELECT h.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
-        (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt", s.id AS home,
+        (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
+        (extract(epoch FROM s.role_verified_at) * 1000)::bigint::text AS "roleVerifiedAt", s.id AS home,
         (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt"
       FROM host_sessions h JOIN sessions s ON s.id = h.parent_id JOIN people p ON p.id = s.person_id
       WHERE h.token_digest = ${tokenDigest} AND h.host = ${host} AND h.revoked_at IS NULL
@@ -201,6 +256,7 @@ export const findHostLive = (tokenDigest: string, host: string) =>
     return Option.map(Option.fromNullishOr(row), (found): Live => ({
       ...found,
       roleCheckedAt: Number(found.roleCheckedAt),
+      roleVerifiedAt: found.roleVerifiedAt === null ? null : Number(found.roleVerifiedAt),
       expiresAt: Number(found.expiresAt),
     }))
   })
@@ -398,7 +454,8 @@ export const setRole = (id: string, role: Role | null, generation: string) =>
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* lockRole(sql, id)
-      yield* sql`UPDATE sessions SET role = ${role}, role_generation = ${generation}::bigint, role_checked_at = clock_timestamp()
+      yield* sql`UPDATE sessions SET role = ${role}, role_generation = ${generation}::bigint, role_checked_at = clock_timestamp(),
+        role_verified_at = clock_timestamp()
         WHERE id = ${id} AND role_generation <= ${generation}::bigint`
       const [row] = yield* sql<{ role: Role | null }>`SELECT ${latestRole(sql, sql`(SELECT person_id FROM sessions WHERE id = ${id})`)} AS role`
       return row!.role

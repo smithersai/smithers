@@ -21,6 +21,7 @@ import * as ShapeAccess from "../ShapeAccess.ts"
 import { branchAccess, canEdit, canView } from "./Access.ts"
 import { TerminalSockets } from "./Sandboxes.ts"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
+import * as SocketAccess from "../SocketAccess.ts"
 
 // The terminal routes (decision 0013 §2-§3, docs/features/branch-workspace.md#the-terminal):
 //
@@ -278,7 +279,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
               yield* markLost(terminalId.toLowerCase()).pipe(Effect.provide(database))
               return refuse(fields, 410, "lost")
             }
+            const admission = yield* SocketAccess.admit(actor.value, { kind: "terminal", branchId: row.branchId }, access)
+              .pipe(Effect.provide(database))
+            if (admission._tag === "ended") return refuse(fields, 401, "authentication")
+            if (admission._tag === "stale") return refuse(fields, 503, "unavailable")
             const attachment = {
+              admission: admission.admission,
               terminalId: terminalId.toLowerCase(),
               ownerId: row.ownerId,
               access,

@@ -3,8 +3,10 @@
 // has `ChatDatabase` to itself. Everything the durable engine does or delegates is background work and reads through
 // `EngineDatabase`: `FlowExecution`, and the sandbox objects it calls (`SandboxObject`, `GateObject`), whose every
 // database read (box admission and release, a person's subscription, an overflow box's model, the box's egress) serves
-// a box the engine woke. The terminal's own authorization stays on the request path: ChatApi checks the session and
-// the branch's sharing before it hands the socket to the object, which reads no table to attach it.
+// a box the engine woke. Socket authorization stays on the request path: ChatApi checks the session and the branch's
+// sharing before it hands a socket to its object, and each socket host renews that socket's lease by the same rules
+// (worker/SocketChecks.ts) through `ChatDatabase`: the transcript's `RunContent`, the rooms' `RoomObject`, and the
+// sandbox objects' terminal sockets (`SocketChecks`).
 
 /** The two configs: `request` is `ChatDatabase`, `engine` is `EngineDatabase`. */
 export type Pool = "request" | "engine"
@@ -15,6 +17,9 @@ export const ROUTES = {
   FlowExecution: "engine",
   SandboxObject: "engine",
   GateObject: "engine",
+  RoomObject: "request",
+  RunContent: "request",
+  SocketChecks: "request",
 } as const satisfies Readonly<Record<string, Pool>>
 
 /** A consumer named in `ROUTES`. */

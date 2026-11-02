@@ -173,3 +173,9 @@ export class Transcripts extends Context.Service<Transcripts, {
     events: ReadonlyArray<Transcript.Event>,
   ) => Effect.Effect<{ readonly next: number; readonly summary: Summary }, TranscriptsUnavailable>
 }>()("@smthrs/mvp/runners/Transcripts") {}
+
+/** When the last event was received, epoch milliseconds (what `append`'s `now` was); `undefined` with none. */
+export const lastAt = (sql: Sql): number | undefined => {
+  const [row] = sql.exec(`SELECT max(received) AS received FROM events`)
+  return typeof row?.received === "number" ? row.received : undefined
+}

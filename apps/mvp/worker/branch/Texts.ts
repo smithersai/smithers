@@ -24,6 +24,7 @@ import { askingOf, branchAccess, canEdit, canView, installedOn, isMember, roleOn
 import * as Conversations from "./Conversations.ts"
 import { Rooms } from "./Rooms.ts"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
+import * as SocketAccess from "../SocketAccess.ts"
 
 // Co-editing's routes (decision 0013 §4, docs/features/coedit.md): every input two people see at once is a text they
 // edit together (`@smthrs/sync`'s `SharedText`), with each other's cursors.
@@ -276,7 +277,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           fields.scope = scoped.kind
           if (!canView(scoped.access)) return refuse(fields, 403, "forbidden")
           fields.access = scoped.access
+          // A conversation's text is the branch's to recheck; a run's, the run's (worker/SocketAccess.ts).
+          const basis: SocketAccess.Basis = "run" in scope
+            ? { kind: "text", run: scope.run.toLowerCase() }
+            : { kind: "branch", branchId: scoped.key.slice("branch:".length) }
+          const admission = yield* SocketAccess.admit(actor.value, basis, scoped.access).pipe(Effect.provide(database))
+          if (admission._tag === "ended") return refuse(fields, 401, "authentication")
+          if (admission._tag === "stale") return refuse(fields, 503, "unavailable")
           const joined = yield* (yield* Rooms).join(roomOf(scoped.key, textId), {
+            admission: admission.admission,
             principal: actor.value.subject.id,
             name: actor.value.login ?? actor.value.subject.id,
             role: scoped.role,

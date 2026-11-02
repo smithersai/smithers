@@ -618,6 +618,23 @@ describe("roles", () => {
     expect(next).not.toBe(generation)
     expect(h.roleChecks.at(-1)).toEqual({ sessionId: session!.id, generation: next })
   })
+  test("a role GitHub hasn't confirmed starts a check at most once a minute, however fresh role_checked_at is", async () => {
+    const h = await signInHarness(runtime)
+    const { cookies } = await h.signInAs()
+    const unconfirm = (checkedSecondsAgo: number) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        UPDATE sessions SET role_verified_at = NULL,
+          role_checked_at = now() - make_interval(secs => ${checkedSecondsAgo})`))
+    // Checked (and failed) 10 s ago: too soon to try again.
+    await unconfirm(10)
+    await h.session(cookies)
+    expect(h.roleChecks).toEqual([])
+    // A session from before `role_verified_at`, or only failed checks for over a minute: a real check starts.
+    await unconfirm(90)
+    await h.session(cookies)
+    const [session] = await sessionRows()
+    expect(h.roleChecks).toEqual([{ sessionId: session!.id, generation: expect.any(Number) }])
+  })
 })
 
 describe("signing out", () => {

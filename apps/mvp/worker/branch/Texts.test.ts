@@ -337,7 +337,11 @@ describe("GET /api/texts/<id>/room", () => {
     ])
     expect(h.rooms.joined).toEqual([{
       branchId: `text:branch:${branch.branchId}:${textId}`,
-      member: { principal: "person-ben", name: "ben", role: "member", access: "view" },
+      member: { principal: "person-ben", name: "ben", role: "member", access: "view", admission: expect.objectContaining({
+        // A conversation's text is rechecked as its branch.
+        basis: { kind: "branch", branchId: branch.branchId },
+        access: "view",
+      }) },
     }])
     expect(h.only("text.room").annotations).toMatchObject({ textId, scope: "conversation", access: "view", outcome: "joined" })
     expect(h.count(Texts.joins, { outcome: "joined" })).toBe(1)

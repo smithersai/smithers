@@ -270,7 +270,9 @@ export const rooms = () => {
     join: (branchId, member) =>
       Effect.sync(() => {
         joined.push({ branchId, member })
-        return HttpServerResponse.jsonUnsafe({ joined: member })
+        // The admission is recorded in `joined`; the answer shows who joined, as before it existed.
+        const { admission: _admission, ...shown } = member
+        return HttpServerResponse.jsonUnsafe({ joined: shown })
       }),
     enforce: (branchId, policy) =>
       state.failing ? Effect.fail(new RoomUnavailable()) : Effect.sync(() => void enforced.push({ branchId, policy })),

@@ -30,6 +30,7 @@ import * as Actor from "./Actor.ts"
 import * as CloudRuns from "./CloudRuns.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
+import type * as SocketAccess from "./SocketAccess.ts"
 import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { repositoryOf } from "./github/Config.ts"
@@ -228,7 +229,10 @@ const routes = async (
     readonly roles?: RepoRoles.RepoRoles
     readonly stop?: (runId: string) => Effect.Effect<void, unknown>
     /** What the run's transcript does with an admitted socket; answers `200 handed <runId>` unless set. */
-    readonly transcript?: (runId: string) => Effect.Effect<HttpServerResponse.HttpServerResponse>
+    readonly transcript?: (
+      runId: string,
+      admission: SocketAccess.Admission,
+    ) => Effect.Effect<HttpServerResponse.HttpServerResponse>
   } = {},
 ) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
@@ -1391,6 +1395,29 @@ describe("GET /api/remote-runs/<runId>/transcript", () => {
         "upgrade",
       ])
       expect(h.spans.filter((span) => span.name === "run.transcript")).toHaveLength(2)
+    })
+  })
+
+  test("hands the transcript who it admitted, on the run's repository, for the object to recheck", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      const handed: Array<SocketAccess.Admission> = []
+      const h = await routes(engine, {
+        actor: member,
+        transcript: (_runId, admission) => Effect.sync(() => (handed.push(admission), HttpServerResponse.text("handed"))),
+      })
+      expect((await h.fetch(transcriptRoute(runId), socket())).status).toBe(200)
+      expect(handed).toEqual([{
+        session: null,
+        alias: null,
+        expiresAt: null,
+        admittedAt: expect.any(Number),
+        principal: member.subject.id,
+        role: member.role,
+        basis: { kind: "run", repoId: "github/octo/hello" },
+        access: "member",
+      }])
     })
   })
 

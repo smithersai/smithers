@@ -51,6 +51,9 @@ export const SESSION_MAX_AGE_DAYS = 30
 /** How old a session's role may get before it is checked with GitHub again, when `ROLE_RECHECK_MINUTES` is unset. */
 export const ROLE_RECHECK_MINUTES = 60
 
+/** How often a session whose role GitHub hasn't confirmed lately starts another check, at most. */
+export const UNCONFIRMED_RECHECK_MS = 60_000
+
 /** How long a sign-in may take, from the button to GitHub's callback. */
 export const SIGN_IN_TTL_SECONDS = 600
 
@@ -394,7 +397,11 @@ export const make = <E, R>(
       )
       if (Option.isNone(live)) return Option.none()
       const now = yield* Clock.currentTimeMillis
-      if (now - live.value.roleCheckedAt >= recheckAfterMs) {
+      // A role GitHub hasn't confirmed within the hour (never, for a session from before `role_verified_at`, or only
+      // failed checks since) is checked again too, at most once a minute: a socket's lease trusts only a confirmed role.
+      const checkedAgo = now - live.value.roleCheckedAt
+      const unconfirmed = live.value.roleVerifiedAt === null || now - live.value.roleVerifiedAt >= recheckAfterMs
+      if (checkedAgo >= recheckAfterMs || (unconfirmed && checkedAgo >= UNCONFIRMED_RECHECK_MS)) {
         // An alias session's role is its home session's, so the check is the home session's.
         yield* (yield* RoleChecks).start(live.value.home ?? live.value.id, live.value.roleCheckedAt)
       }
@@ -404,6 +411,8 @@ export const make = <E, R>(
           subject: { kind: "person", id: live.value.personId },
           role: live.value.role,
           session: live.value.home ?? live.value.id,
+          // The alias session itself, which signing out at its host ends (worker/SocketAccess.ts checks both).
+          ...(live.value.home === undefined ? {} : { alias: live.value.id }),
         },
         login: live.value.login,
         expiresAt: live.value.expiresAt,

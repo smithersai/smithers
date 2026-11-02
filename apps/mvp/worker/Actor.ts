@@ -50,6 +50,8 @@ export interface Actor {
    * session's GitHub token (decision 0012 §5). Absent for local development's developer and in tests that need none.
    */
   readonly session?: string
+  /** The alias session the request came with at an alias host (decision 0130), under `session`; absent at home. */
+  readonly alias?: string
 }
 
 /** Member or above (decision 0007 §1): the roles that may ask Smithers (`repo:ask`) and clone. */

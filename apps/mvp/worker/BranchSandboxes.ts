@@ -4,7 +4,8 @@ import type { SandboxTools } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Clock, Config, Effect, Fiber, Layer, Option, Schema, Scope } from "effect"
-import { FetchHttpClient, Headers, HttpBody, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpBody, HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import { BranchSandbox } from "../infra/BranchSandbox.ts"
 import { CiArtifacts, GateMachine } from "../infra/GateMachine.ts"
@@ -44,6 +45,8 @@ import { SecretKeys } from "./secrets/Keys.ts"
 import * as RegistryEgress from "./branch/RegistryEgress.ts"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 import * as Overflow from "./runners/Overflow.ts"
+import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketChecks from "./SocketChecks.ts"
 
 // Branch sandboxes on Cloudflare (decision 0013 §3, decision 0005 §2, docs/features/branch-workspace.md#the-machine):
 // `SandboxObject`, one Durable Object per branch, named by the branch's id, owns that branch's container
@@ -225,8 +228,12 @@ const isBranch = Schema.is(SandboxBranch)
  * The object's implementation: the branch's container, its checkout, its terminals, its forge and, with
  * `SANDBOX_SECRETS` on, its egress, which reaches Postgres through `connection`, the Hyperdrive config ChatApi binds.
  */
-export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>) =>
-  SandboxObject.make(implementation(connection, {
+export const live = <E, R, CE, CR>(
+  connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
+  checks: SocketChecks.Options,
+  checkConnection: Effect.Effect<Cloudflare.Hyperdrive.Connection, CE, CR>,
+) =>
+  SandboxObject.make(implementation(connection, checks, checkConnection, {
     machine: undefined,
     container: BranchSandbox,
     instance: sandboxInstance,
@@ -237,9 +244,13 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
  * The gate machine's objects (`GateObject`) when the deployment declares it (GATE_IMAGE), on GATE_INSTANCE, their
  * boxes reaching the run's artifacts in `CiArtifacts`; nothing otherwise, and nothing then yields `GateObject`.
  */
-export const gateLive = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>) =>
+export const gateLive = <E, R, CE, CR>(
+  connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
+  checks: SocketChecks.Options,
+  checkConnection: Effect.Effect<Cloudflare.Hyperdrive.Connection, CE, CR>,
+) =>
   Layer.unwrap(Effect.map(JobMachines.declared.pipe(Effect.orDie), (machines) => {
-    const layer = GateObject.make(implementation(connection, {
+    const layer = GateObject.make(implementation(connection, checks, checkConnection, {
       machine: JobMachines.GATE,
       container: GateMachine,
       instance: JobMachines.gateInstance,
@@ -252,8 +263,11 @@ export const gateLive = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.C
     return machines.includes(JobMachines.GATE) ? layer : (Layer.empty as unknown as typeof layer)
   }))
 
-const implementation = <E, R, CR, BR = never>(
+const implementation = <E, R, CE, CCR, CR, BR = never>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
+  checkOptions: SocketChecks.Options,
+  /** The config its sockets' leases renew through: the request path's (worker/DatabaseRoutes.ts). */
+  checkConnection: Effect.Effect<Cloudflare.Hyperdrive.Connection, CE, CCR>,
   spec: MachineSpec<CR, BR>,
 ) =>
   Effect.gen(function* () {
@@ -278,6 +292,7 @@ const implementation = <E, R, CR, BR = never>(
     const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
     const database = Database.layer(hyperdrive.connectionString)
+    const checks = yield* SocketChecks.checker(checkConnection, checkOptions)
     // Workers Logs keeps every JSON line, as it does ChatApi's and FlowExecution's. Without it this object's lines
     // (`sandbox.wake`, `sandbox.checkout`, `sandbox.forge`) never reached a log or a tail.
     // The machine's artifacts bucket, bound in construction; its handle is read per request.
@@ -300,9 +315,18 @@ const implementation = <E, R, CR, BR = never>(
           readonly principal: string
           readonly role: Role | null
           readonly access: "write" | "read"
+          readonly admission: SocketAccess.Admission
+          /** Its lease (worker/SocketAccess.ts): every frame, out and in, passes only before `until`. */
+          readonly lease: { until: number }
           readonly fiber: Fiber.Fiber<unknown>
         }
       >()
+      /** The renewal loop, while any socket is attached (`renewWhileAttached`). */
+      let renewing: Fiber.Fiber<unknown> | undefined
+      /** One renewal at a time: a gate or the loop that finds one running waits for it. */
+      const flight = SocketAccess.singleFlight()
+      /** Every gate's one pending renewal: frames on lapsed leases start at most one fiber for the whole object. */
+      let lapsed: (() => void) | undefined
       // The box's forge requests go to ChatApi's own entrypoint with props naming this object, and come back to it
       // (`answerBox`), which answers them as the forge proxy; every other request it makes does too, as its egress:
       // the package registries (worker/branch/RegistryEgress.ts), or with SANDBOX_SECRETS on, the secrets egress,
@@ -704,20 +728,39 @@ const implementation = <E, R, CR, BR = never>(
           const ownerId = request.headers[OWNER_HEADER] ?? ""
           const principal = request.headers[PRINCIPAL_HEADER] ?? ""
           const access = request.headers[ACCESS_HEADER] === "write" ? "write" : "read"
-          if (!ContainerTerminal.isSessionName(terminalId) || ownerId === "" || principal === "") {
+          const admission = SocketAccess.admissionOf(request)
+          if (!ContainerTerminal.isSessionName(terminalId) || ownerId === "" || principal === "" || admission === undefined) {
             return HttpServerResponse.empty({ status: 400 })
+          }
+          // A session that ended on the way here gets nothing; nor does a person over the cap.
+          if (SocketAccess.ended(admission, yield* Clock.currentTimeMillis)) return HttpServerResponse.empty({ status: 401 })
+          if (SocketAccess.crowded([...attached.values()].map((viewer) => viewer.admission), principal)) {
+            return HttpServerResponse.empty({ status: 429 })
           }
           yield* rearm
           const { env, user } = yield* asUser(userOf(ownerId))
           const pair = new WebSocketPair()
           const [client, server] = [pair[0], pair[1]]
           server.accept()
+          const lease = { until: SocketAccess.leaseFrom(admission, admission.admittedAt) }
+          // The gate is called from the socket's own events, outside any effect: it renews with this object's services.
+          const runFork = Effect.runForkWith(yield* Effect.context<RuntimeContext>())
+          // The terminal reads and writes through the lease: input and output both stop the moment it lapses or the
+          // session ends, and the object's one renewal is asked for.
+          const leased = SocketAccess.gate(
+            server,
+            () => Date.now() < lease.until && !SocketAccess.ended(admission, Date.now()),
+            lapsed ??= SocketAccess.coalesced(renewDue, runFork),
+          )
           const fiber = yield* Effect.forkIn(
-            ContainerTerminal.attach(box, server, { name: terminalId, user, access, cols: 80, rows: 24, env })
+            ContainerTerminal.attach(box, leased, { name: terminalId, user, access, cols: 80, rows: 24, env })
               .pipe(Effect.ensuring(Effect.sync(() => attached.delete(server))), Effect.ensuring(saveNow)),
             pumps,
           )
-          attached.set(server, { principal, role: roleOf(request.headers[ROLE_HEADER]), access, fiber })
+          attached.set(server, { principal, role: roleOf(request.headers[ROLE_HEADER]), access, admission, lease, fiber })
+          if (renewing === undefined) renewing = yield* Effect.forkIn(renewWhileAttached, pumps)
+          // A lease acted on before the loop's wake (a session ending sooner) wakes it then.
+          else loop.nudge({ admission, leaseUntil: lease.until })
           return HttpServerResponse.setBody(
             HttpServerResponse.empty({ status: 101 }),
             HttpBody.raw(new Response(null, { status: 101, webSocket: client })),
@@ -759,6 +802,68 @@ const implementation = <E, R, CR, BR = never>(
             Effect.logWarning("sandbox.forge").pipe(Effect.annotateLogs({ outcome: "failed", ...failureFields(cause) }))
           ),
         )
+
+      /**
+       * Renews the leases of `sockets` by the rules ChatApi admitted them with (worker/SocketAccess.ts). Every socket that
+       * can't be renewed leaves `attached` before any closes; its pump stops on its own time, never waited on.
+       */
+      const renewViewers = (sockets: ReadonlyArray<WebSocket>): Effect.Effect<void, never, RuntimeContext> =>
+        Effect.gen(function* () {
+          const due = sockets.flatMap((socket) => {
+            const viewer = attached.get(socket)
+            return viewer === undefined ? [] : [{ socket, viewer }]
+          })
+          if (due.length === 0) return
+          const verdicts = yield* SocketAccess.renew<RuntimeContext | SqlClient.SqlClient, RuntimeContext>(
+            "terminal",
+            due.map(({ viewer }) => viewer.admission),
+            checks.check,
+            checks.within,
+          )
+          const now = yield* Clock.currentTimeMillis
+          const ending: Array<readonly [WebSocket, Fiber.Fiber<unknown>, SocketAccess.Closing]> = []
+          due.forEach(({ socket, viewer }, index) => {
+            const verdict = verdicts[index]!
+            // A socket detached while its check ran stays detached.
+            if (attached.get(socket) !== viewer) return
+            if (verdict === "keep") viewer.lease.until = SocketAccess.leaseFrom(viewer.admission, now)
+            else {
+              viewer.lease.until = 0
+              attached.delete(socket)
+              ending.push([socket, viewer.fiber, verdict])
+            }
+          })
+          for (const [socket, fiber, closing] of ending) {
+            const close = SocketAccess.CLOSES[closing]
+            yield* Effect.sync(() => socket.close(close.code, close.reason)).pipe(Effect.ignore)
+            yield* Effect.forkIn(Fiber.interrupt(fiber), pumps)
+          }
+        }).pipe(
+          Effect.catchCause((cause) => Effect.logWarning("sandbox.renew").pipe(Effect.annotateLogs(failureFields(cause)))),
+          logged,
+        )
+
+      /** Renews every lease due now (`SocketAccess.due`), one renewal at a time. */
+      const renewDue: Effect.Effect<void, never, RuntimeContext> = flight(Effect.suspend(() => {
+        const now = Date.now()
+        return renewViewers(
+          [...attached].filter(([, viewer]) => SocketAccess.due(viewer.admission, viewer.lease.until, now)).map(([s]) => s),
+        )
+      }))
+
+      /**
+       * Acts on leases `RENEW_AHEAD_MS` before the first lapses (at the session's end for one it caps), renewing every
+       * one due together, for as long as any socket is attached. The object never hibernates while one is, so a fiber in
+       * `pumps` keeps the time. An attach never moves it: a lease that lapses first stops its socket's frames at once,
+       * and the gate asks for the renewal.
+       */
+      const loop = SocketAccess.renewalLoop(
+        () => [...attached.values()].map((viewer) => ({ admission: viewer.admission, leaseUntil: viewer.lease.until })),
+        renewDue,
+      )
+      const renewWhileAttached: Effect.Effect<void, never, RuntimeContext> = loop.loop.pipe(
+        Effect.ensuring(Effect.sync(() => (renewing = undefined))),
+      )
 
       /**
        * Holds every attached socket to the branch's permission list as it now stands: a viewer who lost the branch is
@@ -899,21 +1004,15 @@ export const terminalSocketsOver = (objects: Objects) => Effect.gen(function* ()
     attach: (branchId: string, attachment: Attachment) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        // Only these two headers say who attaches; any `x-smithers-*` the browser sent is dropped first.
-        const headers = Object.fromEntries(
-          Object.entries(request.headers).filter(([name]) => !name.toLowerCase().startsWith("x-smithers-")),
-        )
+        // Only these headers say who attaches; any `x-smithers-*` the browser sent is dropped first.
         const ticket = yield* objects.getByName(branchId).ticket().pipe(Effect.provideService(RuntimeContext, runtime))
-        const forwarded = request.modify({
-          headers: Headers.fromInput({
-            ...headers,
-            [TICKET_HEADER]: ticket,
-            [TERMINAL_HEADER]: attachment.terminalId,
-            [OWNER_HEADER]: attachment.ownerId,
-            [ACCESS_HEADER]: attachment.access,
-            [PRINCIPAL_HEADER]: attachment.principal,
-            [ROLE_HEADER]: attachment.role ?? "",
-          }),
+        const forwarded = SocketAccess.forward(request, attachment.admission, {
+          [TICKET_HEADER]: ticket,
+          [TERMINAL_HEADER]: attachment.terminalId,
+          [OWNER_HEADER]: attachment.ownerId,
+          [ACCESS_HEADER]: attachment.access,
+          [PRINCIPAL_HEADER]: attachment.principal,
+          [ROLE_HEADER]: attachment.role ?? "",
         })
         return yield* objects.getByName(branchId).fetch(forwarded).pipe(Effect.provideService(RuntimeContext, runtime))
       }).pipe(Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 503 }))),
