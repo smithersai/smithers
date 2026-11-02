@@ -15,7 +15,6 @@ import {
   issueOf,
   listProps,
   listFailureOf,
-  listRowsOf,
   listSyncOf,
   type ListRow,
   mayManageTriage,
@@ -454,14 +453,4 @@ test("the list's sync line says Syncing until ChatApi says the App isn't install
   // repository the App can't act on goes to GitHub's list instead (`syncsHere`).
   expect(listSyncOf(true, true, { installed: false })).toBe("syncing")
   expect(listSyncOf(false, true, { installed: false })).toBe("syncing")
-})
-
-test("a cold list shows the issues route's first page until it has synced rows of its own", () => {
-  const page = [{ id: "r#2", number: 2, title: "Newer", state: "open", authorLogin: "maya", comments: 1, createdAt: "c", updatedAt: "u", triage: "proposed", commitment: null }]
-  expect(listRowsOf([], page)).toEqual([{
-    id: "r#2", number: 2, title: "Newer", state: "open", author: "maya", comments: 1, createdAt: "c", updatedAt: "u",
-    triage: "proposed", commitment: null, pending: "", reason: undefined, local: 0,
-  }])
-  const synced = [{ id: "r#1", number: 1, title: "Mine", state: "open", author: null, comments: 0, updatedAt: "u", triage: "", pending: "requested", reason: undefined, local: 1 }]
-  expect(listRowsOf(synced, page)).toBe(synced)
 })

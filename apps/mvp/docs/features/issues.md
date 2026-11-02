@@ -179,8 +179,6 @@ A synced page (the issues and pull requests lists and pages) opens on its own ro
 
 A cold issue page asks `GET /api/repos/<owner>/<name>/issues/<number>` beside its shapes (`RepoClient.issue`) and shows that answer, title and body, until the item's shape syncs (`queries.first`, in memory only): the shape's first request for one item took 1.3 s, then 0.5 s more, on production. The server authorizes it as it does the shapes, so a person who may not read the repository gets nothing.
 
-A cold list does the same with its first page: `GET .../issues?state=all&limit=100` beside its summaries (`RepoClient.issues`, `queries.firstPage`, in memory only), shown as rows with no counts and never "No issues" until the summaries sync (`listRowsOf`). At 849 issues the summaries took 10.5 s to a fresh device's first rows on production (2026-11-02).
-
 Screens: `/$owner/$repo/issues`, `/$owner/$repo/issues/new` and `/$owner/$repo/issues/$number` (`src/screens/issues/`), and an Issues link in the repository's header. Each issue shows the TODOs made from it, on its row and in its page's side column, and a Member gets Make TODO in an open issue's `⋯` menu and on its page, key `t`, while none of its TODOs is open ([TODOs from an issue](todos.md#from-an-issue)); the issue routes open the repository's stack for it. The device's outbox is chat's, extended by `OutboxWrites` (`src/outbox.ts`).
 
 ## Postgres

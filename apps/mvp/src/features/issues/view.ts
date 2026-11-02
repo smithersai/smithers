@@ -27,43 +27,6 @@ export interface ListRow {
   readonly local: number
 }
 
-/**
- * A cold list's rows: its synced rows once it has any, else the first page the issues route answered (`firstPage`),
- * as list rows with nothing pending. The list stays unknown, no counts and no "No issues", until its summaries sync.
- */
-export const listRowsOf = (
-  rows: ReadonlyArray<ListRow>,
-  firstPage: ReadonlyArray<{
-    readonly id: string
-    readonly number: number
-    readonly title: string
-    readonly state: string
-    readonly authorLogin: string | null
-    readonly comments: number
-    readonly createdAt: string
-    readonly updatedAt: string
-    readonly triage: string
-    readonly commitment: string | null
-  }>,
-): ReadonlyArray<ListRow & { readonly createdAt?: string }> =>
-  rows.length > 0
-    ? rows
-    : firstPage.map((row) => ({
-      id: row.id,
-      number: row.number,
-      title: row.title,
-      state: row.state,
-      author: row.authorLogin,
-      comments: row.comments,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      triage: row.triage,
-      commitment: row.commitment,
-      pending: "",
-      reason: undefined,
-      local: 0,
-    }))
-
 /** A row of an issue's comments (queries.ts `conversationQuery`). */
 export interface CommentRow {
   readonly id: string

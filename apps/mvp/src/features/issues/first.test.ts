@@ -36,26 +36,3 @@ test("an issue page has its issue from the issues route while every shape is sti
   expect(store.routed().item.tanstack.toArray).toEqual([])
   expect(requests.some((path) => path === "/api/shapes/items")).toBe(true)
 }, 60_000)
-
-test("a cold list has the issues route's first page while every shape is still held", async () => {
-  const held = { ...ShapeSource.fetchSource, request: () => Effect.never }
-  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, held as ShapeSource.Source) })
-  runtimes.push(runtime)
-  const api = await runtime.runPromise(Effect.service(TestChatApi))
-  const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
-  const id = repoId(owner, name)
-  await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(
-    `INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at, source_updated_at, fetched_at)
-    VALUES ('${id}#1', '${id}', 1, 'issue', 1001, 'Older', '', 'open', now() - interval '1 hour', now() - interval '1 hour', now(), now()),
-      ('${id}#2', '${id}', 2, 'issue', 1002, 'Newer', '', 'closed', now(), now(), now(), now())`,
-  ))))
-  const store = await runtime.runPromise(Effect.service(IssuesStore))
-  await runtime.runPromise(store.route(id))
-  const page = store.routed().firstPage.tanstack
-  page.startSyncImmediate()
-  await vi.waitFor(() => expect(page.toArray.map((row) => [row.number, row.title, row.state])).toEqual(
-    expect.arrayContaining([[2, "Newer", "closed"], [1, "Older", "open"]]),
-  ), { timeout: 15_000 })
-  // Nothing synced: the list's own summaries are still empty.
-  expect(store.routed().items.tanstack.size).toBe(0)
-}, 60_000)

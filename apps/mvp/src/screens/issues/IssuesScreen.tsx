@@ -23,7 +23,7 @@ import {
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
 import { filterWork, withWork, workByIssue } from "../../features/issues/workView"
 import { WORK_FILTER_LABEL } from "../../features/issues/work"
-import { listFailureOf, listProps, listRowsOf, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
+import { listFailureOf, listProps, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
 import "./issues-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
@@ -40,9 +40,7 @@ export function IssuesScreen() {
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: privateRows, isReady: privateReady } = useLiveQuery(queries.list)
   const { data: publicRows, isReady: publicReady } = useLiveQuery(queries.publicList)
-  // Until the summaries sync, the first page the issues route answered: a cold list has rows in a second, not ten.
-  const { data: firstPage } = useLiveQuery(queries.firstPage)
-  const rows = listRowsOf((session?.status === "signed_out" ? publicRows : privateRows) ?? [], firstPage ?? [])
+  const rows = session?.status === "signed_out" ? publicRows : privateRows
   const isReady = session?.status === "signed_out" ? publicReady : privateReady
   const { data: synced } = useLiveQuery(queries.synced)
   const { data: workRows } = useLiveQuery(queries.work)
