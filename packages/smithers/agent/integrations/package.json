@@ -479,7 +479,7 @@
     "@smthrs/canonical": "1.0.0-rc.16",
     "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/crypto": "1.0.0-rc.16",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-60bd29302ace.tgz"
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-587937650a6b.tgz"
   },
   "peerDependencies": {
     "effect": "4.1.0"
@@ -506,10 +506,10 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-6ea57b82a1dd.tgz",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-60bd29302ace.tgz",
-    "vibelang-unplugin": "file:../../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-7e3b05c3f55f.tgz",
-    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-128dc7493736.tgz",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-ef39e96004c2.tgz",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-587937650a6b.tgz",
+    "vibelang-unplugin": "file:../../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-0cd78f8e2c0c.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-7159373887c8.tgz",
     "vitest": "5.0.0"
   }
 }
