@@ -13,7 +13,9 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 0.1.0
  */
-export const startupIndex = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE INDEX flows_journal_events_startup_idx ON flows_journal_events (emitted_at_ms DESC, run_id DESC, seq DESC)`
-})
+export const startupIndex = effect {
+  const sql = try SqlClient.SqlClient
+  try Effect.suspend(() =>
+    sql`CREATE INDEX flows_journal_events_startup_idx ON flows_journal_events (emitted_at_ms DESC, run_id DESC, seq DESC)`
+  )
+}

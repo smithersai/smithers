@@ -13,7 +13,9 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const runEventType: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE INDEX flows_journal_events_run_event_type_idx ON flows_journal_events (run_id, event_type, seq)`
-})
+export const runEventType: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try Effect.suspend(() =>
+    sql`CREATE INDEX flows_journal_events_run_event_type_idx ON flows_journal_events (run_id, event_type, seq)`
+  )
+}

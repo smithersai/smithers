@@ -11,12 +11,12 @@
 import { readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Migrations from "../src/Migrations.ts"
-import * as Initial from "../src/migrations/0001_initial.ts"
-import * as Checkpoints from "../src/migrations/0002_checkpoints.ts"
-import * as StartupIndex from "../src/migrations/0003_startup_index.ts"
-import * as Dedup from "../src/migrations/0004_dedup.ts"
-import * as RunEventType from "../src/migrations/0005_run_event_type.ts"
-import * as Consensus from "../src/migrations/0006_consensus.ts"
+import * as Initial from "../src/migrations/0001_initial.vibe"
+import * as Checkpoints from "../src/migrations/0002_checkpoints.vibe"
+import * as StartupIndex from "../src/migrations/0003_startup_index.vibe"
+import * as Dedup from "../src/migrations/0004_dedup.vibe"
+import * as RunEventType from "../src/migrations/0005_run_event_type.vibe"
+import * as Consensus from "../src/migrations/0006_consensus.vibe"
 
 /** A source module: TypeScript, or the same module migrated to VibeLang. */
 const sourceExtensions = [".ts", ".vibe"] as const
