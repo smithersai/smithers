@@ -44,7 +44,8 @@ add(
         query({
           limit: o.limit ?? 30,
           // A saved view carries its own state; the API refuses both.
-          ...(o.view ? { view: o.view } : { state: o.state === "all" ? undefined : o.state ?? "open" }),
+          ...(o.view ? { view: o.view } : { state: o.state === "all" ? "all" : o.state ?? "open" }),
+          ...(o.search ? { q: o.search } : {}),
           cursor
         }),
       str(o.cursor),

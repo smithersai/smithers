@@ -494,8 +494,9 @@ describe("remaining read and update contracts", () => {
     await resources["issue create"]!(c, { title: "Issue" }, options)
     expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/issues", { title: "Issue", body: "" })
     const response = vi.spyOn(c, "response").mockImplementation(async () => new Response("[]"))
+    // Smithers' issues route defaults to open, so every state is asked for by name (apps/mvp worker/github/IssueList.ts).
     await resources["issue list"]!(c, {}, { ...options, state: "all" })
-    expect(response.mock.calls[0]![1]).not.toContain("state=")
+    expect(response.mock.calls[0]![1]).toContain("state=all")
     await resources["issue list"]!(c, {}, options)
     expect(response.mock.calls[1]![1]).toContain("state=open")
   })

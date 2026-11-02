@@ -594,6 +594,7 @@ export const definitions = {
       "cursor": z.string().describe("Pagination cursor (from previous response)").optional(),
       "limit": z.coerce.number().describe("Results per page").default(30),
       "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
+      "search": z.string().describe("Search titles, or #number").optional(),
       "state": z.enum(["open", "closed", "fixed", "verified", "all"]).describe("Filter by state").default("open"),
       "view": z.string().describe("Saved issue view id from issue views; replaces --state").optional()
     })

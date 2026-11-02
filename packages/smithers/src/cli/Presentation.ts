@@ -307,7 +307,12 @@ export const finish = <A>(context: Context, value: A, rendering: Rendering = {})
  * @since 1.0.0
  */
 export interface Failing extends Context {
-  readonly error: (error: { code: string; message: string; exitCode?: number }) => never
+  readonly error: (error: {
+    code: string
+    message: string
+    exitCode?: number
+    cta?: { description?: string; commands: Array<{ command: string; description: string }> }
+  }) => never
 }
 
 /**
@@ -342,7 +347,17 @@ export const fail = (context: Failing, cause: unknown, refusal: Refusal = {}): n
     message: String(
       Redaction.redactDiagnostic(Failure.commandReport(cause, context.options?.verbose === true))
     ),
-    exitCode: tag === "/cli/UsageError" ? 2 : refusal.exitCode ?? 1
+    exitCode: tag === "/cli/UsageError" ? 2 : refusal.exitCode ?? 1,
+    // A backend that didn't answer is most often the wrong backend: name the setting before any other notice
+    // (Incur appends its own, such as stale skills, to this block).
+    ...(cause instanceof CliError.Refused && (cause.code === "backend_unavailable" || cause.code === "backend_timed_out")
+      ? {
+        cta: {
+          description: "Check which Smithers API this CLI calls:",
+          commands: [{ command: "config get api_origin", description: "show the API origin" }]
+        }
+      }
+      : {})
   })
 }
 

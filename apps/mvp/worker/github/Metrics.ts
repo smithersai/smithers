@@ -124,3 +124,9 @@ export const projectionFailures = Metric.counter("github_projection_failures", {
   description: "Projection failures after a confirmed GitHub write, by operation",
   incremental: true,
 })
+
+/** `GET /api/repos/<owner>/<name>/issues` requests, by `outcome`: `listed`, `invalid`, `refused`, `not_found`, `unavailable`. */
+export const issueLists = Metric.counter("github_issue_lists", {
+  description: "GET /api/repos/<owner>/<name>/issues requests, by outcome",
+  incremental: true,
+})

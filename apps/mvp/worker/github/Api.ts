@@ -89,6 +89,7 @@ import * as Compare from "./Compare.ts"
 import { statusOf } from "./Calls.ts"
 import { apiUrl, type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import { Merge } from "./Merge.ts"
+import * as IssueList from "./IssueList.ts"
 import * as Metrics from "./Metrics.ts"
 import { Reconcile } from "./Reconcile.ts"
 import * as PullRefresh from "./PullRefresh.ts"
@@ -309,7 +310,8 @@ const SHAPES: ReadonlySet<string> = new Set([
 /** Whether ChatApi routes `path` here. */
 export const handles = (path: string): boolean =>
   path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined ||
-  Compare.parseComparePath(path) !== undefined || Review.parseReviewPath(path) !== undefined
+  Compare.parseComparePath(path) !== undefined || Review.parseReviewPath(path) !== undefined ||
+  IssueList.parseIssuesPath(path) !== undefined
 
 /**
  * How long a stale read of the issues waits for `github/Reconcile`'s start to be admitted: one idempotent Durable Object
@@ -873,6 +875,68 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       metric: Metric.withAttributes(Metrics.shapes, { table: WRITES_TABLE }),
     })
 
+    /**
+     * `GET /api/repos/<owner>/<name>/issues` (worker/github/IssueList.ts): one page of the repository's issues, read
+     * as its shapes are, and a stale read starts its Reconcile as theirs do. One span and log line
+     * `github.issues.list` and one count by outcome; never a title or a query.
+     */
+    const issues = (named: { readonly owner: string; readonly name: string }) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Record<string, string | number> = {}
+        const response = yield* Effect.gen(function* () {
+          if (request.method !== "GET") {
+            fields.outcome = "method"
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
+          }
+          const target = repositoryOf(`${named.owner}/${named.name}`)
+          fields.repoId = target.id
+          if (!mayAct(target.id)) {
+            fields.outcome = "not_found"
+            return refuse(404, "not_found")
+          }
+          if (target.id !== repository.id) {
+            const absent = yield* Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.orElseSucceed(() => false))
+            if (absent) {
+              fields.outcome = "app_not_installed"
+              return refuse(404, "app_not_installed")
+            }
+          }
+          const search = new URL(request.url, "http://localhost").searchParams
+          const query = IssueList.parseQuery(search)
+          if (query === undefined) {
+            fields.outcome = "invalid"
+            return refuse(400, "invalid")
+          }
+          const refused = yield* readRefusal(target)
+          if (Option.isSome(refused)) {
+            fields.outcome = "refused"
+            return refused.value
+          }
+          const [, found] = yield* Effect.all([
+            reconcileIfStale(target),
+            IssueList.page(target.id, query).pipe(Effect.provide(database), Effect.result),
+          ], { concurrency: 2 })
+          if (found._tag === "Failure") {
+            fields.outcome = "unavailable"
+            fields.errorCode = codeOf(found.failure)
+            return refuse(503, "unavailable")
+          }
+          fields.outcome = "listed"
+          fields.count = found.success.issues.length
+          fields.more = found.success.next === undefined ? 0 : 1
+          return IssueList.answer(named, search, found.success)
+        })
+        const outcome = String(fields.outcome)
+        yield* Metric.update(Metric.withAttributes(Metrics.issueLists, { outcome }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.issues.outcome": outcome })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : "Info")("github.issues.list").pipe(
+          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+        )
+        return response
+      }).pipe(Effect.withSpan("github.issues.list", { kind: "server" }))
+
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
@@ -944,6 +1008,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       }
       const reviewed = Review.parseReviewPath(path)
       if (reviewed !== undefined) return yield* review(reviewed)
+      const listed = IssueList.parseIssuesPath(path)
+      if (listed !== undefined) return yield* issues(listed)
       const target = parseWritesPath(path)
       if (target !== undefined) return yield* writes(target)
       return HttpServerResponse.empty({ status: 404 })

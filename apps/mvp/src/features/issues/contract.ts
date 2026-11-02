@@ -14,6 +14,17 @@ export const WRITES_SEGMENT = "writes"
 export const writesRoute = (owner: string, name: string): string =>
   `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${WRITES_SEGMENT}`
 
+/** The last segment of `GET /api/repos/<owner>/<name>/issues`: a repository's issues, one page at a time. */
+export const ISSUES_SEGMENT = "issues"
+
+/** `GET /api/repos/<owner>/<name>/issues?state=&q=&limit=&cursor=`. */
+export const issuesRoute = (owner: string, name: string): string =>
+  `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${ISSUES_SEGMENT}`
+
+/** The issues list's page size when the request names none, and the most it sends in one page. */
+export const ISSUE_PAGE_DEFAULT = 30
+export const ISSUE_PAGE_MAX = 100
+
 /** Electric shape proxies: `GET`. Each serves one table with an explicit column list. */
 export const ITEM_SUMMARIES_SHAPE_ROUTE = "/api/shapes/item-summaries"
 export const ITEMS_SHAPE_ROUTE = "/api/shapes/items"

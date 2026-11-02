@@ -166,11 +166,14 @@ export class APIError extends Data.TaggedError("/backend/APIError")<{
   readonly requestId: string
   readonly bodyPreview: string
   readonly message: string
+  /** The origin the request went to, when the client knew it. */
+  readonly origin?: string | undefined
 }> {
-  constructor(status: number, detail: Values, method: string, path: string, headers: Headers, body = "") {
+  constructor(status: number, detail: Values, method: string, path: string, headers: Headers, body = "", origin?: string) {
     super({
       status,
       detail,
+      origin,
       contentType: headers.get("content-type") || "",
       requestId: headers.get("x-request-id") || "",
       bodyPreview: body.slice(0, 512),
@@ -261,6 +264,11 @@ export const refusalOf = (error: APIError, redact: (value: unknown) => unknown =
       : "infra"
   }
   const stated = Failure.terminalSafe(str(redact(str(error.detail.message)))).trim()
+  // A 5xx with no sentence of its own names where it came from: a stale api_origin (a retired backend answering 502
+  // to everything) otherwise reads as an outage of Smithers itself.
+  if (!stated && error.status >= 500 && error.origin !== undefined && refusal.code === "backend_unavailable") {
+    refusal.message = `Smithers Cloud at ${error.origin} did not answer (HTTP ${error.status})`
+  }
   return withCause(
     new Refused({
       ...refusal,
@@ -618,7 +626,7 @@ export class Client {
         text = await this.text(response)
         detail = object(JSON.parse(text))
       } catch { /* use status */ }
-      throw new APIError(response.status, detail, method, path, response.headers, text)
+      throw new APIError(response.status, detail, method, path, response.headers, text, origin)
     }
     return response
   }

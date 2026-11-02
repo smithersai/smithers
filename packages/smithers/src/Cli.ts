@@ -463,6 +463,9 @@ export const makeCli = (
       (row.visibility === "core" || row.visibility === "advanced")
     ).map((row) => row.cli!.join(" ")),
     "login",
+    // The paged issues list (`GET /api/repos/<owner>/<name>/issues`, apps/mvp worker/github/IssueList.ts): the
+    // catalog's issue doors (`issue show`, `issue new`, `issue comment`) open one issue; this one finds it.
+    "issue list",
     "ssh-key add",
     "ssh-key delete",
     "ssh-key list",
