@@ -1,6 +1,6 @@
+import { Schema } from "effect";
 import * as AgentAction from "@smthrs/agent/AgentAction";
 import { Action } from "@smthrs/flow";
-import { Schema } from "effect";
 import { ReleaseError } from "../../../release-support/schema.ts";
 export declare const Collect: Action.Declared<"release-content/collect", Schema.Struct<{
     version: Schema.String;

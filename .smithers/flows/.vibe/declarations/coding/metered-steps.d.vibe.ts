@@ -1,3 +1,4 @@
+import { Layer } from "effect";
 /**
  * The native coding host's request executor, naming the engine dispatch each
  * model call runs under on requests to the install's metered proxy (T-FLW-07).
@@ -5,7 +6,6 @@
  * (packages/smithers/src/internal/MeteredDispatch.ts).
  */
 import * as RequestExecutor from "@smthrs/model/RequestExecutor";
-import { Layer } from "effect";
 import * as MeteredDispatch from "../../../../../packages/smithers/src/internal/MeteredDispatch.ts";
 /** The proxy reads this header only from a flow host credential. */
 export declare const header = "X-Smithers-Native-Step";

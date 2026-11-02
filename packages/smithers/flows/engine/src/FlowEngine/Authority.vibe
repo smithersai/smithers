@@ -19,7 +19,7 @@ import * as Effect from "effect/Effect"
  * @category accessors
  * @since 1.0.0
  */
-export const requestedAuthority = (flow: Flow.Any): Effect.Effect<CapabilitySet.CapabilitySet["groups"]> =>
+export const requestedAuthority = (flow: Flow.Any): CapabilitySet.CapabilitySet["groups"]!! =>
   Effect.map(
     Flow.attenuateCapabilities(Flow.capabilityCeilings(flow.annotations))(CapabilitySet.current),
     (set) => set.groups

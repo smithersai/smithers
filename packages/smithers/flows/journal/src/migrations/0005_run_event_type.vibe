@@ -15,7 +15,5 @@ import * as SqlClient from "effect/sql/SqlClient"
  */
 export const runEventType: void!unknown!SqlClient.SqlClient = effect {
   const sql = try SqlClient.SqlClient
-  try Effect.suspend(() =>
-    sql`CREATE INDEX flows_journal_events_run_event_type_idx ON flows_journal_events (run_id, event_type, seq)`
-  )
+  try sql`CREATE INDEX flows_journal_events_run_event_type_idx ON flows_journal_events (run_id, event_type, seq)`
 }

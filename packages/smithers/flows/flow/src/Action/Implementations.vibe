@@ -118,7 +118,7 @@ export service Implementations {
  * @since 0.1.0
  */
 export const layerImplementations: Layer.Layer<Implementations> = Layer.effect(Implementations)(
-  Effect.sync(() => {
+  effect {
     const registered = new Map<string, Array<{ readonly implementation: Implementation }>>()
     return Implementations.of({
       add: (implementation, options) =>
@@ -134,14 +134,14 @@ export const layerImplementations: Layer.Layer<Implementations> = Layer.effect(I
           const entry = { implementation }
           entries.push(entry)
           registered.set(implementation.name, entries)
-          return Effect.addFinalizer(() =>
-            Effect.sync(() => {
+          return Effect.addFinalizer(effect () =>
+            {
               entries.splice(entries.indexOf(entry), 1)
               if (entries.length === 0) registered.delete(implementation.name)
-            })
+            }
           )
         }),
-      get: (name) => Effect.sync(() => Option.fromNullishOr(registered.get(name)?.at(-1)?.implementation))
+      get: effect (name) => Option.fromNullishOr(registered.get(name)?.at(-1)?.implementation)
     })
-  })
+  }
 )

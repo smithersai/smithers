@@ -64,8 +64,7 @@ export const consensus: void!unknown!SqlClient.SqlClient = effect {
     return
   }
 
-  try Effect.suspend(() =>
-    sql`
+  try sql`
     INSERT INTO flows_consensus_leases (
       run_id,
       owner_host_id,
@@ -93,5 +92,4 @@ export const consensus: void!unknown!SqlClient.SqlClient = effect {
     WHERE status = 'running' OR claim_host_id IS NOT NULL
     ON CONFLICT (run_id) DO NOTHING
   `
-  )
 }
