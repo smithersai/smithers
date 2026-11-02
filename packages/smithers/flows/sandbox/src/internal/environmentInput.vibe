@@ -19,7 +19,7 @@ const encoder = new TextEncoder()
  * @category constructors
  * @since 0.1.0
  */
-export const environmentInput = (operands: ReadonlyArray<string>, stdin: Uint8Array | undefined) => ({
+export const environmentInput = (operands: ReadonlyArray<string>, stdin: Uint8Array | undefined): infer _ => ({
   script: operands.length === 0
     ? ""
     : `eval "$(IFS= read -r smthrs_env && smthrs_env=$(printf %s "$smthrs_env" | base64 -d) && printf 'set -- %s' "$smthrs_env" || printf 'exit 125')" || exit 125; `,
