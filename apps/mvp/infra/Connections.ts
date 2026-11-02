@@ -39,15 +39,6 @@ export const ALERT_PERCENT = 80
  */
 export const CONNECTION_BUDGET = { hyperdrive: 20, engine: 30, electric: 20 + 1, deploy: 5, reserved: 13 } as const
 
-/**
- * `ChatDatabase`'s limit while decision 0150 rolls out: the shared config's old 50, kept for the deploy that creates
- * `EngineDatabase` and moves the engine's traffic to it, so the Worker still sending the engine through `ChatDatabase`
- * never meets a smaller pool. A later deploy shrinks it to `CONNECTION_BUDGET.hyperdrive` and removes this.
- *
- * Meanwhile the sum exceeds the budget at the range's bottom (112 connections at 0.25 CU) but stays under
- * `ALERT_PERCENT` of what Neon sizes the compute's `max_connections` by, the range's top: 450 at 1 CU.
- */
-export const ROLLOUT_REQUEST_LIMIT = 50
 
 /** Electric's query pool: the `electric` budget less its replication connection. */
 export const ELECTRIC_POOL_SIZE = CONNECTION_BUDGET.electric - 1

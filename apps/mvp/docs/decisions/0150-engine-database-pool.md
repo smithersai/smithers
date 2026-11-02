@@ -66,14 +66,12 @@ Two deploys, in this order:
 1. **Move the engine.** Create `EngineDatabase` (30) and route the engine and the sandbox objects to it. `ChatDatabase`
    keeps the shared config's 50 (`ROLLOUT_REQUEST_LIMIT`), so a Worker still sending the engine through `ChatDatabase`
    during the deploy never meets a smaller pool. The connection sum (119) exceeds the budget at the range's bottom (112
-   at 0.25 CU) for this one step. It stays under 80% of the 419 Neon's table gives the compute at the range's top
-   (1 CU), which is what Neon sizes `max_connections` by. `infra/Connections.ts` estimates 450 a CU, which overstates
-   it. The live check is `SHOW max_connections` on the compute, with the peak origin connections Hyperdrive opened in
-   the burst.
+   at 0.25 CU) for this one step. It stays under 80% of what the compute really allows: `SHOW max_connections` read
+   450 on 2026-11-03.
    Check: `hyperdrivePoolSizesAdaptiveGroups` shows the engine's load on the `EngineDatabase` config, and the
    request config's `waitingClients` stays at 0 during a TODO burst.
 2. **Shrink the request pool.** Once step 1 is live, `ChatDatabase` takes `CONNECTION_BUDGET.hyperdrive` (20) and
-   `ROLLOUT_REQUEST_LIMIT` goes. The budget holds at the range's bottom again.
+   `ROLLOUT_REQUEST_LIMIT` goes (its own commit, deployed separately). The budget holds at the range's bottom again.
 
 Rollback, in reverse:
 
@@ -86,7 +84,7 @@ Rollback, in reverse:
 ## Alternatives
 
 - **Raise the one config's limit.** It doesn't isolate anything: the engine fills the extra slices too. Neon sizes
-  `max_connections` by the range's top (419 at 1 CU, by Neon's table), and Cloudflare's paid plan allows about 100 per config, so
+  `max_connections` by the range's top (450 at 1 CU, by `SHOW max_connections`), and Cloudflare's paid plan allows about 100 per config, so
   raising stays possible later. The budget, though, is sized for the range's bottom.
 - **Raise Neon's minimum compute to 0.5 CU.** That doubles the budget and adds CPU, but costs money, and the pool, not
   Neon's connection count, was the limit. It is deferred until this change's effect is measured.
@@ -122,7 +120,17 @@ Rollback, in reverse:
   the token never in a result.
 - `worker/flows/DatabaseLoad.test.ts`: a saturated pool makes the sample over and alerts on both channels; a calm pool
   or a failed read leaves the sample as it was.
-- Not proven before deploy: a real burst. `alchemy dev` binds Hyperdrive straight through to Postgres, so it has no
-  pool to saturate, and the `smithers-gates` stage is a deploy this lane may not make.
+- Burst check after step 1 (live 22:29Z on 2026-11-02): 53 leftover fleet TODOs dropped at about 22:30Z, with their
+  observe runs, base invalidations and GitHub writes. From 22:33Z to 22:45Z `EngineDatabase` had up to 43 clients
+  waiting and 5 s to get a connection, while `ChatDatabase` had 0 waiting and 0 ms. Over 181 minutes since, the request
+  config's waiting stayed 0.
+- Step 2's limit: Hyperdrive divided a limit across about 5 slices (30 gave 6 a slice, 50 gave 10), so 20 should give 4.
+  A slice's `currentPoolSize` stays at its cap whether busy or idle, so it can't show demand. The request path's
+  busiest minute (22:37Z: 983 queries at 202 ms) was 3.3 connections busy across all slices, counting query time and
+  not time held between a transaction's statements.
+- Neon: `SHOW max_connections` 450. 113 samples of `pg_stat_activity` from 01:41Z to 02:03Z on 2026-11-03, outside the
+  burst: at most 78 connections, 9 active, 7 waiting on a lock. During the burst, the two configs' pools summed to at
+  most 84, which with Electric's 21 is about 105 of 450, so connections were not the limit. CPU is not measured: Neon's
+  API reports `cpu_used_sec` 0 and answers metrics 403 on this plan, so it needs the console.
 - After deploy: `hyperdrivePoolSizesAdaptiveGroups` per config, with the request config's `waitingClients` at 0 during
   an e2e TODO burst, and Neon's peak connections and CPU from the console.

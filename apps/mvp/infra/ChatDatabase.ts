@@ -6,7 +6,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Effect, FileSystem, type Redacted } from "effect"
 import * as Database from "../db/Database.ts"
-import { COMPUTE_MAX_CU, COMPUTE_MIN_CU, CONNECTION_BUDGET, ROLLOUT_REQUEST_LIMIT } from "./Connections.ts"
+import { COMPUTE_MAX_CU, COMPUTE_MIN_CU, CONNECTION_BUDGET } from "./Connections.ts"
 import { Compute, directUrl, Postgres } from "./Postgres.ts"
 
 /**
@@ -64,8 +64,7 @@ export const Databases = Effect.gen(function* () {
   const chat = yield* Cloudflare.Hyperdrive.Connection("ChatDatabase", {
     origin,
     caching: { disabled: true },
-    // Kept at the shared config's 50 until the engine's traffic has moved (decision 0150, rollout step 1).
-    originConnectionLimit: ROLLOUT_REQUEST_LIMIT,
+    originConnectionLimit: CONNECTION_BUDGET.hyperdrive,
   })
   const engine = yield* Cloudflare.Hyperdrive.Connection("EngineDatabase", {
     origin,

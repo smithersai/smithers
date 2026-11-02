@@ -156,7 +156,7 @@ Neon sizes `max_connections` by the compute's largest size, about 450 per comput
 
 | Client | Cap | Set by |
 | --- | --- | --- |
-| Hyperdrive's origin connections for the request path: ChatApi's requests (sessions, roles, repositories, shape access) | 20 (50 until rollout step 2, `ROLLOUT_REQUEST_LIMIT`) | `originConnectionLimit` of `ChatDatabase` (`infra/ChatDatabase.ts`) |
+| Hyperdrive's origin connections for the request path: ChatApi's requests (sessions, roles, repositories, shape access) | 20 | `originConnectionLimit` of `ChatDatabase` (`infra/ChatDatabase.ts`) |
 | Hyperdrive's origin connections for the durable engine: every `FlowExecution` alarm and call, about 90% of the queries, and the sandbox objects it calls | 30 | `originConnectionLimit` of `EngineDatabase` (`infra/ChatDatabase.ts`, [decision 0150](decisions/0150-engine-database-pool.md)) |
 | Electric: its query pool and its replication connection | 20 + 1 | `ELECTRIC_DB_POOL_SIZE` on its container (`infra/ElectricGateway.ts`) |
 | The deploy's migrations and an operator's `psql` | 5 | one connection each (`Database.layer`) |
