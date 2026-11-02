@@ -126,10 +126,10 @@ export const readRepositories = (path: string): Readonly<Record<string, Reposito
   return answers
 }
 
-/** The scratch repositories a deployment run names, which the setup asks about: issues, stack and factory. */
+/** The scratch repositories a deployment run names, which the setup asks about: issues, stack, factory and VibeLang. */
 export const scratchRepositoriesOf = (env: Readonly<Record<string, string | undefined>>): ReadonlyArray<string> => [
   ...new Set(
-    [env.E2E_ISSUES_REPOSITORY, env.E2E_STACK_REPOSITORY, env.E2E_FACTORY_REPOSITORY]
+    [env.E2E_ISSUES_REPOSITORY, env.E2E_STACK_REPOSITORY, env.E2E_FACTORY_REPOSITORY, env.E2E_VIBELANG_REPOSITORY]
       .filter((name): name is string => /^[\w.-]+\/[\w.-]+$/.test(name ?? "") && !/^smithersai\//i.test(name!))
       .map((name) => name.toLowerCase()),
   ),
@@ -402,6 +402,13 @@ const needs = {
   githubScratch: {
     met: scratchSet,
     reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository; this permits writes but does not promise synced shapes, never a smithersai one",
+  },
+  vibelangRepository: {
+    met: (run) =>
+      run.target === "deployment" && /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_VIBELANG_REPOSITORY ?? "") &&
+      !/^smithersai\//i.test(run.env.E2E_VIBELANG_REPOSITORY!) && adminOf(run, "E2E_VIBELANG_REPOSITORY") &&
+      run.repository?.(run.env.E2E_VIBELANG_REPOSITORY!.toLowerCase())?.synced === true,
+    reason: "it takes one issue of a VibeLang project to a merged pull request (docs/features/work-links.md#the-proof, phase e): set E2E_VIBELANG_REPOSITORY to a PUBLIC repository with a VibeLang project and GitHub Actions CI, which the test account administers and the App syncs, never a smithersai one; the spec's runner clones it with no credential",
   },
   trackingRepository: {
     met: (run) =>

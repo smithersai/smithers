@@ -13,6 +13,7 @@
 //
 // One command: `E2E_PROD_URL=https://smithers.sh node e2e/prod.mjs e2e/issue-tracking.spec.ts --project=deployment`.
 // It writes its numbers to test-results/issue-tracking.json and to each test's annotations; never a title or a body.
+import { execFileSync } from "node:child_process"
 import { createHash, randomBytes } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -62,10 +63,15 @@ const timed = async <A>(run: () => Promise<A>): Promise<[A, number]> => {
 const listRoute = `/api/repos/${owner}/${name}/issues`
 
 /** Every issue of the repository, walking the paged route; and each page's time. */
-const walk = async (request: APIRequestContext, query = "state=all&limit=100", headers: Readonly<Record<string, string>> = {}) => {
+const walk = async (
+  request: APIRequestContext,
+  query = "state=all&limit=100",
+  headers: Readonly<Record<string, string>> = {},
+  route = listRoute,
+) => {
   const issues: Array<Listed> = []
   const pages: Array<number> = []
-  let next: string | undefined = `${listRoute}?${query}`
+  let next: string | undefined = `${route}?${query}`
   while (next !== undefined) {
     const [response, ms] = await timed(() => request.get(next!, { headers }))
     expect(response.status(), next).toBe(200)
@@ -141,8 +147,12 @@ const numbersByKey = async (page: Page) => {
 }
 
 /** Opens an issue through the writes route as the test person, and answers its number once GitHub made it. */
-const createIssue = async (page: Page, title: string) => {
-  await page.goto(`/${repo}/issues`)
+const createIssue = (page: Page, title: string) => createIssueIn(page, repo, title)
+
+/** Opens an issue on `repository` as the signed-in person, through the writes route, and answers its number. */
+const createIssueIn = async (page: Page, repository: string, title: string) => {
+  const [owner, name] = repository.split("/") as [string, string]
+  await page.goto(`/${repository}/issues`)
   const writeId = crypto.randomUUID()
   const status = await page.evaluate(async ({ path, writeId, title }) => {
     const { personId } = await (await fetch("/api/auth/session")).json()
@@ -157,7 +167,7 @@ const createIssue = async (page: Page, title: string) => {
   let number: number | undefined
   await expect.poll(async () => {
     // By its title: the seed opens issues meanwhile, so the newest few may already be others.
-    const { issues } = await walk(page.request, `state=all&limit=10&q=${encodeURIComponent(title)}`)
+    const { issues } = await walk(page.request, `state=all&limit=10&q=${encodeURIComponent(title)}`, {}, `/api/repos/${owner}/${name}/issues`)
     number = issues.find((issue) => issue.title === title)?.number
     return number
   }, { timeout: 180_000, intervals: [2_000, 5_000] }).toBeDefined()
@@ -360,23 +370,27 @@ test("(d) status: an issue's status follows the work a machine posts, live on it
 })
 
 test("(e) VibeLang end to end: an issue becomes a TODO, an agent's pull request, CI, and a merge that closes it", async ({ page }) => {
+  // A PUBLIC VibeLang project (E2E_VIBELANG_REPOSITORY), which the runner fetches with no credential: the private
+  // repository's runner credential (decision 0148) is a separate change.
+  requires("vibelangRepository")
   test.setTimeout(40 * 60_000)
-  // Before anything is written: a deployment without the runner's read credential can't fetch a private repository.
-  const probe = await page.request.post("/api/runners/git-credential", { data: {} })
-  expect(probe.status(), "the deployment serves POST /api/runners/git-credential (decision 0148)").not.toBe(404)
+  const vibe = env.E2E_VIBELANG_REPOSITORY!
+  const [vibeOwner, vibeName] = vibe.split("/") as [string, string]
   const word = `v${Date.now().toString(36)}`
   const started = Date.now()
-  const issue = await createIssue(page, `greeting: export a proof constant ${word}`)
-  // The runner starts with no mirror: it clones the private repository with the host's read credential (decision 0148).
-  const mirror = join(mkdtempSync(join(tmpdir(), "issue-tracking-mirror-")), "mirror")
+  const title = `greeting: export a proof constant ${word}`
+  const issue = await createIssueIn(page, vibe, title)
+  // The runner's mirror: a plain clone of the public repository, made with no credential.
+  const mirror = join(mkdtempSync(join(tmpdir(), "issue-tracking-vibe-")), "mirror")
+  execFileSync("jj", ["git", "clone", "--colocate", `https://github.com/${vibe}`, mirror], { stdio: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } })
   let runner: Runner | undefined
   let todo: number | undefined
   let merged = false
   try {
-    runner = await startRunner(page, repo, word, 1, { mirror })
-    expect(await configureStack(page, repo, 1, "independent")).toMatchObject({ status: 202 })
+    runner = await startRunner(page, vibe, word, 1, { mirror })
+    expect(await configureStack(page, vibe, 1, "independent")).toMatchObject({ status: 202 })
     // The deterministic ACP test agent's script stands in for a model's change (e2e/runner.ts): one VibeLang line.
-    const committed = await stackChange(page, repo, {
+    const committed = await stackChange(page, vibe, {
       op: "commit",
       title: `Export a proof constant ${word}`,
       prompt: `add the line \`export const proof = "${word}"\` to \`src/proof.vibe\``,
@@ -384,27 +398,42 @@ test("(e) VibeLang end to end: an issue becomes a TODO, an agent's pull request,
     })
     expect(committed).toMatchObject({ status: 202, body: { outcome: "committed" } })
     todo = committed.body.number!
-    await expect.poll(() => serverState(page, repo, todo!), { timeout: 20 * 60_000, intervals: [5_000] }).toBe("in_review")
+    await expect.poll(() => serverState(page, vibe, todo!), { timeout: 20 * 60_000, intervals: [5_000] }).toBe("in_review")
     const inReviewMs = Date.now() - started
-    expect(existsSync(join(mirror, ".jj")), "the runner cloned the private mirror").toBe(true)
-    const pr = ((await (await page.request.get(`/api/repos/${repo}/stack/${todo}`)).json()) as { prNumber: number }).prNumber
+    const pr = ((await (await page.request.get(`/api/repos/${vibe}/stack/${todo}`)).json()) as { prNumber: number }).prNumber
     expect(pr).toBeGreaterThan(0)
-    // A person merges it in Smithers, in person.
-    await page.goto(`/${repo}/pull/${pr}`)
-    await page.getByRole("button", { name: "Squash and merge" }).click({ timeout: 120_000 })
-    await expect.poll(() => serverState(page, repo, todo!), { timeout: 10 * 60_000, intervals: [5_000] }).toBe("merged")
-    merged = true
-    // "Fixes #n" closes the issue on GitHub, and the projection follows.
+    // CI on the pull request's head, as GitHub reports it to anyone: the project builds and its tests pass.
+    let ciMs = 0
     await expect.poll(async () => {
-      const listed = ((await (await page.request.get(`${listRoute}?state=all&q=%23${issue}`)).json()) as Array<Listed>)[0]
+      const head = ((await (await page.request.get(`https://api.github.com/repos/${vibe}/pulls/${pr}`)).json()) as { head: { sha: string } }).head.sha
+      const runs = ((await (await page.request.get(`https://api.github.com/repos/${vibe}/commits/${head}/check-runs`)).json()) as {
+        check_runs: ReadonlyArray<{ status: string; conclusion: string | null }>
+      }).check_runs
+      ciMs = Date.now() - started
+      return runs.length > 0 && runs.every((run) => run.status === "completed") ? runs.map((run) => run.conclusion).join(",") : "pending"
+    }, { timeout: 15 * 60_000, intervals: [15_000] }).toMatch(/^success(,success)*$/)
+    // A person merges it in Smithers, in person.
+    await page.goto(`/${vibe}/pull/${pr}`)
+    await page.getByRole("button", { name: "Squash and merge" }).click({ timeout: 120_000 })
+    await expect.poll(() => serverState(page, vibe, todo!), { timeout: 10 * 60_000, intervals: [5_000] }).toBe("merged")
+    merged = true
+    // "Fixes #n" closes the issue on GitHub, and the projection follows; its work shows what it reached.
+    let listed: Listed | undefined
+    await expect.poll(async () => {
+      listed = ((await (await page.request.get(`/api/repos/${vibeOwner}/${vibeName}/issues?state=all&q=%23${issue}`)).json()) as Array<Listed>)[0]
       return listed?.state
     }, { timeout: 10 * 60_000, intervals: [5_000] }).toBe("closed")
-    record("vibelang", { issue, todo, pr, inReviewMs, closedMs: Date.now() - started })
+    await page.goto(`/${vibe}/issues/${issue}`)
+    await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: title })).toBeVisible({ timeout: 60_000 })
+    record("vibelang", {
+      repository: vibe, issue, todo, pr, inReviewMs, ciMs, closedMs: Date.now() - started,
+      work: { status: listed?.work.status, links: listed?.work.links.map((link) => link["kind"]) },
+    })
   } finally {
     await runner?.attach().catch(() => undefined)
     await cleanUp(
-      () => (todo === undefined || merged ? Promise.resolve() : dropTodo(page, repo, todo)),
-      () => configureStack(page, repo, 1, "stacked"),
+      () => (todo === undefined || merged ? Promise.resolve() : dropTodo(page, vibe, todo)),
+      () => configureStack(page, vibe, 1, "stacked"),
       () => runner?.stop() ?? Promise.resolve(),
       async () => rmSync(dirname(mirror), { recursive: true, force: true }),
     )

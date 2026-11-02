@@ -186,6 +186,7 @@ describe("needs", () => {
       "fleetStall",
       "fleetTelegram",
       "githubScratch",
+      "vibelangRepository",
       "trackingRepository",
       "syncedScratch",
       "secondRepository",
@@ -557,6 +558,7 @@ describe("the scratch repositories' answers", () => {
       E2E_FACTORY_REPOSITORY: "smithersai/smithers",
     })).toEqual(["owner/scratch"])
     expect(scratchRepositoriesOf({ E2E_STACK_REPOSITORY: "not a repository" })).toEqual([])
+    expect(scratchRepositoriesOf({ E2E_VIBELANG_REPOSITORY: "Owner/Vibe", E2E_ISSUES_REPOSITORY: "smithersai/vibelang" })).toEqual(["owner/vibe"])
   })
 
   it("read what the setup wrote, by lowercase name, and nothing before it ran", () => {
