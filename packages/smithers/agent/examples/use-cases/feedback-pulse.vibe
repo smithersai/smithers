@@ -39,21 +39,21 @@ export const Intake = Schema.Struct({
   summary: Schema.String,
 })
 
-const SentimentBreakdown = Schema.Struct({ positive: Schema.Number, neutral: Schema.Number, negative: Schema.Number })
+schema SentimentBreakdown { positive: number; neutral: number; negative: number }
 
-const Theme = Schema.Struct({
-  name: Schema.String,
-  count: Schema.Number,
-  sentiment: Schema.Literals(["positive", "neutral", "negative", "mixed"]),
-  representativeQuotes: Schema.Array(Schema.String),
-})
+schema Theme {
+  name: string
+  count: number
+  sentiment: "positive" | "neutral" | "negative" | "mixed"
+  representativeQuotes: ReadonlyArray<string>
+}
 
-const PainPoint = Schema.Struct({
-  description: Schema.String,
-  severity: Severity,
-  frequency: Schema.Number,
-  sources: Schema.Array(Schema.String),
-})
+schema PainPoint {
+  description: string
+  severity: Severity
+  frequency: number
+  sources: ReadonlyArray<string>
+}
 
 /** What the analyst extracted. */
 export const Extraction = Schema.Struct({

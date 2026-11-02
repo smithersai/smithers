@@ -22,13 +22,8 @@ export const listOpenIssueTitles = effect (
 ) => {
   const repository = try GitHub.Repository.requireRepositoryPath(owner, repo)
   const page = try client.paginate(`/repos/${repository}/issues?state=open`, { maxPages: 5 })
-  const issues = try (Schema.decodeUnknownEffect(Schema.Array(Issue))(page.items)
-    |> Effect.mapError(
-      %,
-      (cause) =>
-        new Core.IntegrationError.IntegrationError("decode-failed", "GitHub returned an item that is not an issue.", {
+  const issues = Schema.decodeUnknownEffect(Schema.Array(Issue))(page.items) catch effect (cause) => { throw new Core.IntegrationError.IntegrationError("decode-failed", "GitHub returned an item that is not an issue.", {
           retryable: false,
-        }, { cause }),
-    ))
+        }, { cause }) }
   return { titles: issues.map((issue) => issue.title), truncated: page.truncated }
 }

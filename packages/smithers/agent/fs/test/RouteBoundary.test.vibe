@@ -4,7 +4,7 @@ import * as Route from "../src/Route.vibe"
 import { failureOf, invalidModule, makeRoute, visibleModule } from "./helpers.vibe"
 
 describe("Route boundary", () => {
-  it.effect("loads a canonical tagged flow and projects its schemas") {
+  it.effect("loads a canonical tagged flow and projects its schemas", effect () => {
     const modulePath = new URL("./fixtures/three-projections/flows/review/flow.ts", import.meta.url).pathname
     const loaded = try Route.load(makeRoute("review", modulePath))
     expect(loaded.name).toBe("review")
@@ -17,9 +17,9 @@ describe("Route boundary", () => {
       accepted: true,
       number: 7
     })
-  }
+  })
 
-  it.effect("copies and freezes complete route metadata") {
+  it.effect("copies and freezes complete route metadata", effect () => {
     const source = makeRoute("review", visibleModule, {
       capabilities: ["fs:read:**"],
       effects: {
@@ -49,9 +49,9 @@ describe("Route boundary", () => {
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.effects)).toBe(true)
     expect(Object.isFrozen(snapshot.capabilities)).toBe(true)
-  }
+  })
 
-  it.effect("copies every schema locator variant") {
+  it.effect("copies every schema locator variant", effect () => {
     const refs: ReadonlyArray<Descriptor.SchemaRef> = [
       new Descriptor.SchemaRefMarkdownArgs({}),
       new Descriptor.SchemaRefMarkdownOutput({}),
@@ -66,9 +66,9 @@ describe("Route boundary", () => {
       expect(snapshot.input._tag).toBe(input._tag)
       expect(snapshot.output._tag).toBe(output._tag)
     }
-  }
+  })
 
-  it.effect("rejects malformed top-level fields without invoking accessors") {
+  it.effect("rejects malformed top-level fields without invoking accessors", effect () => {
     const base = makeRoute("review")
     const malformed: ReadonlyArray<Route.Route> = [
       { ...base, name: "different" },
@@ -105,9 +105,9 @@ describe("Route boundary", () => {
       "invalid_route"
     )
     expect((try failureOf(Route.snapshot({ ...base, placement: hostileOption as never }))).code).toBe("invalid_route")
-  }
+  })
 
-  it.effect("rejects malformed schema locators and effect declarations") {
+  it.effect("rejects malformed schema locators and effect declarations", effect () => {
     const base = makeRoute("review")
     const badRefs = [
       null,
@@ -157,15 +157,15 @@ describe("Route boundary", () => {
     ) {
       expect((try failureOf(Route.snapshot({ ...base, effects: effects as never }))).code).toBe("invalid_route")
     }
-  }
+  })
 
-  it.effect("canonicalizes route identity to NFC") {
+  it.effect("canonicalizes route identity to NFC", effect () => {
     const route = try Route.snapshot(makeRoute("café/list"))
     expect(route.name).toBe("café/list")
     expect(route.segments).toEqual(["café", "list"])
-  }
+  })
 
-  it.effect("classifies executable routes and returns typed loader failures") {
+  it.effect("classifies executable routes and returns typed loader failures", effect () => {
     expect(Route.isCommandRoute(makeRoute("visible"))).toBe(true)
     expect(Route.isCommandRoute(makeRoute("hidden", undefined, { modelInvocable: false }))).toBe(false)
     expect(Route.isCommandRoute(makeRoute("markdown", undefined, { kind: "markdown" }))).toBe(false)
@@ -183,5 +183,5 @@ describe("Route boundary", () => {
       code: "load_failed",
       description: "The selected flow module could not be imported"
     })
-  }
+  })
 })

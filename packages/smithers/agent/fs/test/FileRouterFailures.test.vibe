@@ -50,7 +50,7 @@ effect function scanFlows(files: FileSystem = fileSystem({ exists: effect () => 
 }
 
 describe("FileRouter failure projection", () => {
-  it.effect("preserves every registry discovery category and sanitizes foreign failures") {
+  it.effect("preserves every registry discovery category and sanitizes foreign failures", effect () => {
     for (
       const [source, expected] of [
         ["root_missing", "root_missing"],
@@ -68,34 +68,34 @@ describe("FileRouter failure projection", () => {
     const foreign = try failureOf(scanFlows())
     expect(foreign.code).toBe("discovery_failed")
     expect(JSON.stringify(foreign)).not.toContain("TOP-SECRET")
-  }
+  })
 
-  it.effect("bounds scan results before inspecting route companions") {
+  it.effect("bounds scan results before inspecting route companions", effect () => {
     discovery.scan = effect () =>
       try result(
         Array.from({ length: CommandTree.maximumRoutes + 1 }, (_, index) => descriptor(`/flows/r${index}/flow.ts`))
       )
     expect((try failureOf(scanFlows())).code).toBe("resource_limit")
-  }
+  })
 
-  it.effect("skips root entries and refuses paths collapsing to one route") {
+  it.effect("skips root entries and refuses paths collapsing to one route", effect () => {
     discovery.scan = effect () => try result([descriptor("/flows/flow.ts"), descriptor("/flows/kept/flow.ts")])
     expect((try scanFlows()).routes.map((route) => route.name)).toEqual(["kept"])
 
     discovery.scan = effect () =>
       try result([descriptor("/flows/duplicate/flow.ts"), descriptor("/flows/duplicate/other.ts")])
     expect((try failureOf(scanFlows())).code).toBe("duplicate_route")
-  }
+  })
 
-  it.effect("maps companion inspection failures without retaining their cause") {
+  it.effect("maps companion inspection failures without retaining their cause", effect () => {
     discovery.scan = effect () => try result([descriptor("/flows/route/flow.ts")])
     // @vibelang-diagnostics-next-line EK4804:off
     const error = try failureOf(scanFlows(fileSystem({ exists: effect () => throw new Error("TOP-SECRET") })))
     expect(error.code).toBe("read_failed")
     expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
-  }
+  })
 
-  it.effect("refuses a UI companion whose real path cannot be resolved") {
+  it.effect("refuses a UI companion whose real path cannot be resolved", effect () => {
     discovery.scan = effect () => try result([descriptor("/flows/route/flow.ts")])
     const unresolvable = fileSystem({
       exists: effect () => true,
@@ -105,5 +105,5 @@ describe("FileRouter failure projection", () => {
     const error = try failureOf(scanFlows(unresolvable))
     expect(error.code).toBe("read_failed")
     expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
-  }
+  })
 })

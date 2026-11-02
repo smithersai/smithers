@@ -6,7 +6,7 @@ import { failureOf } from "./helpers.vibe"
 const invocation = Object.freeze({ name: "visible", flow: visibleFlow, input: Object.freeze({ number: 1 }) })
 
 describe("FlowInvoker", () => {
-  it.effect("constructs a frozen service from an own data function") {
+  it.effect("constructs a frozen service from an own data function", effect () => {
     const seen: Array<FlowInvoker.Invocation> = []
     const service = FlowInvoker.make({
       invoke: effect (input) => {
@@ -18,18 +18,18 @@ describe("FlowInvoker", () => {
     expect(Object.isFrozen(service)).toBe(true)
     expect(try service.invoke(invocation)).toBe("done")
     expect(seen).toEqual([invocation])
-  }
+  })
 
-  it.effect("fails closed without retaining invocation data") {
+  it.effect("fails closed without retaining invocation data", effect () => {
     const service = FlowInvoker.makeNoop()
     const error = try failureOf(service.invoke({ ...invocation, name: "TOP-SECRET" }))
 
     expect(Object.isFrozen(service)).toBe(true)
     expect(error).toMatchObject({ code: "invocation_unavailable", method: "FlowInvoker.invoke" })
     expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
-  }
+  })
 
-  it.effect("accepts a valid override and provides it through the layer") {
+  it.effect("accepts a valid override and provides it through the layer", effect () => {
     // The type argument makes the mocked lambda an invoker, which returns a program.
     const override = vi.fn<FlowInvoker.FlowInvoker["invoke"]>(effect () => "overridden")
     const service = FlowInvoker.makeNoop({ invoke: override })
@@ -47,5 +47,5 @@ describe("FlowInvoker", () => {
     expect(result).toBe("overridden")
     expect(layered).toBe("overridden")
     expect(override).toHaveBeenCalledTimes(2)
-  }
+  })
 })

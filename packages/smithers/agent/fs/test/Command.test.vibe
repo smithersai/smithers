@@ -34,7 +34,7 @@ describe("Command", () => {
     expect(parsed.argv).toEqual(["review", "--tags", value, "--tags", "a", "--number", "1"])
   })
 
-  it.effect("preserves command-token and route-name errors through the public surface") {
+  it.effect("preserves command-token and route-name errors through the public surface", effect () => {
     const surface = try Command.make([makeRoute("review")])
     for (
       const [command, method, description] of [
@@ -56,9 +56,9 @@ describe("Command", () => {
         description
       })
     }
-  }
+  })
 
-  it.effect("lexes quotes and escapes before parsing flags") {
+  it.effect("lexes quotes and escapes before parsing flags", effect () => {
     const argv = try CommandLine.lex(
       "review --title='fix bug' --number=4821 --tag one --tag=two --no-draft -- --literal value\\ with\\ spaces"
     )
@@ -83,9 +83,9 @@ describe("Command", () => {
         draft: false
       }
     })
-  }
+  })
 
-  it.effect("keeps single-quoted text literal and honours escapes elsewhere") {
+  it.effect("keeps single-quoted text literal and honours escapes elsewhere", effect () => {
     expect(try CommandLine.lex("x 'a\\nb' 'C:\\path'")).toEqual([
       "x",
       "a\\nb",
@@ -93,18 +93,18 @@ describe("Command", () => {
     ])
     expect(try CommandLine.lex("\"a\\\"b\"")).toEqual(["a\"b"])
     expect(try CommandLine.lex("a\\'b")).toEqual(["a'b"])
-  }
+  })
 
-  it.effect("does not evaluate shell syntax") {
+  it.effect("does not evaluate shell syntax", effect () => {
     const argv = try CommandLine.lex("review '$HOME' \"$(whoami)\" `uname`")
     expect(argv).toEqual(["review", "$HOME", "$(whoami)", "`uname`"])
-  }
+  })
 
-  it.effect("reports unterminated quotes as parse failures") {
+  it.effect("reports unterminated quotes as parse failures", effect () => {
     expect((try failureOf(CommandLine.lex("review 'unterminated"))).code).toBe("parse_failed")
-  }
+  })
 
-  it.effect("uses null-prototype option storage and refuses prototype-sensitive names") {
+  it.effect("uses null-prototype option storage and refuses prototype-sensitive names", effect () => {
     const parsed = try CommandLine.parseFlags([
       "--safe=one",
       "--safe",
@@ -134,15 +134,15 @@ describe("Command", () => {
       expect(error.code).toBe("parse_failed")
       expect(JSON.stringify(error)).not.toContain("secret")
     }
-  }
+  })
 
-  it.effect("handles empty tokens and trailing escapes without shell evaluation") {
+  it.effect("handles empty tokens and trailing escapes without shell evaluation", effect () => {
     expect(try CommandLine.lex("review \"\" tail\\")).toEqual(["review", "", "tail\\"])
     expect(try CommandLine.lex("   ")).toEqual([])
     expect(try CommandLine.lex("  review  ")).toEqual(["review"])
-  }
+  })
 
-  it.effect("enforces command, token, and argv resource bounds") {
+  it.effect("enforces command, token, and argv resource bounds", effect () => {
     expect(try CommandLine.lex("x".repeat(CommandLine.maximumTokenLength))).toHaveLength(1)
     for (
       const command of [
@@ -167,9 +167,9 @@ describe("Command", () => {
         }
       }), ["--safe=x"])
     expect((try exit(CommandLine.parseFlags(hostile))) is Exit.Failure).toBe(true)
-  }
+  })
 
-  it.effect("bounds command bytes independently of the token bounds") {
+  it.effect("bounds command bytes independently of the token bounds", effect () => {
     const tokenCount = 8
     const exact = multibyteCommand(CommandLine.maximumCommandBytes, tokenCount)
     const overBy1 = multibyteCommand(CommandLine.maximumCommandBytes + 1, tokenCount)
@@ -194,11 +194,11 @@ describe("Command", () => {
       method: "CommandLine.lex",
       description: `A command may contain at most ${CommandLine.maximumCommandBytes} UTF-8 bytes`
     })
-  }
+  })
 
-  it.effect("classifies output schema failures as encoding failures") {
+  it.effect("classifies output schema failures as encoding failures", effect () => {
     expect((try failureOf(SchemaBridge.encodeOutput(Schema.Number, "not-a-number"))).code).toBe("encode_failed")
-  }
+  })
 })
 
 describe("Command.call decoded boundary", () => {
@@ -210,15 +210,15 @@ describe("Command.call decoded boundary", () => {
     return try Command.make([makeRoute("scalar")])
   }
 
-  it.effect("returns decoded output from call and encoded output from execute") {
+  it.effect("returns decoded output from call and encoded output from execute", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.NumberFromString)
     provide FlowInvoker.layerNoop({ invoke: effect () => 42 }) {
       expect(try surface.call("scalar", 1)).toBe(42)
       expect(try surface.execute("scalar 1")).toBe("42")
     }
-  }
+  })
 
-  it.effect("accepts decoded transforming input in call and encoded input in execute") {
+  it.effect("accepts decoded transforming input in call and encoded input in execute", effect () => {
     const surface = try surfaceFor(Schema.NumberFromString, Schema.Number)
     const invoke = vi.fn<FlowInvoker.FlowInvoker["invoke"]>(effect ({ input }) => input)
     provide FlowInvoker.layerNoop({ invoke }) {
@@ -228,9 +228,9 @@ describe("Command.call decoded boundary", () => {
       expect((try exit(surface.call("scalar", "42"))) is Exit.Failure).toBe(true)
     }
     expect(invoke).toHaveBeenCalledTimes(2)
-  }
+  })
 
-  it.effect("refuses scalar tokens that execute would otherwise drop") {
+  it.effect("refuses scalar tokens that execute would otherwise drop", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.NumberFromString)
     const invoke = vi.fn<FlowInvoker.FlowInvoker["invoke"]>(effect () => 42)
     provide FlowInvoker.layerNoop({ invoke }) {
@@ -240,9 +240,9 @@ describe("Command.call decoded boundary", () => {
       expect(invoke).not.toHaveBeenCalled()
       expect(try surface.execute("scalar --input 1")).toBe("42")
     }
-  }
+  })
 
-  it.effect("refuses unsafe decoded input before loading or invoking") {
+  it.effect("refuses unsafe decoded input before loading or invoking", effect () => {
     const surface = try Command.make([makeRoute("review")])
     const invoke = vi.fn<FlowInvoker.FlowInvoker["invoke"]>(effect ({ input }) => input)
     let getterCalls = 0
@@ -260,9 +260,9 @@ describe("Command.call decoded boundary", () => {
     }
     expect(getterCalls).toBe(0)
     expect(invoke).not.toHaveBeenCalled()
-  }
+  })
 
-  it.effect("refuses unsafe decoded output after invocation") {
+  it.effect("refuses unsafe decoded output after invocation", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.Number)
     for (const output of [NaN, Infinity]) {
       provide FlowInvoker.layerNoop({ invoke: effect () => output }) {
@@ -272,9 +272,9 @@ describe("Command.call decoded boundary", () => {
         })
       }
     }
-  }
+  })
 
-  it.effect("refuses oversized and accessor output without reading its getter") {
+  it.effect("refuses oversized and accessor output without reading its getter", effect () => {
     const surface = try surfaceFor(Schema.Struct({ value: Schema.String }), Schema.Struct({ value: Schema.String }))
     let getterCalls = 0
     const accessor = Object.defineProperty({}, "value", {
@@ -290,9 +290,9 @@ describe("Command.call decoded boundary", () => {
       }
     }
     expect(getterCalls).toBe(0)
-  }
+  })
 
-  it.effect("detaches input before pending route loading") {
+  it.effect("detaches input before pending route loading", effect () => {
     const flow = {
       capabilities: [],
       effects: undefined,
@@ -317,9 +317,9 @@ describe("Command.call decoded boundary", () => {
       expect(join pending).toBe(1)
     }
     expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ input: { number: 1 } }))
-  }
+  })
 
-  it.effect("preserves native decoded values on both sides of call") {
+  it.effect("preserves native decoded values on both sides of call", effect () => {
     const surface = try surfaceFor(Schema.DateFromString, Schema.DateFromString)
     const date = new Date("2026-01-01T00:00:00.000Z")
     provide FlowInvoker.layerNoop({ invoke: effect ({ input }) => input }) {
@@ -327,14 +327,14 @@ describe("Command.call decoded boundary", () => {
       expect(output).toBeInstanceOf(Date)
       expect(output).toEqual(date)
     }
-  }
+  })
 
-  it.effect("rejects invalid decoded output with a sanitized typed error") {
+  it.effect("rejects invalid decoded output with a sanitized typed error", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.NumberFromString)
     provide FlowInvoker.layerNoop({ invoke: effect () => "TOP-SECRET" }) {
       const error = try failureOf(surface.call("scalar", 1))
       expect(error).toMatchObject({ code: "decode_failed", method: "Command.call" })
       expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
     }
-  }
+  })
 })

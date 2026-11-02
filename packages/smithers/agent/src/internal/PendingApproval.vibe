@@ -5,8 +5,6 @@
 
 import { ControlFacts } from "@smthrs/control"
 import type { JournalEvent } from "@smthrs/journal"
-import * as Option from "effect/Option"
-import * as Schema from "effect/Schema"
 
 /**
  * The run approval one entry names: the request with its question, or the

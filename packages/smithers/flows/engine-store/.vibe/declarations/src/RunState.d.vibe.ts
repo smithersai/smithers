@@ -72,6 +72,7 @@ export declare const RunState: Schema.Struct<{
     readonly result: Schema.optionalKey<Schema.Unknown>;
     readonly cancellation: Schema.optionalKey<Schema.Struct<{
         readonly interruptedAtMs: Schema.Number;
+        readonly run: Schema.optionalKey<Schema.NonEmptyString>;
     }>>;
     readonly origin: Schema.optionalKey<Schema.Struct<{
         readonly door: Schema.String;

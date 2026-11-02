@@ -254,7 +254,7 @@ const decodeAll = <A>(
   items: ReadonlyArray<unknown>,
   path: string,
 ): ReadonlyArray<A>!IntegrationError =>
-  Schema.decodeUnknownEffect(Schema.Array(schema))(items) |> Effect.mapError(%, (cause) => decodeFailed(path, cause))
+  Schema.decodeUnknownEffect(Schema.Array(schema))(items) catch effect (cause) => { throw decodeFailed(path, cause) }
 
 const spanAttributes = (owner: string, repo: string, number?: number): Record<string, unknown> => ({
   "github.owner": owner,

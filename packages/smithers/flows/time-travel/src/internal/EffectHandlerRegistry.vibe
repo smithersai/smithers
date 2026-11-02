@@ -100,13 +100,12 @@ schema Declaration {
 }
 
 const validate = effect (handler: Handler): Handler!TimeTravelError => {
-  try (Schema.decodeUnknownEffect(Declaration)({
+  Schema.decodeUnknownEffect(Declaration)({
     kind: handler.kind,
     tier: handler.tier,
     requiresIdempotencyKey: handler.requiresIdempotencyKey,
     compensation: handler.compensation
-  })
-    |> Effect.mapError(%, (cause) => error("invalid", "effect handler declaration is invalid", cause)))
+  }) catch effect (cause) => { throw error("invalid", "effect handler declaration is invalid", cause) }
   for (const member of ["residue", "revert", "rollback"] as const) {
     if (typeof handler[member] !== "function") {
       throw error("invalid", `effect handler ${handler.kind} has no ${member} function`)
@@ -195,16 +194,12 @@ const fromHandlers = (handlers: HashMap<string, Handler>): Service => {
       if (refusal !== undefined) {
         throw error("irreversible", `handler ${effect.kind} cannot compensate ${effect.id}: ${refusal}`)
       }
-      return handler.revert(effect)
+      return (handler.revert(effect)
         |> Effect.map(%, (data) => ({
           id: `${effect.id}:rollback`,
           effect,
           data
-        }))
-        |> Effect.mapError(
-          %,
-          (cause) => error("compensation_failed", `handler ${effect.kind} could not revert ${effect.id}`, cause)
-        )
+        }))) catch effect (cause) => { throw error("compensation_failed", `handler ${effect.kind} could not revert ${effect.id}`, cause) }
     },
     rollback: (receipt) => {
       const effect = receipt.effect
@@ -221,13 +216,11 @@ const fromHandlers = (handlers: HashMap<string, Handler>): Service => {
       if (refusal !== undefined) {
         throw error("compensation_failed", `handler ${effect.kind} cannot roll back ${effect.id}: ${refusal}`)
       }
-      return handler.rollback(effect, receipt.data)
-        |> Effect.mapError(%, (cause) =>
-          error(
+      return handler.rollback(effect, receipt.data) catch effect (cause) => { throw error(
             "compensation_failed",
             `handler ${effect.kind} could not roll back compensation for ${effect.id}`,
             cause
-          ))
+          ) }
     }
   })
   return service

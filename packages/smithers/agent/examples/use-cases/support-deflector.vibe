@@ -34,12 +34,12 @@ export const Classification = Schema.Struct({
   reasoning: Schema.String,
 })
 
-const Article = Schema.Struct({
-  title: Schema.String,
-  relevance: Percent,
-  snippet: Schema.String,
-  source: Schema.String,
-})
+schema Article {
+  title: string
+  relevance: Percent
+  snippet: string
+  source: string
+}
 
 /** The articles retrieval found, and how well they cover the ticket. */
 export const Knowledge = Schema.Struct({ articles: Schema.Array(Article), coverageScore: Percent })

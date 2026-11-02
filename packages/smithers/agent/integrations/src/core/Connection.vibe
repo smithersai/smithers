@@ -157,15 +157,13 @@ export const resolveSecret = (options: {
         details,
       )
     }
-    return try (options.credentials.resolve({ id: connection.credential.id, name: connection.credential.name })
-      |> Effect.mapError(%, (error) =>
-        new IntegrationError(
+    return options.credentials.resolve({ id: connection.credential.id, name: connection.credential.name }) catch effect (error) => { throw new IntegrationError(
           // A refused or unknown reference is a denial; storage that is absent
           // or cannot open the sealed value leaves the connection unusable.
           error._tag === "/control/Unauthorized" ? "permission-denied" : "credentials-missing",
           `The credential for connection "${connection.id}" could not be resolved.`,
           { ...details, credentialFailure: error.code },
           { cause: error },
-        )))
+        ) }
   }
 }

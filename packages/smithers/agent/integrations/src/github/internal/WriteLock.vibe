@@ -18,16 +18,16 @@ const gates = new Map<string, Gate>()
  * @category concurrency
  */
 export const withWriteLock = <A, E, R>(key: string, effect: A!E!R): A!E!R =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
+  withSpan(() => Effect.acquireUseRelease(
+    effect {
       const gate = gates.get(key) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
       gates.set(key, gate)
       gate.users++
       return gate
-    }),
+    },
     (gate) => gate.semaphore.withPermit(effect),
-    (gate) =>
-      Effect.sync(() => {
+    effect (gate) =>
+      {
         if (--gate.users === 0) gates.delete(key)
-      }),
-  ) |> Effect.withSpan(%, "GitHub.Actions.keyed-write")
+      },
+  ), "GitHub.Actions.keyed-write")

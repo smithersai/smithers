@@ -109,15 +109,13 @@ export const decode = (
   endpoint: unknown,
   path: string,
 ): string!InvalidExporterEndpoint =>
-  Schema.decodeUnknownEffect(Endpoint)(endpoint)
-  |> Effect.map(%, normalize)
-  |> Effect.mapError(%, () =>
-    new InvalidExporterEndpoint({
+  (Schema.decodeUnknownEffect(Endpoint)(endpoint)
+  |> Effect.map(%, normalize)) catch effect () => { throw new InvalidExporterEndpoint({
       code: "invalid_exporter_endpoint",
       path,
       message:
         `OTLP collector ${path} must be an absolute http:// or https:// base URL without credentials, query, fragment, backslashes, spaces, or control characters`,
-    }))
+    }) }
 
 /**
  * Builds the OTLP/HTTP URL one signal is posted to below a decoded endpoint.

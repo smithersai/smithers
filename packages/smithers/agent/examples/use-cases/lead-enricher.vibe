@@ -32,18 +32,18 @@ export const Intake = Schema.Struct({
   summary: Schema.String,
 })
 
-const Firmographics = Schema.Struct({
-  industry: Schema.String,
-  employeeCount: Schema.Number,
-  annualRevenue: Schema.optional(Schema.String),
-  hqLocation: Schema.String,
-  fundingStage: Schema.optional(Schema.String),
-})
+schema Firmographics {
+  industry: string
+  employeeCount: number
+  annualRevenue?: string
+  hqLocation: string
+  fundingStage?: string
+}
 
-const NewsItem = Schema.Struct({
-  headline: Schema.String,
-  relevance: Schema.Literals(["low", "medium", "high"]),
-})
+schema NewsItem {
+  headline: string
+  relevance: "low" | "medium" | "high"
+}
 
 /** What the enrichment agent found about the company. */
 export const Enrichment = Schema.Struct({
