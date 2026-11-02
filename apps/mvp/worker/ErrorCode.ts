@@ -1,12 +1,26 @@
 import { SqlError } from "effect/sql"
 
 /**
- * A failure's code for a log line (docs/observability.md): `sql:<reason>` for a SQL failure, otherwise the failure's
- * `_tag`, otherwise `unknown`. Never its message, which can quote what someone wrote or a provider's text.
+ * The shape a failure class's tag has: an optional `@scope/` or `/`, path segments, then a PascalCase name, such as
+ * `@smthrs/mvp/auth/SessionsUnavailable`, `/chain/AuthorError`, `flows/mcp/McpError` or `TimeoutError`.
  */
-export const codeOf = (error: unknown): string =>
-  SqlError.isSqlError(error)
-    ? `sql:${error.reason._tag}`
-    : typeof error === "object" && error !== null && "_tag" in error
-    ? String(error._tag)
-    : "unknown"
+const KNOWN_TAG = /^(?:@[a-z0-9-]+\/|\/)?(?:[A-Za-z0-9-]+\/)*[A-Z][A-Za-z0-9]*$/
+
+/** Whether `tag` reads as a failure class's name: anything else may be someone's value, and is never copied. */
+const known = (tag: unknown): tag is string => typeof tag === "string" && tag.length <= 128 && KNOWN_TAG.test(tag)
+
+/**
+ * A failure's code for a log line (docs/observability.md): `sql:<reason>` for a SQL failure, otherwise the `_tag` of an
+ * `Error` when it has the shape of a failure class's name, otherwise `unknown`. Never its message, which can quote what someone
+ * wrote or a provider's text, and never a `_tag` on a plain value or one of another shape, which can hold the same. It
+ * never throws, whatever the failure's properties do: it is what a failure handler calls.
+ */
+export const codeOf = (error: unknown): string => {
+  try {
+    if (SqlError.isSqlError(error)) return known(error.reason._tag) ? `sql:${error.reason._tag}` : "unknown"
+    if (!(error instanceof Error) || !("_tag" in error)) return "unknown"
+    return known(error._tag) ? error._tag : "unknown"
+  } catch {
+    return "unknown"
+  }
+}

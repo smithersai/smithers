@@ -939,7 +939,8 @@ check renews it, by the rules the route admitted with (`worker/SocketChecks.ts`)
 role confirmed by GitHub within `ROLE_RECHECK_MINUTES` plus 10 minutes (`sessions.role_verified_at`, which a failed check
 never moves, null for every session from before it, whose next request starts a real check, at most once a minute), and the role on the run's repository (`RepoRoles`, whose rows decide for 5 minutes) or the branch's
 sharing still enough. Hosts renew 10 s before a lease lapses (an alarm for the transcript and the rooms, a fiber for the
-terminal's machine, which never hibernates with a socket open, whose loop a new viewer's sooner deadline wakes), and
+terminal's machine, which never hibernates with a socket open, whose loop a new viewer's sooner deadline wakes; a timer
+beside it closes a socket at its session's end without waiting on a renewal, and both run while any socket is attached), and
 renew a lapsed lease before a frame passes, one renewal at a time per host, so a burst of frames costs one, and a
 terminal's frames on a lapsed lease start at most one renewal for the whole machine. A lease the session's end caps is acted on at that end,
 closing it with no query, never renewed in a loop before it. A renewal checks once per person, session and basis, 4 at a time, each within 5 s and all within 10 s, opening its one
@@ -958,6 +959,8 @@ sockets at once (`enforce`).
 | `socket.lease` | log, span | the same | host, sockets, checks, a count per outcome; never a person |
 | `socket.verdict` | span | the same | none |
 | `run_content.renew`, `room.renew`, `sandbox.renew` | log (warn) | the same | `errorCode`, when a renewal failed |
+| `sandbox.expire` | log | `SandboxObject` | closed: sockets its timer closed at their session's end |
+| `socket.loop` | log (error) | `SandboxObject` | host, loop (`renewal`, `expiry`), outcome `died`, `errorCode`; a loop that died, which the next attach starts again; never the failure's text |
 
 ### Flow usage
 

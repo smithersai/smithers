@@ -321,8 +321,8 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           readonly fiber: Fiber.Fiber<unknown>
         }
       >()
-      /** The renewal loop, while any socket is attached (`renewWhileAttached`). */
-      let renewing: Fiber.Fiber<unknown> | undefined
+      /** The sockets a running renewal holds: an expiry beside it leaves their count to it. */
+      const inRenewal = new Set<WebSocket>()
       /** One renewal at a time: a gate or the loop that finds one running waits for it. */
       const flight = SocketAccess.singleFlight()
       /** Every gate's one pending renewal: frames on lapsed leases start at most one fiber for the whole object. */
@@ -745,11 +745,15 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           const lease = { until: SocketAccess.leaseFrom(admission, admission.admittedAt) }
           // The gate is called from the socket's own events, outside any effect: it renews with this object's services.
           const runFork = Effect.runForkWith(yield* Effect.context<RuntimeContext>())
+          const clock = yield* Effect.clockWith(Effect.succeed)
           // The terminal reads and writes through the lease: input and output both stop the moment it lapses or the
           // session ends, and the object's one renewal is asked for.
           const leased = SocketAccess.gate(
             server,
-            () => Date.now() < lease.until && !SocketAccess.ended(admission, Date.now()),
+            () => {
+              const now = clock.currentTimeMillisUnsafe()
+              return now < lease.until && !SocketAccess.ended(admission, now)
+            },
             lapsed ??= SocketAccess.coalesced(renewDue, runFork),
           )
           const fiber = yield* Effect.forkIn(
@@ -758,9 +762,8 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             pumps,
           )
           attached.set(server, { principal, role: roleOf(request.headers[ROLE_HEADER]), access, admission, lease, fiber })
-          if (renewing === undefined) renewing = yield* Effect.forkIn(renewWhileAttached, pumps)
-          // A lease acted on before the loop's wake (a session ending sooner) wakes it then.
-          else loop.nudge({ admission, leaseUntil: lease.until })
+          // Both loops run while anyone is attached; a lease acted on before a running one's wake wakes it then.
+          yield* loop.ensure(pumps, { admission, leaseUntil: lease.until })
           return HttpServerResponse.setBody(
             HttpServerResponse.empty({ status: 101 }),
             HttpBody.raw(new Response(null, { status: 101, webSocket: client })),
@@ -814,12 +817,15 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             return viewer === undefined ? [] : [{ socket, viewer }]
           })
           if (due.length === 0) return
+          for (const { socket } of due) inRenewal.add(socket)
           const verdicts = yield* SocketAccess.renew<RuntimeContext | SqlClient.SqlClient, RuntimeContext>(
             "terminal",
             due.map(({ viewer }) => viewer.admission),
             checks.check,
             checks.within,
-          )
+          ).pipe(Effect.ensuring(Effect.sync(() => {
+            for (const { socket } of due) inRenewal.delete(socket)
+          })))
           const now = yield* Clock.currentTimeMillis
           const ending: Array<readonly [WebSocket, Fiber.Fiber<unknown>, SocketAccess.Closing]> = []
           due.forEach(({ socket, viewer }, index) => {
@@ -838,7 +844,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           })
           for (const [socket, fiber, closing] of ending) {
             const close = SocketAccess.CLOSES[closing]
-            yield* Effect.sync(() => socket.close(close.code, close.reason)).pipe(Effect.ignore)
+            yield* SocketAccess.safely(Effect.sync(() => socket.close(close.code, close.reason)))
             yield* Effect.forkIn(Fiber.interrupt(fiber), pumps)
           }
         }).pipe(
@@ -847,12 +853,10 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
         )
 
       /** Renews every lease due now (`SocketAccess.due`), one renewal at a time. */
-      const renewDue: Effect.Effect<void, never, RuntimeContext> = flight(Effect.suspend(() => {
-        const now = Date.now()
-        return renewViewers(
+      const renewDue: Effect.Effect<void, never, RuntimeContext> = flight(Effect.flatMap(Clock.currentTimeMillis, (now) =>
+        renewViewers(
           [...attached].filter(([, viewer]) => SocketAccess.due(viewer.admission, viewer.lease.until, now)).map(([s]) => s),
-        )
-      }))
+        )))
 
       /**
        * Acts on leases `RENEW_AHEAD_MS` before the first lapses (at the session's end for one it caps), renewing every
@@ -860,12 +864,29 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
        * `pumps` keeps the time. An attach never moves it: a lease that lapses first stops its socket's frames at once,
        * and the gate asks for the renewal.
        */
+      /**
+       * Closes every socket whose session has ended, with no query and never waiting on a renewal: it leaves `attached`
+       * and closes `4401`, and its pump stops on its own time.
+       */
+      const expire: Effect.Effect<void, never, RuntimeContext> = Effect.gen(function* () {
+        const open = [...attached].map(([socket, viewer]) => ({ socket, admission: viewer.admission, viewer }))
+        const ended = yield* SocketAccess.expireEnded("terminal", open, inRenewal)
+        for (const { socket, viewer } of ended) {
+          viewer.lease.until = 0
+          attached.delete(socket)
+        }
+        for (const { socket, viewer } of ended) {
+          const close = SocketAccess.CLOSES.session
+          yield* SocketAccess.safely(Effect.sync(() => socket.close(close.code, close.reason)))
+          yield* Effect.forkIn(Fiber.interrupt(viewer.fiber), pumps)
+        }
+        if (ended.length > 0) yield* Effect.logInfo("sandbox.expire").pipe(Effect.annotateLogs({ closed: ended.length }))
+      })
       const loop = SocketAccess.renewalLoop(
         () => [...attached.values()].map((viewer) => ({ admission: viewer.admission, leaseUntil: viewer.lease.until })),
         renewDue,
-      )
-      const renewWhileAttached: Effect.Effect<void, never, RuntimeContext> = loop.loop.pipe(
-        Effect.ensuring(Effect.sync(() => (renewing = undefined))),
+        expire,
+        "terminal",
       )
 
       /**
@@ -882,7 +903,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             if (code === undefined) continue
             attached.delete(socket)
             detached++
-            yield* Effect.sync(() => socket.close(code, code === 1008 ? "no access" : "access changed")).pipe(Effect.ignore)
+            yield* SocketAccess.safely(Effect.sync(() => socket.close(code, code === 1008 ? "no access" : "access changed")))
             yield* Fiber.interrupt(viewer.fiber)
           }
           yield* rearm

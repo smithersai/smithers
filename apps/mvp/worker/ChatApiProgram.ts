@@ -27,6 +27,7 @@ import { Directory } from "./branch/People.ts"
 import { TerminalSockets } from "./branch/Sandboxes.ts"
 import * as BranchRooms from "./BranchRooms.ts"
 import * as RunContent from "./RunContent.ts"
+import * as SocketAccess from "./SocketAccess.ts"
 import * as SocketChecks from "./SocketChecks.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import * as BugsApi from "./bugs/Api.ts"
@@ -177,6 +178,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // The configs `ops/DatabaseLoad` watches for saturated pools (worker/HyperdrivePool.ts, decision 0150).
     const configs = Output.all((yield* ChatDatabase).hyperdriveId, (yield* EngineDatabase).hyperdriveId)
     yield* Output.named(Output.map(configs, (ids) => ids.join(",")), "HYPERDRIVE_CONFIG_IDS")
+    // Captured here: a socket's admission reads it for each request (worker/SocketAccess.ts).
+    const roleFreshMs = yield* SocketAccess.configuredRoleFreshMs.pipe(Effect.orDie)
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(DatabaseRoutes.route(pools, "requests"))
     const database = Database.layer(hyperdrive.connectionString)
     // Repository secrets (docs/features/secrets.md): write-only values sealed under SECRETS_KEY, off without it. A
@@ -527,6 +530,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       }).pipe(
         withRequestRay,
         Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
+        Effect.provideService(SocketAccess.roleFreshMs, roleFreshMs),
         // Every shape route calls Electric through the gateway's service binding in production (infra/ElectricUpstream.ts).
         Effect.provide(Layer.unwrap(Effect.map(Effect.service(Cloudflare.WorkerEnvironment), ElectricUpstream.upstream))),
         Effect.provide(logs),

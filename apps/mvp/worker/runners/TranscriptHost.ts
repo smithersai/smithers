@@ -75,7 +75,7 @@ export const make = <R, RC>(ports: Ports<R, RC>) => {
       }
       legacy++
       socket.serializeAttachment({ dropped: true })
-      yield* socket.close(SocketAccess.CLOSES.legacy.code, SocketAccess.CLOSES.legacy.reason).pipe(Effect.ignore)
+      yield* SocketAccess.safely(socket.close(SocketAccess.CLOSES.legacy.code, SocketAccess.CLOSES.legacy.reason))
     }
     yield* SocketAccess.countLegacy("transcript", legacy)
     return found
@@ -95,7 +95,7 @@ export const make = <R, RC>(ports: Ports<R, RC>) => {
       if (Option.isNone(kept) || !("admission" in kept.value)) return false
       const now = yield* Clock.currentTimeMillis
       if (kept.value.leaseUntil <= now || SocketAccess.ended(kept.value.admission, now)) return false
-      yield* socket.send(text).pipe(Effect.ignore)
+      yield* SocketAccess.safely(socket.send(text))
       return true
     })
 
@@ -104,7 +104,7 @@ export const make = <R, RC>(ports: Ports<R, RC>) => {
     Effect.gen(function* () {
       for (const [socket] of ending) socket.serializeAttachment({ dropped: true })
       for (const [socket, closing] of ending) {
-        yield* socket.close(SocketAccess.CLOSES[closing].code, SocketAccess.CLOSES[closing].reason).pipe(Effect.ignore)
+        yield* SocketAccess.safely(socket.close(SocketAccess.CLOSES[closing].code, SocketAccess.CLOSES[closing].reason))
       }
     })
 
@@ -233,7 +233,7 @@ export const make = <R, RC>(ports: Ports<R, RC>) => {
 
   /** Closes every socket and forgets the transcript. */
   const forget = Effect.gen(function* () {
-    for (const socket of yield* ports.sockets) yield* socket.close(1000, "forgotten").pipe(Effect.ignore)
+    for (const socket of yield* ports.sockets) yield* SocketAccess.safely(socket.close(1000, "forgotten"))
     yield* storage.deleteAll()
     yield* Effect.logInfo("run_content.forget")
   })

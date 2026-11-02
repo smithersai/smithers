@@ -251,7 +251,7 @@ export const live = <E, R>(
           return HttpServerResponse.empty({ status: 400 })
         }
         // A session that ended on the way here gets nothing; nor does a person over the cap.
-        if (SocketAccess.ended(admission, Date.now())) return HttpServerResponse.empty({ status: 401 })
+        if (SocketAccess.ended(admission, yield* Clock.currentTimeMillis)) return HttpServerResponse.empty({ status: 401 })
         if (yield* rooms.crowded(principal)) return HttpServerResponse.empty({ status: 429 })
         const [response, socket] = yield* Cloudflare.upgrade()
         yield* PresenceRoom.join(host, socket, identityOf({

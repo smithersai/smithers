@@ -42,6 +42,23 @@ describe("database routes", () => {
     // Neither config is handed to a consumer any other way.
     expect(program.match(/\(\s*(ChatDatabase|EngineDatabase)\s*[,)]/g)).toBeNull()
     // The modules that open the config they are given: a new one needs a route here first.
+    // Each sandbox constructor hands its sockets' checks the SocketChecks route, and the object builds them from it, not
+    // from the engine pool it was given for its own work.
+    expect(program).toContain([
+      `BranchSandboxes.live(`,
+      `      DatabaseRoutes.route(pools, "SandboxObject"),`,
+      `      socketChecks(options),`,
+      `      DatabaseRoutes.route(pools, "SocketChecks"),`,
+    ].join("\n"))
+    expect(program).toContain([
+      `BranchSandboxes.gateLive(`,
+      `      DatabaseRoutes.route(pools, "GateObject"),`,
+      `      socketChecks(options),`,
+      `      DatabaseRoutes.route(pools, "SocketChecks"),`,
+    ].join("\n"))
+    const sandboxes = source("BranchSandboxes.ts")
+    expect(sandboxes.match(/implementation\(connection, checks, checkConnection, \{/g)).toHaveLength(2)
+    expect(sandboxes.match(/SocketChecks\.checker\(([A-Za-z]+),/g)).toEqual(["SocketChecks.checker(checkConnection,"])
     expect(connecting()).toEqual(["BranchSandboxes.ts", "ChatApiProgram.ts", "Executions.ts", "SocketChecks.ts"])
   })
 })

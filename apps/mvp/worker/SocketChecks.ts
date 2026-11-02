@@ -12,10 +12,10 @@ import * as SessionStore from "./SessionStore.ts"
 import {
   type Admission,
   type Checked,
+  configuredRoleFreshMs,
   ended,
   LEASE_MS,
   roleFresh,
-  roleFreshMs as roleFreshConfig,
 } from "./SocketAccess.ts"
 import { mayRead } from "./stack/Access.ts"
 
@@ -109,7 +109,7 @@ export const checker = <E, R>(
     const app = yield* GitHubConfig.configured.pipe(Effect.orDie)
     const allowed = yield* RepoRoles.allowed.pipe(Effect.orDie)
     const home = yield* Conversations.configuredHomeRepositoryNames.pipe(Effect.orDie)
-    const roleFreshMs = yield* roleFreshConfig.pipe(Effect.orDie)
+    const roleFreshMs = yield* configuredRoleFreshMs.pipe(Effect.orDie)
     // `RepoRoles` reads through the client `within` opened for the renewal, not one of its own per read.
     const roles = yield* RepoRoles.make(Layer.effect(SqlClient.SqlClient, Effect.service(SqlClient.SqlClient)), {
       repository,

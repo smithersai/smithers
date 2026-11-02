@@ -4,7 +4,8 @@
 // against this file's schema of the compose Postgres (`pnpm db:up`).
 import { PresenceRoom } from "@smthrs/sync"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Deferred, Effect, Fiber, Metric, Option } from "effect"
+import { Logger as StructuredLogger } from "@smthrs/observability"
+import { Deferred, Effect, Fiber, Logger, Metric, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -39,9 +40,17 @@ class Socket implements SocketAccess.HostSocket {
   sent: Array<string> = []
   closed: { readonly code: number; readonly reason: string } | undefined
   private attachment: unknown = null
+  /** As workerd's: a send or a close on a closed socket throws. */
   send: (text: string) => Effect.Effect<void> = (text) =>
-    Effect.sync(() => void (this.closed === undefined && this.sent.push(text)))
-  close = (code: number, reason: string) => Effect.sync(() => void (this.closed ??= { code, reason }))
+    Effect.sync(() => {
+      if (this.closed !== undefined) throw new Error("send on a closed socket")
+      this.sent.push(text)
+    })
+  close = (code: number, reason: string) =>
+    Effect.sync(() => {
+      if (this.closed !== undefined) throw new Error("close on a closed socket")
+      this.closed = { code, reason }
+    })
   serializeAttachment = (value: unknown) => void (this.attachment = value === null ? null : structuredClone(value))
   deserializeAttachment = <T>() => this.attachment as T | null
   /** The `events` frames' event counts, in order. */
@@ -111,7 +120,7 @@ const checks = async () => {
     RepoRoles.make(scratch.database, { repository: repositoryOf(HOME), app: Option.none() }),
   )
   const layer = branchRoles(scratch.database)
-  const fresh = await runtime.runPromise(SocketAccess.roleFreshMs)
+  const fresh = await runtime.runPromise(Effect.service(SocketAccess.roleFreshMs))
   return (admission: SocketAccess.Admission) => SocketChecks.verdict(roles, admission, fresh).pipe(Effect.provide(layer))
 }
 
@@ -494,6 +503,46 @@ describe("a transcript's watchers", () => {
     }))
   })
 
+  test("a watcher that closed under its lease costs only itself: the others get the event and their closes", async () => {
+    const check = await checks()
+    const [gone, stays, revoked, alsoRevoked] = [new Socket(), new Socket(), new Socket(), new Socket()]
+    const host = transcriptHost(memoryStorage().storage, [gone, stays, revoked, alsoRevoked], check)
+    const [a, b, c, d] = [await signIn("member"), await signIn("member"), await signIn("member"), await signIn("member")]
+    await onTestClock(Effect.gen(function* () {
+      for (const [socket, actor] of [[gone, a], [stays, b], [revoked, c], [alsoRevoked, d]] as const) {
+        yield* host.join(socket, yield* Effect.promise(() => admit(actor)), -1)
+      }
+      // The page goes away between the lease check and the send: its attachment still says it is leased.
+      gone.closed = { code: 1006, reason: "" }
+      yield* host.append(1, [event(0)])
+      expect(stays.events()).toEqual([1])
+      // Its close throws too, and the next ending socket still closes.
+      revoked.closed = { code: 1006, reason: "" }
+      yield* Effect.promise(() => sql`UPDATE sessions SET role = 'guest' WHERE id IN (${c.session!}, ${d.session!})`)
+      yield* TestClock.adjust(LEASE_MS + 1_000)
+      yield* host.append(1, [event(1)])
+    }))
+    expect(alsoRevoked.closed?.code).toBe(1008)
+    expect(stays.events()).toEqual([1, 1])
+  })
+
+  test("forgetting a transcript survives a socket already closed", async () => {
+    const store = sqliteStore()
+    const { storage, values, fire } = memoryStorage(store)
+    const socket = new Socket()
+    const actor = await signIn("member")
+    await onTestClock(Effect.gen(function* () {
+      const start = yield* now
+      Store.append(store, 1, [event(0)], start - RETENTION_MS + 1_000)
+      const host = transcriptHost(storage, [socket], () => Effect.succeed("keep"), store)
+      yield* host.join(socket, yield* Effect.promise(() => admit(actor)), -1)
+      socket.closed = { code: 1006, reason: "" }
+      yield* fire(host.alarm)
+    }))
+    expect(values.size).toBe(0)
+    expect(store.exec(`SELECT name FROM sqlite_master WHERE name = 'events'`)).toEqual([])
+  })
+
   test("mixed deadlines: an ended watcher gets nothing while another's renewal waits, and a late keep renews nothing", async () => {
     const actorA = await signIn("member", 20)
     const actorB = await signIn("member")
@@ -866,26 +915,279 @@ describe("a host that never hibernates", () => {
     expect(fibers.length).toBe(2)
   })
 
-  test("a lease acted on before the loop's wake wakes it then; a later one doesn't move it", async () => {
+  /** Lets the loops' fibers run up to their next sleep. */
+  const settle = Effect.gen(function* () {
+    for (let i = 0; i < 20; i++) yield* Effect.yieldNow
+  })
+
+  /** A host's loops over `leases`, recording when each renewal and expiry ran, in a scope the test closes. */
+  const loops = (
+    leases: Array<ReturnType<typeof lease>>,
+    start: number,
+    renewDue: Effect.Effect<void> = Effect.void,
+  ) => {
     const renewedAt: Array<number> = []
-    await runtime.runPromise(Effect.gen(function* () {
+    const expiredAt: Array<number> = []
+    const loop = SocketAccess.renewalLoop(
+      () => leases,
+      Effect.andThen(Effect.flatMap(now, (at) => Effect.sync(() => void renewedAt.push(at - start))), renewDue),
+      Effect.flatMap(now, (at) => Effect.sync(() => {
+        expiredAt.push(at - start)
+        // The host closes every ended socket: it leaves the lease list.
+        for (let i = leases.length - 1; i >= 0; i--) {
+          const end = leases[i]!.admission.expiresAt
+          if (end !== null && end <= at) leases.splice(i, 1)
+        }
+      })),
+      "terminal",
+    )
+    return { loop, renewedAt, expiredAt }
+  }
+
+  test("a lease acted on before the loop's wake wakes it then; a later one doesn't move it", async () => {
+    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
       const start = yield* now
       const leases = [lease(start, null, LEASE_MS)]
-      const loop = SocketAccess.renewalLoop(() => leases, Effect.flatMap(now, (at) => Effect.sync(() => void renewedAt.push(at - start))))
-      const fiber = yield* Effect.forkChild(loop.loop)
-      for (let i = 0; i < 10; i++) yield* Effect.yieldNow
+      const host = loops(leases, start)
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
       // A viewer whose session ends at 5 s attaches while the loop sleeps until 50 s.
       const sooner = lease(start, 5_000, 5_000)
       leases.push(sooner)
-      loop.nudge(sooner)
-      loop.nudge(lease(start, null, 2 * LEASE_MS))
-      for (let i = 0; i < 10; i++) yield* Effect.yieldNow
+      yield* host.loop.ensure(scope, sooner)
+      yield* host.loop.ensure(scope, lease(start, null, 2 * LEASE_MS))
+      yield* settle
       yield* TestClock.adjust(5_000)
-      for (let i = 0; i < 10; i++) yield* Effect.yieldNow
-      yield* Fiber.interrupt(fiber)
-    }).pipe(Effect.provide(TestClock.layer())))
+      yield* settle
+      return host
+    })).pipe(Effect.provide(TestClock.layer())))
     expect(renewedAt).toContain(5_000)
     expect(renewedAt.every((at) => at <= 5_000)).toBe(true)
+  })
+
+  test("a session's end closes on time while a renewal is stalled, for a viewer who attached during it", async () => {
+    let renewals = 0
+    const { expiredAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const start = yield* now
+      const leases = [lease(start, null, 15_000)]
+      // Postgres hangs: the renewal the loop starts at 5 s never finishes.
+      const host = loops(leases, start, Effect.suspend(() => (renewals++, Effect.never)))
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
+      yield* TestClock.adjust(6_000)
+      yield* settle
+      expect(renewals).toBe(1)
+      // A viewer whose session ends at 8 s attaches while that renewal hangs.
+      const ending = lease(start, 8_000, 8_000)
+      leases.push(ending)
+      yield* host.loop.ensure(scope, ending)
+      yield* TestClock.adjust(2_000)
+      yield* settle
+      return host
+    })).pipe(Effect.provide(TestClock.layer())))
+    expect(expiredAt).toContain(8_000)
+  })
+
+  test("the renewal loop retired on an empty host restarts for a viewer who reconnects", async () => {
+    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const start = yield* now
+      const leases = [lease(start, null, LEASE_MS)]
+      const host = loops(leases, start)
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
+      // The only viewer leaves at 45 s; the renewal loop wakes at 50 s to an empty host and retires.
+      yield* TestClock.adjust(45_000)
+      leases.splice(0)
+      yield* TestClock.adjust(5_000)
+      yield* settle
+      expect(host.renewedAt).toEqual([50_000])
+      // A viewer reconnects at 51 s, leased to 111 s: its renewal is due at 101 s, before its lease lapses.
+      yield* TestClock.adjust(1_000)
+      const back = lease(start + 51_000, null, LEASE_MS)
+      leases.push(back)
+      yield* host.loop.ensure(scope, back)
+      yield* settle
+      yield* TestClock.adjust(50_000)
+      yield* settle
+      return host
+    })).pipe(Effect.provide(TestClock.layer())))
+    expect(renewedAt).toContain(101_000)
+  })
+
+  test("the expiry timer retired on an empty host while a renewal hung restarts for a viewer who attaches", async () => {
+    const { expiredAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const start = yield* now
+      // A viewer leased to 10 s whose session ends at 30 s: its renewal at 0 s hangs.
+      const leases = [lease(start, 30_000, 10_000)]
+      const host = loops(leases, start, Effect.never)
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
+      // At 30 s expiry closes it and, finding the host empty, retires; the renewal still hangs.
+      yield* TestClock.adjust(30_000)
+      yield* settle
+      expect(leases).toEqual([])
+      // A viewer whose session ends at 40 s attaches: expiry must run again then.
+      const next = lease(start, 40_000, 40_000)
+      leases.push(next)
+      yield* host.loop.ensure(scope, next)
+      yield* settle
+      yield* TestClock.adjust(10_000)
+      yield* settle
+      return host
+    })).pipe(Effect.provide(TestClock.layer())))
+    expect(expiredAt).toContain(40_000)
+  })
+
+  test("a viewer who attaches while the loop is on its way out keeps it, and one loop runs", async () => {
+    const release = Effect.runSync(Deferred.make<void>())
+    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const start = yield* now
+      const leases = [lease(start, null, LEASE_MS)]
+      const host = loops(leases, start, Deferred.await(release))
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
+      // The last viewer leaves; the loop wakes at 50 s and holds in a renewal, about to find the host empty.
+      leases.splice(0)
+      yield* TestClock.adjust(50_000)
+      yield* settle
+      const back = lease(start + 50_000, null, LEASE_MS)
+      leases.push(back)
+      yield* host.loop.ensure(scope, back)
+      yield* Deferred.succeed(release, undefined)
+      yield* settle
+      // It goes on to the new lease's renewal, once.
+      yield* TestClock.adjust(50_000)
+      yield* settle
+      return host
+    })).pipe(Effect.provide(TestClock.layer())))
+    expect(renewedAt).toEqual([50_000, 100_000])
+  })
+
+  test("concurrent attaches start one loop of each kind, also after both retired", async () => {
+    const { renewedAt, expiredAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const start = yield* now
+      const first = lease(start, 30_000, 30_000)
+      const leases = [first]
+      const host = loops(leases, start)
+      const attachAll = (added: ReturnType<typeof lease>) =>
+        Effect.all(Array.from({ length: 10 }, () => host.loop.ensure(scope, added)), { concurrency: "unbounded", discard: true })
+      yield* attachAll(first)
+      yield* settle
+      // Its session ends at 30 s: each loop acts once, and each retires on the empty host.
+      yield* TestClock.adjust(30_000)
+      yield* settle
+      expect(leases).toEqual([])
+      const second = lease(start + 30_000, 30_000, 30_000)
+      leases.push(second)
+      yield* attachAll(second)
+      yield* settle
+      yield* TestClock.adjust(30_000)
+      yield* settle
+      return host
+    })).pipe(Effect.provide(TestClock.layer())))
+    // One loop of each kind acts at most once at any time; a duplicate would repeat a time.
+    expect(new Set(renewedAt).size).toBe(renewedAt.length)
+    expect(renewedAt).toContain(60_000)
+    expect(expiredAt).toEqual([30_000, 60_000])
+  })
+
+  test("a dying loop logs which one, with a code and never the failure's text", async () => {
+    const lines: Array<{ readonly message: unknown; readonly annotations: unknown; readonly level: unknown }> = []
+    const logger = Logger.make((options) => {
+      const line = StructuredLogger.formatStructured.log(options)
+      lines.push({ message: line.message, annotations: line.annotations, level: line.level })
+    })
+    const secret = "postgres://someone:hunter2@db"
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const start = yield* now
+      const leases = [lease(start, null, LEASE_MS)]
+      const host = loops(leases, start, Effect.die(new Error(secret)))
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
+      yield* TestClock.adjust(50_000)
+      yield* settle
+    })).pipe(Effect.provide(TestClock.layer()), Effect.provideService(Logger.CurrentLoggers, new Set([logger]))))
+    const died = lines.filter((line) => line.message === "socket.loop")
+    expect(died).toEqual([{
+      message: "socket.loop",
+      level: "ERROR",
+      annotations: expect.objectContaining({ host: "terminal", loop: "renewal", outcome: "died", errorCode: "unknown" }),
+    }])
+    expect(JSON.stringify(lines)).not.toContain("hunter2")
+  })
+
+  test("a loop that died on a defect whose tag throws still frees its slot and logs unknown", async () => {
+    const lines: Array<unknown> = []
+    const logger = Logger.make((options) => {
+      const line = StructuredLogger.formatStructured.log(options)
+      if (line.message === "socket.loop") lines.push(line.annotations)
+    })
+    let renewals = 0
+    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const start = yield* now
+      const leases = [lease(start, null, LEASE_MS)]
+      const hostile = Object.defineProperty(new Error("x"), "_tag", { get: () => { throw new Error("boom") } })
+      const host = loops(leases, start, Effect.suspend(() => (renewals++ === 0 ? Effect.die(hostile) : Effect.void)))
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
+      yield* TestClock.adjust(50_000)
+      yield* settle
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
+      yield* TestClock.adjust(1)
+      yield* settle
+      return host
+    })).pipe(Effect.provide(TestClock.layer()), Effect.provideService(Logger.CurrentLoggers, new Set([logger]))))
+    expect(renewedAt).toEqual([50_000, 50_001])
+    expect(lines).toEqual([expect.objectContaining({ loop: "renewal", outcome: "died", errorCode: "unknown" })])
+  })
+
+  test("a loop that died restarts for the next viewer who attaches", async () => {
+    let renewals = 0
+    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scope = yield* Effect.scope
+      const start = yield* now
+      const leases = [lease(start, null, LEASE_MS)]
+      // The first renewal dies at 50 s; a later one succeeds.
+      const host = loops(leases, start, Effect.suspend(() => (renewals++ === 0 ? Effect.die("renewal died") : Effect.void)))
+      yield* host.loop.ensure(scope, leases[0]!)
+      yield* settle
+      yield* TestClock.adjust(50_000)
+      yield* settle
+      const back = lease(start + 50_000, null, LEASE_MS)
+      leases.push(back)
+      yield* host.loop.ensure(scope, back)
+      yield* settle
+      // The first lease is past its renewal time, so the restarted loop acts a millisecond on.
+      yield* TestClock.adjust(1)
+      yield* settle
+      return host
+    })).pipe(Effect.provide(TestClock.layer())))
+    expect(renewedAt).toEqual([50_000, 50_001])
+    expect(renewals).toBe(2)
+  })
+
+  test("an expiry counts a session close once, leaving one a running renewal holds to that renewal", async () => {
+    const before = count("terminal", "session")
+    const ended = await runtime.runPromise(Effect.gen(function* () {
+      const start = yield* now
+      const open = [
+        { socket: "a", ...lease(start - 20_000, 10_000, 10_000) },
+        { socket: "b", ...lease(start - 20_000, 10_000, 10_000) },
+        { socket: "c", ...lease(start, null, LEASE_MS) },
+      ]
+      return yield* SocketAccess.expireEnded("terminal", open, new Set(["b"]))
+    }))
+    expect(ended.map((each) => each.socket)).toEqual(["a", "b"])
+    expect(count("terminal", "session") - before).toBe(1)
   })
 })
 

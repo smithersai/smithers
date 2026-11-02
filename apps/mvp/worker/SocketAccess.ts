@@ -1,8 +1,9 @@
-import { Clock, Config, Deferred, Effect, Metric, Option, Schema } from "effect"
+import { Cause, Clock, Config, Context, Deferred, Effect, Metric, Option, Schema, type Scope } from "effect"
 import { Headers, type HttpServerRequest } from "effect/http"
 import { ACCESSES } from "../src/features/branch/contract.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
 import type { Actor } from "./Actor.ts"
+import { codeOf } from "./ErrorCode.ts"
 import * as SessionStore from "./SessionStore.ts"
 import { ROLE_RECHECK_MINUTES } from "./SignIn.ts"
 
@@ -45,11 +46,19 @@ export const MAX_SOCKETS_PER_PERSON = 50
  */
 export const ROLE_GRACE_MS = 10 * 60_000
 
-/** The oldest a role's last confirmation by GitHub may be to admit a socket or renew its lease, in milliseconds. */
-export const roleFreshMs = Config.Number("ROLE_RECHECK_MINUTES").pipe(
+/** `roleFreshMs`'s value from `ROLE_RECHECK_MINUTES`, which each program and object captures when it starts. */
+export const configuredRoleFreshMs = Config.Number("ROLE_RECHECK_MINUTES").pipe(
   Config.withDefault(ROLE_RECHECK_MINUTES),
   Config.map((minutes) => minutes * 60_000 + ROLE_GRACE_MS),
 )
+
+/**
+ * The oldest a role's last confirmation by GitHub may be to admit a socket or renew its lease, in milliseconds: the
+ * program's captured value (`configuredRoleFreshMs`); unconfigured, the documented default.
+ */
+export const roleFreshMs = Context.Reference<number>("@smthrs/mvp/SocketAccess/RoleFreshMs", {
+  defaultValue: () => ROLE_RECHECK_MINUTES * 60_000 + ROLE_GRACE_MS,
+})
 
 /** The header only ChatApi sets on a socket it hands a host: the `Admission`, as JSON. A browser's is dropped. */
 export const ADMISSION_HEADER = "x-smithers-admission"
@@ -338,32 +347,123 @@ export const coalesced = <R>(
 
 /**
  * The renewal loop of a host that never hibernates while a socket is open: it sleeps until `nextRenewal` of `leases()`,
- * runs `renewDue`, and ends when no lease is left. `nudge` wakes its sleep sooner for a new lease acted on before that
- * wake; it never cancels a renewal that runs, and a later lease never moves the wake.
+ * runs `renewDue`, and ends when no lease is left. Beside it, and never waiting on it, an expiry timer sleeps until the
+ * earliest session's end and runs `expire`, which closes sockets past their end with no query, so a renewal stalled on
+ * Postgres never holds a close. Both run only while the host holds a lease (`ensure`); a new lease acted on, or a session
+ * ending, before a running child's wake wakes it sooner. It never cancels a renewal that runs, and a later lease never
+ * moves a wake.
  */
-export const renewalLoop = <R>(
+export const renewalLoop = <R, RE>(
   leases: () => ReadonlyArray<{ readonly admission: Admission; readonly leaseUntil: number }>,
   renewDue: Effect.Effect<void, never, R>,
+  expire: Effect.Effect<void, never, RE>,
+  host: string,
 ) => {
-  let wakeAt: number | undefined
-  let wake = Deferred.makeUnsafe<void>()
-  const loop = Effect.gen(function* () {
-    for (;;) {
-      const now = yield* Clock.currentTimeMillis
-      const next = nextRenewal(leases(), now)
-      if (next === undefined) return
-      wake = Deferred.makeUnsafe<void>()
-      wakeAt = next
-      yield* Effect.raceFirst(Effect.sleep(next - now), Deferred.await(wake))
-      wakeAt = undefined
-      yield* renewDue
+  /** A sleep until `at` that `wakeIf` can cut short for a sooner time. */
+  const timer = () => {
+    let wakeAt: number | undefined
+    let wake = Deferred.makeUnsafe<void>()
+    const sleep = (at: number, now: number) =>
+      Effect.suspend(() => {
+        wake = Deferred.makeUnsafe<void>()
+        wakeAt = at
+        return Effect.raceFirst(Effect.sleep(at - now), Deferred.await(wake))
+      }).pipe(Effect.ensuring(Effect.sync(() => void (wakeAt = undefined))))
+    const wakeIf = (at: number) => {
+      if (wakeAt !== undefined && at < wakeAt) Deferred.doneUnsafe(wake, Effect.void)
     }
-  }).pipe(Effect.ensuring(Effect.sync(() => void (wakeAt = undefined))))
-  const nudge = (lease: { readonly admission: Admission; readonly leaseUntil: number }) => {
-    if (wakeAt !== undefined && actAt(lease.admission, lease.leaseUntil) < wakeAt) Deferred.doneUnsafe(wake, Effect.void)
+    return { sleep, wakeIf }
   }
-  return { loop, nudge }
+  const renewal = timer()
+  const expiry = timer()
+  /**
+   * One owner per child: `ensure` reserves the slot in the step that finds it empty, before it forks, so concurrent
+   * attaches start one child. The owner frees the slot when it finds the host empty, in the same step that checks, or
+   * when it dies or is interrupted, and then only its own reservation; the next attach starts it again.
+   */
+  const child = (
+    loop: "renewal" | "expiry",
+    timed: ReturnType<typeof timer>,
+    next: (now: number) => number,
+    act: Effect.Effect<void, never, R | RE>,
+  ) => {
+    let owner: object | undefined
+    const run = (me: object) => {
+      const free = () => {
+        if (owner === me) owner = undefined
+      }
+      return Effect.gen(function* () {
+        for (;;) {
+          const empty = yield* Effect.sync(() => {
+            if (leases().length > 0) return false
+            free()
+            return true
+          })
+          if (empty) return
+          const now = yield* Clock.currentTimeMillis
+          yield* timed.sleep(next(now), now)
+          yield* act
+        }
+      }).pipe(
+        Effect.onError((cause) =>
+          // The slot is free before anything reads the failure.
+          Effect.andThen(
+            Effect.sync(free),
+            Effect.suspend(() =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.void
+                : Effect.logError("socket.loop").pipe(
+                  Effect.annotateLogs({ host, loop, outcome: "died", errorCode: codeOf(Cause.squash(cause)) }),
+                )
+            ),
+          )
+        ),
+      )
+    }
+    /** Starts the child in `scope` unless one owns the slot; answers whether it did. */
+    const start = (scope: Scope.Scope) =>
+      Effect.uninterruptible(Effect.suspend(() => {
+        if (owner !== undefined) return Effect.succeed(false)
+        const me = {}
+        owner = me
+        return Effect.as(Effect.forkIn(run(me), scope), true)
+      }))
+    return start
+  }
+  const startRenewal = child("renewal", renewal, (now) => nextRenewal(leases(), now) ?? now + LEASE_MS, renewDue)
+  const startExpiry = child("expiry", expiry, (now) => {
+    const ends = leases().flatMap((lease) => lease.admission.expiresAt === null ? [] : [lease.admission.expiresAt])
+    // With no session end to wait for, it sleeps a lease long; a viewer attaching with one wakes it.
+    return ends.length === 0 ? now + LEASE_MS : Math.max(Math.min(...ends), now + 1)
+  }, expire)
+  /**
+   * After a socket attaches: starts whichever child isn't running, in `scope`, and wakes a running one sooner for
+   * `lease`. Emptying the host retires both; attaching always leaves both running.
+   */
+  const ensure = (scope: Scope.Scope, lease: { readonly admission: Admission; readonly leaseUntil: number }) =>
+    Effect.gen(function* () {
+      if (!(yield* startRenewal(scope))) renewal.wakeIf(actAt(lease.admission, lease.leaseUntil))
+      if (!(yield* startExpiry(scope)) && lease.admission.expiresAt !== null) expiry.wakeIf(lease.admission.expiresAt)
+    })
+  return { ensure }
 }
+
+/**
+ * The sockets of `open` whose session has ended at `now`, for a host to close `4401` with no query. Counts each such
+ * close as a `session` lease outcome exactly once: one a running renewal holds (`renewing`) is that renewal's to count.
+ */
+export const expireEnded = <S, T extends { readonly socket: S; readonly admission: Admission }>(
+  host: string,
+  open: ReadonlyArray<T>,
+  renewing: ReadonlySet<S>,
+) =>
+  Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis
+    const found = open.filter((each) => ended(each.admission, now))
+    const counted = found.filter((each) => !renewing.has(each.socket)).length
+    if (counted > 0) yield* Metric.update(Metric.withAttributes(leases, { host, outcome: "session" }), counted)
+    return found
+  })
 
 /** Whether `principal` already holds `MAX_SOCKETS_PER_PERSON` of these admissions. */
 export const crowded = (admissions: ReadonlyArray<Admission | undefined>, principal: string): boolean =>
@@ -384,6 +484,13 @@ export const armAt = <R>(storage: Storage<R>, next: number | undefined) =>
     const alarm = yield* storage.getAlarm()
     if (alarm === null || alarm > next) yield* storage.setAlarm(next)
   })
+
+/**
+ * Runs a send or a close on a socket that may have closed: workerd throws there, and Alchemy's socket turns the throw
+ * into a defect that `Effect.ignore` lets through. One socket's end never stops the rest of its host's work.
+ */
+export const safely = <R>(effect: Effect.Effect<unknown, unknown, R>): Effect.Effect<void, never, R> =>
+  Effect.asVoid(Effect.exit(effect))
 
 /** A hibernatable socket as a host holds it: Alchemy's `Cloudflare.WebSocket`, or a test's. */
 export interface HostSocket {
