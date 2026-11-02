@@ -91,6 +91,7 @@ import * as Compare from "./Compare.ts"
 import { statusOf } from "./Calls.ts"
 import { apiUrl, type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import { Merge } from "./Merge.ts"
+import * as FirstPaint from "./FirstPaint.ts"
 import * as IssueList from "./IssueList.ts"
 import * as Metrics from "./Metrics.ts"
 import * as WorkLinks from "./WorkLinks.ts"
@@ -318,7 +319,8 @@ const SHAPES: ReadonlySet<string> = new Set([
 export const handles = (path: string): boolean =>
   path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined ||
   Compare.parseComparePath(path) !== undefined || Review.parseReviewPath(path) !== undefined ||
-  IssueList.parseIssuesPath(path) !== undefined || WorkLinks.parseLinksPath(path) !== undefined
+  IssueList.parseIssuesPath(path) !== undefined || WorkLinks.parseLinksPath(path) !== undefined ||
+  FirstPaint.parseFirstPaintPath(path) !== undefined
 
 /**
  * How long a stale read of the issues waits for `github/Reconcile`'s start to be admitted: one idempotent Durable Object
@@ -917,6 +919,58 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       }).pipe(Effect.withSpan("github.issues.list", { kind: "server" }))
 
     /**
+     * `GET /api/repos/<owner>/<name>/first-paint` (worker/github/FirstPaint.ts, devpriv FINAL §3.10): an issue's heading
+     * or the list's first page for the session cookie's person alone, read under the shapes' rule, within
+     * `FIRST_PAINT_DEADLINE_MS`. Anything but a paint is an empty `204`. One span and log line `github.first_paint` and
+     * one count by form and outcome; never a title, a number or a person.
+     */
+    const firstPaint = (named: { readonly owner: string; readonly name: string }) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Record<string, string | number> = { form: "invalid" }
+        const response = yield* Effect.gen(function* () {
+          // Any other method is one more outcome that doesn't paint: the same empty 204.
+          if (request.method !== "GET") {
+            fields.outcome = "method"
+            return FirstPaint.nothing()
+          }
+          const form = FirstPaint.parseForm(new URL(request.url, "http://localhost").searchParams)
+          if (form !== undefined) fields.form = form.kind
+          const target = repositoryOf(`${named.owner}/${named.name}`)
+          fields.repoId = target.id
+          const { proof } = yield* access.repositoryReadable(target, "cookie", { validate: Effect.succeed(form !== undefined) })
+          if (proof._tag === "Refused") {
+            fields.outcome = `refused_${proof.status}`
+            return FirstPaint.nothing()
+          }
+          const found = yield* FirstPaint.read(target.id, form!).pipe(Effect.provide(database))
+          if (found === undefined) {
+            fields.outcome = "missing"
+            return FirstPaint.nothing()
+          }
+          fields.outcome = "painted"
+          const person = proof.viewer.kind === "person" ? proof.viewer.actor : undefined
+          // A person's deadline counts in the database's clock, from the lookup that read the session's end; a public
+          // read signed out has no session, and only the shell's hand-over cap bounds it.
+          return FirstPaint.painted({
+            viewer: person?.subject.id ?? null,
+            ...(person?.expiry === undefined
+              ? { serverNow: yield* Clock.currentTimeMillis }
+              : { expiresAt: person.expiry.at, serverNow: person.expiry.now }),
+            ...found,
+          })
+        }).pipe((answer) => FirstPaint.guarded(answer, fields, codeOf))
+        const outcome = String(fields.outcome)
+        yield* Metric.update(Metric.withAttributes(Metrics.firstPaints, { form: String(fields.form), outcome }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.first_paint.outcome": outcome })
+        yield* Effect.logWithLevel(outcome === "error" ? "Warn" : "Info")("github.first_paint").pipe(
+          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+        )
+        return response
+      }).pipe(Effect.withSpan("github.first_paint", { kind: "server" }))
+
+    /**
      * `POST /api/repos/<owner>/<name>/issues/<number>/links` (decision 0147, docs/features/work-links.md): a Member or
      * above, in their session or a run's credential, or a runner registered on the repository, with its token, posts
      * what links the issue to the work on it. One span and log line `work.links` and one count by outcome and who
@@ -1089,6 +1143,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (reviewed !== undefined) return yield* review(reviewed)
       const listed = IssueList.parseIssuesPath(path)
       if (listed !== undefined) return yield* issues(listed)
+      const painting = FirstPaint.parseFirstPaintPath(path)
+      if (painting !== undefined) return yield* firstPaint(painting)
       const linked = WorkLinks.parseLinksPath(path)
       if (linked !== undefined) return yield* links(linked)
       const target = parseWritesPath(path)

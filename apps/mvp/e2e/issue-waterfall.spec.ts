@@ -73,12 +73,13 @@ const visit = async (browser: Browser, path: string, shown: { selector: string; 
     const timeline = await page.evaluate(() => {
       const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming
       const resources = performance.getEntriesByType("resource") as Array<PerformanceResourceTiming>
-      const marks = performance.getEntriesByType("mark").filter((mark) => mark.name.startsWith("smithers.boot."))
+      // The boot's stages, and the first paint's (src/firstPaint/shell.ts): when it painted and how it ended.
+      const marks = performance.getEntriesByType("mark").filter((mark) => mark.name.startsWith("smithers.boot.") || mark.name.startsWith("smithers.first_paint."))
       return {
         shown: (window as unknown as { __shown: { shown: number } }).__shown.shown,
         document: { start: navigation.startTime, end: navigation.responseEnd },
         resources: resources.map((entry) => ({ url: entry.name, type: entry.initiatorType, start: entry.startTime, end: entry.responseEnd, size: entry.transferSize })),
-        marks: marks.map((mark) => ({ name: mark.name.slice("smithers.boot.".length), at: mark.startTime })),
+        marks: marks.map((mark) => ({ name: mark.name.replace(/^smithers\.boot\./, "").replace(/^smithers\./, ""), at: mark.startTime })),
         long: (window as unknown as { __long: Array<{ start: number; duration: number }> }).__long,
       }
     })
@@ -91,7 +92,7 @@ const visit = async (browser: Browser, path: string, shown: { selector: string; 
         start: Math.min(...scripts.map((entry) => entry.start)),
         end: Math.max(...scripts.map((entry) => entry.end)),
       }]),
-      ...timeline.marks.map((mark) => ({ name: `boot.${mark.name}`, start: mark.at, end: mark.at })),
+      ...timeline.marks.map((mark) => ({ name: mark.name.startsWith("first_paint.") ? mark.name : `boot.${mark.name}`, start: mark.at, end: mark.at })),
       ...api.map((entry) => ({ name: redactedPath(entry.url, repo), start: entry.start, end: entry.end })),
       ...timeline.long.filter((task) => task.duration >= 100 && task.start <= timeline.shown)
         .map((task) => ({ name: "main thread busy", start: task.start, end: task.start + task.duration })),

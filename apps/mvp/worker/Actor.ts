@@ -55,6 +55,13 @@ export interface Actor {
    * session. Ending the alias ends what it admitted (worker/SocketAccess.ts, worker/runners/Fence.ts).
    */
   readonly alias?: string
+  /**
+   * When the presented session ends (`at`) and the database's `clock_timestamp()` in the lookup that read it (`now`),
+   * epoch milliseconds, so a deadline never mixes the Worker's clock with Postgres' (devpriv FINAL r13). Only
+   * `Sessions.resolveCookie` sets it, for a read that answers with its own deadline (the first paint, §3.10). Never
+   * stored with an actor.
+   */
+  readonly expiry?: { readonly at: number; readonly now: number }
 }
 
 /** Member or above (decision 0007 §1): the roles that may ask Smithers (`repo:ask`) and clone. */

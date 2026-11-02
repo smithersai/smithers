@@ -136,3 +136,13 @@ export const workLinkPosts = Metric.counter("smithers_work_link_posts", {
   description: "POST /api/repos/<owner>/<name>/issues/<number>/links requests, by outcome and poster",
   incremental: true,
 })
+
+/**
+ * First-paint requests (`GET /api/repos/<owner>/<name>/first-paint`), by `form` (`issue`, `list`, `invalid`) and
+ * `outcome`: `painted`, `missing` (no such issue), `refused_<status>` (the access rule's status), `deadline`
+ * or `error` (Postgres, or anything else). Every outcome but `painted` answered an empty `204`.
+ */
+export const firstPaints = Metric.counter("github_first_paints", {
+  description: "First-paint requests, by form and outcome",
+  incremental: true,
+})

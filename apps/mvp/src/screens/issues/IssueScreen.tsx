@@ -25,6 +25,7 @@ import { workByIssue, workSections } from "../../features/issues/workView"
 import { WORK_STATUS_LABELS } from "../../features/issues/work"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { SETTLED } from "../../firstPaint/settled"
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
 
 // /$owner/$repo/issues/$number: one issue and its comments, this device's own last with their chip, "Open on GitHub ↗",
@@ -62,7 +63,7 @@ export function IssueScreen() {
   const page = pageOf(item, synced, itemReady, syncedReady, access)
   if (page === "sign_in") {
     return (
-      <main className="issues-screen"><RepoHeader />
+      <main className="issues-screen" {...SETTLED}><RepoHeader />
         <PageBody width="wide">
           {back}
           <Card className="issues-sign-in"><CardContent><SignInButton /></CardContent></Card>
@@ -72,7 +73,7 @@ export function IssueScreen() {
   }
   if (page === "missing") {
     return (
-      <main className="issues-screen"><RepoHeader />
+      <main className="issues-screen" {...SETTLED}><RepoHeader />
         <PageBody width="wide">
           <NotFound title="Issue not found" back={back} />
         </PageBody>
@@ -82,7 +83,7 @@ export function IssueScreen() {
 
   if (page === "unknown") {
     return (
-      <main className="issues-screen"><RepoHeader />
+      <main className="issues-screen" {...SETTLED}><RepoHeader />
         <PageBody width="wide">
           {back}
           <Card><CardContent>
@@ -99,7 +100,7 @@ export function IssueScreen() {
   }
   if (item === undefined) {
     return (
-      <main className="issues-screen"><RepoHeader />
+      <main className="issues-screen" {...(summary === undefined ? {} : SETTLED)}><RepoHeader />
         <PageBody width="wide">
           {back}
           {/* The repository's warm summaries name the issue before its own shape brings the body and comments. */}
@@ -166,7 +167,7 @@ export function IssueScreen() {
     start: session !== undefined && mayStartTriage(session, confirmed, answer, (ownModels?.length ?? 0) > 0),
   })
   return (
-    <main className="issues-screen"><RepoHeader />
+    <main className="issues-screen" {...SETTLED}><RepoHeader />
       <PageBody width="wide">
         {back}
 

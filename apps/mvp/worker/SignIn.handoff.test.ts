@@ -122,7 +122,19 @@ const harness = async (
       ),
     )
 
-  return { ...h, press, handOff, codeOf, confirm, arrive, sessionAt, actorAt, handedOff, signInAt }
+  /** The cookie's person alone at `origin` (`Sessions.resolveCookie`), as the first paint reads it. */
+  const cookieActorAt = (origin: string, cookies: Record<string, string>) =>
+    runtime.runPromise(
+      Effect.flatMap(Actor.Sessions, (sessions) => sessions.resolveCookie!).pipe(
+        Effect.provide(h.sessions),
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(new Request(`${origin}/api/auth/session`, { headers: { cookie: cookie(cookies) } })),
+        ),
+      ),
+    )
+
+  return { ...h, press, handOff, codeOf, confirm, arrive, sessionAt, actorAt, cookieActorAt, handedOff, signInAt }
 }
 
 /** The stable id of a signed-in session's person. */
@@ -671,6 +683,18 @@ describe("alias sessions", () => {
     expect(await h.actorAt(ALIAS, cookies)).toEqual(Option.some(expect.objectContaining({ session: home!.id, login: "octocat" })))
     expect(await runtime.runPromise(SessionStore.findLiveById(home!.id))).toEqual(Option.some(expect.objectContaining({ id: home!.id })))
     expect(await h.actorAt(OTHER, cookies)).toEqual(Option.none())
+    // The cookie's person at the alias carries home's end with Postgres' clock from the same lookup (devpriv FINAL r13),
+    // and the Worker's clock, moved an hour above, takes no part in it.
+    const [ends] = await sql((client) => client<{ at: string; now: string }>`
+      SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS at,
+        (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS now FROM sessions`)
+    const atAlias = Option.getOrThrow(await h.cookieActorAt(ALIAS, cookies))
+    expect(atAlias.expiry!.at).toBe(Number(ends!.at))
+    expect(Math.abs(atAlias.expiry!.now - Number(ends!.now))).toBeLessThan(30_000)
+    const atHome = Option.getOrThrow(await h.cookieActorAt(HOME, (await h.signInAs()).cookies))
+    expect(Math.abs(atHome.expiry!.now - Number(ends!.now))).toBeLessThan(30_000)
+    // Only the cookie resolver carries it: every other read's actor stays as it was.
+    expect(Option.getOrThrow(await h.actorAt(ALIAS, cookies)).expiry).toBeUndefined()
   })
 
   test("signing in at home again, or home's session expiring, ends every alias session under it", async () => {

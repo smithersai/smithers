@@ -28,6 +28,7 @@ import "./issues-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
 import { repoId } from "../../features/repo/contract"
+import { SETTLED } from "../../firstPaint/settled"
 
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
 // chip and the TODOs made from it, Make TODO in its menu for a Member (docs/features/todos.md#from-an-issue), New issue
@@ -75,7 +76,7 @@ export function IssuesScreen() {
   if (!syncsHere(access, unsynced)) {
     const list = githubList(owner, repo, "issues")
     return (
-      <main className="issues-screen" aria-label="Issues">{header}
+      <main className="issues-screen" aria-label="Issues" {...SETTLED}>{header}
         <PageBody width="wide">
           <Card><CardContent><p className="issues-status-line"><a href={list.href}>{list.text}</a></p></CardContent></Card>
         </PageBody>
@@ -85,7 +86,7 @@ export function IssuesScreen() {
   // A repository whose issues this person may not read: sign in, or nothing to show.
   if (list.refused === "sign_in") {
     return (
-      <main className="issues-screen" aria-label="Issues">{header}
+      <main className="issues-screen" aria-label="Issues" {...SETTLED}>{header}
         <PageBody width="wide">
           <Card className="issues-sign-in"><CardContent><SignInButton /></CardContent></Card>
         </PageBody>
@@ -94,7 +95,7 @@ export function IssuesScreen() {
   }
   if (list.refused === "forbidden") {
     return (
-      <main className="issues-screen" aria-label="Issues">{header}
+      <main className="issues-screen" aria-label="Issues" {...SETTLED}>{header}
         <PageBody width="wide">
           <Card><CardContent><EmptyState title={NOT_FOUND} /></CardContent></Card>
         </PageBody>
@@ -102,7 +103,7 @@ export function IssuesScreen() {
     )
   }
   return (
-    <main className="issues-screen" aria-label="Issues">{header}
+    <main className="issues-screen" aria-label="Issues" {...(failure === undefined && listSync === "syncing" ? {} : SETTLED)}>{header}
       <PageBody width="wide">
         {failure === undefined ? null : (
           <Card><CardContent>

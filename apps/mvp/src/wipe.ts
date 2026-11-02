@@ -70,9 +70,11 @@ export interface PageWipe {
   /**
    * Before the program starts: finishes a wipe a sign-out marked, then holds the device's data, shared, until the page
    * ends. `true` when the device holds nothing of an ended session; `false` when a marked wipe couldn't delete, so the
-   * page must start on `unwiped`'s stores.
+   * page must start on `unwiped`'s stores. With `adopted`, the first paint's shell's own `smithers-data` hold, which it
+   * hands over only while it holds the lock and the mark is absent (src/firstPaint/shell.ts `handOver`): the page keeps
+   * that hold as its own, with no gap, and lets go of it as it would of its own.
    */
-  readonly open: () => Promise<boolean>
+  readonly open: (adopted?: () => void) => Promise<boolean>
   /** The running program's `stop`, which leaving calls before the page loads again. */
   readonly started: (stop: () => Promise<void>) => void
   /** `Host.wipe`: marks the device and tells every page, this one included, to leave. */
@@ -112,6 +114,8 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
   let leaving: Promise<void> | undefined
   let release!: () => void
   const released = new Promise<void>((resolve) => (release = resolve))
+  // How this page lets go of `smithers-data`: its own hold's release, or the adopted shell's.
+  let letGo = () => release()
 
   const leave = (reason: WipeReason) =>
     (leaving ??= Promise.resolve().then(() => stop?.())
@@ -178,7 +182,13 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     })
 
   return {
-    open: async () => {
+    open: async (adopted) => {
+      if (adopted !== undefined) {
+        // Held since before the shell's read, and the mark was absent under the hold: there is nothing to finish, and a
+        // wipe marked from now on waits for this hold, as it waits for any running page's.
+        letGo = adopted
+        return true
+      }
       const clean = await finish()
       await hold()
       return clean
@@ -193,7 +203,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     reopen: (reason) => tell(`reopen:${reason}`),
     close: () => {
       hearing.close()
-      release()
+      letGo()
     },
   }
 }

@@ -1031,9 +1031,21 @@ export const make = <E, R>(
                 Effect.map(Option.map((signed) => ({ ...signed.actor, login: signed.login }))),
                 Effect.provide(context),
               )
+              // The cookie's person also carries when its session ends and the database's clock as it read that, for a
+              // read that answers with its deadline.
+              const cookiePerson = current.pipe(
+                Effect.map(Option.map((signed): Actor.Actor => ({
+                  ...signed.actor,
+                  login: signed.login,
+                  ...(signed.expiresAt === undefined || signed.serverNow === undefined
+                    ? {}
+                    : { expiry: { at: signed.expiresAt, now: signed.serverNow } }),
+                }))),
+                Effect.provide(context),
+              )
               return Actor.Sessions.of({
                 resolve: RunCredentials.resolveWith(credentials, person),
-                resolveCookie: RunCredentials.resolveCookieWith(person),
+                resolveCookie: RunCredentials.resolveCookieWith(cookiePerson),
               })
             })(),
           ),

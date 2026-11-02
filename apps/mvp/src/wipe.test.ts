@@ -101,11 +101,11 @@ const browser = () => {
     ((await navigator.locks.query()).pending ?? [])
       .filter((lock) => lock.name!.startsWith(`${profile}/`))
       .map((lock) => `${lock.name!.slice(profile.length + 1)} ${lock.mode}`)
-  /** Holds `name` exclusively, as an engine worker that leads holds the engine's lock; `release` lets go. */
-  const holdLock = async (name: string) => {
+  /** Holds `name`, exclusively as an engine worker that leads holds the engine's lock, or shared; `release` lets go. */
+  const holdLock = async (name: string, mode: LockMode = "exclusive") => {
     let release = () => {}
     await new Promise<void>((granted) => {
-      void navigator.locks.request(scoped(name), () => {
+      void navigator.locks.request(scoped(name), { mode }, () => {
         granted()
         return new Promise<void>((resolve) => (release = resolve))
       })
@@ -162,6 +162,26 @@ test("a page that still holds the device's data holds a sign-out's wipe off unti
   expect(await twoAgain.open()).toBe(true)
   expect(device.removed).toEqual([targets.engine])
   expect(await device.pending()).toEqual([])
+})
+
+test("a page adopts the first paint's shared hold as its own: no gap, and a wipe waits until the page lets go", async () => {
+  const device = browser()
+  // The shell's hold (src/firstPaint/shell.ts): smithers-data, shared, from before its read.
+  const releaseShell = await device.holdLock(DATA_LOCK, "shared")
+  const page = device.page(async () => {})
+  expect(await page.open(releaseShell)).toBe(true)
+  // The page asked for no hold of its own: the shell's is the only one.
+  expect(await device.pending()).toEqual([])
+  // Another page's sign-out marks the device; a boot after it waits for the adopted hold.
+  await device.page().wipe()
+  const again = device.page()
+  const opened = again.open()
+  await until(async () => expect(await device.pending()).toContain(`${DATA_LOCK} exclusive`))
+  expect(device.removed).toEqual([])
+  // The page ends: the adopted hold goes, and the wipe deletes.
+  page.close()
+  expect(await opened).toBe(true)
+  expect(device.removed).toEqual([targets.engine])
 })
 
 test("the wipe waits for the engine worker that leads to let go of the directory", async () => {

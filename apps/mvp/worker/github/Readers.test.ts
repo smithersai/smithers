@@ -12,6 +12,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { digestSync } from "@smthrs/crypto"
 import {
   COMMENTS_SHAPE_ROUTE,
+  firstPaintRoute,
   issuesRoute,
   ITEMS_SHAPE_ROUTE,
   ITEM_SUMMARIES_SHAPE_ROUTE,
@@ -426,6 +427,104 @@ describe("one access matrix for every reader of a repository's issues", () => {
   }, 60_000)
 })
 
+// The first paint (worker/github/FirstPaint.ts, devpriv FINAL §3.10) answers the same matrix as the session cookie's
+// person alone: a runner's token beside it is never read, so the cookie's person decides. Every refusal, whatever its
+// reason, is one empty 204, and every answer is `private, no-store`.
+describe("the first paint answers the matrix as the cookie's person, one empty 204 for every refusal", () => {
+  /** The cookie's person alone: the matrix's viewer, never the runner token riding along. */
+  const firstPaintOf = (cell: Cell): string =>
+    cell.name === "own private, runner token, member" ? "200" : cell.shapes === "200" && cell.runnerOn === undefined ? "200" : "204"
+
+  test.each(MATRIX)("$name", async (cell) => {
+    await seed(cell)
+    // A signed-out deployment's cookie resolves nobody; sessions that can't be read can't resolve a cookie either.
+    const sessions = cell.viewer.kind === "signed_out"
+      ? Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.succeedNone, resolveCookie: Effect.succeedNone }))
+      : cell.viewer.kind === "sessions_down"
+      ? Layer.succeed(Actor.Sessions, Actor.Sessions.of({
+        resolve: Effect.fail(new Actor.SessionsUnavailable()),
+        resolveCookie: Effect.fail(new Actor.SessionsUnavailable()),
+      }))
+      : signedInAs({ ...member(), role: cell.viewer.kind === "person" ? cell.viewer.role : "member" })
+    const github = scriptedGitHub(cell.repo.owner, cell.repo.name)
+    github.private = cell.visibility === "private"
+    const h = await githubHarness(runtime, {
+      own: OWN,
+      github,
+      allowed: ACTED_ON,
+      roles: rolesFor(cell.viewer, { roles: 0 }),
+      ...(cell.noApp === true ? { app: null } : {}),
+      sessions,
+    })
+    const headers: Record<string, string> = cell.runnerOn === undefined ? {} : { authorization: `Bearer ${RUNNER_TOKEN}` }
+    const route = firstPaintRoute(cell.repo.owner, cell.repo.name)
+    const issue = await h.fetch(`${route}?issue=${cell.invalid === true ? "not-a-number" : "7"}`, { headers })
+    const list = await h.fetch(`${route}?list=all`, { headers })
+    const expected = cell.invalid === true ? "204" : firstPaintOf(cell)
+    for (const response of [issue, list]) {
+      expect(response.headers.get("cache-control")).toBe("private, no-store")
+      expect(response.headers.get("vary")).toBe("cookie")
+    }
+    const issueBody = await issue.text()
+    const listBody = await list.text()
+    expect(String(issue.status)).toBe(expected)
+    // An invalid issue number is the request's own: the list form beside it is a valid request.
+    expect(String(list.status)).toBe(cell.invalid === true ? firstPaintOf(cell) : expected)
+    if (expected === "200") {
+      const painted = JSON.parse(issueBody) as { viewer: string | null; serverNow: number; issue: unknown }
+      expect(painted.issue).toEqual({ number: 7, title: "Seven", state: "open", author: null })
+      expect(painted.viewer === null).toBe(cell.viewer.kind === "signed_out")
+      expect(typeof painted.serverNow).toBe("number")
+      expect((JSON.parse(listBody) as { list: Array<{ number: number }> }).list.map((row) => row.number)).toEqual([7])
+    } else {
+      // Nothing says why: no body, no code, no wait.
+      expect([issueBody, issue.headers.get("retry-after")]).toEqual(["", null])
+    }
+    // Nothing a first paint reads starts a Reconcile or asks GitHub.
+    expect(h.starts.filter((start) => start.flow === "github/Reconcile")).toEqual([])
+    // Counted by form and outcome: a paint, or the refusal's status, never more than that.
+    // (The cookie's person with no role there is refused as forbidden; the shapes read the runner's token as nobody.)
+    const status = cell.name === "own private, runner token, no role" ? "403" : cell.shapes.split(" ")[0]!
+    expect(h.count(Metrics.firstPaints, {
+      form: cell.invalid === true ? "invalid" : "issue",
+      outcome: expected === "200" ? "painted" : `refused_${status}`,
+    })).toBe(1)
+  }, 60_000)
+
+  // One clock (devpriv FINAL r13): a person's deadline is the session lookup's pair, the end and Postgres' clock read
+  // in the same statement, never the Worker's clock beside Postgres' end.
+  test("a person's deadline is the session lookup's end and clock, as read together", async () => {
+    const cell: Cell = { name: "own private", repo: OWN, visibility: "private", viewer: { ...person, role: "member" }, shapes: "200", list: "200" }
+    await seed(cell)
+    const expiry = { at: 5_000_000, now: 4_000_000 }
+    const github = scriptedGitHub(OWN.owner, OWN.name)
+    github.private = true
+    const h = await githubHarness(runtime, {
+      own: OWN,
+      github,
+      allowed: ACTED_ON,
+      roles: rolesFor(cell.viewer, { roles: 0 }),
+      sessions: signedInAs({ ...member(), expiry }),
+    })
+    const painted = await (await h.fetch(`${firstPaintRoute(OWN.owner, OWN.name)}?issue=7`)).json() as { expiresAt: number; serverNow: number }
+    expect([painted.expiresAt, painted.serverNow]).toEqual([expiry.at, expiry.now])
+  }, 60_000)
+
+  test("a missing issue, an unknown form and a second parameter are the same empty 204", async () => {
+    const cell: Cell = { name: "own private", repo: OWN, visibility: "private", viewer: { ...person, role: "member" }, shapes: "200", list: "200" }
+    await seed(cell)
+    const h = await harnessFor(cell)
+    const route = firstPaintRoute(OWN.owner, OWN.name)
+    for (const query of ["issue=8", "list=open", "issue=7&list=all", "issue=07", "", "issue=99999999999"]) {
+      const response = await h.fetch(`${route}?${query}`)
+      expect([query, response.status, await response.text(), response.headers.get("cache-control")]).toEqual([query, 204, "", "private, no-store"])
+    }
+    expect(h.count(Metrics.firstPaints, { form: "issue", outcome: "missing" })).toBe(1)
+    const posted = await h.fetch(route + "?issue=7", { method: "POST" })
+    expect([posted.status, await posted.text(), posted.headers.get("cache-control")]).toEqual([204, "", "private, no-store"])
+  }, 60_000)
+})
+
 // Sign-in's own sessions (worker/SignIn.ts): a real signed session cookie, resolved through its store, alone and beside
 // a run credential, valid or forged, and with a device header naming its person, another, or no device data.
 describe("a real signed session cookie reads every reader as its person", () => {
@@ -476,6 +575,37 @@ describe("a real signed session cookie reads every reader as its person", () => 
     }
     answers.list = (await answerOf(await h.fetch(listPath(cell), { headers }))).answer
     expect(new Set(Object.values(answers))).toEqual(new Set([expected]))
+  }, 60_000)
+
+  test("the first paint reads as the cookie's person alone, with the session's deadline", async () => {
+    await seed(cell)
+    const browser = await signedInBrowser()
+    const github = scriptedGitHub(OWN.owner, OWN.name)
+    github.private = true
+    const h = await githubHarness(runtime, { own: OWN, github, allowed: ACTED_ON, roles: rolesFor(cell.viewer, { roles: 0 }), sessions: browser.signIn.sessions })
+    const path = `${firstPaintRoute(OWN.owner, OWN.name)}?issue=7`
+    const paint = async (extra: Record<string, string>) => {
+      const response = await h.fetch(path, { headers: { cookie: cookie(browser.cookies), ...extra } })
+      return response.status === 200 ? (await response.json()) as { viewer: string; expiresAt?: number; serverNow: number } : response.status
+    }
+    const painted = await paint({})
+    if (typeof painted === "number") throw new Error(`expected a paint, got ${painted}`)
+    expect(painted.viewer).toBe(browser.personId)
+    // The session's end and Postgres' clock, both from the lookup: the session row's own `expires_at`.
+    const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      Effect.orDie(client<{ readonly expiresAt: string; readonly dbNow: string }>`
+        SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt",
+          (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "dbNow"
+        FROM sessions WHERE person_id = ${browser.personId}`)))
+    expect(painted.expiresAt).toBe(Number(row!.expiresAt))
+    expect(Number(row!.dbNow) - painted.serverNow).toBeGreaterThanOrEqual(0)
+    expect(Number(row!.dbNow) - painted.serverNow).toBeLessThan(30_000)
+    // A credential beside the cookie is never read: a forged one changes nothing, and neither does a valid one.
+    expect(typeof await paint({ authorization: "Bearer forged" })).toBe("object")
+    expect(typeof await paint({ authorization: `Bearer ${browser.credential}` })).toBe("object")
+    // The device naming someone else binds the cookie to nobody, as every read binds it.
+    expect(await paint({ [DEVICE_PERSON_HEADER]: "person-someone-else" })).toBe(204)
+    expect((await h.fetch(path)).status).toBe(204)
   }, 60_000)
 
   test("without the cookie the same requests are signed out", async () => {

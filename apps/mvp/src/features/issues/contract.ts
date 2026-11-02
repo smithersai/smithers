@@ -21,6 +21,38 @@ export const ISSUES_SEGMENT = "issues"
 export const issuesRoute = (owner: string, name: string): string =>
   `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${ISSUES_SEGMENT}`
 
+/**
+ * The last segment of `GET /api/repos/<owner>/<name>/first-paint?issue=<n>` or `?list=all`: what a cold issue page or
+ * issues list paints before the app boots (docs/features/issues.md#first-paint, devpriv FINAL §3.10). Cookie only; every
+ * outcome but a paint is an empty `204`, and every answer is `private, no-store`.
+ */
+export const FIRST_PAINT_SEGMENT = "first-paint"
+
+/** `GET /api/repos/<owner>/<name>/first-paint`. */
+export const firstPaintRoute = (owner: string, name: string): string =>
+  `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${FIRST_PAINT_SEGMENT}`
+
+/** One issue as a first paint shows it: in a list row or as a page's heading. */
+export interface FirstPaintIssue {
+  readonly number: number
+  readonly title: string
+  readonly state: string
+  readonly author: string | null
+}
+
+/**
+ * A first paint's answer: who it was read for (`null`, a public read without a session), until when that session is
+ * live and the server's clock as it answered (a deadline is `sentAt + (expiresAt - serverNow)`), and the issue or the
+ * list's first page, newest update first.
+ */
+export interface FirstPaint {
+  readonly viewer: string | null
+  readonly expiresAt?: number
+  readonly serverNow: number
+  readonly issue?: FirstPaintIssue
+  readonly list?: ReadonlyArray<FirstPaintIssue>
+}
+
 /** The issues list's page size when the request names none, and the most it sends in one page. */
 export const ISSUE_PAGE_DEFAULT = 30
 export const ISSUE_PAGE_MAX = 100

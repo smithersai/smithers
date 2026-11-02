@@ -56,6 +56,7 @@ items, comments ◀── Electric ◀── Postgres ◀──┘
 | `POST /api/github/webhook` | `200` once the delivery is verified, its `github/Apply` started (for an `issues` or `issue_comment` event naming a repository the deployment acts on: its own, and with the App any other `GITHUB_ALLOWED_REPOSITORIES` doesn't leave out; GitHub sends the App events only of repositories it is installed on), with `REPO_FLOWS` on its `triggers/Dispatch` started (for a `push` or `pull_request` of any installed repository, [ci.md](ci.md#triggers)), and the delivery recorded; a repeat is counted `duplicate` and starts the same execution, which changes nothing. `401 { code: "invalid_signature" }`, `400 invalid` (no delivery id, no event, not JSON), `413 too_large` (over 5 MiB; Reconcile covers it), `405`, `503 not_configured` (no App or no webhook secret), `503 unavailable` |
 | `POST /api/repos/<owner>/<name>/writes` | `202 { txid, writeId }` for a new write, `200 { txid: null, writeId, status }` for one already taken (a pending one's execution is started again, which changes nothing). Refusals below |
 | `GET /api/repos/<owner>/<name>/issues` | One page of the repository's issues from the projection, for a client that doesn't sync the list (the CLI's `smthrs issue list`, the issue-tracking proof): `?state=open\|closed\|all` (open by default), `?q=` (a title substring, or `#n`/`n` for that number), `?limit=` (30 by default, at most 100), `?cursor=` from the `Link: <…>; rel="next"` header the page before sent, latest update first, then highest number. Read as the shapes are (a role there, or a public repository); a stale read starts Reconcile as theirs do. `400 invalid` for a state, limit or cursor it doesn't take; `404 not_found` or `app_not_installed` as the shapes; `503 unavailable` when Postgres fails. Each request is one `github.issues.list` span and log line and one `github_issue_lists` count by outcome (`worker/github/IssueList.ts`) |
+| `GET /api/repos/<owner>/<name>/first-paint` | What a cold issue page (`?issue=<n>`) or unfiltered issues list (`?list=all`) paints before the app boots ([first paint](#first-paint)): `200 { viewer, expiresAt?, serverNow, issue \| list }`, the issue's number, title, state and author, or the list's first 30 issues, latest update first. Read for the session cookie's person alone, under the shapes' rule; a run credential or runner token beside the cookie is never read. A person's `expiresAt` and `serverNow` are the session lookup's own pair, both Postgres' (devpriv FINAL r13). Every other outcome (a refusal of any kind, an invalid query, another method, a missing issue, a failed read, or a read past 1.5 s) is an empty `204` that says nothing of why. Every answer is `Cache-Control: private, no-store`, `Vary: cookie`. It starts no Reconcile. One `github.first_paint` span and log line and one `github_first_paints` count by form and outcome (`worker/github/FirstPaint.ts`) |
 | `GET /api/shapes/items` | `items` with `ITEM_COLUMNS` of the repository `?repo=<owner>/<name>` names, the deployment's own unless it names one; starts that repository's Reconcile when stale, waiting at most 2 seconds for admission. The comments, sync, triage settings, pull request, commit, review and check shapes take `?repo=` too; a name GitHub couldn't have is `400 invalid`, a repository the deployment doesn't act on `404 not_found` (decision 0079, slice 1b) |
 | `GET /api/shapes/comments` | its `comments` with `COMMENT_COLUMNS` |
 | `GET /api/shapes/github-sync` | its `github_sync` rows with `SYNC_COLUMNS` (never the cursor) |
@@ -175,6 +176,37 @@ Buttons show only to a Member and above of the issue's repository; Run triage ag
 | `view.ts` | the props of `IssuesView`, `ItemConversation` and `IssueForm` from the queries' rows |
 
 Screens: `/$owner/$repo/issues`, `/$owner/$repo/issues/new` and `/$owner/$repo/issues/$number` (`src/screens/issues/`), and an Issues link in the repository's header. Each issue shows the TODOs made from it, on its row and in its page's side column, and a Member gets Make TODO in an open issue's `⋯` menu and on its page, key `t`, while none of its TODOs is open ([TODOs from an issue](todos.md#from-an-issue)); the issue routes open the repository's stack for it. The device's outbox is chat's, extended by `OutboxWrites` (`src/outbox.ts`).
+
+## First paint
+
+A cold issue page or issues list shows its issue's title, or its first 30 issues, before the app's bundle has run
+(devpriv FINAL §3.10, [decision 0152](../decisions/0152-first-paint-before-boot.md)). The app itself still opens the
+device store and syncs as it always does; the first paint only stands in until the page shows itself.
+
+1. **The shell.** `index.html` carries one inline script, `src/firstPaint/inline.ts` bundled by `vite.config.ts`, at
+   the top of `<body>`. For `/<owner>/<repo>/issues/<n>`, or `/<owner>/<repo>/issues` with no search, it asks for
+   nothing when sign-out's wipe mark (`smithers-wipe`) is present or can't be read. Otherwise it holds
+   `smithers-data`, the Web Lock a wipe waits on, shared, reads the mark again once granted, and only then reads the
+   [first-paint route](#routes) with the cookie, `no-store`, waiting at most 2.5 s.
+2. **The paint.** The answer is painted with `textContent` only into `#first-paint`, a node over the page outside
+   `#root`. It lives in that node and the shell's memory: never in a collection, OPFS, IndexedDB, local or session
+   storage or any cache. Its deadline is `sentAt + (expiresAt - serverNow)`, both read from Postgres in the session's
+   own lookup (`clock_timestamp()` beside `expires_at`), and it shows at most 30 s from the paint. An answer that
+   arrives after the app's page showed itself, or after the route moved on, is never painted.
+3. **Revocation.** The node and the answer go, and the shell lets go of its hold, on a wipe-channel message, the mark
+   appearing, `pagehide`, the deadline, 30 s without a hand-over, or a session answer the page reads that names
+   anyone else (`verifyingFetch`, `src/firstPaint/page.ts`; a paint read signed out of a public repository stays for
+   anyone). A hidden or frozen page hides the node; shown or resumed, it checks the deadline, the 30 s cap and the
+   mark first.
+4. **Hand-over.** The app's boot adopts the shell's hold as its own `smithers-data` hold with no gap
+   (`PageWipe.open(adopted)`, `src/wipe.ts`): the shell hands it over only while it holds it and the mark is absent;
+   otherwise it revokes and the boot runs as it did before. Letting go of the adopted hold ends the paint first. The
+   node goes once the issue page or the list marks its
+   `main` `data-first-paint="settled"`, which it does once it shows the page itself or why it can't (sign in, Not
+   found, GitHub's list), or once the route changes.
+
+The boot timeline marks `smithers.first_paint.painted` and how the paint ended (`handed_over`, `deadline`, `wipe`,
+`person_mismatch`, ...), never a title or a person.
 
 ## Postgres
 

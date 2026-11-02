@@ -104,6 +104,25 @@ export default defineConfig(({ command }) => ({
         resolveTempFolder: () => join(import.meta.dirname, "node_modules", ".vite-pwa-dev"),
       },
     }),
+    // The first paint's shell (src/firstPaint/shell.ts): src/firstPaint/inline.ts bundled into one inline script at the
+    // top of `<body>`, so a cold issue page's or issues list's read starts as the document parses, before the app's
+    // bundle loads. Inline, it costs no request of its own.
+    {
+      name: "smithers-first-paint",
+      transformIndexHtml: async () => {
+        const { build } = await import("esbuild")
+        const built = await build({
+          entryPoints: [join(import.meta.dirname, "src", "firstPaint", "inline.ts")],
+          bundle: true,
+          write: false,
+          format: "iife",
+          minify: command === "build",
+          target: "es2022",
+          platform: "browser",
+        })
+        return [{ tag: "script", children: built.outputFiles[0]!.text, injectTo: "body-prepend" }]
+      },
+    },
     // What the app frames: only https: pages (src/pwa.ts FRAME_POLICY), in every build.
     {
       name: "smithers-frame-policy",

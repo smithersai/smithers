@@ -255,6 +255,8 @@ export default defineConfig({
         // The worker's first import, which starts its first session read off the worker's global; src/flows/sessionRead.ts
         // is what reads it, tested.
         "src/flows/sessionStart.worker.ts",
+        // The first paint's inline script, which hands the browser's objects to src/firstPaint/shell.ts, tested.
+        "src/firstPaint/inline.ts",
         "src/features/code-intel/language.worker.ts"
       ],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }

@@ -27,9 +27,13 @@ import { deviceRegistry } from "./device/registry"
 import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
 import "./styles/fonts.css"
 import { markStage } from "./bootStages"
+import { takeShell, verifyingFetch } from "./firstPaint/page"
 
 // The boot's first stage: the bundle has loaded and runs (src/bootStages.ts).
 markStage(performance, "page")
+// The first paint's shell, when index.html's inline script painted, or is about to paint, for this route
+// (src/firstPaint/shell.ts): this page adopts its `smithers-data` hold and checks its viewer against every session answer.
+const firstPaint = takeShell(window)
 
 // The build this bundle is, which vite.config.ts names from the deployed revision (`version.json` beside the app);
 // `dev` under the dev server and wherever the build named none.
@@ -472,7 +476,7 @@ const page = {
   // Every request to ChatApi waits for the activation and carries the device's owner while this page has its data
   // open. Every session answer, Auth's at startup and on reconnect alike, checks the activation again: one naming
   // someone else, or a person signing in while this page is sealed until they do, reopens every page.
-  fetch: boundFetch(window.fetch.bind(window), {
+  fetch: boundFetch(verifyingFetch(window.fetch.bind(window), firstPaint), {
     origin: window.location.origin,
     principal: () => (activation.state() === "retained" && deviceOwner !== undefined ? deviceOwner : NO_DEVICE_DATA),
     ready: activation.ready,
@@ -495,7 +499,7 @@ const page = {
 // (src/test/e2e.ts). A production build drops this branch, and the test module with it. Either way, a wipe a sign-out
 // marked finishes first, and a page whose wipe couldn't delete starts on stores that aren't the device's
 // (src/wipe.ts `unwiped`). Leaving on a wipe drops the view, then stops the program.
-void Promise.all([wipe.open(), claimEditorTabId({
+void Promise.all([wipe.open(firstPaint?.handOver()), claimEditorTabId({
   storage: { getItem: (key) => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value) },
   locks: navigator.locks, page: window, randomId: () => crypto.randomUUID(),
 })]).then(([wiped, editorTab]) => {
