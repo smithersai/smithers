@@ -731,3 +731,54 @@ const alive = (pid: number) => {
     return false
   }
 }
+
+// Astra's review of f7b3de5f and 281a40d4: `existsSync` answers false for a path it can't stat (EACCES, EIO) as for one
+// that isn't there, so a mirror or checkout the runner couldn't read was taken as gone, and its owed removal dropped.
+test(
+  "a mirror or checkout the runner can't stat is not taken as gone: the removal stays owed until it can",
+  async () => {
+    // The mirror in a directory of its own, which is made unreadable.
+    const box = join(root, "box")
+    mkdirSync(box)
+    const mirror = Host.mirror(box)
+    const stateDir = join(root, "state")
+    const checkout = Workspace.of(stateDir, "unreadable")
+    expect(made(await Effect.runPromise(Effect.exit(Workspace.create(mirror.path, mirror.base, checkout))))).toBe(
+      "made"
+    )
+    await Effect.runPromise(Workspace.scheduleRemoval(mirror.path, checkout))
+    const record = join(stateDir, "removals", `${checkout.name}.json`)
+    chmodSync(box, 0o000)
+    try {
+      await Effect.runPromise(Workspace.sweep(stateDir))
+      expect(existsSync(record)).toBe(true)
+    } finally {
+      chmodSync(box, 0o755)
+    }
+    expect(existsSync(checkout.dir)).toBe(true)
+    expect(listed(mirror.path, checkout.name)).toBe(true)
+    // Readable again: done.
+    await Effect.runPromise(Workspace.sweep(stateDir))
+    expect(existsSync(record)).toBe(false)
+    expect(existsSync(checkout.dir)).toBe(false)
+    expect(listed(mirror.path, checkout.name)).toBe(false)
+    // The checkout's directory can't be stat'ed (its parent unreadable) once the mirror forgot it: still owed.
+    const second = Workspace.of(stateDir, "unreadable-dir")
+    expect(made(await Effect.runPromise(Effect.exit(Workspace.create(mirror.path, mirror.base, second))))).toBe("made")
+    await Effect.runPromise(Workspace.scheduleRemoval(mirror.path, second))
+    const secondRecord = join(stateDir, "removals", `${second.name}.json`)
+    const work = join(stateDir, "work")
+    chmodSync(work, 0o000)
+    try {
+      await Effect.runPromise(Workspace.sweep(stateDir))
+      expect(existsSync(secondRecord)).toBe(true)
+    } finally {
+      chmodSync(work, 0o755)
+    }
+    expect(existsSync(second.dir)).toBe(true)
+    await Effect.runPromise(Workspace.sweep(stateDir))
+    expect(existsSync(secondRecord)).toBe(false)
+    expect(existsSync(second.dir)).toBe(false)
+  },
+  120_000
+)

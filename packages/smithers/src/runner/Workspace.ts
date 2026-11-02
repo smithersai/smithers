@@ -645,6 +645,29 @@ export const create = <E = never>(
 export const DELETE_TIMEOUT_MS = 5 * 60 * 1000
 
 /**
+ * Whether `path` is there: `false` only when the file system says it isn't (`ENOENT`, or `ENOTDIR` for a path through
+ * a file). Any other answer (`EACCES`, `EIO`, ...) fails: the runner can't tell, so nothing owed is taken as done.
+ */
+const present = (path: string): Effect.Effect<boolean, WorkspaceError> =>
+  Effect.try({
+    try: () => {
+      try {
+        lstatSync(path)
+        return true
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code
+        if (code === "ENOENT" || code === "ENOTDIR") return false
+        throw error
+      }
+    },
+    catch: () => new WorkspaceError({ step: "forget" })
+  }).pipe(
+    Effect.tapError(() =>
+      Effect.logWarning("runner.workspace").pipe(Effect.annotateLogs({ step: "stat", reason: "uncertain" }))
+    )
+  )
+
+/**
  * Deletes the directory `dir` and everything in it with `rm -rf`, in a
  * process of its own (in a group of its own, killed whole when interrupted or
  * out of time), so a large checkout or a slow filesystem never blocks the
@@ -653,7 +676,7 @@ export const DELETE_TIMEOUT_MS = 5 * 60 * 1000
  */
 const deleteTree = (dir: string, timeoutMs = DELETE_TIMEOUT_MS) =>
   Effect.gen(function*() {
-    if (!existsSync(dir)) return
+    if (!(yield* present(dir))) return
     const ran = yield* run(
       onPath("rm") ?? "/bin/rm",
       ["-rf", "--", dir],
@@ -661,7 +684,7 @@ const deleteTree = (dir: string, timeoutMs = DELETE_TIMEOUT_MS) =>
       timeoutMs,
       true
     )
-    if (ran.code !== 0 || existsSync(dir)) {
+    if (ran.code !== 0 || (yield* present(dir))) {
       yield* Effect.logWarning("runner.workspace").pipe(
         Effect.annotateLogs({ step: "delete", exitCode: ran.code, reason: reasonOf(ran.stderr) })
       )
@@ -672,12 +695,13 @@ const deleteTree = (dir: string, timeoutMs = DELETE_TIMEOUT_MS) =>
 /**
  * Forgets workspace `name` in `mirror` with `command` (`jj` or `provisioning`):
  * done only when the forget succeeded, or the mirror verifiably no longer has
- * the workspace (no mirror at all, or `jj workspace list` doesn't name it).
- * Anything else fails, so the removal stays owed.
+ * the workspace (no mirror at all, as the file system says, or `jj workspace
+ * list` doesn't name it). Anything else, a mirror it can't stat included,
+ * fails, so the removal stays owed.
  */
 const forget = (mirror: string, name: string, command: (args: ReadonlyArray<string>) => Effect.Effect<Ran>) =>
   Effect.gen(function*() {
-    if (!existsSync(join(mirror, ".jj"))) return
+    if (!(yield* present(join(mirror, ".jj")))) return
     const forgot = yield* command(["-R", mirror, "workspace", "forget", name])
     if (forgot.code === 0) return
     const listed = yield* command(["-R", mirror, "workspace", "list", "-T", "name ++ \"\\n\""])
