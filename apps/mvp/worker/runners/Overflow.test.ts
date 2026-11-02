@@ -122,6 +122,12 @@ describe("an Admin's overflow setting", () => {
       expect(await sql(`SELECT name, labels, capacity, token_sha256 AS sha FROM runners`)).toEqual([
         { name: "cloudflare-overflow", labels: ["linux", "cloudflare"], capacity: 2, sha: expect.stringMatching(/^[0-9a-f]{64}$/) },
       ])
+      // Replaying the same durable writer invocation leaves the registration and setting unchanged.
+      const kept = Option.getOrThrow(await runtime.runPromise(Overflow.read(REPO)))
+      const invocation = { actorId: admin.subject.id, invocationKey: "repeat-overflow" }
+      const write = { ...kept, tokenSha256: digestSync(await tokenNow()) }
+      expect(await runtime.runPromise(Overflow.set(write, invocation))).toBe("set")
+      expect(await runtime.runPromise(Overflow.set(write, invocation))).toBe("repeat")
       const token = await tokenNow()
       expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/)
       const [runner] = await sql<{ sha: string }>(`SELECT token_sha256 AS sha FROM runners`)
@@ -299,4 +305,13 @@ describe("the overflow wake", () => {
     await sql(`UPDATE agent_jobs SET pinned_runner = NULL`)
     expect(await Effect.runPromise(failing.status("todo:1#g1"))).toEqual({ _tag: "Running" })
   })
+})
+
+
+test("overflow box identities preserve the repository and are distinct from branch workspaces", async () => {
+  expect(Overflow.isBox(Overflow.boxId(REPO))).toBe(true)
+  expect(Overflow.isBox("branch-1")).toBe(false)
+  expect(Overflow.boxBranch(REPO)).toMatchObject({ owner: "acme", name: "widgets", branch: "", forge: "github" })
+  expect(Overflow.boxBranch("")).toMatchObject({ owner: "", name: "" })
+  expect(await runtime.runPromise(Overflow.read(REPO))).toEqual(Option.none())
 })

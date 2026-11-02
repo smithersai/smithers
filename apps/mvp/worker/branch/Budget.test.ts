@@ -68,6 +68,7 @@ const observed = async <A, E>(effect: Effect.Effect<A, E>) => {
 
 describe("what a machine is for", () => {
   test("a job's, a TODO's attempt branch on GitHub, else the branch's own", () => {
+    expect(Budget.kindOf({ branchId: "overflow-1", owner: "o", name: "n", branch: "x", forge: "github" })).toBe("overflow")
     expect(Budget.kindOf({ branchId: "b", owner: "o", name: "n", branch: "x", kind: "job", forge: "github" })).toBe("job")
     expect(Budget.kindOf({ branchId: "b", owner: "o", name: "n", branch: "x", forge: "github" })).toBe("todo")
     expect(Budget.kindOf({ branchId: "b", owner: "o", name: "n", branch: "x" })).toBe("branch")

@@ -116,7 +116,7 @@ export const AUDIENCE: Readonly<Record<Fleet.Kind, { readonly role: "maintainer"
 /** The longest title a bell row and a message's subject carry. */
 const MAX_TITLE = 200
 
-const clip = (text: string) => (text.length <= MAX_TITLE ? text : `${text.slice(0, MAX_TITLE - 1)}…`)
+const clip = (text: string) => (text.length <= MAX_TITLE ? text : `${text.slice(0, MAX_TITLE - 1).replace(/[\uD800-\uDBFF]$/, "")}…`)
 
 /** A repository's page path: `github/<owner>/<name>` → `/<owner>/<name>`. */
 const repoPath = (repoId: string) => `/${repoId.replace(/^github\//, "")}`

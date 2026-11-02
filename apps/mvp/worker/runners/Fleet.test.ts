@@ -212,6 +212,7 @@ describe("project", () => {
     const ended = (status: Fleet.Job["status"], outcome: unknown) =>
       Fleet.project(job({ status, outcome, settledAt: at(now) }), run(), Fleet.DEFAULTS).next
     expect(ended("done", { _tag: "Done", usage: { contextTokens: 5 } })).toMatchObject({ state: "done", contextTokens: 5, endedAt: at(now) })
+    expect(ended("failed", null)).toMatchObject({ state: "failed", reason: "failed" })
     expect(ended("failed", { _tag: "Failed", reason: "machine_lost" })).toMatchObject({ state: "failed", reason: "machine_lost" })
     expect(ended("cancelled", { _tag: "Cancelled", processTreeGone: true }).state).toBe("stopped")
     expect(ended("retryable", { _tag: "Retryable" }).state).toBe("retried")
