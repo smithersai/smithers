@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
-import { ReviewCommentSeverity } from "../src/workflow/reviewCommentSeveritySchema.ts"
+import { ReviewCommentSeverity } from "../src/workflow/reviewCommentSeveritySchema.vibe"
 import { buildVerifyFindingsPrompt } from "../src/workflow/verifyFindings.ts"
 
 /**

@@ -3,7 +3,7 @@ import { Smithers } from "@smthrs/targets"
 const cwd = ".smithers/flows/review"
 const sources = [
   Smithers.file("//.smithers/flows/review/flow.ts"),
-  Smithers.glob("//.smithers/flows/review/src/**/*.ts")
+  Smithers.glob("//.smithers/flows/review/src/**/*.{ts,vibe}")
 ]
 const tests = Smithers.glob("//.smithers/flows/review/tests/**/*.ts")
 const check = Smithers.Typecheck({
