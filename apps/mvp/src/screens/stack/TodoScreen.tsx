@@ -8,7 +8,7 @@ import { useTodos } from "../../features/todos/components/TodosContext"
 import { AFTER, BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } from "../../features/todos/contract"
 import { mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf } from "../../features/todos/view"
 import "./stack-screen.css"
-import { useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 
 // /$owner/$repo/stack/$number (decision 0016 §4): one TODO as GitHub's issue page. Its title and T<n>, its state pill,
@@ -32,6 +32,7 @@ export function TodoScreen() {
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const answer = useRepoAnswer(owner, repo)
+  const repository = useRepo()
   const navigate = useNavigate()
   const status = accessFor(repoId, access)
   if (status === "sign_in") {
@@ -67,6 +68,12 @@ export function TodoScreen() {
           ]}
           onNavigate={(item) => void navigate({ href: item.href! })}
         />
+        {screen.kind === "unavailable" ? (
+          <Card><CardContent><EmptyState
+            title="Can't check your role on this repository right now."
+            action={<Button variant="outline" size="sm" onClick={() => repository.actions.role(owner, repo)}>Try again</Button>}
+          /></CardContent></Card>
+        ) : null}
         {screen.kind === "waiting" ? (
           <Card><CardContent>
             <p role="status">Syncing TODO…</p>

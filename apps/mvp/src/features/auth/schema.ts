@@ -81,6 +81,8 @@ export const RepoRole = Schema.Struct({
   id: Schema.String,
   /** Content-free refusal of the latest authority read; no shape starts until a successful retry. */
   failure: Schema.optional(Schema.String),
+  /** ChatApi's refusal of the role read itself: `authentication` (401), `forbidden` (403). An answer: no role there. */
+  refused: Schema.optional(Schema.Literals(["authentication", "forbidden"])),
   role: Schema.NullOr(Schema.Literals(ROLES)),
   /** Effective role on Smithers' workspace copy; separate from GitHub/home authority. */
   workspaceRole: Schema.optional(Schema.NullOr(Schema.Literals(ROLES))),

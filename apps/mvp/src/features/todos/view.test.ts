@@ -520,6 +520,8 @@ describe("a TODO's page as GitHub's issue page", () => {
     expect(todoScreenOf(undefined, 9, todos, "allowed", "octo", "hello")).toEqual({ kind: "missing" })
     // The TODO is there and its prompt isn't yet, or the shape hasn't answered: the frame only.
     expect(todoScreenOf(undefined, 4, todos, "allowed", "octo", "hello")).toEqual({ kind: "waiting" })
+    // A role ChatApi couldn't answer shows no cached TODO, as a refusal shows none.
+    expect(todoScreenOf(card(), 4, todos, "unavailable", "octo", "hello")).toEqual({ kind: "unavailable" })
     expect(todoScreenOf(undefined, 9, [], "unknown", "octo", "hello")).toEqual({ kind: "waiting" })
   })
 })

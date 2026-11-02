@@ -23,7 +23,7 @@ import {
   withDrop,
 } from "../../features/todos/view"
 import "./stack-screen.css"
-import { useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 
 // /$owner/$repo/stack (decision 0016 §4), drawn as GitHub's issue list: Open (the stack in merge order, then this
 // device's commits the stack hasn't numbered) and Closed (merged and dropped, latest first) tabs with counts, each row
@@ -48,6 +48,7 @@ export function StackScreen() {
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const answer = useRepoAnswer(owner, repo)
+  const repository = useRepo()
   const navigate = useNavigate()
   const status = accessFor(repoId, access)
   if (status === "sign_in") {
@@ -55,6 +56,18 @@ export function StackScreen() {
       <main className="stack-screen" aria-label="Stack"><RepoHeader />
         <PageBody width="wide">
           <Card><CardContent><EmptyState title="Members can make TODOs." action={<SignInButton />} /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
+  if (status === "unavailable") {
+    return (
+      <main className="stack-screen" aria-label="Stack"><RepoHeader />
+        <PageBody width="wide">
+          <Card><CardContent><EmptyState
+            title="Can't check your role on this repository right now."
+            action={<Button variant="outline" size="sm" onClick={() => repository.actions.role(owner, repo)}>Try again</Button>}
+          /></CardContent></Card>
         </PageBody>
       </main>
     )

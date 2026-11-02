@@ -24,6 +24,7 @@ import { blobKey, copyPayloadOf, readmeOf, refsKey, resolveRef, type Target, tre
 import type { AboutRow, BlobRow, CloneRow, HeadRow, RefsRow, TreeRow, ViewRow } from "./rows"
 import { VIEW } from "./rows"
 import type { Repository } from "./schema"
+import type { RepoRole } from "../auth/schema"
 import { RepoStore } from "./store"
 
 // What a person does in the repository view, and what the tab does for them. Each action returns once the tab's rows
@@ -277,7 +278,9 @@ export const role = (owner: string, name: string, reuse = false) =>
     const id = repoId(owner, name)
     if (reuse) {
       const held = yield* store.roles.get(id)
-      if (Option.isSome(held) && held.value.failure === undefined) {
+      // Only a role ChatApi answered is kept: neither a failure nor a refusal (401, 403), so access that came back is
+      // read again on the next route.
+      if (Option.isSome(held) && held.value.failure === undefined && held.value.refused === undefined) {
         yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "kept", role: held.value.role ?? "none" }), 1)
         return yield* Effect.logInfo("repo.role").pipe(Effect.annotateLogs({ outcome: "kept", role: held.value.role ?? "none" }))
       }
@@ -305,19 +308,45 @@ const readRole = (owner: string, name: string, id: string) =>
     const result = yield* Effect.result((yield* RepoClient).role(owner, name))
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt
     if (result._tag === "Failure") {
-      yield* put(store.roles, id, { id, role: null, own: false, failure: result.failure.code ?? "unavailable" })
+      // A real refusal (401 or 403) is an answer: no role there. Anything else (a 5xx, a 429, the network) is ChatApi
+      // not answering now: unavailable, until Try again asks once more.
+      const status = result.failure.status
+      yield* replaceRole(store, status === 401 || status === 403
+        ? { id, role: null, own: false, refused: status === 401 ? "authentication" : "forbidden" }
+        : { id, role: null, own: false, failure: result.failure.code ?? "unavailable" })
       yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "refused", role: "unknown" }), 1)
       return yield* Effect.logWarning("repo.role").pipe(
         Effect.annotateLogs({ outcome: "refused", status: result.failure.status ?? 0, durationMs }),
       )
     }
     const { role: held, workspaceRole, own, readable, synced } = result.success
-    yield* put(store.roles, id, { id, role: held, workspaceRole, own, readable, synced, failure: undefined })
+    yield* replaceRole(store, {
+      id,
+      role: held,
+      own,
+      ...(workspaceRole === undefined ? {} : { workspaceRole }),
+      ...(readable === undefined ? {} : { readable }),
+      ...(synced === undefined ? {} : { synced }),
+    })
     yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "answered", role: held ?? "none" }), 1)
     yield* Effect.logInfo("repo.role").pipe(
       Effect.annotateLogs({ outcome: "answered", role: held ?? "none", own, durationMs }),
     )
   })
+
+/**
+ * Writes `row` as the whole of what this tab knows of the person's authority on its repository: nothing of an earlier
+ * answer stays (an earlier `readable` would still let a refused person read).
+ */
+const replaceRole = (store: RepoStore["Service"], row: RepoRole) =>
+  Effect.gen(function* () {
+    if (Option.isNone(yield* store.roles.get(row.id))) return yield* store.roles.insert(row)
+    yield* store.roles.update(row.id, (draft) => {
+      const fields = draft as Record<string, unknown>
+      for (const key of Object.keys(fields)) if (key !== "id") delete fields[key]
+      Object.assign(fields, row)
+    })
+  }).pipe(Effect.orDie)
 
 /**
  * What GitHub says of `owner/name`, once this tab has loaded it: loads it unless this tab has it or is loading it, then

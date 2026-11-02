@@ -162,9 +162,10 @@ export type StackView = typeof StackView.Type
 
 /**
  * Whether this person may read a repository's stack, from its shape's answers: `unknown` until one answers, `allowed`,
- * or refused: `sign_in` (signed out) or `forbidden` (not a Member). One row per repository.
+ * `unavailable` (ChatApi couldn't answer the role: Try again asks once more), or refused: `sign_in` (signed out) or
+ * `forbidden` (not a Member). One row per repository.
  */
-export const ACCESS_STATES = ["unknown", "allowed", "sign_in", "forbidden"] as const
+export const ACCESS_STATES = ["unknown", "allowed", "unavailable", "sign_in", "forbidden"] as const
 export const Access = Schema.Struct({ id: Schema.String, status: Schema.Literals(ACCESS_STATES) })
 export type Access = typeof Access.Type
 

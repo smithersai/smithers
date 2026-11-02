@@ -349,6 +349,8 @@ The writer admits no Queued TODO whose `after` chain runs through a TODO that is
 
 Stack initialization retains the store’s shape source, including cache isolation and injected access refusals. A prompt shape refused with 401 or 403 keeps access at `sign_in` or `forbidden` even when the TODO shape succeeds.
 
+A role answer ChatApi couldn't give (a `5xx`, a `429`, the network) is no denial: the stack's access is `unavailable`, and the Stack and a TODO's pages read "Can't check your role on this repository right now." with Try again, which asks for the role once more; a TODO's page shows nothing the device kept of it meanwhile. Nothing asks again by itself. A `401` from the role route reads sign in and a `403` no role there; neither is reused by the next route, which asks again. Each answer or refusal replaces the whole of what the tab knew of the person's authority there. Before 2026-11-02 a failed answer read `forbidden` ("Members can make TODOs.") until the tab was reloaded: an Admin's Stack page did for 15 minutes on production.
+
 
 ### Merge wake (2026-10-22)
 

@@ -430,7 +430,9 @@ export const todoScreenOf = (
   access: Access["status"],
   owner: string,
   name: string,
-): { readonly kind: "page"; readonly page: TodoPage } | { readonly kind: "missing" | "waiting" } => {
+): { readonly kind: "page"; readonly page: TodoPage } | { readonly kind: "missing" | "waiting" | "unavailable" } => {
+  // A role ChatApi couldn't answer shows nothing this device kept of the TODO, as a refusal shows nothing.
+  if (access === "unavailable") return { kind: "unavailable" }
   if (card !== undefined) return { kind: "page", page: todoPageOf(card, owner, name) }
   return access === "allowed" && !todos.some((todo) => todo.number === number) ? { kind: "missing" } : { kind: "waiting" }
 }
