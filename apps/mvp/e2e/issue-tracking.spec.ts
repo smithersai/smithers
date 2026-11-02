@@ -18,7 +18,7 @@ import { createHash, randomBytes } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { type APIRequestContext, type Page } from "@playwright/test"
+import { type APIRequestContext, type Page, type Request } from "@playwright/test"
 import { workStatusOf, type WorkLinkKind, type WorkLinkState } from "../src/features/issues/work"
 import { expect, test } from "./fixtures"
 import { cleanUp, type Runner, startRunner } from "./runner"
@@ -200,10 +200,48 @@ test("(a) volume: the list pages, searches, filters and opens one issue at the s
     await page.getByRole("searchbox", { name: "Search issues" }).or(page.getByRole("textbox", { name: "Search issues" })).fill(`#${probe.number}`)
     await expect(page.locator(`a[href$="/${repo}/issues/${probe.number}"]`).first()).toBeVisible({ timeout: 60_000 })
   })
+  // Where the issue open's time goes: each API request the page made meanwhile, from the open's start. A live shape
+  // request waits for changes by design and is left out; /role, the shapes' first reads and the issue route stay.
+  const openRequests: Array<{ path: string; offset: string | null; status: number | null; startMs: number; endMs: number }> = []
+  let openStarted = 0
+  const onFinished = async (request: Request) => {
+    const url = new URL(request.url())
+    if (!url.pathname.startsWith("/api/") || url.searchParams.get("live") === "true") return
+    const response = await request.response().catch(() => null)
+    const timing = request.timing()
+    const startMs = Math.round(timing.startTime - openStarted)
+    if (openStarted === 0 || startMs < 0) return
+    openRequests.push({
+      path: url.pathname,
+      offset: url.searchParams.get("offset"),
+      status: response?.status() ?? null,
+      startMs,
+      endMs: Math.round(startMs + Math.max(0, timing.responseEnd)),
+    })
+  }
+  page.on("requestfinished", onFinished)
+  page.on("requestfailed", onFinished)
   const [, openMs] = await timed(async () => {
+    openStarted = Date.now()
     await page.goto(`/${repo}/issues/${probe.number}`)
     await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: `#${probe.number}` })).toContainText(probe.title.slice(0, 40), { timeout: 60_000 })
   })
+  page.off("requestfinished", onFinished)
+  page.off("requestfailed", onFinished)
+  const latest = (match: (path: string) => boolean) => {
+    const matched = openRequests.filter((request) => match(request.path))
+    return matched.length === 0 ? null : {
+      count: matched.length,
+      endMs: Math.max(...matched.map((request) => request.endMs)),
+      longestMs: Math.max(...matched.map((request) => request.endMs - request.startMs)),
+    }
+  }
+  const openPhases = {
+    role: latest((path) => path.endsWith("/role")),
+    shapes: latest((path) => path.startsWith("/api/shapes/")),
+    issueRoute: latest((path) => /\/issues\/\d+$/.test(path)),
+    requests: openRequests.sort((left, right) => left.startMs - right.startMs),
+  }
   const numbers = {
     issues: issues.length,
     pages: pages.length,
@@ -217,6 +255,7 @@ test("(a) volume: the list pages, searches, filters and opens one issue at the s
     browserListFirstRowsMs: listPageMs,
     browserListSearchMs: listSearchMs,
     browserOpenIssueMs: openMs,
+    browserOpenIssuePhases: openPhases,
   }
   record("volume", numbers)
   // Usable means seconds: a page of the API in under 2 s at p95, the browser's list's first rows in under 10 s on a
@@ -408,19 +447,31 @@ test("(e) VibeLang end to end: an issue becomes a TODO, an agent's pull request,
     // Anonymous GitHub allows 60 requests an hour: the head is read once, the check runs every 30 s, and the wait ends
     // at CI's first finished answer, a failure included, instead of polling a failure until the limit refuses it.
     let ciMs = 0
-    const github = async <A>(path: string): Promise<A> => {
-      const response = await page.request.get(`https://api.github.com/repos/${vibe}/${path}`)
+    // A connection GitHub dropped is no answer yet, and the next look asks again (2026-11-02 22:46Z: "socket hang up"
+    // ended the wait while CI had passed); an answer GitHub refused still fails, naming its status.
+    let dropped: string | undefined
+    const github = async <A>(path: string): Promise<A | undefined> => {
+      const response = await page.request.get(`https://api.github.com/repos/${vibe}/${path}`).catch((error: Error) => {
+        dropped = error.message
+        return undefined
+      })
+      if (response === undefined) return undefined
       if (!response.ok()) throw new Error(`GitHub ${path}: ${response.status()} ${(await response.text()).slice(0, 200)}`)
       return (await response.json()) as A
     }
-    const head = (await github<{ head: { sha: string } }>(`pulls/${pr}`)).head.sha
+    let head: string | undefined
+    await expect.poll(async () => (head = (await github<{ head: { sha: string } }>(`pulls/${pr}`))?.head.sha), {
+      timeout: 2 * 60_000,
+      intervals: [10_000],
+    }).toBeDefined()
     let conclusions = "pending"
     await expect.poll(async () => {
-      const runs = (await github<{ check_runs: ReadonlyArray<{ status: string; conclusion: string | null }> }>(`commits/${head}/check-runs`)).check_runs
+      const runs = (await github<{ check_runs: ReadonlyArray<{ status: string; conclusion: string | null }> }>(`commits/${head}/check-runs`))?.check_runs
+      if (runs === undefined) return `pending (${dropped})`
       ciMs = Date.now() - started
       conclusions = runs.length > 0 && runs.every((run) => run.status === "completed") ? runs.map((run) => run.conclusion).join(",") : "pending"
       return conclusions
-    }, { timeout: 15 * 60_000, intervals: [30_000] }).not.toBe("pending")
+    }, { timeout: 15 * 60_000, intervals: [30_000] }).not.toMatch(/^pending/)
     expect(conclusions, `CI on ${vibe}@${head}`).toMatch(/^success(,success)*$/)
     // A person merges it in Smithers, in person.
     await page.goto(`/${vibe}/pull/${pr}`)
