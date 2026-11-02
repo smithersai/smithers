@@ -77,7 +77,7 @@ export const identityOf = (member: Member, leaseUntil: number) => ({
 export interface Ports<S, R, RS, RC> {
   readonly sockets: Effect.Effect<ReadonlyArray<S>, never, R>
   readonly storage: SocketAccess.Storage<RS>
-  readonly check: (admission: SocketAccess.Admission) => Effect.Effect<SocketAccess.Verdict, never, RC>
+  readonly check: (admission: SocketAccess.Admission) => Effect.Effect<SocketAccess.Checked, never, RC>
   readonly within: <A>(renewal: Effect.Effect<A, never, R | RS | RC>) => Effect.Effect<A, unknown, R | RS>
 }
 
@@ -143,12 +143,13 @@ export const room = <S extends PresenceRoom.RoomSocket<R>, R, RS, RC>(ports: Por
       const renewed = new Set<S>()
       const ending: Array<readonly [S, SocketAccess.Closing]> = []
       due.forEach((member, index) => {
-        const verdict = verdicts[index]!
+        const { verdict, until } = verdicts[index]!
         // A member who left, or was ended, while the check ran stays out.
         const current = keptOf(member.socket)
         if (current === undefined || (current.leaseUntil ?? 0) === 0) return
         if (verdict !== "keep") return void ending.push([member.socket, verdict])
-        keep(member.socket, { ...current, leaseUntil: SocketAccess.leaseFrom(member.admission, now) })
+        // The window its check measured, from when that check started (decision 0151 rule 9).
+        keep(member.socket, { ...current, leaseUntil: until ?? SocketAccess.leaseFrom(member.admission, now) })
         renewed.add(member.socket)
       })
       yield* end(ending)

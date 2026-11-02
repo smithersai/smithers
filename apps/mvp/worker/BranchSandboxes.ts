@@ -823,10 +823,11 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           const now = yield* Clock.currentTimeMillis
           const ending: Array<readonly [WebSocket, Fiber.Fiber<unknown>, SocketAccess.Closing]> = []
           due.forEach(({ socket, viewer }, index) => {
-            const verdict = verdicts[index]!
+            const { verdict, until } = verdicts[index]!
             // A socket detached while its check ran stays detached.
             if (attached.get(socket) !== viewer) return
-            if (verdict === "keep") viewer.lease.until = SocketAccess.leaseFrom(viewer.admission, now)
+            // The window its check measured, from when that check started (decision 0151 rule 9).
+            if (verdict === "keep") viewer.lease.until = until ?? SocketAccess.leaseFrom(viewer.admission, now)
             else {
               viewer.lease.until = 0
               attached.delete(socket)

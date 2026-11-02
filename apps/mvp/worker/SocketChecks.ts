@@ -9,7 +9,14 @@ import { scopeAccess } from "./branch/Texts.ts"
 import * as GitHubConfig from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as SessionStore from "./SessionStore.ts"
-import { type Admission, ended, roleFresh, roleFreshMs as roleFreshConfig, type Verdict } from "./SocketAccess.ts"
+import {
+  type Admission,
+  type Checked,
+  ended,
+  LEASE_MS,
+  roleFresh,
+  roleFreshMs as roleFreshConfig,
+} from "./SocketAccess.ts"
 import { mayRead } from "./stack/Access.ts"
 
 // The rules a socket host renews a lease by (worker/SocketAccess.ts): the same ones its route admitted it with.
@@ -25,13 +32,18 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
   Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis
     if (ended(admission, now)) return "session" as const
+    // A kept lease's window starts when this check started, on this Worker's clock, and runs `LEASE_MS`, never past
+    // what the database said was left of the session then (decision 0151 rule 9).
+    let until = now + LEASE_MS
     let role = admission.role
     if (admission.session !== null) {
       const live = yield* SessionStore.authority(admission.session, admission.alias)
       if (Option.isNone(live) || live.value.personId !== admission.principal) return "session" as const
       // A role GitHub hasn't confirmed lately renews nothing; the page's reconnect through the route starts its check.
-      if (!roleFresh(live.value.roleVerifiedAt, now, roleFreshMs)) return "unverified" as const
+      // Both times are the database's: a Worker clock skewed from it neither stretches nor cuts the freshness.
+      if (!roleFresh(live.value.roleVerifiedAt, live.value.serverNow, roleFreshMs)) return "unverified" as const
       role = live.value.role
+      until = now + Math.min(LEASE_MS, live.value.expiresAt - live.value.serverNow)
     }
     const actor: Actor = {
       subject: { kind: "person", id: admission.principal },
@@ -51,24 +63,24 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
           ),
         )
         if (Option.isNone(resolved)) return "unverified" as const
-        return mayRead(Option.some({ ...actor, role: resolved.value })) ? "keep" as const : "revoked" as const
+        return mayRead(Option.some({ ...actor, role: resolved.value })) ? ({ verdict: "keep", until } as const) : "revoked" as const
       }
       case "branch":
       case "terminal": {
         const branch = yield* branchAccess(Option.some(actor), basis.branchId)
         if (branch === undefined || !canView(branch.access)) return "revoked" as const
-        if (basis.kind === "branch") return branch.access === admission.access ? "keep" as const : "changed" as const
+        if (basis.kind === "branch") return branch.access === admission.access ? ({ verdict: "keep", until } as const) : "changed" as const
         if (!canAsk(actor)) return "revoked" as const
-        return (canEdit(branch.access) ? "write" : "read") === admission.access ? "keep" as const : "changed" as const
+        return (canEdit(branch.access) ? "write" : "read") === admission.access ? ({ verdict: "keep", until } as const) : "changed" as const
       }
       case "text": {
         const scoped = yield* scopeAccess(Option.some(actor), { run: basis.run })
         if (scoped === undefined || !canView(scoped.access)) return "revoked" as const
-        return scoped.access === admission.access ? "keep" as const : "changed" as const
+        return scoped.access === admission.access ? ({ verdict: "keep", until } as const) : "changed" as const
       }
     }
   }).pipe(
-    Effect.catchCause(() => Effect.succeed<Verdict>("unverified")),
+    Effect.catchCause(() => Effect.succeed<Checked>("unverified")),
     Effect.withSpan("socket.verdict"),
   )
 
@@ -109,7 +121,7 @@ export const checker = <E, R>(
         verdict(roles, admission, roleFreshMs).pipe(
           Effect.provide(branchRoles),
           Effect.provideService(Conversations.homeRepositoryNames, home),
-          Effect.catchCause(() => Effect.succeed<Verdict>("unverified")),
+          Effect.catchCause(() => Effect.succeed<Checked>("unverified")),
         ),
       within: <A, R2>(renewal: Effect.Effect<A, never, R2>) =>
         renewal.pipe(Effect.provide(database)) as Effect.Effect<A, unknown, Exclude<R2, SqlClient.SqlClient>>,

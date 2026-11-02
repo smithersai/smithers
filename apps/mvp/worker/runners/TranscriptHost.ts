@@ -41,7 +41,7 @@ export interface Ports<R, RC> {
   readonly sql: Store.Sql
   readonly storage: Storage<R>
   readonly sockets: Effect.Effect<ReadonlyArray<SocketAccess.HostSocket>, never, R>
-  readonly check: (admission: SocketAccess.Admission) => Effect.Effect<SocketAccess.Verdict, never, RC>
+  readonly check: (admission: SocketAccess.Admission) => Effect.Effect<SocketAccess.Checked, never, RC>
   /** Runs one renewal with what `check` needs (one Postgres client in the object). */
   readonly within: <A>(renewal: Effect.Effect<A, never, RC | R>) => Effect.Effect<A, unknown, R>
 }
@@ -117,13 +117,14 @@ export const make = <R, RC>(ports: Ports<R, RC>) => {
       const renewed: Array<Watcher> = []
       const ending: Array<readonly [SocketAccess.HostSocket, SocketAccess.Closing]> = []
       due.forEach((watcher, index) => {
-        const verdict = verdicts[index]!
+        const { verdict, until } = verdicts[index]!
         // A socket dropped while its check ran stays dropped.
         if (!decodeKept(watcher.socket.deserializeAttachment<unknown>()).pipe(Option.exists((kept) => "admission" in kept))) {
           return
         }
         if (verdict === "keep") {
-          const leaseUntil = SocketAccess.leaseFrom(watcher.admission, now)
+          // The window its check measured, from when that check started (decision 0151 rule 9).
+          const leaseUntil = until ?? SocketAccess.leaseFrom(watcher.admission, now)
           lease(watcher.socket, watcher.admission, leaseUntil)
           renewed.push({ ...watcher, leaseUntil })
         } else ending.push([watcher.socket, verdict])

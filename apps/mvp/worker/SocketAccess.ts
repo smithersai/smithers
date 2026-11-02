@@ -132,7 +132,8 @@ export const admit = (actor: Actor, basis: Basis, access: Admission["access"]) =
     if (actor.session !== undefined) {
       const found = yield* SessionStore.authority(actor.session, actor.alias ?? null)
       if (Option.isNone(found) || found.value.personId !== actor.subject.id) return { _tag: "ended" } as Admitted
-      if (!roleFresh(found.value.roleVerifiedAt, now, yield* roleFreshMs)) return { _tag: "stale" } as Admitted
+      // Both times are the database's, so a Worker clock skewed from it decides nothing (decision 0151 rule 9).
+      if (!roleFresh(found.value.roleVerifiedAt, found.value.serverNow, yield* roleFreshMs)) return { _tag: "stale" } as Admitted
       // The end on this Worker's clock: the lookup started at `now`, and the database said how long was left then
       // (decision 0151 rule 9), so a Worker clock skewed from the database's never lengthens the lease.
       expiresAt = now + (found.value.expiresAt - found.value.serverNow)
@@ -174,6 +175,19 @@ export const ended = (admission: Admission, now: number): boolean =>
  */
 export type Verdict = "keep" | "session" | "revoked" | "changed" | "unverified"
 
+/**
+ * A check's answer: a verdict, or a kept lease with its window, `until` (this Worker's clock): the check's start plus
+ * `LEASE_MS`, never past what the database said was left of the session (decision 0151 rule 9). A bare `"keep"` is
+ * leased from when the renewal ends.
+ */
+export type Checked = Verdict | { readonly verdict: "keep"; readonly until: number }
+
+/** A renewal's answer for one admission: its verdict, and for a kept lease the window its check measured. */
+export interface Renewed {
+  readonly verdict: Verdict
+  readonly until?: number
+}
+
 /** The close each ending verdict sends, and a socket from before leases (`legacy`): a code and a reason. */
 export const CLOSES = {
   session: { code: 4401, reason: "session ended" },
@@ -210,7 +224,7 @@ const authorityOf = (admission: Admission): string =>
 export const renew = <RC, R>(
   host: string,
   admissions: ReadonlyArray<Admission>,
-  check: (admission: Admission) => Effect.Effect<Verdict, never, RC>,
+  check: (admission: Admission) => Effect.Effect<Checked, never, RC>,
   within: <A>(effect: Effect.Effect<A, never, RC | R>) => Effect.Effect<A, unknown, R>,
 ) =>
   Effect.gen(function* () {
@@ -221,7 +235,7 @@ export const renew = <RC, R>(
       [...asked],
       ([key, admission]) =>
         check(admission).pipe(
-          Effect.timeoutOrElse({ duration: CHECK_TIMEOUT_MS, orElse: () => Effect.succeed<Verdict>("unverified") }),
+          Effect.timeoutOrElse({ duration: CHECK_TIMEOUT_MS, orElse: () => Effect.succeed<Checked>("unverified") }),
           Effect.map((verdict) => [key, verdict] as const),
         ),
       { concurrency: CHECK_CONCURRENCY },
@@ -229,14 +243,18 @@ export const renew = <RC, R>(
       Effect.timeoutOrElse({ duration: RENEW_DEADLINE_MS, orElse: () => Effect.succeed([]) }),
       Effect.catchCause(() => Effect.succeed([])),
     )
-    const verdicts = new Map<string, Verdict>(checked)
+    const verdicts = new Map<string, Checked>(checked)
     // A check that answered after the session's end renews nothing: the end is checked again now.
     const after = yield* Clock.currentTimeMillis
-    const answers = admissions.map((admission): Verdict =>
-      ended(admission, after) ? "session" : verdicts.get(authorityOf(admission)) ?? "unverified"
-    )
+    const answers = admissions.map((admission): Renewed => {
+      if (ended(admission, after)) return { verdict: "session" }
+      const answer = verdicts.get(authorityOf(admission)) ?? "unverified"
+      return typeof answer === "string"
+        ? { verdict: answer }
+        : { verdict: "keep", until: Math.min(answer.until, admission.expiresAt ?? Infinity) }
+    })
     const counts: Record<Verdict, number> = { keep: 0, session: 0, revoked: 0, changed: 0, unverified: 0 }
-    for (const outcome of answers) {
+    for (const { verdict: outcome } of answers) {
       counts[outcome]++
       yield* Metric.update(Metric.withAttributes(leases, { host, outcome }), 1)
     }
