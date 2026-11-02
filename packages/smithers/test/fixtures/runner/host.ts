@@ -75,6 +75,8 @@ export const start = async (token: string) => {
   const machines: Array<AgentRunner.Machine | undefined> = []
   /** Every claim request, in order. */
   const claimRequests: Array<typeof AgentRunner.ClaimRequest.Type> = []
+  /** How the git-credential route answers: `404` unless a test sets another status (decision 0148); its asks. */
+  const credential = { status: 404, retryAfter: undefined as number | undefined, asks: 0 }
   const server = createServer(async (request, response) => {
     const body = await read(request)
     if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { code: "authentication" })
@@ -108,6 +110,11 @@ export const start = async (token: string) => {
     }
     const row = rows.get(String(value.key))
     const holds = row !== undefined && row.state === "claimed" && row.claim === value.claim && row.held
+    if (request.url === AgentRunner.ROUTES.gitCredential) {
+      credential.asks++
+      if (credential.retryAfter !== undefined) response.setHeader("retry-after", String(credential.retryAfter))
+      return json(response, credential.status, { code: credential.status === 404 ? "not_found" : "refused" })
+    }
     if (request.url === AgentRunner.ROUTES.heartbeat) {
       if (row !== undefined) {
         row.heartbeats++
@@ -159,6 +166,7 @@ export const start = async (token: string) => {
     rows,
     machines,
     claimRequests,
+    credential,
     /** Queues generation `generation` of the step `origin` with `task`. */
     enqueue: (
       task: AgentRunner.Task,

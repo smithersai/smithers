@@ -158,6 +158,8 @@ export interface ScriptedGitHub {
   now: number
   /** The installation tokens GitHub minted, newest last, with what each was asked for. */
   readonly minted: Array<{ readonly token: string; readonly body: unknown }>
+  /** The installation tokens revoked with `DELETE /installation/token`, in order. */
+  readonly revoked: Array<string>
   /** A user token GitHub accepts, for `login`. */
   readonly userToken: (login: string) => Redacted.Redacted<string>
   /** Revokes a user token: GitHub answers 401 for it from now on. */
@@ -994,6 +996,13 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const body: unknown = raw === undefined || raw === "" ? undefined : JSON.parse(raw)
       const fault = github.faults.findIndex((candidate) => candidate.match(method, url.pathname))
       const armed = fault === -1 ? undefined : github.faults.splice(fault, 1)[0]
+      // An installation token revoking itself: GitHub refuses it from then on.
+      if (armed === undefined && method === "DELETE" && url.pathname === "/installation/token") {
+        const bearer = request.headers["authorization"]?.replace(/^Bearer /, "") ?? ""
+        if (!installationTokens.delete(bearer)) return Effect.succeed(HttpClientResponse.fromWeb(request, json({ message: "Bad credentials" }, 401)))
+        github.revoked.push(bearer)
+        return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
+      }
       if (armed?.hold !== undefined) return Effect.promise(armed.hold).pipe(Effect.andThen(respond(request, url, method, who, body, armed)))
       return respond(request, url, method, who, body, armed)
     })
@@ -1071,6 +1080,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     private: false,
     now: Date.now(),
     minted: [],
+    revoked: [],
     userToken: (login) => {
       const token = `ghu_scripted_${(users += 1)}`
       userTokens.set(token, login)

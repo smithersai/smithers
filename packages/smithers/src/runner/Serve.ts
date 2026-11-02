@@ -174,7 +174,16 @@ export const loop = (
         })
       )
       if (claimed._tag === "Failure") {
-        yield* Effect.logWarning("runner.claim").pipe(Effect.annotateLogs({ outcome: claimed.failure.code }))
+        if (claimed.failure.status === 403) {
+          // A runner registered before registration proved access to its repository (decision 0148).
+          yield* Effect.logError("runner.claim").pipe(Effect.annotateLogs({
+            outcome: "not_authorized",
+            hint: "the host refuses this runner: an Admin of its repository registers it again " +
+              "(PUT /api/repos/<owner>/<name>/runners/<runner> with the same tokenSha256)"
+          }))
+        } else {
+          yield* Effect.logWarning("runner.claim").pipe(Effect.annotateLogs({ outcome: claimed.failure.code }))
+        }
         yield* Effect.sleep(`${backoff} seconds`)
         backoff = Math.min(30, backoff * 2)
         continue
