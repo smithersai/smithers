@@ -191,6 +191,31 @@ describe("signing in at an alias", () => {
     expect(h.count({ route: "arrive", outcome: "signed_in" })).toBe(1)
   })
 
+  // Device privacy (devpriv FINAL, step 1): an alias session has no end of its own (host_sessions has no expiry); the
+  // answer at the alias reads the alias session it holds and says its parent's end, with the server's now.
+  test("at an alias, the answer carries its parent session's end and the server's now", async () => {
+    const h = await harness()
+    const home = (await h.signInAs()).cookies
+    const pressed = await h.press()
+    const handed = await h.handOff(pressed.location, home)
+    const arrived = await h.arrive(h.codeOf(handed), pressed.cookies)
+    const alias = { smithers_session: setCookies(arrived)["smithers_session"]!.value }
+    const parentEnd = async () => Number((await sql((client) =>
+      client<{ readonly expiresAt: string }>`SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt" FROM sessions`))[0]!.expiresAt)
+    const before = Date.now()
+    const answer = await h.sessionAt(ALIAS, alias) as SessionState & { readonly expiresAt?: number; readonly serverNow?: number }
+    expect(answer).toMatchObject({ signedIn: true, login: "octocat", expiresAt: await parentEnd() })
+    expect(answer.serverNow).toBeGreaterThanOrEqual(before)
+    // The parent's end moves, and the alias's answer follows it; home says the same end.
+    await sql((client) => client`UPDATE sessions SET expires_at = expires_at - interval '2 days'`)
+    expect((await h.sessionAt(ALIAS, alias) as { readonly expiresAt?: number }).expiresAt).toBe(await parentEnd())
+    expect((await h.sessionAt(HOME, home) as { readonly expiresAt?: number }).expiresAt).toBe(await parentEnd())
+    // The alias session signed out on its own: the answer there is signed out, with no end, while home's stays.
+    await sql((client) => client`UPDATE host_sessions SET revoked_at = now()`)
+    expect(await h.sessionAt(ALIAS, alias)).toEqual({ signedIn: false, available: true, hostedModel: false })
+    expect(await h.sessionAt(HOME, home)).toMatchObject({ signedIn: true, expiresAt: await parentEnd() })
+  })
+
   test("signed out everywhere, GitHub's one callback at home finishes both", async () => {
     const h = await harness()
     const pressed = await h.press()
