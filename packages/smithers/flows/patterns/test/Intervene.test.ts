@@ -17,7 +17,7 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Intervene from "../src/Intervene.ts"
 import * as Pattern from "../src/Pattern.ts"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 import { execute, executeExit } from "./Execute.ts"
 import { payloadOf } from "./Graphs.ts"
 

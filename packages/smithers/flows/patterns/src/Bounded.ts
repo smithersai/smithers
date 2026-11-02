@@ -18,7 +18,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import type * as Types from "effect/Types"
 import * as Compose from "./internal/Compose.vibe"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "./PatternError.vibe"
 
 /**
  * Configuration for {@link all}.

@@ -15,7 +15,7 @@ import * as Graph from "@smthrs/flow/Graph"
 import * as Effects from "@smthrs/plan/Effects"
 import * as Node from "@smthrs/plan/Node"
 import type * as Schema from "effect/Schema"
-import { PatternError } from "../PatternError.ts"
+import { PatternError } from "../PatternError.vibe"
 
 /**
  * @since 0.1.0

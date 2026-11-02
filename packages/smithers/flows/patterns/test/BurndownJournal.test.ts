@@ -25,7 +25,7 @@ import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { describe, expect, it } from "vitest"
 import * as Burndown from "../src/Burndown.ts"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 
 interface Issue {
   readonly id: string

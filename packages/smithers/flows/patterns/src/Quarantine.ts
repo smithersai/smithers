@@ -15,7 +15,7 @@
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Compose from "./internal/Compose.vibe"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "./PatternError.vibe"
 
 /**
  * What a failing member does to its siblings.

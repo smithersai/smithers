@@ -55,7 +55,7 @@
     "./Optimizer": "./src/Optimizer.ts",
     "./Panel": "./src/Panel.ts",
     "./Pattern": "./src/Pattern.ts",
-    "./PatternError": "./src/PatternError.ts",
+    "./PatternError": "./src/PatternError.vibe",
     "./Quarantine": "./src/Quarantine.ts",
     "./Recursion": "./src/Recursion.ts",
     "./ReviewLoop": "./src/ReviewLoop.ts",

@@ -9,7 +9,7 @@
 import * as Stall from "@smthrs/flow/Stall"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import { PatternError } from "../PatternError.ts"
+import { PatternError } from "../PatternError.vibe"
 
 /**
  * The operational option: a {@link Stall.Options} plus the signals a round

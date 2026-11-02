@@ -10,7 +10,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { expect, expectTypeOf } from "vitest"
 import * as MergeQueue from "../src/MergeQueue.ts"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 import { execute } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 

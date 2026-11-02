@@ -19,7 +19,7 @@ import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.vibe"
 import * as Stalling from "./internal/Stalling.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "./PatternError.vibe"
 
 /**
  * One unit of delegated work named by the plan.
