@@ -6,13 +6,26 @@
 // the extraction of `repositoryReadable` changes none of them. The list route's one documented difference: a runner
 // registered on the repository reads its issues with its token.
 import { Effect, Layer, Option } from "effect"
+import { SqlClient } from "effect/sql"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { digestSync } from "@smthrs/crypto"
-import { COMMENTS_SHAPE_ROUTE, issuesRoute, ITEMS_SHAPE_ROUTE, ITEM_SUMMARIES_SHAPE_ROUTE } from "../../src/features/issues/contract.ts"
-import type { Role } from "../../src/features/auth/contract.ts"
+import {
+  COMMENTS_SHAPE_ROUTE,
+  issuesRoute,
+  ITEMS_SHAPE_ROUTE,
+  ITEM_SUMMARIES_SHAPE_ROUTE,
+  SYNC_SHAPE_ROUTE,
+  TRIAGE_SETTINGS_SHAPE_ROUTE,
+} from "../../src/features/issues/contract.ts"
+import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULL_RECEIPT_HEADER, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
+import { WORK_LINKS_SHAPE_ROUTE } from "../../src/features/issues/work.ts"
+import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type Role, type SessionState } from "../../src/features/auth/contract.ts"
 import * as Actor from "../Actor.ts"
-import { testFile } from "../test/harness.ts"
+import * as RunCredentials from "../RunCredentials.ts"
+import { signedIn as signedInAs, testFile } from "../test/harness.ts"
+import { cookie, signInHarness } from "../test/signIn.ts"
+import * as Metrics from "./Metrics.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import { reset, sql } from "./test/fixtures.ts"
 import { githubHarness, member } from "./test/harness.ts"
@@ -113,20 +126,23 @@ const MATRIX: ReadonlyArray<Cell> = [
   { name: "elsewhere, invalid request", repo: ELSEWHERE, visibility: "private", viewer: { kind: "signed_out" }, invalid: true, shapes: "404 not_found", list: "404 not_found" },
 ]
 
-/** `RepoRoles` as GitHub answers `viewer`'s role on every repository. */
-const rolesFor = (viewer: Viewer): RepoRoles.RepoRoles<never> => ({
+/** `RepoRoles` as GitHub answers `viewer`'s role on every repository, counting each read. */
+const rolesFor = (viewer: Viewer, calls: { roles: number }): RepoRoles.RepoRoles<never> => ({
   repository: OWN,
   resolve: (actor, target) =>
-    viewer.kind === "person_cant_act"
-      ? Effect.fail(new RepoRoles.RoleRefused({ code: "app_not_installed" }))
-      : viewer.kind === "person_roles_down"
-      ? Effect.fail(new RepoRoles.RoleRefused({ code: "github_unavailable", retryAfterSeconds: 7 }))
-      : Effect.succeed({
-        role: viewer.kind === "person" ? viewer.role : null,
-        held: viewer.kind === "person" && viewer.role !== null
-          ? Option.some({ repoId: target.id, personId: actor.subject.id, role: viewer.role })
-          : Option.none(),
-      }),
+    Effect.suspend(() => {
+      calls.roles++
+      return viewer.kind === "person_cant_act"
+        ? Effect.fail(new RepoRoles.RoleRefused({ code: "app_not_installed" }))
+        : viewer.kind === "person_roles_down"
+        ? Effect.fail(new RepoRoles.RoleRefused({ code: "github_unavailable", retryAfterSeconds: 7 }))
+        : Effect.succeed({
+          role: viewer.kind === "person" ? viewer.role : null,
+          held: viewer.kind === "person" && viewer.role !== null
+            ? Option.some({ repoId: target.id, personId: actor.subject.id, role: viewer.role })
+            : Option.none(),
+        })
+    }),
 })
 
 const seed = async (cell: Cell) => {
@@ -135,6 +151,11 @@ const seed = async (cell: Cell) => {
     runtime,
     `INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at, source_updated_at, fetched_at)
     VALUES ('${repo.id}#7', '${repo.id}', 7, 'issue', 7, 'Seven', 'Body', 'open', now(), now(), now(), now())`,
+  )
+  await sql(
+    runtime,
+    `INSERT INTO comments (id, repo_id, item_id, github_id, body, created_at, updated_at, source_updated_at, fetched_at)
+    VALUES ('${repo.id}/comment/70', '${repo.id}', '${repo.id}#7', 70, 'Seventy', now(), now(), now(), now())`,
   )
   await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${repo.id}', 1, ${cell.visibility === "private"})`)
   if (cell.appAbsent === true) {
@@ -149,32 +170,40 @@ const seed = async (cell: Cell) => {
   }
 }
 
+/** `base`, counting each request's resolution of who asks. */
+const countedSessions = (base: Layer.Layer<Actor.Sessions>, calls: { sessions: number }) =>
+  Layer.effect(
+    Actor.Sessions,
+    Effect.map(Effect.service(Actor.Sessions), (sessions) =>
+      Actor.Sessions.of({ ...sessions, resolve: Effect.andThen(Effect.sync(() => void calls.sessions++), sessions.resolve) })),
+  ).pipe(Layer.provide(base))
+
 const harnessFor = async (cell: Cell) => {
   const github = scriptedGitHub(cell.repo.owner, cell.repo.name)
   github.private = cell.visibility === "private"
   const viewer = cell.viewer
-  return githubHarness(runtime, {
+  const calls = { roles: 0, sessions: 0 }
+  const base = viewer.kind === "signed_out"
+    ? Actor.signedOut
+    : viewer.kind === "sessions_down"
+    ? Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }))
+    : signedInAs({ ...member(), role: viewer.kind === "person" ? viewer.role : "member" })
+  const h = await githubHarness(runtime, {
     own: OWN,
     github,
     allowed: ACTED_ON,
-    roles: rolesFor(viewer),
+    roles: rolesFor(viewer, calls),
     ...(cell.noApp === true ? { app: null } : {}),
-    ...(viewer.kind === "signed_out"
-      ? { actor: null }
-      : viewer.kind === "sessions_down"
-      ? { sessions: Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) })) }
-      : { actor: { ...member(), role: viewer.kind === "person" ? viewer.role : "member" } }),
+    sessions: countedSessions(base, calls),
   })
+  return { ...h, calls }
 }
 
-/** A response as the matrix writes it: its status, a refusal's code, and how long it asks to wait. */
+/** A response as the matrix writes it: its status, a refusal's code, and how long it asks to wait; and a 200's body. */
 const answerOf = async (response: Response) => {
   const wait = response.headers.get("retry-after")
-  if (response.status === 200) {
-    await response.arrayBuffer()
-    return "200"
-  }
   const body = await response.text()
+  if (response.status === 200) return { answer: "200", body, receipt: response.headers.get(PULL_RECEIPT_HEADER) }
   const code = (() => {
     try {
       return (JSON.parse(body) as { code?: string }).code
@@ -182,37 +211,218 @@ const answerOf = async (response: Response) => {
       return undefined
     }
   })()
-  return [String(response.status), code, wait === null ? undefined : `retry-after=${wait}`].filter((part) => part !== undefined).join(" ")
+  return {
+    answer: [String(response.status), code, wait === null ? undefined : `retry-after=${wait}`].filter((part) => part !== undefined).join(" "),
+    body,
+    receipt: null,
+  }
 }
 
 const repoParam = (repo: Repo) => `repo=${encodeURIComponent(`${repo.owner}/${repo.name}`)}`
 
-/** The repository shapes a page reads: the list's summaries, and the issue page's item and comments. */
-const shapeReaders = (cell: Cell): ReadonlyArray<readonly [string, string]> => {
+/** One repository shape a page reads: its name, its path, the table its metric counts under, and whether it refreshes a pull. */
+interface Reader {
+  readonly reader: string
+  readonly path: string
+  readonly table: string
+  readonly refresh?: boolean
+  /** It takes an item number, or a pull's to refresh: an invalid request names one that can't be. */
+  readonly numbered?: boolean
+}
+
+/** Every repository shape (Api.ts REPOSITORY_SHAPES), the issue page's numbered ones, and the pull shapes' refresh paths. */
+const shapeReaders = (cell: Cell): ReadonlyArray<Reader> => {
   const number = cell.invalid === true ? "not-a-number" : "7"
-  return [
-    ["summaries", `${ITEM_SUMMARIES_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=-1`],
-    ["items", `${ITEMS_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=-1`],
-    ["issue item", `${ITEMS_SHAPE_ROUTE}?${repoParam(cell.repo)}&number=${number}&offset=-1`],
-    ["issue comments", `${COMMENTS_SHAPE_ROUTE}?${repoParam(cell.repo)}&number=${number}&offset=-1`],
+  const at = (route: string, extra = "") => `${route}?${repoParam(cell.repo)}${extra}&offset=-1`
+  const all: ReadonlyArray<Reader> = [
+    { reader: "summaries", path: at(ITEM_SUMMARIES_SHAPE_ROUTE), table: "items" },
+    { reader: "items", path: at(ITEMS_SHAPE_ROUTE), table: "items" },
+    { reader: "comments", path: at(COMMENTS_SHAPE_ROUTE), table: "comments" },
+    { reader: "sync", path: at(SYNC_SHAPE_ROUTE), table: "github_sync" },
+    { reader: "triage settings", path: at(TRIAGE_SETTINGS_SHAPE_ROUTE), table: "triage_settings" },
+    { reader: "pulls", path: at(PULLS_SHAPE_ROUTE), table: "pulls" },
+    { reader: "pull commits", path: at(PULL_COMMITS_SHAPE_ROUTE), table: "pull_commits" },
+    { reader: "reviews", path: at(REVIEWS_SHAPE_ROUTE), table: "reviews" },
+    { reader: "checks", path: at(CHECKS_SHAPE_ROUTE), table: "runs" },
+    { reader: "work links", path: at(WORK_LINKS_SHAPE_ROUTE), table: "work_links" },
+    { reader: "issue item", path: at(ITEMS_SHAPE_ROUTE, `&number=${number}`), table: "items", numbered: true },
+    { reader: "issue comments", path: at(COMMENTS_SHAPE_ROUTE, `&number=${number}`), table: "comments", numbered: true },
+    { reader: "refresh pull commits", path: at(PULL_COMMITS_SHAPE_ROUTE, `&refresh=${number}`), table: "pull_commits", refresh: true, numbered: true },
+    { reader: "refresh reviews", path: at(REVIEWS_SHAPE_ROUTE, `&refresh=${number}`), table: "reviews", refresh: true, numbered: true },
+    { reader: "refresh checks", path: at(CHECKS_SHAPE_ROUTE, `&refresh=${number}`), table: "runs", refresh: true, numbered: true },
   ]
+  // An invalid request names a number that can't be: only the readers that take one.
+  return cell.invalid === true ? all.filter((reader) => reader.numbered === true) : all
 }
 
 const listPath = (cell: Cell) => `${issuesRoute(cell.repo.owner, cell.repo.name)}?state=all&limit=${cell.invalid === true ? "lots" : "5"}`
+
+const values = (body: string) =>
+  (JSON.parse(body) as Array<{ value?: Record<string, unknown> }>).flatMap((row) => (row.value === undefined ? [] : [row.value]))
+
+/** A refusal at the deployment or the request's own validation: nothing about the viewer is read. */
+const beforeViewer = (answer: string) => ["404 not_found", "404 app_not_installed", "400 invalid"].includes(answer)
 
 describe("one access matrix for every reader of a repository's issues", () => {
   test.each(MATRIX)("$name", async (cell) => {
     await seed(cell)
     const h = await harnessFor(cell)
     const headers: Record<string, string> = cell.runnerOn === undefined ? {} : { authorization: `Bearer ${RUNNER_TOKEN}` }
+    const readers = shapeReaders(cell)
     const answers: Record<string, string> = {}
-    // An invalid request names an item number that can't be: only the issue page's shapes take one.
-    const readers = shapeReaders(cell).filter(([reader]) => cell.invalid !== true || reader.startsWith("issue "))
-    for (const [reader, path] of readers) answers[reader] = await answerOf(await h.fetch(path, { headers }))
-    answers.list = await answerOf(await h.fetch(listPath(cell), { headers }))
+    const bodies: Record<string, string> = {}
+    const receipts: Record<string, string | null> = {}
+    for (const { reader, path } of readers) {
+      const answered = await answerOf(await h.fetch(path, { headers }))
+      answers[reader] = answered.answer
+      bodies[reader] = answered.body
+      receipts[reader] = answered.receipt
+    }
+    const listed = await answerOf(await h.fetch(listPath(cell), { headers }))
+    answers.list = listed.answer
     expect(answers).toEqual({
-      ...Object.fromEntries(readers.map(([reader]) => [reader, cell.shapes])),
+      ...Object.fromEntries(readers.map(({ reader }) => [reader, cell.shapes])),
       list: cell.list,
     })
+
+    // What was read to answer: nothing of the viewer before the deployment's checks and the request's own pass; once
+    // they pass, who asks is resolved once per request, and a person's role read once per request.
+    const reached = readers.filter(() => !beforeViewer(cell.shapes)).length + (beforeViewer(cell.list) ? 0 : 1)
+    const personal = cell.viewer.kind !== "signed_out" && cell.viewer.kind !== "sessions_down"
+    // A request carrying a runner's token is read by its credential, which reads as nobody: no role is read for it.
+    const asPerson = personal && cell.runnerOn === undefined
+    expect(h.calls).toEqual({ sessions: reached, roles: asPerson ? reached : 0 })
+    if (beforeViewer(cell.shapes)) {
+      // Refused before anyone was asked about: GitHub never asked, nothing started.
+      expect(h.github.calls).toEqual([])
+      expect(h.starts).toEqual([])
+    } else {
+      // Reconcile's admission runs beside the viewer's check for items and summaries, refused or not.
+      expect(h.starts.some((start) => start.flow === "github/Reconcile")).toBe(true)
+    }
+    // A pull's refresh starts its Apply only once the viewer may read (one execution for pull 7, whichever of its
+    // three shapes asked); its answer carries the refresh's receipt.
+    const refreshed = h.starts.filter((start) => start.flow === "github/Apply").length
+    expect(refreshed).toBe(cell.shapes === "200" ? 1 : 0)
+    for (const { reader, refresh } of readers) {
+      if (refresh === true) expect([reader, receipts[reader] !== null]).toEqual([reader, cell.shapes === "200"])
+    }
+
+    // The shapes count a refusal at the App's absence or the viewer's under their table, a refresh's viewer refusal
+    // excepted; never a deployment's not_found or an invalid request.
+    const status = cell.shapes.split(" ")[0]!
+    const counted = (reader: Reader) =>
+      cell.shapes === "404 app_not_installed" || (!beforeViewer(cell.shapes) && cell.shapes !== "200" && reader.refresh !== true)
+    // (A served read is counted by the shape proxy itself, as every 200 is.)
+    if (cell.shapes !== "200") {
+      for (const table of new Set(readers.map((reader) => reader.table))) {
+        const expected = readers.filter((reader) => reader.table === table && counted(reader)).length
+        expect([table, h.count(Metrics.shapes, { table, status, live: "false" })]).toEqual([table, expected])
+      }
+    }
+    const listOutcome = cell.list === "200" ? "listed" : beforeViewer(cell.list) ? cell.list.split(" ")[1]! : "refused"
+    expect(h.count(Metrics.issueLists, { outcome: listOutcome })).toBe(1)
+
+    // A read that answers carries the repository's rows (Electric sends values as text).
+    if (cell.list === "200") expect((JSON.parse(listed.body) as Array<{ number: number }>).map((issue) => issue.number)).toEqual([7])
+    if (cell.shapes === "200") {
+      expect(values(bodies["summaries"]!).map((row) => row.title)).toEqual(["Seven"])
+      expect(values(bodies["issue item"]!).map((row) => [row.number, row.title, row.body])).toEqual([["7", "Seven", "Body"]])
+      expect(values(bodies["issue comments"]!).map((row) => row.body)).toEqual(["Seventy"])
+    }
+  }, 60_000)
+})
+
+// Sign-in's own sessions (worker/SignIn.ts): a real signed session cookie, resolved through its store, alone and beside
+// a run credential, valid or forged, and with a device header naming its person, another, or no device data.
+describe("a real signed session cookie reads every reader as its person", () => {
+  const cell: Cell = { name: "own private", repo: OWN, visibility: "private", viewer: { ...person, role: "member" }, shapes: "200", list: "200" }
+
+  const signedInBrowser = async () => {
+    const signIn = await signInHarness(runtime)
+    const { cookies } = await signIn.signInAs()
+    const identity = await signIn.session(cookies) as SessionState
+    if (!identity.signedIn) throw new Error("expected a signed-in person")
+    const personId = identity.personId!
+    const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      Effect.orDie(client<{ readonly id: string }>`SELECT id FROM sessions WHERE person_id = ${personId}`)))
+    // A run credential minted in that session, as the credential route mints one for the person's agent.
+    const credential = await runtime.runPromise(Effect.gen(function* () {
+      const credentials = yield* RunCredentials.RunCredentials
+      const claims = RunCredentials.claimsFor(
+        { subject: { kind: "person", id: personId }, role: "member", session: row!.id },
+        crypto.randomUUID(),
+        { flow: "chat/Answer" },
+        Date.now(),
+      )
+      if (claims._tag === "Failure") return yield* Effect.die("no claims")
+      return yield* credentials.sign(claims.success)
+    }).pipe(Effect.provide(signIn.sessions)))
+    return { signIn, cookies, personId, credential }
+  }
+
+  test.each([
+    ["the cookie alone", (_: string, __: string) => ({}), "200"],
+    ["the device naming its person", (personId: string, __: string) => ({ [DEVICE_PERSON_HEADER]: personId }), "200"],
+    ["a page with no device data", (_: string, __: string) => ({ [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA }), "200"],
+    ["the device naming another person", (_: string, __: string) => ({ [DEVICE_PERSON_HEADER]: "person-someone-else" }), "401 authentication"],
+    ["a valid run credential beside it", (_: string, credential: string) => ({ authorization: `Bearer ${credential}` }), "200"],
+    ["a forged credential beside it", (_: string, __: string) => ({ authorization: "Bearer forged" }), "401 authentication"],
+    ["a valid credential and another person's device", (_: string, credential: string) => ({ authorization: `Bearer ${credential}`, [DEVICE_PERSON_HEADER]: "person-someone-else" }), "401 authentication"],
+  ] as const)("%s", async (_name, extra, expected) => {
+    await seed(cell)
+    const browser = await signedInBrowser()
+    const calls = { roles: 0, sessions: 0 }
+    const github = scriptedGitHub(OWN.owner, OWN.name)
+    github.private = true
+    const h = await githubHarness(runtime, { own: OWN, github, allowed: ACTED_ON, roles: rolesFor(cell.viewer, calls), sessions: browser.signIn.sessions })
+    const headers = { cookie: cookie(browser.cookies), ...extra(browser.personId, browser.credential) }
+    const answers: Record<string, string> = {}
+    for (const { reader, path } of shapeReaders(cell).filter(({ refresh }) => refresh !== true)) {
+      answers[reader] = (await answerOf(await h.fetch(path, { headers }))).answer
+    }
+    answers.list = (await answerOf(await h.fetch(listPath(cell), { headers }))).answer
+    expect(new Set(Object.values(answers))).toEqual(new Set([expected]))
+  }, 60_000)
+
+  test("without the cookie the same requests are signed out", async () => {
+    await seed(cell)
+    const browser = await signedInBrowser()
+    const github = scriptedGitHub(OWN.owner, OWN.name)
+    github.private = true
+    const h = await githubHarness(runtime, { own: OWN, github, allowed: ACTED_ON, roles: rolesFor(cell.viewer, { roles: 0 }), sessions: browser.signIn.sessions })
+    expect((await answerOf(await h.fetch(listPath(cell)))).answer).toBe("401 authentication")
+    expect((await answerOf(await h.fetch(`${ITEMS_SHAPE_ROUTE}?${repoParam(OWN)}&offset=-1`))).answer).toBe("401 authentication")
+  }, 60_000)
+})
+
+// A pull shape with `?refresh=` decides who may read once, before both the refresh and the read: neither runs on a
+// refusal, and an answer that would change during the request is not asked again (the single-check contract).
+describe("a pull's refresh is authorized once, before both the refresh and the read", () => {
+  test.each([PULL_COMMITS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE, CHECKS_SHAPE_ROUTE])("%s", async (route) => {
+    const cell: Cell = { name: "own private", repo: OWN, visibility: "private", viewer: { ...person, role: "member" }, shapes: "200", list: "200" }
+    await seed(cell)
+    // A role that is held at the first read and gone at any later one.
+    let reads = 0
+    const roles: RepoRoles.RepoRoles<never> = {
+      repository: OWN,
+      resolve: (actor, target) => Effect.sync(() => {
+        reads++
+        const role = reads === 1 ? "member" as const : null
+        return { role, held: role === null ? Option.none() : Option.some({ repoId: target.id, personId: actor.subject.id, role }) }
+      }),
+    }
+    const github = scriptedGitHub(OWN.owner, OWN.name)
+    github.private = true
+    const h = await githubHarness(runtime, { own: OWN, github, allowed: ACTED_ON, roles })
+    const answered = await answerOf(await h.fetch(`${route}?${repoParam(OWN)}&refresh=7&offset=-1`))
+    expect([answered.answer, answered.receipt !== null]).toEqual(["200", true])
+    expect(reads).toBe(1)
+    expect(h.starts.filter((start) => start.flow === "github/Apply")).toHaveLength(1)
+    // Refused at that one check: no refresh starts, nothing is read.
+    const refused = await answerOf(await h.fetch(`${route}?${repoParam(OWN)}&refresh=7&offset=-1`))
+    expect(refused.answer).toBe("403 forbidden")
+    expect(reads).toBe(2)
+    expect(h.starts.filter((start) => start.flow === "github/Apply")).toHaveLength(1)
   }, 60_000)
 })
