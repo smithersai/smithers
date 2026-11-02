@@ -417,8 +417,8 @@ export const showMessage = (id: string) => Effect.gen(function* () {
   const position = rows.findIndex((row) => row.id === id || `unsent:${row.id}` === id)
   if (position === -1) return
   const now = Option.getOrThrow(yield* shown.history.get(HISTORY))
-  const limit = Math.max(now.limit, rows.length - position + store.pageSize)
-  if (limit === now.limit) return
+  if (position >= rows.length - now.limit) return
+  const limit = rows.length - position + store.pageSize
   yield* shown.latest.setWindow({ limit }).pipe(Effect.orDie, Effect.forkIn(store.scope, { startImmediately: true }))
   yield* shown.history.update(HISTORY, (history) => {
     history.limit = limit
