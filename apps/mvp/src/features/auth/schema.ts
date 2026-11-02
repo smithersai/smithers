@@ -14,6 +14,8 @@ export const SessionState = Schema.Union([
     role: Schema.NullOr(Schema.Literals(ROLES)),
     hostedModel: Schema.optional(Schema.Boolean),
     install: Schema.optional(Schema.String),
+    expiresAt: Schema.optional(Schema.Number),
+    serverNow: Schema.optional(Schema.Number),
   }),
 ])
 

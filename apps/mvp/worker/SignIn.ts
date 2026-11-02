@@ -78,6 +78,11 @@ export class RoleChecks extends Context.Service<
 export interface Signed {
   readonly actor: Actor.Actor
   readonly login: string
+  /**
+   * When the session the request presented ends, epoch milliseconds (devpriv FINAL step 1): its home session's end,
+   * which an alias session shares. None for local development's people, who have no session.
+   */
+  readonly expiresAt?: number
 }
 
 /** Sign-in's services when it is configured: what `auth/RecheckRole` needs, and the lifetimes. */
@@ -401,6 +406,7 @@ export const make = <E, R>(
           session: live.value.home ?? live.value.id,
         },
         login: live.value.login,
+        expiresAt: live.value.expiresAt,
       })
     }).pipe(Effect.withSpan("auth.resolve"))
 
@@ -915,6 +921,9 @@ export const make = <E, R>(
           role: signed.value.actor.role,
           hostedModel: hostedModel && Actor.canAsk(signed.value.actor),
           ...(install === undefined ? {} : { install }),
+          // Until when the session is live, and this server's now, so a tab counts down from when it asked.
+          ...(signed.value.expiresAt === undefined ? {} : { expiresAt: signed.value.expiresAt }),
+          serverNow: yield* Clock.currentTimeMillis,
         }
         : { signedIn: false, available: Option.isSome(setup) || options.fallback !== undefined, hostedModel }
       return HttpServerResponse.jsonUnsafe(state, { status: 200, headers: noStore })

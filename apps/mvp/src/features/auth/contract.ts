@@ -142,6 +142,10 @@ export type SessionState =
     readonly role: Role | null
     readonly hostedModel?: boolean
     readonly install?: string
+    /** When the session ends, epoch milliseconds on the server's clock; none for a session that has no end, as in local development. */
+    readonly expiresAt?: number
+    /** The server's clock when it answered, epoch milliseconds: a tab's deadline is `sentAt + (expiresAt - serverNow)`. */
+    readonly serverNow?: number
   }
 
 /** How a tab's session check ended: ChatApi said signed in or signed out, or couldn't say (`unreachable`). */

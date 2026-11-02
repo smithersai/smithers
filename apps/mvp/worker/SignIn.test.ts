@@ -260,11 +260,79 @@ describe("the callback", () => {
       hostedModel: false,
       // Where Install goes: the App's installation, by GITHUB_APP_SLUG (ruling AUTH-8).
       install: "https://github.com/apps/smithers/installations/new",
+      // Until when the session is live, and the server's clock (devpriv FINAL step 1).
+      expiresAt: expect.any(Number),
+      serverNow: expect.any(Number),
     } satisfies SessionState)
     expect(h.github.repositories).toEqual(["smithersai/smithers"])
     const [line] = h.line("auth.callback")
     expect(line!.annotations).toMatchObject({ outcome: "signed_in", role: "member", personId: session!.personId })
     expect(h.count({ route: "callback", outcome: "signed_in" })).toBe(1)
+  })
+
+  // Device privacy (devpriv FINAL, step 1): the answer says until when the session is live, and the server's own
+  // clock, so a tab can count down `expiresAt - serverNow` from when it sent, whatever its own clock says.
+  test("a signed-in answer carries its session's end and the server's now; a signed-out one carries neither", async () => {
+    const h = await signInHarness(runtime)
+    const { cookies } = await h.signInAs()
+    const [row] = await query((sql) =>
+      sql<{ readonly expiresAt: string }>`SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt" FROM sessions`)
+    const before = Date.now()
+    const answer = await h.session(cookies) as SessionState & { readonly expiresAt?: number; readonly serverNow?: number }
+    const after = Date.now()
+    expect(answer).toMatchObject({ signedIn: true, expiresAt: Number(row!.expiresAt) })
+    expect(answer.serverNow).toBeGreaterThanOrEqual(before)
+    expect(answer.serverNow).toBeLessThanOrEqual(after)
+    expect(answer.expiresAt! - answer.serverNow!).toBeGreaterThan(0)
+    // The server's clock, not the browser's: an hour later on the server is an hour later in the answer.
+    h.advance(60 * 60 * 1000)
+    const later = await h.session(cookies) as { readonly expiresAt?: number; readonly serverNow?: number }
+    expect(later.serverNow).toBeGreaterThanOrEqual(before + 60 * 60 * 1000)
+    expect(later.expiresAt).toBe(answer.expiresAt)
+    // The session's end moves when the server's row does.
+    await query((sql) => sql`UPDATE sessions SET expires_at = expires_at - interval '1 day'`)
+    expect((await h.session(cookies) as { readonly expiresAt?: number }).expiresAt).toBe(answer.expiresAt! - 24 * 60 * 60 * 1000)
+    const signedOut = await h.session({}) as Record<string, unknown>
+    expect(signedOut.signedIn).toBe(false)
+    expect(signedOut).not.toHaveProperty("expiresAt")
+    expect(signedOut).not.toHaveProperty("serverNow")
+  })
+
+  test("two sessions with different ends each answer with their own", async () => {
+    const h = await signInHarness(runtime)
+    const first = (await h.signInAs()).cookies
+    const second = (await h.signInAs()).cookies
+    // The first session ends in 3 days, the second in 9: each answer says its own row's end, never the other's.
+    await query((sql) => sql`
+      UPDATE sessions SET expires_at = now() + CASE WHEN id = (SELECT id FROM sessions ORDER BY created_at, id LIMIT 1)
+        THEN interval '3 days' ELSE interval '9 days' END`)
+    const ends = (await query((sql) =>
+      sql<{ readonly expiresAt: string }>`
+        SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt" FROM sessions ORDER BY created_at, id`))
+      .map((row) => Number(row.expiresAt))
+    expect(ends).toHaveLength(2)
+    expect(ends[0]).not.toBe(ends[1])
+    expect(await h.session(first)).toMatchObject({ signedIn: true, expiresAt: ends[0] })
+    expect(await h.session(second)).toMatchObject({ signedIn: true, expiresAt: ends[1] })
+  })
+
+  // Astra's step-1 caveat: `serverNow` is the Worker's clock while the end is Postgres's. A skew between them moves
+  // `serverNow` and leaves `expiresAt` alone, so the lifetime a tab counts down is off by exactly the skew. Device
+  // privacy enforcement must not trust it until the skew is resolved or bounded (devpriv FINAL, step 1 caveat).
+  test("a Worker clock skewed from Postgres's moves serverNow by the skew and leaves expiresAt", async () => {
+    const h = await signInHarness(runtime)
+    const { cookies } = await h.signInAs()
+    const even = await h.session(cookies) as { readonly expiresAt: number; readonly serverNow: number }
+    const skew = 10 * 60 * 1000
+    for (const offset of [skew, -2 * skew]) {
+      h.advance(offset)
+      const skewed = await h.session(cookies) as { readonly expiresAt: number; readonly serverNow: number }
+      expect(skewed.expiresAt).toBe(even.expiresAt)
+      const shift = skewed.serverNow - even.serverNow
+      // The Worker's clock moved by the net offset; the real time between the two reads is well under a minute.
+      const net = offset === skew ? skew : -skew
+      expect(Math.abs(shift - net)).toBeLessThan(60 * 1000)
+    }
   })
 
   test("a state that isn't this browser's signs nobody in and never reaches GitHub", async () => {
@@ -459,7 +527,7 @@ describe("the callback", () => {
     github.expiring = false
     const h = await signInHarness(runtime, { github })
     const { cookies } = await h.signInAs()
-    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member", hostedModel: false, install: "https://github.com/apps/smithers/installations/new" })
+    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member", hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), serverNow: expect.any(Number) })
     const [session] = await sessionRows()
     expect(session!.refresh).toBeNull()
   })
@@ -512,7 +580,7 @@ describe("roles", () => {
       github.permission = permission
       const h = await signInHarness(runtime, { github })
       const { cookies } = await h.signInAs()
-      expect(await h.session(cookies), permission).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role, hostedModel: false, install: "https://github.com/apps/smithers/installations/new" })
+      expect(await h.session(cookies), permission).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role, hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), serverNow: expect.any(Number) })
     }
   })
 
@@ -766,7 +834,7 @@ describe("sessions", () => {
       config: {},
       fallback: { actor: localDeveloper, login: "local-developer" },
     })
-    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false })
+    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false, serverNow: expect.any(Number) })
   })
 
   test("local development's developer signs out and back in with a cookie, never reaching GitHub", async () => {
@@ -797,7 +865,7 @@ describe("sessions", () => {
     expect(back.status).toBe(303)
     expect(back.headers.get("location")).toBe("/app?tab=1")
     expect(setCookies(back)["smithers_dev_signed_out"]!.line).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/)
-    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false })
+    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false, serverNow: expect.any(Number) })
     expect(dev.github.calls).toEqual([])
     expect(dev.revocations).toEqual([])
     expect(dev.count({ route: "sign_out", outcome: "signed_out", reason: "local_developer" })).toBe(1)
@@ -828,6 +896,7 @@ describe("sessions", () => {
       login: "local-teammate",
       role: "member",
       hostedModel: false,
+      serverNow: expect.any(Number),
     })
     for (const person of ["nobody", "toString"]) {
       expect(await dev.session({ smithers_dev_person: person })).toEqual({
@@ -836,6 +905,7 @@ describe("sessions", () => {
         login: "local-developer",
         role: "admin",
         hostedModel: false,
+        serverNow: expect.any(Number),
       })
     }
     // Signed out, the cookie names nobody; without a developer, no teammate either.
@@ -1023,6 +1093,7 @@ test("local development's newcomer is a Member nobody was before, named by the d
     login: name,
     role: "member",
     hostedModel: false,
+    serverNow: expect.any(Number),
   })
   // A value that names no newcomer is the developer, as any other unknown name is.
   for (const person of ["newcomer-", "newcomer-Upper", `newcomer-${"a".repeat(33)}`]) {
@@ -1046,7 +1117,7 @@ test("local development's strangers hold no role on its repository; an owner- is
   const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" }, newcomer })
   for (const kind of ["owner", "reader"] as const) {
     const name = `${kind}-${Date.now().toString(36)}`
-    expect(await dev.session({ smithers_dev_person: name }), kind).toEqual({ signedIn: true, personId: name, login: name, role: null, hostedModel: false })
+    expect(await dev.session({ smithers_dev_person: name }), kind).toEqual({ signedIn: true, personId: name, login: name, role: null, hostedModel: false, serverNow: expect.any(Number) })
     const actor = { subject: { kind: "person" as const, id: name }, role: null }
     expect(devRoles(actor, repositoryOf(STRANGERS_REPOSITORY)), kind).toBe(kind === "owner" ? "admin" : "guest")
     expect(devRoles(actor, repositoryOf("octocat/Hello-World")), kind).toBeNull()

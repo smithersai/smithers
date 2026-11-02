@@ -131,20 +131,27 @@ export interface Live {
   readonly role: Role | null
   readonly roleCheckedAt: number
   readonly home?: string
+  /**
+   * When the session ends, epoch milliseconds: the home session's `expires_at`. An alias session has no end of its own
+   * (`host_sessions` has none), so its parent's.
+   */
+  readonly expiresAt: number
 }
 
 /** The live session `which` picks: not signed out, not revoked and not past its end. */
 const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<Omit<Live, "roleCheckedAt"> & { readonly roleCheckedAt: string }>`
+    const [row] = yield* sql<Omit<Live, "roleCheckedAt" | "expiresAt"> & { readonly roleCheckedAt: string; readonly expiresAt: string }>`
       SELECT s.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
-        (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt"
+        (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
+        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt"
       FROM sessions s JOIN people p ON p.id = s.person_id
       WHERE ${which(sql)} AND s.revoked_at IS NULL AND s.expires_at > now()`
     return Option.map(Option.fromNullishOr(row), (found): Live => ({
       ...found,
       roleCheckedAt: Number(found.roleCheckedAt),
+      expiresAt: Number(found.expiresAt),
     }))
   })
 
@@ -182,15 +189,19 @@ export const findLiveById = (id: string) => findLiveBy((sql) => sql`s.id = ${id}
 export const findHostLive = (tokenDigest: string, host: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<Omit<Live, "roleCheckedAt"> & { readonly roleCheckedAt: string; readonly home: string }>`
+    const [row] = yield* sql<
+      Omit<Live, "roleCheckedAt" | "expiresAt"> & { readonly roleCheckedAt: string; readonly home: string; readonly expiresAt: string }
+    >`
       SELECT h.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
-        (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt", s.id AS home
+        (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt", s.id AS home,
+        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt"
       FROM host_sessions h JOIN sessions s ON s.id = h.parent_id JOIN people p ON p.id = s.person_id
       WHERE h.token_digest = ${tokenDigest} AND h.host = ${host} AND h.revoked_at IS NULL
         AND s.revoked_at IS NULL AND s.expires_at > now()`
     return Option.map(Option.fromNullishOr(row), (found): Live => ({
       ...found,
       roleCheckedAt: Number(found.roleCheckedAt),
+      expiresAt: Number(found.expiresAt),
     }))
   })
 

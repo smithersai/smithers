@@ -206,6 +206,16 @@ describe("signing in at an alias", () => {
     const answer = await h.sessionAt(ALIAS, alias) as SessionState & { readonly expiresAt?: number; readonly serverNow?: number }
     expect(answer).toMatchObject({ signedIn: true, login: "octocat", expiresAt: await parentEnd() })
     expect(answer.serverNow).toBeGreaterThanOrEqual(before)
+    // The answer names no session: neither the parent's id nor the alias's own appears anywhere in it.
+    const [ids] = await sql((client) =>
+      client<{ readonly parent: string; readonly alias: string }>`
+        SELECT s.id::text AS parent, h.id::text AS alias FROM host_sessions h JOIN sessions s ON s.id = h.parent_id`)
+    expect(ids).toBeDefined()
+    const serialized = JSON.stringify(answer)
+    expect(serialized).not.toContain(ids!.parent)
+    expect(serialized).not.toContain(ids!.alias)
+    expect(answer).not.toHaveProperty("home")
+    expect(answer).not.toHaveProperty("session")
     // The parent's end moves, and the alias's answer follows it; home says the same end.
     await sql((client) => client`UPDATE sessions SET expires_at = expires_at - interval '2 days'`)
     expect((await h.sessionAt(ALIAS, alias) as { readonly expiresAt?: number }).expiresAt).toBe(await parentEnd())
