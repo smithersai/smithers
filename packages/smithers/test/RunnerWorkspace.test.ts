@@ -4,7 +4,7 @@
 // jobs at once, so every command that changes a mirror runs one at a time per mirror.
 import { resolveJjBinary } from "@smthrs/jj/node/resolveJjBinary"
 import { Effect, Exit, Fiber, Option } from "effect"
-import { execFile, execFileSync, spawn } from "node:child_process"
+import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process"
 import {
   chmodSync,
   existsSync,
@@ -814,3 +814,99 @@ test("a sweep that can't read or unlink its records fails nothing, and a later s
   expect(Exit.isSuccess(await Effect.runPromise(Effect.exit(Workspace.sweep(stateDir))))).toBe(true)
   expect(existsSync(record)).toBe(false)
 }, 120_000)
+
+// A state directory two runners share, or a process id reused since a crash: a group is ended only when the runner that
+// recorded it is gone, and its leader is still the process recorded.
+test("reaping ends only a dead runner's group, led by the process it recorded", async () => {
+  const stateDir = join(root, "state")
+  const groups = join(stateDir, "groups")
+  mkdirSync(groups, { recursive: true })
+  const leader = () => {
+    const child = spawn("sleep", ["300"], { detached: true, stdio: "ignore" })
+    children.push(child)
+    return child
+  }
+  const record = (pid: number, owner: number, command = "sleep") =>
+    writeFileSync(join(groups, `${pid}.json`), JSON.stringify({ pid, owner, command, startedAt: Date.now() }))
+  const ownerAlive = spawn("sleep", ["300"], { stdio: "ignore" })
+  children.push(ownerAlive)
+  const ownerDead = spawn("true", [], { stdio: "ignore" })
+  await new Promise((done) => ownerDead.once("exit", done))
+  const liveRunners = leader()
+  const reused = leader()
+  const orphan = leader()
+  record(liveRunners.pid!, ownerAlive.pid!)
+  record(reused.pid!, ownerDead.pid!, "jj")
+  record(orphan.pid!, ownerDead.pid!)
+  await Effect.runPromise(Workspace.reapGroups(stateDir))
+  await until(() => !alive(orphan.pid!), 10_000)
+  expect(alive(liveRunners.pid!)).toBe(true)
+  expect(alive(reused.pid!)).toBe(true)
+  // A live runner's record stays; the others are settled.
+  expect(readdirSync(groups)).toEqual([`${liveRunners.pid!}.json`])
+}, 60_000)
+
+// Astra's review of the route-on stack: the record of a finished command was unlinked unguarded in the child's event
+// callback, so an error under groups/ escaped and could end the runner; and a record that couldn't be read, or a process
+// that couldn't be inspected, was dropped, losing the only way to reap a group still running.
+test(
+  "a record under groups/ that can't be removed, read or checked is kept and reported, and the runner goes on",
+  async () => {
+    const stateDir = join(root, "state")
+    await Effect.runPromise(Workspace.watchGroups(stateDir))
+    const groups = join(stateDir, "groups")
+    const started = join(root, "started")
+    const go = join(root, "go")
+    const fake = join(root, "fake-jj")
+    writeFileSync(fake, `#!/bin/sh\ntouch "${started}"\nwhile [ ! -f "${go}" ]; do sleep 0.05; done\n`)
+    chmodSync(fake, 0o755)
+    await withEnv({ SMITHERS_JJ_PATH: fake }, async () => {
+      const running = Effect.runPromise(Workspace.jj(["version"], 30_000, undefined, true))
+      await until(() => existsSync(started), 10_000)
+      expect(readdirSync(groups)).toHaveLength(1)
+      // Its record can't be removed when it exits: the command still answers.
+      chmodSync(groups, 0o500)
+      try {
+        writeFileSync(go, "")
+        expect((await running).code).toBe(0)
+      } finally {
+        chmodSync(groups, 0o755)
+      }
+      expect(readdirSync(groups)).toHaveLength(1)
+    })
+    // Its process gone, the next start settles the record it kept.
+    await Effect.runPromise(Workspace.reapGroups(stateDir))
+    expect(readdirSync(groups)).toEqual([])
+    const leader = spawn("sleep", ["300"], { detached: true, stdio: "ignore" })
+    children.push(leader)
+    const record = join(groups, `${leader.pid!}.json`)
+    writeFileSync(record, JSON.stringify({ pid: leader.pid, owner: 1 << 30, command: "sleep", startedAt: Date.now() }))
+    // The record can't be read.
+    chmodSync(record, 0o000)
+    try {
+      await Effect.runPromise(Workspace.reapGroups(stateDir))
+    } finally {
+      chmodSync(record, 0o600)
+    }
+    expect(existsSync(record)).toBe(true)
+    expect(alive(leader.pid!)).toBe(true)
+    // The process can't be inspected: no `ps` on the path.
+    const empty = join(root, "no-tools")
+    mkdirSync(empty)
+    await withEnv({ PATH: empty }, () => Effect.runPromise(Workspace.reapGroups(stateDir)))
+    expect(existsSync(record)).toBe(true)
+    expect(alive(leader.pid!)).toBe(true)
+    // Both clear: reaped.
+    await Effect.runPromise(Workspace.reapGroups(stateDir))
+    await until(() => !alive(leader.pid!), 10_000)
+    expect(existsSync(record)).toBe(false)
+  },
+  60_000
+)
+
+const children: Array<ChildProcess> = []
+afterEach(() => {
+  for (const child of children.splice(0)) {
+    if (child.pid !== undefined && alive(child.pid)) child.kill("SIGKILL")
+  }
+})

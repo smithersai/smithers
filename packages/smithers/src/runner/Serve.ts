@@ -35,7 +35,7 @@ const SWEEP_SECONDS = 2
 /**
  * What the runner logs while the host refuses its claims `403`: no registration
  * through its repository's Admin role authorized it (decision 0148; migration
- * 0093 cleared every earlier one), so it claims nothing until an Admin of the
+ * `0095_runner_reauthorization` cleared every earlier one), so it claims nothing until an Admin of the
  * repository registers it again with its token's SHA-256.
  *
  * @category constants
@@ -61,6 +61,9 @@ export const loop = (
 ) =>
   Effect.gen(function*() {
     const host = yield* Host.Host
+    // A runner killed before it could end its provisioning commands' process groups ends them first (decision 0148).
+    yield* Workspace.reapGroups(config.stateDir)
+    yield* Workspace.watchGroups(config.stateDir)
     const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
     const profiles = Object.keys(config.profiles)
     let held: string | undefined

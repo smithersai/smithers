@@ -33,7 +33,7 @@
 import type * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { resolveJjBinary } from "@smthrs/jj/node/resolveJjBinary"
 import { Cause, Effect, Option, Schema, Semaphore } from "effect"
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
   accessSync,
@@ -52,7 +52,7 @@ import {
   writeFileSync
 } from "node:fs"
 import { devNull, tmpdir } from "node:os"
-import { delimiter, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path"
+import { basename, delimiter, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path"
 
 /**
  * A jj command failed, or a path left the checkout.
@@ -231,6 +231,148 @@ export const jj = (
  */
 const provisioning = (args: ReadonlyArray<string>, timeoutMs = 120_000) => jj(args, timeoutMs, undefined, true)
 
+/** Where this process records the process groups it starts (`watchGroups`): none until the serve loop says. */
+let groupsDir: string | undefined
+
+/**
+ * Records, while it runs, each process group this process starts for a command (`run` with `group`), under
+ * `<state>/groups/`, so a runner killed without a chance to end them ends them when it starts again (`reapGroups`).
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const watchGroups = (stateDir: string) =>
+  Effect.sync(() => {
+    groupsDir = join(stateDir, "groups")
+    mkdirSync(groupsDir, { recursive: true, mode: 0o700 })
+  })
+
+/** An error's code, for a log: what a file-system or process call said, never a path. */
+const codeOf = (error: unknown): string => (error as NodeJS.ErrnoException).code ?? "unknown"
+
+/**
+ * Records group `pid`, led by `file`, started now, and answers what forgets it once it exited. Neither ever throws: this
+ * runs in the child's event callbacks, where a throw would end the runner. Each answers an error's code for the command
+ * to report. A record left behind is settled at the next start (`reapGroups`).
+ */
+const trackGroup = (
+  pid: number,
+  file: string
+): { readonly failed?: string; readonly forget: () => string | undefined } => {
+  const dir = groupsDir
+  if (dir === undefined) return { forget: () => undefined }
+  const record = join(dir, `${pid}.json`)
+  try {
+    writeFileSync(record, JSON.stringify({ pid, owner: process.pid, command: basename(file), startedAt: Date.now() }), {
+      mode: 0o600
+    })
+  } catch (error) {
+    return { failed: codeOf(error), forget: () => undefined }
+  }
+  return {
+    forget: () => {
+      try {
+        rmSync(record, { force: true })
+        return undefined
+      } catch (error) {
+        return codeOf(error)
+      }
+    }
+  }
+}
+
+/** What `ps` says of process `pid`: gone, its command and seconds since it started, or `uncertain` if `ps` couldn't tell. */
+const processOf = (pid: number) => {
+  const ran = spawnSync("ps", ["-o", "etime=,comm=", "-p", String(pid)], { encoding: "utf8" })
+  const line = (ran.stdout ?? "").trim()
+  // `ps` exits 1 and prints nothing for a process that isn't there; anything else says nothing about it.
+  if (ran.error !== undefined || ran.status === null || ran.status > 1) return { _tag: "uncertain" } as const
+  if (line === "") return { _tag: "gone" } as const
+  const [etime, ...command] = line.split(/\s+/)
+  const [days, clock] = etime!.includes("-") ? etime!.split("-") as [string, string] : ["0", etime!]
+  const parts = clock.split(":").map(Number)
+  while (parts.length < 3) parts.unshift(0)
+  const elapsedSeconds = Number(days) * 86_400 + parts[0]! * 3_600 + parts[1]! * 60 + parts[2]!
+  return { _tag: "running", command: basename(command.join(" ")), elapsedSeconds } as const
+}
+
+/** Whether process `pid` exists: one this user can't signal counts, so nothing is taken from a runner still there. */
+const isAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH"
+  }
+}
+
+/**
+ * Ends each process group a runner on `stateDir` recorded and didn't see exit (`watchGroups`): one it started before it
+ * was killed, a stalled fetch, say, which no one else would end. A record whose runner is still alive stays as it is. A
+ * group is killed whole only when its leader is still the process recorded (the same command, started when the record
+ * says, within 10 seconds), never a process that took its id since. A record goes only once its group is known to be
+ * ended or not this record's: one that can't be read, a process that can't be inspected, a group that can't be signalled
+ * stays for the next start, and each is reported. Never fails.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const reapGroups = (stateDir: string) =>
+  Effect.gen(function*() {
+    const dir = join(stateDir, "groups")
+    const files = yield* Effect.sync(() => {
+      try {
+        return { names: readdirSync(dir).filter((name) => name.endsWith(".json")) }
+      } catch (error) {
+        return { names: [], failed: codeOf(error) }
+      }
+    })
+    if (files.failed !== undefined && files.failed !== "ENOENT") {
+      yield* Effect.logWarning("runner.reap").pipe(Effect.annotateLogs({ step: "list", code: files.failed }))
+    }
+    for (const file of files.names) {
+      const settled = yield* Effect.sync(() => settleGroup(join(dir, file)))
+      yield* (settled.outcome === "kept" ? Effect.logWarning("runner.reap") : Effect.logInfo("runner.reap")).pipe(
+        Effect.annotateLogs({ group: file, ...settled })
+      )
+    }
+  })
+
+/** One group's record (`reapGroups`): what became of it. Never throws. */
+const settleGroup = (path: string): { readonly outcome: string; readonly step?: string; readonly code?: string } => {
+  const kept = (step: string, code: string) => ({ outcome: "kept", step, code })
+  let record: { readonly pid: number; readonly owner: number; readonly command: string; readonly startedAt: number }
+  try {
+    record = JSON.parse(readFileSync(path, "utf8"))
+  } catch (error) {
+    return kept("read", error instanceof SyntaxError ? "malformed" : codeOf(error))
+  }
+  const { command, owner, pid, startedAt } = record
+  // Another runner on this state directory, still alive, owns its groups and its records.
+  if (Number.isInteger(owner) && owner > 1 && owner !== process.pid && isAlive(owner)) return { outcome: "owned" }
+  if (!Number.isInteger(pid) || pid <= 1) return kept("read", "malformed")
+  const running = processOf(pid)
+  if (running._tag === "uncertain") return kept("inspect", "ps")
+  let outcome = "not_ours"
+  if (
+    running._tag === "running" && running.command === command &&
+    Math.abs(running.elapsedSeconds - (Date.now() - startedAt) / 1000) <= 10
+  ) {
+    try {
+      process.kill(-pid, "SIGKILL")
+      outcome = "reaped"
+    } catch (error) {
+      if (codeOf(error) !== "ESRCH") return kept("kill", codeOf(error))
+    }
+  }
+  try {
+    rmSync(path, { force: true })
+    return { outcome }
+  } catch (error) {
+    return kept("unlink", codeOf(error))
+  }
+}
+
 /**
  * Runs `file args` for at most `timeoutMs`: its exit code and output.
  * Interrupted or out of time, it is killed, and an interruption completes
@@ -249,6 +391,7 @@ const run = (
 ): Effect.Effect<Ran> =>
   Effect.callback<Ran>((resume) => {
     const child = spawn(file, [...args], { ...options, detached: group, stdio: ["ignore", "pipe", "pipe"] })
+    const tracked = group && child.pid !== undefined ? trackGroup(child.pid, file) : undefined
     const out: Array<Buffer> = []
     const err: Array<Buffer> = []
     let size = 0
@@ -274,8 +417,16 @@ const run = (
       exited()
       if (ended) return
       ended = true
+      const forgetting = tracked?.forget()
       clearTimeout(timer)
-      resume(Effect.succeed({ code, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() }))
+      const failed = tracked?.failed ?? forgetting
+      const ran = { code, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() }
+      // A record it couldn't write or remove is reported, and costs the command nothing.
+      resume(
+        failed === undefined
+          ? Effect.succeed(ran)
+          : Effect.logWarning("runner.groups").pipe(Effect.annotateLogs({ code: failed }), Effect.as(ran))
+      )
     }
     child.on("error", () => done(1))
     child.on("close", (code) => done(code ?? 1))
