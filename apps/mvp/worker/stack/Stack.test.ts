@@ -10,6 +10,7 @@ import { isReady, openOf, type Row, type Stack as Rules, violations } from "../.
 import { testFile, uuid } from "../test/harness.ts"
 import * as Stack from "./Stack.ts"
 import { foldCommit } from "./StackFeed.ts"
+import { workStatusOf } from "../../src/features/issues/work.ts"
 
 const runtime = testFile("stack_writer")
 beforeEach(() =>
@@ -1048,5 +1049,53 @@ describe("independent lanes (decision 0135)", () => {
       .toMatchObject({ lanes: 1, working: 1, ready: 1, held: 1 })
     expect(observed.count(Stack.admissions, { base: "default" })).toBe(1)
     expect(observed.lines.find((line) => line.message === "todo.run.requested")!.annotations).toMatchObject({ base: "default" })
+  })
+})
+
+// Issue-tracking proof (e), production 2026-11-02: a TODO made from an issue reached a merged pull request that closed
+// the issue, and the issue's work showed nothing. The stack's writer links the work to the issue it came from
+// (decision 0147): the TODO, its pull request and its merge, each as its state changes, so the issue's status follows.
+describe("a TODO made from an issue links its work to the issue", () => {
+  const links = () =>
+    sql<{ kind: string; ref: string; state: string | null; url: string | null; source: string }>(`
+      SELECT kind, ref, state, url, source FROM work_links WHERE repo_id = '${REPO}' AND number = 12 ORDER BY kind`)
+  const status = async () => workStatusOf((await links()).map((link) => ({ ...link, updated_at: "" })) as never)
+  const reportAs = (attempt: Stack.RunAttempt, event: Stack.RunEvent) =>
+    runtime.runPromise(Effect.gen(function* () {
+      const { database } = yield* TestDatabase.Scratch
+      return yield* Stack.report(attempt, event, { runs: true }).pipe(Effect.provide(database))
+    }))
+
+  test("working, in review with its pull request, merged with its merge: each on the issue, its status following", async () => {
+    await sql(`TRUNCATE work_links`)
+    const committed = await applyOn(commit({ op: { kind: "commit", title: "T", prompt: "P", acceptance: [], issue: 12 } }), true)
+    if (committed.kind !== "applied") throw new Error("not applied")
+    const start = committed.receipt.starts[0]!
+    const attempt = { attemptId: start.attemptId, todoId: start.todoId, repoId: REPO, ordinal: start.ordinal }
+    expect(await links()).toEqual([{ kind: "session", ref: "TODO #1", state: "working", url: null, source: "todo:1" }])
+    expect(await status()).toBe("working")
+    await reportAs(attempt, { kind: "published", headSha: "b".repeat(40), prNumber: 7, draft: false })
+    expect(await links()).toEqual([
+      { kind: "pr", ref: "#7", state: "open", url: "https://github.com/octo/hello/pull/7", source: "todo:1" },
+      { kind: "session", ref: "TODO #1", state: null, url: null, source: "todo:1" },
+    ])
+    expect(await status()).toBe("in_review")
+    await reportAs(attempt, { kind: "finished", state: "merged", note: "merged_on_github", mergeSha: "c".repeat(40) })
+    expect(await links()).toEqual([
+      { kind: "merge", ref: "c".repeat(12), state: "merged", url: `https://github.com/octo/hello/commit/${"c".repeat(40)}`, source: "todo:1" },
+      { kind: "pr", ref: "#7", state: "merged", url: "https://github.com/octo/hello/pull/7", source: "todo:1" },
+      { kind: "session", ref: "TODO #1", state: "done", url: null, source: "todo:1" },
+    ])
+    expect(await status()).toBe("merged")
+  })
+
+  test("a dropped TODO's link says closed; a TODO made from no issue links nothing", async () => {
+    await sql(`TRUNCATE work_links`)
+    await applyOn(commit({ op: { kind: "commit", title: "T", prompt: "P", acceptance: [], issue: 12 } }))
+    expect(await links()).toEqual([{ kind: "session", ref: "TODO #1", state: null, url: null, source: "todo:1" }])
+    await applyOn(drop(1))
+    expect(await links()).toEqual([{ kind: "session", ref: "TODO #1", state: "closed", url: null, source: "todo:1" }])
+    await applyOn(commit())
+    expect(await sql(`SELECT count(*)::int AS n FROM work_links`)).toEqual([{ n: 1 }])
   })
 })

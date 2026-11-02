@@ -2,6 +2,7 @@ import { digestSync } from "@smthrs/crypto"
 import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { foldCommit } from "./StackFeed.ts"
+import * as WorkLinks from "../github/WorkLinks.ts"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import {
   STACK_OUTCOMES,
@@ -209,7 +210,7 @@ export const apply = <E = never, R = never>(
     const startedAt = yield* Clock.currentTimeMillis
     const sql = yield* SqlClient.SqlClient
     const hash = payloadHash(change)
-    const applied = yield* sql.withTransaction(Effect.gen(function* () {
+    const applied = yield* sql.withTransaction(Effect.tap(Effect.gen(function* () {
       yield* sql`INSERT INTO stacks (repo_id) VALUES (${change.repoId}) ON CONFLICT (repo_id) DO NOTHING`
       const [locked] = yield* sql<Locked>`
         SELECT next_number AS "nextNumber", lanes, max_open AS "maxOpen", base FROM stacks
@@ -355,7 +356,7 @@ export const apply = <E = never, R = never>(
         moved,
         lanes: lanesOf(after),
       } as const
-    }))
+    }), () => linkWork(change.repoId)))
     const outcome = applied.kind === "applied"
       ? applied.receipt.outcome
       : applied.kind === "repeated"
@@ -397,6 +398,52 @@ export const isRefusal = (
 ): outcome is "stack_full" | "merged" | "not_found" | "not_retryable" | "after_not_open" =>
   outcome === "stack_full" || outcome === "merged" || outcome === "not_found" || outcome === "not_retryable" ||
   outcome === "after_not_open"
+
+/**
+ * Links the work on each TODO this transaction changed to the issue it was made from (decision 0147, the server posting
+ * on its own flow's behalf, source `todo:<number>`): the TODO itself (`session`: working, done once merged, closed once
+ * dropped, failed), its pull request (`pr`: open, merged, closed) and its merge commit (`merge`). The rows this
+ * transaction changed are the ones it stamped `updated_at = now()`. An issue's status follows its links
+ * (`workStatusOf`), so it follows the TODO with no person editing it.
+ */
+const linkWork = (repoId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const touched = yield* sql<{
+      readonly number: number
+      readonly state: string
+      readonly issueNumber: number
+      readonly prNumber: number | null
+      readonly mergeSha: string | null
+    }>`
+      SELECT number, state, issue_number AS "issueNumber", pr_number AS "prNumber", merge_sha AS "mergeSha" FROM todos
+      WHERE repo_id = ${repoId} AND issue_number IS NOT NULL AND updated_at = now()`
+    if (touched.length === 0) return
+    const [, owner = "", name = ""] = repoId.split("/")
+    const github = `https://github.com/${owner}/${name}`
+    const now = yield* Clock.currentTimeMillis
+    for (const todo of touched) {
+      const session: WorkLinks.Post["links"][number] = {
+        kind: "session",
+        ref: `TODO #${todo.number}`,
+        state: todo.state === "working" ? "working" : todo.state === "merged" ? "done" : todo.state === "dropped"
+          ? "closed" : todo.state === "failed" ? "failed" : null,
+      }
+      const links: Array<WorkLinks.Post["links"][number]> = [session]
+      if (todo.prNumber !== null) {
+        links.push({
+          kind: "pr",
+          ref: `#${todo.prNumber}`,
+          url: `${github}/pull/${todo.prNumber}`,
+          state: todo.state === "merged" ? "merged" : todo.state === "dropped" || todo.state === "failed" ? "closed" : "open",
+        })
+      }
+      if (todo.state === "merged" && todo.mergeSha !== null) {
+        links.push({ kind: "merge", ref: todo.mergeSha.slice(0, 12), url: `${github}/commit/${todo.mergeSha}`, state: "merged" })
+      }
+      yield* WorkLinks.write(repoId, todo.issueNumber, { links }, `todo:${todo.number}`, now)
+    }
+  })
 
 /** The attempt a `todo` run reports for: every report is fenced by its TODO and ordinal. */
 export interface RunAttempt {
@@ -448,7 +495,7 @@ export const reports = Metric.counter("smithers_todo_reports", {
 export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly runs: boolean }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const reported = yield* sql.withTransaction(Effect.gen(function* () {
+    const reported = yield* sql.withTransaction(Effect.tap(Effect.gen(function* () {
       const [locked] = yield* sql<Locked>`
         SELECT next_number AS "nextNumber", lanes, max_open AS "maxOpen", base FROM stacks
         WHERE repo_id = ${attempt.repoId} FOR UPDATE`
@@ -584,7 +631,7 @@ export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly
           finished_report = ${JSON.stringify({ event, starts })}::jsonb
         WHERE id = ${attempt.attemptId}::uuid`
       return { outcome: "applied", starts } satisfies Reported
-    }))
+    }), () => linkWork(attempt.repoId)))
     yield* Metric.update(Metric.withAttributes(reports, { kind: event.kind, outcome: reported.outcome }), 1)
     yield* Effect.logWithLevel(reported.outcome === "stale" ? "Warn" : "Info")("stack.report").pipe(
       Effect.annotateLogs({

@@ -14,6 +14,10 @@ a lane, the merge queue, a reviewer                  ChatApi                    
                                                                  └──▶ Electric /api/shapes/work-links ──▶ list chips, issue page sections
 ```
 
+### TODOs made from an issue
+
+A TODO made from an issue links its own work there, with no post: the stack's writer (`worker/stack/Stack.ts`, `linkWork`), in the same transaction as each change to the TODO, writes its links with `source` `todo:<number>`. The TODO itself is a `session` link, `TODO #<n>` (`working`, `done` once merged, `closed` once dropped, `failed`; no state while queued or in review); its pull request a `pr` link, `#<p>` to GitHub (`open`, `merged`, `closed`); and once merged, its merge commit a `merge` link (`merged`). So an issue a TODO took to a merged pull request reads Merged, with the TODO, the pull request and the merge one click away. No one else may post as `todo:<n>`: it is the server's own write, not a route.
+
 ## Routes
 
 | Route | Answers |
