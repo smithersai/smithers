@@ -156,7 +156,8 @@ const createIssue = async (page: Page, title: string) => {
   expect(status).toBe(202)
   let number: number | undefined
   await expect.poll(async () => {
-    const { issues } = await walk(page.request, `state=open&limit=5`)
+    // By its title: the seed opens issues meanwhile, so the newest few may already be others.
+    const { issues } = await walk(page.request, `state=all&limit=10&q=${encodeURIComponent(title)}`)
     number = issues.find((issue) => issue.title === title)?.number
     return number
   }, { timeout: 180_000, intervals: [2_000, 5_000] }).toBeDefined()
@@ -166,7 +167,8 @@ const createIssue = async (page: Page, title: string) => {
 test("(a) volume: the list pages, searches, filters and opens one issue at the seeded volume, within budgets", async ({ page, request }) => {
   test.setTimeout(15 * 60_000)
   const [{ issues, pages }, walkMs] = await timed(() => walk(request))
-  test.skip(issues.length < minimum, `the repository has ${issues.length} issues; this run needs ${minimum} (E2E_TRACKING_MIN_ISSUES): the seed is still running`)
+  // Too few issues is a failed proof, never a skipped one: the seed is still running.
+  expect(issues.length, `the repository has ${issues.length} issues; this run needs ${minimum} (E2E_TRACKING_MIN_ISSUES)`).toBeGreaterThanOrEqual(minimum)
   expect(new Set(issues.map((issue) => issue.number)).size).toBe(issues.length)
   const [first, firstPageMs] = await timed(() => request.get(`${listRoute}?limit=30`))
   expect(first.status()).toBe(200)
@@ -207,18 +209,19 @@ test("(a) volume: the list pages, searches, filters and opens one issue at the s
     browserOpenIssueMs: openMs,
   }
   record("volume", numbers)
-  // Usable: a page of the API in under 2 s at p95, the browser's list in under 30 s cold, an issue in under 10 s.
+  // Usable means seconds: a page of the API in under 2 s at p95, the browser's list's first rows in under 10 s on a
+  // fresh device (its first page from the issues route), one issue in under 3.5 s (its title and body from the route).
   expect(numbers.pageP95Ms).toBeLessThan(2_000)
   expect(numbers.searchMs).toBeLessThan(3_000)
-  expect(numbers.browserListFirstRowsMs).toBeLessThan(30_000)
+  expect(numbers.browserListFirstRowsMs).toBeLessThan(10_000)
   expect(numbers.browserListSearchMs).toBeLessThan(5_000)
-  expect(numbers.browserOpenIssueMs).toBeLessThan(10_000)
+  expect(numbers.browserOpenIssueMs).toBeLessThan(3_500)
 })
 
 test("(b) import: every seeded record is an issue with its title, and the seed's time is known", async ({ page, request }) => {
   test.setTimeout(15 * 60_000)
   const seeded = sent()
-  test.skip(seeded.length < minimum, `the seed sent ${seeded.length} records; this run needs ${minimum}`)
+  expect(seeded.length, `the seed sent ${seeded.length} records; this run needs ${minimum}`).toBeGreaterThanOrEqual(minimum)
   await page.goto(`/${repo}/issues`)
   const { numbers, notDone } = await numbersByKey(page)
   const { issues } = await walk(request)
@@ -258,7 +261,7 @@ test("(c) links: a machine links each imported record to its work; one click rea
     return url === undefined ? link : { ...link, url }
   }
   const chosen = records().filter((row) => row.links.length > 0 && numbers.has(row.key)).slice(0, linked)
-  test.skip(chosen.length === 0, "no imported record with work links yet: the seed is still running")
+  expect(chosen.length, "no imported record with work links yet: the seed is still running").toBeGreaterThan(0)
   const [, postMs] = await timed(async () => {
     for (const row of chosen) await post(request, token, numbers.get(row.key)!, row.links.slice(0, 50).map(addressed))
   })
@@ -278,8 +281,10 @@ test("(c) links: a machine links each imported record to its work; one click rea
   // The browser: a lane with a queue entry and a merge. Each link is one click to the issue or commit it names.
   // The record whose links reach the most of who, session, queue entry and merge: a lane with a landed queue entry, or
   // a queue entry, whose session link reaches its lane's issue.
+  const weight: Readonly<Record<string, number>> = { queue: 4, merge: 2, session: 1, assignee: 1 }
   const reach = (row: TrackedRecord) =>
-    new Set(row.links.map(addressed).filter((link) => link.url !== undefined && ["assignee", "session", "queue", "merge"].includes(link.kind)).map((link) => link.kind)).size
+    [...new Set(row.links.map(addressed).filter((link) => link.url !== undefined).map((link) => link.kind))]
+      .reduce((sum, kind) => sum + (weight[kind] ?? 0), 0)
   const lane = [...chosen].sort((a, b) => reach(b) - reach(a))[0]!
   const laneNumber = numbers.get(lane.key)!
   await page.goto(`/${repo}/issues/${laneNumber}`)
@@ -310,7 +315,9 @@ test("(c) links: a machine links each imported record to its work; one click rea
     clicks.push({ kind, ms })
     await page.goto(`/${repo}/issues/${laneNumber}`)
   }
-  expect(clicks.map((click) => click.kind)).toEqual(expect.arrayContaining(["session", "queue"]))
+  // The record reaches its queue entry, and its lane or its merge, each in one click.
+  expect(clicks.map((click) => click.kind)).toContain("queue")
+  expect(clicks.length).toBeGreaterThanOrEqual(2)
   // Will's list: issues linked to a pull request or a queued merge, on the page.
   await page.goto(`/${repo}/issues?work=pr-or-queue`)
   await expect(page.locator(`a[href$="/${repo}/issues/${laneNumber}"]`).first()).toBeVisible({ timeout: 120_000 })

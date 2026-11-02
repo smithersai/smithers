@@ -186,6 +186,7 @@ describe("needs", () => {
       "fleetStall",
       "fleetTelegram",
       "githubScratch",
+      "trackingRepository",
       "syncedScratch",
       "secondRepository",
       "dogfood",
