@@ -6,7 +6,7 @@ import * as Database from "../../db/Database.ts"
 import { issuesRoute } from "../../src/features/issues/contract.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
-import { decodeCursor, encodeCursor, parseIssuesPath } from "./IssueList.ts"
+import { decodeCursor, encodeCursor, parseIssuePath, parseIssuesPath } from "./IssueList.ts"
 import * as Metrics from "./Metrics.ts"
 import { scriptedGitHub } from "./test/scriptedGitHub.ts"
 import { member, githubHarness } from "./test/harness.ts"
@@ -47,7 +47,7 @@ const nextOf = (response: Response) => /<([^>]+)>;\s*rel="next"/.exec(response.h
 describe("the issues list", () => {
   test("is the issues route, and nothing else under the repository", () => {
     expect(handles(route)).toBe(true)
-    expect(handles(`${route}/7`)).toBe(false)
+    expect(handles(`${route}/7/comments`)).toBe(false)
     expect(handles("/api/repos/acme/widgets/issuez")).toBe(false)
     expect(parseIssuesPath("/api/repos/%E0%A4%A/widgets/issues")).toBeUndefined()
     expect(parseIssuesPath("/api/repos/-bad/widgets/issues")).toBeUndefined()
@@ -140,5 +140,33 @@ describe("the issues list", () => {
     // Another repository with Postgres down: the App-absent check leaves it to the read, which can't answer either.
     const otherOffline = await githubHarness(runtime, { own: OWN, github: gadgets(), database: unreachable })
     expect((await otherOffline.fetch(issuesRoute("acme", "gadgets"))).status).toBe(503)
+  })
+
+  test("answers one issue with its body, as a page shows it before its shapes sync; none is 404", async () => {
+    await seed(6)
+    await sql(runtime, `UPDATE items SET body = 'The body of five', closed_at = timestamptz '2026-10-02T00:00:00Z' WHERE number = 5`)
+    expect(parseIssuePath(`${route}/5`)).toEqual({ owner: "acme", name: "widgets", number: 5 })
+    for (const path of [`${route}/0`, `${route}/x`, `${route}/99999999999`, "/api/repos/-bad/widgets/issues/5", `${route}/5/x`]) {
+      expect([path, parseIssuePath(path)]).toEqual([path, undefined])
+    }
+    expect(handles(`${route}/5`)).toBe(true)
+    const h = await githubHarness(runtime)
+    const five = await h.fetch(`${route}/5`)
+    expect(five.status).toBe(200)
+    expect(await five.json()).toMatchObject({
+      number: 5, title: "Issue 5", body: "The body of five", state: "closed", closed_at: "2026-10-02T00:00:00.000000Z",
+      author: { login: "maya" }, work: { status: "none", links: [] },
+    })
+    expect(await (await h.fetch(`${route}/6`)).json()).toMatchObject({ number: 6, closed_at: null })
+    // A pull request's number, a tombstoned issue and one the projection never had: not issues here.
+    for (const number of [7, 8, 99]) {
+      const missing = await h.fetch(`${route}/${number}`)
+      expect([number, missing.status, await missing.json()]).toEqual([number, 404, { code: "not_found" }])
+    }
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, true)`)
+    const visitor = await githubHarness(runtime, { actor: null })
+    expect((await visitor.fetch(`${route}/5`)).status).toBe(401)
+    const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    expect((await (await githubHarness(runtime, { database: unreachable })).fetch(`${route}/5`)).status).toBe(503)
   })
 })

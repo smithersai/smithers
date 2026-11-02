@@ -211,6 +211,21 @@ describe("whose quota a read spends", () => {
     expect(JSON.stringify(one.logs)).not.toMatch(/ghs_about|PRIVATE KEY/)
   })
 
+  test("a private repository the App is installed on is not found, and nobody asks GitHub again for 10 minutes", async () => {
+    // Production, 2026-11-02: each cold page of a private repository paid a 1.4 s GraphQL read for this same answer.
+    const github = scriptedGitHub()
+    github.publish("acme", "secret", spoonKnife({ fullName: "acme/secret", private: true }))
+    github.install("acme", "secret")
+    const one = await isolate(github, { config: await appConfig() })
+    expect(await one.answer("acme", "secret")).toMatchObject({ _tag: "Refused", code: "not_found", cache: "miss" })
+    const kept = await row("github/acme/secret")
+    expect(kept?.refusal).toBe("not_found")
+    expect(kept?.nextIn).toBeGreaterThan(9 * 60_000)
+    const calls = github.calls.length
+    expect(await one.answer("acme", "secret")).toMatchObject({ _tag: "Refused", code: "not_found", cache: "refusal" })
+    expect(github.calls).toHaveLength(calls)
+  })
+
   test("elsewhere a visitor reads anonymously over REST, and the App's absence is remembered for an hour", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")

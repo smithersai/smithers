@@ -53,6 +53,11 @@ export const HOLD = Duration.seconds(5)
 export const RATE_HOLD = Duration.minutes(1)
 /** How long nobody asks GitHub again after it said the repository isn't there. */
 export const NOT_FOUND_HOLD = Duration.minutes(1)
+/**
+ * How long nobody asks GitHub again after it said the repository is private, which About answers not found by design:
+ * a private repository rarely turns public, and each read costs a cold page about 1.4 s (production, 2026-11-02).
+ */
+export const PRIVATE_HOLD = Duration.minutes(10)
 /** The longest a rate limit holds every read off, whatever GitHub says of its reset. */
 export const MAX_HOLD = Duration.minutes(15)
 /** How long an answer GitHub left parts out of is fresh, at most. */
@@ -310,7 +315,9 @@ export const make = <E, R>(
 
     /** How long nobody asks GitHub again after `refusal`. */
     const holdFor = (refusal: AboutRefused, nowMs: number) =>
-      refusal.code === "not_found"
+      refusal.private === true
+        ? ms(PRIVATE_HOLD)
+        : refusal.code === "not_found"
         ? ms(NOT_FOUND_HOLD)
         : refusal.code === "rate_limited"
         ? Math.min(ms(MAX_HOLD), Math.max(ms(RATE_HOLD), refusal.retryAfterMillis ?? 0, (refusal.resetAtMillis ?? 0) - nowMs))

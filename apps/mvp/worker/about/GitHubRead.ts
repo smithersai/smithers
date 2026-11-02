@@ -52,6 +52,8 @@ export class AboutRefused extends Data.TaggedError("AboutRefused")<{
   readonly upstreamStatus?: number
   readonly retryAfterMillis?: number
   readonly resetAtMillis?: number
+  /** GitHub has the repository, and it is private: About answers it not found, by design, for everyone. */
+  readonly private?: boolean
 }> {}
 
 /** One read's answer, and the parts GitHub couldn't give now. */
@@ -447,7 +449,7 @@ export const graphql = (client: GitHub.GitHubClient.GitHubClient, owner: string,
       onNone: () => Effect.fail(new AboutRefused({ code: "github_unavailable", stage: "graphql" })),
       onSome: Effect.succeed,
     })
-    if (repository.isPrivate) return yield* new AboutRefused({ code: "not_found", stage: "graphql" })
+    if (repository.isPrivate) return yield* new AboutRefused({ code: "not_found", stage: "graphql", private: true })
     const fields = raw as Readonly<Record<string, unknown>>
     const base = `/repos/${path}`
     const entries = repository.root?.entries ?? null

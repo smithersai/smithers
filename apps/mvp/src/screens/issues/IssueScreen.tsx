@@ -39,7 +39,10 @@ export function IssueScreen() {
   const { owner, repo, number } = useParams({ from: "/$owner/$repo/issues/$number" })
   const { queries, actions } = useIssues()
   const auth = useAuth()
-  const { data: item, isReady: itemReady } = useLiveQuery(queries.item)
+  const { data: syncedItem, isReady: itemReady } = useLiveQuery(queries.item)
+  // Until the issue's shape syncs, what the issues route answered: a cold page shows its title and body at once.
+  const { data: first } = useLiveQuery(queries.first)
+  const item = syncedItem ?? first
   const { data: rows } = useLiveQuery(queries.conversation)
   const { data: synced, isReady: syncedReady } = useLiveQuery(queries.synced)
   const { data: view } = useLiveQuery(queries.view)
