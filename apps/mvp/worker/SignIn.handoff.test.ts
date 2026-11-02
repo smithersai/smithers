@@ -206,6 +206,12 @@ describe("signing in at an alias", () => {
     const answer = await h.sessionAt(ALIAS, alias) as SessionState & { readonly expiresAt?: number; readonly serverNow?: number }
     expect(answer).toMatchObject({ signedIn: true, login: "octocat", expiresAt: await parentEnd() })
     expect(answer.serverNow).toBeGreaterThanOrEqual(before)
+    // The database's clock, not the Worker's: an alias answer an hour "later" on the Worker still says the database's now.
+    h.advance(60 * 60 * 1000)
+    const skewed = await h.sessionAt(ALIAS, alias) as { readonly expiresAt?: number; readonly serverNow?: number }
+    expect(skewed.serverNow).toBeLessThan(Date.now() + 60 * 1000)
+    expect(skewed.expiresAt).toBe(answer.expiresAt)
+    h.advance(-60 * 60 * 1000)
     // The answer names no session: neither the parent's id nor the alias's own appears anywhere in it.
     const [ids] = await sql((client) =>
       client<{ readonly parent: string; readonly alias: string }>`

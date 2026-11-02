@@ -213,6 +213,24 @@ describe("a transcript's watchers", () => {
     expect(stays.events()).toEqual([1])
   })
 
+  // The clock contract (decision 0151 rule 9): the lease's end is the query's start on this Worker's clock plus what the
+  // database said was left, so a Worker clock ahead of the database's or behind it neither cuts nor stretches it.
+  test("a session's end on a skewed Worker clock is what the database says is left, from when the lookup started", async () => {
+    const ending = await signIn("member", 600)
+    for (const skew of [60 * 60 * 1000, -60 * 60 * 1000]) {
+      const [admission, workerNow] = await runtime.runPromise(Effect.gen(function* () {
+        yield* TestClock.setTime(Date.now() + skew)
+        const workerNow = yield* now
+        const admitted = yield* SocketAccess.admit(ending, RUN, "member")
+        if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
+        return [admitted.admission, workerNow] as const
+      }).pipe(Effect.provide(TestClock.layer())))
+      const left = admission.expiresAt! - workerNow
+      expect(left, String(skew)).toBeGreaterThan(590_000)
+      expect(left, String(skew)).toBeLessThanOrEqual(600_000)
+    }
+  })
+
   test("a lease never runs past the session's end: no event after it, and 4401 with no query", async () => {
     let asked = 0
     const check = await checks()

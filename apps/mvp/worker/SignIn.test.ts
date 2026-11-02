@@ -284,11 +284,6 @@ describe("the callback", () => {
     expect(answer.serverNow).toBeGreaterThanOrEqual(before)
     expect(answer.serverNow).toBeLessThanOrEqual(after)
     expect(answer.expiresAt! - answer.serverNow!).toBeGreaterThan(0)
-    // The server's clock, not the browser's: an hour later on the server is an hour later in the answer.
-    h.advance(60 * 60 * 1000)
-    const later = await h.session(cookies) as { readonly expiresAt?: number; readonly serverNow?: number }
-    expect(later.serverNow).toBeGreaterThanOrEqual(before + 60 * 60 * 1000)
-    expect(later.expiresAt).toBe(answer.expiresAt)
     // The session's end moves when the server's row does.
     await query((sql) => sql`UPDATE sessions SET expires_at = expires_at - interval '1 day'`)
     expect((await h.session(cookies) as { readonly expiresAt?: number }).expiresAt).toBe(answer.expiresAt! - 24 * 60 * 60 * 1000)
@@ -316,22 +311,23 @@ describe("the callback", () => {
     expect(await h.session(second)).toMatchObject({ signedIn: true, expiresAt: ends[1] })
   })
 
-  // Astra's step-1 caveat: `serverNow` is the Worker's clock while the end is Postgres's. A skew between them moves
-  // `serverNow` and leaves `expiresAt` alone, so the lifetime a tab counts down is off by exactly the skew. Device
-  // privacy enforcement must not trust it until the skew is resolved or bounded (devpriv FINAL, step 1 caveat).
-  test("a Worker clock skewed from Postgres's moves serverNow by the skew and leaves expiresAt", async () => {
+  // The clock contract (devpriv design §5, decision 0151 rule 9): `serverNow` is the database's `clock_timestamp()`,
+  // sampled by the lookup that read the session's end, so the lifetime a tab counts down, `expiresAt - serverNow`, is
+  // the database's whatever the Worker's clock says. Step 1 sampled the Worker's clock, which carried its skew through.
+  test("serverNow is the database's clock beside the session's end: a Worker clock ahead or behind moves neither", async () => {
     const h = await signInHarness(runtime)
     const { cookies } = await h.signInAs()
-    const even = await h.session(cookies) as { readonly expiresAt: number; readonly serverNow: number }
-    const skew = 10 * 60 * 1000
-    for (const offset of [skew, -2 * skew]) {
+    for (const offset of [0, 10 * 60 * 1000, -20 * 60 * 1000]) {
       h.advance(offset)
-      const skewed = await h.session(cookies) as { readonly expiresAt: number; readonly serverNow: number }
-      expect(skewed.expiresAt).toBe(even.expiresAt)
-      const shift = skewed.serverNow - even.serverNow
-      // The Worker's clock moved by the net offset; the real time between the two reads is well under a minute.
-      const net = offset === skew ? skew : -skew
-      expect(Math.abs(shift - net)).toBeLessThan(60 * 1000)
+      const before = Date.now()
+      const answer = await h.session(cookies) as { readonly expiresAt: number; readonly serverNow: number }
+      const after = Date.now()
+      // The test's database runs on this machine's clock: the sample falls inside the request, whatever the offset.
+      expect(answer.serverNow).toBeGreaterThanOrEqual(before - 1000)
+      expect(answer.serverNow).toBeLessThanOrEqual(after + 1000)
+      const [row] = await query((sql) =>
+        sql<{ readonly left: string }>`SELECT (extract(epoch FROM expires_at - clock_timestamp()) * 1000)::bigint::text AS "left" FROM sessions`)
+      expect(Math.abs(answer.expiresAt - answer.serverNow - Number(row!.left))).toBeLessThan(5000)
     }
   })
 
