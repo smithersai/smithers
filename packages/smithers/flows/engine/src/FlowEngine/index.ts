@@ -13,7 +13,7 @@
  * @since 1.0.0
  */
 export { ActionKeyEncoding, type KeyEncoding, keyEncodings } from "./ActionKey.ts"
-export * from "./Authority.ts"
+export * from "./Authority.vibe"
 export * from "./Encoded.vibe"
 export * from "./FlowInstance.vibe"
 export * from "./layerMemory.ts"

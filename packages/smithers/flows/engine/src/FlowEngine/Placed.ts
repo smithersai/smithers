@@ -19,7 +19,7 @@ import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
 import * as FlowProxy from "../FlowProxy.ts"
 import { type Binding, Hosts } from "../Hosts.ts"
-import { requestedAuthority } from "./Authority.ts"
+import { requestedAuthority } from "./Authority.vibe"
 
 /**
  * A binding to another engine.
