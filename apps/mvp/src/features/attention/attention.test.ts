@@ -134,9 +134,11 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     const answerId = await ask(ann, "Deploy the docs preview")
     const subject = `run:${answerId}`
     const first = await Effect.runPromise(api.answerTo("Deploy the docs preview"))
-    // Live: Ann sees it in the conversation, so no toast over it; Ben sees a quiet toast naming her on any page.
+    // Live: Ann sees it in the conversation, so no toast over it; Ben sees a quiet toast that an agent runs there, on
+    // any page: only the launcher's row quotes the run (docs/features/notifications.md, Routing).
     await until(() => expect(benDevice.entry(subject)).toMatchObject({ state: "working", stack: true, listed: false }))
-    expect(benDevice.entry(subject)!.detail).toContain("Deploy the docs preview")
+    expect(benDevice.entry(subject)!.detail).toMatch(/^Agent run/)
+    expect(benDevice.entry(subject)!.detail).not.toContain("Deploy the docs preview")
     expect(benDevice.stackHere()).not.toContain(subject)
     await until(() => expect(ann.entry(subject)).toMatchObject({ state: "working", mine: true, stack: true, listed: true }))
     expect(ann.stackHere()).not.toContain(subject)
