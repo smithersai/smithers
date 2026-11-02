@@ -4,14 +4,7 @@
  * the change read back from it.
  *
  * jj runs with no user configuration, so a host's own settings never change
- * what a checkout holds or what its diff says: its configuration directory is
- * one this process made, empty and private to the runner's user.
- *
- * A fetch or clone with a credential (decision 0148) runs git with tracing
- * off whatever the runner's environment or git's global and system files say,
- * and with the git this process resolved on its own `PATH`, whatever jj
- * configuration the mirror holds. An agent running as the runner's user can
- * still read what that user can (decision 0136): see decision 0148.
+ * what a checkout holds or what its diff says.
  *
  * Every checkout of a repository shares its mirror's operation log, refs and
  * git worktrees, which jj and git keep in files: ten `jj workspace add`s at
@@ -25,22 +18,12 @@
 
 import type * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { resolveJjBinary } from "@smthrs/jj/node/resolveJjBinary"
-import { Effect, Option, Schema, Semaphore } from "effect"
+import { Effect, Schema, Semaphore } from "effect"
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
-import {
-  accessSync,
-  chmodSync,
-  constants,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync
-} from "node:fs"
-import { devNull, tmpdir } from "node:os"
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join, relative, resolve, sep } from "node:path"
 
 /**
  * A jj command failed, or a path left the checkout.
@@ -96,93 +79,6 @@ const exclusive = (mirror: string) => <A, E, R>(effect: Effect.Effect<A, E, R>):
     return gate.withPermits(1)(effect)
   })
 
-/** jj's configuration directory: made once by this process, empty, readable and writable by its user alone. */
-let configDir: string | undefined
-const jjConfig = (): string => {
-  if (configDir === undefined || !existsSync(configDir)) {
-    configDir = mkdtempSync(join(tmpdir(), "smithers-runner-jj-"))
-    chmodSync(configDir, 0o700)
-  }
-  return configDir
-}
-
-/**
- * Whether an environment variable would let a credentialed git or jj write
- * what it does, read configuration besides the command's own, or run another
- * program in git's place: git's tracing (`GIT_TRACE*`, `GIT_CURL_VERBOSE`),
- * git configuration from the environment (`GIT_CONFIG*`), git's helper
- * programs' directory (`GIT_EXEC_PATH`), and jj's own (`JJ_*`, `RUST_LOG`).
- */
-const isUnsafe = (name: string): boolean =>
-  /^(GIT_TRACE|GIT_CONFIG|JJ_)/.test(name) ||
-  ["GIT_CURL_VERBOSE", "GIT_EXEC_PATH", "GIT_REDACT_COOKIES", "RUST_LOG"].includes(name)
-
-/**
- * The environment a jj command runs in: the runner's (`base`), with jj's own empty
- * configuration directory. With a credential (`credentialed`), without what
- * `isUnsafe` names, with git's tracing set off (an environment setting wins
- * over git's global and system files, and trace2 reads no repository's), and
- * git's global and system files unread; then `extraEnv` on top.
- *
- * @category constructors
- * @since 1.0.0
- */
-export const commandEnv = (
-  base: Readonly<Record<string, string | undefined>>,
-  extraEnv: Readonly<Record<string, string>>,
-  credentialed: boolean
-): Record<string, string> => {
-  const env: Record<string, string> = {}
-  for (const [name, value] of Object.entries(base)) {
-    if (value !== undefined && !(credentialed && isUnsafe(name))) env[name] = value
-  }
-  if (credentialed) {
-    for (
-      const name of [
-        "GIT_TRACE",
-        "GIT_TRACE2",
-        "GIT_TRACE2_EVENT",
-        "GIT_TRACE2_PERF",
-        "GIT_TRACE_CURL",
-        "GIT_TRACE_PACKET",
-        "GIT_TRACE_PACKFILE",
-        "GIT_TRACE_PERFORMANCE",
-        "GIT_TRACE_SETUP",
-        "GIT_TRACE_SHALLOW",
-        "GIT_CURL_VERBOSE"
-      ]
-    ) env[name] = "0"
-    env.GIT_CONFIG_NOSYSTEM = "1"
-    env.GIT_CONFIG_GLOBAL = devNull
-  }
-  return { ...env, ...extraEnv, JJ_CONFIG: jjConfig() }
-}
-
-/**
- * The absolute path of the `git` on the runner's own `PATH`, resolved when
- * first asked; `undefined` when there is none.
- */
-let gitPath: string | null | undefined
-const resolveGit = (): string | undefined => {
-  if (gitPath === undefined) {
-    gitPath = null
-    for (const dir of (process.env.PATH ?? "").split(delimiter)) {
-      if (!isAbsolute(dir)) continue
-      const candidate = join(dir, "git")
-      try {
-        accessSync(candidate, constants.X_OK)
-        if (statSync(candidate).isFile()) {
-          gitPath = candidate
-          break
-        }
-      } catch {
-        // Not here.
-      }
-    }
-  }
-  return gitPath ?? undefined
-}
-
 /** The first line of a command's errors, with every absolute path replaced: what a log may say of it. */
 const reasonOf = (stderr: string): string =>
   (stderr.split("\n").find((line) => line.trim() !== "") ?? "").replace(/\/[^\s'"`:,)]+/g, "<path>").slice(0, 200)
@@ -198,11 +94,12 @@ export const jj = (
   args: ReadonlyArray<string>,
   timeoutMs = 120_000,
   cwd?: string,
-  extraEnv: Readonly<Record<string, string>> = {},
-  credentialed = false
+  extraEnv: Readonly<Record<string, string>> = {}
 ): Effect.Effect<Ran> =>
   Effect.callback<Ran>((resume, signal) => {
-    const git = resolveGit()
+    // An empty configuration directory: jj reads no user or host settings.
+    const config = join(tmpdir(), "smithers-runner-jj-config")
+    mkdirSync(config, { recursive: true })
     execFile(
       resolveJjBinary().path,
       [
@@ -212,17 +109,14 @@ export const jj = (
         "--config",
         "user.name=smithers-runner",
         "--config",
-        "user.email=runner@localhost",
-        // Every command runs the git this process resolved, whatever the mirror's jj configuration names: jj runs git
-        // for more than a fetch, and the mirror's configuration is the agent's to write (decision 0148).
-        ...(git === undefined ? [] : ["--config", `git.executable-path=${JSON.stringify(git)}`])
+        "user.email=runner@localhost"
       ],
       {
         signal,
         timeout: timeoutMs,
         ...(cwd === undefined ? {} : { cwd }),
         maxBuffer: 64 * 1024 * 1024,
-        env: commandEnv(process.env, extraEnv, credentialed)
+        env: { ...process.env, ...extraEnv, JJ_CONFIG: config }
       },
       (error, stdout, stderr) => {
         const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1
@@ -256,10 +150,7 @@ export interface GitCredential {
  * What `git`, under jj, reads to authenticate to `credential.remote`'s host:
  * an `Authorization` header through `GIT_CONFIG_*` in the command's own
  * environment, never on its command line, in a file or in a log, and only for
- * HTTPS URLs under that host. The same entries, which git ranks above any
- * repository's configuration, run no hook (a `reference-transaction` hook
- * would see this environment), verify TLS, and drop any pinned address for a
- * host.
+ * HTTPS URLs under that host.
  *
  * @category constructors
  * @since 1.0.0
@@ -267,65 +158,33 @@ export interface GitCredential {
 export const gitAuthEnv = (credential: GitCredential): Record<string, string> => {
   const origin = new URL(credential.remote).origin
   const basic = Buffer.from(`${credential.username}:${credential.password}`).toString("base64")
-  const entries: ReadonlyArray<readonly [string, string]> = [
-    [`http.${origin}/.extraheader`, `AUTHORIZATION: basic ${basic}`],
-    ["core.hooksPath", devNull],
-    ["http.sslVerify", "true"],
-    ["http.curloptResolve", ""]
-  ]
-  const env: Record<string, string> = { GIT_CONFIG_COUNT: String(entries.length), GIT_TERMINAL_PROMPT: "0" }
-  entries.forEach(([key, value], n) => {
-    env[`GIT_CONFIG_KEY_${n}`] = key
-    env[`GIT_CONFIG_VALUE_${n}`] = value
-  })
-  return env
-}
-
-/**
- * Runs `jj args` (a fetch or clone) with `credential` when there is one: git
- * gets it from `gitAuthEnv`, and runs as the absolute `git` this process
- * resolved (as every jj command does here), overriding any
- * `git.executable-path` in the mirror's or anyone's jj configuration. Without
- * a resolved `git`, a credentialed command fails.
- */
-const fetching = (args: ReadonlyArray<string>, credential: Option.Option<GitCredential>) => {
-  if (Option.isNone(credential)) return jj(args, 600_000).pipe(Effect.flatMap(ok("fetch")))
-  if (resolveGit() === undefined) return Effect.fail(new WorkspaceError({ step: "fetch" }))
-  return jj(
-    args,
-    600_000,
-    undefined,
-    gitAuthEnv(credential.value),
-    true
-  )
-    .pipe(Effect.flatMap(ok("fetch")))
+  return {
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: `http.${origin}/.extraheader`,
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+    GIT_TERMINAL_PROMPT: "0"
+  }
 }
 
 /**
  * Makes the checkout of `base` from `mirror`: fetches the mirror first when it
- * doesn't have the commit, and clones it first when it doesn't exist yet. Only
- * then is `credential` asked for, while this checkout alone changes the
- * mirror: a private repository's fetch and clone authenticate with what it
- * gives, a public one's go without. A missing mirror is cloned only with one.
+ * doesn't have the commit, and clones it first when it doesn't exist yet. With
+ * a `credential`, a private repository's fetch and clone authenticate with it.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const create = <E = never>(
-  mirror: string,
-  base: string,
-  checkout: Checkout,
-  credential: Effect.Effect<Option.Option<GitCredential>, E> = Effect.succeed(Option.none())
-): Effect.Effect<void, WorkspaceError | E> =>
+export const create = (mirror: string, base: string, checkout: Checkout, credential?: GitCredential) =>
   exclusive(mirror)(Effect.gen(function*() {
-    if (!existsSync(join(mirror, ".jj"))) {
-      const cloning = yield* credential
-      if (Option.isNone(cloning)) return yield* new WorkspaceError({ step: "fetch" })
+    const auth = credential === undefined ? {} : gitAuthEnv(credential)
+    if (!existsSync(join(mirror, ".jj")) && credential !== undefined) {
       yield* Effect.sync(() => mkdirSync(dirname(mirror), { recursive: true }))
-      yield* fetching(["git", "clone", cloning.value.remote, mirror], cloning)
+      yield* jj(["git", "clone", credential.remote, mirror], 600_000, undefined, auth).pipe(Effect.flatMap(ok("fetch")))
     }
     const known = yield* jj(["-R", mirror, "log", "--ignore-working-copy", "--no-graph", "-r", base, "-T", "commit_id"])
-    if (known.code !== 0) yield* fetching(["-R", mirror, "git", "fetch"], yield* credential)
+    if (known.code !== 0) {
+      yield* jj(["-R", mirror, "git", "fetch"], 600_000, undefined, auth).pipe(Effect.flatMap(ok("fetch")))
+    }
     yield* Effect.sync(() => mkdirSync(dirname(checkout.dir), { recursive: true }))
     yield* jj(["-R", mirror, "workspace", "add", "--name", checkout.name, "-r", base, checkout.dir]).pipe(
       Effect.flatMap(ok("add"))

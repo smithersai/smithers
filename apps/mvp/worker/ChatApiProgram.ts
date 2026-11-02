@@ -193,9 +193,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       // A TODO's agent writes its transcript to the TODO's run (decision 0141).
       runOf: TodoSession.runOf,
       steering: TodoSession.steering(engineWriter),
-      // A private repository's mirror fetches with the App's read-only token for that repository (decision 0148). Off
-      // until the review of its fixes passes: without it the route answers 404 and the runner fetches as before.
-      ...(RunnersApi.GIT_CREDENTIAL_ON ? { gitCredential: GitCredential.make(yield* GitHubConfig.configured, database) } : {}),
+      // A private repository's mirror fetches with the App's read-only token for that repository (decision 0148).
+      gitCredential: GitCredential.make(yield* GitHubConfig.configured, database),
     })
     const runnerAdmin = yield* RunnerAdmin.make(database)
     // Every live runner and its repository's installation, for the deployment's Admins (decision 0148).

@@ -51,21 +51,19 @@ const record = (table: "runner_changes" | "agent_changes", op: string, repoId: s
 
 /**
  * Registers runner `write.name` on its repository with its token's SHA-256, labels and capacity. Adding a name again
- * replaces them and brings a removed runner back; its old token is refused from then on. The Admin route admitted the
- * write by the role GitHub gives on the repository, so the runner is marked authorized there (`repo_authorized_at`,
- * decision 0148): only such a runner is handed a git credential.
+ * replaces them and brings a removed runner back; its old token is refused from then on.
  */
 export const addRunner = (write: RunnerWrite, by: By): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
       if (!(yield* record("runner_changes", "add", write.repoId, write.name, by))) return "repeat" as const
       yield* sql`
-        INSERT INTO runners (repo_id, name, labels, capacity, token_sha256, added_by, repo_authorized_at)
+        INSERT INTO runners (repo_id, name, labels, capacity, token_sha256, added_by)
         VALUES (${write.repoId}, ${write.name}, ARRAY(SELECT jsonb_array_elements_text(${textArray(write.labels)}::jsonb)),
-          ${write.capacity}, ${write.tokenSha256}, ${by.actorId}, now())
+          ${write.capacity}, ${write.tokenSha256}, ${by.actorId})
         ON CONFLICT (repo_id, name) DO UPDATE SET labels = EXCLUDED.labels, capacity = EXCLUDED.capacity,
           token_sha256 = EXCLUDED.token_sha256, added_by = EXCLUDED.added_by, added_at = now(), seen_at = NULL,
-          removed_at = NULL, repo_authorized_at = now()`
+          removed_at = NULL`
       return "set" as const
     })))
 

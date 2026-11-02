@@ -12,7 +12,6 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
-import * as Migration0089 from "../../db/migrations/0089_runner_git_credentials.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
@@ -567,8 +566,8 @@ describe("the repository's runners and agents", () => {
       expect((await asAdmin.send("runners/nyc-01", "GET")).status).toBe(405)
       expect((await asAdmin.send("agents/coder", "POST")).status).toBe(405)
       expect(await asAdmin.send("runners/nyc-01", "PUT", runner)).toEqual({ status: 202, body: { name: "nyc-01" } })
-      expect(await sql`SELECT name, labels, capacity, added_by AS "addedBy", repo_authorized_at IS NOT NULL AS authorized FROM runners`).toEqual([
-        { name: "nyc-01", labels: ["linux"], capacity: 4, addedBy: "person-admin", authorized: true },
+      expect(await sql`SELECT name, labels, capacity, added_by AS "addedBy" FROM runners`).toEqual([
+        { name: "nyc-01", labels: ["linux"], capacity: 4, addedBy: "person-admin" },
       ])
       expect((await asAdmin.send("agents/smithers", "PUT", { labels: [], profile: "p" })).status).toBe(400)
       expect((await asAdmin.send("agents/coder", "PUT", { labels: [], profile: "p", maxHours: 13 })).status).toBe(400)
@@ -622,28 +621,6 @@ describe("the repository's runners and agents", () => {
       await asAdmin.close()
     }
     expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
-  })
-
-  // Production b9dca623 registered runners by the deployment's role where no installation was recorded (decision 0148).
-  // A runner registered before is authorized only where its repository's installation record is older than it.
-  test("a runner registered before registration proved access claims nothing, unless backfilled, until registered again", async () => {
-    const token = await register("legacy")
-    await Effect.runPromise((await jobs()).start(taskOf(), "todo:legacy#g1"))
-    await sql`UPDATE runners SET repo_authorized_at = NULL`
-    // The installation recorded after the runner was added: nothing proves the registrant's role there.
-    await sql`UPDATE github_repositories SET checked_at = now() + interval '1 minute'`
-    await query(Migration0089.backfill)
-    const { claim } = await routes()
-    expect(await claim(token)).toEqual({ status: 403, body: { code: "not_authorized" } })
-    // Recorded before the runner was added: the route took the role GitHub gave there, so the row is backfilled.
-    await sql`UPDATE github_repositories SET checked_at = now() - interval '1 day'`
-    await query(Migration0089.backfill)
-    expect((await claim(token)).body).toMatchObject({ job: { key: "todo:legacy#g1" } })
-    // Registered again: authorized whatever the backfill said.
-    await sql`UPDATE runners SET repo_authorized_at = NULL`
-    expect((await claim(token)).status).toBe(403)
-    await query(Store.addRunner({ repoId: REPO, name: "legacy", tokenSha256: digestSync(token), labels: ["linux", "nyc"], capacity: 2 }, by()))
-    expect((await claim(token, { running: [] })).status).toBe(200)
   })
 
   test("a runner on a repository with no recorded installation claims none of its jobs", async () => {

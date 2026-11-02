@@ -45,7 +45,6 @@ import { Cause, Deferred, Effect, Exit, Fiber, Option, Queue, Schema, Stream } f
 import { execFile } from "node:child_process"
 import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import type * as Config from "./Config.ts"
-import * as Credential from "./Credential.ts"
 import * as Host from "./Host.ts"
 import * as Spool from "./Spool.ts"
 import * as Tree from "./Tree.ts"
@@ -275,29 +274,17 @@ export const work = (
     if (profile === undefined) return yield* report(failed("refused"))
     if (!Workspace.exists(checkout)) {
       if (job.generation > 1 || control.reclaimed) return yield* report(failed("machine_lost"))
-      // A private repository's mirror fetches with the host's read credential for this job (decision 0148), asked for
-      // only when the mirror must fetch or clone. A `404` fetches as before; a host or GitHub that can't answer now
-      // makes the job retryable; a refusal fails the workspace without fetching.
+      // A private repository's mirror fetches with the host's read credential for this job (decision 0148). A public
+      // one, or a host without the route, fetches as before; a refusal leaves the fetch to fail on its own.
       const host = yield* Host.Host
+      const credential = yield* host.gitCredential({ key: job.key, claim: job.claim }).pipe(Effect.option)
       const made = yield* Effect.exit(Workspace.create(
         repository.mirror,
         job.task.base,
         checkout,
-        Credential.forJob(host, job)
-      )).pipe(Effect.ensuring(Effect.sync(() => Credential.forget(job))))
-      if (Exit.isFailure(made)) {
-        const error = Cause.findErrorOption(made.cause)
-        if (Option.isSome(error) && error.value instanceof Credential.CredentialUnavailable) {
-          return yield* report(
-            error.value.afterSeconds === undefined
-              ? { _tag: "Retryable" }
-              : { _tag: "Retryable", afterSeconds: error.value.afterSeconds },
-            { credential: "unavailable" }
-          )
-        }
-        const refused = Option.isSome(error) && error.value instanceof Credential.CredentialRefused
-        return yield* report(failed("workspace"), refused ? { credential: "refused" } : {})
-      }
+        Option.getOrUndefined(credential)
+      ))
+      if (Exit.isFailure(made)) return yield* report(failed("workspace"))
     }
     if (Date.now() >= job.deadline) return yield* report(failed("timeout"))
     const saved = readCheckpoint(checkout)
@@ -537,11 +524,7 @@ const session = (options: {
           if (taken) {
             awaiting = [...awaiting, steer.id]
             yield* options.spool.append(Transcript.KINDS.steer, { id: steer.id, mode: "steering" })
-            return yield* steerLog(steer.id, {
-              mode: "steering",
-              outcome: "handed",
-              durationMs: Date.now() - startedAt
-            })
+            return yield* steerLog(steer.id, { mode: "steering", outcome: "handed", durationMs: Date.now() - startedAt })
           }
         }
         // No turn in flight: the steer starts the next one. Else the only way every ACP agent takes it: cancel the
@@ -603,9 +586,7 @@ const session = (options: {
         while (Date.now() - lastUpdate < QUIET.afterMs && Date.now() - endedAt < QUIET.maxMs) {
           yield* Effect.sleep(Math.max(10, Math.min(QUIET.afterMs - (Date.now() - lastUpdate), 1000)))
         }
-        yield* Effect.logInfo("runner.quiet").pipe(
-          Effect.annotateLogs({ job: job.key, waitedMs: Date.now() - endedAt })
-        )
+        yield* Effect.logInfo("runner.quiet").pipe(Effect.annotateLogs({ job: job.key, waitedMs: Date.now() - endedAt }))
       })
       const settled = yield* Effect.raceAll([
         quiet.pipe(Effect.as("quiet" as const)),

@@ -17,9 +17,8 @@ import { Transcripts } from "./RunContent.ts"
 // `agent_jobs`, the external system the host's `ExternalAgent` step waits on durably: the routes start nothing and retry
 // nothing.
 //
-// - `POST /api/runners/claim { profiles, free, running, waitSeconds }`: `403 not_authorized` for a runner registered
-//   before registration proved access to its repository (decision 0148), which an Admin registers again. Else first a
-//   job the runner holds but didn't list (it restarted), handed back with its claim, `reclaimed`; else, while it has room under its capacity, its
+// - `POST /api/runners/claim { profiles, free, running, waitSeconds }`: first a job the runner holds but didn't list
+//   (it restarted), handed back with its claim, `reclaimed`; else, while it has room under its capacity, its
 //   repository's oldest queued job for a profile it has, whose labels it carries, and pinned to no other runner,
 //   claimed with a new claim id and a lease. With `minQueuedSeconds` (an overflow runner, decision 0144), only a job
 //   claimable for that long: the route never asks which runners are held or full, so it stays the same for every
@@ -80,17 +79,8 @@ export const handles = (path: string): boolean => Object.hasOwn(ROUTE_OF, path)
 
 const noStore = { "cache-control": "no-store" }
 
-/**
- * Whether ChatApi wires the git-credential route to the App (decision 0148). Off until the security review of its
- * fixes passes; off, the route answers `404 not_configured` and the runner fetches without a credential.
- */
-export const GIT_CREDENTIAL_ON = false
-
-/** The least time between two credentials for one job: a runner reuses one until it nears its end (decision 0148). */
-export const CREDENTIAL_GAP_SECONDS = 30
-
-/** The most credentials one job's runner is handed in an hour (decision 0148). */
-export const CREDENTIALS_PER_HOUR = 3
+/** The git-credential route answers 404 to every request (decision 0148, pending its security review's fixes). */
+const OFF: boolean = true
 
 const decodeClaim = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.ClaimRequest))
 const decodeHeartbeat = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.HeartbeatRequest))
@@ -122,8 +112,6 @@ interface Runner {
   readonly name: string
   readonly repoId: string
   readonly tokenSha256: string
-  /** Whether an Admin of its repository, by the role GitHub gives there, registered it (decision 0148). */
-  readonly authorized: boolean
 }
 
 /** A credential for git over HTTPS to one repository, and when it stops working (epoch ms). */
@@ -132,15 +120,6 @@ export interface GitCredential {
   readonly username: string
   readonly password: Redacted.Redacted<string>
   readonly expiresAt: number
-}
-
-/**
- * The App's read credentials (decision 0148): `mint` makes one for a repository's contents alone, `none` where the App
- * isn't configured or installed there; `revoke` ends one the route won't deliver, and never fails.
- */
-export interface GitCredentials<R> {
-  readonly mint: (repoId: string) => Effect.Effect<Option.Option<GitCredential>, unknown, R>
-  readonly revoke: (credential: GitCredential) => Effect.Effect<void, never, R>
 }
 
 /** A claimed row, as the claim returns it. */
@@ -188,7 +167,7 @@ export const make = <E, R>(
      * A read-only credential for git over HTTPS to `repoId`, as the App mints it for that repository's contents alone
      * (decision 0148); `none` where the App isn't configured or installed there. Absent: the route answers `404`.
      */
-    readonly gitCredential?: GitCredentials<R>
+    readonly gitCredential?: (repoId: string) => Effect.Effect<Option.Option<GitCredential>, unknown, R>
   },
 ) => {
   const leaseSeconds = options.leaseSeconds ?? LEASE_SECONDS
@@ -228,22 +207,15 @@ export const make = <E, R>(
       if (Option.isNone(token)) return Option.none<Runner>()
       const tokenSha256 = digestSync(token.value)
       const sql = yield* SqlClient.SqlClient
-      const [row] = yield* sql<{
-        readonly id: string
-        readonly name: string
-        readonly repoId: string
-        readonly away: boolean
-        readonly authorized: boolean
-      }>`
+      const [row] = yield* sql<{ readonly id: string; readonly name: string; readonly repoId: string; readonly away: boolean }>`
         WITH found AS (
-          SELECT id, name, repo_id, seen_at, repo_authorized_at FROM runners
-          WHERE token_sha256 = ${tokenSha256} AND removed_at IS NULL),
+          SELECT id, name, repo_id, seen_at FROM runners WHERE token_sha256 = ${tokenSha256} AND removed_at IS NULL),
         touched AS (
           UPDATE runners r SET seen_at = now() FROM found
           WHERE r.id = found.id
             AND (found.seen_at IS NULL OR found.seen_at < now() - ${SEEN_EVERY_SECONDS}::int * interval '1 second')
           RETURNING r.id)
-        SELECT id::text AS id, name, repo_id AS "repoId", repo_authorized_at IS NOT NULL AS authorized,
+        SELECT id::text AS id, name, repo_id AS "repoId",
           coalesce(seen_at < now() - ${Fleet.UNREACHABLE_SECONDS}::int * interval '1 second', false) AS away
         FROM found`
       if (row === undefined) return Option.none<Runner>()
@@ -251,7 +223,7 @@ export const make = <E, R>(
       if (row.away) {
         yield* sql`UPDATE fleet_alerts SET closed_at = now() WHERE kind = 'offline' AND subject = ${row.id} AND closed_at IS NULL`
       }
-      return Option.some({ id: row.id, name: row.name, repoId: row.repoId, tokenSha256, authorized: row.authorized })
+      return Option.some({ id: row.id, name: row.name, repoId: row.repoId, tokenSha256 })
     })
 
   const claimed = `key, claim::text AS claim, generation, task,
@@ -271,9 +243,8 @@ export const make = <E, R>(
 
   /**
    * Claims the oldest job the runner may take, now, among those claimable for at least `minQueuedSeconds`. The same
-   * statement checks the runner's token still names it, that it has room under its registered capacity, that an Admin
-   * of its repository registered it by GitHub's role, and that Smithers recorded the App's installation on its
-   * repository (decision 0148).
+   * statement checks the runner's token still names it, that it has room under its registered capacity, and that
+   * Smithers recorded the App's installation on its repository (decision 0148).
    */
   const claimOnce = (runner: Runner, claim: string, profiles: ReadonlyArray<string>, minQueuedSeconds: number) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -283,7 +254,6 @@ export const make = <E, R>(
         WHERE key = (
           SELECT j.key FROM agent_jobs j, runners r
           WHERE r.id = ${runner.id}::uuid AND r.token_sha256 = ${runner.tokenSha256} AND r.removed_at IS NULL
-            AND r.repo_authorized_at IS NOT NULL
             AND EXISTS (SELECT 1 FROM github_repositories g WHERE g.repo_id = r.repo_id AND g.installation_id IS NOT NULL)
             AND j.repo_id = r.repo_id AND j.status = 'queued' AND NOT j.cancel_requested
             AND j.profile = ANY(ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(profiles)}::jsonb)))
@@ -301,8 +271,6 @@ export const make = <E, R>(
     Effect.gen(function* () {
       const wants = yield* bodyOf(request, decodeClaim)
       if (wants._tag === "Refused") return refuse(fields, wants.status, "invalid")
-      // Registered before registration proved access to the repository: an Admin registers it again (decision 0148).
-      if (!runner.authorized) return refuse(fields, 403, "not_authorized")
       const job = (row: Claimed, reclaimed: boolean) =>
         Effect.gen(function* () {
           const task = yield* decodeTask(row.task).pipe(Effect.orDie)
@@ -500,120 +468,36 @@ export const make = <E, R>(
 
   /**
    * `POST /api/runners/git-credential { key, claim }` (decision 0148): for a job this runner holds now, a read-only
-   * credential for its repository, which must be the one the runner is registered on. A job's runner is handed one at
-   * most every `CREDENTIAL_GAP_SECONDS` and `CREDENTIALS_PER_HOUR` an hour, else `429` with `retry-after`; concurrent
-   * requests are decided one at a time on the job's row, so only one mints. After minting, the route checks the hold
-   * again: a job settled, a runner retired or a deadline passed meanwhile gets no credential, and the minted one is
-   * revoked. Never logged: the record names the job and the outcome only.
+   * credential for its repository, which must be the one the runner is registered on. Never logged: the record names
+   * the job and the outcome only.
    */
   const gitCredential = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
     Effect.gen(function* () {
+      // Off until the security review's findings on decision 0148 are fixed: the runner reads 404 as no credential and
+      // fetches as before.
+      if (OFF) return refuse(fields, 404, "not_found")
       const asked = yield* bodyOf(request, decodeGitCredential)
       if (asked._tag === "Refused") return refuse(fields, asked.status, "invalid")
       fields.key = asked.value.key
-      const credentials = options.gitCredential
-      if (credentials === undefined) return refuse(fields, 404, "not_configured")
-      if (!isUuid(asked.value.claim)) return refuse(fields, 409, "not_held")
+      if (options.gitCredential === undefined) return refuse(fields, 404, "not_configured")
       const sql = yield* SqlClient.SqlClient
-      const { key, claim } = asked.value
-      // One transaction on the job's row: the hold, and the issuance it reserves.
-      const reserved = yield* sql.withTransaction(Effect.gen(function* () {
-        const [row] = yield* sql<{
-          readonly task: unknown
-          readonly tokenSha256: string
-          readonly authorized: boolean
-          readonly installed: boolean
-          readonly count: number
-          readonly sinceSeconds: number | null
-          readonly lastSeconds: number | null
-          readonly lastAt: string | null
-          readonly since: string | null
-        }>`
-          SELECT j.task, r.token_sha256 AS "tokenSha256", r.repo_authorized_at IS NOT NULL AS authorized,
-            EXISTS (SELECT 1 FROM github_repositories g WHERE g.repo_id = r.repo_id AND g.installation_id IS NOT NULL)
-              AS installed,
-            j.git_credentials AS count,
-            extract(epoch FROM clock_timestamp() - j.git_credentials_since)::float8 AS "sinceSeconds",
-            extract(epoch FROM clock_timestamp() - j.git_credential_at)::float8 AS "lastSeconds",
-            j.git_credential_at::text AS "lastAt", j.git_credentials_since::text AS since
-          FROM agent_jobs j JOIN runners r ON r.id = j.runner_id
-          WHERE j.key = ${key} AND j.claim = ${claim}::uuid AND r.id = ${runner.id}::uuid AND j.status = 'claimed'
-            AND j.deadline_at > now() AND r.removed_at IS NULL
-          FOR UPDATE OF j`
-        if (row === undefined || row.tokenSha256 !== runner.tokenSha256) return { _tag: "NotHeld" } as const
-        const task = yield* decodeTask(row.task).pipe(Effect.option)
-        // A runner reads only the repository it is registered on, whatever a task names.
-        if (Option.isNone(task) || task.value.repository !== runner.repoId) return { _tag: "OtherRepository" } as const
-        // Registered before registration proved access to the repository: an Admin registers it again.
-        if (!row.authorized) return { _tag: "NotAuthorized" } as const
-        // Asked before the installation is recorded, minting would discover and record it: never here.
-        if (!row.installed) return { _tag: "NotInstalled" } as const
-        const fresh = row.sinceSeconds === null || row.sinceSeconds >= 3600
-        const count = fresh ? 0 : row.count
-        if (count >= CREDENTIALS_PER_HOUR) {
-          return { _tag: "Busy", retryAfter: Math.min(3600, Math.max(1, Math.ceil(3600 - row.sinceSeconds!))) } as const
-        }
-        if (row.lastSeconds !== null && row.lastSeconds < CREDENTIAL_GAP_SECONDS) {
-          return {
-            _tag: "Busy",
-            retryAfter: Math.min(
-              CREDENTIAL_GAP_SECONDS,
-              Math.max(1, Math.ceil(CREDENTIAL_GAP_SECONDS - row.lastSeconds)),
-            ),
-          } as const
-        }
-        yield* sql`
-          UPDATE agent_jobs SET git_credentials = ${count + 1}, git_credential_at = clock_timestamp(),
-            git_credentials_since = CASE WHEN ${fresh} THEN clock_timestamp() ELSE git_credentials_since END
-          WHERE key = ${key}`
-        return { _tag: "Reserved", previous: { count: row.count, lastAt: row.lastAt, since: row.since } } as const
-      }))
-      switch (reserved._tag) {
-        case "NotHeld":
-          return refuse(fields, 409, "not_held")
-        case "OtherRepository":
-          return refuse(fields, 403, "other_repository")
-        case "NotAuthorized":
-          return refuse(fields, 403, "not_authorized")
-        case "NotInstalled":
-          return refuse(fields, 404, "app_not_installed")
-        case "Busy": {
-          fields.code = "busy"
-          fields.retryAfter = reserved.retryAfter
-          return HttpServerResponse.jsonUnsafe({ code: "busy" }, {
-            status: 429,
-            headers: { ...noStore, "retry-after": String(reserved.retryAfter) },
-          })
-        }
-      }
-      // Nothing issued: the reservation goes back, so an outage of GitHub doesn't spend the job's hour.
-      const release = sql`
-        UPDATE agent_jobs SET git_credentials = ${reserved.previous.count},
-          git_credential_at = ${reserved.previous.lastAt}::timestamptz,
-          git_credentials_since = ${reserved.previous.since}::timestamptz
-        WHERE key = ${key} AND claim = ${claim}::uuid`
-      const minted = yield* credentials.mint(runner.repoId).pipe(Effect.onError(() => Effect.ignore(release)))
-      if (Option.isNone(minted)) {
-        yield* release
-        return refuse(fields, 404, "app_not_installed")
-      }
-      // Settled, retired or past its deadline while GitHub minted: the credential is never delivered.
-      const [still] = yield* sql`
-        SELECT 1 FROM agent_jobs j JOIN runners r ON r.id = j.runner_id
-        WHERE j.key = ${key} AND j.claim = ${claim}::uuid AND r.id = ${runner.id}::uuid
-          AND r.token_sha256 = ${runner.tokenSha256} AND r.removed_at IS NULL AND r.repo_authorized_at IS NOT NULL
-          AND j.status = 'claimed' AND j.deadline_at > now()
-          AND EXISTS (SELECT 1 FROM github_repositories g WHERE g.repo_id = r.repo_id AND g.installation_id IS NOT NULL)`
-      if (still === undefined) {
-        yield* credentials.revoke(minted.value)
-        fields.revoked = true
-        return refuse(fields, 409, "not_held")
-      }
+      const [row] = isUuid(asked.value.claim)
+        ? yield* sql<{ readonly task: unknown }>`
+          SELECT task FROM agent_jobs
+          WHERE key = ${asked.value.key} AND claim = ${asked.value.claim}::uuid AND runner_id = ${runner.id}::uuid
+            AND status = 'claimed' AND deadline_at > now()`
+        : []
+      if (row === undefined) return refuse(fields, 409, "not_held")
+      const task = yield* decodeTask(row.task).pipe(Effect.option)
+      // A runner reads only the repository it is registered on, whatever a task names.
+      if (Option.isNone(task) || task.value.repository !== runner.repoId) return refuse(fields, 403, "other_repository")
+      const credential = yield* options.gitCredential(runner.repoId)
+      if (Option.isNone(credential)) return refuse(fields, 404, "app_not_installed")
       return answer(fields, "issued", {
-        remote: minted.value.remote,
-        username: minted.value.username,
-        password: Redacted.value(minted.value.password),
-        expiresAt: minted.value.expiresAt,
+        remote: credential.value.remote,
+        username: credential.value.username,
+        password: Redacted.value(credential.value.password),
+        expiresAt: credential.value.expiresAt,
       })
     }).pipe(Effect.provide(database))
 

@@ -22,9 +22,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 export class HostError extends Schema.TaggedError<HostError>()("@smthrs/cli/Runner/HostError", {
   code: Schema.Literals(["unavailable", "refused", "invalid"]),
   route: Schema.String,
-  status: Schema.optional(Schema.Int),
-  /** The wait the host's `retry-after` said, in seconds, on a `429` or `503`. */
-  retryAfterSeconds: Schema.optional(Schema.Int)
+  status: Schema.optional(Schema.Int)
 }) {}
 
 /**
@@ -89,15 +87,7 @@ export const layer = (options: { readonly origin: string; readonly token: string
           )
           const status = response.status
           if (status === 401 || status === 403) return yield* new HostError({ code: "refused", route, status })
-          if (status >= 500 || status === 429) {
-            const wait = Number(response.headers["retry-after"])
-            return yield* new HostError({
-              code: "unavailable",
-              route,
-              status,
-              ...(Number.isInteger(wait) && wait > 0 ? { retryAfterSeconds: wait } : {})
-            })
-          }
+          if (status >= 500 || status === 429) return yield* new HostError({ code: "unavailable", route, status })
           if (status !== 200) return yield* new HostError({ code: "invalid", route, status })
           const text = yield* response.text.pipe(Effect.mapError(() => new HostError({ code: "unavailable", route })))
           return yield* decode(text).pipe(Effect.mapError(() => new HostError({ code: "invalid", route, status })))

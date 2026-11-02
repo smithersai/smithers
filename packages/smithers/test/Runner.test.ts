@@ -533,32 +533,6 @@ describe("smthrs runner serve", () => {
     expect(await host.settled(row)).toEqual({ _tag: "Failed", reason: "machine_lost" })
   }, 90_000)
 
-  // Decision 0148: the credential is asked for only when the mirror must fetch. A host or GitHub that can't issue one
-  // now makes the job retryable, with the host's wait; a refusal fails the workspace; a 404 fetches as before.
-  test("a job whose base the mirror has never asks for a credential", async () => {
-    configure()
-    const row = host.enqueue(Host.task({ base: mirror.base, prompt: "add the line `x` to `x`" }))
-    host.credential.status = 503
-    serveInProcess()
-    expect((await host.settled(row))._tag).toBe("Done")
-    expect(host.credential.asks).toBe(0)
-  }, 90_000)
-
-  test("a fetch whose credential the host can't issue now is retryable with its wait; a refused one fails workspace", async () => {
-    configure()
-    const missing = "f".repeat(40)
-    host.credential.status = 429
-    host.credential.retryAfter = 30
-    const busy = host.enqueue(Host.task({ base: missing, prompt: "refuse" }))
-    serveInProcess()
-    expect(await host.settled(busy)).toEqual({ _tag: "Retryable", afterSeconds: 30 })
-    host.credential.status = 403
-    host.credential.retryAfter = undefined
-    const refused = host.enqueue(Host.task({ base: missing, prompt: "refuse" }))
-    expect(await host.settled(refused)).toEqual({ _tag: "Failed", reason: "workspace" })
-    expect(host.credential.asks).toBe(2)
-  }, 90_000)
-
   test("a deadline already past fails timeout", async () => {
     configure()
     const row = host.enqueue(Host.task({ base: mirror.base, prompt: "run `sleep 60`" }), {
