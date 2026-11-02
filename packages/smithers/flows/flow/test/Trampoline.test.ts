@@ -12,7 +12,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
@@ -114,18 +114,37 @@ describe("Flow.Handoff", () => {
     }))
 })
 
+/** A source module: TypeScript, or the same module migrated to VibeLang. */
+const sourceExtensions = [".ts", ".vibe"] as const
+
+/** The one file that holds the source module `stem`, among the paths `exists` accepts. */
+const sourceFile = (exists: (path: string) => boolean, stem: string): string => {
+  const files = sourceExtensions.map((extension) => `${stem}${extension}`).filter(exists)
+  if (files.length !== 1) {
+    throw new Error(`${stem} needs one source module, found ${files.length === 0 ? "none" : files.join(" and ")}`)
+  }
+  return files[0]!
+}
+
+const packageFile = (path: string): URL => new URL(`../${path}`, import.meta.url)
+
 describe("round scope contract", () => {
+  // Documents are named by file; source modules by module, whichever source
+  // file holds it.
   for (
-    const path of [
-      "docs/concepts/suspension-and-replay.md",
-      "docs/concepts/trampoline-rounds.md",
-      "docs/guides/cancel-and-roll-back.md",
-      "src/Flow/Flow.ts",
-      "src/Flow/Runtime.ts"
+    const [name, path] of [
+      ...[
+        "docs/concepts/suspension-and-replay.md",
+        "docs/concepts/trampoline-rounds.md",
+        "docs/guides/cancel-and-roll-back.md"
+      ].map((path) => [path, () => path] as const),
+      ...["src/Flow/Flow", "src/Flow/Runtime"].map((stem) =>
+        [stem, () => sourceFile((file) => existsSync(packageFile(file)), stem)] as const
+      )
     ]
   ) {
-    it(`${path} documents the rollback boundary at handoff`, () => {
-      const text = readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
+    it(`${name} documents the rollback boundary at handoff`, () => {
+      const text = readFileSync(packageFile(path()), "utf8")
         .replace(/\s*\*\s?/g, " ")
         .replace(/\s+/g, " ")
       expect(text).not.toContain("not when a round ends")
@@ -134,6 +153,24 @@ describe("round scope contract", () => {
       )
     })
   }
+
+  it.each([
+    ["a .ts module", ["src/M.ts"], "src/M.ts"],
+    ["a .vibe module", ["src/M.vibe"], "src/M.vibe"]
+  ])("reads the source of %s", (_case, files, expected) => {
+    expect(sourceFile((file) => files.includes(file), "src/M")).toBe(expected)
+  })
+
+  it.each([
+    ["a missing module", ["src/Other.ts"], "none"],
+    ["a module in both languages", ["src/M.ts", "src/M.vibe"], "src/M.ts and src/M.vibe"],
+    ["a declaration sidecar only", ["src/M.d.vibe.ts"], "none"],
+    ["a module in another language", ["src/M.js"], "none"]
+  ])("refuses the source of %s", (_case, files, found) => {
+    expect(() => sourceFile((file) => files.includes(file), "src/M")).toThrow(
+      `src/M needs one source module, found ${found}`
+    )
+  })
 
   it.effect("discards round 1 rollback before round 2 in the same lineage fails", () =>
     Effect.gen(function*() {
