@@ -20,13 +20,20 @@ export const memberRunSource = (
     }).pipe(Stream.changes),
 )
 
+/** `read` once sign-in resolves to signed in, else `visitor`: a visitor's authenticated read would only log a 401. */
+export const whenSignedIn = <A, E, R, A2, E2, R2>(
+  read: Effect.Effect<A, E, R>,
+  visitor: Effect.Effect<A2, E2, R2>,
+  auth: Option.Option<AuthStore["Service"]>,
+): Effect.Effect<A | A2, E | E2, R | R2> => Option.isNone(auth) ? read :
+  auth.value.sessionState.rows.pipe(
+    Stream.filter((rows) => rows[0]!.status === "signed_in" || rows[0]!.status === "signed_out"),
+    Stream.runHead,
+    Effect.flatMap((rows): Effect.Effect<A | A2, E | E2, R | R2> => Option.isSome(rows) && rows.value[0]!.status === "signed_in" ? read : visitor),
+  )
+
 /** Wait for sign-in to resolve before reading the authenticated cloud index. */
 export const cloudRunList = <A, E, R>(
   read: Effect.Effect<ReadonlyArray<A>, E, R>,
   auth: Option.Option<AuthStore["Service"]>,
-): Effect.Effect<ReadonlyArray<A>, E, R> => Option.isNone(auth) ? read :
-  auth.value.sessionState.rows.pipe(
-    Stream.filter((rows) => rows[0]!.status === "signed_in" || rows[0]!.status === "signed_out"),
-    Stream.runHead,
-    Effect.flatMap((rows) => Option.isSome(rows) && rows.value[0]!.status === "signed_in" ? read : Effect.succeed([])),
-  )
+): Effect.Effect<ReadonlyArray<A>, E, R> => whenSignedIn(read, Effect.succeed([] as ReadonlyArray<A>), auth)

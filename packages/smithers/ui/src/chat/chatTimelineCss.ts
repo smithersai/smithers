@@ -10,6 +10,7 @@ export const chatTimelineCss = `
 .sui-timeline-disclosure[open]>summary{color:var(--text,#211d18)}
 @media(max-width:960px){.sui-timeline-disclosure>summary{min-width:32px;min-height:${t.controlHeight};box-sizing:border-box;display:flex;align-items:center}}
 @media(max-width:1179px){.sui-chat-transcript:has(> .sui-timeline-disclosure[open]){z-index:41}}
+.sui-chat-transcript:has(> .sui-timeline-disclosure) .sui-chat-messages::before{content:"";display:block;flex:none;height:34px}
 .sui-chat-timeline{
   --sui-tl-text:var(--text,#211d18);--sui-tl-muted:var(--text-muted,#665f54);--sui-tl-faint:var(--text-faint,#6c655a);
   --sui-tl-ask:var(--sui-tl-muted);--sui-tl-answer:var(--brand,#0f766e);--sui-tl-bg:var(--bg,#f7f4ee);
@@ -24,6 +25,7 @@ export const chatTimelineCss = `
 @media(min-width:1180px){@container(min-width:600px){
 .sui-timeline-disclosure,.sui-timeline-disclosure[open]{inset-inline-end:calc(100% + 8px);top:22px;bottom:22px;width:var(--sui-timeline-room,342px);z-index:1}
 .sui-timeline-disclosure>summary,.sui-timeline-disclosure[open]>summary{display:none}
+.sui-chat-transcript:has(> .sui-timeline-disclosure) .sui-chat-messages::before{display:none}
 .sui-timeline-disclosure::details-content{display:block;content-visibility:visible;height:100%}
 .sui-timeline-disclosure .sui-chat-timeline,.sui-timeline-disclosure[open] .sui-chat-timeline{display:block;width:100%;height:100%;padding:0;background:none;border:0;border-radius:0;box-shadow:none}
 .sui-chat-timeline:not(:hover):not(:focus-within){--q-tx:var(--sui-tl-faint);--q-tx-in:var(--sui-tl-muted);--q-off:.85;--q-mk:30%;--q-mk-in:56%;--q-st:62%;--q-ui:30%;--q-dot:68%;--q-line:20%}

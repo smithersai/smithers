@@ -1033,6 +1033,17 @@ describe("the runs on Cloudflare in the list (ruling FLOW-13)", () => {
   })
 })
 
+test("a visitor's Run form says Sign in without asking ChatApi", async () => {
+  // `flows` dies if it is asked (`open`).
+  const t = open({ inspect: () => refused("unused"), list: () => Effect.succeed({ runs: [], cursor: null }) }, true)
+  const auth = Option.getOrThrow(t.auth)
+  auth.sessionState.tanstack.startSyncImmediate()
+  const loading = t.run(t.store.loadRepoFlows({ owner: "octo", name: "hello" }))
+  await t.run(auth.session.update(SESSION, (row) => { row.status = "signed_out" }))
+  await loading
+  expect(Option.getOrThrow(await t.run(t.store.form.get("form")))).toMatchObject({ state: "refused", refusal: "authentication" })
+})
+
 test("a visitor's cloud history resolves without issuing an authenticated read", async () => {
   let reads = 0
   const t = open({ inspect: () => refused("unused"), list: () => Effect.succeed({ runs: [], cursor: null }),

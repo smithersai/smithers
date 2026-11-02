@@ -2,7 +2,7 @@ import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Clock, Context, Duration, Effect, Layer, Metric, Option, Ref, Scope, Semaphore, Stream } from "effect"
-import { RemoteReadFailed, RemoteRunsClient } from "./api"
+import { RemoteReadFailed, RemoteRunsClient, RepoRunsFailed } from "./api"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT, settled } from "./contract"
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
 import { CloudRun, FORM, type Inspection, type RepoName, RepoRunForm, RepoRunRow, RepoRunsLoaded, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
@@ -11,7 +11,7 @@ import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 import { repoId } from "../repo/contract"
 import { AuthStore } from "../auth/store"
 import { RepoStore } from "../repo/store"
-import { cloudRunList, memberRunSource } from "./source"
+import { cloudRunList, memberRunSource, whenSignedIn } from "./source"
 import { codeOf } from "../../errorCode"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
@@ -691,7 +691,8 @@ export class RunsStore extends Context.Service<
         Effect.gen(function* () {
           const generation = yield* nextGeneration
           yield* setForm({ repo, flows: [], defaultBranch: null, flow: null, ref: null, schema: null, state: "loading", refusal: null, token: null })
-          const read = yield* Effect.result(remote.flows(repo))
+          // A visitor sees the form's Sign in without the 401 a request would log.
+          const read = yield* Effect.result(whenSignedIn(remote.flows(repo), Effect.fail(new RepoRunsFailed({ code: "authentication" })), auth))
           if (!(yield* isLatest(generation))) return
           yield* read._tag === "Success"
             ? setForm({ flows: read.success.flows, defaultBranch: read.success.defaultBranch, ref: read.success.defaultBranch, state: "ready" })
