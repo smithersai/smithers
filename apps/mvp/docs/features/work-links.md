@@ -56,6 +56,8 @@ One command proves on a deployment that Smithers tracks our issues: `E2E_PROD_UR
 2. **Seed**: `node ops/issue-tracking/seed.mjs --repo <owner>/<name>` creates them through Smithers' own writes route as the test person, one every 7.5 s (480 an hour, under GitHub's 500 content creations an hour), resumable, waiting out `retry-after`, and pausing while a production e2e run holds `run.lock`. 5,000 issues take about 10.5 hours.
 3. **Prove**: (a) the paged list walks every issue and the browser lists, searches and opens one within budgets; (b) every seeded record is an issue with its title; (c) a registered runner posts each record's links, the list and its `?work=pr-or-queue` filter answer them, and from a lane's issue one click reaches its lane, session, queue entry and merge; (d) a new issue's status follows a machine's posts, live on its page. Numbers go to `test-results/issue-tracking.json`.
 
+**The cold waterfall**: `E2E_PROD_URL=https://smithers.sh node e2e/prod.mjs e2e/issue-waterfall.spec.ts --project=deployment` opens the list and one issue on new devices (`E2E_WATERFALL_VISITS`, 3 by default) and prints each visit's stages: the document, the app's assets, the boot's marks, every `/api/` request and the main thread's long tasks, until the first rows or the issue's title showed. `E2E_WATERFALL_PROFILE=<dir>` saves each visit's CPU profile. Paths name the repository `<repo>`; no title or body leaves the browser.
+
 Settings: `E2E_TRACKING_REPOSITORY`, `E2E_TRACKING_RECORDS`, `E2E_TRACKING_SEED_STATE`, `E2E_TRACKING_RUNNER_TOKEN_FILE` (made and registered by the spec when absent), `E2E_TRACKING_MIN_ISSUES`, `E2E_TRACKING_LINKED`.
 
 ## Tests
@@ -68,3 +70,4 @@ Settings: `E2E_TRACKING_REPOSITORY`, `E2E_TRACKING_RECORDS`, `E2E_TRACKING_SEED_
 | `ops/work-links/link.test.ts` | the client's request, its token handling and its waits |
 | `ops/issue-tracking/records.test.ts` | the import's scrubbing, its records and links, and their order |
 | `e2e/issue-tracking.spec.ts` | production: volume, import, links and status, above |
+| `e2e/issue-waterfall.spec.ts` | production: the cold list's and the cold issue page's stages, above |
