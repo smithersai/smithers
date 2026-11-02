@@ -1,7 +1,7 @@
 import { dom } from "./fixtures/dom"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router"
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
 import { act, createElement } from "react"
 import { createRoot } from "react-dom/client"
 import { afterAll, expect, test, vi } from "vitest"
@@ -14,6 +14,7 @@ import { openTestApp } from "../src/test/chatApi"
 import { FileTabsBar } from "../src/features/files/components/FileTabsBar"
 import { FilesProvider } from "../src/features/files/components/FilesContext"
 import { FilesStore } from "../src/features/files/store"
+import { RepoStore } from "../src/features/repo/store"
 import { RepoProvider } from "../src/features/repo/components/RepoContext"
 import { nodeDevice } from "../src/test/chatApi"
 import { openTab } from "../src/test/repoDevice"
@@ -25,7 +26,7 @@ afterAll(() => dom.happyDOM.close())
 const server = testFile("files_navigation")
 const base = "/octocat/Spoon-Knife/blob/main/"
 
-test("persisted keyboard close survives the real repository route reopening", async () => {
+test("persisted keyboard close survives the real repository route reopening", async ({ signal }) => {
   const h = await repoHarness(server)
   await h.seed("octocat", "Spoon-Knife")
   const device = nodeDevice()
@@ -45,6 +46,7 @@ test("persisted keyboard close survives the real repository route reopening", as
   let navigate: (path: string) => void = () => { throw new Error("router not ready") }
   const tab = await openTab({ origin: h.origin, fetch: h.fetch, persistence, navigate: (path) => navigate(path) })
   const store = await tab.runtime.runPromise(Effect.service(FilesStore))
+  const repoStore = await tab.runtime.runPromise(Effect.service(RepoStore))
   const app = openTestApp({ sessionLifecycle: false })
   const chat = await app.runPromise(Effect.service(Chat))
   const branch = await app.runPromise(Effect.service(Branch))
@@ -58,8 +60,18 @@ test("persisted keyboard close survives the real repository route reopening", as
     await tab.runtime.runPromise(store.tabs.restored)
     for (const [path, L] of [["README.md", undefined], ["src/index.ts", "2-4"]] as const) {
       tab.repo.actions.openRoute("blob", { owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: path }, { L })
-      await vi.waitFor(() => expect(tab.view().view).toMatchObject({ revision: "main", path }))
-      await vi.waitFor(() => expect(tab.tabs().some((row) => row.path === path)).toBe(true))
+      // The route resolves before its independent tab follower runs. Await each collection's real receipt;
+      // vi.waitFor's default one-second poll is no budget for admission, sync and SQLite under suite load.
+      await tab.runtime.runPromise(repoStore.view.changes({ initial: true }).pipe(
+        Stream.filter((changes) => changes.some((change) => change.value.revision === "main" && change.value.path === path)),
+        Stream.runHead,
+      ), { signal })
+      await tab.runtime.runPromise(store.tabs.changes({ initial: true }).pipe(
+        Stream.filter((changes) => changes.some((change) => change.value.path === path)),
+        Stream.runHead,
+      ), { signal })
+      expect(tab.view().view).toMatchObject({ revision: "main", path })
+      expect(tab.tabs().some((row) => row.path === path)).toBe(true)
     }
     const root = createRootRoute()
     const route = createRoute({
