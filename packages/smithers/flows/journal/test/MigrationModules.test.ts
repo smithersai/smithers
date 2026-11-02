@@ -18,6 +18,20 @@ import * as Dedup from "../src/migrations/0004_dedup.ts"
 import * as RunEventType from "../src/migrations/0005_run_event_type.ts"
 import * as Consensus from "../src/migrations/0006_consensus.ts"
 
+/** A source module: TypeScript, or the same module migrated to VibeLang. */
+const sourceExtensions = [".ts", ".vibe"] as const
+
+/**
+ * The migration id of each source module in `files`, sorted: one entry per
+ * file, so an id held by two files appears twice. A `.vibe` module's
+ * declaration sidecar is not a module.
+ */
+const migrationIds = (files: ReadonlyArray<string>): ReadonlyArray<string> =>
+  files.flatMap((file) => {
+    const extension = sourceExtensions.find((extension) => file.endsWith(extension))
+    return extension === undefined || file.endsWith(".d.vibe.ts") ? [] : [file.slice(0, -extension.length)]
+  }).sort()
+
 describe("migration modules", () => {
   it("registers an Effect for every migration in the set", () => {
     const entries = Object.entries(Migrations.set.migrations)
@@ -50,7 +64,17 @@ describe("migration modules", () => {
   })
 
   it("keeps one src/migrations file per migration id, with no gaps", () => {
-    const files = readdirSync(new URL("../src/migrations/", import.meta.url)).filter((name) => name.endsWith(".ts"))
-    expect(files.sort()).toEqual(Object.keys(Migrations.set.migrations).map((id) => `${id}.ts`))
+    const files = readdirSync(new URL("../src/migrations/", import.meta.url))
+    expect(migrationIds(files)).toEqual(Object.keys(Migrations.set.migrations))
+  })
+
+  it.each([
+    ["one .ts file per id", ["0001_a.ts", "0002_b.ts"], ["0001_a", "0002_b"]],
+    ["a migration migrated to .vibe", ["0001_a.ts", "0002_b.vibe"], ["0001_a", "0002_b"]],
+    ["an id in both languages", ["0001_a.ts", "0001_a.vibe"], ["0001_a", "0001_a"]],
+    ["a declaration sidecar", ["0001_a.vibe", "0001_a.d.vibe.ts"], ["0001_a"]],
+    ["a file in another language", ["0001_a.ts", "0002_b.js"], ["0001_a"]]
+  ])("reads the migration ids of %s", (_case, files, expected) => {
+    expect(migrationIds(files)).toEqual(expected)
   })
 })
