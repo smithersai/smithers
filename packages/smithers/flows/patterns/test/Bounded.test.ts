@@ -7,7 +7,7 @@ import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
 import { expect, expectTypeOf } from "vitest"
 import * as Bounded from "../src/Bounded.ts"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 import { execute } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 

@@ -17,7 +17,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Optimizer from "../src/Optimizer.ts"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 import { execute, executeExit, member } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 

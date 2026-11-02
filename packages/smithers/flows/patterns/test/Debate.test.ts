@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Debate from "../src/Debate.ts"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 import { callsTo } from "./Graphs.ts"
 
 // One declaration per role, because a `@smthrs/flow` flow states the payload it

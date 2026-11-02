@@ -9,7 +9,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as CheckSuite from "../src/CheckSuite.ts"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 import { execute } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 

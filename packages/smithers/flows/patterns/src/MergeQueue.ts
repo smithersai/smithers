@@ -17,7 +17,7 @@ import * as Compose from "./internal/Compose.vibe"
 import type { Member as Callable } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.vibe"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "./PatternError.vibe"
 
 /**
  * The priority a member gets when it does not declare one.

@@ -18,7 +18,7 @@ import { dual } from "effect/Function"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.vibe"
 import * as Decorate from "./internal/Decorate.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "./PatternError.vibe"
 
 /**
  * The sole value accepted from an approval step.

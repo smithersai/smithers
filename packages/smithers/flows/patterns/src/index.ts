@@ -10,7 +10,7 @@
  * @category errors
  * @since 0.1.0
  */
-export * as PatternError from "./PatternError.ts"
+export * as PatternError from "./PatternError.vibe"
 
 /**
  * @category builders

@@ -12,7 +12,7 @@
  */
 import * as Effects from "@smthrs/plan/Effects";
 import type * as Schema from "effect/Schema";
-import { PatternError } from "../PatternError.ts";
+import { PatternError } from "../PatternError.vibe";
 /**
  * @since 0.1.0
  * @private

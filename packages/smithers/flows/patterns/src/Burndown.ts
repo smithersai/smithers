@@ -40,7 +40,7 @@ import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.vibe"
 import type { Member as Callable } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "./PatternError.vibe"
 
 /**
  * One backlog item.

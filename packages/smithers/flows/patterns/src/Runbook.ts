@@ -20,7 +20,7 @@ import * as Decorate from "./internal/Decorate.ts"
 import * as Failure from "./internal/Failure.vibe"
 import { OpaqueInput } from "./internal/Payload.vibe"
 import * as Pattern from "./Pattern.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "./PatternError.vibe"
 
 const ApprovalInput = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
 

@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 import * as Sidecar from "../src/Sidecar.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 

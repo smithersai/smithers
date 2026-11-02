@@ -21,7 +21,7 @@ import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.vibe"
 import * as Pattern from "./Pattern.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "./PatternError.vibe"
 
 const ApprovalInput = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
 
