@@ -89,7 +89,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/CompensationHandlers.vibe",
-        "src/internal/EffectHandlerRegistry.vibe",
+        "src/internal/EffectHandlerRegistry.ts",
         "src/internal/Compensation.ts",
         "src/internal/Rewind.ts",
         "src/TimeTravel.ts"

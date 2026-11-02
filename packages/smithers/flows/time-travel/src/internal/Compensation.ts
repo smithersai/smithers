@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema"
 import { EffectRecord } from "../EffectBoundary.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 import type { Receipt } from "../TimeTravelStore.ts"
-import { Assessment as HandlerAssessment, EffectHandlerRegistry, RollbackReceipt } from "./EffectHandlerRegistry.vibe"
+import { Assessment as HandlerAssessment, EffectHandlerRegistry, RollbackReceipt } from "./EffectHandlerRegistry.ts"
 
 /**
  * One complete preflight decision for a crossed effect.

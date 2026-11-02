@@ -10,7 +10,7 @@ import * as Layer from "effect/Layer"
 import * as Result from "effect/Result"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import type { EffectRecord } from "../src/EffectBoundary.ts"
-import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
+import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
 import { error } from "../src/TimeTravelError.vibe"
 
 const boundaryAuthority = {
