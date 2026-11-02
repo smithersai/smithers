@@ -3,11 +3,15 @@
  *
  * @since 1.0.0
  */
-
-import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
-import * as Fault from "../Fault.ts"
-
+import * as Schema from "effect/Schema";
+declare const DeadlineExceeded_base: Schema.Class<DeadlineExceeded, Schema.TaggedStruct<"@smthrs/flow/DeadlineExceeded", {
+    readonly code: Schema.withConstructorDefault<Schema.Literal<"deadline_exceeded">>;
+    readonly flowName: Schema.String;
+    readonly executionId: Schema.String;
+    readonly deadlineMs: Schema.Number;
+    readonly startedAtMs: Schema.Number;
+    readonly message: Schema.String;
+}>, import("effect/Cause").YieldableError>;
 /**
  * An execution was still unsettled when its flow's `deadline` elapsed.
  *
@@ -23,18 +27,6 @@ import * as Fault from "../Fault.ts"
  * @category errors
  * @since 1.0.0
  */
-export class DeadlineExceeded extends Schema.TaggedError<DeadlineExceeded>()(
-  "@smthrs/flow/DeadlineExceeded",
-  {
-    code: Schema.Literal("deadline_exceeded").pipe(
-      Schema.withConstructorDefault(Effect.succeed("deadline_exceeded"))
-    ),
-    flowName: Schema.String,
-    executionId: Schema.String,
-    deadlineMs: Schema.Number,
-    startedAtMs: Schema.Number,
-    message: Schema.String
-  }
-) {}
-
-Fault.register("@smthrs/flow/DeadlineExceeded", "policy")
+export declare class DeadlineExceeded extends DeadlineExceeded_base {
+}
+export {};

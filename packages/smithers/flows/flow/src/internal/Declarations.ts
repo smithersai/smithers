@@ -20,7 +20,7 @@
 
 import * as Effects from "@smthrs/plan/Effects"
 import * as Context from "effect/Context"
-import { Capabilities, EffectEnvelope, ModelInvocable } from "../Flow/Annotations.ts"
+import { Capabilities, EffectEnvelope, ModelInvocable } from "../Flow/Annotations.vibe"
 
 /**
  * Lowers the literal declarations a constructor call carries into the

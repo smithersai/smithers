@@ -28,7 +28,7 @@ const keys = keysPackage.lib
 const canonical = canonicalPackage.lib
 
 const cwd = "packages/smithers/flows/flow"
-const sources = Smithers.glob("src/**/*.ts")
+const sources = Smithers.glob("src/**/*.{ts,vibe}")
 const tests = Smithers.glob("test/**/*.test.ts")
 const examples = Smithers.glob("examples/**/*.ts")
 
@@ -252,7 +252,7 @@ const securityReview = Smithers.SecurityReview({
         "A replayed or cached value handed to downstream nodes without decoding through the action's success schema.",
         "A replaying registration path (layerWithImplementations or its callers) that defaults callbackIdentity to \"process-local\" instead of \"stable\"."
       ],
-      paths: ["src/Interpreter.ts", "src/Graph.ts", "src/Action/Implementations.ts"]
+      paths: ["src/Interpreter.ts", "src/Graph.ts", "src/Action/Implementations.vibe"]
     },
     {
       id: "graph-payload-bounds",
@@ -295,7 +295,7 @@ const securityReview = Smithers.SecurityReview({
         "A readSet, writeSet, or removes entry typed as a plain string instead of FileSet.Pattern, Glob, or Entry.",
         "The disjointWritesAndRemoves filter bypassed by constructing the boundary without the schema."
       ],
-      paths: ["src/Action/FileBoundary.ts", "src/Action/FileInput.ts", "src/Action/make.ts"]
+      paths: ["src/Action/FileBoundary.vibe", "src/Action/FileInput.vibe", "src/Action/make.ts"]
     }
   ]
 })

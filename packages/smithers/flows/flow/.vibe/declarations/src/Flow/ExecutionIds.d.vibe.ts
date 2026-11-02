@@ -15,16 +15,11 @@
  *
  * @since 0.1.0
  */
-
-import { Crypto, Sha256 } from "@smthrs/crypto"
-import { DerivedKey } from "@smthrs/keys"
-import * as Context from "effect/Context"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Schema from "effect/Schema"
-import { ExecutionIdRequired } from "./ExecutionIdRequired.ts"
-import type { Any } from "./Flow.ts"
-
+import { Crypto } from "@smthrs/crypto";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import type { Any } from "./Flow.ts";
 /**
  * Mints the execution id of an invocation that named none.
  *
@@ -36,37 +31,8 @@ import type { Any } from "./Flow.ts"
  * @since 0.1.0
  */
 export interface ExecutionIdSource {
-  readonly mint: <W extends Any>(
-    flow: W,
-    payload: unknown
-  ) => Effect.Effect<string, never, Crypto.Crypto | W["payloadSchema"]["EncodingServices"]>
+    readonly mint: <W extends Any>(flow: W, payload: unknown) => Effect.Effect<string, never, Crypto.Crypto | W["payloadSchema"]["EncodingServices"]>;
 }
-
-/**
- * The canonical key of an invocation: the flow's own payload codec, then RFC
- * 8785, then SHA-256.
- *
- * Encoding first is what makes the key agree with the durable driver, which
- * compares the ENCODED payload when it decides whether an existing run row is
- * the same invocation. A payload with no canonical form — a non-finite number,
- * a lone surrogate, a cycle — has no derivable identity at all, so it fails
- * here instead of hashing something approximate.
- *
- * @private
- */
-const canonicalKey = <W extends Any>(
-  flow: W,
-  payload: unknown
-): Effect.Effect<string, ExecutionIdRequired, Crypto.Crypto | W["payloadSchema"]["EncodingServices"]> =>
-  (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(payload) as Effect.Effect<
-    unknown,
-    unknown,
-    W["payloadSchema"]["EncodingServices"]
-  >).pipe(
-    Effect.flatMap((encoded) => Schema.decodeUnknownEffect(DerivedKey)(encoded)),
-    Effect.mapError(() => new ExecutionIdRequired({ flowName: flow._tag }))
-  )
-
 /**
  * An opt-in deterministic source over the flow tag and the payload's
  * canonical form.
@@ -83,24 +49,13 @@ const canonicalKey = <W extends Any>(
  * @category constructors
  * @since 0.1.0
  */
-export const derived: ExecutionIdSource = {
-  mint: (flow, payload) =>
-    canonicalKey(flow, payload).pipe(
-      // The JSON tuple prevents delimiter splicing. This exact framing freezes at rc.0.
-      Effect.flatMap((key) => Effect.orDie(Schema.decodeUnknownEffect(Sha256)(JSON.stringify([flow._tag, key])))),
-      Effect.orDie
-    )
-}
-
+export declare const derived: ExecutionIdSource;
 /**
  * Mints independent execution ids for unkeyed requests using host cryptography.
  * @category constructors
  * @since 0.1.0
  */
-export const fresh: ExecutionIdSource = {
-  mint: () => Effect.flatMap(Crypto.Crypto, (crypto) => Effect.orDie(crypto.randomUUIDv4()))
-}
-
+export declare const fresh: ExecutionIdSource;
 /**
  * Context reference carrying the host's execution-id source, defaulting to
  * {@link fresh}.
@@ -108,13 +63,7 @@ export const fresh: ExecutionIdSource = {
  * @category idempotency
  * @since 0.1.0
  */
-export const CurrentExecutionIds = Context.Reference<ExecutionIdSource>(
-  "@smthrs/flow/Flow/CurrentExecutionIds",
-  {
-    defaultValue: () => fresh
-  }
-)
-
+export declare const CurrentExecutionIds: Context.Reference<ExecutionIdSource>;
 /**
  * Declares the host's execution-id source as a layer.
  *
@@ -127,6 +76,4 @@ export const CurrentExecutionIds = Context.Reference<ExecutionIdSource>(
  * @category idempotency
  * @since 0.1.0
  */
-export const layerExecutionIds = (
-  source: ExecutionIdSource
-): Layer.Layer<never> => Layer.succeed(CurrentExecutionIds)(source)
+export declare const layerExecutionIds: (source: ExecutionIdSource) => Layer.Layer<never>;

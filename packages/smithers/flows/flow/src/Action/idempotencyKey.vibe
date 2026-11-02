@@ -28,14 +28,14 @@ export const idempotencyKey: (
     readonly includeAttempt?: boolean | undefined
     readonly parentScope?: string | undefined
   } | undefined
-) => Effect.Effect<string, never, FlowInstance | Crypto.Crypto> =
+) => string!never!FlowInstance | Crypto.Crypto =
   // Untraced because action-key allocation is on every action attempt.
-  Effect.fnUntraced(function*(name: string, options?: {
+  effect (name: string, options?: {
     readonly includeAttempt?: boolean | undefined
     readonly parentScope?: string | undefined
-  }) {
-    const instance = yield* FlowInstance
-    const attempt = yield* CurrentAttempt
+  }) => {
+    const instance = try FlowInstance
+    const attempt = try CurrentAttempt
     // Internal durable operations are scoped by the caller's declaration name
     // and declared `parentScope` through the canonical `StepIdentity` derivation (issue
     // #98): a run-global counter numbered concurrent offers in fiber-arrival
@@ -52,17 +52,19 @@ export const idempotencyKey: (
       : undefined
     // Invalid identity material is a defect at this internal-operation boundary;
     // injected cryptography keeps key construction platform-independent.
-    const scope = yield* StepIdentity.allocationScope({
+    const scope = try (StepIdentity.allocationScope({
       kind: "internal",
       name,
       idempotency: parentScope
-    }).pipe(Effect.orDie)
-    const ordinal = instance.actionState.nextOrdinal(scope)
+    }) |> Effect.orDie(%))
+    const ordinal = try Effect.orDie(
+      Effect.try({ try: () => instance.actionState.nextOrdinal(scope), catch: (error) => error })
+    )
     const identityScope = JSON.stringify([name, parentScope ?? null])
-    return yield* StepIdentity.invocationKey({
+    return try (StepIdentity.invocationKey({
       runId: instance.executionId,
       ordinal,
       tier: "unsealed",
       parentScope: identityScope
-    }).pipe(Effect.orDie)
-  })
+    }) |> Effect.orDie(%))
+  }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Option, Scope } from "effect"
-import { type Implementation, Implementations, layerImplementations } from "../src/Action/Implementations.ts"
+import { type Implementation, Implementations, layerImplementations } from "../src/Action/Implementations.vibe"
 
 const closeOrders = [
   [0, 1, 2],

@@ -18,8 +18,8 @@ import type { Scope } from "effect/Scope"
 import type { AnyStructSchema } from "../Flow/Flow.ts"
 import type { FlowInstance, FlowRuntime } from "../FlowRuntime/index.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
-import type { FileBoundary } from "./FileBoundary.ts"
-import type { Implementation } from "./Implementations.ts"
+import type { FileBoundary } from "./FileBoundary.vibe"
+import type { Implementation } from "./Implementations.vibe"
 import type { TypeId } from "./TypeId.ts"
 
 /**
