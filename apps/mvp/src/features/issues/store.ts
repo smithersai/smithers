@@ -7,7 +7,7 @@ import { signedInChanges, signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
 import { role } from "../repo/actions"
-import { type OneIssue, RepoClient } from "../repo/api"
+import { RepoClient } from "../repo/api"
 import { repoId } from "../repo/contract"
 import { sendingAdmitted } from "../../outboxAdmission"
 import { RepoStore } from "../repo/store"
@@ -18,7 +18,6 @@ import {
   ITEM_SUMMARIES_SHAPE_ROUTE,
   SYNC_SHAPE_ROUTE,
   TRIAGE_SETTINGS_SHAPE_ROUTE,
-  TRIAGE_STATES,
   WRITES_SHAPE_ROUTE,
 } from "./contract"
 import { WORK_LINKS_SHAPE_ROUTE } from "./work"
@@ -108,11 +107,6 @@ export interface RepoIssues {
   readonly list: Query<typeof listQuery>
   readonly publicList: Query<typeof publicListQuery>
   readonly item: Query<typeof itemQuery>
-  /**
-   * The routed issue as the issues route answered it, before its shapes synced: what a cold page shows first. None
-   * once nothing asked, or the route refused.
-   */
-  readonly first: Query<typeof itemQuery>
   readonly conversation: Query<typeof conversationQuery>
   readonly synced: Query<typeof syncedQuery>
   readonly unsynced: Query<typeof unsyncedQuery>
@@ -221,7 +215,6 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     workLinks: Rows<WorkLinkRow>,
   ) =>
     Effect.all({
-      first: itemQuery(view, firstReads),
       workRows: rowsQuery(workLinks),
       itemRows: rowsQuery(items),
       syncRows: rowsQuery(sync),
@@ -258,8 +251,6 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     getKey: byRepo,
   })
   const emptyAccess = yield* accessFor("none")
-  // Issues the issues route answered before their shapes synced, in memory only: a cold page's first paint.
-  const firstReads = yield* Collection.local<Item, string>({ id: "issue-first-reads", schema: Item, getKey: byId })
   const emptyWork = yield* Collection.local<WorkLinkRow, string>({ id: "issue-work-links-none", schema: WorkLinkRow, getKey: byId })
   const empty: RepoIssues = {
     id: "",
@@ -507,46 +498,6 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       Stream.runForEach((rows) => Effect.forEach(rows, ({ id }) => Effect.ignore(requested.delete(id)), { discard: true })),
       Effect.forkIn(scope, { startImmediately: true }),
     )
-    // A cold page asks the issues route for its issue beside the shapes: the server authorizes it as it does them.
-    const [owner, name] = id.slice("github/".length).split("/") as [string, string]
-    if (client.issue !== undefined) {
-      const key = `${id}#${number}`
-      const keep = (issue: OneIssue) =>
-        Effect.gen(function* () {
-          if (Option.isSome(yield* details.get(key))) return
-          if (Option.isSome(yield* firstReads.get(key))) yield* firstReads.delete(key)
-          yield* firstReads.insert({
-            id: key,
-            repoId: id,
-            number: issue.number,
-            kind: "issue",
-            githubId: 0,
-            title: issue.title,
-            body: issue.body,
-            state: issue.state,
-            stateReason: null,
-            authorLogin: issue.author.login,
-            comments: issue.comments,
-            createdAt: issue.created_at,
-            updatedAt: issue.updated_at,
-            closedAt: issue.closed_at,
-            deletedAt: null,
-            writeId: null,
-            triage: (TRIAGE_STATES as ReadonlyArray<string>).includes(issue.triage) ? issue.triage as Item["triage"] : "proposed",
-            triagePinned: false,
-            commitment: null,
-          })
-        })
-      yield* client.issue(owner, name, number).pipe(
-        Effect.flatMap(keep),
-        // A refused read leaves the page to its shapes, as before.
-        Effect.tapError((refused) =>
-          Effect.logInfo("issues.first").pipe(Effect.annotateLogs({ feature: "issues", outcome: "refused", status: "status" in refused ? refused.status ?? 0 : 0 }))
-        ),
-        Effect.ignore,
-        Effect.forkIn(scope, { startImmediately: true }),
-      )
-    }
     const selected: RepoIssues = {
       ...repo, details, comments, access,
       ...(yield* queriesOf(repo.items, details, comments, repo.sync, repo.triageSettings, access, repo.workLinks)),

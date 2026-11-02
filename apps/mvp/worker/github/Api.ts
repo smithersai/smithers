@@ -317,8 +317,7 @@ const SHAPES: ReadonlySet<string> = new Set([
 export const handles = (path: string): boolean =>
   path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined ||
   Compare.parseComparePath(path) !== undefined || Review.parseReviewPath(path) !== undefined ||
-  IssueList.parseIssuesPath(path) !== undefined || IssueList.parseIssuePath(path) !== undefined ||
-  WorkLinks.parseLinksPath(path) !== undefined
+  IssueList.parseIssuesPath(path) !== undefined || WorkLinks.parseLinksPath(path) !== undefined
 
 /**
  * How long a stale read of the issues waits for `github/Reconcile`'s start to be admitted: one idempotent Durable Object
@@ -887,7 +886,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * as its shapes are, and a stale read starts its Reconcile as theirs do. One span and log line
      * `github.issues.list` and one count by outcome; never a title or a query.
      */
-    const issues = (named: { readonly owner: string; readonly name: string; readonly number?: number }) =>
+    const issues = (named: { readonly owner: string; readonly name: string }) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const startedAt = yield* Clock.currentTimeMillis
@@ -911,7 +910,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             }
           }
           const search = new URL(request.url, "http://localhost").searchParams
-          const query = named.number === undefined ? IssueList.parseQuery(search) : IssueList.parseQuery(new URLSearchParams())
+          const query = IssueList.parseQuery(search)
           if (query === undefined) {
             fields.outcome = "invalid"
             return refuse(400, "invalid")
@@ -925,21 +924,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               return refused.value
             }
             fields.by = "runner"
-          }
-          if (named.number !== undefined) {
-            // One issue with its body: what a page shows before its shapes have synced (docs/features/issues.md#routes).
-            const read = yield* IssueList.one(target.id, named.number).pipe(Effect.provide(database), Effect.result)
-            if (read._tag === "Failure") {
-              fields.outcome = "unavailable"
-              fields.errorCode = codeOf(read.failure)
-              return refuse(503, "unavailable")
-            }
-            if (read.success === undefined) {
-              fields.outcome = "not_found"
-              return refuse(404, "not_found")
-            }
-            fields.outcome = "read"
-            return HttpServerResponse.jsonUnsafe(read.success, { headers: { "cache-control": "no-store", vary: "cookie, authorization" } })
           }
           const [, found] = yield* Effect.all([
             reconcileIfStale(target),
@@ -1104,7 +1088,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       }
       const reviewed = Review.parseReviewPath(path)
       if (reviewed !== undefined) return yield* review(reviewed)
-      const listed = IssueList.parseIssuesPath(path) ?? IssueList.parseIssuePath(path)
+      const listed = IssueList.parseIssuesPath(path)
       if (listed !== undefined) return yield* issues(listed)
       const linked = WorkLinks.parseLinksPath(path)
       if (linked !== undefined) return yield* links(linked)

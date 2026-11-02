@@ -28,19 +28,6 @@ export const parseIssuesPath = (path: string): { readonly owner: string; readonl
   }
 }
 
-/** The repository and issue an issue route names, from `/api/repos/<owner>/<name>/issues/<number>`; none otherwise. */
-export const parseIssuePath = (
-  path: string,
-): { readonly owner: string; readonly name: string; readonly number: number } | undefined => {
-  if (!path.startsWith(`${REPOS_ROUTE}/`)) return undefined
-  const segments = path.slice(REPOS_ROUTE.length + 1).split("/")
-  if (segments.length !== 4 || segments[2] !== ISSUES_SEGMENT || !/^[1-9]\d{0,9}$/.test(segments[3]!)) return undefined
-  const number = Number(segments[3])
-  if (number > 2_147_483_647) return undefined
-  const repository = parseIssuesPath(`${REPOS_ROUTE}/${segments[0]}/${segments[1]}/${ISSUES_SEGMENT}`)
-  return repository === undefined ? undefined : { ...repository, number }
-}
-
 /** Where a page starts after: the last issue's update time (Postgres' microseconds, UTC) and number. */
 export interface Cursor {
   readonly updatedAt: string
@@ -188,39 +175,3 @@ export const answer = (
   }
   return HttpServerResponse.jsonUnsafe(found.issues, { headers })
 }
-
-/** One issue as the issue route answers it: the list's facts, its body, and when it closed. */
-export interface OneIssue extends ListedIssue {
-  readonly body: string
-  readonly closed_at: string | null
-}
-
-/** Issue `number` of `repoId` with its body and work, or `undefined` when the projection has no such issue. */
-export const one = (repoId: string, number: number) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<Row & { readonly body: string; readonly closed_at: string | null }>`
-      SELECT number, title, body, state, author_login, comments, triage, commitment,
-        to_char(created_at AT TIME ZONE 'UTC', ${UTC_MICROS}) AS created_at,
-        to_char(updated_at AT TIME ZONE 'UTC', ${UTC_MICROS}) AS updated_at,
-        to_char(updated_at AT TIME ZONE 'UTC', ${UTC_MICROS}) AS cursor_at,
-        to_char(closed_at AT TIME ZONE 'UTC', ${UTC_MICROS}) AS closed_at
-      FROM items WHERE repo_id = ${repoId} AND number = ${number} AND kind = 'issue' AND deleted_at IS NULL`
-    if (row === undefined) return undefined
-    const work = yield* workOf(repoId, [number])
-    const issue: OneIssue = {
-      number: row.number,
-      title: row.title,
-      body: row.body,
-      state: row.state,
-      author: { login: row.author_login },
-      comments: row.comments,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      closed_at: row.closed_at,
-      triage: row.triage,
-      commitment: row.commitment,
-      work: work.get(number) ?? { status: "none", links: [] },
-    }
-    return issue
-  })

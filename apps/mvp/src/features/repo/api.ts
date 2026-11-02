@@ -188,41 +188,6 @@ export const getRole = Effect.fn("repo.role.get")(function* (
 })
 
 /**
- * One issue as `GET /api/repos/<owner>/<name>/issues/<number>` answers it (worker/github/IssueList.ts): what an issue
- * page shows before its shapes have synced.
- */
-export const OneIssue = Schema.Struct({
-  number: Schema.Number,
-  title: Schema.String,
-  body: Schema.String,
-  state: Schema.Literals(["open", "closed"]),
-  author: Schema.Struct({ login: Schema.NullOr(Schema.String) }),
-  comments: Schema.Number,
-  created_at: Schema.String,
-  updated_at: Schema.String,
-  closed_at: Schema.NullOr(Schema.String),
-  triage: Schema.String,
-  commitment: Schema.NullOr(Schema.String),
-})
-export type OneIssue = typeof OneIssue.Type
-
-/** `GET .../issues/<number>`, read as the list is; any refusal, a 404 included, is `RepoRefused`. */
-export const getIssue = Effect.fn("repo.issue.get")(function* (
-  origin: string,
-  repository: { readonly owner: string; readonly name: string; readonly number: number },
-  within: Duration.Input,
-) {
-  return yield* exchange(
-    HttpClientRequest.get(
-      `${origin}${REPOS_ROUTE}/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/issues/${repository.number}`,
-    ),
-    within,
-    (status) => status === 200,
-    json(OneIssue),
-  )
-})
-
-/**
  * RepoApi's client, as a service: the one way the browser asks for a clone and reads a repository. Tests of a RepoApi
  * that fails provide a faulty one; every other test uses the real one.
  */
@@ -237,8 +202,6 @@ export class RepoClient extends Context.Service<
     readonly about: (owner: string, name: string) => Effect.Effect<About, RepoRefused>
     /** Who the person is on the repository: their role there, and whether it is the deployment's own. */
     readonly role: (owner: string, name: string) => Effect.Effect<RepoRoleAnswer, RepoRefused>
-    /** One issue with its body, from the issues route; absent in a client that doesn't read it. */
-    readonly issue?: (owner: string, name: string, number: number) => Effect.Effect<OneIssue, RepoRefused>
   }
 >()("@smthrs/mvp/repo/RepoClient") {
   /** The real client: RepoApi at `origin`, with `within` for each whole request. */
@@ -256,7 +219,6 @@ export class RepoClient extends Context.Service<
           refs: (owner, name) => withClient(getRefs(options.origin, { owner, name }, options.within)),
           about: (owner, name) => withClient(getAbout(options.origin, { owner, name }, options.within)),
           role: (owner, name) => withClient(getRole(options.origin, { owner, name }, options.within)),
-          issue: (owner, name, number) => withClient(getIssue(options.origin, { owner, name, number }, options.within)),
         })
       }),
     )

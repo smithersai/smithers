@@ -14,7 +14,6 @@ import type { PullsLayer } from "./features/pulls/pulls"
 import { type StackFilter, stackFilterOf, todoNumberOf } from "./features/todos/contract"
 import type { TodosView } from "./features/todos/todos"
 import { canonicalRepoHref, lineSearch, staysInRepository } from "./features/repo/paths"
-import { type EnterContext, enterSynced } from "./routeEnter"
 import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
 import type { SecretsLayer } from "./features/secrets/secrets"
@@ -176,15 +175,6 @@ const enterRepository = (
     return open()
   },
 )
-
-/** What `enterSynced` needs of a route's context: the repository's and home's actions, and the router's location. */
-const syncedContext = (context: RouterContext): EnterContext => ({
-  repo: context.repo,
-  home: context.home,
-  shownPath: shownPath(context),
-  replace: (href) => (context.router as unknown as { navigate: (options: { href: string; replace: boolean }) => unknown } | undefined)
-    ?.navigate({ href, replace: true }),
-})
 
 /** A page whose data is on the device already: nothing to warm. */
 const local = () => undefined
@@ -510,7 +500,7 @@ const issuesRoute = createRoute({
   component: IssuesScreen,
   validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search), ...workSearch(search) }),
   beforeLoad: ({ context, params, ...load }) =>
-    enterSynced(syncedContext(context), params,
+    enterRepository(context, params,
       load,
       () => Promise.all([context.issues.actions.warm(params.owner, params.repo), context.todos.actions.warm(params.owner, params.repo)]),
       () =>
@@ -546,8 +536,8 @@ const issueRoute = createRoute({
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
   beforeLoad: ({ context, params, ...load }) =>
-    enterSynced(
-      syncedContext(context),
+    enterRepository(
+      context,
       params,
       load,
       () => Promise.all([context.issues.actions.warm(params.owner, params.repo, params.number), context.todos.actions.warm(params.owner, params.repo)]),
@@ -591,7 +581,7 @@ const pullsRoute = createRoute({
   component: PullsScreen,
   validateSearch: listSearch,
   beforeLoad: ({ context, params, ...load }) =>
-    enterSynced(syncedContext(context), params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo)),
+    enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo)),
 })
 
 /** A pull request's number in its path, as an issue's is; any other matches no route. */
@@ -623,7 +613,7 @@ const pullRoute = createRoute({
   component: () => <PullScreen tab="conversation" />,
   params: pullParams,
   beforeLoad: ({ context, params, ...load }) =>
-    enterSynced(syncedContext(context), params, load, () => context.pulls.actions.warm(params.owner, params.repo, params.number), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
+    enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo, params.number), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
 })
 
 /** `/$owner/$repo/pull/$number/$tab`: its commits, its checks (the Smithers runs on its head), or its files. */
