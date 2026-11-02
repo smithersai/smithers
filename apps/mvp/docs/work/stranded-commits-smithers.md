@@ -4,18 +4,18 @@ Part of [stranded commits](stranded-commits.md): method, classes and the landing
 
 ## ~/smithers classification (since 2026-10-02)
 
-Repository `/Users/williamcory/smithers`, main `6c9e4781c25b`, judged against main@origin `6c9e4781c25b` on 2026-11-01T22:35:31.103Z.
+Repository `/Users/williamcory/smithers`, main `68561991f348`, judged against main@origin `e1fdb6f0f2da` on 2026-11-02T02:23:23.591Z.
 
-Candidates: `((((~::main@origin & ~empty() & ~::remote_bookmarks(remote=origin)) & committer_date(after:"2026-10-02")) ~ (::remote_bookmarks(remote=w12hold))) ~ (e092c5a2a4d96c3a4eedbd8ac063b021955e6a07 | 3b44c0a6380844240835b6112ea218c116ce7ca4 | 6f9b089faa321e703fb53db75643c3c8468ee216 | aa2bd008672f147840409cd8540e3f3e907c8ddf | d6531b2f13d360e4be67b12ad9a09e935de03018 | d6531b2f13d360e4be67b12ad9a09e935de03018 | 79ae50477db1bd1335e787178939ed2a0c0bc711)) ~ (158a9154ed0638eaddb4896aa76fcbe38bf9f2e4 | bc2a3d585828d8cfc3957b24cd15b725a607a30f)`.
+Candidates: `(((~::main@origin & ~empty() & ~::remote_bookmarks(remote=origin)) & committer_date(after:"2026-10-02")) ~ (::remote_bookmarks(remote=w12hold))) ~ (e092c5a2a4d96c3a4eedbd8ac063b021955e6a07 | fbe5b115977b7f27c9f297b99f2f74f2bae6adf8 | c4e9d791548e028a90d1c1c842f53892322b53de | e857323a352fb79df71f808c1e6c4ad4a6e0b053 | c668bd1c5c21db92fa65ef3a9d4051b5eeaac4f5 | 30c06f660995685a19e1f0f7b88e0a3dd28f4caa)`.
 
 | Class | Commits |
 |---|---|
 | EMPTY-ISH | 11 |
-| ON-MAIN | 685 |
-| PARTIAL | 940 |
+| ON-MAIN | 727 |
+| PARTIAL | 949 |
 | SCAFFOLD | 12 |
-| STRANDED | 136 |
-| SUPERSEDED | 1633 |
+| STRANDED | 71 |
+| SUPERSEDED | 1647 |
 
 ### Heads
 
@@ -23,12 +23,11 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 
 | Head | Bookmark / working copy | Commits | Classes | Net on/superseded/missing/partial (lines) | Missing files |
 |---|---|---|---|---|---|
-| `2ece571644` |  | 3 | undefined 3 | 0/0/0/0 (0) |  |
-| `5686bc4bfc` |  | 132 | PARTIAL 105, EMPTY-ISH 1, ON-MAIN 9, STRANDED 7, SUPERSEDED 10 | 47/1/3524/614 (45492) | .agents/skills/vibelang/SKILL.md (86), .gitignore (1), .prettierignore (1), .smithers/flows/bench/README.md (1) |
+| `5686bc4bfc` |  | 132 | PARTIAL 105, EMPTY-ISH 1, ON-MAIN 9, STRANDED 7, SUPERSEDED 10 | 54/1/3517/614 (45438) | .agents/skills/vibelang/SKILL.md (86), .gitignore (1), .prettierignore (1), .smithers/flows/bench/README.md (1) |
 | `775f26b754` |  | 118 | PARTIAL 93, ON-MAIN 8, STRANDED 8, SUPERSEDED 9 | 41/1/3379/607 (44020) | .agents/skills/vibelang/SKILL.md (86), .gitignore (1), .prettierignore (1), .smithers/flows/bench/README.md (1) |
 | `faf3ec5b89` |  | 93 | PARTIAL 82, ON-MAIN 2, STRANDED 6, SUPERSEDED 3 | 41/1/3043/581 (36541) | .agents/skills/vibelang/SKILL.md (86), .gitignore (1), .prettierignore (1), .smithers/flows/bench/README.md (1) |
 | `d977f8f878` |  | 77 | PARTIAL 68, STRANDED 6, SUPERSEDED 3 | 41/1/2862/498 (32845) | .agents/skills/vibelang/SKILL.md (86), .gitignore (1), .prettierignore (1), .smithers/flows/bench/README.md (1) |
-| `cda4f0dd87` |  | 2 | PARTIAL 1, ON-MAIN 1 | 43/7/0/0 (0) |  |
+| `cda4f0dd87` |  | 2 | PARTIAL 1, ON-MAIN 1 | 42/8/0/0 (0) |  |
 | `8372477664` |  | 68 | PARTIAL 60, STRANDED 5, SUPERSEDED 3 | 40/1/2783/473 (31079) | .agents/skills/vibelang/SKILL.md (86), .gitignore (1), .prettierignore (1), .smithers/flows/bench/README.md (1) |
 | `fea394ac50` |  | 1 | STRANDED 1 | 0/0/1/0 (4) | apps/mvp/worker/TimelineSummaries.ts (4) |
 | `bde074effb` |  | 1 | PARTIAL 1 | 0/0/4/1 (139) | apps/mvp/db/Database.ts (120), apps/mvp/docs/decisions/0133-timeline-phases.md (12), apps/mvp/src/features/timeline/store.test.ts (3), apps/mvp/worker/TimelineSummaries.ts (4) |
@@ -41,38 +40,38 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `1de5e182cf` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `0db52eb270` | builder/stack-flake | 12 | ON-MAIN 4, SUPERSEDED 8 | 0/0/0/0 (0) |  |
 | `866e2f8d10` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `4e42c3bae8` | builder/stack-flake builder/stack-flake builder/stack-flake | 11 | ON-MAIN 3, SUPERSEDED 5, PARTIAL 3 | 199/21/3/40 (71) | apps/mvp/db/migrations/0076_merge_flow.ts (1), apps/mvp/docs/decisions/0133-merge-flow.md (6), apps/mvp/docs/decisions/0134-independent-lanes.md (9), apps/mvp/docs/decisions/0135-external-agents-on-ru |
+| `4e42c3bae8` | builder/stack-flake builder/stack-flake builder/stack-flake | 11 | ON-MAIN 3, SUPERSEDED 5, PARTIAL 3 | 199/22/3/39 (70) | apps/mvp/db/migrations/0076_merge_flow.ts (1), apps/mvp/docs/decisions/0133-merge-flow.md (6), apps/mvp/docs/decisions/0134-independent-lanes.md (9), apps/mvp/docs/decisions/0135-external-agents-on-ru |
 | `e7b5a39485` |  | 7 | PARTIAL 2, SUPERSEDED 4, SCAFFOLD 1 | 92/41/4/10 (71) | apps/mvp/db/Database.test.ts (12), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0075_timeline_phases.ts (7), apps/mvp/docs/decisions/0133-timeline-phases.md (12) |
 | `b665026cf8` |  | 8 | PARTIAL 6, SUPERSEDED 1, SCAFFOLD 1 | 97/37/4/10 (64) | apps/mvp/db/Database.test.ts (12), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0075_timeline_phases.ts (7), apps/mvp/docs/decisions/0133-timeline-phases.md (8) |
 | `78e0972cba` | builder/answers-fix | 2 | ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `86021e62c1` |  | 1 | PARTIAL 1 | 0/0/0/1 (38) | apps/mvp/e2e/toast-layout-shift.spec.ts (38) |
 | `759b8ee64c` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `c5bd6f21fd` | builder/s3-steer | 5 | SUPERSEDED 2, PARTIAL 1, ON-MAIN 2 | 285/10/7/46 (134) | apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/db/migrations/0079_agent_stops.ts (2) |
-| `2554588b75` | builder/s3-steer | 5 | SUPERSEDED 2, PARTIAL 1, ON-MAIN 2 | 285/10/7/46 (134) | apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/db/migrations/0079_agent_stops.ts (2) |
+| `c5bd6f21fd` | builder/s3-steer | 5 | SUPERSEDED 2, PARTIAL 1, ON-MAIN 2 | 285/11/7/45 (133) | apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/db/migrations/0079_agent_stops.ts (2) |
+| `2554588b75` | builder/s3-steer | 5 | SUPERSEDED 2, PARTIAL 1, ON-MAIN 2 | 285/11/7/45 (133) | apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/db/migrations/0079_agent_stops.ts (2) |
 | `fafb7b4b72` | builder/byok builder/byok | 4 | ON-MAIN 3, PARTIAL 1 | 54/4/0/1 (3) | apps/mvp/e2e/personal-model.spec.ts (3) |
 | `32cd3a0296` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `3e25393fcd` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `d4b99ce31b` | builder/byok | 4 | ON-MAIN 3, PARTIAL 1 | 53/4/0/1 (3) | apps/mvp/e2e/personal-model.spec.ts (3) |
-| `940f8a206a` |  | 3 | PARTIAL 1, ON-MAIN 2 | 268/12/7/51 (212) | .changeset/agent-steer-and-stop.md (3), apps/mvp/db/Database.test.ts (10), apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
+| `940f8a206a` |  | 3 | PARTIAL 1, ON-MAIN 2 | 268/13/7/50 (211) | .changeset/agent-steer-and-stop.md (3), apps/mvp/db/Database.test.ts (10), apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
 | `c32827324b` |  | 1 | PARTIAL 1 | 78/43/3/10 (43) | apps/mvp/db/Database.test.ts (2), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0075_timeline_phases.ts (8), apps/mvp/docs/decisions/0131-timeline-phases.md (12) |
 | `ab6868b4a9` |  | 1 | PARTIAL 1 | 0/0/0/1 (35) | apps/mvp/e2e/toast-layout-shift.spec.ts (35) |
 | `1e8eb7c87f` |  | 1 | PARTIAL 1 | 22/2/11/10 (83) | .changeset/toast-stack-anchored.md (1), apps/mvp/docs/decisions/0009-notifications-and-live-work.md (1), apps/mvp/docs/decisions/0015-agent-status.md (1), apps/mvp/docs/decisions/0036-toasts-reserve-p |
-| `c32430ee25` |  | 3 | PARTIAL 1, ON-MAIN 2 | 268/12/7/51 (212) | .changeset/agent-steer-and-stop.md (3), apps/mvp/db/Database.test.ts (10), apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
-| `2115d4a452` |  | 3 | PARTIAL 1, ON-MAIN 2 | 268/12/7/51 (212) | .changeset/agent-steer-and-stop.md (3), apps/mvp/db/Database.test.ts (10), apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
+| `c32430ee25` |  | 3 | PARTIAL 1, ON-MAIN 2 | 268/13/7/50 (211) | .changeset/agent-steer-and-stop.md (3), apps/mvp/db/Database.test.ts (10), apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
+| `2115d4a452` |  | 3 | PARTIAL 1, ON-MAIN 2 | 268/13/7/50 (211) | .changeset/agent-steer-and-stop.md (3), apps/mvp/db/Database.test.ts (10), apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
 | `fe8a5d8f48` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `bceaf869a0` |  | 4 | PARTIAL 1, SUPERSEDED 1, ON-MAIN 2 | 273/12/7/46 (134) | apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/db/migrations/0079_agent_stops.ts (2) |
-| `f77f503af8` |  | 3 | PARTIAL 1, ON-MAIN 2 | 268/12/7/51 (212) | .changeset/agent-steer-and-stop.md (3), apps/mvp/db/Database.test.ts (10), apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
-| `b43032836f` |  | 1 | PARTIAL 1 | 252/19/10/48 (200) | apps/mvp/.s5-check.sh (4), apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (10), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
-| `5c3d63613b` |  | 1 | PARTIAL 1 | 252/19/10/48 (200) | apps/mvp/.s5-check.sh (4), apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (10), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
-| `0bd16f0c21` |  | 1 | PARTIAL 1 | 236/17/7/50 (143) | apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/db/migrations/0078_agent_transcripts.ts (3) |
+| `bceaf869a0` |  | 4 | PARTIAL 1, SUPERSEDED 1, ON-MAIN 2 | 273/13/7/45 (133) | apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/db/migrations/0079_agent_stops.ts (2) |
+| `f77f503af8` |  | 3 | PARTIAL 1, ON-MAIN 2 | 268/13/7/50 (211) | .changeset/agent-steer-and-stop.md (3), apps/mvp/db/Database.test.ts (10), apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
+| `b43032836f` |  | 1 | PARTIAL 1 | 252/20/10/47 (199) | apps/mvp/.s5-check.sh (4), apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (10), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
+| `5c3d63613b` |  | 1 | PARTIAL 1 | 252/20/10/47 (199) | apps/mvp/.s5-check.sh (4), apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (10), apps/mvp/db/migrations/0075_merge_flow.ts (2) |
+| `0bd16f0c21` |  | 1 | PARTIAL 1 | 236/18/7/49 (142) | apps/mvp/db/Database.ts (8), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/db/migrations/0078_agent_transcripts.ts (3) |
 | `dbef79d353` |  | 17 | PARTIAL 13, STRANDED 3, SUPERSEDED 1 | 106/1/2013/135 (5013) | .agents/skills/vibelang/SKILL.md (86), .gitignore (1), .prettierignore (1), .smithers/flows/bench/README.md (1) |
-| `53f3e4f254` | s1-runner@ | 7 | SUPERSEDED 4, PARTIAL 3 | 154/19/5/31 (94) | apps/mvp/db/Database.ts (4), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/docs/decisions/0132-independent-lanes.md (10), apps/mvp/docs/decisions/0133-external-agents-on-runners.md (11) |
+| `53f3e4f254` | s1-runner@ | 7 | SUPERSEDED 4, PARTIAL 3 | 154/20/5/30 (93) | apps/mvp/db/Database.ts (4), apps/mvp/db/migrations/0077_agent_runners.ts (25), apps/mvp/docs/decisions/0132-independent-lanes.md (10), apps/mvp/docs/decisions/0133-external-agents-on-runners.md (11) |
 | `0fe9b8d615` | builder/merge-flow merge-flow@ | 1 | PARTIAL 1 | 31/0/4/14 (26) | apps/mvp/db/Database.test.ts (2), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0075_merge_flow.ts (2), apps/mvp/docs/decisions/0131-merge-flow.md (7) |
 | `5026a02787` | builder/alias-auth alias-auth@ | 14 | SUPERSEDED 14 | 0/0/0/0 (0) |  |
-| `dca331d06f` |  | 2 | PARTIAL 2 | 0/0/19/2 (252) | apps/mvp/docs/work/mobile-w8.md (44), apps/mvp/e2e/README.md (8), apps/mvp/e2e/frames.test.ts (30), apps/mvp/e2e/frames.ts (10) |
+| `dca331d06f` |  | 2 | PARTIAL 2 | 15/0/2/4 (44) | apps/mvp/e2e/README.md (1), apps/mvp/e2e/fullPageScreenshot.ts (3), apps/mvp/e2e/mobile-baseline.ts (2), apps/mvp/tests/MobileLayout.browser.test.ts (30) |
 | `982d7006d2` |  | 13 | PARTIAL 3, SUPERSEDED 5, ON-MAIN 5 | 63/2/92/17 (1201) | apps/mvp/docs/decisions/0121-operation-progress.md (10), apps/mvp/docs/features/issues.md (1), apps/mvp/docs/features/notifications.md (2), apps/mvp/docs/features/todos.md (5) |
-| `bd36978696` |  | 22 | ON-MAIN 6, SUPERSEDED 12, PARTIAL 4 | 431/118/1/1 (3) | apps/mvp/src/features/commands/commands.test.ts (2), apps/mvp/worker/index.ts (1) |
-| `bf0476b452` |  | 15 | PARTIAL 8, SUPERSEDED 4, ON-MAIN 3 | 398/33/8/5 (48) | apps/mvp/docs/features/issues.md (5), apps/mvp/docs/features/slash-commands.md (2), apps/mvp/docs/observability.md (3), apps/mvp/e2e/branch-publish.spec.ts (11) |
+| `bd36978696` |  | 22 | ON-MAIN 6, SUPERSEDED 12, PARTIAL 4 | 428/121/1/1 (3) | apps/mvp/src/features/commands/commands.test.ts (2), apps/mvp/worker/index.ts (1) |
+| `bf0476b452` |  | 15 | PARTIAL 8, SUPERSEDED 4, ON-MAIN 3 | 395/36/8/5 (48) | apps/mvp/docs/features/issues.md (5), apps/mvp/docs/features/slash-commands.md (2), apps/mvp/docs/observability.md (3), apps/mvp/e2e/branch-publish.spec.ts (11) |
 | `ccd8a24b03` |  | 1 | SCAFFOLD 1 | 0/0/0/0 (0) |  |
 | `584d0000e6` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `ec33db8c91` |  | 4 | SUPERSEDED 2, ON-MAIN 2 | 0/0/0/0 (0) |  |
@@ -99,7 +98,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `7897cc2847` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `95805eabbb` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `ff05330075` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `0712915ee7` |  | 1 | PARTIAL 1 | 6/2/8/0 (13) | .changeset/mobile-home-announcement-target.md (2), apps/mvp/docs/features/notifications.md (1), apps/mvp/src/features/attention/detail.test.ts (2), apps/mvp/src/screens/issues/issues-screen.css (2) |
+| `0712915ee7` |  | 1 | PARTIAL 1 | 5/3/8/0 (13) | .changeset/mobile-home-announcement-target.md (2), apps/mvp/docs/features/notifications.md (1), apps/mvp/src/features/attention/detail.test.ts (2), apps/mvp/src/screens/issues/issues-screen.css (2) |
 | `5d08f1c6b6` |  | 5 | SUPERSEDED 3, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `e4a8c2f4d1` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `0e3a7c85c5` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
@@ -114,7 +113,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `82e7357ae5` |  | 1 | EMPTY-ISH 1 | 0/0/0/0 (0) |  |
 | `4b37b4b97f` |  | 1 | PARTIAL 1 | 0/0/0/1 (1) | apps/mvp/worker/test/workerd/shapes.ts (1) |
 | `34f0c5687b` |  | 1 | EMPTY-ISH 1 | 0/0/0/0 (0) |  |
-| `7f67d7edde` |  | 6 | SUPERSEDED 4, PARTIAL 2 | 332/75/2/6 (62) | apps/mvp/e2e/vibelang-visitor.spec.ts (3), apps/mvp/src/features/issues/issues.ts (3), apps/mvp/src/features/issues/store.ts (6), apps/mvp/src/features/pulls/pulls.ts (2) |
+| `7f67d7edde` |  | 6 | SUPERSEDED 4, PARTIAL 2 | 331/76/2/6 (62) | apps/mvp/e2e/vibelang-visitor.spec.ts (3), apps/mvp/src/features/issues/issues.ts (3), apps/mvp/src/features/issues/store.ts (6), apps/mvp/src/features/pulls/pulls.ts (2) |
 | `4fb9c67761` |  | 4 | SUPERSEDED 3, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `20acd0d7f6` |  | 8 | ON-MAIN 3, PARTIAL 2, SUPERSEDED 3 | 446/34/1/5 (21) | apps/mvp/docs/decisions/0107-frontend-failures-recorded-once.md (6), apps/mvp/src/features/issues/writes.ts (1), apps/mvp/src/features/pulls/actions.ts (8), apps/mvp/src/features/timeline/store.test.t |
 | `709a9b4085` |  | 1 | PARTIAL 1 | 6/0/0/2 (2) | apps/mvp/docs/decisions/0107-embed-full-screen-revision.md (1), apps/mvp/docs/work/embed-race.md (1) |
@@ -124,7 +123,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `2adb786dc3` |  | 12 | SUPERSEDED 10, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `e796863977` |  | 12 | ON-MAIN 3, SUPERSEDED 9 | 0/0/0/0 (0) |  |
 | `84810da5d9` |  | 4 | PARTIAL 2, SUPERSEDED 2 | 109/15/2/3 (16) | apps/mvp/db/Database.ts (4), apps/mvp/db/migrations/0063_bug_reports.ts (8), apps/mvp/db/migrations/0065_bug_report_errors.ts (2), apps/mvp/vitest.config.ts (2) |
-| `7d062cf108` |  | 5 | SUPERSEDED 4, PARTIAL 1 | 211/121/7/11 (99) | apps/mvp/db/Database.test.ts (45), apps/mvp/docs/decisions/0104-model-tiers.md (10), apps/mvp/docs/features/jev.md (1), apps/mvp/docs/features/model-endpoint.md (2) |
+| `7d062cf108` |  | 5 | SUPERSEDED 4, PARTIAL 1 | 210/122/7/11 (99) | apps/mvp/db/Database.test.ts (45), apps/mvp/docs/decisions/0104-model-tiers.md (10), apps/mvp/docs/features/jev.md (1), apps/mvp/docs/features/model-endpoint.md (2) |
 | `c528165c0e` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `a7c024885e` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `3285d5e1f9` |  | 1 | PARTIAL 1 | 39/30/2/2 (7) | apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0064_timeline_summaries.ts (4), apps/mvp/vitest.config.ts (1) |
@@ -174,7 +173,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `ad792eea0e` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `dcd6da80eb` |  | 4 | PARTIAL 1, SUPERSEDED 3 | 99/37/2/0 (5) | apps/mvp/docs/features/sign-in.md (3), apps/mvp/docs/features/timeline.md (2) |
 | `68315c158f` |  | 3 | PARTIAL 1, SUPERSEDED 2 | 84/46/3/0 (6) | apps/mvp/docs/features/agent-status.md (1), apps/mvp/docs/features/sign-in.md (3), apps/mvp/docs/features/timeline.md (2) |
-| `e98419b928` |  | 1 | PARTIAL 1 | 4173/75/342/58 (60517) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/attachments/new-branch/design.md (26), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0034_prototypes.ts |
+| `e98419b928` |  | 1 | PARTIAL 1 | 4218/75/251/104 (56947) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/attachments/new-branch/design.md (26), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0034_prototypes.ts |
 | `901ac4b864` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `6e719f421a` |  | 1 | PARTIAL 1 | 19/31/2/4 (14) | apps/mvp/docs/decisions/0099-repository-page-boundaries.md (3), apps/mvp/docs/features/repo.md (1), apps/mvp/docs/work/repo-pages.md (1), apps/mvp/src/features/home/components/HomeTabs.tsx (1) |
 | `cbd9b8209c` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
@@ -192,11 +191,11 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `68287c4345` |  | 3 | ON-MAIN 3 | 0/0/0/0 (0) |  |
 | `fccdf564da` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `dd805e229d` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `d3928d2f04` |  | 3 | ON-MAIN 1, PARTIAL 1, SUPERSEDED 1 | 11/2/1/2 (7) | apps/mvp/evals/flowCases.test.ts (6), apps/mvp/evals/flowCases.ts (1) |
+| `d3928d2f04` |  | 3 | ON-MAIN 1, PARTIAL 1, SUPERSEDED 1 | 12/2/0/2 (2) | apps/mvp/evals/flowCases.test.ts (1), apps/mvp/evals/flowCases.ts (1) |
 | `e3755de690` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `39f8cad1c3` |  | 5 | PARTIAL 2, SUPERSEDED 2, ON-MAIN 1 | 190/26/35/17 (292) | apps/mvp/db/Database.test.ts (5), apps/mvp/db/Database.ts (2), apps/mvp/docs/decisions/0012-git-end-to-end.md (1), apps/mvp/docs/decisions/0013-branch-workspace.md (1) |
+| `39f8cad1c3` |  | 5 | PARTIAL 2, SUPERSEDED 2, ON-MAIN 1 | 189/27/35/17 (292) | apps/mvp/db/Database.test.ts (5), apps/mvp/db/Database.ts (2), apps/mvp/docs/decisions/0012-git-end-to-end.md (1), apps/mvp/docs/decisions/0013-branch-workspace.md (1) |
 | `40022a75e6` |  | 1 | PARTIAL 1 | 57/4/0/3 (4) | apps/mvp/docs/decisions/0087-pin-message.md (1), apps/mvp/docs/features/chat.md (1), apps/mvp/docs/work/pin-message.md (2) |
-| `ecf78a276d` |  | 24 | STRANDED 1, ON-MAIN 15, PARTIAL 3, SUPERSEDED 5 | 79/0/78/8 (17535) | apps/mvp/docs/features/agent-evals.md (27), apps/mvp/docs/infrastructure.md (1), apps/mvp/docs/work/agent-ui-evals-fix.md (356), apps/mvp/evals/results/agent-2026-10-23T21-21-04-827Z.json (212) |
+| `ecf78a276d` |  | 24 | PARTIAL 4, ON-MAIN 15, SUPERSEDED 5 | 144/0/11/10 (6738) | apps/mvp/docs/features/agent-evals.md (1), apps/mvp/docs/infrastructure.md (1), apps/mvp/evals/results/agent-2026-10-23T21-46-59-028Z.json (774), apps/mvp/evals/results/agent-2026-10-23T22-18-51-775Z. |
 | `54239406d3` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `20858bc9a8` |  | 2 | ON-MAIN 1, SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `da2a7d8616` |  | 2 | ON-MAIN 2 | 0/0/0/0 (0) |  |
@@ -217,9 +216,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `339099a805` |  | 1 | PARTIAL 1 | 17/3/0/1 (10) | apps/mvp/worker/github/Api.test.ts (10) |
 | `ab8f62e371` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `9066432f71` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
-| `a4b7a02775` |  | 6 | PARTIAL 2, ON-MAIN 2, SUPERSEDED 2 | 133/58/5/7 (21) | apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/docs/work/ci-parity-run-view.md (1), apps/mvp/src/device/migrations.test.ts (2) |
+| `a4b7a02775` |  | 6 | PARTIAL 2, ON-MAIN 2, SUPERSEDED 2 | 127/64/5/7 (21) | apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/docs/work/ci-parity-run-view.md (1), apps/mvp/src/device/migrations.test.ts (2) |
 | `c8417db8d0` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `397ac16d47` |  | 5 | SUPERSEDED 3, PARTIAL 1, ON-MAIN 1 | 176/17/1/0 (1) | apps/mvp/src/device/registry.ts (1) |
+| `397ac16d47` |  | 5 | SUPERSEDED 3, PARTIAL 1, ON-MAIN 1 | 174/19/1/0 (1) | apps/mvp/src/device/registry.ts (1) |
 | `e74b0d3d03` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `474e9d5d24` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `4ad4c7908b` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -233,9 +232,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `3c0ea663e3` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `306bb9a2a9` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `5fd8aa4174` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
-| `0e8d7cc83b` |  | 5 | PARTIAL 4, STRANDED 1 | 2/0/10/4 (127) | apps/mvp/docs/work/platform-node-linux-reds.md (68), packages/smithers/flows/platform-node/docs/troubleshooting.md (15), packages/smithers/flows/platform-node/src/internal/ProcSnapshot.ts (5), package |
-| `b03633a3c1` |  | 5 | PARTIAL 4, STRANDED 1 | 2/0/10/4 (127) | apps/mvp/docs/work/platform-node-linux-reds.md (68), packages/smithers/flows/platform-node/docs/troubleshooting.md (15), packages/smithers/flows/platform-node/src/internal/ProcSnapshot.ts (5), package |
-| `373aa72a50` |  | 5 | PARTIAL 4, STRANDED 1 | 2/0/10/4 (127) | apps/mvp/docs/work/platform-node-linux-reds.md (68), packages/smithers/flows/platform-node/docs/troubleshooting.md (15), packages/smithers/flows/platform-node/src/internal/ProcSnapshot.ts (5), package |
+| `0e8d7cc83b` |  | 5 | ON-MAIN 3, PARTIAL 2 | 10/0/4/2 (17) | packages/smithers/flows/platform-node/test/NativeRuntimeRestart.test.ts (2), packages/smithers/flows/platform-node/test/NodeRuntimeReap.integration.test.ts (3), packages/smithers/flows/platform-node/t |
+| `b03633a3c1` |  | 5 | ON-MAIN 3, PARTIAL 2 | 10/0/4/2 (17) | packages/smithers/flows/platform-node/test/NativeRuntimeRestart.test.ts (2), packages/smithers/flows/platform-node/test/NodeRuntimeReap.integration.test.ts (3), packages/smithers/flows/platform-node/t |
+| `373aa72a50` |  | 5 | ON-MAIN 3, PARTIAL 2 | 10/0/4/2 (17) | packages/smithers/flows/platform-node/test/NativeRuntimeRestart.test.ts (2), packages/smithers/flows/platform-node/test/NodeRuntimeReap.integration.test.ts (3), packages/smithers/flows/platform-node/t |
 | `6b14785300` |  | 8 | ON-MAIN 3, SUPERSEDED 5 | 0/0/0/0 (0) |  |
 | `dcd35527d1` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `2ebb0a730e` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -243,19 +242,19 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `775dd2d7c7` |  | 2 | SUPERSEDED 1, PARTIAL 1 | 94/16/4/3 (101) | .changeset/command-in-the-step.md (1), packages/smithers/flows/engine-store/docs/api.md (4), packages/smithers/flows/engine-store/src/EngineStore.ts (23), packages/smithers/flows/engine-store/test/Hos |
 | `1197725423` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `bb8846cec1` |  | 3 | ON-MAIN 2, SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `24337be84e` |  | 8 | PARTIAL 1, SUPERSEDED 6, ON-MAIN 1 | 79/38/17/2 (131) | .changeset/claim-log-owners.md (1), apps/mvp/src/test/agent.ts (9), apps/mvp/worker/flows/Todo.test.ts (26), apps/mvp/worker/test/flowHost.ts (27) |
+| `24337be84e` |  | 8 | PARTIAL 1, SUPERSEDED 6, ON-MAIN 1 | 85/38/13/0 (62) | apps/mvp/src/test/agent.ts (9), apps/mvp/worker/flows/Todo.test.ts (26), apps/mvp/worker/test/flowHost.ts (27) |
 | `9128d43fe1` |  | 6 | SUPERSEDED 2, ON-MAIN 4 | 0/0/0/0 (0) |  |
 | `97b04fc0f6` |  | 5 | SUPERSEDED 3, ON-MAIN 1, PARTIAL 1 | 135/12/1/0 (5) | apps/mvp/src/flows/registrations.ts (5) |
 | `384646b652` |  | 8 | SUPERSEDED 7, ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `67917e16d7` |  | 10 | STRANDED 1, PARTIAL 4, SUPERSEDED 3, ON-MAIN 2 | 83/37/55/50 (1855) | .changeset/ci-job-step-log.md (5), apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/docs/features/actions.md (55) |
+| `67917e16d7` |  | 10 | STRANDED 1, PARTIAL 4, SUPERSEDED 3, ON-MAIN 2 | 121/43/19/42 (540) | .changeset/ci-job-step-log.md (5), apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/docs/features/actions.md (52) |
 | `15098441d5` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `7e0ae698e6` |  | 8 | STRANDED 1, SUPERSEDED 6, ON-MAIN 1 | 79/38/17/0 (68) | apps/mvp/src/test/agent.ts (9), apps/mvp/worker/flows/Todo.test.ts (14), apps/mvp/worker/test/flowHost.ts (27), packages/smithers/flows/engine-store/src/internal/RunDriver.ts (18) |
+| `7e0ae698e6` |  | 8 | PARTIAL 1, SUPERSEDED 6, ON-MAIN 1 | 82/38/14/0 (50) | apps/mvp/src/test/agent.ts (9), apps/mvp/worker/flows/Todo.test.ts (14), apps/mvp/worker/test/flowHost.ts (27) |
 | `08cb0cd99d` |  | 6 | ON-MAIN 2, SUPERSEDED 4 | 0/0/0/0 (0) |  |
 | `e5760e837c` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 77/14/8/21 (69) | apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0043_github_repo_roles.ts (3), apps/mvp/docs/decisions/0065-roles-per-repository.md (10), apps/mvp/docs/features/issues.md (4) |
 | `c150967dde` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `2ad00d3322` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
 | `3a43ea31fa` |  | 7 | SUPERSEDED 6, ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `91d70e9d68` |  | 4 | SUPERSEDED 1, PARTIAL 2, ON-MAIN 1 | 151/16/9/7 (37) | apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0044_agent_views.ts (9), apps/mvp/docs/features/agent-evals.md (1) |
+| `91d70e9d68` |  | 4 | SUPERSEDED 1, PARTIAL 2, ON-MAIN 1 | 149/18/9/7 (37) | apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0044_agent_views.ts (9), apps/mvp/docs/features/agent-evals.md (1) |
 | `47f1d1ffea` |  | 1 | PARTIAL 1 | 73/20/4/2 (8) | apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0043_conversation_people.ts (3), apps/mvp/docs/work/conversations-and-history.md (1), apps/mvp/src/flows/registry.test.ts (1) |
 | `7db2d33fbd` |  | 6 | SUPERSEDED 4, ON-MAIN 1, PARTIAL 1 | 82/20/4/1 (8) | apps/mvp/src/features/repo/components/RepoHeader.tsx (3), apps/mvp/src/features/terminal/navigation.test.ts (1), apps/mvp/src/main.tsx (1), apps/mvp/src/screens/branch/offline.test.ts (3) |
 | `be9b41b545` |  | 4 | PARTIAL 1, SUPERSEDED 3 | 31/4/1/5 (61) | apps/mvp/docs/work/todo-production-start-latency.md (37), packages/smithers/flows/docs/runtime-construction.md (8), packages/smithers/flows/src/Runtime.ts (5), packages/smithers/flows/src/internal/Run |
@@ -264,11 +263,11 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `cbd021c4c2` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
 | `83b9d49672` |  | 6 | PARTIAL 3, SUPERSEDED 2, ON-MAIN 1 | 115/55/6/2 (50) | apps/mvp/db/Database.ts (6), apps/mvp/docs/decisions/0065-github-projection-ordering.md (3), apps/mvp/docs/features/issues.md (1), apps/mvp/docs/features/pulls.md (1) |
 | `ae3d1d4e90` |  | 5 | SUPERSEDED 3, ON-MAIN 1, PARTIAL 1 | 122/13/1/0 (5) | apps/mvp/src/flows/registrations.ts (5) |
-| `db2e3e783b` |  | 34 | ON-MAIN 31, SUPERSEDED 2, STRANDED 1 | 113/1/1/0 (2) | packages/smithers/test/EvaluationCli.test.ts (2) |
+| `db2e3e783b` |  | 34 | ON-MAIN 31, SUPERSEDED 2, STRANDED 1 | 107/7/1/0 (2) | packages/smithers/test/EvaluationCli.test.ts (2) |
 | `2bdf838be6` |  | 2 | SUPERSEDED 1, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `81490bf80b` |  | 4 | ON-MAIN 1, SUPERSEDED 2, PARTIAL 1 | 122/12/1/0 (5) | apps/mvp/src/flows/registrations.ts (5) |
 | `39302f919c` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
-| `5d05890579` |  | 4 | SUPERSEDED 1, PARTIAL 2, ON-MAIN 1 | 136/13/12/9 (80) | apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0043_agent_views.ts (9), apps/mvp/docs/features/agent-evals.md (3) |
+| `5d05890579` |  | 4 | SUPERSEDED 1, PARTIAL 2, ON-MAIN 1 | 134/15/12/9 (80) | apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0043_agent_views.ts (9), apps/mvp/docs/features/agent-evals.md (3) |
 | `adec00bc79` |  | 6 | SUPERSEDED 3, ON-MAIN 1, PARTIAL 2 | 62/12/8/9 (43) | .smithers/flows/release/fixtures/public-api-baseline.json (3), apps/mvp/src/boot.test.ts (2), apps/mvp/src/boot.ts (6), apps/mvp/src/features/repo/components/RepoHeader.tsx (3) |
 | `c6db4254b1` |  | 2 | PARTIAL 2 | 68/6/15/16 (71) | apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0041_domains.ts (11), apps/mvp/docs/decisions/0007-roles-and-tags.md (1), apps/mvp/docs/decisions/0028-custom-domains.md (5) |
 | `b238afaac2` |  | 6 | ON-MAIN 2, SUPERSEDED 4 | 0/0/0/0 (0) |  |
@@ -283,7 +282,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `11af05aba7` |  | 2 | PARTIAL 2 | 41/9/0/4 (15) | apps/mvp/docs/work/todo-stack-hold.md (3), apps/mvp/worker/flows/Todo.test.ts (1), apps/mvp/worker/stack/Stack.test.ts (7), apps/mvp/worker/stack/Stack.ts (4) |
 | `e61fff0891` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `24a7bd8f79` |  | 4 | SUPERSEDED 3, ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `d716562442` |  | 6 | PARTIAL 4, SUPERSEDED 2 | 226/19/30/12 (357) | apps/mvp/docs/work/journal-latency.md (9), apps/mvp/worker/Executions.ts (1), apps/site/public/llms-full.txt (59), apps/site/src/content/docs/docs/reference/api/database.mdx (39) |
+| `d716562442` |  | 6 | PARTIAL 4, SUPERSEDED 2 | 224/21/30/12 (364) | apps/mvp/docs/work/journal-latency.md (9), apps/mvp/worker/Executions.ts (1), apps/site/public/llms-full.txt (59), apps/site/src/content/docs/docs/reference/api/database.mdx (39) |
 | `2b7b365b7d` |  | 2 | ON-MAIN 1, SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `a2b862d154` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `c14cea2606` |  | 2 | ON-MAIN 1, SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -299,7 +298,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `6b2971b10f` |  | 6 | ON-MAIN 2, SUPERSEDED 4 | 0/0/0/0 (0) |  |
 | `37c4036a58` |  | 2 | PARTIAL 2 | 106/10/5/0 (11) | apps/mvp/docs/features/flows.md (1), apps/mvp/src/features/auth/store.ts (1), apps/mvp/src/flows/registrations.ts (5), apps/mvp/src/test/e2e.ts (4) |
 | `13182e1705` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
-| `5a0fb2b622` |  | 6 | PARTIAL 4, SUPERSEDED 2 | 235/20/29/5 (150) | apps/mvp/docs/work/journal-latency.md (9), apps/site/public/llms-full.txt (45), apps/site/src/content/docs/docs/reference/api/database.mdx (35), apps/site/src/content/docs/docs/reference/api/engine-st |
+| `5a0fb2b622` |  | 6 | PARTIAL 4, SUPERSEDED 2 | 232/23/29/5 (150) | apps/mvp/docs/work/journal-latency.md (9), apps/site/public/llms-full.txt (45), apps/site/src/content/docs/docs/reference/api/database.mdx (35), apps/site/src/content/docs/docs/reference/api/engine-st |
 | `1f91ef7a70` |  | 4 | SUPERSEDED 3, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `a607670a74` |  | 2 | SUPERSEDED 1, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `0a442931c6` |  | 6 | SUPERSEDED 4, ON-MAIN 1, PARTIAL 1 | 129/23/7/20 (132) | .changeset/database-writer-lock-timeout.md (6), .smithers/flows/release/fixtures/public-api-baseline.json (3), apps/mvp/worker/Executions.ts (1), apps/site/public/llms-full.txt (18) |
@@ -321,7 +320,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `fae2972933` |  | 5 | SUPERSEDED 5 | 0/0/0/0 (0) |  |
 | `65d0c9b954` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `3216e65c29` |  | 3 | SUPERSEDED 2, PARTIAL 1 | 25/6/7/18 (119) | .changeset/database-writer-lock-timeout.md (6), .smithers/flows/release/fixtures/public-api-baseline.json (3), apps/site/public/llms-full.txt (18), apps/site/src/content/docs/docs/reference/api/databa |
-| `1cd360747c` |  | 7 | PARTIAL 5, SUPERSEDED 2 | 235/19/29/28 (394) | .changeset/database-writer-lock-timeout.md (6), apps/mvp/docs/work/journal-latency.md (9), apps/site/public/llms-full.txt (66), apps/site/src/content/docs/docs/reference/api/database.mdx (56) |
+| `1cd360747c` |  | 7 | PARTIAL 5, SUPERSEDED 2 | 232/22/29/28 (394) | .changeset/database-writer-lock-timeout.md (6), apps/mvp/docs/work/journal-latency.md (9), apps/site/public/llms-full.txt (66), apps/site/src/content/docs/docs/reference/api/database.mdx (56) |
 | `01117011e5` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `232ed3b05c` |  | 1 | PARTIAL 1 | 14/0/1/2 (52) | apps/mvp/docs/work/mini-harness-719499.md (47), packages/smithers/agent/harness/docs/concepts.md (3), packages/smithers/agent/harness/src/CellTurn.ts (2) |
 | `69b56b184f` |  | 1 | PARTIAL 1 | 24/0/5/3 (40) | apps/mvp/docs/work/model-evaluator-regressions-721994.md (27), packages/smithers/agent/model/README.md (2), packages/smithers/agent/model/docs/api.md (3), packages/smithers/agent/model/src/Endpoint.ts |
@@ -343,10 +342,10 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `c5c1ec01dc` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `06799a9d9d` |  | 1 | PARTIAL 1 | 37/0/12/4 (92) | apps/mvp/docs/work/github-write-safety-342737.md (18), packages/smithers/agent/integrations/README.md (2), packages/smithers/agent/integrations/src/github/Actions.ts (1), packages/smithers/agent/integ |
 | `c63dcc4693` |  | 9 | SUPERSEDED 7, ON-MAIN 2 | 0/0/0/0 (0) |  |
-| `e2d711da18` |  | 4 | SUPERSEDED 1, PARTIAL 2, ON-MAIN 1 | 141/14/8/7 (36) | apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0043_agent_views.ts (9), apps/mvp/docs/features/agent-evals.md (1) |
-| `26da3c47fd` |  | 3 | PARTIAL 1, SUPERSEDED 2 | 58/8/18/0 (30) | apps/site/public/llms-full.txt (10), apps/site/src/content/docs/docs/reference/api/engine-store.mdx (2), apps/site/src/content/docs/docs/reference/api/platform-cloudflare.mdx (8), packages/smithers/fl |
+| `e2d711da18` |  | 4 | SUPERSEDED 1, PARTIAL 2, ON-MAIN 1 | 139/16/8/7 (36) | apps/mvp/AGENTS.md (1), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0043_agent_views.ts (9), apps/mvp/docs/features/agent-evals.md (1) |
+| `26da3c47fd` |  | 3 | PARTIAL 1, SUPERSEDED 2 | 56/10/18/0 (30) | apps/site/public/llms-full.txt (10), apps/site/src/content/docs/docs/reference/api/engine-store.mdx (2), apps/site/src/content/docs/docs/reference/api/platform-cloudflare.mdx (8), packages/smithers/fl |
 | `afac32fc6f` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `fcbc2db3f3` |  | 3 | PARTIAL 3 | 176/11/11/6 (128) | apps/mvp/docs/work/journal-latency.md (9), apps/site/public/llms-full.txt (35), apps/site/src/content/docs/docs/reference/api/database.mdx (35), packages/smithers/flows/database/docs/api.md (35) |
+| `fcbc2db3f3` |  | 3 | PARTIAL 3 | 175/12/11/6 (128) | apps/mvp/docs/work/journal-latency.md (9), apps/site/public/llms-full.txt (35), apps/site/src/content/docs/docs/reference/api/database.mdx (35), packages/smithers/flows/database/docs/api.md (35) |
 | `87afc19dba` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `467ba8d3c1` |  | 1 | PARTIAL 1 | 41/0/1/1 (44) | apps/mvp/docs/work/mini-harness-regressions-216946.md (41), packages/smithers/agent/harness/PACKAGE.ts (3) |
 | `0ae96a044a` |  | 1 | PARTIAL 1 | 30/4/1/2 (41) | apps/mvp/docs/work/mini-backend-449117.md (30), packages/smithers/src/internal/backend/Runs.ts (2), packages/smithers/test/BackendWorkspace.test.ts (9) |
@@ -363,10 +362,10 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `4debb68b67` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `e294a3c4ee` |  | 2 | PARTIAL 2 | 118/7/5/12 (122) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/src/Migrations.ts (7), packages/smithers/flows/database/src/internal/WriteTally.ts (3), packages/smithers/flows/data |
 | `d36edc4400` |  | 2 | PARTIAL 2 | 125/7/5/9 (111) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/src/Migrations.ts (7), packages/smithers/flows/database/src/internal/WriteTally.ts (3), packages/smithers/flows/data |
-| `c0046c5d2d` |  | 4 | SUPERSEDED 2, SCAFFOLD 1, PARTIAL 1 | 142/8/5/4 (63) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/src/test/SlowNetwork.ts (14), packages/smithers/flows/database/test/PostgresPooling.test.ts (1), packages/smithers/f |
+| `c0046c5d2d` |  | 4 | SUPERSEDED 2, SCAFFOLD 1, PARTIAL 1 | 141/9/5/4 (63) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/src/test/SlowNetwork.ts (14), packages/smithers/flows/database/test/PostgresPooling.test.ts (1), packages/smithers/f |
 | `b839008003` |  | 2 | PARTIAL 2 | 117/7/5/12 (122) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/src/Migrations.ts (7), packages/smithers/flows/database/src/internal/WriteTally.ts (3), packages/smithers/flows/data |
-| `a5831dcfee` |  | 3 | SUPERSEDED 1, PARTIAL 2 | 144/8/5/3 (49) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/test/PostgresPooling.test.ts (1), packages/smithers/flows/platform-cloudflare/package.json (1), packages/smithers/fl |
-| `4e6686686f` |  | 4 | PARTIAL 3, SUPERSEDED 1 | 144/8/5/3 (49) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/test/PostgresPooling.test.ts (1), packages/smithers/flows/platform-cloudflare/package.json (1), packages/smithers/fl |
+| `a5831dcfee` |  | 3 | SUPERSEDED 1, PARTIAL 2 | 143/9/5/3 (49) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/test/PostgresPooling.test.ts (1), packages/smithers/flows/platform-cloudflare/package.json (1), packages/smithers/fl |
+| `4e6686686f` |  | 4 | PARTIAL 3, SUPERSEDED 1 | 143/9/5/3 (49) | packages/smithers/flows/database/docs/api.md (35), packages/smithers/flows/database/test/PostgresPooling.test.ts (1), packages/smithers/flows/platform-cloudflare/package.json (1), packages/smithers/fl |
 | `f0fcc1f28a` |  | 7 | SUPERSEDED 2, ON-MAIN 1, PARTIAL 3, STRANDED 1 | 148/20/12/12 (123) | .changeset/browser-runtime-authorize-recheck.md (8), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (1), apps/mvp/docs/features/flows.md (1), apps/mvp/docs/features/sign-in.md ( |
 | `84449e6ef6` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `d1c6a15702` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
@@ -402,7 +401,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `2928064a89` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `ad1d4ef682` |  | 1 | PARTIAL 1 | 2/2/5/4 (121) | apps/mvp/docs/decisions/0028-terminal-session-deadline.md (4), apps/mvp/docs/features/sandbox-tools.md (1), apps/mvp/docs/work/terminal-session-deadline.md (11), apps/mvp/worker/BranchSandboxes.test.t |
 | `77c9d62aff` |  | 1 | PARTIAL 1 | 8/0/1/1 (3) | apps/mvp/docs/work/mini-effect-electric-validation.md (2), packages/effect-electric/src/ElectricCollection.ts (1) |
-| `0b93fc6d9a` |  | 25 | SUPERSEDED 17, ON-MAIN 7, PARTIAL 1 | 290/60/1/3 (29) | apps/mvp/docs/work/branch-page-regressions.md (22), apps/mvp/src/features/runs/actions.ts (5), apps/mvp/src/flows/requests.test.ts (1), apps/mvp/worker/RepoApi.ts (1) |
+| `0b93fc6d9a` |  | 25 | SUPERSEDED 17, ON-MAIN 7, PARTIAL 1 | 288/62/1/3 (29) | apps/mvp/docs/work/branch-page-regressions.md (22), apps/mvp/src/features/runs/actions.ts (5), apps/mvp/src/flows/requests.test.ts (1), apps/mvp/worker/RepoApi.ts (1) |
 | `0bbf6b3fbd` |  | 20 | SUPERSEDED 16, ON-MAIN 4 | 0/0/0/0 (0) |  |
 | `e8db41361c` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `cce3569189` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
@@ -411,9 +410,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `0aa846e9c2` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `fa8b8f89a7` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `61f1ea1263` |  | 9 | SUPERSEDED 7, ON-MAIN 2 | 0/0/0/0 (0) |  |
-| `09e2b52cd0` |  | 1 | PARTIAL 1 | 9/0/1/1 (40) | apps/mvp/docs/work/model-proxy-wire-boundaries.md (29), packages/smithers/agent/model/test/ModelProxy.test.ts (11) |
+| `09e2b52cd0` |  | 1 | PARTIAL 1 | 10/0/1/0 (29) | apps/mvp/docs/work/model-proxy-wire-boundaries.md (29) |
 | `72a73899be` |  | 29 | SUPERSEDED 20, ON-MAIN 9 | 0/0/0/0 (0) |  |
-| `cff156d794` |  | 1 | PARTIAL 1 | 9/0/1/1 (40) | apps/mvp/docs/work/model-proxy-wire-boundaries.md (29), packages/smithers/agent/model/test/ModelProxy.test.ts (11) |
+| `cff156d794` |  | 1 | PARTIAL 1 | 10/0/1/0 (29) | apps/mvp/docs/work/model-proxy-wire-boundaries.md (29) |
 | `104a7b5e07` |  | 34 | ON-MAIN 12, SUPERSEDED 22 | 0/0/0/0 (0) |  |
 | `331891126f` |  | 29 | SUPERSEDED 20, ON-MAIN 9 | 0/0/0/0 (0) |  |
 | `b95118a69b` |  | 2 | SUPERSEDED 1, ON-MAIN 1 | 0/0/0/0 (0) |  |
@@ -429,7 +428,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `97f2a041f0` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `d92a9c71ce` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `3040e79cca` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `d349d20f42` |  | 1 | PARTIAL 1 | 9/0/1/1 (30) | apps/mvp/docs/work/model-proxy-wire-boundaries.md (19), packages/smithers/agent/model/test/ModelProxy.test.ts (11) |
+| `d349d20f42` |  | 1 | PARTIAL 1 | 10/0/1/0 (19) | apps/mvp/docs/work/model-proxy-wire-boundaries.md (19) |
 | `b98e2fc309` |  | 12 | SUPERSEDED 5, ON-MAIN 6, PARTIAL 1 | 342/3/1/15 (112) | packages/smithers/flows/patterns/src/MergeQueue.ts (1), packages/smithers/flows/patterns/src/Optimizer.ts (19), packages/smithers/flows/patterns/src/Trellis.ts (16), packages/smithers/flows/patterns/s |
 | `b8282bf27d` |  | 13 | ON-MAIN 7, SUPERSEDED 5, PARTIAL 1 | 375/2/1/15 (112) | packages/smithers/flows/patterns/src/MergeQueue.ts (1), packages/smithers/flows/patterns/src/Optimizer.ts (19), packages/smithers/flows/patterns/src/Trellis.ts (16), packages/smithers/flows/patterns/s |
 | `a3a6cac508` |  | 12 | PARTIAL 2, SUPERSEDED 4, ON-MAIN 6 | 342/3/1/15 (112) | packages/smithers/flows/patterns/src/MergeQueue.ts (1), packages/smithers/flows/patterns/src/Optimizer.ts (19), packages/smithers/flows/patterns/src/Trellis.ts (16), packages/smithers/flows/patterns/s |
@@ -441,7 +440,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `2cf7a54bcd` |  | 3 | ON-MAIN 1, SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `2849e27fb1` |  | 4 | STRANDED 1, SUPERSEDED 3 | 161/8/0/10 (136) | packages/smithers/flows/patterns/src/Runbook.ts (8), packages/smithers/flows/patterns/src/Trellis.ts (16), packages/smithers/flows/patterns/src/index.ts (1), packages/smithers/flows/patterns/test/Dele |
 | `1d09fe42d7` |  | 4 | PARTIAL 1, SUPERSEDED 3 | 246/7/2/7 (73) | packages/smithers/flows/patterns/src/MergeQueue.ts (1), packages/smithers/flows/patterns/src/Panel.ts (1), packages/smithers/flows/patterns/src/Trellis.ts (16), packages/smithers/flows/patterns/src/in |
-| `02def9611e` |  | 1 | PARTIAL 1 | 9/0/1/1 (28) | apps/mvp/docs/work/model-proxy-wire-boundaries.md (17), packages/smithers/agent/model/test/ModelProxy.test.ts (11) |
+| `02def9611e` |  | 1 | PARTIAL 1 | 10/0/1/0 (17) | apps/mvp/docs/work/model-proxy-wire-boundaries.md (17) |
 | `26d7a5b737` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `c597088dc0` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `1821a5f647` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -505,7 +504,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `b111fae417` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 17/0/15/6 (137) | .changeset/cloudflare-safe-failure-detail.md (5), .changeset/cloudflare-terminal-input-bounds.md (2), apps/mvp/docs/work/platform-cloudflare-review-fixes.md (15), packages/smithers/flows/platform-clou |
 | `93af17ebd4` |  | 4 | SUPERSEDED 3, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `32e5a252c9` |  | 13 | SUPERSEDED 9, ON-MAIN 4 | 0/0/0/0 (0) |  |
-| `4b4584af3b` |  | 20 | SUPERSEDED 14, PARTIAL 2, ON-MAIN 4 | 235/26/2/0 (5) | apps/mvp/src/features/views/views.test.ts (2), packages/smithers/ui/src/presentation/bundle.generated.ts (3) |
+| `4b4584af3b` |  | 20 | SUPERSEDED 14, PARTIAL 2, ON-MAIN 4 | 234/27/2/0 (5) | apps/mvp/src/features/views/views.test.ts (2), packages/smithers/ui/src/presentation/bundle.generated.ts (3) |
 | `fcd2fd1cd5` |  | 15 | ON-MAIN 3, SUPERSEDED 12 | 0/0/0/0 (0) |  |
 | `0bb36a57fb` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
 | `664184311f` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -523,7 +522,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `c87a5e86b4` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `e4fd2edc7e` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `3f0367fc91` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `dd60c8c5bf` |  | 10 | SUPERSEDED 8, ON-MAIN 1, PARTIAL 1 | 141/14/2/1 (36) | apps/mvp/docs/work/plan-confirmed-bugs-586345.md (24), packages/smithers/flows/plan/docs/concepts/authoring-ast.md (11), packages/smithers/flows/plan/src/FileSet.ts (1) |
+| `dd60c8c5bf` |  | 10 | SUPERSEDED 8, ON-MAIN 1, PARTIAL 1 | 140/15/2/1 (36) | apps/mvp/docs/work/plan-confirmed-bugs-586345.md (24), packages/smithers/flows/plan/docs/concepts/authoring-ast.md (11), packages/smithers/flows/plan/src/FileSet.ts (1) |
 | `9d7b44d389` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `c09041d548` |  | 4 | SUPERSEDED 3, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `092f8d2167` |  | 1 | PARTIAL 1 | 10/10/1/2 (15) | apps/mvp/alchemy.run.ts (1), apps/mvp/src/pwa.test.ts (2), apps/mvp/src/pwa.ts (12) |
@@ -595,8 +594,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `66491a2430` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 30/6/2/2 (14) | apps/mvp/docs/work/run-change-feed-progress.md (8), apps/mvp/src/features/runs/remote.test.ts (5), apps/mvp/src/test/chatApi.ts (1) |
 | `1f61aefdd2` |  | 8 | STRANDED 2, PARTIAL 5, ON-MAIN 1 | 111/52/13/3 (53) | apps/mvp/db/Database.ts (6), apps/mvp/db/migrations/0041_drop_merge_unknown.ts (1), apps/mvp/docs/decisions/0027-github-projection-ordering.md (3), apps/mvp/docs/features/issues.md (1) |
 | `911860abdb` |  | 2 | SUPERSEDED 1, ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `15f0dbca51` |  | 1 | PARTIAL 1 | 0/0/6/2 (53) | apps/mvp/PACKAGE.test.ts (21), apps/mvp/dev/vite-fs.test.ts (17), apps/mvp/docs/work/fix-apps-mvp-023236.md (13), apps/mvp/package.json (1) |
-| `32562de10e` |  | 1 | PARTIAL 1 | 0/0/6/2 (53) | apps/mvp/PACKAGE.test.ts (21), apps/mvp/dev/vite-fs.test.ts (17), apps/mvp/docs/work/fix-apps-mvp-023236.md (13), apps/mvp/package.json (1) |
+| `15f0dbca51` |  | 1 | PARTIAL 1 | 7/0/1/0 (1) | apps/mvp/vite.config.ts (1) |
+| `32562de10e` |  | 1 | PARTIAL 1 | 7/0/1/0 (1) | apps/mvp/vite.config.ts (1) |
 | `73e68aed9e` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `9ea9fe32a2` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `0a3e757882` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
@@ -623,8 +622,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `75b80c768b` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 30/6/2/2 (21) | apps/mvp/docs/work/run-change-feed-progress.md (15), apps/mvp/src/features/runs/remote.test.ts (5), apps/mvp/src/test/chatApi.ts (1) |
 | `1c02db0ba8` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `6477a5d540` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `b8a154457f` |  | 1 | PARTIAL 1 | 0/0/7/2 (87) | apps/mvp/docs/work/fix-browser-filesystem-441211.md (13), packages/smithers/flows/platform-browser/docs/testing.md (4), packages/smithers/flows/platform-browser/src/BrowserFileSystem/fileInfo.ts (6),  |
-| `f129e8e7ef` |  | 1 | PARTIAL 1 | 2/0/12/1 (108) | apps/mvp/docs/features/issues.md (6), apps/mvp/docs/work/fix-issues-completion-236531.md (15), apps/mvp/src/features/issues/actions.ts (17), apps/mvp/src/features/issues/issues.test.ts (63) |
+| `b8a154457f` |  | 1 | PARTIAL 1 | 8/0/0/1 (9) | packages/smithers/flows/platform-browser/test/BrowserFileSystemSnapshot.test.ts (9) |
+| `f129e8e7ef` |  | 1 | PARTIAL 1 | 3/0/10/2 (98) | apps/mvp/docs/features/issues.md (6), apps/mvp/docs/work/fix-issues-completion-236531.md (15), apps/mvp/src/features/issues/actions.ts (17), apps/mvp/src/features/issues/issues.test.ts (57) |
 | `0267262ad7` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `8770d3b357` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `ecea1e22e6` |  | 1 | PARTIAL 1 | 9/0/1/1 (2) | apps/mvp/docs/work/flow-sibling-suspension-codec.md (1), packages/smithers/flows/flow/docs/concepts/suspension-and-replay.md (1) |
@@ -633,7 +632,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `0d2938e7df` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `d16d5d5adc` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `cfb32e285e` |  | 5 | PARTIAL 1, ON-MAIN 3, SUPERSEDED 1 | 96/7/0/3 (98) | apps/mvp/docs/work/time-travel-generation-evidence.md (15), packages/smithers/flows/time-travel/src/SqlTimeTravelStore.ts (11), packages/smithers/flows/time-travel/test/RecoveryGenerationEvidence.test |
-| `514c5839a7` |  | 1 | PARTIAL 1 | 2/0/20/6 (146) | apps/mvp/docs/features/chat.md (4), apps/mvp/docs/work/chat-regressions-212049.md (7), apps/mvp/src/features/chat/actions.ts (17), apps/mvp/src/features/chat/api.test.ts (7) |
+| `514c5839a7` |  | 1 | PARTIAL 1 | 4/0/12/12 (112) | apps/mvp/docs/features/chat.md (4), apps/mvp/docs/work/chat-regressions-212049.md (7), apps/mvp/src/features/chat/actions.ts (14), apps/mvp/src/features/chat/api.test.ts (7) |
 | `834c49417b` |  | 5 | ON-MAIN 1, SUPERSEDED 4 | 0/0/0/0 (0) |  |
 | `fe44e5949f` |  | 7 | PARTIAL 1, SUPERSEDED 6 | 248/16/0/18 (113) | packages/smithers/flows/patterns/src/DelegationChain.ts (2), packages/smithers/flows/patterns/src/Runbook.ts (1), packages/smithers/flows/patterns/src/Trellis.ts (16), packages/smithers/flows/patterns |
 | `2f5b9204b2` |  | 5 | PARTIAL 4, ON-MAIN 1 | 90/37/7/0 (11) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/issues.md (1), apps/mvp/e2e/target.test.ts (1), apps/mvp/worker/ChatApiProgram.ts (3) |
@@ -670,16 +669,16 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `ab5f407304` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 2/1/3/3 (41) | apps/mvp/docs/work/run-change-feed-progress.md (16), apps/mvp/src/features/runs/remote.test.ts (5), apps/mvp/src/test/chatApi.ts (1), packages/smithers/flows/engine-store/test/RunChangeProgress.test.t |
 | `3b3ffdc94c` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `ad0b6bbbbe` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `40d9433e74` |  | 1 | PARTIAL 1 | 227/152/247/5079 (65252) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11552), apps/maintainer-site/queue/queue.json (197), apps/mvp/db/Database.ts (2) |
+| `40d9433e74` |  | 1 | PARTIAL 1 | 231/152/244/5078 (65107) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11552), apps/maintainer-site/queue/queue.json (197), apps/mvp/db/Database.ts (2) |
 | `250d68f731` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `fcb0f1f644` |  | 5 | PARTIAL 4, ON-MAIN 1 | 88/38/10/1 (25) | apps/mvp/PACKAGE.ts (9), apps/mvp/db/Database.ts (2), apps/mvp/docs/features/issues.md (1), apps/mvp/docs/rules.md (3) |
-| `133177b7ce` |  | 1 | PARTIAL 1 | 227/152/247/5079 (65252) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11552), apps/maintainer-site/queue/queue.json (197), apps/mvp/db/Database.ts (2) |
+| `133177b7ce` |  | 1 | PARTIAL 1 | 231/152/244/5078 (65107) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11552), apps/maintainer-site/queue/queue.json (197), apps/mvp/db/Database.ts (2) |
 | `e7737158b0` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `d92797640d` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `8e76e1670f` |  | 3 | PARTIAL 2, SUPERSEDED 1 | 107/21/15/13 (519) | .changeset/browser-runtime-authorize-recheck.md (8), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (15), apps/mvp/docs/features/flows.md (1), apps/mvp/docs/features/sign-in.md  |
 | `45d6da7d54` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
-| `b541e7346c` |  | 3 | STRANDED 2, SUPERSEDED 1 | 8544/24/14/34 (940) | .github/actionlint.yaml (6), .github/scripts/ci/cloud.sh (3), .github/scripts/reference-host/job-started.sh (103), .github/scripts/reference-host/job-started.test.mjs (146) |
-| `b8a380c99d` |  | 6 | ON-MAIN 2, SUPERSEDED 3, PARTIAL 1 | 136/30/1/0 (2) | apps/mvp/worker/ChatApi.ts (2) |
+| `b541e7346c` |  | 3 | STRANDED 2, SUPERSEDED 1 | 8538/30/14/34 (938) | .github/actionlint.yaml (6), .github/scripts/ci/cloud.sh (3), .github/scripts/reference-host/job-started.sh (103), .github/scripts/reference-host/job-started.test.mjs (146) |
+| `b8a380c99d` |  | 6 | ON-MAIN 2, SUPERSEDED 3, PARTIAL 1 | 135/31/1/0 (2) | apps/mvp/worker/ChatApi.ts (2) |
 | `7886df0eb0` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `d3037136fb` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `caad251749` |  | 2 | ON-MAIN 2 | 0/0/0/0 (0) |  |
@@ -691,7 +690,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `44950d7853` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 103/48/5/2 (162) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/e2e/dogfood.spec.ts (143), apps/mvp/worker/BranchSandboxes.ts (3) |
 | `04acef4549` |  | 7 | PARTIAL 1, SUPERSEDED 4, ON-MAIN 2 | 104/48/8/2 (38) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/worker/BranchSandboxes.ts (3), apps/mvp/worker/stack/Stack.ts (10) |
 | `2cac886f0a` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 103/48/5/2 (162) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/e2e/dogfood.spec.ts (143), apps/mvp/worker/BranchSandboxes.ts (3) |
-| `43205e918b` |  | 3 | STRANDED 2, SUPERSEDED 1 | 8544/24/14/34 (924) | .github/actionlint.yaml (6), .github/scripts/ci/cloud.sh (3), .github/scripts/reference-host/job-started.sh (103), .github/scripts/reference-host/job-started.test.mjs (146) |
+| `43205e918b` |  | 3 | STRANDED 2, SUPERSEDED 1 | 8538/30/14/34 (922) | .github/actionlint.yaml (6), .github/scripts/ci/cloud.sh (3), .github/scripts/reference-host/job-started.sh (103), .github/scripts/reference-host/job-started.test.mjs (146) |
 | `55e13cd8b2` |  | 3 | PARTIAL 2, SUPERSEDED 1 | 107/21/15/13 (519) | .changeset/browser-runtime-authorize-recheck.md (8), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (15), apps/mvp/docs/features/flows.md (1), apps/mvp/docs/features/sign-in.md  |
 | `c318874875` |  | 4 | PARTIAL 3, SUPERSEDED 1 | 132/24/8/6 (37) | .changeset/browser-runtime-authorize-recheck.md (8), apps/mvp/docs/features/flows.md (1), apps/mvp/docs/features/sign-in.md (1), apps/mvp/e2e/sign-in.spec.ts (3) |
 | `f74c52ee8d` |  | 5 | PARTIAL 1, SUPERSEDED 4 | 218/21/5/20 (119) | packages/smithers/agent/memory/docs/api.md (1), packages/smithers/agent/memory/src/MemoryTrellis.ts (1), packages/smithers/flows/patterns/docs/api.md (4), packages/smithers/flows/patterns/docs/teams.m |
@@ -707,7 +706,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `1f66b87609` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `001b7bcf34` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `319fe4bb38` |  | 4 | PARTIAL 3, SUPERSEDED 1 | 124/27/6/3 (23) | .changeset/browser-runtime-authorize-recheck.md (8), apps/mvp/docs/features/flows.md (1), apps/mvp/docs/observability.md (2), apps/mvp/src/features/auth/store.ts (1) |
-| `2b50710416` |  | 6 | ON-MAIN 2, SUPERSEDED 3, PARTIAL 1 | 136/30/1/0 (2) | apps/mvp/worker/ChatApi.ts (2) |
+| `2b50710416` |  | 6 | ON-MAIN 2, SUPERSEDED 3, PARTIAL 1 | 135/31/1/0 (2) | apps/mvp/worker/ChatApi.ts (2) |
 | `05686de888` |  | 5 | SUPERSEDED 4, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `65aa2e5ea1` |  | 4 | PARTIAL 3, SUPERSEDED 1 | 117/24/14/14 (489) | .changeset/browser-runtime-authorize-recheck.md (8), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (15), apps/mvp/docs/features/flows.md (1), apps/mvp/docs/features/sign-in.md  |
 | `c8103ca98a` |  | 6 | ON-MAIN 1, SUPERSEDED 5 | 0/0/0/0 (0) |  |
@@ -721,7 +720,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `17a0b5addc` |  | 7 | SUPERSEDED 5, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `abe7287882` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 101/46/7/3 (224) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/e2e/dogfood.spec.ts (143), apps/mvp/worker/BranchSandboxes.ts (3) |
 | `01f13eed0c` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `354a880329` |  | 3 | ON-MAIN 1, SUPERSEDED 1, PARTIAL 1 | 70/12/3/0 (81) | apps/site/public/llms-full.txt (27), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (27), packages/smithers/flows/platform-browser/docs/api.md (27) |
+| `354a880329` |  | 3 | ON-MAIN 1, SUPERSEDED 1, PARTIAL 1 | 69/13/3/0 (81) | apps/site/public/llms-full.txt (27), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (27), packages/smithers/flows/platform-browser/docs/api.md (27) |
 | `b544f92f59` |  | 5 | PARTIAL 1, SUPERSEDED 4 | 211/17/3/18 (102) | packages/smithers/flows/patterns/docs/teams.md (2), packages/smithers/flows/patterns/src/DelegationChain.ts (5), packages/smithers/flows/patterns/src/Intervene.ts (4), packages/smithers/flows/patterns |
 | `6969bbcb4a` |  | 6 | ON-MAIN 1, SUPERSEDED 5 | 0/0/0/0 (0) |  |
 | `03949a34d5` |  | 5 | ON-MAIN 1, SUPERSEDED 4 | 0/0/0/0 (0) |  |
@@ -737,37 +736,37 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `0700de245e` |  | 5 | PARTIAL 1, SUPERSEDED 4 | 207/17/5/20 (119) | packages/smithers/agent/memory/docs/api.md (1), packages/smithers/agent/memory/src/MemoryTrellis.ts (1), packages/smithers/flows/patterns/docs/api.md (4), packages/smithers/flows/patterns/docs/teams.m |
 | `947bdf378b` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `c9b1279c8b` |  | 1 | PARTIAL 1 | 23/14/3/1 (33) | apps/mvp/.sol-review-baseline.json (1), apps/mvp/.sol-review-red.mjs (7), apps/mvp/.sol-review-validate.mjs (7), apps/mvp/src/features/attention/branch-page.test.ts (18) |
-| `e16546f509` |  | 3 | ON-MAIN 1, SUPERSEDED 1, PARTIAL 1 | 70/12/3/0 (3) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (1), packages/smithers/flows/platform-browser/docs/api.md (1) |
+| `e16546f509` |  | 3 | ON-MAIN 1, SUPERSEDED 1, PARTIAL 1 | 69/13/3/0 (3) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (1), packages/smithers/flows/platform-browser/docs/api.md (1) |
 | `e268a29c73` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `9937f548f9` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
 | `e045d2151d` |  | 2 | ON-MAIN 1, SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `b7ee053aa8` |  | 3 | SUPERSEDED 1, ON-MAIN 2 | 0/0/0/0 (0) |  |
-| `2bb993d7cb` |  | 5 | PARTIAL 5 | 1/1/121/17 (1013) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
-| `7ed39694df` |  | 5 | PARTIAL 5 | 1/1/121/17 (1013) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
-| `dcd3dc5fb7` |  | 3 | SUPERSEDED 2, PARTIAL 1 | 67/13/4/0 (11) | apps/mvp/e2e/local-first-conflicts.spec.ts (8), apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (1), packages/smithers/flows/platform-browser/doc |
+| `2bb993d7cb` |  | 5 | PARTIAL 5 | 13/1/106/20 (934) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
+| `7ed39694df` |  | 5 | PARTIAL 5 | 13/1/106/20 (934) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
+| `dcd3dc5fb7` |  | 3 | SUPERSEDED 2, PARTIAL 1 | 66/14/4/0 (11) | apps/mvp/e2e/local-first-conflicts.spec.ts (8), apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (1), packages/smithers/flows/platform-browser/doc |
 | `c539a4e7e0` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `0ecd648e5b` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
-| `c558742b0f` |  | 3 | ON-MAIN 1, SUPERSEDED 1, PARTIAL 1 | 69/12/3/0 (3) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (1), packages/smithers/flows/platform-browser/docs/api.md (1) |
+| `c558742b0f` |  | 3 | ON-MAIN 1, SUPERSEDED 1, PARTIAL 1 | 68/13/3/0 (3) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (1), packages/smithers/flows/platform-browser/docs/api.md (1) |
 | `1340c277b5` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `29b4ce4166` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `e141cdd55c` |  | 6 | SUPERSEDED 4, ON-MAIN 1, PARTIAL 1 | 134/30/1/0 (2) | apps/mvp/worker/ChatApi.ts (2) |
+| `e141cdd55c` |  | 6 | SUPERSEDED 4, ON-MAIN 1, PARTIAL 1 | 133/31/1/0 (2) | apps/mvp/worker/ChatApi.ts (2) |
 | `f987f4d487` |  | 1 | PARTIAL 1 | 15/2/8/19 (83) | .changeset/time-travel-fork-intent-reclamation.md (2), apps/mvp/docs/work/time-travel-fork-intent-reclamation.md (11), packages/smithers/flows/time-travel/docs/api.md (21), packages/smithers/flows/tim |
-| `31778ff498` |  | 12 | PARTIAL 3, SUPERSEDED 7, EMPTY-ISH 1, ON-MAIN 1 | 570/113/6/3 (17) | .smithers/flows/release/fixtures/public-api-baseline.json (6), apps/mvp/docs/work/vibelang-package-migration.md (6), apps/site/astro.config.mjs (3), evals/docs/bunfig.toml (1) |
-| `ad5cff7222` |  | 12 | PARTIAL 3, SUPERSEDED 7, EMPTY-ISH 1, ON-MAIN 1 | 570/113/6/3 (15) | .smithers/flows/release/fixtures/public-api-baseline.json (6), apps/mvp/docs/work/vibelang-package-migration.md (4), apps/site/astro.config.mjs (3), evals/docs/bunfig.toml (1) |
+| `31778ff498` |  | 12 | PARTIAL 3, SUPERSEDED 7, EMPTY-ISH 1, ON-MAIN 1 | 569/114/6/3 (17) | .smithers/flows/release/fixtures/public-api-baseline.json (6), apps/mvp/docs/work/vibelang-package-migration.md (6), apps/site/astro.config.mjs (3), evals/docs/bunfig.toml (1) |
+| `ad5cff7222` |  | 12 | PARTIAL 3, SUPERSEDED 7, EMPTY-ISH 1, ON-MAIN 1 | 569/114/6/3 (15) | .smithers/flows/release/fixtures/public-api-baseline.json (6), apps/mvp/docs/work/vibelang-package-migration.md (4), apps/site/astro.config.mjs (3), evals/docs/bunfig.toml (1) |
 | `f99a272901` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
 | `9f24605ced` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `2df6b4ce9d` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `30c93e58e5` |  | 1 | PARTIAL 1 | 2/0/16/7 (182) | apps/mvp/docs/decisions/0028-chat-draft-and-delivery-isolation.md (7), apps/mvp/docs/features/chat.md (6), apps/mvp/docs/work/chat-regressions-683390.md (8), apps/mvp/src/features/chat/actions.ts (16) |
+| `30c93e58e5` |  | 1 | PARTIAL 1 | 3/0/11/11 (110) | apps/mvp/docs/decisions/0028-chat-draft-and-delivery-isolation.md (7), apps/mvp/docs/features/chat.md (6), apps/mvp/docs/work/chat-regressions-683390.md (8), apps/mvp/src/features/chat/actions.ts (13) |
 | `cbe8fe86e7` |  | 1 | PARTIAL 1 | 8/3/1/5 (77) | packages/smithers/flows/database/src/DatabaseMetrics.ts (1), packages/smithers/flows/database/src/postgres/PostgresDatabase.ts (1), packages/smithers/flows/platform-cloudflare/package.json (1), packag |
 | `1cabd1f1c2` |  | 1 | PARTIAL 1 | 28/28/4/1 (12) | apps/mvp/db/Database.ts (2), apps/mvp/docs/decisions/0027-github-projection-ordering.md (3), apps/mvp/vitest.config.ts (1), apps/mvp/worker/github/Api.ts (6) |
 | `f31eb50189` |  | 1 | PARTIAL 1 | 13/10/6/6 (51) | apps/mvp/.sol-review-baseline.json (1), apps/mvp/.sol-review-red.mjs (7), apps/mvp/src/features/attention/api.test.ts (3), apps/mvp/src/features/attention/api.ts (2) |
-| `88f0d76616` |  | 1 | PARTIAL 1 | 2/0/15/8 (182) | apps/mvp/docs/decisions/0028-chat-draft-and-delivery-isolation.md (7), apps/mvp/docs/features/chat.md (6), apps/mvp/docs/work/chat-regressions-683390.md (8), apps/mvp/src/features/chat/actions.ts (16) |
-| `b008dcea7c` |  | 23 | SUPERSEDED 13, ON-MAIN 6, PARTIAL 4 | 281/84/115/18 (955) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (4), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
+| `88f0d76616` |  | 1 | PARTIAL 1 | 3/0/10/12 (112) | apps/mvp/docs/decisions/0028-chat-draft-and-delivery-isolation.md (7), apps/mvp/docs/features/chat.md (6), apps/mvp/docs/work/chat-regressions-683390.md (8), apps/mvp/src/features/chat/actions.ts (13) |
+| `b008dcea7c` |  | 23 | SUPERSEDED 13, ON-MAIN 6, PARTIAL 4 | 291/85/101/21 (877) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (4), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
 | `a9a0cca0a4` |  | 2 | SUPERSEDED 1, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `efb69411db` |  | 11 | SUPERSEDED 7, PARTIAL 1, ON-MAIN 3 | 54/30/0/2 (5) | apps/mvp/worker/flows/Todo.test.ts (5) |
 | `65e5c1587b` |  | 9 | SUPERSEDED 5, PARTIAL 1, ON-MAIN 3 | 51/28/0/1 (1) | apps/mvp/worker/flows/Todo.test.ts (1) |
 | `5ea747ed39` |  | 4 | PARTIAL 1, SUPERSEDED 2, ON-MAIN 1 | 10/17/0/0 (0) |  |
-| `3a4c9409b0` |  | 25 | STRANDED 7, PARTIAL 8, SUPERSEDED 7, ON-MAIN 3 | 86/40/208/26 (3211) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), .gitignore (2) |
+| `3a4c9409b0` |  | 25 | PARTIAL 10, SUPERSEDED 9, ON-MAIN 5, STRANDED 1 | 107/40/185/28 (3086) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), CONTRIBUTING.md (3) |
 | `cd3478b0c2` |  | 7 | SUPERSEDED 5, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `ac93b8b123` |  | 7 | SUPERSEDED 5, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `4fbbbe9cd2` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 102/46/7/3 (174) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/e2e/dogfood.spec.ts (143), apps/mvp/worker/BranchSandboxes.ts (3) |
@@ -775,19 +774,19 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `29e6aa7cbb` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 103/46/9/2 (35) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/worker/BranchSandboxes.ts (3), apps/mvp/worker/flows/Todo.ts (10) |
 | `df704c1faa` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 102/46/7/3 (174) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/e2e/dogfood.spec.ts (143), apps/mvp/worker/BranchSandboxes.ts (3) |
 | `2700fb6351` |  | 1 | PARTIAL 1 | 28/28/4/1 (12) | apps/mvp/db/Database.ts (2), apps/mvp/docs/decisions/0027-github-projection-ordering.md (3), apps/mvp/vitest.config.ts (1), apps/mvp/worker/github/Api.ts (6) |
-| `06889e5501` |  | 13 | PARTIAL 4, ON-MAIN 4, SUPERSEDED 5 | 162/54/114/18 (1005) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
+| `06889e5501` |  | 13 | PARTIAL 4, ON-MAIN 4, SUPERSEDED 5 | 171/55/101/21 (929) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
 | `aec510490c` |  | 7 | SUPERSEDED 5, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `a997886458` |  | 7 | SUPERSEDED 5, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `7bc4b5408b` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 102/46/7/3 (174) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/e2e/dogfood.spec.ts (143), apps/mvp/worker/BranchSandboxes.ts (3) |
 | `063cd73166` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 103/46/9/2 (35) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/worker/BranchSandboxes.ts (3), apps/mvp/worker/flows/Todo.ts (10) |
 | `f30888f5ce` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 102/46/7/3 (174) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/e2e/dogfood.spec.ts (143), apps/mvp/worker/BranchSandboxes.ts (3) |
-| `f9da52c50b` |  | 20 | SUPERSEDED 4, ON-MAIN 4, STRANDED 6, PARTIAL 6 | 110/36/205/27 (3244) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), .gitignore (2) |
+| `f9da52c50b` |  | 20 | SUPERSEDED 5, ON-MAIN 6, PARTIAL 9 | 130/36/181/31 (3131) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), CONTRIBUTING.md (3) |
 | `1b350c0982` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
-| `9ff7f5bc65` |  | 13 | PARTIAL 4, ON-MAIN 4, SUPERSEDED 5 | 162/54/114/18 (1005) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
+| `9ff7f5bc65` |  | 13 | PARTIAL 4, ON-MAIN 4, SUPERSEDED 5 | 171/55/101/21 (929) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
 | `0cabd611c1` |  | 7 | PARTIAL 1, SUPERSEDED 4, ON-MAIN 2 | 103/46/7/2 (31) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/worker/BranchSandboxes.ts (3), apps/mvp/worker/flows/Todo.ts (10) |
 | `10816fe72b` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `edc2e4c7a1` |  | 7 | PARTIAL 1, SUPERSEDED 4, ON-MAIN 2 | 103/46/9/2 (35) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/worker/BranchSandboxes.ts (3), apps/mvp/worker/flows/Todo.ts (10) |
-| `7fd6439ba8` |  | 4 | SUPERSEDED 1, ON-MAIN 2, PARTIAL 1 | 109/24/0/2 (58) | apps/mvp/worker/ChatApi.ts (56), apps/mvp/worker/flows/Todo.test.ts (2) |
+| `7fd6439ba8` |  | 4 | SUPERSEDED 1, ON-MAIN 2, PARTIAL 1 | 108/25/0/2 (59) | apps/mvp/worker/ChatApi.ts (57), apps/mvp/worker/flows/Todo.test.ts (2) |
 | `ef3d9b5979` |  | 4 | STRANDED 1, SUPERSEDED 2, ON-MAIN 1 | 14/10/0/1 (6) | apps/mvp/docs/work/repo-pages-header-and-locators.md (6) |
 | `de3650a43e` |  | 1 | PARTIAL 1 | 10/1/1/1 (2) | apps/mvp/worker/ModelRoles.ts (2) |
 | `2c3ed92c19` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
@@ -804,98 +803,98 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `e7c2dfa26f` |  | 6 | PARTIAL 1, SUPERSEDED 3, ON-MAIN 2 | 14/16/1/0 (9) | .smithers/flows/release/fixtures/public-api-baseline.json (9) |
 | `a5b0da83bb` |  | 13 | SUPERSEDED 9, ON-MAIN 4 | 0/0/0/0 (0) |  |
 | `7c0c916980` |  | 11 | SUPERSEDED 7, ON-MAIN 4 | 0/0/0/0 (0) |  |
-| `b582dd6f9e` |  | 27 | STRANDED 7, PARTIAL 7, SUPERSEDED 9, ON-MAIN 4 | 90/40/208/26 (3211) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), .gitignore (2) |
+| `b582dd6f9e` |  | 27 | PARTIAL 9, SUPERSEDED 11, ON-MAIN 6, STRANDED 1 | 111/40/185/28 (3086) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), CONTRIBUTING.md (3) |
 | `d88d0cf0df` |  | 3 | PARTIAL 2, SUPERSEDED 1 | 86/40/2/8 (90) | apps/mvp/docs/decisions/0024-watching-a-todo-run.md (7), apps/mvp/docs/features/runs.md (3), apps/mvp/src/features/runs/remote.test.ts (36), apps/mvp/src/features/runs/store.test.ts (9) |
-| `3d8110d1c5` |  | 1 | PARTIAL 1 | 2/0/14/8 (138) | apps/mvp/docs/work/time-travel-storage-regressions.md (19), packages/smithers/flows/time-travel/docs/guides/fork-a-run.md (8), packages/smithers/flows/time-travel/src/MemoryTimeTravelStore.ts (11), pa |
+| `3d8110d1c5` |  | 1 | PARTIAL 1 | 7/0/9/8 (125) | apps/mvp/docs/work/time-travel-storage-regressions.md (19), packages/smithers/flows/time-travel/docs/guides/fork-a-run.md (8), packages/smithers/flows/time-travel/src/MemoryTimeTravelStore.ts (11), pa |
 | `dd12f89340` |  | 18 | SUPERSEDED 12, ON-MAIN 6 | 0/0/0/0 (0) |  |
 | `a573dd28f2` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `5cb08384b1` |  | 22 | PARTIAL 1, SUPERSEDED 13, ON-MAIN 8 | 127/32/2/4 (20) | apps/mvp/worker/flows/Todo.test.ts (2), packages/smithers/flows/engine/src/FlowEngine/ActionKey.ts (7), packages/smithers/flows/engine/src/FlowEngine/Dispatch.ts (3), packages/smithers/flows/engine-st |
 | `538b7b9572` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `531bfc5f56` |  | 20 | SUPERSEDED 4, ON-MAIN 4, STRANDED 6, PARTIAL 6 | 110/36/205/27 (3244) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), .gitignore (2) |
+| `531bfc5f56` |  | 20 | SUPERSEDED 5, ON-MAIN 6, PARTIAL 9 | 130/36/181/31 (3131) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), CONTRIBUTING.md (3) |
 | `48208181b8` |  | 1 | PARTIAL 1 | 0/1/1/0 (1) | .smithers/flows/release/fixtures/public-api-baseline.json (1) |
 | `37e0698c1d` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `3dd43987e7` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `a3b0e6cbce` |  | 1 | PARTIAL 1 | 2/0/13/7 (124) | apps/mvp/docs/work/time-travel-storage-regressions.md (7), packages/smithers/flows/time-travel/docs/guides/fork-a-run.md (8), packages/smithers/flows/time-travel/src/MemoryTimeTravelStore.ts (11), pac |
+| `a3b0e6cbce` |  | 1 | PARTIAL 1 | 6/0/9/7 (112) | apps/mvp/docs/work/time-travel-storage-regressions.md (7), packages/smithers/flows/time-travel/docs/guides/fork-a-run.md (8), packages/smithers/flows/time-travel/src/MemoryTimeTravelStore.ts (11), pac |
 | `fcf850ee1d` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `4949a83285` |  | 1 | PARTIAL 1 | 52/81/4/2 (13) | apps/mvp/db/Database.ts (2), apps/mvp/docs/decisions/0027-github-projection-ordering.md (3), apps/mvp/docs/work/github-ordering-fixes.md (1), apps/mvp/vitest.config.ts (1) |
 | `14cd4d44e8` |  | 1 | PARTIAL 1 | 0/1/1/0 (1) | .smithers/flows/release/fixtures/public-api-baseline.json (1) |
-| `c9ccd9c40f` |  | 1 | PARTIAL 1 | 2/1/23/4 (158) | apps/mvp/db/Database.test.ts (19), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (11), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
-| `7440233936` |  | 1 | PARTIAL 1 | 2/1/23/4 (163) | apps/mvp/db/Database.test.ts (19), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (11), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
+| `c9ccd9c40f` |  | 1 | PARTIAL 1 | 7/1/12/10 (100) | apps/mvp/db/Database.test.ts (5), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (4), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
+| `7440233936` |  | 1 | PARTIAL 1 | 7/1/12/10 (105) | apps/mvp/db/Database.test.ts (5), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (4), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
 | `850106b3a9` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `89a34240a7` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `91cee7a477` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `c659b0153c` |  | 1 | PARTIAL 1 | 16/0/3/1 (37) | apps/mvp/docs/work/plan-confirmed-bugs-586345.md (24), packages/smithers/flows/plan/docs/concepts/authoring-ast.md (11), packages/smithers/flows/plan/src/FileSet.ts (1), packages/smithers/flows/plan/s |
 | `ab3cc44f15` |  | 8 | PARTIAL 6, EMPTY-ISH 1, ON-MAIN 1 | 7/0/56/9 (2820) | .changeset/mcp-server.md (29), .smithers/flows/release/fixtures/public-api-baseline.json (7), apps/mvp/AGENTS.md (2), apps/mvp/db/Database.ts (2) |
-| `0ea193cb82` |  | 1 | PARTIAL 1 | 10/2/1/1 (30) | apps/mvp/docs/work/worker-953411.md (27), apps/mvp/worker/AlertChannels.test.ts (3) |
-| `e2e332627a` |  | 1 | PARTIAL 1 | 10/2/1/1 (30) | apps/mvp/docs/work/worker-953411.md (27), apps/mvp/worker/AlertChannels.test.ts (3) |
+| `0ea193cb82` |  | 1 | PARTIAL 1 | 10/2/0/2 (7) | apps/mvp/docs/work/worker-953411.md (4), apps/mvp/worker/AlertChannels.test.ts (3) |
+| `e2e332627a` |  | 1 | PARTIAL 1 | 11/2/0/1 (3) | apps/mvp/worker/AlertChannels.test.ts (3) |
 | `183b6a9993` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `aafdad4fc2` |  | 1 | PARTIAL 1 | 15/1/0/4 (31) | apps/mvp/docs/work/time-travel-evidence-586651.md (2), packages/smithers/flows/time-travel/README.md (1), packages/smithers/flows/time-travel/src/EffectBoundary.ts (3), packages/smithers/flows/time-tr |
 | `7db8f80fce` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `a2f4b43226` |  | 9 | PARTIAL 7, EMPTY-ISH 1, ON-MAIN 1 | 7/0/56/9 (2820) | .changeset/mcp-server.md (29), .smithers/flows/release/fixtures/public-api-baseline.json (7), apps/mvp/AGENTS.md (2), apps/mvp/db/Database.ts (2) |
 | `8d6d9f946c` |  | 1 | PARTIAL 1 | 1/1/1/0 (3) | .smithers/flows/release/fixtures/public-api-baseline.json (3) |
-| `f10019f8ed` |  | 20 | SUPERSEDED 4, ON-MAIN 4, STRANDED 6, PARTIAL 6 | 110/39/206/26 (3192) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), .gitignore (2) |
+| `f10019f8ed` |  | 20 | SUPERSEDED 5, ON-MAIN 6, PARTIAL 9 | 130/39/182/30 (3078) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), CONTRIBUTING.md (3) |
 | `c3be9c0f71` |  | 1 | PARTIAL 1 | 17/1/1/6 (14) | apps/mvp/docs/work/browser-platform-failure-regressions.md (1), packages/smithers/flows/platform-browser/src/BrowserLanguageServer.ts (2), packages/smithers/flows/platform-browser/test/BrowserEngine.t |
 | `3276853346` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `5268957e32` |  | 4 | SUPERSEDED 3, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `dcd274e4b1` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `35b00bcc5f` |  | 3 | SUPERSEDED 2, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `1ece3c2d19` |  | 2 | PARTIAL 1, ON-MAIN 1 | 43/8/1/1 (6) | apps/mvp/e2e/target.ts (4), apps/mvp/evals/session.ts (2) |
-| `6b11187a07` |  | 3 | PARTIAL 2, STRANDED 1 | 1/0/20/2 (92) | .changeset/repo-view-pierre-diffs-1-5-2.md (7), .smithers/flows/package.json (1), .smithers/flows/review/tests/renderWalkthroughHtml.test.ts (2), apps/mvp/docs/work/pierre-diffs-upgrades.md (16) |
+| `6b11187a07` |  | 3 | ON-MAIN 3 | 0/0/0/0 (0) |  |
 | `363f83c1c0` |  | 4 | PARTIAL 4 | 3/0/15/4 (2790) | .changeset/agent-harness-cli.md (30), .changeset/cli-runner.md (28), packages/smithers/agent/README.md (1), packages/smithers/agent/docs/README.md (1) |
 | `c751c7cd0a` |  | 27 | SUPERSEDED 14, ON-MAIN 12, EMPTY-ISH 1 | 0/0/0/0 (0) |  |
 | `a3b4795f09` |  | 22 | PARTIAL 1, SUPERSEDED 10, ON-MAIN 10, EMPTY-ISH 1 | 214/57/2/0 (14) | .smithers/flows/release/fixtures/public-api-baseline.json (9), packages/smithers/flows/engine-store/src/PlanScheduler.ts (5) |
-| `9282a98a77` |  | 43 | STRANDED 7, PARTIAL 7, SUPERSEDED 16, ON-MAIN 12, EMPTY-ISH 1 | 284/81/205/30 (3216) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), .gitignore (2) |
+| `9282a98a77` |  | 43 | PARTIAL 9, SUPERSEDED 18, ON-MAIN 14, STRANDED 1, EMPTY-ISH 1 | 305/81/182/32 (3091) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), CONTRIBUTING.md (3) |
 | `701923c931` |  | 29 | SUPERSEDED 16, ON-MAIN 12, EMPTY-ISH 1 | 0/0/0/0 (0) |  |
 | `cadf086bce` |  | 2 | PARTIAL 2 | 61/6/26/12 (307) | .changeset/browser-runtime-authorize-recheck.md (8), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (9), apps/mvp/docs/features/flows.md (1), apps/mvp/docs/features/sign-in.md ( |
 | `5a4cd7d7dc` |  | 6 | SUPERSEDED 5, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `318e18d004` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `df9aecf75d` |  | 1 | PARTIAL 1 | 204/145/248/5207 (65399) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11639), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
-| `ea9f72d317` |  | 3 | PARTIAL 2, STRANDED 1 | 0/0/19/3 (96) | .changeset/repo-view-pierre-diffs-1-5-2.md (7), .smithers/flows/package.json (1), .smithers/flows/review/tests/renderWalkthroughHtml.test.ts (2), apps/mvp/docs/proposals/pierre-oss-survey.md (20) |
+| `df9aecf75d` |  | 1 | PARTIAL 1 | 208/145/245/5206 (65254) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11639), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `ea9f72d317` |  | 3 | ON-MAIN 3 | 0/0/0/0 (0) |  |
 | `cd216513f0` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 96/45/9/6 (202) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4), apps/mvp/e2e/dogfood.spec.ts (143), apps/mvp/worker/BranchSandboxes.ts (3) |
 | `04db310802` |  | 7 | SUPERSEDED 5, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `02eea0709d` |  | 2 | PARTIAL 2 | 66/9/24/12 (273) | .changeset/browser-runtime-authorize-recheck.md (8), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (9), apps/mvp/docs/features/flows.md (1), apps/mvp/docs/features/sign-in.md ( |
 | `0b9034bb1b` |  | 1 | PARTIAL 1 | 13/3/8/0 (47) | apps/mvp/docs/work/flow-source-regressions-751129.md (28), packages/smithers/flows/flow/README.md (10), packages/smithers/flows/flow/docs/reference/flow.md (1), packages/smithers/flows/flow/src/Durabl |
 | `5f627a1f24` |  | 18 | PARTIAL 1, SUPERSEDED 8, ON-MAIN 8, EMPTY-ISH 1 | 210/58/1/0 (5) | packages/smithers/flows/engine-store/src/PlanScheduler.ts (5) |
-| `702ffac454` |  | 1 | PARTIAL 1 | 202/138/249/5212 (65390) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11632), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `702ffac454` |  | 1 | PARTIAL 1 | 206/138/246/5211 (65245) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11632), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
 | `8976dd2d49` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `93a0a2e454` |  | 4 | PARTIAL 4 | 0/1/115/17 (939) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
+| `93a0a2e454` |  | 4 | PARTIAL 4 | 12/1/99/21 (860) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
 | `e4453b6d10` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `b752bc330e` |  | 4 | STRANDED 1, ON-MAIN 1, PARTIAL 1, SUPERSEDED 1 | 124/27/23/2 (654) | apps/mvp/e2e/agent.spec.ts (2), apps/mvp/e2e/answer-ordering.spec.ts (5), apps/mvp/e2e/deployment/sign-in.setup.ts (104), apps/mvp/e2e/devices.ts (6) |
-| `8aa8312ce6` |  | 36 | SUPERSEDED 11, ON-MAIN 12, STRANDED 6, PARTIAL 6, EMPTY-ISH 1 | 304/77/202/31 (3249) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), .gitignore (2) |
+| `b752bc330e` |  | 4 | STRANDED 1, ON-MAIN 1, PARTIAL 1, SUPERSEDED 1 | 123/28/23/2 (654) | apps/mvp/e2e/agent.spec.ts (2), apps/mvp/e2e/answer-ordering.spec.ts (5), apps/mvp/e2e/deployment/sign-in.setup.ts (104), apps/mvp/e2e/devices.ts (6) |
+| `8aa8312ce6` |  | 36 | SUPERSEDED 12, ON-MAIN 14, PARTIAL 9, EMPTY-ISH 1 | 324/77/178/35 (3136) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), CONTRIBUTING.md (3) |
 | `c8f906cd4a` |  | 18 | SUPERSEDED 9, ON-MAIN 8, EMPTY-ISH 1 | 0/0/0/0 (0) |  |
-| `b6d3a4ffb2` |  | 2 | PARTIAL 2 | 0/0/18/3 (95) | .changeset/repo-view-pierre-diffs-1-5-2.md (7), .smithers/flows/package.json (1), apps/mvp/docs/proposals/pierre-oss-survey.md (21), packages/smithers/ui/repo-view/docs/api.md (1) |
+| `b6d3a4ffb2` |  | 2 | ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `a244a7225b` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `bfcb08d420` |  | 1 | PARTIAL 1 | 11/3/9/1 (29) | apps/mvp/docs/work/flow-source-regressions-751129.md (7), packages/smithers/flows/flow/README.md (10), packages/smithers/flows/flow/docs/reference/flow.md (1), packages/smithers/flows/flow/src/Durable |
 | `45881b7777` |  | 8 | PARTIAL 6, EMPTY-ISH 1, ON-MAIN 1 | 7/0/56/9 (2801) | .changeset/mcp-server.md (29), .smithers/flows/release/fixtures/public-api-baseline.json (7), apps/mvp/AGENTS.md (2), apps/mvp/db/Database.ts (2) |
 | `28873e59cd` |  | 1 | PARTIAL 1 | 22/8/2/3 (18) | apps/mvp/docs/work/github-ordering-fixes.md (1), apps/mvp/worker/github/Api.test.ts (9), apps/mvp/worker/github/Api.ts (6), apps/mvp/worker/github/Merge.ts (1) |
-| `f50eeed6be` |  | 1 | PARTIAL 1 | 202/133/249/5217 (65372) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11614), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `f50eeed6be` |  | 1 | PARTIAL 1 | 206/133/246/5216 (65227) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11614), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
 | `aaf17365b7` |  | 1 | PARTIAL 1 | 8/2/8/4 (26) | apps/mvp/docs/work/flow-source-regressions-751129.md (7), packages/smithers/flows/flow/src/DurableDeferred.ts (1), packages/smithers/flows/flow/src/DurableQueue.ts (1), packages/smithers/flows/flow/sr |
 | `3b17fe4b72` |  | 1 | PARTIAL 1 | 22/8/2/3 (18) | apps/mvp/docs/work/github-ordering-fixes.md (1), apps/mvp/worker/github/Api.test.ts (9), apps/mvp/worker/github/Api.ts (6), apps/mvp/worker/github/Merge.ts (1) |
 | `01dde7d4f9` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `b763b2c97b` |  | 2 | PARTIAL 2 | 0/0/17/3 (94) | .changeset/repo-view-pierre-diffs-1-5-2.md (7), apps/mvp/docs/proposals/pierre-oss-survey.md (21), packages/smithers/ui/repo-view/docs/api.md (1), packages/smithers/ui/repo-view/docs/guides/use-the-re |
-| `25dff651a6` |  | 4 | STRANDED 1, ON-MAIN 1, PARTIAL 1, SUPERSEDED 1 | 124/28/23/2 (660) | apps/mvp/e2e/agent.spec.ts (2), apps/mvp/e2e/answer-ordering.spec.ts (5), apps/mvp/e2e/deployment/sign-in.setup.ts (104), apps/mvp/e2e/devices.ts (6) |
+| `b763b2c97b` |  | 2 | ON-MAIN 2 | 0/0/0/0 (0) |  |
+| `25dff651a6` |  | 4 | STRANDED 1, ON-MAIN 1, PARTIAL 1, SUPERSEDED 1 | 123/29/23/2 (660) | apps/mvp/e2e/agent.spec.ts (2), apps/mvp/e2e/answer-ordering.spec.ts (5), apps/mvp/e2e/deployment/sign-in.setup.ts (104), apps/mvp/e2e/devices.ts (6) |
 | `2051795044` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `b9ee2951c4` |  | 21 | SUPERSEDED 13, ON-MAIN 8 | 0/0/0/0 (0) |  |
-| `c3ab4ad244` |  | 1 | PARTIAL 1 | 2/1/24/4 (163) | apps/mvp/db/Database.test.ts (19), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (11), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
+| `c3ab4ad244` |  | 1 | PARTIAL 1 | 7/1/13/10 (105) | apps/mvp/db/Database.test.ts (5), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (4), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
 | `67736f4842` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `bcc82d0297` |  | 4 | SUPERSEDED 2, ON-MAIN 1, PARTIAL 1 | 128/29/1/0 (2) | apps/mvp/worker/ChatApi.ts (2) |
-| `32bf658e5f` |  | 2 | PARTIAL 2 | 0/0/92/14 (611) | apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (2), apps/mvp/docs/features/issues.md (8), apps/mvp/docs/features/notifications.md (5), apps/mvp/docs/features/sign-in.md (3) |
+| `bcc82d0297` |  | 4 | SUPERSEDED 2, ON-MAIN 1, PARTIAL 1 | 127/30/1/0 (2) | apps/mvp/worker/ChatApi.ts (2) |
+| `32bf658e5f` |  | 2 | PARTIAL 2 | 12/0/76/18 (540) | apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (2), apps/mvp/docs/features/issues.md (8), apps/mvp/docs/features/notifications.md (3), apps/mvp/docs/features/sign-in.md (3) |
 | `6a94dc267e` |  | 6 | SUPERSEDED 4, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `7ed8110efb` |  | 16 | PARTIAL 5, SUPERSEDED 8, ON-MAIN 3 | 110/48/5/20 (100) | .changeset/github-once-merge.md (2), apps/mvp/PACKAGE.ts (4), apps/mvp/docs/features/issues.md (2), apps/mvp/docs/features/pulls.md (4) |
-| `cdb1160df9` |  | 15 | STRANDED 1, PARTIAL 1, SUPERSEDED 7, ON-MAIN 6 | 97/28/7/3 (42) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/spend-alerts.md (2), apps/mvp/docs/work/prod-flows.md (9), apps/mvp/src/features/spend/actions.ts (12) |
-| `7759ae184b` |  | 1 | PARTIAL 1 | 200/126/248/5221 (65199) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11452), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
-| `c870231485` |  | 4 | PARTIAL 4 | 0/1/106/16 (762) | .changeset/electric-collection-evict.md (10), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (2), apps/mvp/docs/features/issues.md (11), apps/mvp/docs/features/notifications.md  |
-| `040001c3ef` |  | 5 | STRANDED 1, PARTIAL 4 | 0/1/116/18 (858) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
+| `cdb1160df9` |  | 15 | PARTIAL 2, SUPERSEDED 7, ON-MAIN 6 | 103/28/3/1 (4) | apps/mvp/db/Database.ts (2), apps/mvp/docs/features/spend-alerts.md (1), apps/mvp/worker/RepoApi.ts (1) |
+| `7759ae184b` |  | 1 | PARTIAL 1 | 204/126/245/5220 (65054) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11452), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `c870231485` |  | 4 | PARTIAL 4 | 12/1/90/20 (691) | .changeset/electric-collection-evict.md (10), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md (2), apps/mvp/docs/features/issues.md (11), apps/mvp/docs/features/notifications.md  |
+| `040001c3ef` |  | 5 | STRANDED 1, PARTIAL 4 | 12/1/100/22 (779) | .changeset/electric-collection-evict.md (10), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_session_role_verified.ts (7), apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority. |
 | `464b1cb892` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `fd1e672266` |  | 7 | SUPERSEDED 5, ON-MAIN 2 | 0/0/0/0 (0) |  |
-| `a5e2df4749` |  | 1 | STRANDED 1 | 0/0/1/0 (1) | packages/smithers/ui/repo-view/package.json (1) |
+| `a5e2df4749` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `2a8e92a560` |  | 7 | STRANDED 1, SUPERSEDED 4, ON-MAIN 2 | 91/43/10/11 (222) | .smithers/checks/check.sh (2), .smithers/checks/lint.sh (3), apps/mvp/db/Database.ts (2), apps/mvp/docs/features/todos.md (4) |
-| `5adf377d7d` |  | 3 | SUPERSEDED 2, PARTIAL 1 | 68/13/4/0 (4) | apps/mvp/e2e/local-first-conflicts.spec.ts (1), apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (1), packages/smithers/flows/platform-browser/doc |
-| `8f2dc27a08` |  | 1 | PARTIAL 1 | 266/120/250/5161 (65064) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11317), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `5adf377d7d` |  | 3 | SUPERSEDED 2, PARTIAL 1 | 67/14/4/0 (4) | apps/mvp/e2e/local-first-conflicts.spec.ts (1), apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/platform-browser.mdx (1), packages/smithers/flows/platform-browser/doc |
+| `8f2dc27a08` |  | 1 | PARTIAL 1 | 270/120/247/5160 (64919) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11317), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
 | `fa854a7729` |  | 8 | PARTIAL 6, EMPTY-ISH 1, ON-MAIN 1 | 7/0/56/9 (2794) | .changeset/mcp-server.md (29), .smithers/flows/release/fixtures/public-api-baseline.json (7), apps/mvp/AGENTS.md (2), apps/mvp/db/Database.ts (2) |
 | `5f7174e85a` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `1cadd90544` |  | 14 | SUPERSEDED 10, ON-MAIN 4 | 0/0/0/0 (0) |  |
-| `9ff3087d68` |  | 1 | PARTIAL 1 | 1/1/23/4 (154) | apps/mvp/db/Database.test.ts (19), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (11), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
+| `9ff3087d68` |  | 1 | PARTIAL 1 | 6/1/12/10 (96) | apps/mvp/db/Database.test.ts (5), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (4), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
 | `f88f24cd65` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `4513685cc2` |  | 6 | EMPTY-ISH 2, PARTIAL 3, ON-MAIN 1 | 4/0/26/2 (1277) | .changeset/mcp-server.md (29), .smithers/flows/release/fixtures/public-api-baseline.json (7), docs/libraries.md (2), packages/smithers/agent/src/AgentRunner.ts (99) |
 | `e8c922fe28` |  | 1 | PARTIAL 1 | 5/1/3/3 (33) | apps/mvp/docs/features/issues.md (1), apps/mvp/docs/work/issues-credential-regressions.md (22), apps/mvp/src/features/issues/api.test.ts (9), apps/mvp/src/features/issues/api.ts (1) |
@@ -904,54 +903,54 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `95621d0845` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `35f594e16e` |  | 5 | PARTIAL 3, EMPTY-ISH 1, ON-MAIN 1 | 4/0/26/2 (1277) | .changeset/mcp-server.md (29), .smithers/flows/release/fixtures/public-api-baseline.json (7), docs/libraries.md (2), packages/smithers/agent/src/AgentRunner.ts (99) |
 | `2eebe05718` |  | 22 | PARTIAL 1, SUPERSEDED 10, ON-MAIN 10, EMPTY-ISH 1 | 274/69/1/0 (5) | packages/smithers/flows/engine-store/src/PlanScheduler.ts (5) |
-| `d74d3c69ef` |  | 1 | PARTIAL 1 | 264/119/250/5157 (64990) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11251), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `d74d3c69ef` |  | 1 | PARTIAL 1 | 268/119/247/5156 (64845) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11251), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
 | `58004e350b` |  | 12 | SUPERSEDED 8, ON-MAIN 4 | 0/0/0/0 (0) |  |
-| `537de2daf8` |  | 1 | PARTIAL 1 | 1/1/18/4 (141) | apps/mvp/db/Database.test.ts (19), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (11), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
+| `537de2daf8` |  | 1 | PARTIAL 1 | 4/1/11/8 (88) | apps/mvp/db/Database.test.ts (5), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (4), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
 | `faa02d0a79` |  | 1 | PARTIAL 1 | 5/1/3/3 (23) | apps/mvp/docs/features/issues.md (1), apps/mvp/docs/work/issues-credential-regressions.md (12), apps/mvp/src/features/issues/api.test.ts (9), apps/mvp/src/features/issues/api.ts (1) |
-| `9aa491a333` |  | 1 | PARTIAL 1 | 264/117/250/5159 (64929) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11190), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
-| `6afbc5206d` |  | 1 | PARTIAL 1 | 1/1/16/4 (139) | apps/mvp/db/Database.test.ts (19), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (11), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
-| `d00a00804b` |  | 1 | PARTIAL 1 | 264/113/250/5164 (64918) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11179), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `9aa491a333` |  | 1 | PARTIAL 1 | 268/117/247/5158 (64784) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11190), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `6afbc5206d` |  | 1 | PARTIAL 1 | 4/1/9/8 (86) | apps/mvp/db/Database.test.ts (5), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_flow_draft_receipts.ts (4), apps/mvp/docs/decisions/0038-draft-save-concurrency.md (6) |
+| `d00a00804b` |  | 1 | PARTIAL 1 | 268/113/247/5163 (64773) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11179), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
 | `12c1e23387` |  | 1 | PARTIAL 1 | 5/1/2/4 (15) | apps/mvp/docs/features/issues.md (1), apps/mvp/docs/work/issues-credential-regressions.md (4), apps/mvp/src/features/issues/api.test.ts (9), apps/mvp/src/features/issues/api.ts (1) |
 | `b661e1b0b1` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `8902f02f40` |  | 1 | PARTIAL 1 | 260/113/250/5165 (64888) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11149), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `8902f02f40` |  | 1 | PARTIAL 1 | 264/113/247/5164 (64743) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (11149), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
 | `402d0c3661` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `aa5882d7a8` |  | 1 | PARTIAL 1 | 254/103/250/5176 (64592) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (10853), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `aa5882d7a8` |  | 1 | PARTIAL 1 | 258/103/247/5175 (64447) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (10853), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
 | `0fd28abddc` |  | 3 | ON-MAIN 2, SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `c24411430b` |  | 2 | PARTIAL 2 | 5/0/25/5 (1271) | apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0038_agent_runners.ts (50), apps/mvp/src/features/agent-backends/contract.ts (25), apps/mvp/vitest.config.ts (8) |
 | `3da4bd89f2` |  | 2 | PARTIAL 2 | 3/0/25/2 (1098) | .changeset/mcp-server.md (23), .smithers/flows/release/fixtures/public-api-baseline.json (7), docs/libraries.md (2), packages/smithers/agent/src/AgentRunner.ts (99) |
-| `ad3afb35e8` |  | 1 | PARTIAL 1 | 2/0/1/0 (7) | apps/mvp/docs/work/worker-953411.md (7) |
+| `ad3afb35e8` |  | 1 | PARTIAL 1 | 2/0/0/1 (1) | apps/mvp/docs/work/worker-953411.md (1) |
 | `1c3b1ed942` |  | 9 | PARTIAL 1, SUPERSEDED 6, ON-MAIN 2 | 56/18/0/3 (4) | apps/mvp/worker/flows/Todo.test.ts (2), apps/site/public/llms-full.txt (2) |
 | `d7e650d344` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `467e1e0ece` |  | 2 | STRANDED 2 | 0/0/1/0 (18) | apps/mvp/docs/work/land-and-deploy-mvp.md (18) |
+| `467e1e0ece` |  | 2 | ON-MAIN 1, SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `17e95ec919` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `3cb9124e12` |  | 35 | SUPERSEDED 10, ON-MAIN 12, STRANDED 6, PARTIAL 6, EMPTY-ISH 1 | 288/73/204/30 (3198) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), .gitignore (2) |
+| `3cb9124e12` |  | 35 | SUPERSEDED 11, ON-MAIN 14, PARTIAL 9, EMPTY-ISH 1 | 308/73/180/34 (3084) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), CONTRIBUTING.md (3) |
 | `7ff8144985` |  | 5 | PARTIAL 1, SUPERSEDED 2, ON-MAIN 2 | 56/18/0/3 (4) | apps/mvp/worker/flows/Todo.test.ts (2), apps/site/public/llms-full.txt (2) |
 | `4794064626` |  | 2 | STRANDED 1, PARTIAL 1 | 2/0/2/1 (131) | apps/mvp/docs/decisions/0027-coding-agent-backends.md (18), apps/mvp/docs/work/coding-agent-backends.md (14), packages/smithers/agent/src/AgentRunner.ts (99) |
-| `869eaba965` |  | 1 | PARTIAL 1 | 252/98/250/5183 (64496) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (10756), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
+| `869eaba965` |  | 1 | PARTIAL 1 | 256/98/247/5182 (64351) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (10756), apps/maintainer-site/queue/queue.json (235), apps/mvp/db/Database.ts (2) |
 | `6817e4ecbd` |  | 4 | SUPERSEDED 2, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `4d35803d1f` |  | 1 | PARTIAL 1 | 18/4/0/1 (13) | apps/mvp/e2e/sandbox-lifecycle.spec.ts (13) |
-| `df5ede0070` |  | 6 | STRANDED 5, PARTIAL 1 | 0/1/27/0 (119) | .gitignore (2), .specs/product/mvp.md (1), .specs/product/overview.md (1), CONTRIBUTING.md (9) |
-| `871bacc02d` |  | 1 | PARTIAL 1 | 177/266/247/5161 (58761) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (5255), apps/maintainer-site/queue/queue.json (2), apps/mvp/db/Database.ts (2) |
-| `c349c7bdf4` |  | 1 | PARTIAL 1 | 177/266/247/5161 (58761) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (5255), apps/maintainer-site/queue/queue.json (2), apps/mvp/db/Database.ts (2) |
+| `df5ede0070` |  | 6 | PARTIAL 3, SUPERSEDED 1, ON-MAIN 2 | 21/1/4/2 (11) | CONTRIBUTING.md (3), apps/mvp/docs/features/branch-workspace.md (1), apps/mvp/docs/infrastructure.md (2), apps/mvp/docs/rules.md (3) |
+| `871bacc02d` |  | 1 | PARTIAL 1 | 181/266/244/5160 (58616) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (5255), apps/maintainer-site/queue/queue.json (2), apps/mvp/db/Database.ts (2) |
+| `c349c7bdf4` |  | 1 | PARTIAL 1 | 181/266/244/5160 (58616) | .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/coverage.json (5255), apps/maintainer-site/queue/queue.json (2), apps/mvp/db/Database.ts (2) |
 | `bfcc6c1a3d` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `8d07068639` |  | 3 | PARTIAL 3 | 16/2/106/25 (2871) | .changeset/docs-home-url-string.md (2), .changeset/ui-page-pane.md (4), .changeset/views-docs.md (8), apps/mvp/AGENTS.md (1) |
 | `e9f6d1e89e` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `512f6e1ad3` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `d048301dfc` |  | 9 | PARTIAL 3, SUPERSEDED 6 | 575/125/6/2 (11) | .smithers/flows/release/fixtures/public-api-baseline.json (6), apps/site/astro.config.mjs (3), evals/docs/bunfig.toml (1), packages/smithers/flows/flow/PACKAGE.ts (1) |
+| `d048301dfc` |  | 9 | PARTIAL 3, SUPERSEDED 6 | 574/126/6/2 (11) | .smithers/flows/release/fixtures/public-api-baseline.json (6), apps/site/astro.config.mjs (3), evals/docs/bunfig.toml (1), packages/smithers/flows/flow/PACKAGE.ts (1) |
 | `d39f412ec2` |  | 1 | PARTIAL 1 | 0/1/72/0 (194) | apps/mvp/docs/work/ssr-temp-cache-leak.md (19), apps/mvp/evals/vitest.config.ts (2), apps/mvp/vitest.config.ts (2), packages/effect-code-storage/vitest.config.ts (2) |
 | `c578bb3b75` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `86723e22ad` |  | 1 | PARTIAL 1 | 28/20/15/5 (109) | .changeset/browser-runtime-authorize.md (11), apps/mvp/docs/decisions/0021-local-first-migrations.md (6), apps/mvp/docs/features/sign-in.md (8), apps/mvp/docs/observability.md (1) |
 | `b5737baf44` |  | 5 | ON-MAIN 3, SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `1cb5344e2c` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `08c498f459` |  | 2 | ON-MAIN 1, SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `c3f3d6782a` |  | 1 | PARTIAL 1 | 1915/1805/3946/67 (58793) | .changeset/attached-wait-reports-outcome.md (5), .changeset/shared-sqlite-receipt-fails-closed.md (3), .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/before |
+| `c3f3d6782a` |  | 1 | PARTIAL 1 | 1914/1810/3943/66 (58648) | .changeset/attached-wait-reports-outcome.md (5), .changeset/shared-sqlite-receipt-fails-closed.md (3), .smithers/flows/release/fixtures/public-api-baseline.json (54), apps/maintainer-site/queue/before |
 | `60fd111680` |  | 5 | SUPERSEDED 3, ON-MAIN 2 | 0/0/0/0 (0) |  |
-| `0432886e45` |  | 1 | PARTIAL 1 | 2401/704/429/44 (55120) | .changeset/attached-wait-reports-outcome.md (5), .changeset/browser-failure-recovery.md (2), .changeset/cli-run-destination.md (2), .changeset/crypto-global-source-shape.md (2) |
+| `0432886e45` |  | 1 | PARTIAL 1 | 2397/712/426/43 (54975) | .changeset/attached-wait-reports-outcome.md (5), .changeset/browser-failure-recovery.md (2), .changeset/cli-run-destination.md (2), .changeset/crypto-global-source-shape.md (2) |
 | `39a13b08de` |  | 1 | STRANDED 1 | 0/0/1/0 (13) | apps/mvp/docs/infrastructure.md (13) |
-| `62b9ef30ca` |  | 1 | PARTIAL 1 | 1646/5217/4/3 (34) | .land4-sdk.sh (18), apps/maintainer-site/queue/queue.json (6), apps/mvp/e2e/local-first.spec.ts (5), apps/mvp/worker/flows/RepoClone.test.ts (3) |
+| `62b9ef30ca` |  | 1 | PARTIAL 1 | 1641/5222/4/3 (34) | .land4-sdk.sh (18), apps/maintainer-site/queue/queue.json (6), apps/mvp/e2e/local-first.spec.ts (5), apps/mvp/worker/flows/RepoClone.test.ts (3) |
 | `24747a3bf0` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `7d1f83e264` |  | 1 | SCAFFOLD 1 | 0/0/0/0 (0) |  |
-| `1ef9292cf0` |  | 1 | PARTIAL 1 | 1755/638/196/26 (54915) | .changeset/attached-wait-reports-outcome.md (5), .changeset/shared-sqlite-receipt-fails-closed.md (3), apps/maintainer-site/README.md (4), apps/maintainer-site/queue/queue.json (1782) |
+| `1ef9292cf0` |  | 1 | PARTIAL 1 | 1747/646/196/26 (54915) | .changeset/attached-wait-reports-outcome.md (5), .changeset/shared-sqlite-receipt-fails-closed.md (3), apps/maintainer-site/README.md (4), apps/maintainer-site/queue/queue.json (1782) |
 | `b0d1a1148f` |  | 1 | SCAFFOLD 1 | 0/0/0/0 (0) |  |
 | `354d59dda5` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `9335d5fa7d` |  | 1 | PARTIAL 1 | 239/0/34/91 (6806) | .specs/design/mock/build.mjs (5), .specs/design/mock/evals/mock-fidelity/REPORT.md (18), .specs/design/mock/evals/mock-fidelity/browser.test.ts (90), .specs/design/mock/evals/mock-fidelity/browser.ts  |
@@ -960,7 +959,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `d6fa75217b` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `e99ce3e179` |  | 1 | PARTIAL 1 | 6/48/1/0 (16) | .smithers/factory.json (16) |
 | `e058383e32` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `c1ec763351` |  | 1 | PARTIAL 1 | 1/0/6/4 (79) | packages/smithers/agent/registry/src/Executable.ts (11), packages/smithers/agent/registry/test/Executable.test.ts (30), packages/smithers/src/internal/NativeControl.ts (16), packages/smithers/test/Nat |
+| `c1ec763351` |  | 1 | PARTIAL 1 | 1/0/6/4 (82) | packages/smithers/agent/registry/src/Executable.ts (11), packages/smithers/agent/registry/test/Executable.test.ts (30), packages/smithers/src/internal/NativeControl.ts (16), packages/smithers/test/Nat |
 | `cf1d3c7573` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `010fbc424a` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `5036067ccb` |  | 3 | PARTIAL 2, SUPERSEDED 1 | 0/122/13/0 (265) | apps/site/astro.config.mjs (1), docs/api/openapi/sites.yaml (111), packages/rpc/PACKAGE.ts (2), packages/rpc/src/AppBootstrap.ts (1) |
@@ -1032,11 +1031,11 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `a63baaad78` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `fd1125dda7` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `2d6d27b8c8` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `edcd2f4cb5` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 573/57/15/34 (228) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/plugin.mdx (1), packages/smithers/agent/evals/test/Runner.test.ts (3), packages/smithers/agent/evals/test/Trials.test. |
-| `45b7874a46` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 566/57/15/31 (245) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/plugin.mdx (1), packages/smithers/agent/evals/test/Runner.test.ts (3), packages/smithers/agent/evals/test/Trials.test. |
-| `1ee38f3447` |  | 2 | PARTIAL 1, ON-MAIN 1 | 501/55/15/30 (167) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/plugin.mdx (1), packages/smithers/agent/memory/README.md (4), packages/smithers/agent/memory/docs/README.md (1) |
-| `865abb05d4` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 351/43/16/23 (167) | packages/smithers/agent/harness/test/zz-probe-tmp.test.ts (23), packages/smithers/agent/harness/zz-probe.config.ts (1), packages/smithers/agent/memory/README.md (4), packages/smithers/agent/memory/doc |
-| `1a00aac5c5` |  | 2 | PARTIAL 1, ON-MAIN 1 | 350/43/16/24 (174) | packages/repo-targets/rt-probe.tmp.ts (5), packages/smithers/agent/harness/test/zz-probe-tmp.test.ts (23), packages/smithers/agent/harness/zz-probe.config.ts (1), packages/smithers/agent/memory/README |
+| `edcd2f4cb5` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 571/59/15/34 (228) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/plugin.mdx (1), packages/smithers/agent/evals/test/Runner.test.ts (3), packages/smithers/agent/evals/test/Trials.test. |
+| `45b7874a46` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 564/59/15/31 (245) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/plugin.mdx (1), packages/smithers/agent/evals/test/Runner.test.ts (3), packages/smithers/agent/evals/test/Trials.test. |
+| `1ee38f3447` |  | 2 | PARTIAL 1, ON-MAIN 1 | 499/57/15/30 (167) | apps/site/public/llms-full.txt (1), apps/site/src/content/docs/docs/reference/api/plugin.mdx (1), packages/smithers/agent/memory/README.md (4), packages/smithers/agent/memory/docs/README.md (1) |
+| `865abb05d4` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 349/45/16/23 (167) | packages/smithers/agent/harness/test/zz-probe-tmp.test.ts (23), packages/smithers/agent/harness/zz-probe.config.ts (1), packages/smithers/agent/memory/README.md (4), packages/smithers/agent/memory/doc |
+| `1a00aac5c5` |  | 2 | PARTIAL 1, ON-MAIN 1 | 348/45/16/24 (174) | packages/repo-targets/rt-probe.tmp.ts (5), packages/smithers/agent/harness/test/zz-probe-tmp.test.ts (23), packages/smithers/agent/harness/zz-probe.config.ts (1), packages/smithers/agent/memory/README |
 | `a16459a919` |  | 2 | PARTIAL 1, ON-MAIN 1 | 296/43/16/17 (156) | packages/repo-targets/vitest.tmp-effect404.config.ts (11), packages/smithers/agent/harness/test/zz-probe-tmp.test.ts (23), packages/smithers/agent/harness/zz-probe.config.ts (1), packages/smithers/age |
 | `6a3210d440` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `2b48e94c16` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
@@ -1051,28 +1050,28 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `61e65dbee5` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `08c0b7944c` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `798e31e447` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `cc7646203d` |  | 1 | PARTIAL 1 | 5/0/33/0 (287) | apps/tui/README.md (6), apps/tui/src/app-view.tsx (14), apps/tui/src/inbox.ts (3), apps/tui/src/run-card-view.tsx (6) |
-| `417e34ccc1` |  | 1 | STRANDED 1 | 0/0/6/0 (327) | apps/tui/docs/testing.md (45), apps/tui/e2e/denied-edit-fixture.tsx (54), apps/tui/e2e/denied-edit-judge.ts (41), apps/tui/e2e/denied-edit.test.ts (120) |
-| `1b0c595a39` |  | 1 | PARTIAL 1 | 0/0/1/2 (161) | apps/tui/e2e/workspace-fixture.tsx (28), apps/tui/e2e/workspace-outcome.test.ts (133) |
+| `cc7646203d` |  | 1 | PARTIAL 1 | 14/0/22/2 (130) | apps/tui/README.md (3), apps/tui/src/inbox.ts (3), apps/tui/src/run-card.ts (2), apps/tui/src/tabs-view.tsx (2) |
+| `417e34ccc1` |  | 1 | STRANDED 1 | 0/0/6/0 (326) | apps/tui/docs/testing.md (45), apps/tui/e2e/denied-edit-fixture.tsx (53), apps/tui/e2e/denied-edit-judge.ts (41), apps/tui/e2e/denied-edit.test.ts (120) |
+| `1b0c595a39` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `a8a2e05e6d` |  | 1 | PARTIAL 1 | 9/0/1/0 (5) | apps/tui/src/app.tsx (5) |
-| `b39ca4665b` |  | 1 | STRANDED 1 | 0/0/8/0 (184) | apps/tui/README.md (5), apps/tui/src/subagents.ts (14), apps/tui/test/command-receipts.test.tsx (156), apps/tui/test/run-card.test.ts (2) |
-| `62f5ff7635` |  | 1 | PARTIAL 1 | 1/0/19/5 (426) | apps/tui/README.md (9), apps/tui/src/run-card-view.tsx (3), apps/tui/src/run-card.ts (2), apps/tui/src/session.ts (7) |
-| `0429a5434c` |  | 1 | PARTIAL 1 | 2/0/2/1 (101) | apps/tui/e2e/steering-delivery.test.ts (61), apps/tui/e2e/tabs-fixture.tsx (1), apps/tui/test/worker-steer.test.ts (39) |
-| `b1266b07a7` |  | 1 | PARTIAL 1 | 0/0/9/2 (162) | apps/tui/README.md (6), apps/tui/src/app.tsx (20), apps/tui/src/surfaces.ts (2), apps/tui/test/app-summary-focus.test.tsx (132) |
+| `b39ca4665b` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
+| `62f5ff7635` |  | 1 | PARTIAL 1 | 24/0/1/0 (3) | apps/tui/src/workspace.ts (3) |
+| `0429a5434c` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
+| `b1266b07a7` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `d9eacae175` |  | 1 | PARTIAL 1 | 1/0/1/0 (94) | packages/smithers/agent/model/test/FailureCopyBudget.test.ts (94) |
 | `617ca48896` |  | 1 | PARTIAL 1 | 12/0/1/2 (25) | apps/tui/src/timeline.ts (5), apps/tui/src/transcript-view.ts (20) |
 | `7c360bd2cd` |  | 1 | PARTIAL 1 | 0/0/2/2 (158) | packages/smithers/agent/model/src/FailureCopy.ts (24), packages/smithers/agent/model/test/FailureCopyInspection.test.ts (134) |
-| `3c156cc6f0` |  | 1 | PARTIAL 1 | 1/0/3/1 (97) | apps/tui/src/transcript-view.ts (2), apps/tui/test/transcript-view.test.tsx (95) |
+| `3c156cc6f0` |  | 1 | PARTIAL 1 | 1/0/2/2 (96) | apps/tui/src/transcript-view.ts (1), apps/tui/test/transcript-view.test.tsx (95) |
 | `d3b36ac7a7` |  | 1 | STRANDED 1 | 0/0/3/0 (68) | packages/smithers/agent/model/src/FailureCopy.ts (6), packages/smithers/agent/model/test/FailureCopyLookup.test.ts (62) |
 | `11929e3109` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `73a7a8697e` |  | 1 | PARTIAL 1 | 0/1/8/3 (209) | apps/tui/README.md (5), apps/tui/e2e/grep.test.ts (70), apps/tui/src/timeline.ts (9), apps/tui/src/transcript-view.ts (3) |
-| `7bcf9a2535` |  | 1 | PARTIAL 1 | 0/0/8/3 (185) | apps/tui/README.md (3), apps/tui/e2e/asks-fixture.tsx (45), apps/tui/e2e/asks.test.ts (94), apps/tui/src/app.tsx (1) |
-| `d81ce9b981` |  | 1 | STRANDED 1 | 0/0/6/0 (284) | apps/tui/e2e/answer-frames-fixture.tsx (44), apps/tui/e2e/answer-frames.test.ts (54), apps/tui/src/view.tsx (12), apps/tui/test/answer-frames.test.tsx (174) |
-| `526ea677dd` |  | 1 | PARTIAL 1 | 0/0/14/1 (355) | apps/tui/README.md (4), apps/tui/e2e/cells-scroll-fixture.tsx (16), apps/tui/e2e/cells-scroll.test.ts (72), apps/tui/src/app.tsx (2) |
+| `7bcf9a2535` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
+| `d81ce9b981` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
+| `526ea677dd` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `dd80756e3f` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `9a68f68b26` |  | 1 | SCAFFOLD 1 | 0/0/0/0 (0) |  |
 | `31cf4a863a` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `28c5a59925` |  | 1 | PARTIAL 1 | 0/0/10/3 (173) | apps/tui/e2e/input-ownership-preload.mjs (20), apps/tui/e2e/input-ownership.test.ts (46), apps/tui/src/host.ts (6), apps/tui/test/input-ownership.test.ts (51) |
+| `28c5a59925` |  | 1 | PARTIAL 1 | 12/0/1/0 (1) | packages/smithers/src/internal/NodeControlHost.ts (1) |
 | `4c6ec2c6d8` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `67ee1cb998` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `4db8ccba03` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -1084,9 +1083,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `ac47472556` |  | 1 | PARTIAL 1 | 21/372/3/3 (32) | apps/site/src/data/cli-commands.json (23), apps/site/src/data/help/diff.txt (7), apps/site/src/data/help/wiki/show.txt (2) |
 | `2180af77ce` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `96e251acbb` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `3db7927ac4` | col03r-close-3626 | 1 | PARTIAL 1 | 3/4/1/2 (26) | .github/workflows/ci.yml (2), PACKAGE.ts (24) |
-| `4847fe3e63` |  | 1 | PARTIAL 1 | 2/3/1/2 (26) | .github/workflows/ci.yml (2), PACKAGE.ts (24) |
-| `5015cf2b98` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 3/11/1/2 (26) | .github/workflows/ci.yml (2), PACKAGE.ts (24) |
+| `3db7927ac4` | col03r-close-3626 | 1 | PARTIAL 1 | 2/5/2/1 (27) | .github/workflows/ci.yml (2), PACKAGE.ts (25) |
+| `4847fe3e63` |  | 1 | PARTIAL 1 | 1/4/2/1 (27) | .github/workflows/ci.yml (2), PACKAGE.ts (25) |
+| `5015cf2b98` |  | 2 | PARTIAL 1, SUPERSEDED 1 | 2/12/2/1 (27) | .github/workflows/ci.yml (2), PACKAGE.ts (25) |
 | `e83ac05054` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `2bddcd2e0d` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `c6c8853153` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
@@ -1152,7 +1151,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `a53c9d02fc` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `dcbf160de9` |  | 2 | PARTIAL 2 | 119/277/18/21 (116) | apps/site/public/llms-full.txt (19), apps/site/src/data/cli-commands.json (16), packages/rpc/README.md (1), packages/rpc/src/ApplicationAuth.ts (10) |
 | `924ebf2104` |  | 1 | PARTIAL 1 | 18/211/66/12 (621) | .specs/product/actions.md (3), apps/tui/README.md (4), apps/tui/src/app.tsx (3), apps/tui/src/factory.ts (34) |
-| `6abe4af91b` |  | 2 | SUPERSEDED 1, PARTIAL 1 | 12/26/11/5 (96) | .github/workflows/release.yml (2), .gitignore (3), packages/smithers/build/docs/reference/targets/tool-build.md (1), packages/smithers/build/targets/src/ToolBuild.ts (1) |
+| `6abe4af91b` |  | 2 | SUPERSEDED 1, PARTIAL 1 | 15/26/10/3 (77) | .github/workflows/release.yml (2), .gitignore (3), packages/smithers/flows/platform-node/README.md (3), packages/smithers/flows/platform-node/src/internal/ProcessSupervisor.ts (24) |
 | `03a3694b3b` |  | 2 | SUPERSEDED 1, PARTIAL 1 | 499/435/2/4 (39) | packages/rpc/src/Cards.ts (39) |
 | `a08cd8b05f` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `fb80484220` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -1174,7 +1173,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `408fb26b52` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `4861667052` |  | 3 | SUPERSEDED 3 | 0/0/0/0 (0) |  |
 | `80438d385b` |  | 2 | PARTIAL 2 | 5/81/17/2 (179) | apps/site/src/data/help/host.txt (2), apps/site/src/data/help/smthrs.txt (1), docs/api/openapi/host.yaml (65), packages/rpc/scripts/refresh-failure-codes.mjs (1) |
-| `9d34c2542b` |  | 1 | PARTIAL 1 | 12/3/42/6 (270) | packages/smithers/build/build-cli/src/engine.ts (2), packages/smithers/src/Cli.ts (7), packages/smithers/src/NodeControl.ts (61), packages/smithers/src/cli/ControlBridge.ts (20) |
+| `9d34c2542b` |  | 1 | PARTIAL 1 | 13/3/42/5 (268) | packages/smithers/src/Cli.ts (7), packages/smithers/src/NodeControl.ts (61), packages/smithers/src/cli/ControlBridge.ts (20), packages/smithers/src/cli/ControlCommands.ts (2) |
 | `9e8d01e519` |  | 1 | PARTIAL 1 | 1/43/21/29 (936) | packages/rpc/PACKAGE.ts (6), packages/rpc/docs/card-view-models.md (52), packages/rpc/src/ActorChipCard.test.ts (5), packages/rpc/src/AgentCard.test.ts (4) |
 | `8ed50795a0` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `6ef8a02b74` |  | 1 | PARTIAL 1 | 41/215/0/1 (55) | .specs/engineering/overview.md (55) |
@@ -1188,19 +1187,19 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `c279d1deb0` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `6851f25350` |  | 1 | PARTIAL 1 | 0/43/19/31 (845) | packages/rpc/PACKAGE.ts (7), packages/rpc/docs/card-view-models.md (52), packages/rpc/src/ActorChipCard.test.ts (5), packages/rpc/src/AgentCard.test.ts (4) |
 | `f2231907b8` |  | 1 | PARTIAL 1 | 13/161/22/3 (315) | packages/rpc/src/Mythical.ts (4), packages/rpc/src/PlueFailureCodes.ts (4), packages/rpc/src/StackIssues.ts (7), packages/rpc/src/Todo.ts (108) |
-| `8e2d288e32` |  | 1 | PARTIAL 1 | 11/3/37/5 (134) | packages/smithers/build/build-cli/src/engine.ts (2), packages/smithers/src/Cli.ts (7), packages/smithers/src/NodeControl.ts (61), packages/smithers/src/cli/ControlBridge.ts (20) |
+| `8e2d288e32` |  | 1 | PARTIAL 1 | 12/3/37/4 (132) | packages/smithers/src/Cli.ts (7), packages/smithers/src/NodeControl.ts (61), packages/smithers/src/cli/ControlBridge.ts (20), packages/smithers/src/cli/ControlCommands.ts (2) |
 | `6e3cbc98d2` |  | 1 | PARTIAL 1 | 13/161/22/3 (315) | packages/rpc/src/Mythical.ts (4), packages/rpc/src/PlueFailureCodes.ts (4), packages/rpc/src/StackIssues.ts (7), packages/rpc/src/Todo.ts (108) |
 | `879b69e3c3` |  | 1 | PARTIAL 1 | 2/67/2/1 (48) | packages/smithers/src/internal/backend/Commands.ts (1), packages/smithers/src/internal/backend/Definitions.ts (1), packages/smithers/test/BackendHostStatus.test.ts (46) |
-| `d69f001440` |  | 1 | PARTIAL 1 | 45/1552/31/0 (2350) | packages/rpc/PACKAGE.ts (8), packages/rpc/src/Cards.ts (5), packages/rpc/src/catalog/AppendixA.test.ts (137), packages/rpc/src/catalog/AppendixB.test.ts (116) |
+| `d69f001440` |  | 1 | PARTIAL 1 | 45/1552/31/0 (2349) | packages/rpc/PACKAGE.ts (8), packages/rpc/src/Cards.ts (5), packages/rpc/src/catalog/AppendixA.test.ts (137), packages/rpc/src/catalog/AppendixB.test.ts (116) |
 | `9ae63fbdb1` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `9c5e89b94c` |  | 2 | PARTIAL 2 | 0/1/34/5 (744) | .agents/skills/smithers-agent-runtime/SKILL.md (1), packages/smithers/agent/std/README.md (34), packages/smithers/agent/std/docs/guides/pin-a-checkpoint.md (13), packages/smithers/agent/std/src/Checkp |
 | `5a39eeb80a` |  | 1 | PARTIAL 1 | 24/220/1/0 (9) | packages/smithers/src/internal/backend/ProductApi.ts (9) |
-| `4c1418c1dc` |  | 1 | PARTIAL 1 | 9/21/3/2 (25) | .github/workflows/release.yml (2), .gitignore (4), packages/smithers/build/docs/reference/targets/tool-build.md (1), packages/smithers/build/targets/src/ToolBuild.ts (1) |
+| `4c1418c1dc` |  | 1 | PARTIAL 1 | 12/21/2/0 (6) | .github/workflows/release.yml (2), .gitignore (4) |
 | `e648b58958` |  | 1 | PARTIAL 1 | 24/220/1/0 (9) | packages/smithers/src/internal/backend/ProductApi.ts (9) |
-| `254db52da3` |  | 1 | PARTIAL 1 | 9/21/3/2 (25) | .github/workflows/release.yml (2), .gitignore (4), packages/smithers/build/docs/reference/targets/tool-build.md (1), packages/smithers/build/targets/src/ToolBuild.ts (1) |
-| `ea329ccaed` |  | 1 | PARTIAL 1 | 40/1534/31/0 (2319) | packages/rpc/PACKAGE.ts (8), packages/rpc/src/Cards.ts (5), packages/rpc/src/catalog/AppendixA.test.ts (109), packages/rpc/src/catalog/AppendixB.test.ts (116) |
-| `1317075d06` |  | 2 | SUPERSEDED 1, PARTIAL 1 | 9/21/3/2 (25) | .github/workflows/release.yml (2), .gitignore (4), packages/smithers/build/docs/reference/targets/tool-build.md (1), packages/smithers/build/targets/src/ToolBuild.ts (1) |
-| `665a7bba77` |  | 1 | PARTIAL 1 | 40/1534/31/0 (2319) | packages/rpc/PACKAGE.ts (8), packages/rpc/src/Cards.ts (5), packages/rpc/src/catalog/AppendixA.test.ts (109), packages/rpc/src/catalog/AppendixB.test.ts (116) |
+| `254db52da3` |  | 1 | PARTIAL 1 | 12/21/2/0 (6) | .github/workflows/release.yml (2), .gitignore (4) |
+| `ea329ccaed` |  | 1 | PARTIAL 1 | 40/1534/31/0 (2318) | packages/rpc/PACKAGE.ts (8), packages/rpc/src/Cards.ts (5), packages/rpc/src/catalog/AppendixA.test.ts (109), packages/rpc/src/catalog/AppendixB.test.ts (116) |
+| `1317075d06` |  | 2 | SUPERSEDED 1, PARTIAL 1 | 12/21/2/0 (6) | .github/workflows/release.yml (2), .gitignore (4) |
+| `665a7bba77` |  | 1 | PARTIAL 1 | 40/1534/31/0 (2318) | packages/rpc/PACKAGE.ts (8), packages/rpc/src/Cards.ts (5), packages/rpc/src/catalog/AppendixA.test.ts (109), packages/rpc/src/catalog/AppendixB.test.ts (116) |
 | `4b3b64ca93` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `20783b49b9` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `a270a1098f` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -1212,7 +1211,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `c7250d32c4` |  | 2 | SUPERSEDED 2 | 0/0/0/0 (0) |  |
 | `2b466b2b6a` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `f1facb2e9a` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
-| `c8e5326089` |  | 2 | PARTIAL 2 | 9/21/3/2 (25) | .github/workflows/release.yml (2), .gitignore (4), packages/smithers/build/docs/reference/targets/tool-build.md (1), packages/smithers/build/targets/src/ToolBuild.ts (1) |
+| `c8e5326089` |  | 2 | SUPERSEDED 1, PARTIAL 1 | 12/21/2/0 (6) | .github/workflows/release.yml (2), .gitignore (4) |
 | `230b43a5cc` |  | 1 | PARTIAL 1 | 6/1519/28/0 (1893) | packages/rpc/PACKAGE.ts (3), packages/rpc/src/Cards.ts (5), packages/rpc/src/catalog/AppendixA.test.ts (100), packages/rpc/src/catalog/AppendixB.test.ts (100) |
 | `95b21f37c9` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `dafab3926a` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -1225,13 +1224,11 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | Workspace | Directory | Why |
 |---|---|---|
 | default | `/Users/williamcory/smithers` | process cwd |
-| deploy-mvp-1031b | `/Users/williamcory/smithers-deploy-mvp-1031b` | edited .smithers/flows/land/farm/mini-remote.sh |
-| e2escratch | `/Users/williamcory/smithers-ws-e2escratch` | process cwd, edited .smithers/flows/land/farm/mini-remote.sh |
-| latency | `/Users/williamcory/smithers-ws-latency` | edited .git-blame-ignore-revs |
+| deploy-mvp-1031b | `/Users/williamcory/smithers-deploy-mvp-1031b` | edited .changeset/sandbox-ci-graph.md |
+| e2escratch | `/Users/williamcory/smithers-ws-e2escratch` | edited .changeset/sandbox-ci-graph.md |
+| latency | `/Users/williamcory/smithers-ws-latency` | edited .changeset/sandbox-ci-graph.md |
 | overflow3 | `/Users/williamcory/smithers-ws-overflow3` | edited .git-blame-ignore-revs |
 | packcli | `/Users/williamcory/smithers-ws-packcli` | edited .git-blame-ignore-revs |
-| realtodo | `/Users/williamcory/smithers-ws-realtodo` | edited .smithers/target-index.json |
-| 2 commits | `` | committed in the last 6 hours |
 
 ### Commits
 
@@ -1247,14 +1244,14 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-02 13:32 | `d09a8e1dcb` | PARTIAL | 6/1509/28/0 | d09a8e1dcb |  | packages/rpc/PACKAGE.ts: const catalogInputs = [Smithers.file("//.specs/product/mvp.md"), |
 | 2026-10-02 13:36 | `3d82b68e64` | PARTIAL | 446/300/4/5 | 3d82b68e64 |  | packages/rpc/src/Cards.ts: /* The admin plugin's cards (Launch Checklist §E — registered o |
 | 2026-10-02 13:42 | `95b21f37c9` | SUPERSEDED | 30/104/0/0 | 95b21f37c9 |  | apps/app/src/bun/NativeBackendProcess.test.ts: main deleted it in 82b5490dbe (🔥 chore(repo |
-| 2026-10-02 13:44 | `59eb10efd4` | PARTIAL | 12/26/11/5 | 6abe4af91b | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
+| 2026-10-02 13:44 | `59eb10efd4` | PARTIAL | 15/26/10/3 | 6abe4af91b | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
 | 2026-10-02 13:44 | `15237b9840` | SUPERSEDED | 0/3/0/0 | 1f20522feb | 🧪 test(spike): measure virtiofs member-home isolation (#3437) | scripts/spikes/mch-02-virtiofs-homes/run.sh: main deleted it in c0d449997b (🔬 feat(spike): |
-| 2026-10-02 13:44 | `4c1418c1dc` | PARTIAL | 9/21/3/2 | 4c1418c1dc | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
-| 2026-10-02 13:44 | `254db52da3` | PARTIAL | 9/21/3/2 | 254db52da3 | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
-| 2026-10-02 13:44 | `98aa332efc` | PARTIAL | 9/21/3/2 | 1317075d06 | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
+| 2026-10-02 13:44 | `4c1418c1dc` | PARTIAL | 12/21/2/0 | 4c1418c1dc | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
+| 2026-10-02 13:44 | `254db52da3` | PARTIAL | 12/21/2/0 | 254db52da3 | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
+| 2026-10-02 13:44 | `98aa332efc` | PARTIAL | 12/21/2/0 | 1317075d06 | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
 | 2026-10-02 13:44 | `59e902456b` | SUPERSEDED | 0/3/0/0 | 9032b494a6 | 🧪 test(spike): measure virtiofs member-home isolation (#3437) | scripts/spikes/mch-02-virtiofs-homes/run.sh: main deleted it in c0d449997b (🔬 feat(spike): |
 | 2026-10-02 13:44 | `676d7cb208` | SUPERSEDED | 0/3/0/0 | c7250d32c4 | 🧪 test(spike): measure virtiofs member-home isolation (#3437) | scripts/spikes/mch-02-virtiofs-homes/run.sh: main deleted it in c0d449997b (🔬 feat(spike): |
-| 2026-10-02 13:44 | `4527355b48` | PARTIAL | 9/22/2/2 | c8e5326089 | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
+| 2026-10-02 13:44 | `4527355b48` | PARTIAL | 11/22/2/0 | c8e5326089 | ✨ feat(app): assemble the relocatable Apple Silicon server bundle (#34 | .github/workflows/release.yml: # This job gates the web and local pairs with fresh Postgre |
 | 2026-10-02 13:45 | `408fb26b52` | SUPERSEDED | 0/67/0/0 | 408fb26b52 | ✨ feat(backend): detect repository machine recipes (#3439) | go.mod: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, its Worker an |
 | 2026-10-02 13:45 | `8ff6743c2e` | SUPERSEDED | 0/67/0/0 | 8ff6743c2e | ✨ feat(backend): detect repository machine recipes (#3439) | go.mod: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, its Worker an |
 | 2026-10-02 13:45 | `23830b2acb` | PARTIAL | 39/283/1/0 | 23830b2acb |  | packages/smithers/src/internal/backend/ProductApi.ts: export const postApiInstallSetupGith |
@@ -1263,7 +1260,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-02 13:45 | `e648b58958` | PARTIAL | 24/220/1/0 | e648b58958 |  | packages/smithers/src/internal/backend/ProductApi.ts: export const postApiInstallSetupGith |
 | 2026-10-02 13:45 | `f1facb2e9a` | SUPERSEDED | 0/52/0/0 | f1facb2e9a | ✨ feat(backend): detect repository machine recipes (#3439) | packages/backend/docs/machine-images.md: main deleted it in 82b5490dbe (🔥 chore(repo): rem |
 | 2026-10-02 13:54 | `193f49212d` | PARTIAL | 126/208/11/7 | dcbf160de9 | ✨ feat(backend): claim the install with GitHub and delete password aut | apps/site/public/llms-full.txt: Read it with `docker logs smithers`. Open that URL and sig |
-| 2026-10-02 13:54 | `c8e5326089` | PARTIAL | 0/2/1/0 | c8e5326089 |  | packages/smithers/build/docs/reference/targets/tool-build.md: \| `timeout` \| `Shell.Durat |
+| 2026-10-02 13:54 | `c8e5326089` | SUPERSEDED | 1/2/0/0 | c8e5326089 |  | apps/app/PACKAGE.ts: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, |
 | 2026-10-02 13:57 | `8ed50795a0` | SUPERSEDED | 0/37/0/0 | 8ed50795a0 | 🧪 test(spike): measure relay and Yjs latency in microVMs (#3441) | scripts/spikes/col-01/.gitignore: main deleted it in 6a294a96e7 (🧪 test(spike): recover VM |
 | 2026-10-02 13:57 | `ec4fb28baa` | SUPERSEDED | 0/37/0/0 | ec4fb28baa | 🧪 test(spike): measure relay and Yjs latency in microVMs (#3441) | scripts/spikes/col-01/.gitignore: main deleted it in 6a294a96e7 (🧪 test(spike): recover VM |
 | 2026-10-02 13:57 | `9ae63fbdb1` | SUPERSEDED | 0/37/0/0 | 9ae63fbdb1 | 🧪 test(spike): measure relay and Yjs latency in microVMs (#3441) | scripts/spikes/col-01/.gitignore: main deleted it in 6a294a96e7 (🧪 test(spike): recover VM |
@@ -1287,8 +1284,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-02 14:29 | `5e15e84174` | SUPERSEDED | 0/1/0/0 | 5e15e84174 |  | go.mod: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, its Worker an |
 | 2026-10-02 14:33 | `20783b49b9` | SUPERSEDED | 2/9/0/0 | 20783b49b9 |  | flows/issue-sweep/land.ts: main deleted it in 1884e6262b (🐛 fix(flows): register issue-swe |
 | 2026-10-02 14:39 | `1317075d06` | SUPERSEDED | 0/3/0/0 | 1317075d06 |  | apps/app/PACKAGE.ts: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, |
-| 2026-10-02 15:14 | `9d34c2542b` | PARTIAL | 12/3/42/6 | 9d34c2542b | 🐛 fix(cli): initialize required MCP without unrelated host services (# | packages/smithers/build/build-cli/src/engine.ts: import * as EffectNodePath from "@effect/ |
-| 2026-10-02 15:14 | `8e2d288e32` | PARTIAL | 11/3/37/5 | 8e2d288e32 | 🐛 fix(cli): initialize required MCP without unrelated host services (# | packages/smithers/build/build-cli/src/engine.ts: import * as EffectNodePath from "@effect/ |
+| 2026-10-02 15:14 | `9d34c2542b` | PARTIAL | 13/3/42/5 | 9d34c2542b | 🐛 fix(cli): initialize required MCP without unrelated host services (# | packages/smithers/src/Cli.ts: import * as MigrateCommand from "@smthrs/migrate/flow/Comman |
+| 2026-10-02 15:14 | `8e2d288e32` | PARTIAL | 12/3/37/4 | 8e2d288e32 | 🐛 fix(cli): initialize required MCP without unrelated host services (# | packages/smithers/src/Cli.ts: import * as MigrateCommand from "@smthrs/migrate/flow/Comman |
 | 2026-10-02 15:17 | `2a97a69e93` | PARTIAL | 7/39/17/1 | 2a97a69e93 | 🐛 fix(factory): scope remote recovery ownership (#3413) | packages/smithers/flows/patterns/docs/burndown.md: Claim, landing and release keys also in |
 | 2026-10-02 15:17 | `10ebdb6839` | PARTIAL | 4/75/12/2 | 80438d385b | ✨ feat(backend): derive machine limits from detected host capacity (#3 | apps/site/src/data/help/host.txt: status  Show the detected host profile and machine limit |
 | 2026-10-02 15:17 | `3ba6237ede` | PARTIAL | 4/70/13/2 | 3ba6237ede |  | apps/site/src/data/help/host.txt: status  Show the detected host profile and machine limit |
@@ -1410,9 +1407,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-07 07:34 | `2bddcd2e0d` | SUPERSEDED | 2/221/0/0 | 2bddcd2e0d | ✅ test(machined): variant-5 transcript bounds and named stream bounds  | crates/smithers-machined/src/conn.rs: main deleted it in 2e68e23d14 (🛠️ fix(release): repa |
 | 2026-10-07 07:55 | `e83ac05054` | SUPERSEDED | 0/36/0/0 | e83ac05054 | ✅ test(machined): pin record bounds, batch path refusals and local una | crates/smithers-machined/src/local.rs: main deleted it in 2e68e23d14 (🛠️ fix(release): rep |
 | 2026-10-07 08:14 | `a4a20b86cd` | SUPERSEDED | 1/10/0/0 | 5015cf2b98 | 🐛 fix(cocontracts): give ev_moved_off_returned its own event_id and pi | docs/architecture/0004-machined-wire.md: main carried then changed it: 322ed84988 (🐛 fix(t |
-| 2026-10-07 08:29 | `3db7927ac4` | PARTIAL | 3/4/1/2 | col03r-close-3626 | ✅ ci(machined): run T-COL-03r's ADR 0004 wire check C-COL-06 as //:mac | .github/workflows/ci.yml: run: "pnpm exec smthrs test '//:machinedWire' --known-red '.gith |
-| 2026-10-07 08:29 | `4847fe3e63` | PARTIAL | 2/3/1/2 | 4847fe3e63 | ✅ ci(machined): run T-COL-03r's ADR 0004 wire slice as //:machinedWire | .github/workflows/ci.yml: run: "pnpm exec smthrs test '//:machinedWire' --known-red '.gith |
-| 2026-10-07 08:29 | `5015cf2b98` | PARTIAL | 2/3/1/2 | 5015cf2b98 | ✅ ci(machined): run T-COL-03r's ADR 0004 wire slice as //:machinedWire | .github/workflows/ci.yml: run: "pnpm exec smthrs test '//:machinedWire' --known-red '.gith |
+| 2026-10-07 08:29 | `3db7927ac4` | PARTIAL | 2/5/2/1 | col03r-close-3626 | ✅ ci(machined): run T-COL-03r's ADR 0004 wire check C-COL-06 as //:mac | .github/workflows/ci.yml: run: "pnpm exec smthrs test '//:machinedWire' --known-red '.gith |
+| 2026-10-07 08:29 | `4847fe3e63` | PARTIAL | 1/4/2/1 | 4847fe3e63 | ✅ ci(machined): run T-COL-03r's ADR 0004 wire slice as //:machinedWire | .github/workflows/ci.yml: run: "pnpm exec smthrs test '//:machinedWire' --known-red '.gith |
+| 2026-10-07 08:29 | `5015cf2b98` | PARTIAL | 1/4/2/1 | 5015cf2b98 | ✅ ci(machined): run T-COL-03r's ADR 0004 wire slice as //:machinedWire | .github/workflows/ci.yml: run: "pnpm exec smthrs test '//:machinedWire' --known-red '.gith |
 | 2026-10-07 10:44 | `96e251acbb` | ON-MAIN | 1/0/0/0 | 96e251acbb |  |  |
 | 2026-10-07 18:48 | `ac47472556` | PARTIAL | 21/372/3/3 | ac47472556 |  | apps/site/src/data/cli-commands.json: "repo": {; apps/site/src/data/cli-commands.json: "op |
 | 2026-10-07 18:49 | `2180af77ce` | SUPERSEDED | 0/3/0/0 | 2180af77ce |  | packages/backend/internal/compose/rehearsal_integration_test.go: main deleted it in 82b549 |
@@ -1426,28 +1423,28 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-10 00:53 | `4db8ccba03` | SUPERSEDED | 1/9/0/0 | 4db8ccba03 | 🐛 fix(agent): durably project completed coding replies into session tr | packages/backend/internal/routes/agent_flow_completion_integration_test.go: main deleted i |
 | 2026-10-10 01:44 | `67ee1cb998` | SUPERSEDED | 0/2/0/0 | 67ee1cb998 | fix(terminal): refuse workflow background machines at admission (#3786 | packages/backend/internal/services/workspace_terminal_background_test.go: main has no pack |
 | 2026-10-10 02:03 | `4c6ec2c6d8` | SUPERSEDED | 0/2/0/0 | 4c6ec2c6d8 | 🐛 fix(ssh): refuse background machines before branch reservation (#378 | packages/backend/internal/services/branch_ssh_background_test.go: main has no packages/bac |
-| 2026-10-10 03:48 | `28c5a59925` | PARTIAL | 0/0/10/3 | 28c5a59925 | 🐛 fix(tui): leave stdin ownership to the renderer (#3702) | apps/tui/e2e/input-ownership-preload.mjs: process.on("warning", (warning) => warnings.push |
+| 2026-10-10 03:48 | `28c5a59925` | PARTIAL | 12/0/1/0 | 28c5a59925 | 🐛 fix(tui): leave stdin ownership to the renderer (#3702) | packages/smithers/src/internal/NodeControlHost.ts: import { NodeChildProcessSpawner, NodeC |
 | 2026-10-10 04:22 | `31cf4a863a` | SUPERSEDED | 1/5/0/0 | 31cf4a863a | 🐛 fix(app): render supplied TODO merge actions (#3662) | apps/app/e2e/playwright/view-stories.spec.ts: main deleted it in 82b5490dbe (🔥 chore(repo) |
-| 2026-10-10 08:32 | `9a68f68b26` | SCAFFOLD | 40/18/21/1 | 9a68f68b26 | fix(init): scaffold tagged runnable flow.ts (#3638) | apps/site/public/llms-full.txt: \| `migrationUrl`                \| `string` |
+| 2026-10-10 08:32 | `9a68f68b26` | SCAFFOLD | 39/19/21/1 | 9a68f68b26 | fix(init): scaffold tagged runnable flow.ts (#3638) | apps/site/public/llms-full.txt: \| `migrationUrl`                \| `string` |
 | 2026-10-10 09:06 | `dd80756e3f` | ON-MAIN | 5/0/0/0 | dd80756e3f | fix(tui): return typed approval preparation failures (#3671) |  |
-| 2026-10-10 09:24 | `526ea677dd` | PARTIAL | 0/0/14/1 | 526ea677dd | fix(tui): preserve Chat position when toggling Cells (#3697) | apps/tui/README.md: reading where it was, and a reader at the live edge stays there. A pag |
-| 2026-10-10 10:30 | `d81ce9b981` | STRANDED | 0/0/6/0 | d81ce9b981 | fix(tui): draw available answers before syntax highlighting (#3699) | apps/tui/e2e/answer-frames-fixture.tsx: createRoot(renderer).render(<App host={host} seat= |
-| 2026-10-10 10:57 | `7bcf9a2535` | PARTIAL | 0/0/8/3 | 7bcf9a2535 | fix(tui): send Chat's a on Enter until answer selection (#3666) | apps/tui/README.md: unless you move the cursor; Enter in deliberately opened answer forms |
+| 2026-10-10 09:24 | `526ea677dd` | ON-MAIN | 15/0/0/0 | 526ea677dd | fix(tui): preserve Chat position when toggling Cells (#3697) |  |
+| 2026-10-10 10:30 | `d81ce9b981` | ON-MAIN | 6/0/0/0 | d81ce9b981 | fix(tui): draw available answers before syntax highlighting (#3699) |  |
+| 2026-10-10 10:57 | `7bcf9a2535` | ON-MAIN | 11/0/0/0 | 7bcf9a2535 | fix(tui): send Chat's a on Enter until answer selection (#3666) |  |
 | 2026-10-10 11:15 | `73a7a8697e` | PARTIAL | 0/1/8/3 | 73a7a8697e | fix(tui): skip hidden programs in /grep (#3698) | apps/tui/README.md: `/grep <text>` keeps rows containing the text, skips hidden programs ( |
 | 2026-10-10 11:37 | `11929e3109` | SUPERSEDED | 9/1/0/0 | 11929e3109 | fix(tui): show safe causes for remote flow failures (#3674) | apps/tui/test/fixtures/remote-failure-project/flows/failure/flow.ts: main deleted it in 51 |
 | 2026-10-10 12:16 | `d3b36ac7a7` | STRANDED | 0/0/3/0 | d3b36ac7a7 | fix(model): ignore inherited failure copy entries (#3795) | packages/smithers/agent/model/src/FailureCopy.ts: const key = typeof value.code === "strin |
-| 2026-10-10 12:29 | `3c156cc6f0` | PARTIAL | 1/0/3/1 | 3c156cc6f0 | 🐛 fix(tui): the chat row cache reuses its projection when the transcri | apps/tui/src/transcript-view.ts: const projectedChat = useMemo(() => RunCard.chat(transcri |
+| 2026-10-10 12:29 | `3c156cc6f0` | PARTIAL | 1/0/2/2 | 3c156cc6f0 | 🐛 fix(tui): the chat row cache reuses its projection when the transcri | apps/tui/src/transcript-view.ts: const projectedChat = useMemo(() => RunCard.chat(transcri |
 | 2026-10-10 12:43 | `7c360bd2cd` | PARTIAL | 0/0/2/2 | 7c360bd2cd | fix(model): safely inspect failure descriptions (#3796) | packages/smithers/agent/model/src/FailureCopy.ts: /** Snapshot only the copy's fields, so |
 | 2026-10-10 12:59 | `617ca48896` | PARTIAL | 12/0/1/2 | 617ca48896 | 🐛 fix(tui): align /grep with non-program cell display (#3794) | apps/tui/src/timeline.ts: return [item.prose, item.source, item.printed, CellDisplay.text( |
 | 2026-10-10 13:19 | `d9eacae175` | PARTIAL | 1/0/1/0 | d9eacae175 | fix(model): retain recognized budgets through malformed skipped causes | packages/smithers/agent/model/test/FailureCopyBudget.test.ts: expect(FailureCopy.describe( |
-| 2026-10-10 13:28 | `b1266b07a7` | PARTIAL | 0/0/9/2 | b1266b07a7 | fix(tui): require explicit Summary row focus (#3682) | apps/tui/README.md: an empty composer focuses and moves. Row letters act only after that d |
-| 2026-10-10 13:53 | `0429a5434c` | PARTIAL | 2/0/2/1 | 0429a5434c | fix(tui): report steering delivery in tabs fixture (#3683) | apps/tui/e2e/steering-delivery.test.ts: "removes the visible steering label at the real fi |
-| 2026-10-10 14:12 | `62f5ff7635` | PARTIAL | 1/0/19/5 | 62f5ff7635 | fix(tui): show model replacements on worker cards (#3678) | apps/tui/README.md: line `↪ GPT-6.1 Sol has no credit · using Qwen 3.8` on its card and in |
-| 2026-10-10 14:58 | `b39ca4665b` | STRANDED | 0/0/8/0 | b39ca4665b | fix(tui): retain pipeline checks and display multiline commands faithf | apps/tui/README.md: the preceding check in place; pipelines and uncertain commands keep th |
+| 2026-10-10 13:28 | `b1266b07a7` | ON-MAIN | 11/0/0/0 | b1266b07a7 | fix(tui): require explicit Summary row focus (#3682) |  |
+| 2026-10-10 13:53 | `0429a5434c` | ON-MAIN | 5/0/0/0 | 0429a5434c | fix(tui): report steering delivery in tabs fixture (#3683) |  |
+| 2026-10-10 14:12 | `62f5ff7635` | PARTIAL | 24/0/1/0 | 62f5ff7635 | fix(tui): show model replacements on worker cards (#3678) | apps/tui/src/workspace.ts: this.transcripts.set(tab.id, Transcript.note(this.transcript(ta |
+| 2026-10-10 14:58 | `b39ca4665b` | ON-MAIN | 8/0/0/0 | b39ca4665b | fix(tui): retain pipeline checks and display multiline commands faithf |  |
 | 2026-10-10 15:18 | `a8a2e05e6d` | PARTIAL | 9/0/1/0 | a8a2e05e6d | 🐛 fix(tui): retain card focus when closing worker diffs (#3675) | apps/tui/src/app.tsx: if (reviewTab !== undefined && open === undefined && !key.ctrl && !k |
-| 2026-10-10 15:54 | `1b0c595a39` | PARTIAL | 0/0/1/2 | 1b0c595a39 | fix(tui): project workspace fixture delegation outcomes (#3677) | apps/tui/e2e/workspace-fixture.tsx: let fixFrame = 0; apps/tui/e2e/workspace-fixture.tsx: |
+| 2026-10-10 15:54 | `1b0c595a39` | ON-MAIN | 3/0/0/0 | 1b0c595a39 | fix(tui): project workspace fixture delegation outcomes (#3677) |  |
 | 2026-10-10 16:18 | `417e34ccc1` | STRANDED | 0/0/6/0 | 417e34ccc1 | 🛠️ fix(tui): stop the denied-edit replay after the denial (#3673) | apps/tui/docs/testing.md: with a failed `edit math.js` receipt whose summary starts `Denie |
-| 2026-10-10 19:36 | `cc7646203d` | PARTIAL | 5/0/33/0 | cc7646203d | fix(tui): keep worker durations consistent and clock units whole (#367 | apps/tui/README.md: call, then the result, ending `ctrl+o program · 11.4s`; Ctrl+O reveals |
+| 2026-10-10 19:36 | `cc7646203d` | PARTIAL | 14/0/22/2 | cc7646203d | fix(tui): keep worker durations consistent and clock units whole (#367 | apps/tui/README.md: call, then the result, ending `ctrl+o program · 11.4s`; Ctrl+O reveals |
 | 2026-10-13 05:31 | `798e31e447` | SUPERSEDED | 0/1/0/0 | 798e31e447 |  | apps/app/src/mainview/styles/cards.css: main deleted it in 82b5490dbe (🔥 chore(repo): remo |
 | 2026-10-13 10:17 | `08c0b7944c` | SUPERSEDED | 0/9/0/0 | 08c0b7944c |  | docs/api/openapi/admin.yaml: main deleted it in 82b5490dbe (🔥 chore(repo): remove the lega |
 | 2026-10-13 13:41 | `e9e0a419ca` | SUPERSEDED | 12/37/0/0 | e9e0a419ca |  | apps/app/e2e/playwright/flow-new-agent-form.spec.ts: main deleted it in 82b5490dbe (🔥 chor |
@@ -1471,14 +1468,14 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-14 17:33 | `a16459a919` | PARTIAL | 287/43/16/17 | a16459a919 |  | packages/repo-targets/vitest.tmp-effect404.config.ts: if (id === "effect" \|\| id.startsWi |
 | 2026-10-14 17:39 | `2abd454040` | SUPERSEDED | 0/2/0/0 | 865abb05d4 | 🐛 fix(integrations): find a sticky comment after a github.com edit sav | packages/smithers/agent/integrations/src/github/Actions.ts: main carried then changed it: |
 | 2026-10-14 17:39 | `5b56c1a847` | ON-MAIN | 6/0/0/0 | 1a00aac5c5 | ✅ test(run-store): add runnable quickstart and cancellation examples |  |
-| 2026-10-14 17:40 | `865abb05d4` | PARTIAL | 351/41/16/23 | 865abb05d4 |  | packages/smithers/agent/harness/test/zz-probe-tmp.test.ts: it("probe", () => { for (const |
-| 2026-10-14 17:40 | `1a00aac5c5` | PARTIAL | 344/43/16/24 | 1a00aac5c5 |  | packages/repo-targets/rt-probe.tmp.ts: try { ctx = JSON.stringify((ReviewDocsAgainstCode({ |
+| 2026-10-14 17:40 | `865abb05d4` | PARTIAL | 349/43/16/23 | 865abb05d4 |  | packages/smithers/agent/harness/test/zz-probe-tmp.test.ts: it("probe", () => { for (const |
+| 2026-10-14 17:40 | `1a00aac5c5` | PARTIAL | 342/45/16/24 | 1a00aac5c5 |  | packages/repo-targets/rt-probe.tmp.ts: try { ctx = JSON.stringify((ReviewDocsAgainstCode({ |
 | 2026-10-14 17:44 | `838d73ade2` | ON-MAIN | 6/0/0/0 | 1ee38f3447 | ✅ test(capability): run the quickstart and grant guides as tested exam |  |
-| 2026-10-14 17:47 | `1ee38f3447` | PARTIAL | 495/55/15/30 | 1ee38f3447 |  | apps/site/public/llms-full.txt: failure. Match on; apps/site/src/content/docs/docs/referen |
+| 2026-10-14 17:47 | `1ee38f3447` | PARTIAL | 493/57/15/30 | 1ee38f3447 |  | apps/site/public/llms-full.txt: failure. Match on; apps/site/src/content/docs/docs/referen |
 | 2026-10-14 17:49 | `dd5c741ce4` | SUPERSEDED | 0/2/0/0 | 45b7874a46 | ✅ test(backend): cover workspace source revision and session credentia | packages/backend/workspace/session_credential_test.go: main deleted it in 82b5490dbe (🔥 ch |
 | 2026-10-14 17:52 | `69812b7de8` | SUPERSEDED | 0/2/0/0 | edcd2f4cb5 | ✅ test(backend): cover workspace source revision and session credentia | packages/backend/workspace/session_credential_test.go: main deleted it in 82b5490dbe (🔥 ch |
-| 2026-10-14 17:52 | `45b7874a46` | PARTIAL | 566/55/15/31 | 45b7874a46 |  | apps/site/public/llms-full.txt: failure. Match on; apps/site/src/content/docs/docs/referen |
-| 2026-10-14 17:53 | `edcd2f4cb5` | PARTIAL | 573/55/15/34 | edcd2f4cb5 |  | apps/site/public/llms-full.txt: failure. Match on; apps/site/src/content/docs/docs/referen |
+| 2026-10-14 17:52 | `45b7874a46` | PARTIAL | 564/57/15/31 | 45b7874a46 |  | apps/site/public/llms-full.txt: failure. Match on; apps/site/src/content/docs/docs/referen |
+| 2026-10-14 17:53 | `edcd2f4cb5` | PARTIAL | 571/57/15/34 | edcd2f4cb5 |  | apps/site/public/llms-full.txt: failure. Match on; apps/site/src/content/docs/docs/referen |
 | 2026-10-14 18:19 | `db8f1ddd76` | ON-MAIN | 1/0/0/0 | db8f1ddd76 | 🐛 fix(patterns): name the site reference page rather than globbing ano |  |
 | 2026-10-14 18:50 | `2d6d27b8c8` | ON-MAIN | 4/0/0/0 | 2d6d27b8c8 | 🐛 fix(patterns): Debate.make hands members the round number |  |
 | 2026-10-14 18:51 | `fd1125dda7` | SUPERSEDED | 9/1/0/0 | fd1125dda7 | 🐛 fix(registry): report same-pack duplicates and ignored model seats | packages/smithers/agent/registry/docs/guides/diagnose-a-missing-flow.md: main carried then |
@@ -1583,9 +1580,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-17 23:58 | `9f22b2e653` | SUPERSEDED | 1/8/0/0 | 9f22b2e653 | wip: 4a regress fixes | packages/backend/internal/chat/context_callback_integration_test.go: main deleted it in 82 |
 | 2026-10-18 00:06 | `f2354423ff` | SUPERSEDED | 0/2/0/0 | f2354423ff | wip: cookie proof chrome | apps/server/docs/host-cookie-isolation.md: main deleted it in 82b5490dbe (🔥 chore(repo): r |
 | 2026-10-20 08:02 | `354d59dda5` | SUPERSEDED | 156/46/0/0 | 354d59dda5 |  | apps/mvp/worker/ExecutionHost.test.ts: main carried then changed it: b0399926ba (✨ feat(mv |
-| 2026-10-20 13:04 | `1ef9292cf0` | PARTIAL | 1762/652/234/26 | 1ef9292cf0 |  | .changeset/attached-wait-reports-outcome.md: snapshot answers, and the driver waits about |
+| 2026-10-20 13:04 | `1ef9292cf0` | PARTIAL | 1754/660/234/26 | 1ef9292cf0 |  | .changeset/attached-wait-reports-outcome.md: snapshot answers, and the driver waits about |
 | 2026-10-20 17:14 | `b0d1a1148f` | SCAFFOLD | 84/23/2/12 | b0d1a1148f | ✨ feat(fs): @smthrs/fs on VibeLang (wip: land after vibelang is on npm | packages/smithers/agent/fs/package.json: "vibelang-runtime": "file:../../../../../../vibe/ |
-| 2026-10-20 18:42 | `0432886e45` | PARTIAL | 2612/718/447/44 | 0432886e45 |  | .changeset/attached-wait-reports-outcome.md: snapshot answers, and the driver waits about |
+| 2026-10-20 18:42 | `0432886e45` | PARTIAL | 2608/726/444/43 | 0432886e45 |  | .changeset/attached-wait-reports-outcome.md: snapshot answers, and the driver waits about |
 | 2026-10-20 23:58 | `3a2cfc7c56` | ON-MAIN | 1/0/0/0 | efb69411db | 🧠 feat(agent): port Jev opening memory and skill selection |  |
 | 2026-10-20 23:58 | `b1e87690f1` | ON-MAIN | 1/0/0/0 | e7c2dfa26f | 🧠 feat(agent): port Jev opening memory and skill selection |  |
 | 2026-10-20 23:58 | `b146099057` | ON-MAIN | 1/0/0/0 | c751c7cd0a | 🧠 feat(agent): port Jev opening memory and skill selection |  |
@@ -1594,8 +1591,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-20 23:58 | `4d548d3eeb` | SUPERSEDED | 41/7/0/0 | 3cb9124e12 | 🧠 feat(agent): port Jev opening memory and skill selection | apps/mvp/src/features/agent/host.ts: landed as 5d6c5efc06 (same author and time, committed |
 | 2026-10-20 23:58 | `24747a3bf0` | SUPERSEDED | 34/8/0/0 | 24747a3bf0 | 🧠 feat(agent): port Jev opening memory and skill selection | apps/mvp/src/features/agent/host.ts: landed as 5d6c5efc06 (same author and time, committed |
 | 2026-10-21 00:00 | `7d1f83e264` | SCAFFOLD | 56/18/2/0 | 7d1f83e264 | wip: 4c alone (registry adapted to main) - reference only | packages/smithers/flows/platform-browser/docs/api.md: \| `BrowserRuntime.run(options)` |
-| 2026-10-21 00:15 | `62b9ef30ca` | PARTIAL | 1688/5217/4/3 | 62b9ef30ca | land4d: combined (to split) | .land4-sdk.sh: ( cd "$d" && pnpm run check ) > /tmp/land4-check.log 2>&1 \|\| { ok=0; echo |
-| 2026-10-21 01:04 | `c3f3d6782a` | PARTIAL | 2086/1819/3962/67 | c3f3d6782a |  | .changeset/attached-wait-reports-outcome.md: snapshot answers, and the driver waits about |
+| 2026-10-21 00:15 | `62b9ef30ca` | PARTIAL | 1683/5222/4/3 | 62b9ef30ca | land4d: combined (to split) | .land4-sdk.sh: ( cd "$d" && pnpm run check ) > /tmp/land4-check.log 2>&1 \|\| { ok=0; echo |
+| 2026-10-21 01:04 | `c3f3d6782a` | PARTIAL | 2085/1824/3959/66 | c3f3d6782a |  | .changeset/attached-wait-reports-outcome.md: snapshot answers, and the driver waits about |
 | 2026-10-21 02:10 | `39a13b08de` | STRANDED | 0/0/1/0 | 39a13b08de | 📝 docs(mvp): record the round 4 production deploy and its smoke test | apps/mvp/docs/infrastructure.md: Also logged: the site Worker throws `Can't read from requ |
 | 2026-10-21 02:59 | `5b0337ba95` | SUPERSEDED | 19/13/0/0 | c751c7cd0a | 🐛 fix(mvp): the timeline's summaries follow the window, so a long conv | apps/mvp/docs/features/timeline.md: main carried then changed it: 5032597657 (🐛 fix(mvp): |
 | 2026-10-21 02:59 | `648d7a90cd` | SUPERSEDED | 19/13/0/0 | 2eebe05718 | 🐛 fix(mvp): the timeline's summaries follow the window, so a long conv | apps/mvp/docs/features/timeline.md: main carried then changed it: 5032597657 (🐛 fix(mvp): |
@@ -1679,22 +1676,22 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 05:34 | `e1095b962f` | SUPERSEDED | 3/4/0/0 | e1095b962f | ✅ test(mvp): the coding factory's whole loop, recorded live with chapt | apps/mvp/docs/features/todos.md: main carried then changed it: 5772fdbffb (🐛 fix(mvp): a T |
 | 2026-10-21 07:21 | `3c8e63e100` | SUPERSEDED | 23/15/0/0 | 31778ff498 | ♻️ refactor(fs): @smthrs/fs compiles with VibeLang 0.0.3 (D281, D282) | packages/smithers/agent/fs/package.json: main carried then changed it: 39ccbd83d1 (⬆️ chor |
 | 2026-10-21 07:21 | `281f5a8ba8` | SUPERSEDED | 23/15/0/0 | d048301dfc | ♻️ refactor(fs): @smthrs/fs compiles with VibeLang 0.0.3 (D281, D282) | packages/smithers/agent/fs/package.json: main carried then changed it: 39ccbd83d1 (⬆️ chor |
-| 2026-10-21 09:41 | `e98419b928` | PARTIAL | 4323/89/356/58 | e98419b928 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `40d9433e74` | PARTIAL | 377/166/261/5079 | 40d9433e74 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `133177b7ce` | PARTIAL | 377/166/261/5079 | 133177b7ce |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `df9aecf75d` | PARTIAL | 354/159/262/5207 | df9aecf75d |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `702ffac454` | PARTIAL | 352/152/263/5212 | 702ffac454 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `f50eeed6be` | PARTIAL | 352/147/263/5217 | f50eeed6be |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `7759ae184b` | PARTIAL | 350/140/262/5221 | 7759ae184b |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `8f2dc27a08` | PARTIAL | 416/134/264/5161 | 8f2dc27a08 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `d74d3c69ef` | PARTIAL | 414/133/264/5157 | d74d3c69ef |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `9aa491a333` | PARTIAL | 414/131/264/5159 | 9aa491a333 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `d00a00804b` | PARTIAL | 414/127/264/5164 | d00a00804b |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `8902f02f40` | PARTIAL | 410/127/264/5165 | 8902f02f40 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `aa5882d7a8` | PARTIAL | 404/117/264/5176 | aa5882d7a8 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `869eaba965` | PARTIAL | 402/112/264/5183 | 869eaba965 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `871bacc02d` | PARTIAL | 327/280/261/5161 | 871bacc02d |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
-| 2026-10-21 09:41 | `c349c7bdf4` | PARTIAL | 327/280/261/5161 | c349c7bdf4 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `e98419b928` | PARTIAL | 4368/89/265/104 | e98419b928 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `40d9433e74` | PARTIAL | 381/166/258/5078 | 40d9433e74 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `133177b7ce` | PARTIAL | 381/166/258/5078 | 133177b7ce |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `df9aecf75d` | PARTIAL | 358/159/259/5206 | df9aecf75d |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `702ffac454` | PARTIAL | 356/152/260/5211 | 702ffac454 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `f50eeed6be` | PARTIAL | 356/147/260/5216 | f50eeed6be |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `7759ae184b` | PARTIAL | 354/140/259/5220 | 7759ae184b |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `8f2dc27a08` | PARTIAL | 420/134/261/5160 | 8f2dc27a08 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `d74d3c69ef` | PARTIAL | 418/133/261/5156 | d74d3c69ef |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `9aa491a333` | PARTIAL | 418/131/261/5158 | 9aa491a333 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `d00a00804b` | PARTIAL | 418/127/261/5163 | d00a00804b |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `8902f02f40` | PARTIAL | 414/127/261/5164 | 8902f02f40 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `aa5882d7a8` | PARTIAL | 408/117/261/5175 | aa5882d7a8 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `869eaba965` | PARTIAL | 406/112/261/5182 | 869eaba965 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `871bacc02d` | PARTIAL | 331/280/258/5160 | 871bacc02d |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
+| 2026-10-21 09:41 | `c349c7bdf4` | PARTIAL | 331/280/258/5160 | c349c7bdf4 |  | .smithers/flows/release/fixtures/public-api-baseline.json: "internal/NodeControlHost.d.ts" |
 | 2026-10-21 09:49 | `1b038435cd` | PARTIAL | 0/1/72/0 | 3a4c9409b0 | 🐛 fix(test): reuse Vitest module cache to stop SSR temp leaks | apps/mvp/docs/work/ssr-temp-cache-leak.md: Vitest 5 fork workers write transformed modules |
 | 2026-10-21 09:49 | `df152a598a` | PARTIAL | 0/1/72/0 | f9da52c50b | 🐛 fix(test): reuse Vitest module cache to stop SSR temp leaks | apps/mvp/docs/work/ssr-temp-cache-leak.md: Vitest 5 fork workers write transformed modules |
 | 2026-10-21 09:49 | `baa22829d6` | PARTIAL | 0/1/72/0 | b582dd6f9e | 🐛 fix(test): reuse Vitest module cache to stop SSR temp leaks | apps/mvp/docs/work/ssr-temp-cache-leak.md: Vitest 5 fork workers write transformed modules |
@@ -1765,9 +1762,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 10:34 | `0c5c9bffc1` | SUPERSEDED | 187/2/0/0 | d048301dfc | 🔧 chore(repo-targets): source scanners read .vibe as they read .ts | packages/repo-targets/README.md: main carried then changed it: 3b734cb691 (🧹 fix(lint): en |
 | 2026-10-21 10:35 | `91ca11e9a1` | ON-MAIN | 4/0/0/0 | cdb1160df9 | 🧪 test(mvp): the sign-out revocation test signs out as the device's pe |  |
 | 2026-10-21 10:36 | `99b39baadc` | SUPERSEDED | 77/25/0/0 | b008dcea7c | ✨ feat(mvp): a Member steers a TODO's working agent from its run (TODO | apps/mvp/docs/decisions/0026-watching-a-todo-run.md: main carried then changed it: e3c8b6e |
-| 2026-10-21 10:36 | `7c9dc7431f` | PARTIAL | 76/24/0/1 | 7fd6439ba8 | ✨ feat(mvp): a Member steers a TODO's working agent from its run (TODO | apps/mvp/worker/ChatApi.ts: +    // read of it, from the engine's schema, and its row of t |
-| 2026-10-21 10:36 | `56f3a57321` | PARTIAL | 77/23/1/0 | b752bc330e | ✨ feat(mvp): a Member steers a TODO's working agent from its run (TODO | apps/mvp/worker/ChatApi.ts: // read of it, from the engine's schema, and its row of the en |
-| 2026-10-21 10:36 | `613bfc81b3` | PARTIAL | 77/24/1/0 | b8a380c99d | ✨ feat(mvp): a Member steers a TODO's working agent from its run (TODO | apps/mvp/worker/ChatApi.ts: // read of it, from the engine's schema, and its row of the en |
+| 2026-10-21 10:36 | `7c9dc7431f` | PARTIAL | 75/25/0/1 | 7fd6439ba8 | ✨ feat(mvp): a Member steers a TODO's working agent from its run (TODO | apps/mvp/worker/ChatApi.ts: +    // read of it, from the engine's schema, and its row of t |
+| 2026-10-21 10:36 | `56f3a57321` | PARTIAL | 76/24/1/0 | b752bc330e | ✨ feat(mvp): a Member steers a TODO's working agent from its run (TODO | apps/mvp/worker/ChatApi.ts: // read of it, from the engine's schema, and its row of the en |
+| 2026-10-21 10:36 | `613bfc81b3` | PARTIAL | 76/25/1/0 | b8a380c99d | ✨ feat(mvp): a Member steers a TODO's working agent from its run (TODO | apps/mvp/worker/ChatApi.ts: // read of it, from the engine's schema, and its row of the en |
 | 2026-10-21 10:37 | `e5dc72621c` | ON-MAIN | 1/0/0/0 | b8a380c99d | ✅ test(mvp): steer a TODO's working agent on a live instance, and its  |  |
 | 2026-10-21 10:37 | `c192af2459` | ON-MAIN | 1/0/0/0 | b008dcea7c | ✅ test(mvp): steer a TODO's working agent on a live instance, and its  |  |
 | 2026-10-21 10:37 | `22ed031b67` | ON-MAIN | 1/0/0/0 | 7fd6439ba8 | ✅ test(mvp): steer a TODO's working agent on a live instance, and its  |  |
@@ -1788,15 +1785,15 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 10:56 | `8205ba2636` | PARTIAL | 38/4/5/3 | cadf086bce | 🐛 fix(mvp): a session check ChatApi couldn't answer asks again, as the | apps/mvp/docs/features/flows.md: The execution id is minted once per dispatch unless the c |
 | 2026-10-21 10:56 | `402d0c3661` | SUPERSEDED | 27/4/0/0 | 402d0c3661 |  | apps/site/public/llms-full.txt: main carried then changed it: 83534f8619 (🐛 fix(sandbox): |
 | 2026-10-21 10:56 | `4d35803d1f` | PARTIAL | 18/4/0/1 | 4d35803d1f |  | apps/mvp/e2e/sandbox-lifecycle.spec.ts: `cat t-${word}.txt after.txt; echo log-$(cat runs- |
-| 2026-10-21 11:01 | `bbf6b5b14d` | STRANDED | 0/0/11/0 | 3a4c9409b0 | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
-| 2026-10-21 11:01 | `dfa8543630` | STRANDED | 0/0/11/0 | f9da52c50b | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
-| 2026-10-21 11:01 | `9ed0b6076e` | STRANDED | 0/0/11/0 | b582dd6f9e | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
-| 2026-10-21 11:01 | `059d02c88a` | STRANDED | 0/0/11/0 | 531bfc5f56 | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
-| 2026-10-21 11:01 | `31d2562139` | STRANDED | 0/0/11/0 | f10019f8ed | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
-| 2026-10-21 11:01 | `7284174c30` | STRANDED | 0/0/11/0 | 9282a98a77 | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
-| 2026-10-21 11:01 | `034afa6bf0` | STRANDED | 0/0/11/0 | 8aa8312ce6 | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
-| 2026-10-21 11:01 | `edd392b6a4` | STRANDED | 0/0/11/0 | 3cb9124e12 | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
-| 2026-10-21 11:01 | `f4f77c09aa` | STRANDED | 0/0/11/0 | df5ede0070 | 📝 docs(mvp): bring the app's docs up to the rulings | .gitignore: # The app's open-work list is a tracked doc that other docs link to.; apps/mvp |
+| 2026-10-21 11:01 | `bbf6b5b14d` | PARTIAL | 7/0/4/0 | 3a4c9409b0 | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
+| 2026-10-21 11:01 | `dfa8543630` | PARTIAL | 7/0/4/0 | f9da52c50b | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
+| 2026-10-21 11:01 | `9ed0b6076e` | PARTIAL | 7/0/4/0 | b582dd6f9e | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
+| 2026-10-21 11:01 | `059d02c88a` | PARTIAL | 7/0/4/0 | 531bfc5f56 | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
+| 2026-10-21 11:01 | `31d2562139` | PARTIAL | 7/0/4/0 | f10019f8ed | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
+| 2026-10-21 11:01 | `7284174c30` | PARTIAL | 7/0/4/0 | 9282a98a77 | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
+| 2026-10-21 11:01 | `034afa6bf0` | PARTIAL | 7/0/4/0 | 8aa8312ce6 | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
+| 2026-10-21 11:01 | `edd392b6a4` | PARTIAL | 7/0/4/0 | 3cb9124e12 | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
+| 2026-10-21 11:01 | `f4f77c09aa` | PARTIAL | 7/0/4/0 | df5ede0070 | 📝 docs(mvp): bring the app's docs up to the rulings | apps/mvp/docs/features/branch-workspace.md: - The live half of the end-to-end test, agains |
 | 2026-10-21 11:02 | `0d2938e7df` | SUPERSEDED | 8891/60/0/0 | 0d2938e7df | 🔥 chore(repo): remove the legacy app, its Worker and the Go backend | .github/workflows/ci.yml: main carried then changed it: e15cac4f2a (🧹 chore(ci): retire th |
 | 2026-10-21 11:02 | `d053c51c14` | SUPERSEDED | 8891/60/0/0 | d053c51c14 | 🔥 chore(repo): remove the legacy app, its Worker and the Go backend | .github/workflows/ci.yml: main carried then changed it: e15cac4f2a (🧹 chore(ci): retire th |
 | 2026-10-21 11:02 | `2012389cac` | SUPERSEDED | 8893/60/0/0 | b541e7346c | 🔥 chore(repo): remove the legacy app, its Worker and the Go backend | .github/workflows/ci.yml: main carried then changed it: e15cac4f2a (🧹 chore(ci): retire th |
@@ -1828,51 +1825,51 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 11:05 | `9b5aa1a316` | ON-MAIN | 1/0/0/0 | 3cb9124e12 | 📝 docs(mvp): the durable external effects proposal: one identity per w |  |
 | 2026-10-21 11:05 | `567f6dba61` | SUPERSEDED | 6/1/0/0 | 5cb08384b1 | ✨ feat(flow): Action.once writes to another service once per dispatch  | packages/smithers/flows/flow/docs/reference/flow.md: main carried then changed it: 01460b1 |
 | 2026-10-21 11:05 | `f3b240c8b4` | ON-MAIN | 1/0/0/0 | 5cb08384b1 | 📝 docs(mvp): the durable external effects proposal: one identity per w |  |
-| 2026-10-21 11:06 | `f0c744272d` | STRANDED | 0/0/6/0 | 3a4c9409b0 | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:06 | `bf2c554cfc` | STRANDED | 0/0/1/0 | 3a4c9409b0 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `e35029d47e` | STRANDED | 0/0/6/0 | f9da52c50b | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:06 | `66635a3847` | STRANDED | 0/0/1/0 | f9da52c50b | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `4d3b35e0f4` | STRANDED | 0/0/6/0 | b582dd6f9e | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:06 | `a712c830d7` | STRANDED | 0/0/1/0 | b582dd6f9e | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `b4e2bb4103` | STRANDED | 0/0/6/0 | 531bfc5f56 | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:06 | `d5e7e8443a` | STRANDED | 0/0/1/0 | 531bfc5f56 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `cf994c522d` | STRANDED | 0/0/6/0 | f10019f8ed | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:06 | `897209f999` | STRANDED | 0/0/1/0 | f10019f8ed | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `d3b924c717` | STRANDED | 0/0/6/0 | 9282a98a77 | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:06 | `53eabbcf28` | STRANDED | 0/0/1/0 | 9282a98a77 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `a906385740` | STRANDED | 0/0/6/0 | 8aa8312ce6 | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:06 | `a2670e26dc` | STRANDED | 0/0/1/0 | 8aa8312ce6 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `b2002896e3` | STRANDED | 0/0/6/0 | 3cb9124e12 | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:06 | `965810162f` | STRANDED | 0/0/1/0 | 3cb9124e12 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `2f0f54d843` | STRANDED | 0/0/1/0 | 467e1e0ece | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: Evidence: deploy log `r5-deploy-1.log`, the Wor |
-| 2026-10-21 11:06 | `3f02584d05` | STRANDED | 0/0/6/0 | df5ede0070 | 📝 docs(repo): landing, contributing and the plugin spec line match the | .specs/product/overview.md: \| Plugins \| M-55: everything is a plugin ([decision 0017](.. |
-| 2026-10-21 11:07 | `c8193637a1` | STRANDED | 0/0/6/0 | 3a4c9409b0 | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `c8e42c8fb0` | PARTIAL | 0/0/1/1 | 3a4c9409b0 | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:07 | `ee64a6d44f` | STRANDED | 0/0/6/0 | f9da52c50b | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `6b2942fc2c` | STRANDED | 0/0/2/0 | f9da52c50b | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:07 | `e3f7792b41` | STRANDED | 0/0/6/0 | b582dd6f9e | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `da2762e1ea` | PARTIAL | 0/0/1/1 | b582dd6f9e | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:07 | `9a215b0bb1` | STRANDED | 0/0/6/0 | 531bfc5f56 | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `57ad0712fb` | STRANDED | 0/0/2/0 | 531bfc5f56 | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:07 | `3d1e95a070` | STRANDED | 0/0/6/0 | f10019f8ed | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `a39b61a707` | STRANDED | 0/0/2/0 | f10019f8ed | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:07 | `06c111e409` | STRANDED | 0/0/6/0 | 9282a98a77 | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `bbe5f3def5` | PARTIAL | 0/0/1/1 | 9282a98a77 | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:07 | `187b949022` | STRANDED | 0/0/6/0 | 8aa8312ce6 | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `cc0e03ff47` | STRANDED | 0/0/2/0 | 8aa8312ce6 | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:07 | `c906cbe685` | STRANDED | 0/0/6/0 | 3cb9124e12 | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `934ab11978` | STRANDED | 0/0/2/0 | 3cb9124e12 | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:07 | `0aad65275f` | STRANDED | 0/0/6/0 | df5ede0070 | 📝 docs(history): label the old MVP records as history and point them a | .specs/product/mvp.md: \| M-55 (Will, 2026-10-20 14:40; rulings PLUGIN-1, PLUGIN-2, PLUGIN |
-| 2026-10-21 11:07 | `b3f2eb8ba4` | STRANDED | 0/0/2/0 | df5ede0070 | 📝 docs(maintainer-site): say what the maintainer app is now, and where | apps/maintainer-site/README.md: It is the tool we dogfood, not the product. Its review que |
-| 2026-10-21 11:08 | `2849ce9cec` | PARTIAL | 0/1/1/0 | 3a4c9409b0 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
-| 2026-10-21 11:08 | `ad8a0ff5b2` | PARTIAL | 0/1/1/0 | f9da52c50b | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
-| 2026-10-21 11:08 | `f4d21133d4` | PARTIAL | 0/1/1/0 | b582dd6f9e | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
-| 2026-10-21 11:08 | `c69aa6080f` | PARTIAL | 0/1/1/0 | 531bfc5f56 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
-| 2026-10-21 11:08 | `8ee5f6af45` | PARTIAL | 0/1/1/0 | f10019f8ed | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
-| 2026-10-21 11:08 | `33364b071b` | PARTIAL | 0/1/1/0 | 9282a98a77 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
-| 2026-10-21 11:08 | `e799793e01` | PARTIAL | 0/1/1/0 | 8aa8312ce6 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
-| 2026-10-21 11:08 | `a26c59648e` | PARTIAL | 0/1/1/0 | 3cb9124e12 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
-| 2026-10-21 11:08 | `33d12ea774` | PARTIAL | 0/1/1/0 | df5ede0070 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/DESIGN.md: > History: the August 2026 design spec of the old app (`apps/app`), kept a |
+| 2026-10-21 11:06 | `f0c744272d` | PARTIAL | 5/0/0/1 | 3a4c9409b0 | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:06 | `bf2c554cfc` | SUPERSEDED | 0/1/0/0 | 3a4c9409b0 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: changed later in its stack (head 3a4c9409b0) |
+| 2026-10-21 11:06 | `e35029d47e` | PARTIAL | 5/0/0/1 | f9da52c50b | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:06 | `66635a3847` | PARTIAL | 0/0/0/1 | f9da52c50b | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: updated: 2026-10-21 11:06 PDT |
+| 2026-10-21 11:06 | `4d3b35e0f4` | PARTIAL | 5/0/0/1 | b582dd6f9e | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:06 | `a712c830d7` | SUPERSEDED | 0/1/0/0 | b582dd6f9e | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: changed later in its stack (head b582dd6f9e) |
+| 2026-10-21 11:06 | `b4e2bb4103` | PARTIAL | 5/0/0/1 | 531bfc5f56 | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:06 | `d5e7e8443a` | PARTIAL | 0/0/0/1 | 531bfc5f56 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: updated: 2026-10-21 11:06 PDT |
+| 2026-10-21 11:06 | `cf994c522d` | PARTIAL | 5/0/0/1 | f10019f8ed | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:06 | `897209f999` | PARTIAL | 0/0/0/1 | f10019f8ed | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: updated: 2026-10-21 11:06 PDT |
+| 2026-10-21 11:06 | `d3b924c717` | PARTIAL | 5/0/0/1 | 9282a98a77 | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:06 | `53eabbcf28` | SUPERSEDED | 0/1/0/0 | 9282a98a77 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: changed later in its stack (head 9282a98a77) |
+| 2026-10-21 11:06 | `a906385740` | PARTIAL | 5/0/0/1 | 8aa8312ce6 | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:06 | `a2670e26dc` | PARTIAL | 0/0/0/1 | 8aa8312ce6 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: updated: 2026-10-21 11:06 PDT |
+| 2026-10-21 11:06 | `b2002896e3` | PARTIAL | 5/0/0/1 | 3cb9124e12 | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:06 | `965810162f` | PARTIAL | 0/0/0/1 | 3cb9124e12 | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: updated: 2026-10-21 11:06 PDT |
+| 2026-10-21 11:06 | `2f0f54d843` | SUPERSEDED | 0/1/0/0 | 467e1e0ece | docs(mvp): record the engine-schema deploy and the QuickJS blocker tha | apps/mvp/docs/work/land-and-deploy-mvp.md: changed later in its stack (head 467e1e0ece) |
+| 2026-10-21 11:06 | `3f02584d05` | PARTIAL | 5/0/0/1 | df5ede0070 | 📝 docs(repo): landing, contributing and the plugin spec line match the | CONTRIBUTING.md: is [`apps/mvp`](apps/mvp/AGENTS.md). Track our own work in the maintainer |
+| 2026-10-21 11:07 | `c8193637a1` | ON-MAIN | 6/0/0/0 | 3a4c9409b0 | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `c8e42c8fb0` | PARTIAL | 1/0/0/1 | 3a4c9409b0 | 📝 docs(maintainer-site): say what the maintainer app is now, and where | docs/libraries.md: -\| Comment on, label or close an issue in this repository \| `issue-cl |
+| 2026-10-21 11:07 | `ee64a6d44f` | ON-MAIN | 6/0/0/0 | f9da52c50b | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `6b2942fc2c` | ON-MAIN | 2/0/0/0 | f9da52c50b | 📝 docs(maintainer-site): say what the maintainer app is now, and where |  |
+| 2026-10-21 11:07 | `e3f7792b41` | ON-MAIN | 6/0/0/0 | b582dd6f9e | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `da2762e1ea` | PARTIAL | 1/0/0/1 | b582dd6f9e | 📝 docs(maintainer-site): say what the maintainer app is now, and where | docs/libraries.md: -\| Comment on, label or close an issue in this repository \| `issue-cl |
+| 2026-10-21 11:07 | `9a215b0bb1` | ON-MAIN | 6/0/0/0 | 531bfc5f56 | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `57ad0712fb` | ON-MAIN | 2/0/0/0 | 531bfc5f56 | 📝 docs(maintainer-site): say what the maintainer app is now, and where |  |
+| 2026-10-21 11:07 | `3d1e95a070` | ON-MAIN | 6/0/0/0 | f10019f8ed | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `a39b61a707` | ON-MAIN | 2/0/0/0 | f10019f8ed | 📝 docs(maintainer-site): say what the maintainer app is now, and where |  |
+| 2026-10-21 11:07 | `06c111e409` | ON-MAIN | 6/0/0/0 | 9282a98a77 | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `bbe5f3def5` | PARTIAL | 1/0/0/1 | 9282a98a77 | 📝 docs(maintainer-site): say what the maintainer app is now, and where | docs/libraries.md: -\| Comment on, label or close an issue in this repository \| `issue-cl |
+| 2026-10-21 11:07 | `187b949022` | ON-MAIN | 6/0/0/0 | 8aa8312ce6 | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `cc0e03ff47` | ON-MAIN | 2/0/0/0 | 8aa8312ce6 | 📝 docs(maintainer-site): say what the maintainer app is now, and where |  |
+| 2026-10-21 11:07 | `c906cbe685` | ON-MAIN | 6/0/0/0 | 3cb9124e12 | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `934ab11978` | ON-MAIN | 2/0/0/0 | 3cb9124e12 | 📝 docs(maintainer-site): say what the maintainer app is now, and where |  |
+| 2026-10-21 11:07 | `0aad65275f` | ON-MAIN | 6/0/0/0 | df5ede0070 | 📝 docs(history): label the old MVP records as history and point them a |  |
+| 2026-10-21 11:07 | `b3f2eb8ba4` | ON-MAIN | 2/0/0/0 | df5ede0070 | 📝 docs(maintainer-site): say what the maintainer app is now, and where |  |
+| 2026-10-21 11:08 | `2849ce9cec` | SUPERSEDED | 1/1/0/0 | 3a4c9409b0 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
+| 2026-10-21 11:08 | `ad8a0ff5b2` | SUPERSEDED | 1/1/0/0 | f9da52c50b | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
+| 2026-10-21 11:08 | `f4d21133d4` | SUPERSEDED | 1/1/0/0 | b582dd6f9e | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
+| 2026-10-21 11:08 | `c69aa6080f` | SUPERSEDED | 1/1/0/0 | 531bfc5f56 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
+| 2026-10-21 11:08 | `8ee5f6af45` | SUPERSEDED | 1/1/0/0 | f10019f8ed | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
+| 2026-10-21 11:08 | `33364b071b` | SUPERSEDED | 1/1/0/0 | 9282a98a77 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
+| 2026-10-21 11:08 | `e799793e01` | SUPERSEDED | 1/1/0/0 | 8aa8312ce6 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
+| 2026-10-21 11:08 | `a26c59648e` | SUPERSEDED | 1/1/0/0 | 3cb9124e12 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
+| 2026-10-21 11:08 | `33d12ea774` | SUPERSEDED | 1/1/0/0 | df5ede0070 | 📝 docs(apps): mark the old app's design spec and the old edge's upstre | apps/UPSTREAMS.md: main deleted it in 82b5490dbe (🔥 chore(repo): remove the legacy app, it |
 | 2026-10-21 11:12 | `d800510c9f` | SUPERSEDED | 52/10/0/0 | 354a880329 | 🐛 fix(sdk): one tab per device stores what a synced collection syncs,  | apps/mvp/docs/observability.md: main carried then changed it: 127885af31 (🔇 fix(effect-tan |
 | 2026-10-21 11:12 | `43eb2d5a53` | SUPERSEDED | 52/10/0/0 | e16546f509 | 🐛 fix(sdk): one tab per device stores what a synced collection syncs,  | apps/mvp/docs/observability.md: main carried then changed it: 127885af31 (🔇 fix(effect-tan |
 | 2026-10-21 11:12 | `9df20305da` | SUPERSEDED | 51/11/0/0 | dcd3dc5fb7 | 🐛 fix(sdk): one tab per device stores what a synced collection syncs,  | apps/mvp/docs/observability.md: main carried then changed it: 127885af31 (🔇 fix(effect-tan |
@@ -1939,15 +1936,15 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 11:25 | `8aa8312ce6` | SUPERSEDED | 22/3/0/0 | 8aa8312ce6 | ✨ feat(integrations): GitHub.Once writes a branch, commit, pull reques | packages/smithers/agent/integrations/docs/api.md: main carried then changed it: 89b4eef1d7 |
 | 2026-10-21 11:25 | `3cb9124e12` | SUPERSEDED | 22/3/0/0 | 3cb9124e12 | ✨ feat(integrations): GitHub.Once writes a branch, commit, pull reques | packages/smithers/agent/integrations/docs/api.md: main carried then changed it: 89b4eef1d7 |
 | 2026-10-21 11:25 | `fbe3ce992d` | SUPERSEDED | 22/3/0/0 | 5cb08384b1 | ✨ feat(integrations): GitHub.Once writes a branch, commit, pull reques | packages/smithers/agent/integrations/docs/api.md: main carried then changed it: 89b4eef1d7 |
-| 2026-10-21 11:30 | `3a4c9409b0` | STRANDED | 0/0/1/0 | 3a4c9409b0 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
-| 2026-10-21 11:30 | `1c6b08c5b2` | STRANDED | 0/0/1/0 | f9da52c50b | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
-| 2026-10-21 11:30 | `b582dd6f9e` | STRANDED | 0/0/1/0 | b582dd6f9e | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
-| 2026-10-21 11:30 | `e60a346d03` | STRANDED | 0/0/1/0 | 531bfc5f56 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
-| 2026-10-21 11:30 | `82bce526e9` | STRANDED | 0/0/1/0 | f10019f8ed | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
-| 2026-10-21 11:30 | `9282a98a77` | STRANDED | 0/0/1/0 | 9282a98a77 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
-| 2026-10-21 11:30 | `5eb5bea4fe` | STRANDED | 0/0/1/0 | 8aa8312ce6 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
-| 2026-10-21 11:30 | `3e883f25f2` | STRANDED | 0/0/1/0 | 3cb9124e12 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
-| 2026-10-21 11:30 | `df5ede0070` | STRANDED | 0/0/1/0 | df5ede0070 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `3a4c9409b0` | PARTIAL | 0/0/0/1 | 3a4c9409b0 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `1c6b08c5b2` | PARTIAL | 0/0/0/1 | f9da52c50b | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `b582dd6f9e` | PARTIAL | 0/0/0/1 | b582dd6f9e | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `e60a346d03` | PARTIAL | 0/0/0/1 | 531bfc5f56 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `82bce526e9` | PARTIAL | 0/0/0/1 | f10019f8ed | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `9282a98a77` | PARTIAL | 0/0/0/1 | 9282a98a77 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `5eb5bea4fe` | PARTIAL | 0/0/0/1 | 8aa8312ce6 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `3e883f25f2` | PARTIAL | 0/0/0/1 | 3cb9124e12 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
+| 2026-10-21 11:30 | `df5ede0070` | PARTIAL | 0/0/0/1 | df5ede0070 | 📝 docs(work): record the 2026-10-21 docs truth pass | apps/mvp/docs/work/docs-truth-pass.md: owner: docs-truth agent (Claude Opus), started by t |
 | 2026-10-21 11:34 | `1855167b08` | ON-MAIN | 3/0/0/0 | 6817e4ecbd | ✅ test(mvp): the factory spec declares its needs and runs on the store |  |
 | 2026-10-21 11:36 | `8da626160e` | SUPERSEDED | 15/7/0/0 | c751c7cd0a | 🐛 fix(mvp): preserve wipe failures and start activation after prefligh | apps/mvp/docs/decisions/0025-startup-wipe-and-telemetry.md: main carried then changed it: |
 | 2026-10-21 11:36 | `b64e5ce025` | SUPERSEDED | 15/7/0/0 | 2eebe05718 | 🐛 fix(mvp): preserve wipe failures and start activation after prefligh | apps/mvp/docs/decisions/0025-startup-wipe-and-telemetry.md: main carried then changed it: |
@@ -2001,12 +1998,12 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 11:54 | `1b350c0982` | SUPERSEDED | 0/5/0/0 | 1b350c0982 |  | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: f |
 | 2026-10-21 11:54 | `37e0698c1d` | SUPERSEDED | 0/5/0/0 | 37e0698c1d |  | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: f |
 | 2026-10-21 11:54 | `c8f906cd4a` | SUPERSEDED | 0/5/0/0 | c8f906cd4a |  | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: f |
-| 2026-10-21 12:05 | `03eb0005c6` | STRANDED | 0/0/1/0 | 3a4c9409b0 | docs(mvp): record remote flows running in production after the QuickJS | apps/mvp/docs/work/land-and-deploy-mvp.md: - Still running at 19:01 UTC, none retrying: `c |
-| 2026-10-21 12:05 | `e6f94e1995` | STRANDED | 0/0/1/0 | b582dd6f9e | docs(mvp): record remote flows running in production after the QuickJS | apps/mvp/docs/work/land-and-deploy-mvp.md: - Still running at 19:01 UTC, none retrying: `c |
-| 2026-10-21 12:05 | `e6068bb054` | STRANDED | 0/0/1/0 | 9282a98a77 | docs(mvp): record remote flows running in production after the QuickJS | apps/mvp/docs/work/land-and-deploy-mvp.md: - Still running at 19:01 UTC, none retrying: `c |
+| 2026-10-21 12:05 | `03eb0005c6` | ON-MAIN | 1/0/0/0 | 3a4c9409b0 | docs(mvp): record remote flows running in production after the QuickJS |  |
+| 2026-10-21 12:05 | `e6f94e1995` | ON-MAIN | 1/0/0/0 | b582dd6f9e | docs(mvp): record remote flows running in production after the QuickJS |  |
+| 2026-10-21 12:05 | `e6068bb054` | ON-MAIN | 1/0/0/0 | 9282a98a77 | docs(mvp): record remote flows running in production after the QuickJS |  |
 | 2026-10-21 12:05 | `97a87133ec` | SUPERSEDED | 2/5/0/0 | 0fd28abddc | ⚡ fix(mvp): ChatApi starts in about 100 ms, its program imported when  | apps/mvp/docs/infrastructure.md: main carried then changed it: 8a27d83180 (🧪 test(mvp): se |
 | 2026-10-21 12:05 | `51d02af8b0` | SUPERSEDED | 2/5/0/0 | cdb1160df9 | ⚡ fix(mvp): ChatApi starts in about 100 ms, its program imported when  | apps/mvp/docs/infrastructure.md: main carried then changed it: 8a27d83180 (🧪 test(mvp): se |
-| 2026-10-21 12:05 | `467e1e0ece` | STRANDED | 0/0/1/0 | 467e1e0ece | docs(mvp): record remote flows running in production after the QuickJS | apps/mvp/docs/work/land-and-deploy-mvp.md: - Still running at 19:01 UTC, none retrying: `c |
+| 2026-10-21 12:05 | `467e1e0ece` | ON-MAIN | 1/0/0/0 | 467e1e0ece | docs(mvp): record remote flows running in production after the QuickJS |  |
 | 2026-10-21 12:06 | `bf0982cae2` | PARTIAL | 0/0/9/2 | 62778583ba | ✨ feat(agent): HarnessCli, the command line, environment and output re | .changeset/agent-harness-cli.md: - `HarnessCli.classify(text)` and `HarnessCli.resetAt(tex |
 | 2026-10-21 12:06 | `4c9422b784` | PARTIAL | 0/0/9/2 | 363f83c1c0 | ✨ feat(agent): HarnessCli, the command line, environment and output re | .changeset/agent-harness-cli.md: - `HarnessCli.classify(text)` and `HarnessCli.resetAt(tex |
 | 2026-10-21 12:07 | `0c1a2e6007` | ON-MAIN | 11/0/0/0 | 0fd28abddc | 🐛 fix(mvp): a model call larger than the whole daily budget is refused |  |
@@ -2061,8 +2058,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 12:16 | `1e08c677db` | SUPERSEDED | 1/1/0/0 | dd12f89340 | 📝 docs(mvp): the durable external effects proposal as built: Write, Tr | apps/mvp/docs/proposals/durable-external-effects.md: main carried then changed it: 58bb605 |
 | 2026-10-21 12:16 | `195b5d7417` | SUPERSEDED | 1/2/0/0 | dd12f89340 | 🚨 chore(mvp): lint rule durable.external-writes-once | apps/mvp/PACKAGE.ts: main carried then changed it: 6e187f0cba (🚨 chore(mvp): durable.exter |
 | 2026-10-21 12:16 | `e8c2d11efc` | SUPERSEDED | 2/1/0/0 | dd12f89340 | 🐛 fix(mvp): a rejected issue's triage comment is looked for in the who | apps/mvp/worker/github/Triage.ts: main carried then changed it: f65d5c6e2a (♻️ refactor(mv |
-| 2026-10-21 12:16 | `0ea193cb82` | PARTIAL | 10/2/1/1 | 0ea193cb82 | 🐛 fix(mvp): bind opaque runs exactly and use configured alert links | apps/mvp/docs/work/worker-953411.md: - Malformed conversation id: `ShapeProxy.test.ts` exp |
-| 2026-10-21 12:16 | `e2e332627a` | PARTIAL | 10/2/1/1 | e2e332627a |  | apps/mvp/docs/work/worker-953411.md: - Malformed conversation id: `ShapeProxy.test.ts` exp |
+| 2026-10-21 12:16 | `0ea193cb82` | PARTIAL | 10/2/0/2 | 0ea193cb82 | 🐛 fix(mvp): bind opaque runs exactly and use configured alert links | apps/mvp/docs/work/worker-953411.md: An earlier whole-package run was invalidated when the |
+| 2026-10-21 12:16 | `e2e332627a` | PARTIAL | 11/2/0/1 | e2e332627a |  | apps/mvp/worker/AlertChannels.test.ts: const { h } = await open(admin, { config: { ALERT_A |
 | 2026-10-21 12:16 | `701923c931` | SUPERSEDED | 1/1/0/0 | 701923c931 | 📝 docs(mvp): the durable external effects proposal as built: Write, Tr | apps/mvp/docs/proposals/durable-external-effects.md: main carried then changed it: 58bb605 |
 | 2026-10-21 12:16 | `14600b3ab3` | SUPERSEDED | 1/2/0/0 | 701923c931 | 🚨 chore(mvp): lint rule durable.external-writes-once | apps/mvp/PACKAGE.ts: main carried then changed it: 6e187f0cba (🚨 chore(mvp): durable.exter |
 | 2026-10-21 12:16 | `8ead12a8d1` | SUPERSEDED | 2/1/0/0 | 701923c931 | 🐛 fix(mvp): a rejected issue's triage comment is looked for in the who | apps/mvp/worker/github/Triage.ts: main carried then changed it: f65d5c6e2a (♻️ refactor(mv |
@@ -2070,7 +2067,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 12:16 | `3f871f31df` | SUPERSEDED | 1/2/0/0 | 9282a98a77 | 🚨 chore(mvp): lint rule durable.external-writes-once | apps/mvp/PACKAGE.ts: main carried then changed it: 6e187f0cba (🚨 chore(mvp): durable.exter |
 | 2026-10-21 12:16 | `2bfd41f3ef` | SUPERSEDED | 2/1/0/0 | 9282a98a77 | 🐛 fix(mvp): a rejected issue's triage comment is looked for in the who | apps/mvp/worker/github/Triage.ts: main carried then changed it: f65d5c6e2a (♻️ refactor(mv |
 | 2026-10-21 12:16 | `27b087381b` | SUPERSEDED | 2/3/0/0 | 5cb08384b1 | 📝 docs: regenerated site reference for Action.once and GitHub.Once | apps/site/src/content/docs/docs/reference/api/flow.mdx: main carried then changed it: 9870 |
-| 2026-10-21 12:16 | `ad3afb35e8` | PARTIAL | 2/0/1/0 | ad3afb35e8 |  | apps/mvp/docs/work/worker-953411.md: Investigate worker findings using farm regression tes |
+| 2026-10-21 12:16 | `ad3afb35e8` | PARTIAL | 2/0/0/1 | ad3afb35e8 |  | apps/mvp/docs/work/worker-953411.md: status: in-progress |
 | 2026-10-21 12:16 | `1c3b1ed942` | PARTIAL | 12/5/0/1 | 1c3b1ed942 |  | apps/site/public/llms-full.txt: - **Signature:** `once<A, E, R>(name: string, effect: Keye |
 | 2026-10-21 12:16 | `f0b55a2cbf` | SUPERSEDED | 1/1/0/0 | 5cb08384b1 | 📝 docs(mvp): the durable external effects proposal as built: Write, Tr | apps/mvp/docs/proposals/durable-external-effects.md: main carried then changed it: 58bb605 |
 | 2026-10-21 12:16 | `01b15bf291` | SUPERSEDED | 1/2/0/0 | 5cb08384b1 | 🚨 chore(mvp): lint rule durable.external-writes-once | apps/mvp/PACKAGE.ts: main carried then changed it: 6e187f0cba (🚨 chore(mvp): durable.exter |
@@ -2125,7 +2122,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 12:34 | `0182dd8d5b` | PARTIAL | 0/0/24/3 | b008dcea7c | 🔒 fix(mvp): no run credential in device storage: the outbox holds a pe | apps/mvp/docs/features/issues.md: \| `writes.ts` \| `issue-sending` (the outbox's optimist |
 | 2026-10-21 12:34 | `b4a0b66a74` | PARTIAL | 0/0/24/3 | 9ff7f5bc65 | 🔒 fix(mvp): no run credential in device storage: the outbox holds a pe | apps/mvp/docs/features/issues.md: \| `writes.ts` \| `issue-sending` (the outbox's optimist |
 | 2026-10-21 12:34 | `a2ea16b98e` | PARTIAL | 0/1/24/3 | 2bb993d7cb | 🔒 fix(mvp): no run credential in device storage: the outbox holds a pe | apps/mvp/docs/features/issues.md: \| `writes.ts` \| `issue-sending` (the outbox's optimist |
-| 2026-10-21 12:34 | `32bf658e5f` | PARTIAL | 0/0/46/7 | 32bf658e5f |  | apps/mvp/docs/features/issues.md: \| `writes.ts` \| `issue-sending` (the outbox's optimist |
+| 2026-10-21 12:34 | `32bf658e5f` | PARTIAL | 12/0/30/11 | 32bf658e5f |  | apps/mvp/docs/features/issues.md: \| `writes.ts` \| `issue-sending` (the outbox's optimist |
 | 2026-10-21 12:34 | `9e85137372` | PARTIAL | 0/1/24/3 | c870231485 | 🔒 fix(mvp): no run credential in device storage: the outbox holds a pe | apps/mvp/docs/features/issues.md: \| `writes.ts` \| `issue-sending` (the outbox's optimist |
 | 2026-10-21 12:41 | `e8a39377e9` | PARTIAL | 0/0/28/4 | b008dcea7c | 🔒 fix(mvp): a refused person never sees issues the device still holds, | .changeset/electric-collection-evict.md: const notes = yield* ElectricCollection.make({ id |
 | 2026-10-21 12:41 | `aac28cf1ed` | PARTIAL | 0/0/28/4 | 9ff7f5bc65 | 🔒 fix(mvp): a refused person never sees issues the device still holds, | .changeset/electric-collection-evict.md: const notes = yield* ElectricCollection.make({ id |
@@ -2151,12 +2148,12 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 12:54 | `9327d8a401` | ON-MAIN | 7/0/0/0 | dd12f89340 | ✨ feat(flow): Action.once takes a key recorded before the step, for wr |  |
 | 2026-10-21 12:54 | `0bde45a8e2` | ON-MAIN | 6/0/0/0 | 5cb08384b1 | 🐛 fix(cli): stack submit finds the pull request its change already ope |  |
 | 2026-10-21 12:54 | `9de0cb90e0` | ON-MAIN | 7/0/0/0 | 5cb08384b1 | ✨ feat(flow): Action.once takes a key recorded before the step, for wr |  |
-| 2026-10-21 12:55 | `c9ccd9c40f` | PARTIAL | 2/1/23/4 | c9ccd9c40f | 🐛 fix(mvp): serialize draft writes and fence admission | apps/mvp/db/Database.test.ts: for (const [name, time] of [["original", "2026-10-01"], ["un |
-| 2026-10-21 12:55 | `7440233936` | PARTIAL | 2/1/23/4 | 7440233936 |  | apps/mvp/db/Database.test.ts: for (const [name, time] of [["original", "2026-10-01"], ["un |
-| 2026-10-21 12:55 | `c3ab4ad244` | PARTIAL | 2/1/24/4 | c3ab4ad244 |  | apps/mvp/db/Database.test.ts: for (const [name, time] of [["original", "2026-10-01"], ["un |
-| 2026-10-21 12:55 | `9ff3087d68` | PARTIAL | 1/1/23/4 | 9ff3087d68 |  | apps/mvp/db/Database.test.ts: for (const [name, time] of [["original", "2026-10-01"], ["un |
-| 2026-10-21 12:55 | `537de2daf8` | PARTIAL | 1/1/18/4 | 537de2daf8 |  | apps/mvp/db/Database.test.ts: for (const [name, time] of [["original", "2026-10-01"], ["un |
-| 2026-10-21 12:55 | `6afbc5206d` | PARTIAL | 1/1/16/4 | 6afbc5206d |  | apps/mvp/db/Database.test.ts: for (const [name, time] of [["original", "2026-10-01"], ["un |
+| 2026-10-21 12:55 | `c9ccd9c40f` | PARTIAL | 7/1/12/10 | c9ccd9c40f | 🐛 fix(mvp): serialize draft writes and fence admission | apps/mvp/db/Database.test.ts: UPDATE flow_drafts SET saved_revision = 99 WHERE name = 'ori |
+| 2026-10-21 12:55 | `7440233936` | PARTIAL | 7/1/12/10 | 7440233936 |  | apps/mvp/db/Database.test.ts: UPDATE flow_drafts SET saved_revision = 99 WHERE name = 'ori |
+| 2026-10-21 12:55 | `c3ab4ad244` | PARTIAL | 7/1/13/10 | c3ab4ad244 |  | apps/mvp/db/Database.test.ts: UPDATE flow_drafts SET saved_revision = 99 WHERE name = 'ori |
+| 2026-10-21 12:55 | `9ff3087d68` | PARTIAL | 6/1/12/10 | 9ff3087d68 |  | apps/mvp/db/Database.test.ts: UPDATE flow_drafts SET saved_revision = 99 WHERE name = 'ori |
+| 2026-10-21 12:55 | `537de2daf8` | PARTIAL | 4/1/11/8 | 537de2daf8 |  | apps/mvp/db/Database.test.ts: UPDATE flow_drafts SET saved_revision = 99 WHERE name = 'ori |
+| 2026-10-21 12:55 | `6afbc5206d` | PARTIAL | 4/1/9/8 | 6afbc5206d |  | apps/mvp/db/Database.test.ts: UPDATE flow_drafts SET saved_revision = 99 WHERE name = 'ori |
 | 2026-10-21 12:56 | `e8c922fe28` | PARTIAL | 5/1/3/3 | e8c922fe28 | 🐛 fix(issues): validate queued writes and retain failed persistence | apps/mvp/docs/features/issues.md: - **Queued writes survive refusal.** The outbox settles |
 | 2026-10-21 12:56 | `faa02d0a79` | PARTIAL | 5/1/3/3 | faa02d0a79 |  | apps/mvp/docs/features/issues.md: - **Queued writes survive refusal.** The outbox settles |
 | 2026-10-21 12:56 | `12c1e23387` | PARTIAL | 5/1/2/4 | 12c1e23387 |  | apps/mvp/docs/features/issues.md: - **Queued writes survive refusal.** The outbox settles |
@@ -2183,13 +2180,13 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 13:07 | `91ab75fa68` | PARTIAL | 32/9/21/4 | c318874875 | 🐛 fix(mvp): a new device whose first session check failed takes its pe | .changeset/browser-runtime-authorize-recheck.md: authorize: (opened) => Effect.tap(checkOw |
 | 2026-10-21 13:07 | `cadf086bce` | PARTIAL | 26/2/24/7 | cadf086bce |  | .changeset/browser-runtime-authorize-recheck.md: authorize: (opened) => Effect.tap(checkOw |
 | 2026-10-21 13:07 | `02eea0709d` | PARTIAL | 31/5/22/7 | 02eea0709d | 🐛 fix(mvp): a new device whose first session check failed takes its pe | .changeset/browser-runtime-authorize-recheck.md: authorize: (opened) => Effect.tap(checkOw |
-| 2026-10-21 13:08 | `797b55f409` | PARTIAL | 1/0/21/3 | b008dcea7c | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
-| 2026-10-21 13:08 | `06889e5501` | PARTIAL | 1/0/19/4 | 06889e5501 | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
-| 2026-10-21 13:08 | `9ff7f5bc65` | PARTIAL | 1/0/19/4 | 9ff7f5bc65 | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
-| 2026-10-21 13:08 | `6eac005aab` | PARTIAL | 1/0/21/3 | 2bb993d7cb | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
-| 2026-10-21 13:08 | `93a0a2e454` | PARTIAL | 0/0/21/3 | 93a0a2e454 | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
-| 2026-10-21 13:08 | `c870231485` | PARTIAL | 0/0/17/1 | c870231485 | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/docs/features/notifications.md: \| `main:<repo id>` \| GitHub's `push` to the def |
-| 2026-10-21 13:08 | `2081e0849b` | PARTIAL | 0/0/21/3 | 040001c3ef | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
+| 2026-10-21 13:08 | `797b55f409` | PARTIAL | 13/0/6/6 | b008dcea7c | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
+| 2026-10-21 13:08 | `06889e5501` | PARTIAL | 11/0/6/7 | 06889e5501 | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
+| 2026-10-21 13:08 | `9ff7f5bc65` | PARTIAL | 11/0/6/7 | 9ff7f5bc65 | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
+| 2026-10-21 13:08 | `6eac005aab` | PARTIAL | 13/0/6/6 | 2bb993d7cb | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
+| 2026-10-21 13:08 | `93a0a2e454` | PARTIAL | 12/0/5/7 | 93a0a2e454 | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
+| 2026-10-21 13:08 | `c870231485` | PARTIAL | 12/0/1/5 | c870231485 | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/docs/features/notifications.md: \| `main:<repo id>` \| GitHub's `push` to the def |
+| 2026-10-21 13:08 | `2081e0849b` | PARTIAL | 12/0/5/7 | 040001c3ef | 🔒 fix(mvp): repository notifications reach only watchers who may read  | apps/mvp/db/Database.ts: import sessionRoleVerified from "./migrations/0038_session_role_v |
 | 2026-10-21 13:11 | `c86ee76680` | SUPERSEDED | 2/1/0/0 | b8a380c99d | 🐛 fix(mvp): a stack change's send settles only once its record is stor | apps/mvp/src/features/todos/writes.ts: main carried then changed it: e14f3bc21c (✨ feat(mv |
 | 2026-10-21 13:11 | `f9b631beba` | SUPERSEDED | 2/1/0/0 | b008dcea7c | 🐛 fix(mvp): a stack change's send settles only once its record is stor | apps/mvp/src/features/todos/writes.ts: main carried then changed it: e14f3bc21c (✨ feat(mv |
 | 2026-10-21 13:11 | `7fd6439ba8` | SUPERSEDED | 2/1/0/0 | 7fd6439ba8 | 🐛 fix(mvp): a stack change's send settles only once its record is stor | apps/mvp/src/features/todos/writes.ts: main carried then changed it: e14f3bc21c (✨ feat(mv |
@@ -2358,12 +2355,12 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 13:41 | `0f4f5d6c01` | SUPERSEDED | 9/3/0/0 | 5268957e32 | 🐛 fix(mvp): an eval run fails when it spends past its token cap, the l | apps/mvp/docs/features/agent-evals.md: main carried then changed it: f3e8043de9 (✅ test(mv |
 | 2026-10-21 13:41 | `28873e59cd` | PARTIAL | 22/8/2/3 | 28873e59cd |  | apps/mvp/docs/work/github-ordering-fixes.md: status: in-progress; apps/mvp/worker/github/A |
 | 2026-10-21 13:41 | `3b17fe4b72` | PARTIAL | 22/8/2/3 | 3b17fe4b72 |  | apps/mvp/docs/work/github-ordering-fixes.md: status: in-progress; apps/mvp/worker/github/A |
-| 2026-10-21 13:41 | `6d227a6d45` | PARTIAL | 0/0/17/2 | 6b11187a07 | ⬆️ chore(repo-view): pin @pierre/diffs 1.5.2 and let pierre settle the | .changeset/repo-view-pierre-diffs-1-5-2.md: hands worker errors to the pool's `onWorkerErr |
+| 2026-10-21 13:41 | `6d227a6d45` | ON-MAIN | 19/0/0/0 | 6b11187a07 | ⬆️ chore(repo-view): pin @pierre/diffs 1.5.2 and let pierre settle the |  |
 | 2026-10-21 13:41 | `4e1d69c168` | SUPERSEDED | 4/2/0/0 | 5cb08384b1 | 🐛 fix(mvp): a draft an agent or slash command starts is named by its e | apps/mvp/src/features/flows-ui/flows.test.ts: main carried then changed it: b120140226 (✨ |
 | 2026-10-21 13:41 | `01c93f08de` | ON-MAIN | 7/0/0/0 | 5cb08384b1 | 🐛 fix(mvp): spend alert delivery is declared irreversible and at least |  |
 | 2026-10-21 13:41 | `7a2012ca17` | ON-MAIN | 2/0/0/0 | 5cb08384b1 | ♻️ refactor(mvp): triage's repro request and rejection comment are wri |  |
 | 2026-10-21 13:41 | `464b1cb892` | SUPERSEDED | 7/5/0/0 | 464b1cb892 | 🐛 fix(mvp): an eval run fails when it spends past its token cap, the l | apps/mvp/docs/features/agent-evals.md: main carried then changed it: f3e8043de9 (✅ test(mv |
-| 2026-10-21 13:41 | `a5e2df4749` | STRANDED | 0/0/1/0 | a5e2df4749 |  | packages/smithers/ui/repo-view/package.json: "@pierre/diffs": "1.5.2", |
+| 2026-10-21 13:41 | `a5e2df4749` | ON-MAIN | 1/0/0/0 | a5e2df4749 |  |  |
 | 2026-10-21 13:41 | `71d5e4bfcc` | SUPERSEDED | 2/1/0/0 | cdb1160df9 | ✅ test(mvp): a new Cloudflare tail waits until it streams before a tes | apps/mvp/e2e/logs.ts: main carried then changed it: 7e55daf25f (🔎 fix(mvp): validate produ |
 | 2026-10-21 13:41 | `eb967bc797` | SUPERSEDED | 39/5/0/0 | cdb1160df9 | 🐛 fix(mvp): a clone request is persisted and answered at once; the ask | apps/mvp/docs/features/repo.md: main carried then changed it: 402074942b (🐛 fix(mvp): sett |
 | 2026-10-21 13:42 | `e18258be21` | PARTIAL | 19/5/11/0 | e18258be21 | 📝 docs: regenerate the site's API pages, llms files, redirect map and  | apps/site/public/llms-full.txt: `@smthrs/agent` exports thirty modules from its root entry |
@@ -2404,10 +2401,10 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 13:51 | `5d6829da09` | PARTIAL | 7/3/3/0 | fcb0f1f644 | ✨ feat(integrations): GitHub.Once.merge merges once and finds the merg | apps/site/src/content/docs/docs/reference/api/integrations.mdx: \| `mergePull` |
 | 2026-10-21 13:51 | `662ce2597c` | PARTIAL | 16/24/2/0 | fcb0f1f644 | 🔒️ fix(mvp): a home counts a session's role only on the repository it  | apps/mvp/e2e/target.test.ts: expect(unmet).toEqual(["effectRoles", "webhookSecret", "alert |
 | 2026-10-21 13:51 | `63240e86bc` | PARTIAL | 21/5/1/8 | 7ed8110efb | 🐛 fix(mvp): a person's triage wins over the flow's whatever order the  | apps/mvp/docs/features/issues.md: - **A person supersedes the flow, whatever order the lab |
-| 2026-10-21 13:51 | `31b27639d3` | PARTIAL | 0/0/5/1 | cdb1160df9 | 🐛 fix(mvp): a failed alert-channel save clears once another device sav | apps/mvp/docs/features/spend-alerts.md: - **Saving:** the Save button's flow runs at once |
+| 2026-10-21 13:51 | `31b27639d3` | PARTIAL | 5/0/1/0 | cdb1160df9 | 🐛 fix(mvp): a failed alert-channel save clears once another device sav | apps/mvp/docs/features/spend-alerts.md: - **Saving:** the Save button's flow runs at once |
 | 2026-10-21 13:51 | `439390b66f` | PARTIAL | 4/1/2/3 | 7ed8110efb | ✨ feat(integrations): GitHub.Once.merge merges once and finds the merg | .changeset/github-once-merge.md: taken for the step's own. A rebase merge writes no messag |
 | 2026-10-21 13:51 | `1a0a1cc98a` | PARTIAL | 16/24/2/0 | 7ed8110efb | 🔒️ fix(mvp): a home counts a session's role only on the repository it  | apps/mvp/e2e/target.test.ts: expect(unmet).toEqual(["effectRoles", "webhookSecret", "alert |
-| 2026-10-21 13:52 | `cdb1160df9` | STRANDED | 0/0/2/0 | cdb1160df9 | 📝 docs(mvp): the prod-flows work note with production evidence as of 1 | apps/mvp/docs/work/prod-flows.md: updated: 2026-10-21 14:05 PDT; apps/mvp/docs/work/prod-f |
+| 2026-10-21 13:52 | `cdb1160df9` | PARTIAL | 1/0/1/0 | cdb1160df9 | 📝 docs(mvp): the prod-flows work note with production evidence as of 1 | apps/mvp/docs/work/prod-flows.md: updated: 2026-10-21 14:05 PDT |
 | 2026-10-21 13:53 | `78efa227e7` | PARTIAL | 42/8/6/1 | 4ab24343c4 | 🐛 fix(mvp): a merge rechecks the base branch's own head and merges onc | apps/mvp/db/Database.ts: import dropMergeUnknown from "./migrations/0041_drop_merge_unknow |
 | 2026-10-21 13:53 | `2f5b9204b2` | PARTIAL | 32/8/1/0 | 2f5b9204b2 | 🐛 fix(mvp): a merge rechecks the base branch's own head and merges onc | apps/mvp/worker/github/test/scriptedGitHub.ts: * The base's commit GitHub reports as `base |
 | 2026-10-21 13:53 | `aba350c47e` | PARTIAL | 32/8/1/0 | aba350c47e | 🐛 fix(mvp): a merge rechecks the base branch's own head and merges onc | apps/mvp/worker/github/test/scriptedGitHub.ts: * The base's commit GitHub reports as `base |
@@ -2426,15 +2423,15 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 14:00 | `dd12f89340` | SUPERSEDED | 15/2/0/0 | dd12f89340 | 🐛 fix(flow)!: a DurableQueue item runs as a durable execution; a recor | packages/smithers/flows/flow/src/DurableQueue.ts: main carried then changed it: ede7c1e0b6 |
 | 2026-10-21 14:00 | `758ee373de` | SUPERSEDED | 15/2/0/0 | 5cb08384b1 | 🐛 fix(flow)!: a DurableQueue item runs as a durable execution; a recor | packages/smithers/flows/flow/src/DurableQueue.ts: main carried then changed it: ede7c1e0b6 |
 | 2026-10-21 14:00 | `b9ee2951c4` | SUPERSEDED | 5/4/0/0 | b9ee2951c4 |  | packages/smithers/flows/flow/src/DurableQueue.ts: landed as a625d24531 (same author and ti |
-| 2026-10-21 14:03 | `17779a87c9` | STRANDED | 0/0/2/0 | 6b11187a07 | ⬆️ chore(flows): pin @pierre/diffs 1.5.2 for the review flow's diff re | .smithers/flows/package.json: "@pierre/diffs": "1.5.2",; .smithers/flows/review/tests/rend |
-| 2026-10-21 14:03 | `b6d3a4ffb2` | PARTIAL | 0/0/1/1 | b6d3a4ffb2 |  | .smithers/flows/package.json: "@pierre/diffs": "1.5.2",; apps/mvp/docs/proposals/pierre-os |
-| 2026-10-21 14:03 | `b763b2c97b` | PARTIAL | 0/0/0/1 | b763b2c97b |  | apps/mvp/docs/proposals/pierre-oss-survey.md: - Docs: `docs/reference/contracts.md` and `d |
+| 2026-10-21 14:03 | `17779a87c9` | ON-MAIN | 2/0/0/0 | 6b11187a07 | ⬆️ chore(flows): pin @pierre/diffs 1.5.2 for the review flow's diff re |  |
+| 2026-10-21 14:03 | `b6d3a4ffb2` | ON-MAIN | 2/0/0/0 | b6d3a4ffb2 |  |  |
+| 2026-10-21 14:03 | `b763b2c97b` | ON-MAIN | 1/0/0/0 | b763b2c97b |  |  |
 | 2026-10-21 14:07 | `0b9034bb1b` | PARTIAL | 13/3/8/0 | 0b9034bb1b | 🐛 fix(flow): preserve payload sources and safe durable replay | apps/mvp/docs/work/flow-source-regressions-751129.md: - `pnpm exec vitest run test/GraphRe |
 | 2026-10-21 14:07 | `bfcb08d420` | PARTIAL | 11/3/9/1 | bfcb08d420 |  | apps/mvp/docs/work/flow-source-regressions-751129.md: title: Flow source regression fixes; |
 | 2026-10-21 14:07 | `aaf17365b7` | PARTIAL | 8/2/8/4 | aaf17365b7 |  | apps/mvp/docs/work/flow-source-regressions-751129.md: title: Flow source regression fixes; |
 | 2026-10-21 14:10 | `8976dd2d49` | ON-MAIN | 31/0/0/0 | 8976dd2d49 | 🐛 fix(engine): preserve cancellation authority and safe lineage admiss |  |
-| 2026-10-21 14:17 | `6b11187a07` | PARTIAL | 1/0/1/0 | 6b11187a07 | 📝 docs(mvp): survey Pierre's open source for the code views, with benc | apps/mvp/docs/work/pierre-diffs-upgrades.md: **Why:** Will asked on 2026-10-21 what of Pie |
-| 2026-10-21 14:17 | `ea9f72d317` | PARTIAL | 0/0/0/1 | ea9f72d317 |  | apps/mvp/docs/proposals/pierre-oss-survey.md: - Docs: `docs/reference/contracts.md` and `d |
+| 2026-10-21 14:17 | `6b11187a07` | ON-MAIN | 2/0/0/0 | 6b11187a07 | 📝 docs(mvp): survey Pierre's open source for the code views, with benc |  |
+| 2026-10-21 14:17 | `ea9f72d317` | ON-MAIN | 1/0/0/0 | ea9f72d317 |  |  |
 | 2026-10-21 14:21 | `051a722892` | PARTIAL | 3/0/93/3 | 62778583ba | 🔒 fix(agent,cli): the runner resumes a started session, stops on a los | .changeset/agent-harness-cli.md: `HarnessCli.toolsAllowed` and `HarnessCli.onSubscription` |
 | 2026-10-21 14:21 | `363f83c1c0` | PARTIAL | 3/0/93/3 | 363f83c1c0 | 🔒 fix(agent,cli): the runner resumes a started session, stops on a los | .changeset/agent-harness-cli.md: `HarnessCli.toolsAllowed` and `HarnessCli.onSubscription` |
 | 2026-10-21 14:23 | `a42c8a7bfc` | SUPERSEDED | 1/2/0/0 | a2cc4468ea | 📝 docs(mvp): the production e2e work note after remote flows ran; them | apps/mvp/docs/work/prod-e2e.md: main carried then changed it: 86bd1f7cb3 (📝 docs(mvp): the |
@@ -2456,8 +2453,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 14:35 | `2812c0c583` | PARTIAL | 16/1/2/1 | dd60c8c5bf | 🐛 fix(plan): preserve historical scopes and validate safe immutable to | apps/mvp/docs/work/plan-confirmed-bugs-586345.md: Validation runs on Latitude, with failin |
 | 2026-10-21 14:35 | `c659b0153c` | PARTIAL | 16/0/3/1 | c659b0153c | 🐛 fix(plan): preserve historical scopes and validate safe immutable to | apps/mvp/docs/work/plan-confirmed-bugs-586345.md: Validation runs on Latitude, with failin |
 | 2026-10-21 14:44 | `fb6fa2c572` | SUPERSEDED | 15/1/0/0 | c63dcc4693 | 🐛 fix(sdk): a terminal socket redials on the flow engine's retry decis | packages/smithers/flows/platform-browser/README.md: main carried then changed it: b8f0ff24 |
-| 2026-10-21 14:49 | `3d8110d1c5` | PARTIAL | 2/0/14/8 | 3d8110d1c5 | 🐛 fix(time-travel): preserve fork cleanup and historical child state | apps/mvp/docs/work/time-travel-storage-regressions.md: Reproduce and fix the eight reporte |
-| 2026-10-21 14:49 | `a3b0e6cbce` | PARTIAL | 2/0/13/7 | a3b0e6cbce |  | apps/mvp/docs/work/time-travel-storage-regressions.md: Reproduce and fix the eight reporte |
+| 2026-10-21 14:49 | `3d8110d1c5` | PARTIAL | 7/0/9/8 | 3d8110d1c5 | 🐛 fix(time-travel): preserve fork cleanup and historical child state | apps/mvp/docs/work/time-travel-storage-regressions.md: Reproduce and fix the eight reporte |
+| 2026-10-21 14:49 | `a3b0e6cbce` | PARTIAL | 6/0/9/7 | a3b0e6cbce |  | apps/mvp/docs/work/time-travel-storage-regressions.md: Reproduce and fix the eight reporte |
 | 2026-10-21 14:51 | `8b2455ab7a` | SUPERSEDED | 64/26/0/0 | a2cc4468ea | 🔥 refactor(patterns)!: delete WithRetry; a retry is an action's RetryP | .smithers/flows/create-flow/provision/flow.mdx: main carried then changed it: 68c5bb5dd0 ( |
 | 2026-10-21 14:51 | `0d3f74007d` | SUPERSEDED | 64/26/0/0 | 43007b0fd8 | 🔥 refactor(patterns)!: delete WithRetry; a retry is an action's RetryP | .smithers/flows/create-flow/provision/flow.mdx: main carried then changed it: 68c5bb5dd0 ( |
 | 2026-10-21 14:51 | `d607c103c6` | SUPERSEDED | 64/26/0/0 | 4a47b426e6 | 🔥 refactor(patterns)!: delete WithRetry; a retry is an action's RetryP | .smithers/flows/create-flow/provision/flow.mdx: main carried then changed it: 68c5bb5dd0 ( |
@@ -2581,9 +2578,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 15:14 | `7605fcb6af` | ON-MAIN | 15/0/0/0 | 01f13eed0c | 🐛 fix(core): Digest.canonical serializes without running an Effect |  |
 | 2026-10-21 15:14 | `c5622c9c0d` | SUPERSEDED | 23/15/0/0 | c5622c9c0d |  | apps/mvp/docs/features/notifications.md: main carried then changed it: 4a6932b47d (fix(mvp |
 | 2026-10-21 15:14 | `c9b1279c8b` | PARTIAL | 23/15/3/0 | c9b1279c8b |  | apps/mvp/.sol-review-baseline.json: {"src/features/attention/api.ts": "import { Context, D |
-| 2026-10-21 15:14 | `30c93e58e5` | PARTIAL | 2/0/16/7 | 30c93e58e5 |  | apps/mvp/docs/decisions/0028-chat-draft-and-delivery-isolation.md: An existing-question re |
+| 2026-10-21 15:14 | `30c93e58e5` | PARTIAL | 3/0/11/11 | 30c93e58e5 |  | apps/mvp/docs/decisions/0028-chat-draft-and-delivery-isolation.md: An existing-question re |
 | 2026-10-21 15:14 | `f31eb50189` | PARTIAL | 13/20/2/0 | f31eb50189 |  | apps/mvp/.sol-review-baseline.json: {"src/features/attention/api.ts": "import { Context, D |
-| 2026-10-21 15:14 | `88f0d76616` | PARTIAL | 2/0/15/8 | 88f0d76616 |  | apps/mvp/docs/decisions/0028-chat-draft-and-delivery-isolation.md: An existing-question re |
+| 2026-10-21 15:14 | `88f0d76616` | PARTIAL | 3/0/10/12 | 88f0d76616 |  | apps/mvp/docs/decisions/0028-chat-draft-and-delivery-isolation.md: An existing-question re |
 | 2026-10-21 15:15 | `f647672cd9` | PARTIAL | 18/6/5/4 | 1cd360747c | ✨ feat(flows): each alarm logs its duration, journal entries, write tr | packages/smithers/flows/database/docs/api.md: \| `@smthrs/database/DatabaseMetrics` |
 | 2026-10-21 15:15 | `cc2f507610` | PARTIAL | 19/7/4/2 | fcbc2db3f3 | ✨ feat(flows): each alarm logs its duration, journal entries, write tr | packages/smithers/flows/database/docs/api.md: \| `@smthrs/database/DatabaseMetrics` |
 | 2026-10-21 15:15 | `cbe8fe86e7` | PARTIAL | 8/3/1/5 | cbe8fe86e7 |  | packages/smithers/flows/database/src/DatabaseMetrics.ts: import * as WriteTally from "./in |
@@ -2960,7 +2957,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 17:03 | `87dde44da6` | SUPERSEDED | 50/22/0/0 | 87dde44da6 | ✨ feat(mvp): a stuck or failed draft offers Draft again and Delete, an | apps/mvp/db/Database.ts: landed as 4656e2586b (same author and time, committed later) |
 | 2026-10-21 17:09 | `2849e27fb1` | STRANDED | 0/0/4/0 | 2849e27fb1 |  | packages/smithers/flows/patterns/src/Runbook.ts: +    error: Failure.schemaFor([PatternErr |
 | 2026-10-21 17:09 | `0a20cc956d` | STRANDED | 0/0/4/0 | 0a20cc956d |  | packages/smithers/flows/patterns/src/Runbook.ts: +    error: Failure.schemaFor([PatternErr |
-| 2026-10-21 17:09 | `514c5839a7` | PARTIAL | 2/0/20/6 | 514c5839a7 |  | apps/mvp/docs/features/chat.md: - If Smithers can't answer, the answer says `Couldn't answ |
+| 2026-10-21 17:09 | `514c5839a7` | PARTIAL | 4/0/12/12 | 514c5839a7 |  | apps/mvp/docs/features/chat.md: - If Smithers can't answer, the answer says `Couldn't answ |
 | 2026-10-21 17:09 | `fe44e5949f` | PARTIAL | 31/1/0/4 | fe44e5949f |  | packages/smithers/flows/patterns/src/Runbook.ts: error: Failure.schemaFor([PatternError], |
 | 2026-10-21 17:10 | `5c54f61672` | ON-MAIN | 3/0/0/0 | fa5176b235 | ✅ test(mvp): the two known gaps of a shared Saved, as tests marked bro |  |
 | 2026-10-21 17:10 | `cb2f611705` | ON-MAIN | 3/0/0/0 | 0a3e757882 | ✅ test(mvp): the two known gaps of a shared Saved, as tests marked bro |  |
@@ -2986,9 +2983,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 17:25 | `1d46172b03` | SUPERSEDED | 24/3/0/0 | 1d46172b03 | 🐛 fix(agent): keep diagnostics private and resolve seats lazily | packages/smithers/agent/README.md: main carried then changed it: 387adb691e (🐛 fix(agent): |
 | 2026-10-21 17:25 | `0267262ad7` | SUPERSEDED | 7/1/0/0 | 0267262ad7 | 🐛 fix(views): share first opens and preserve navigation order | apps/mvp/src/features/views/views.test.ts: landed as 4dd1444fb3 (same author and time, com |
 | 2026-10-21 17:25 | `8770d3b357` | ON-MAIN | 18/0/0/0 | 8770d3b357 | 🐛 fix(mvp): join benchmark workers before finalizing evidence |  |
-| 2026-10-21 17:27 | `f129e8e7ef` | PARTIAL | 2/0/12/1 | f129e8e7ef | 🐛 fix(issues): preserve newer drafts and submission ownership | apps/mvp/docs/features/issues.md: Replacing a commitment removes only a matching local rec |
+| 2026-10-21 17:27 | `f129e8e7ef` | PARTIAL | 3/0/10/2 | f129e8e7ef | 🐛 fix(issues): preserve newer drafts and submission ownership | apps/mvp/docs/features/issues.md: Replacing a commitment removes only a matching local rec |
 | 2026-10-21 17:30 | `6477a5d540` | SUPERSEDED | 10/3/0/0 | 6477a5d540 | 🐛 fix(effect-code-storage): bound error diagnostics and validate read  | packages/effect-code-storage/src/internal/bounded.ts: main carried then changed it: e8fc61 |
-| 2026-10-21 17:30 | `b8a154457f` | PARTIAL | 0/0/7/2 | b8a154457f | 🐛 fix(platform-browser): validate stats and retain filesystem operatio | apps/mvp/docs/work/fix-browser-filesystem-441211.md: the fix, including the configured 100 |
+| 2026-10-21 17:30 | `b8a154457f` | PARTIAL | 8/0/0/1 | b8a154457f | 🐛 fix(platform-browser): validate stats and retain filesystem operatio | packages/smithers/flows/platform-browser/test/BrowserFileSystemSnapshot.test.ts: const bac |
 | 2026-10-21 17:33 | `1c02db0ba8` | ON-MAIN | 5/0/0/0 | 1c02db0ba8 | 🐛 fix(harness): seal reentrant dispatch and bound sparse traversal |  |
 | 2026-10-21 17:37 | `93af17ebd4` | SUPERSEDED | 10/2/0/0 | 93af17ebd4 |  | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: e |
 | 2026-10-21 17:37 | `c09041d548` | SUPERSEDED | 10/2/0/0 | c09041d548 |  | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: e |
@@ -3022,8 +3019,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 20:44 | `73e68aed9e` | SUPERSEDED | 3/2/0/0 | 73e68aed9e | 🐛 fix(mvp): a branch sandbox's PID 1 reaps orphans, and the image has  | apps/mvp/infra/sandbox/Dockerfile: main carried then changed it: e3a4a95b63 (✨ feat(mvp): |
 | 2026-10-21 20:44 | `9ea9fe32a2` | SUPERSEDED | 3/2/0/0 | 9ea9fe32a2 |  | apps/mvp/infra/sandbox/Dockerfile: main carried then changed it: e3a4a95b63 (✨ feat(mvp): |
 | 2026-10-21 20:44 | `0a3e757882` | SUPERSEDED | 1/1/0/0 | 0a3e757882 | 📝 docs(mvp): co-editing saves pass in production; the work note's evid | apps/mvp/docs/work/branch-coediting.md: main carried then changed it: 78edec1c09 (📝 docs(m |
-| 2026-10-21 20:46 | `15f0dbca51` | PARTIAL | 0/0/6/2 | 15f0dbca51 | 🐛 fix(mvp): restrict dev file serving and match Jev scopes faithfully | apps/mvp/PACKAGE.test.ts: * `matchesGlob` for import rules (ImportRulesCheck) and minimatc |
-| 2026-10-21 20:46 | `32562de10e` | PARTIAL | 0/0/6/2 | 32562de10e |  | apps/mvp/PACKAGE.test.ts: * `matchesGlob` for import rules (ImportRulesCheck) and minimatc |
+| 2026-10-21 20:46 | `15f0dbca51` | PARTIAL | 7/0/1/0 | 15f0dbca51 | 🐛 fix(mvp): restrict dev file serving and match Jev scopes faithfully | apps/mvp/vite.config.ts: server: { port: 5190, strictPort: true, fs: { strict: true } }, |
+| 2026-10-21 20:46 | `32562de10e` | PARTIAL | 7/0/1/0 | 32562de10e |  | apps/mvp/vite.config.ts: server: { port: 5190, strictPort: true, fs: { strict: true } }, |
 | 2026-10-21 20:48 | `6219c20372` | SUPERSEDED | 25/2/0/0 | c0046c5d2d | WIP(flows): Astra review fixes for run writer locks, not green yet | packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md: main carried the |
 | 2026-10-21 20:49 | `daecd8e185` | ON-MAIN | 23/0/0/0 | 104a7b5e07 | 🐛 fix(platform-cloudflare): budget terminal input by bytes and clean u |  |
 | 2026-10-21 20:49 | `aa3f1ffbb1` | ON-MAIN | 23/0/0/0 | 9ef520910f | 🐛 fix(platform-cloudflare): budget terminal input by bytes and clean u |  |
@@ -3114,8 +3111,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 21:13 | `dd9fb460f8` | PARTIAL | 19/4/2/1 | dd9fb460f8 |  | apps/mvp/docs/features/agent.md: Turn admission, heartbeat and content writes serialize on |
 | 2026-10-21 21:14 | `5d33f74f80` | ON-MAIN | 2/0/0/0 | ff1eb39a91 | 📝 docs(mvp): decision 0039, custom domains on Cloudflare for SaaS behi |  |
 | 2026-10-21 21:14 | `57f59de10e` | PARTIAL | 0/1/0/1 | c6db4254b1 | 📝 docs(mvp): decision 0028, custom domains on Cloudflare for SaaS behi | apps/mvp/docs/decisions/0028-custom-domains.md: \| Option \| Why not \|; apps/mvp/docs/dec |
-| 2026-10-21 21:14 | `1cd360747c` | PARTIAL | 56/5/6/3 | 1cd360747c | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/mvp/docs/work/journal-latency.md: statement, branch, function and line coverage. Engi |
-| 2026-10-21 21:14 | `fcbc2db3f3` | PARTIAL | 56/5/6/3 | fcbc2db3f3 | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/mvp/docs/work/journal-latency.md: statement, branch, function and line coverage. Engi |
+| 2026-10-21 21:14 | `1cd360747c` | PARTIAL | 55/6/6/3 | 1cd360747c | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/mvp/docs/work/journal-latency.md: statement, branch, function and line coverage. Engi |
+| 2026-10-21 21:14 | `fcbc2db3f3` | PARTIAL | 55/6/6/3 | fcbc2db3f3 | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/mvp/docs/work/journal-latency.md: statement, branch, function and line coverage. Engi |
 | 2026-10-21 21:14 | `c0046c5d2d` | SUPERSEDED | 24/2/0/0 | c0046c5d2d | ⚡ perf(flows): a drive writes its node records in its other transactio | packages/smithers/flows/engine-store/src/EngineStore.ts: main carried then changed it: eb5 |
 | 2026-10-21 21:14 | `a5831dcfee` | SUPERSEDED | 24/2/0/0 | a5831dcfee |  | packages/smithers/flows/engine-store/src/EngineStore.ts: main carried then changed it: eb5 |
 | 2026-10-21 21:14 | `9b82a3f72f` | SUPERSEDED | 24/2/0/0 | 4e6686686f | ⚡ perf(flows): a drive writes its node records in its other transactio | packages/smithers/flows/engine-store/src/EngineStore.ts: main carried then changed it: eb5 |
@@ -3264,19 +3261,19 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 22:12 | `c1ee3e0ddd` | SUPERSEDED | 18/1/0/0 | 6b2971b10f | ✨ feat(ui): DocsPageView draws a docs page's Markdown with its site, a | packages/smithers/ui/src/presentation/bundle.generated.ts: main carried then changed it: 3 |
 | 2026-10-21 22:14 | `91646f2334` | SUPERSEDED | 20/2/0/0 | 397ac16d47 | 🧪 test(mvp): agent evals for asking with a form and showing a board | apps/mvp/evals/checks.ts: main carried then changed it: f46ea917ee (✨ feat(mvp): a reposit |
 | 2026-10-21 22:14 | `e16986baaf` | SUPERSEDED | 8/1/0/0 | 397ac16d47 | ✅ test(mvp): e2e for asking with a form and playing a generated tic-ta | apps/mvp/src/test/scriptedAgent.ts: main carried then changed it: f46ea917ee (✨ feat(mvp): |
-| 2026-10-21 22:14 | `4d6e32800b` | PARTIAL | 133/20/1/0 | 397ac16d47 | ✨ feat(mvp): the agent asks with forms and shows views, inline and ful | apps/mvp/src/device/registry.ts: import { AskingV1, AuthConfirmedV1, ChatDraftV1, IssueSen |
+| 2026-10-21 22:14 | `4d6e32800b` | PARTIAL | 132/21/1/0 | 397ac16d47 | ✨ feat(mvp): the agent asks with forms and shows views, inline and ful | apps/mvp/src/device/registry.ts: import { AskingV1, AuthConfirmedV1, ChatDraftV1, IssueSen |
 | 2026-10-21 22:14 | `196438ee7f` | ON-MAIN | 2/0/0/0 | 397ac16d47 | 🐛 fix(ui): the clipboard fallback typechecks in a Worker |  |
 | 2026-10-21 22:14 | `91d70e9d68` | SUPERSEDED | 19/3/0/0 | 91d70e9d68 | 🧪 test(mvp): agent evals for asking with a form and showing a board | apps/mvp/docs/features/agent-evals.md: landed as 86dc184039 (same author and time, committ |
 | 2026-10-21 22:14 | `e4d08d2e60` | PARTIAL | 6/1/1/0 | 91d70e9d68 | ✅ test(mvp): e2e for asking with a form and playing a generated tic-ta | apps/mvp/src/flows/engine.worker.ts: else void Promise.all([import("../test/scriptedAgent" |
-| 2026-10-21 22:14 | `7b77eb3e77` | PARTIAL | 124/13/7/7 | 91d70e9d68 | ✨ feat(mvp): the agent asks with forms and shows views, inline and ful | apps/mvp/AGENTS.md: - `ChatApi.ts` is Effect-native: it stores questions in Postgres, prox |
+| 2026-10-21 22:14 | `7b77eb3e77` | PARTIAL | 123/14/7/7 | 91d70e9d68 | ✨ feat(mvp): the agent asks with forms and shows views, inline and ful | apps/mvp/AGENTS.md: - `ChatApi.ts` is Effect-native: it stores questions in Postgres, prox |
 | 2026-10-21 22:14 | `285502b608` | ON-MAIN | 2/0/0/0 | 91d70e9d68 | 🐛 fix(ui): the clipboard fallback typechecks in a Worker |  |
 | 2026-10-21 22:14 | `5d05890579` | SUPERSEDED | 13/3/0/0 | 5d05890579 | 🧪 test(mvp): agent evals for asking with a form and showing a board | apps/mvp/docs/features/agent-evals.md: landed as 86dc184039 (same author and time, committ |
 | 2026-10-21 22:14 | `d02fe9e1c6` | PARTIAL | 5/0/2/1 | 5d05890579 | ✅ test(mvp): e2e for asking with a form and playing a generated tic-ta | apps/mvp/src/flows/engine.worker.ts: else void Promise.all([import("../test/scriptedAgent" |
-| 2026-10-21 22:14 | `79025dcb10` | PARTIAL | 116/12/9/7 | 5d05890579 | ✨ feat(mvp): the agent asks with forms and shows views, inline and ful | apps/mvp/AGENTS.md: - `ChatApi.ts` is Effect-native: it stores questions in Postgres, prox |
+| 2026-10-21 22:14 | `79025dcb10` | PARTIAL | 115/13/9/7 | 5d05890579 | ✨ feat(mvp): the agent asks with forms and shows views, inline and ful | apps/mvp/AGENTS.md: - `ChatApi.ts` is Effect-native: it stores questions in Postgres, prox |
 | 2026-10-21 22:14 | `b69812928b` | ON-MAIN | 2/0/0/0 | 5d05890579 | 🐛 fix(ui): the clipboard fallback typechecks in a Worker |  |
 | 2026-10-21 22:14 | `e2d711da18` | SUPERSEDED | 14/2/0/0 | e2d711da18 | 🧪 test(mvp): agent evals for asking with a form and showing a board | apps/mvp/docs/features/agent-evals.md: landed as 86dc184039 (same author and time, committ |
 | 2026-10-21 22:14 | `9374b2595b` | PARTIAL | 5/0/1/1 | e2d711da18 | ✅ test(mvp): e2e for asking with a form and playing a generated tic-ta | apps/mvp/src/flows/engine.worker.ts: else void Promise.all([import("../test/scriptedAgent" |
-| 2026-10-21 22:14 | `bffb8c8086` | PARTIAL | 120/13/6/6 | e2d711da18 | ✨ feat(mvp): the agent asks with forms and shows views, inline and ful | apps/mvp/AGENTS.md: - `ChatApi.ts` is Effect-native: it stores questions in Postgres, prox |
+| 2026-10-21 22:14 | `bffb8c8086` | PARTIAL | 119/14/6/6 | e2d711da18 | ✨ feat(mvp): the agent asks with forms and shows views, inline and ful | apps/mvp/AGENTS.md: - `ChatApi.ts` is Effect-native: it stores questions in Postgres, prox |
 | 2026-10-21 22:14 | `39a983cb62` | ON-MAIN | 2/0/0/0 | e2d711da18 | 🐛 fix(ui): the clipboard fallback typechecks in a Worker |  |
 | 2026-10-21 22:21 | `ff1eb39a91` | PARTIAL | 87/20/0/1 | ff1eb39a91 | ✨ feat(mvp): custom domains, Vercel-style, for Maintainers only | apps/mvp/db/migrations/0044_domains.ts: checked_at timestamptz,; apps/mvp/db/Database.ts: |
 | 2026-10-21 22:21 | `c6db4254b1` | PARTIAL | 68/33/1/1 | c6db4254b1 | ✨ feat(mvp): custom domains, Vercel-style, for Maintainers only | apps/mvp/db/migrations/0041_domains.ts: // Custom domains (decision 0028, docs/features/do |
@@ -3361,10 +3358,10 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-21 23:01 | `1f1f31f298` | SUPERSEDED | 11/2/0/0 | 1f1f31f298 |  | apps/mvp/docs/features/issues.md: landed as c40976dcbe (same author and time, committed la |
 | 2026-10-21 23:02 | `c02e30023c` | SUPERSEDED | 27/10/0/0 | c02e30023c | 🐛 fix(mvp): a branch's page opened offline shows at once, and opens it | apps/mvp/docs/features/branch-workspace.md: main carried then changed it: fae3a9e2e8 (🐛 fi |
 | 2026-10-21 23:02 | `87afc19dba` | SUPERSEDED | 24/10/0/0 | 87afc19dba | 🐛 fix(mvp): a branch's page opened offline shows at once, and opens it | apps/mvp/docs/features/branch-workspace.md: main carried then changed it: fae3a9e2e8 (🐛 fi |
-| 2026-10-21 23:03 | `02def9611e` | PARTIAL | 9/0/1/1 | 02def9611e |  | apps/mvp/docs/work/model-proxy-wire-boundaries.md: data. Relative endpoint identity, blank |
-| 2026-10-21 23:04 | `09e2b52cd0` | PARTIAL | 9/0/1/1 | 09e2b52cd0 | 🐛 fix(model): bound proxy lines and validate public requests | apps/mvp/docs/work/model-proxy-wire-boundaries.md: data. Relative endpoint identity, blank |
-| 2026-10-21 23:04 | `cff156d794` | PARTIAL | 9/0/1/1 | cff156d794 |  | apps/mvp/docs/work/model-proxy-wire-boundaries.md: data. Relative endpoint identity, blank |
-| 2026-10-21 23:04 | `d349d20f42` | PARTIAL | 9/0/1/1 | d349d20f42 |  | apps/mvp/docs/work/model-proxy-wire-boundaries.md: data. Relative endpoint identity, blank |
+| 2026-10-21 23:03 | `02def9611e` | PARTIAL | 10/0/1/0 | 02def9611e |  | apps/mvp/docs/work/model-proxy-wire-boundaries.md: data. Relative endpoint identity, blank |
+| 2026-10-21 23:04 | `09e2b52cd0` | PARTIAL | 10/0/1/0 | 09e2b52cd0 | 🐛 fix(model): bound proxy lines and validate public requests | apps/mvp/docs/work/model-proxy-wire-boundaries.md: data. Relative endpoint identity, blank |
+| 2026-10-21 23:04 | `cff156d794` | PARTIAL | 10/0/1/0 | cff156d794 |  | apps/mvp/docs/work/model-proxy-wire-boundaries.md: data. Relative endpoint identity, blank |
+| 2026-10-21 23:04 | `d349d20f42` | PARTIAL | 10/0/1/0 | d349d20f42 |  | apps/mvp/docs/work/model-proxy-wire-boundaries.md: data. Relative endpoint identity, blank |
 | 2026-10-21 23:07 | `bedd7ff582` | PARTIAL | 16/0/0/1 | bedd7ff582 |  | apps/mvp/docs/work/flow-sibling-suspension-codec.md: Reworked ecea1e22e6ab on e90cc1cf2f12 |
 | 2026-10-21 23:08 | `104a7b5e07` | ON-MAIN | 17/0/0/0 | 104a7b5e07 | 🐛 fix(flow): nested sibling suspensions settle and encoded codec types |  |
 | 2026-10-21 23:08 | `9ef520910f` | ON-MAIN | 17/0/0/0 | 9ef520910f | 🐛 fix(flow): nested sibling suspensions settle and encoded codec types |  |
@@ -3415,9 +3412,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-22 00:16 | `ec0ec5d54a` | ON-MAIN | 10/0/0/0 | ec0ec5d54a | 🐛 fix(backend): bound process output and require one revision |  |
 | 2026-10-22 00:29 | `1aa63307c9` | PARTIAL | 8/7/0/2 | 1cd360747c | 🔎 feat(flows): correlate remote run admission timing | packages/smithers/flows/platform-cloudflare/src/ExecutionObject.ts: +      yield* Effect.l |
 | 2026-10-22 00:29 | `5604c29b24` | SUPERSEDED | 9/7/0/0 | 26da3c47fd | 🔎 feat(flows): correlate remote run admission timing | apps/mvp/docs/work/todo-run-start.md: main carried then changed it: 719b30408c (🐛 fix(mvp) |
-| 2026-10-22 00:32 | `a1c820f281` | PARTIAL | 47/7/18/1 | 1cd360747c | 🐛 fix(mvp): cancel dropped TODO runs durably | apps/site/public/llms-full.txt: \| `Driver`                \| `Context.Service<{ admit, dr |
+| 2026-10-22 00:32 | `a1c820f281` | PARTIAL | 45/10/18/0 | 1cd360747c | 🐛 fix(mvp): cancel dropped TODO runs durably | apps/site/public/llms-full.txt: \| `Driver`                \| `Context.Service<{ admit, dr |
 | 2026-10-22 00:32 | `dd33ebd480` | SUPERSEDED | 5/1/0/0 | 1cd360747c | 🐛 fix(platform-cloudflare): bound admission alarm delays | packages/smithers/flows/platform-cloudflare/test/AdmissionLatency.test.ts: main carried th |
-| 2026-10-22 00:32 | `26da3c47fd` | PARTIAL | 47/7/18/1 | 26da3c47fd | 🐛 fix(mvp): cancel dropped TODO runs durably | apps/site/public/llms-full.txt: \| `Driver`                \| `Context.Service<{ admit, dr |
+| 2026-10-22 00:32 | `26da3c47fd` | PARTIAL | 45/10/18/0 | 26da3c47fd | 🐛 fix(mvp): cancel dropped TODO runs durably | apps/site/public/llms-full.txt: \| `Driver`                \| `Context.Service<{ admit, dr |
 | 2026-10-22 00:32 | `c8001f766e` | SUPERSEDED | 5/1/0/0 | 26da3c47fd | 🐛 fix(platform-cloudflare): bound admission alarm delays | packages/smithers/flows/platform-cloudflare/test/AdmissionLatency.test.ts: main carried th |
 | 2026-10-22 00:42 | `afa18db821` | ON-MAIN | 13/0/0/0 | afa18db821 | 🐛 fix(cli): honor auth selection and workspace path boundaries |  |
 | 2026-10-22 00:42 | `4debb68b67` | ON-MAIN | 12/0/0/0 | 4debb68b67 | 🐛 fix(evals): malformed scorer results and snapshot getters fail safel |  |
@@ -3490,8 +3487,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-22 03:39 | `184402303f` | SUPERSEDED | 36/6/0/0 | e457a8fef8 | ✨ feat(engine-store): a hosted drive takes a budget and yields at a st | apps/site/public/llms-full.txt: main carried then changed it: d9e2c5af35 (🔧 chore: regener |
 | 2026-10-22 03:39 | `428be8dd93` | SUPERSEDED | 36/6/0/0 | 0a442931c6 | ✨ feat(engine-store): a hosted drive takes a budget and yields at a st | apps/site/public/llms-full.txt: main carried then changed it: d9e2c5af35 (🔧 chore: regener |
 | 2026-10-22 03:42 | `d6eb05b0bb` | SUPERSEDED | 17/3/0/0 | ca3ccee5d9 | ✨ feat(ci): plan repository flows in QuickJS and run their jobs durabl | apps/mvp/docs/features/ci.md: main carried then changed it: 9f6bbd1e9c (✨ feat(ci): dispat |
-| 2026-10-22 03:42 | `1483658caf` | PARTIAL | 15/5/0/2 | a4b7a02775 | ✨ feat(ci): plan repository flows in QuickJS and run their jobs durabl | apps/mvp/worker/AgentSandbox.workerd.test.ts: ;({ worker, wasm } = await start("agent", EN |
-| 2026-10-22 03:42 | `30080091a6` | PARTIAL | 14/5/0/2 | 67917e16d7 | ✨ feat(ci): a repository's own flow.ts runs on Smithers, planned in a  | apps/mvp/worker/AgentSandbox.workerd.test.ts: ;({ worker, wasm } = await start("agent", EN |
+| 2026-10-22 03:42 | `1483658caf` | PARTIAL | 13/7/0/2 | a4b7a02775 | ✨ feat(ci): plan repository flows in QuickJS and run their jobs durabl | apps/mvp/worker/AgentSandbox.workerd.test.ts: ;({ worker, wasm } = await start("agent", EN |
+| 2026-10-22 03:42 | `30080091a6` | PARTIAL | 12/7/0/2 | 67917e16d7 | ✨ feat(ci): a repository's own flow.ts runs on Smithers, planned in a  | apps/mvp/worker/AgentSandbox.workerd.test.ts: ;({ worker, wasm } = await start("agent", EN |
 | 2026-10-22 03:45 | `344c597278` | SUPERSEDED | 11/3/0/0 | 64266eb489 | ✅ test(mvp): the flows suite's baseline, from a safe full run after th | apps/mvp/docs/features/agent-evals.md: main carried then changed it: 0549b2ea8e (✨ feat(mv |
 | 2026-10-22 03:47 | `e457a8fef8` | SUPERSEDED | 39/6/0/0 | e457a8fef8 | ✨ feat(platform-cloudflare,mvp): an execution's alarm drives within a  | packages/smithers/flows/platform-cloudflare/docs/concepts/execution-lifecycle.md: main car |
 | 2026-10-22 03:47 | `0a442931c6` | SUPERSEDED | 39/6/0/0 | 0a442931c6 | ✨ feat(platform-cloudflare,mvp): an execution's alarm drives within a  | packages/smithers/flows/platform-cloudflare/docs/concepts/execution-lifecycle.md: main car |
@@ -3504,20 +3501,20 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-22 03:48 | `30c8a01879` | SUPERSEDED | 5/1/0/0 | efc4391769 | 🐛 fix(platform-cloudflare): bound admission alarm delays | packages/smithers/flows/platform-cloudflare/test/AdmissionLatency.test.ts: main carried th |
 | 2026-10-22 03:48 | `af757f5a92` | SUPERSEDED | 9/7/0/0 | efc4391769 | 🔎 feat(flows): correlate remote run admission timing | apps/mvp/docs/work/todo-run-start.md: main carried then changed it: 719b30408c (🐛 fix(mvp) |
 | 2026-10-22 03:48 | `6049829e5f` | PARTIAL | 18/14/1/0 | d716562442 | ✨ feat(flows): each alarm logs its duration, journal entries, write tr | packages/smithers/flows/database/docs/api.md: \| `@smthrs/database/DatabaseMetrics` |
-| 2026-10-22 03:48 | `75697adbfb` | PARTIAL | 44/11/18/0 | d716562442 | 🐛 fix(mvp): cancel dropped TODO runs durably | apps/site/public/llms-full.txt: \| `Driven`                \| `{ _tag: "Settled"; status } |
+| 2026-10-22 03:48 | `75697adbfb` | PARTIAL | 43/12/18/0 | d716562442 | 🐛 fix(mvp): cancel dropped TODO runs durably | apps/site/public/llms-full.txt: \| `Driven`                \| `{ _tag: "Settled"; status } |
 | 2026-10-22 03:48 | `3544a544e9` | SUPERSEDED | 5/1/0/0 | d716562442 | 🐛 fix(platform-cloudflare): bound admission alarm delays | packages/smithers/flows/platform-cloudflare/test/AdmissionLatency.test.ts: main carried th |
 | 2026-10-22 03:48 | `23ef86e088` | SUPERSEDED | 10/7/0/0 | d716562442 | 🔎 feat(flows): correlate remote run admission timing | apps/mvp/docs/work/todo-run-start.md: main carried then changed it: 719b30408c (🐛 fix(mvp) |
 | 2026-10-22 03:48 | `441e4c4c7d` | PARTIAL | 19/12/2/0 | 5a0fb2b622 | ✨ feat(flows): each alarm logs its duration, journal entries, write tr | packages/smithers/flows/database/docs/api.md: \| `@smthrs/database/DatabaseMetrics` |
-| 2026-10-22 03:48 | `3ce3deab2f` | PARTIAL | 47/8/18/0 | 5a0fb2b622 | 🐛 fix(mvp): cancel dropped TODO runs durably | apps/site/public/llms-full.txt: \| `Driver`                \| `Context.Service<{ admit, dr |
+| 2026-10-22 03:48 | `3ce3deab2f` | PARTIAL | 45/10/18/0 | 5a0fb2b622 | 🐛 fix(mvp): cancel dropped TODO runs durably | apps/site/public/llms-full.txt: \| `Driver`                \| `Context.Service<{ admit, dr |
 | 2026-10-22 03:48 | `7ad8ec7fdd` | SUPERSEDED | 5/1/0/0 | 5a0fb2b622 | 🐛 fix(platform-cloudflare): bound admission alarm delays | packages/smithers/flows/platform-cloudflare/test/AdmissionLatency.test.ts: main carried th |
 | 2026-10-22 03:48 | `b52bb87e5a` | SUPERSEDED | 9/7/0/0 | 5a0fb2b622 | 🔎 feat(flows): correlate remote run admission timing | apps/mvp/docs/work/todo-run-start.md: main carried then changed it: 719b30408c (🐛 fix(mvp) |
 | 2026-10-22 03:49 | `43891bdd98` | SUPERSEDED | 53/5/0/0 | 43891bdd98 | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/site/src/content/docs/docs/reference/api/platform-cloudflare.mdx: main carried then c |
 | 2026-10-22 03:49 | `1f0ed4c732` | SUPERSEDED | 118/10/0/0 | 43891bdd98 | ⚡ perf(flows): runs write their journals and engine state side by side | packages/smithers/flows/database/src/DatabaseMetrics.ts: main carried then changed it: 7db |
 | 2026-10-22 03:49 | `efc4391769` | SUPERSEDED | 53/5/0/0 | efc4391769 | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/site/src/content/docs/docs/reference/api/platform-cloudflare.mdx: main carried then c |
 | 2026-10-22 03:49 | `97aa4b79cb` | SUPERSEDED | 118/10/0/0 | efc4391769 | ⚡ perf(flows): runs write their journals and engine state side by side | packages/smithers/flows/database/src/DatabaseMetrics.ts: main carried then changed it: 7db |
-| 2026-10-22 03:49 | `d716562442` | PARTIAL | 57/8/6/2 | d716562442 | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/site/public/llms-full.txt: \| `@smthrs/database/DatabaseMetrics`           \| the wri |
+| 2026-10-22 03:49 | `d716562442` | PARTIAL | 56/9/6/2 | d716562442 | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/site/public/llms-full.txt: \| `@smthrs/database/DatabaseMetrics`           \| the wri |
 | 2026-10-22 03:49 | `4674ab621f` | PARTIAL | 114/13/2/1 | d716562442 | ⚡ perf(flows): runs write their journals and engine state side by side | packages/smithers/flows/database/docs/api.md: interface WriteOptions {; packages/smithers/ |
-| 2026-10-22 03:49 | `5a0fb2b622` | PARTIAL | 62/7/6/2 | 5a0fb2b622 | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/site/public/llms-full.txt: \| `@smthrs/database/DatabaseMetrics`           \| the wri |
+| 2026-10-22 03:49 | `5a0fb2b622` | PARTIAL | 61/8/6/2 | 5a0fb2b622 | ⚡ perf(flows): a drive writes its node records in its other transactio | apps/site/public/llms-full.txt: \| `@smthrs/database/DatabaseMetrics`           \| the wri |
 | 2026-10-22 03:49 | `64266eb489` | ON-MAIN | 9/0/0/0 | 64266eb489 | 🐛 fix(mvp): an answer's text streams only when nothing can make it unt |  |
 | 2026-10-22 03:49 | `ef79f62954` | PARTIAL | 115/10/3/1 | 5a0fb2b622 | ⚡ perf(flows): runs write their journals and engine state side by side | packages/smithers/flows/database/docs/api.md: interface WriteOptions {; packages/smithers/ |
 | 2026-10-22 03:54 | `30107a6b8d` | SUPERSEDED | 0/1/0/0 | 30107a6b8d | ✅ test(mvp): the ownerless offline activation proves its verified reop | apps/mvp/e2e/sign-in.spec.ts: main carried then changed it: b590c19559 (🐛 fix(mvp): adopt |
@@ -3579,7 +3576,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-22 07:58 | `c9d2ade518` | ON-MAIN | 9/0/0/0 | c9d2ade518 | 🧪 test(mvp): wait for branch composer controls after navigation |  |
 | 2026-10-22 08:18 | `47f1d1ffea` | PARTIAL | 73/25/0/1 | 47f1d1ffea | ✨ feat(mvp): your conversations: /new starts one on a new branch, Arch | apps/mvp/db/migrations/0043_conversation_people.ts: person_id text NOT NULL,; apps/mvp/db/ |
 | 2026-10-22 08:20 | `ca3ccee5d9` | SUPERSEDED | 118/55/0/0 | ca3ccee5d9 | ✨ feat(mvp): watch repository CI runs with Stop and restrict rollout | apps/mvp/AGENTS.md: main carried then changed it: da8b72a5b7 (📝 docs(mvp): repository feed |
-| 2026-10-22 08:20 | `a4b7a02775` | PARTIAL | 106/50/1/1 | a4b7a02775 | ✨ feat(mvp): watch repository CI runs on Cloudflare with Stop | apps/mvp/src/device/migrations.test.ts: [FileTabsStore, { key: "a/b@main:README.md", owner |
+| 2026-10-22 08:20 | `a4b7a02775` | PARTIAL | 102/54/1/1 | a4b7a02775 | ✨ feat(mvp): watch repository CI runs on Cloudflare with Stop | apps/mvp/src/device/migrations.test.ts: [FileTabsStore, { key: "a/b@main:README.md", owner |
 | 2026-10-22 08:20 | `a3c129e82f` | SUPERSEDED | 81/46/0/0 | 67917e16d7 | ✨ feat(mvp): a repository's runs at /$owner/$repo/actions, watched liv | apps/mvp/AGENTS.md: landed as 120aa96554 (same author and time, committed later) |
 | 2026-10-22 08:28 | `7815f22e1b` | ON-MAIN | 4/0/0/0 | db2e3e783b | test(cli): update terminal, authority and durable fault fixtures |  |
 | 2026-10-22 08:35 | `670fc3048e` | ON-MAIN | 3/0/0/0 | db2e3e783b | fix(cli): mount canonical MCP commands while preserving direct help an |  |
@@ -3681,16 +3678,16 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-22 11:19 | `3a43ea31fa` | SUPERSEDED | 27/20/0/0 | 3a43ea31fa | ✨ feat(mvp): a command runs up to SANDBOX_COMMAND_MAX_SECONDS, an hour | apps/mvp/docs/features/sandbox-tools.md: main carried then changed it: b8a9ee0cec (🐛 fix(m |
 | 2026-10-22 11:58 | `c150967dde` | ON-MAIN | 7/0/0/0 | c150967dde | fix(mvp): let crashed test engines refuse shutdown writes |  |
 | 2026-10-22 11:59 | `67917e16d7` | STRANDED | 0/0/2/0 | 67917e16d7 | 📝 docs: regenerated site reference and llms text for CiJob's step log | apps/site/public/llms-full.txt: \| Name                    \| What it is |
-| 2026-10-22 11:59 | `d8e24d5fbe` | PARTIAL | 3/0/112/15 | 67917e16d7 | ✨ feat(mvp): run a repository's flow by hand from its form, Retry and  | apps/mvp/docs/features/actions.md: DO alarm finds a repo/Run settled ─ settled ─▶ repo/Set |
+| 2026-10-22 11:59 | `d8e24d5fbe` | PARTIAL | 57/0/45/28 | 67917e16d7 | ✨ feat(mvp): run a repository's flow by hand from its form, Retry and  | apps/mvp/docs/features/actions.md: DO alarm finds a repo/Run settled ─ settled ─▶ repo/Set |
 | 2026-10-22 11:59 | `645410aad8` | PARTIAL | 0/0/7/4 | 67917e16d7 | ✨ feat(sandbox): a CI step's result keeps the end of its log | .changeset/ci-job-step-log.md: `CiJob`'s step result keeps the end of what its command pri |
 | 2026-10-22 12:10 | `15098441d5` | SUPERSEDED | 2/1/0/0 | 15098441d5 | 📝 docs: regenerated site reference and API baseline for the hour-long  | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: 6 |
-| 2026-10-22 12:33 | `7e0ae698e6` | STRANDED | 0/0/17/0 | 7e0ae698e6 |  | apps/mvp/src/test/agent.ts: /** Kills the engine as a killed tab's dies (`Engine.crash` in |
+| 2026-10-22 12:33 | `7e0ae698e6` | PARTIAL | 3/0/14/0 | 7e0ae698e6 |  | apps/mvp/src/test/agent.ts: /** Kills the engine as a killed tab's dies (`Engine.crash` in |
 | 2026-10-22 12:35 | `834bbeb9d4` | SUPERSEDED | 24/2/0/0 | 6b14785300 | 🐛 fix(mvp): a run past the deployment's limit is refused with the limi | apps/mvp/docs/features/sandbox-tools.md: main carried then changed it: e3a4a95b63 (✨ feat( |
 | 2026-10-22 12:35 | `cda67bb823` | SUPERSEDED | 73/14/0/0 | 6b14785300 | ⚡ perf: a sandbox command answers the step that asked it in 0.1 s, not | apps/mvp/worker/ExecutionHost.ts: main carried then changed it: 2611507e89 (📈 feat(mvp): t |
 | 2026-10-22 12:35 | `775dd2d7c7` | SUPERSEDED | 24/2/0/0 | 775dd2d7c7 | 🐛 fix(mvp): a run past the deployment's limit is refused with the limi | apps/mvp/docs/features/sandbox-tools.md: main carried then changed it: e3a4a95b63 (✨ feat( |
 | 2026-10-22 12:35 | `3b45c91151` | PARTIAL | 70/14/4/3 | 775dd2d7c7 | ⚡ perf: a sandbox command answers the step that asked it in 0.1 s, not | .changeset/command-in-the-step.md: A sandbox command that exits at once answers the step t |
 | 2026-10-22 12:35 | `384646b652` | SUPERSEDED | 11/1/0/0 | 384646b652 | 🐛 fix(harness): a sandbox command's call is not cut at its own timeout | apps/mvp/src/features/agent/agent.test.ts: main carried then changed it: 6509ca42cc (✨ fea |
-| 2026-10-22 12:43 | `24337be84e` | PARTIAL | 0/0/17/2 | 24337be84e |  | .changeset/claim-log-owners.md: The `flow.run.claimed` log line names who took the run: `o |
+| 2026-10-22 12:43 | `24337be84e` | PARTIAL | 6/0/13/0 | 24337be84e |  | apps/mvp/src/test/agent.ts: /** Kills the engine as a killed tab's dies (`Engine.crash` in |
 | 2026-10-22 13:03 | `bb8846cec1` | ON-MAIN | 2/0/0/0 | bb8846cec1 | 🐛 fix(harness): the realm stack test finds the host overflowing inside |  |
 | 2026-10-22 13:07 | `812520275c` | SUPERSEDED | 4/1/0/0 | 9128d43fe1 | fix(flows): keep the public barrel inventory complete and publishable | apps/mvp/docs/work/flows-reds.md: main carried then changed it: fe25ce0a8c (test(flows): c |
 | 2026-10-22 13:08 | `1ea2bd5b45` | ON-MAIN | 2/0/0/0 | 9128d43fe1 | fix(flows): keep host registration logs out of the PID protocol |  |
@@ -3705,23 +3702,23 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-22 15:11 | `8d87946a54` | SUPERSEDED | 39/2/0/0 | 6b14785300 | ⚡ perf(engine-store): a resumed run replays its recorded steps without | apps/site/src/content/docs/docs/reference/api/engine-store.mdx: main carried then changed |
 | 2026-10-22 15:11 | `21a5cdc8ab` | ON-MAIN | 10/0/0/0 | 6b14785300 | ✨ feat(journal): recall and recorded answer a run's re-emissions witho |  |
 | 2026-10-22 15:19 | `dcd35527d1` | ON-MAIN | 4/0/0/0 | dcd35527d1 | test(platform-node): expose cancellation failures and exercise shared  |  |
-| 2026-10-22 15:29 | `50190558c7` | PARTIAL | 0/0/3/1 | 0e8d7cc83b | test(platform-node): distinguish semantic restart edits from comments | apps/mvp/docs/work/platform-node-linux-reds.md: Catalog: `@smthrs/platform-node` for Node |
-| 2026-10-22 15:29 | `11731ba350` | PARTIAL | 0/0/3/1 | b03633a3c1 | test(platform-node): distinguish semantic restart edits from comments | apps/mvp/docs/work/platform-node-linux-reds.md: Catalog: `@smthrs/platform-node` for Node |
-| 2026-10-22 15:29 | `d5b6c31b41` | PARTIAL | 0/0/3/1 | 373aa72a50 | test(platform-node): distinguish semantic restart edits from comments | apps/mvp/docs/work/platform-node-linux-reds.md: Catalog: `@smthrs/platform-node` for Node |
-| 2026-10-22 15:30 | `0300eb6b70` | PARTIAL | 1/0/4/1 | 0e8d7cc83b | test(platform-node): wait for fixture receipts before signalling hosts | apps/mvp/docs/work/platform-node-linux-reds.md: suppressing Node's experimental Web Storag |
-| 2026-10-22 15:30 | `9b6d10d569` | PARTIAL | 1/0/4/1 | b03633a3c1 | test(platform-node): wait for fixture receipts before signalling hosts | apps/mvp/docs/work/platform-node-linux-reds.md: suppressing Node's experimental Web Storag |
-| 2026-10-22 15:30 | `0faf7850b6` | PARTIAL | 1/0/4/1 | 373aa72a50 | test(platform-node): wait for fixture receipts before signalling hosts | apps/mvp/docs/work/platform-node-linux-reds.md: suppressing Node's experimental Web Storag |
+| 2026-10-22 15:29 | `50190558c7` | PARTIAL | 1/0/2/1 | 0e8d7cc83b | test(platform-node): distinguish semantic restart edits from comments | packages/smithers/flows/platform-node/test/NativeRuntimeRestart.test.ts: ["continuation", |
+| 2026-10-22 15:29 | `11731ba350` | PARTIAL | 1/0/2/1 | b03633a3c1 | test(platform-node): distinguish semantic restart edits from comments | packages/smithers/flows/platform-node/test/NativeRuntimeRestart.test.ts: ["continuation", |
+| 2026-10-22 15:29 | `d5b6c31b41` | PARTIAL | 1/0/2/1 | 373aa72a50 | test(platform-node): distinguish semantic restart edits from comments | packages/smithers/flows/platform-node/test/NativeRuntimeRestart.test.ts: ["continuation", |
+| 2026-10-22 15:30 | `0300eb6b70` | PARTIAL | 3/0/2/1 | 0e8d7cc83b | test(platform-node): wait for fixture receipts before signalling hosts | packages/smithers/flows/platform-node/test/NodeRuntimeReap.integration.test.ts: // Runtime |
+| 2026-10-22 15:30 | `9b6d10d569` | PARTIAL | 3/0/2/1 | b03633a3c1 | test(platform-node): wait for fixture receipts before signalling hosts | packages/smithers/flows/platform-node/test/NodeRuntimeReap.integration.test.ts: // Runtime |
+| 2026-10-22 15:30 | `0faf7850b6` | PARTIAL | 3/0/2/1 | 373aa72a50 | test(platform-node): wait for fixture receipts before signalling hosts | packages/smithers/flows/platform-node/test/NodeRuntimeReap.integration.test.ts: // Runtime |
 | 2026-10-22 15:30 | `6b14785300` | ON-MAIN | 1/0/0/0 | 6b14785300 | ✅ test(engine-store): the held drive's test moves the clock only once  |  |
-| 2026-10-22 15:33 | `c24074824e` | STRANDED | 0/0/2/0 | 0e8d7cc83b | test(platform-node): cover explicit read denials and optional resolver | packages/smithers/flows/platform-node/test/ProcessSandbox.test.ts: NodeFs.writeFileSync(No |
-| 2026-10-22 15:33 | `a91faca27b` | STRANDED | 0/0/2/0 | b03633a3c1 | test(platform-node): cover explicit read denials and optional resolver | packages/smithers/flows/platform-node/test/ProcessSandbox.test.ts: NodeFs.writeFileSync(No |
-| 2026-10-22 15:33 | `63b88e9796` | STRANDED | 0/0/2/0 | 373aa72a50 | test(platform-node): cover explicit read denials and optional resolver | packages/smithers/flows/platform-node/test/ProcessSandbox.test.ts: NodeFs.writeFileSync(No |
-| 2026-10-22 15:34 | `3ed609cbe1` | PARTIAL | 1/0/1/0 | 0e8d7cc83b | refactor(platform-node): remove obsolete write-widening guard | apps/mvp/docs/work/platform-node-linux-reds.md: First full coverage run: 1,299 passed / 11 |
-| 2026-10-22 15:34 | `20d415154e` | PARTIAL | 1/0/1/0 | b03633a3c1 | refactor(platform-node): remove obsolete write-widening guard | apps/mvp/docs/work/platform-node-linux-reds.md: First full coverage run: 1,299 passed / 11 |
-| 2026-10-22 15:34 | `63f281a428` | PARTIAL | 1/0/1/0 | 373aa72a50 | refactor(platform-node): remove obsolete write-widening guard | apps/mvp/docs/work/platform-node-linux-reds.md: First full coverage run: 1,299 passed / 11 |
+| 2026-10-22 15:33 | `c24074824e` | ON-MAIN | 2/0/0/0 | 0e8d7cc83b | test(platform-node): cover explicit read denials and optional resolver |  |
+| 2026-10-22 15:33 | `a91faca27b` | ON-MAIN | 2/0/0/0 | b03633a3c1 | test(platform-node): cover explicit read denials and optional resolver |  |
+| 2026-10-22 15:33 | `63b88e9796` | ON-MAIN | 2/0/0/0 | 373aa72a50 | test(platform-node): cover explicit read denials and optional resolver |  |
+| 2026-10-22 15:34 | `3ed609cbe1` | ON-MAIN | 2/0/0/0 | 0e8d7cc83b | refactor(platform-node): remove obsolete write-widening guard |  |
+| 2026-10-22 15:34 | `20d415154e` | ON-MAIN | 2/0/0/0 | b03633a3c1 | refactor(platform-node): remove obsolete write-widening guard |  |
+| 2026-10-22 15:34 | `63f281a428` | ON-MAIN | 2/0/0/0 | 373aa72a50 | refactor(platform-node): remove obsolete write-widening guard |  |
 | 2026-10-22 15:35 | `5fd8aa4174` | SUPERSEDED | 31/18/0/0 | 5fd8aa4174 | fix(mvp): stop TODO descendants when their base closes | apps/mvp/db/Database.ts: main carried then changed it: 1d5f008b71 (🔧 fix(devx): rebuild mi |
-| 2026-10-22 15:37 | `0e8d7cc83b` | PARTIAL | 0/0/5/2 | 0e8d7cc83b | fix(platform-node): recognize exited proc inodes as gone on Linux | apps/mvp/docs/work/platform-node-linux-reds.md: status: completed; apps/mvp/docs/work/plat |
-| 2026-10-22 15:37 | `b03633a3c1` | PARTIAL | 0/0/5/2 | b03633a3c1 | fix(platform-node): recognize exited proc inodes as gone on Linux | apps/mvp/docs/work/platform-node-linux-reds.md: status: completed; apps/mvp/docs/work/plat |
-| 2026-10-22 15:37 | `373aa72a50` | PARTIAL | 0/0/5/2 | 373aa72a50 | fix(platform-node): recognize exited proc inodes as gone on Linux | apps/mvp/docs/work/platform-node-linux-reds.md: status: completed; apps/mvp/docs/work/plat |
+| 2026-10-22 15:37 | `0e8d7cc83b` | ON-MAIN | 7/0/0/0 | 0e8d7cc83b | fix(platform-node): recognize exited proc inodes as gone on Linux |  |
+| 2026-10-22 15:37 | `b03633a3c1` | ON-MAIN | 7/0/0/0 | b03633a3c1 | fix(platform-node): recognize exited proc inodes as gone on Linux |  |
+| 2026-10-22 15:37 | `373aa72a50` | ON-MAIN | 7/0/0/0 | 373aa72a50 | fix(platform-node): recognize exited proc inodes as gone on Linux |  |
 | 2026-10-23 00:25 | `306bb9a2a9` | SUPERSEDED | 0/1/0/0 | 306bb9a2a9 | 📝 docs(mvp): the branch sandboxes handoff: what works in production an | apps/mvp/docs/work/sandboxes.md: main carried then changed it: e3a4a95b63 (✨ feat(mvp): ev |
 | 2026-10-23 00:28 | `510f0dc709` | SUPERSEDED | 11/1/0/0 | 510f0dc709 | fix(mvp): publish agent commits relative to the TODO base | apps/mvp/worker/flows/Todo.ts: main carried then changed it: d535d7fa6d (✨ feat(mvp): Publ |
 | 2026-10-23 00:28 | `3c0ea663e3` | SUPERSEDED | 11/1/0/0 | 3c0ea663e3 | fix(mvp): publish agent commits relative to the TODO base | apps/mvp/worker/flows/Todo.ts: main carried then changed it: d535d7fa6d (✨ feat(mvp): Publ |
@@ -3830,7 +3827,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-23 14:41 | `40022a75e6` | PARTIAL | 57/6/0/1 | 40022a75e6 | ✨ feat(mvp): keep personal messages pinned above conversations | apps/mvp/docs/decisions/0087-pin-message.md: # 0087 — A personal pinned message; apps/mvp/ |
 | 2026-10-23 14:41 | `3fd6771a55` | PARTIAL | 57/6/0/1 | 039dfc6ed8 | ✨ feat(mvp): keep personal messages pinned above conversations | apps/mvp/docs/decisions/0087-pin-message.md: # 0087 — A personal pinned message; apps/mvp/ |
 | 2026-10-23 14:41 | `9a588759db` | PARTIAL | 57/6/0/1 | 9a588759db | ✨ feat(mvp): keep personal messages pinned above conversations | apps/mvp/docs/decisions/0082-pin-message.md: # 0082 — A personal pinned message; apps/mvp/ |
-| 2026-10-23 14:49 | `39f8cad1c3` | PARTIAL | 35/6/24/12 | 39f8cad1c3 | 🧪 test(mvp): isolate real services and synchronize fixtures | apps/mvp/src/features/agent/memory.test.ts: import { Cause, Clock, ConfigProvider, Context |
+| 2026-10-23 14:49 | `39f8cad1c3` | PARTIAL | 34/7/24/12 | 39f8cad1c3 | 🧪 test(mvp): isolate real services and synchronize fixtures | apps/mvp/src/features/agent/memory.test.ts: import { Cause, Clock, ConfigProvider, Context |
 | 2026-10-23 14:49 | `fdf5f28852` | SUPERSEDED | 12/4/0/0 | 39f8cad1c3 | ✨ feat(harness): execute pinned flow modules in isolated realms | packages/smithers/agent/harness/README.md: main carried then changed it: f04d30a6d6 (✨ fea |
 | 2026-10-23 14:49 | `8ea5310fe4` | ON-MAIN | 13/0/0/0 | 39f8cad1c3 | ✨ feat(code-storage): scope sandbox Git fetches to one branch |  |
 | 2026-10-23 14:50 | `7445178a7b` | ON-MAIN | 15/0/0/0 | 8597758a90 | 🐛 fix(ui): keep mobile repository and conversation controls readable |  |
@@ -3863,12 +3860,12 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-23 17:41 | `20858bc9a8` | ON-MAIN | 6/0/0/0 | 20858bc9a8 | 🧪 test(mvp): await settled mobile lists and own TODO cleanup |  |
 | 2026-10-23 17:55 | `869474222d` | ON-MAIN | 2/0/0/0 | ecf78a276d | 🔍 test(mvp): retain stalled device handoff diagnostics |  |
 | 2026-10-23 18:12 | `9dec033c06` | ON-MAIN | 5/0/0/0 | ecf78a276d | 🧪 test(mvp): wait for agent completion between plugin scenarios |  |
-| 2026-10-23 19:17 | `ecf78a276d` | STRANDED | 0/0/76/0 | ecf78a276d | 📝 docs(mvp): retain agent UI eval repair evidence and blocked proof | apps/mvp/docs/features/agent-evals.md: Twenty-six, each one behavior the app ships today; |
+| 2026-10-23 19:17 | `ecf78a276d` | PARTIAL | 66/0/8/2 | ecf78a276d | 📝 docs(mvp): retain agent UI eval repair evidence and blocked proof | apps/mvp/docs/features/agent-evals.md: Twenty-six, each one behavior the app ships today; |
 | 2026-10-23 22:18 | `e3755de690` | SUPERSEDED | 21/8/0/0 | e3755de690 | 🧪 test(mvp): retain missing fixture isolation and synchronization | apps/mvp/db/TestDatabase.ts: main carried then changed it: 72ece084eb (🐛 fix(test): reap e |
 | 2026-10-23 23:11 | `dd805e229d` | SUPERSEDED | 134/28/0/0 | dd805e229d | ✨ feat(mvp): create branches through repository flows | apps/mvp/PACKAGE.test.ts: main carried then changed it: 959ed5fca8 (🐛 fix: land W14 produc |
 | 2026-10-24 00:07 | `69ae4dde36` | SUPERSEDED | 0/2/0/0 | d3928d2f04 | 🧪 test(mvp): synchronize concurrent read-token mints on provider entry | apps/mvp/worker/github/ReadToken.test.ts: main carried then changed it: 637979ce01 (🐛 fix( |
 | 2026-10-24 00:13 | `d3928d2f04` | ON-MAIN | 10/0/0/0 | d3928d2f04 | 🐛 fix(mvp): retain authenticated transport for durable TODO inspection |  |
-| 2026-10-24 00:13 | `b0a5326d3d` | PARTIAL | 1/0/1/2 | d3928d2f04 | 🧪 test(mvp): calibrate TODO inspection and its tool telemetry | apps/mvp/evals/flowCases.test.ts: bad: { calls: [call("run/list")], text: "No runs on this |
+| 2026-10-24 00:13 | `b0a5326d3d` | PARTIAL | 2/0/0/2 | d3928d2f04 | 🧪 test(mvp): calibrate TODO inspection and its tool telemetry | apps/mvp/evals/flowCases.test.ts: bad: { calls: [call("run/list")], text: "No runs on this |
 | 2026-10-24 00:22 | `fccdf564da` | SUPERSEDED | 5/2/0/0 | fccdf564da | ✅ test(mvp): close Runs and About coverage gaps | apps/mvp/worker/RepoApi.test.ts: main carried then changed it: 45e326dc6b (🐛 fix(mvp): vis |
 | 2026-10-24 01:47 | `c17be25bf5` | ON-MAIN | 3/0/0/0 | f4776e99c3 | 🧪 test(mvp): follow remote run changes after an empty snapshot |  |
 | 2026-10-24 01:51 | `2c1c1cb1f0` | ON-MAIN | 2/0/0/0 | 68287c4345 | 🐛 fix(mvp): close TODO status route branch gaps |  |
@@ -3952,7 +3949,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-25 16:01 | `2408fbc7b9` | SUPERSEDED | 106/11/0/0 | ec80d9bc36 | ✨ feat(mvp): runs read like GitHub Actions, with Cloud runs beside thi | apps/mvp/docs/features/runs.md: main carried then changed it: 6855753cba (✨ feat(mvp): sto |
 | 2026-10-25 16:01 | `b79eddb780` | SUPERSEDED | 3/3/0/0 | 7b5d0a2135 | ⚡ fix(mvp): hold Electric's container once per object, and record each | apps/mvp/docs/infrastructure.md: main carried then changed it: cb80f2e0e5 (🔍 fix(mvp): the |
 | 2026-10-25 16:05 | `a86869e604` | ON-MAIN | 7/0/0/0 | a86869e604 | 🐛 fix(test): pin cell console examples and scope quickstart workspaces |  |
-| 2026-10-25 16:08 | `0f0c11e2db` | PARTIAL | 12/6/0/1 | 7f67d7edde | ✨ feat(mvp): the issues' and pull requests' shapes, the webhook and Re | apps/mvp/worker/github/Api.test.ts: const h = await githubHarness(runtime, { own: OWN, act |
+| 2026-10-25 16:08 | `0f0c11e2db` | PARTIAL | 11/7/0/1 | 7f67d7edde | ✨ feat(mvp): the issues' and pull requests' shapes, the webhook and Re | apps/mvp/worker/github/Api.test.ts: const h = await githubHarness(runtime, { own: OWN, act |
 | 2026-10-25 16:08 | `cf75af2bd1` | SUPERSEDED | 13/6/0/0 | cf75af2bd1 | ✨ feat(mvp): the issues' and pull requests' shapes, the webhook and Re | apps/mvp/docs/decisions/0079-roles-per-repository.md: main carried then changed it: b1e28c |
 | 2026-10-25 16:08 | `f57845b9e8` | SUPERSEDED | 12/7/0/0 | 2adb786dc3 | ✨ feat(mvp): the issues' and pull requests' shapes, the webhook and Re | apps/mvp/docs/decisions/0079-roles-per-repository.md: main carried then changed it: b1e28c |
 | 2026-10-25 16:10 | `3cb5972dce` | SUPERSEDED | 25/9/0/0 | 7f67d7edde | ♻️ refactor(mvp): one answer says whether a repository is the deployme | apps/mvp/docs/decisions/0102-repository-page-boundaries.md: main carried then changed it: |
@@ -4057,7 +4054,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-26 04:38 | `f76c88ee90` | ON-MAIN | 1/0/0/0 | f76c88ee90 | 🧪 test: open chat before publishing a new branch |  |
 | 2026-10-26 07:04 | `9d9cca6e72` | ON-MAIN | 8/0/0/0 | 9d9cca6e72 | 🧪 test(mvp): isolate home fixtures and preserve upstream branch refs |  |
 | 2026-10-26 07:41 | `ff05330075` | ON-MAIN | 5/0/0/0 | ff05330075 | 🐛 fix(mvp): the live editor opens a path with nothing at it as a new,  |  |
-| 2026-10-26 07:44 | `0712915ee7` | PARTIAL | 6/3/7/0 | 0712915ee7 | 🐛 fix(mvp): keep mobile controls reachable and branch tabs unclipped | .changeset/mobile-home-announcement-target.md: Give repository home announcement links the |
+| 2026-10-26 07:44 | `0712915ee7` | PARTIAL | 5/4/7/0 | 0712915ee7 | 🐛 fix(mvp): keep mobile controls reachable and branch tabs unclipped | .changeset/mobile-home-announcement-target.md: Give repository home announcement links the |
 | 2026-10-26 08:32 | `7897cc2847` | SUPERSEDED | 19/10/0/0 | 7897cc2847 | ⚡ perf(mvp): Electric's object returns responses untouched; overload a | apps/mvp/docs/infrastructure.md: main carried then changed it: 86c73b0883 (⚡ feat(mvp): ca |
 | 2026-10-26 08:32 | `95805eabbb` | SUPERSEDED | 31/6/0/0 | 95805eabbb | ⚡ perf(mvp): a tab requests only the shapes its person and page read | apps/mvp/docs/features/pulls.md: landed as 16637103d4 (same author and time, committed lat |
 | 2026-10-26 08:33 | `cf3efa4272` | SUPERSEDED | 16/1/0/0 | f23a59978f | ✨ feat(effect-electric): ShapeProxy sends a canonical upstream URL and | packages/effect-electric/src/ShapeProxy.ts: main carried then changed it: a93d2152f8 (🐛 fi |
@@ -4125,7 +4122,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-26 19:46 | `9a4c771665` | ON-MAIN | 10/0/0/0 | 3d5fc96f1c | 🐛 fix(mvp): return preview metadata for oversized files |  |
 | 2026-10-26 19:46 | `a02b3d420d` | SUPERSEDED | 22/15/0/0 | a02b3d420d | 🐛 fix(mvp): keep model failures on their relevant surfaces | apps/mvp/docs/features/personal-model.md: main carried then changed it: d2942b1ea7 (✨ feat |
 | 2026-10-26 19:55 | `3d5fc96f1c` | SUPERSEDED | 12/1/0/0 | 3d5fc96f1c | 🐛 fix(mvp): distinguish missing branches from unsynced mirrors | apps/mvp/src/features/repo/components/RepoPage.tsx: main carried then changed it: fb8d7fcf |
-| 2026-10-26 21:13 | `119ffa9a91` | PARTIAL | 0/0/20/1 | dca331d06f | 🐛 fix(mvp): keep screenshot captures out of edited mobile recordings | apps/mvp/docs/work/mobile-w8.md: the old media path; the saved production measurements ret |
+| 2026-10-26 21:13 | `119ffa9a91` | PARTIAL | 17/0/2/2 | dca331d06f | 🐛 fix(mvp): keep screenshot captures out of edited mobile recordings | apps/mvp/e2e/README.md: holds. It never infers exclusions from visual glitches. Unmarked f |
 | 2026-10-27 02:21 | `a0ab8dfa8e` | SUPERSEDED | 0/11/0/0 | bf0476b452 | 🐛 fix(mvp): durably admit issue creation before returning | apps/mvp/docs/features/issues.md: changed later in its stack (head bf0476b452) |
 | 2026-10-27 02:33 | `0683738f81` | SUPERSEDED | 0/4/0/0 | bf0476b452 | 🐛 fix(mvp): label queued issue creation Requested | apps/mvp/docs/features/issues.md: changed later in its stack (head bf0476b452) |
 | 2026-10-27 02:37 | `09c8c364ef` | SUPERSEDED | 3/2/0/0 | bf0476b452 | 🐛 fix(mvp): recover unavailable issue write URLs | apps/mvp/docs/features/issues.md: changed later in its stack (head bf0476b452) |
@@ -4155,9 +4152,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-27 05:40 | `40761bdbc3` | PARTIAL | 9/1/0/1 | bf0476b452 | 🐛 fix(mvp): settle visitor issue counts from public snapshots | apps/mvp/docs/features/issues.md: A known pending issue write says **Requested**, includin |
 | 2026-10-27 05:42 | `e44ad89b7c` | SUPERSEDED | 17/4/0/0 | bd36978696 | 🐛 fix(mvp): explain unavailable repository issue lists | apps/mvp/src/features/repo/actions.ts: main carried then changed it: 8800f22acb (🔒 feat(mv |
 | 2026-10-27 05:42 | `29857aabd8` | SUPERSEDED | 17/4/0/0 | bf0476b452 | 🐛 fix(mvp): explain unavailable repository issue lists | apps/mvp/src/features/repo/actions.ts: main carried then changed it: 8800f22acb (🔒 feat(mv |
-| 2026-10-27 05:51 | `23ced576b0` | PARTIAL | 237/19/1/1 | bd36978696 | 🐛 fix(mvp): durably admit every device write before returning | apps/mvp/src/features/commands/commands.test.ts: Commands \| Chat \| ChatStore \| Commands |
-| 2026-10-27 05:51 | `bf0476b452` | PARTIAL | 238/15/3/2 | bf0476b452 | 🐛 fix(mvp): durably admit every device write before returning | apps/mvp/docs/features/slash-commands.md: +Composer write actions return promises that res |
-| 2026-10-27 06:22 | `d5ca0487dc` | PARTIAL | 62/15/2/1 | bd36978696 | 🐛 fix(mvp): repair W12 production followups | apps/mvp/src/features/commands/commands.test.ts: import { choose as chooseCommand, submit |
+| 2026-10-27 05:51 | `23ced576b0` | PARTIAL | 235/21/1/1 | bd36978696 | 🐛 fix(mvp): durably admit every device write before returning | apps/mvp/src/features/commands/commands.test.ts: Commands \| Chat \| ChatStore \| Commands |
+| 2026-10-27 05:51 | `bf0476b452` | PARTIAL | 236/17/3/2 | bf0476b452 | 🐛 fix(mvp): durably admit every device write before returning | apps/mvp/docs/features/slash-commands.md: +Composer write actions return promises that res |
+| 2026-10-27 06:22 | `d5ca0487dc` | PARTIAL | 61/16/2/1 | bd36978696 | 🐛 fix(mvp): repair W12 production followups | apps/mvp/src/features/commands/commands.test.ts: import { choose as chooseCommand, submit |
 | 2026-10-27 06:22 | `ccd8a24b03` | SCAFFOLD | 453/41/55/24 | ccd8a24b03 | 🧪 wip: retain rejected W13 progress recovery investigation | apps/mvp/docs/features/notifications.md: ## Background dispatch progress; apps/mvp/docs/fe |
 | 2026-10-27 10:26 | `8302d9cb3f` | SUPERSEDED | 19/1/0/0 | 982d7006d2 | 🐛 fix(memory): retain message timestamps on idempotent retries | apps/mvp/docs/work/package-bugbash4-cli.md: main carried then changed it: 3b6b30a14d (🐛 fi |
 | 2026-10-27 10:47 | `bdec5b3bf4` | ON-MAIN | 3/0/0/0 | bd36978696 | 🔀 chore(mvp): integrate W14 followups |  |
@@ -4343,7 +4340,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-31 18:26 | `07f9a17ffa` | ON-MAIN | 4/0/0/0 | builder/stack-flake | 📝 docs(mvp): the personal model code cites decision 0132, model connec |  |
 | 2026-10-31 18:37 | `1de5e182cf` | SUPERSEDED | 39/10/0/0 | 1de5e182cf |  | apps/mvp/src/features/first-run/components/first-run.css: main carried then changed it: e3 |
 | 2026-10-31 20:04 | `6e01efc2e6` | ON-MAIN | 9/0/0/0 | cda4f0dd87 | 🐛 fix(mvp): a skipped e2e test gets no video or GIF, so its blank reco |  |
-| 2026-10-31 20:06 | `cda4f0dd87` | PARTIAL | 34/7/1/0 | cda4f0dd87 | ✅ test(mvp): production e2e runs TODOs, independent lanes and an exter | apps/mvp/stack.png (binary); apps/mvp/docs/infrastructure.md: main carried then changed it |
+| 2026-10-31 20:06 | `cda4f0dd87` | PARTIAL | 33/8/1/0 | cda4f0dd87 | ✅ test(mvp): production e2e runs TODOs, independent lanes and an exter | apps/mvp/stack.png (binary); apps/mvp/docs/infrastructure.md: main carried then changed it |
 | 2026-10-31 20:51 | `8ecf2957e4` | PARTIAL | 1/1/4/1 | 5686bc4bfc | migrate(vibelang): packages/smithers/flows/canonical: 1 of 2 modules t | packages/smithers/flows/canonical/PACKAGE.ts: const sources = Input.glob("{src,examples}/* |
 | 2026-10-31 20:51 | `5f5eeb4f54` | PARTIAL | 1/1/4/1 | 775f26b754 | migrate(vibelang): packages/smithers/flows/canonical: 1 of 2 modules t | packages/smithers/flows/canonical/PACKAGE.ts: const sources = Input.glob("{src,examples}/* |
 | 2026-10-31 20:51 | `62badf998e` | PARTIAL | 1/0/4/2 | faf3ec5b89 | migrate(vibelang): packages/smithers/flows/canonical: 1 of 2 modules t | packages/smithers/flows/canonical/PACKAGE.ts: const sources = Input.glob("{src,examples}/* |
@@ -4641,7 +4638,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-11-01 12:14 | `e8771127f9` | EMPTY-ISH | 0/0/0/0 | 5686bc4bfc | migrate(vibelang): regenerate bun.lock, pnpm-lock.yaml and the target  |  |
 | 2026-11-01 12:14 | `25bef205e3` | ON-MAIN | 28/0/0/0 | 5686bc4bfc | migrate(vibelang): harness, model, registry: drop stale sidecars besid |  |
 | 2026-11-01 13:21 | `d7eb1d3200` | PARTIAL | 0/1/2/2 | 5686bc4bfc | migrate(vibelang): packages/smithers/migrate: 1 of 10 modules to .vibe | packages/smithers/migrate/.vibe/declarations/src/flow/bin.d.vibe.ts: #!/usr/bin/env node; |
-| 2026-11-01 13:23 | `77b15ef93b` | PARTIAL | 20/40/1928/125 | 5686bc4bfc | migrate(vibelang): upgrade Effect to 4.1.0 and VibeLang to 0.0.11 | .gitignore: .vibelang-toolchain/; .smithers/flows/bench/README.md: per node on `scheduler- |
+| 2026-11-01 13:23 | `77b15ef93b` | PARTIAL | 27/40/1921/125 | 5686bc4bfc | migrate(vibelang): upgrade Effect to 4.1.0 and VibeLang to 0.0.11 | .gitignore: .vibelang-toolchain/; .smithers/flows/bench/README.md: per node on `scheduler- |
 | 2026-11-01 13:32 | `8dce06ad1f` | PARTIAL | 3/0/25/5 | 5686bc4bfc | migrate(vibelang): packages/smithers/ui: 1 of 2 modules to .vibe | packages/smithers/ui/.vibe/declarations/src/flow-form.d.vibe.ts: export declare const subm |
 | 2026-11-01 13:33 | `613e45c2ad` | PARTIAL | 1/0/6/2 | 5686bc4bfc | migrate(vibelang): packages/smithers/agent/registry: 1 of 18 modules t | packages/smithers/agent/registry/.vibe/declarations/src/Prompt.d.vibe.ts: export declare c |
 | 2026-11-01 13:34 | `01e8f89ddc` | PARTIAL | 2/0/4/0 | 5686bc4bfc | migrate(vibelang): packages/smithers/flows/keys: 1 of 5 modules to .vi | packages/smithers/flows/keys/PACKAGE.ts: sources: Input.glob("{src,examples}/**/*.{ts,vibe |

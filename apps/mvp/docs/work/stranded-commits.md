@@ -59,6 +59,29 @@ Many heads are older versions of one lane (rewritten, rebased or duplicated);
 landing takes the newest version of each lane and records the older ones as
 superseded by it.
 
+## Result (2026-11-01, final run)
+
+The classifier's classes are conservative: a hunk main rewrote in other
+words still reads PARTIAL. Every head with missing content was then judged
+by hand, family by family, by the sub-lanes in the ledger below.
+
+| | w12-hold | ~/smithers |
+|---|---|---|
+| Commits judged | 644 | 3,417 |
+| ON-MAIN | 291 | 727 |
+| SUPERSEDED | 212 | 1,647 |
+| PARTIAL | 132 | 949 |
+| STRANDED | 3 | 71 |
+| SCAFFOLD | 2 | 12 |
+| EMPTY-ISH | 4 | 11 |
+
+Ledger decisions (rows; a family row covers every copy of that lane): 46
+LANDED, 12 PARTLY LANDED, 240 SUPERSEDED with the main commit, 7 SCAFFOLD,
+4 HELD by a decision, 2 BLOCKED (one needs Will; one needs a GitHub App dev
+stack). home-2-ci's BLOCKED row was landed afterwards by home-2
+(`e1fdb6f0f2`). 147 commits landed on main: 140 by the sub-lanes, 7 by this
+lane.
+
 Rerun, read-only for both repositories, against an empty workspace at
 main@origin:
 
@@ -81,6 +104,10 @@ or a recorded reason.
 | `lander/w8mig-held` 2bf9537d, mig2 `w8-top` 9d424aa5, and the `migrate(vibelang):` heads in ~/smithers | HELD | The W8 VibeLang migration. Lane smithers-f2 owns it (newer tips on nyc-01), and Will's rule of 2026-10-29 00:41 merges a VibeLang migration only when every tool, script and linter works on `.vibe` (`~/smithers-builders/smithers-tool-risk.md`). Kept under its bookmarks. |
 | `held/sandbox-accounting` 7ec478c2 and its content in 321ccd7c, 62d8a6f3, 650117a1 | HELD | The lead narrowed AUTH-8 on 2026-10-28 01:57 after P1 defects survived nine Astra rounds; decision 0122's amendment, AUTH-8, `sandbox-budgets.md`, `todos.md` and `who-caps.md` still record the hold. Its decision `0124-todo-startup-ownership` needs a new number if revived. |
 | `main@origin..builder/effect-upgrade` and its copies | OWNED | Lane `land-effect`. |
+| ~/smithers a340a0cbb4, 0182dd8d5b (run credential stored on the device) | BLOCKED: Will | Main keeps a credential in the issue outbox and renews it at delivery (the landed design of `10ec5f4da5`, which later work builds on). Landing this reverses a landed auth design and needs an outbox redesign and a device-schema bump, so it needs Will's call. Sub-lane home-1. |
+| ~/smithers 2bb993d7cb browser test for issue eviction | BLOCKED | Its fix landed re-implemented as `e6e1f71db8` (sub-lane evict). The test removes access with a shape `403`, which decision 0110 no longer treats as losing access; a replacement needs a dev stack syncing through the GitHub App and a fault switch for the role answer, which the mini lacks. |
+| ~/smithers e98419b928 auto-POC code | HELD | Unwired and older than per-repository roles; decision 0018 lists auto-POC as follow-up work. A pointer is in `docs/work/issue-lifecycle.md`. Sub-lane home-1. |
+| ~/smithers 40d9433e74 issue POC, Repro and Prototype drafts (migration `0034_prototypes`) | HELD | `apps/mvp/docs/features/issues.md` says the draft files "are outside this landing". Readable at that commit. Sub-lane home-3. |
 
 ### Parent lane checks
 
@@ -90,6 +117,7 @@ or a recorded reason.
 | `b6b6552142` | builder/bb4-writes | SUPERSEDED | Rechecked on current main: 5 of 5 commits superseded, net 0 missing (migration `0071_branch_write_notices` and `write-admission.spec.ts` on main; carriers `1d5f008b71`, `959ed5fca8`, `39b7705c9e`, `e14f3bc21c`, `627194e142`). |
 | `6b985b4f92` | builder/app-timeouts | LANDED | By sub-lane ci-a3 (`fe6a735a56`..`8465130939`); the 50 lines left are `worker/test/reset*` and one `RepoApi.test.ts` hunk, superseded by `1dc140ad06` and `a35b513380`. |
 | 8 TUI fixes from home-6 (#3676–#3702) | ~/smithers | LANDED | Their issues were closed "not planned" on 10-16 because mvp.md defers the TUI from launch: a schedule, not a rejection, so they landed under PROC-26. |
+| `d7f78f322e` | home-2-ui helper | LANDED | The helper stalled before testing; home-2 duplicated its commit, finished it and landed it as `e1fdb6f0f2`. Its original stays in w12-hold. |
 
 ### Sub-lane app-a (DONE)
 
@@ -256,14 +284,54 @@ stranded-audit/ci-b, 2026-11-01. Families: CI-shard, CI lanes W25, ci-release, c
 - The mini-run client counts any command containing "e2e" as E2E mode. A path such as e2e/offlineTransport.test.ts in an eslint list is enough to trigger it.
 Workspace sa-ci-b removed after landing.
 
-### Sub-lane app-b (RUNNING)
+### Sub-lane app-b (DONE)
 
 
 
 
-Testing the one landable hunk (83eb2a5099 copy e69498bd) on the mini.
+Families: toasts/progress (toasts2, f02a185170, w13-toasts 618f8d2383, 86f688d42c), bb4-app2, bb5-app, progress cc87e618b5.
+Workspace: ~/smithers-builders/ws-sa-app-b (w12-hold, sa-app-b). Originals untouched.
 
-### Sub-lane app-c (RUNNING)
+#### Lineage (from lead-todo, toasts2-REPORT.md, w13-toasts-REPORT.md, bb4-app2-REPORT.md, bb5-app-REPORT.md)
+
+```
+bb4-app2 717f550e (W11)  --W13 9662836059fe lands non-toast fixes, HOLDS 7db7a18f/1306d2d3/717f550e (Astra)
+  -> w13-toasts 618f8d23 (toasts redo on W14 writes; Astra P2 "permanent Requested") -- left out of W15
+  -> toasts2 1ba8d1ef (+ f02a185170 older copy) -- STOPPED at review limit: "no single admission authority"
+  -> progress redesign cc87e618 (decision 0124) -- LANDED W18 as e14f3bc21c71, refined f33bc3757938
+bb5-app a80b82ce (bb4-writes + bb5 fixes) -- LANDED W13 9662836059fe (bb4-writes part) + W14 959ed5fca835
+w14-writes 111179544c.. (inside 618f8d23) -- LANDED W16 627194e142ec..a75d29abd74c (decision 0122 -> 0123)
+86f688d42c -- conflicted root-parented copy of 111179544c (lander rebase artifact)
+```
+
+Decision 0124 (main, e14f3bc21c71) states: "Nothing is stored for presentation: no progress row, owner, lock or generation" and "The three earlier builders' twelve review rounds stored a progress row beside the receipts ... Each class is impossible here or has a regression test". That is the deliberate replacement of decision 0121-operation-progress and every FlowNotices/FlowProgress/operationNotice/snapshotProgress/todoProgress/issueProgress file in the toast heads.
+
+#### Heads
+
+| Head | Name | Decision | Pushed main ids / evidence |
+|---|---|---|---|
+| `1ba8d1efde` | builder/toasts2 (23) | PARTLY LANDED | 83eb2a5099 landed as **1f42c292ff2a** "🧪 test(platform-browser): assert mode bits without privileged access checks". Rest SUPERSEDED by e14f3bc21c71 "✨ feat(mvp): show background progress as a projection of receipts" (decision 0124, W18) + f33bc3757938. Builder itself stopped (`docs/work/toasts2.md`: "no single atomic admission/result authority"); lead replaced it with the progress redesign (lead-todo 00:57). |
+| `f02a185170` | - (4, older copy of toasts2 base) | SUPERSEDED | e14f3bc21c71 (0124). Its top commit "reconcile progress across interrupted write admission" is the same stored-progress reconciliation 0124 rules out. |
+| `618f8d2383` | w13-toasts (22; builder/w13-toasts divergent) | SUPERSEDED | 19 w14-writes commits on main by subject in W16: 627194e142ec, 2d4e899b08ad, d890c4b0322b, 3820a388bea6, 39b7705c9e5d, efb71af72a29, 3877247b9e80, 9a62b3f26457, bb772e7b575a, 821c6fbead7d, 296604b0f68b, 442c645993e2, 402fd35b344c, e83354acdabf, fcdcafa459ee, a607f642cbb5, a37329a06c1a, a29c886b0c5c, a75d29abd74c (their "missing" lines are intermediate states fixed later in the same stack; decision 0122 renumbered to 0123). d422bb58fa is empty. 3 toast commits (6c5d84c8cb, 9c9b33924b, 618f8d2383) SUPERSEDED by e14f3bc21c71 (0124). |
+| `86f688d42c` | - (1) | SUPERSEDED | Conflicted (`conflict=true`), root-parented lander rebase artifact of 111179544c (contains conflict markers; 7862 insertions from root). Landed as 627194e142ec "🐛 fix(mvp): retain write inputs before asynchronous admission"; decision is 0123-write-input-receipts on main. |
+| `717f550e01` | builder/bb4-app2 (11) | SUPERSEDED | 8 non-toast fixes landed in W13 9662836059fe "🐛 fix: land W13 browser, writes, views, CLI, privacy and docs" (main has PluginScreen Connection status, blank-report docs, run-panel/flow-draft `requires(...)` specs, bug-report-privacy spec, commands refusal; later evolved). W13 explicitly held 7db7a18f/1306d2d3/717f550e (toasts); those SUPERSEDED by e14f3bc21c71 (0124: no FlowNotices/stored progress). |
+| `a80b82ce4b` | builder/bb5-app (13) | SUPERSEDED | bb4-writes part (65d92738ce, d9d3378f53, 5b86d9d1d2, 6a00d1869c, b6b6552142) in W13 9662836059fe (migration 0071, WriteFeed). bb5 part in W14 959ed5fca835 "🐛 fix: land W14 production followups and CLI references" (bugbash4-bb5-app.md, admission.ts, appRoute, not-found, filter-sitemap, telemetryExport, IssuesScreen failure line, visitor counts). Remaining missing lines (sameFields recovery matching, e2e titles) rewritten by w14-writes 627194e142ec (input receipts, 0123); main's write-admission/todo-write-admission specs keep the same tests. |
+| `cc87e618b5` | builder/progress (3) | LANDED (earlier) | e14f3bc21c71 + 60137de34d/f13f678099 equivalents in W18 (999a30cbc877); its 12 "missing" lines are later refinements on main: f33bc3757938 "🐛 fix(mvp): project committed TODO results after recovery cleanup" (0124 item 7 inserted, renumbering 7-10). |
+
+#### Hunks not landed, with reason
+
+- toasts2/f02a185170/w13-toasts/bb4-app2 toast code: 0121-operation-progress, flows/progress*, flows/notices*, noticeSchema, attention/operationNotice, snapshotProgress, todoProgress, issueProgress, receiptNotices, FlowNoticesStore/flow-progress device stores, generations/owner tokens, test/faults progress faults, playwright.progress.config.ts, background/issue/todo-progress specs (main has its own), docs/work/toasts2.md and w13-toasts.md: SUPERSEDED by e14f3bc21c71 (0124 §"The findings this rules out").
+- toasts2 1be995b47a `BrowserEngine.leaders` + README/libraries.md row: SUPERSEDED by 0124 §6 `BrowserEngine.runs` snapshot-and-follow stream (f13f678099 -> main).
+- toasts2 30d2274d39 TODO outbox v3 migration assertion: depends on toasts2's todo-sending v3; main is at v2 (migrations.test.ts:383). SUPERSEDED with the toast schema.
+- 86f688d42c whole commit: conflict artifact; SUPERSEDED by 627194e142ec.
+- bb4-app2/bb5-app docs/work notes lines (status, "No push"): main holds its own current versions of those work files.
+
+#### Tests (Mac mini)
+
+- 1f42c292 on 73c00d52: `vitest run test/BrowserFileSystem.test.ts` 63/63 pass; `pnpm run check` pass; eslint pass. `dprint check` reports 2 unformatted files, test/BrowserRuntime.test.ts and src/internal/Protocol.ts, identically on plain main (source swap, /tmp/sa-app-b/pb-test2.log vs pb-test3.log): pre-existing, not touched by this change.
+- The landed change: browser FS `access` checks mode bits itself (`permitted`, src/BrowserFileSystem/make.ts:128), so main's old assertion `toBe(backendReadable)` failed when the Node test process can bypass mode bits (root).
+
+### Sub-lane app-c (DONE)
 
 
 
@@ -282,7 +350,13 @@ Testing the one landable hunk (83eb2a5099 copy e69498bd) on the mini.
 | `30798c67e1` | bb4-views | SUPERSEDED | landed in main `9662836059` 🐛 fix: land W13 browser, writes, views, CLI, privacy and docs: undispatched-as-skipped graph steps, FlowGraph `skipped` (now via `STEP_WORDS`), `pullPageOf`/`pullAbsent`, raw download tests, minimum-font specs. Settings spec rewritten by `d2942b1ea7` (decision 0132); landing title rule replaced by `cbb40294a0` (landing in the mock look) |
 | `d1d3cc9af8` | w12-followups | SUPERSEDED | landed as main `959ed5fca8` 🐛 fix: land W14 production followups and CLI references (quota section in repo.md, `/bug` exact-command tests, `choose(..., keyboard)`, retained prerequisites in target.test.ts, CSP expectations, bell flow). Later deliberate rewrites: repo-browse clone test now drives `/clone` (`959ed5fca8`+), signed-out plugin sign-in moved to `PluginView.tsx` by `613822c9e7`/`cbb40294a0`, Account span and repo-header CSS rewritten by `cbb40294a0` and `0b0fbc91c4` (PageHeader), mobile control audit rewritten by `b450a52fc2`/`4fdaaa36a7` |
 | `64c69c1597` | bb4-docs | SUPERSEDED | 36 of 39 commits on main; the missing lines are generated CLI references (`cli-commands.json`, `help/tui.txt`, `help/generate/ci.txt`, `cli.md`, `llms-full.txt`, `CatalogCli.fixture.json`) that `gen-cli-data --check` regenerates from main's CLI, plus `--budget-tokens` wording, all rewritten by main `959ed5fca8` 🐛 fix: land W14 production followups and CLI references ("Token cap per turn and worker (default 200M...)") and `e40da83be9` 🐛 fix(cli): select executable CI renderers. `regressions/*.test.mjs` in check:docs and the `/app/flows`,`/app/settings` built-site test are on main |
-| `45a19eaed2` | bb2-docs | PARTLY LANDED | see below; pending mini run |
+| `45a19eaed2` | bb2-docs | SUPERSEDED | the one real gap: `05ae782867` fixed the Install Smithers link in generated `.smithers/home.json` only; `3b734cb691` regenerated it from `.smithers/FACTORY.ts` and reverted it, so `apps/site/scripts/repository-install-link.test.mjs` went red. I fixed FACTORY.ts plus home.json, ran it green on the mini (site test, pack.test homepage suite, `//:factoryProjection` ok), then after a fetch found main `c410c1346f` 🐛 fix(home): send installation to its instructions had landed the same diff, so my copy rebased to empty and was not pushed. Rest: flows.md `/flow.edit` wording deliberately removed by `9662836059` (flow-terms test now forbids `/flow.edit`); quickstart, Schedule nav (`1088f9d05b`), tier names (`959ed5fca8`, `d2942b1ea7`) on main |
+
+#### Hunks not landed
+
+Every missing hunk above is SUPERSEDED by the named main commit. None is SCAFFOLD. Nothing is BLOCKED. Nothing was pushed: the one live gap (Install Smithers link) landed independently as `c410c1346f`.
+
+Rechecked against main `73c00d52fe` after fetch; all cited commits are ancestors of main and the key markers are still present. Workspace `sa-app-c` forgotten and its directory removed.
 
 ### Sub-lane app-d (DONE)
 
@@ -445,7 +519,7 @@ Tests (Mac mini): `pnpm docs:check` green. apps/mvp `pnpm typecheck` green. Focu
 - Device eviction of a refused repository's issues (e8a39377e9) and its browser test (2bb993d7cb): needs an `ElectricCollection` evict API keyed on role-based access.
 - Auto-POC code (e98419b928): unfinished slice 3 of decision 0018.
 
-### Sub-lane home-2 (RUNNING)
+### Sub-lane home-2 (DONE)
 
 
 
@@ -458,7 +532,7 @@ Source: ~/smithers heads in `briefs/stranded/home-2.md`. Workspace `sa-home-2`.
 | F2.2 (undescribed) | `0f5e96700e`, `775dd2d7c7` | SUPERSEDED | Journal recall/recorded: 784d75196eeb ✨ feat(journal): recall and recorded answer a run's re-emissions without a write. Stack: b8a9ee0cec9f (run past deployment limit), 706f1373c78d (sandbox command 0.1 s). 775dd2d7c7 is the older version of the same stack. |
 | F2.3 (undescribed) | `24337be84e` (older 7e0ae698e6) | PARTLY LANDED | 2c59c85599ab. Lands `flow.run.claimed` owner/stolenFrom/evidence fields + ClaimLogOwners test + changeset + lifecycle doc. Not landed: Engine.crash test-harness refactor in worker/test/flowHost.ts, agent.ts, Todo.test.ts; main built its own crash harness (009de4d458c8 fix(mvp): let crashed test engines refuse shutdown writes; Todo.test's todo-crash engine). Stack below is on main (sandbox command jobs). |
 | F2.4 retain live session authority | `97b04fc0f6` (+ae3d1d4e90, 81490bf80b, e84c047471) | SUPERSEDED | b820dda6ae2d, b590c19559f3, 2cb405b306ce, 61e46051e70d. Missing lines are the registrations doc comment, rewritten on main. |
-| F2.5 CI manual run, CiJob step log | `67917e16d7` | PARTLY LANDED | 7bf773f965c2 (engine slice of d8e24d5fbe94, by helper home-2-ci). CI spine: c0b1b3651d05, ccc71a0b2c24, 9f6bbd1e9c44. Actions list: 120aa96554cb. 645410aad889 log tail: SUPERSEDED by 88e0dbb1f2d3. 10814a5fe4f1 SCAFFOLD ("not for landing"). Routes/Run form/Retry UI: port in progress by helper home-2-ui. Detail: stranded-audit-home-2-ci.md |
+| F2.5 CI manual run, CiJob step log | `67917e16d7` | LANDED (re-implemented) | 7bf773f965c2 (engine slice of d8e24d5fbe94, helper home-2-ci) and e1fdb6f0f2da (routes, repo/run, Run form, Retry/Retry failed, e2e/actions.spec.ts, docs; ported by helper home-2-ui, which stalled before landing, finished and landed by home-2). CI spine: c0b1b3651d05, ccc71a0b2c24, 9f6bbd1e9c44. Actions list: 120aa96554cb. 645410aad889 log tail: SUPERSEDED by 88e0dbb1f2d3. Source CiJobMachine step log SUPERSEDED by 88e0dbb1f2d3; durable repo/Settle SUPERSEDED by 120aa96554cb. 10814a5fe4f1 SCAFFOLD ("not for landing"). Docs regen commits 31e8e9eacc16, 67917e16d7 SUPERSEDED (docs:check passes on landed tree). Detail: stranded-audit-home-2-ci.md |
 | F2.6 issues/TODOs on any installed repo | `e5760e837c` | SUPERSEDED | 1426cef9c5bb (same subject; decision renumbered 0065 to 0079, migration to 0051) |
 | F2.7 your conversations | `47f1d1ffea` | SUPERSEDED | cb7025c266dc (migration renumbered 0047_conversation_people) |
 | F2.8 box command uses a secret e2e | `7db2d33fbd` (+adec00bc79, 3458516e6a) | SUPERSEDED | 535211a0b878 and its stack; missing lines are app-context wiring rewritten on main |
@@ -498,8 +572,31 @@ Source: ~/smithers heads in `briefs/stranded/home-2.md`. Workspace `sa-home-2`.
 - engine-store: `vitest run test/ClaimLogOwners.test.ts` 2 passed; `pnpm check` exit 0.
 - platform-node: `vitest run test/ProcSnapshot.test.ts test/ProcessSandbox.test.ts` 141 passed, 3 skipped (the ESRCH case is Linux-only; the source's Latitude Linux run recorded it green); `pnpm check` exit 0.
 - model: `vitest run test/ModelProxy.test.ts` 96 passed; `pnpm check` exit 0.
+- apps/mvp (e1fdb6f0f2da before rebase): `pnpm typecheck` exit 0; `vitest run src/features/runs src/features/actions worker/ci/RunsApi.test.ts worker/RepoRuns.test.ts src/flows evals/flowCases.test.ts` 34 files, 457 passed; `src/device/schemas.test.ts` 8 passed; root `pnpm docs:check` exit 0. The e2e spec `e2e/actions.spec.ts` was not run (needs the e2e lock and GitHub App prerequisites).
 
-### Sub-lane home-3 (RUNNING)
+Rebased onto main cb2ff93fc445 before push; no shared files with the two new main commits. Workspaces sa-home-2, sa-home-2-ci, sa-home-2-ui forgotten and deleted. The helper's original commit d7f78f322eb0 stays in w12-hold, unabandoned.
+
+### Sub-lane home-2-ci (DONE (PARTLY LANDED; rest BLOCKED))
+
+
+Family F2.5, newest head ~/smithers 67917e16d7 (fork 3e1eb154a6).
+
+| Hunk/commit | Decision | Pushed main ids / evidence |
+|---|---|---|
+| 1389c84f2832..70805a5f7524 CI spine | SUPERSEDED | c0b1b3651d05, ccc71a0b2c24, 9f6bbd1e9c44 (parent's finding) |
+| a3c129e82f66 actions list with Stop | SUPERSEDED | 120aa96554cb watch repository CI runs with Stop and restrict rollout |
+| 10814a5fe4f1 "base: not for landing" | SCAFFOLD | its own subject says not for landing |
+| 645410aad889 CiJob StepResult.log tail | SUPERSEDED | 88e0dbb1f2d3 retain command output for run step records: StepResult.output {stdout,stderr,truncated}, bounded, earlier steps stripped |
+| d8e24d5fbe94 engine part: Realm.describe, RunRequest manual/input/only, Triggers manual+manualFlows, e2e hand flow, failed-jobs run settles failed | LANDED (re-implemented) | 7bf773f965c2 |
+| d8e24d5fbe94 Dispatch records run before start | SUPERSEDED | 120aa96554cb (Dispatch.ts RepoRuns.record) |
+| d8e24d5fbe94 CiJobMachine step log | SUPERSEDED | 88e0dbb1f2d3 |
+| d8e24d5fbe94 durable repo/Settle flow (worker/ci/Settle.ts) | SUPERSEDED | main settles in the run's object (RepoRuns.settle from Executions settled hook, 120aa96554cb); the failure-reading intent landed in 7bf773f965c2 |
+| d8e24d5fbe94 RunsApi routes, repo/run client flow, Run form, Retry/Retry failed buttons, e2e/actions.spec.ts, feature docs | BLOCKED | 33 of 57 files reject on main; RunsApi assumes one GITHUB_REPOSITORY, main has REPO_FLOWS_REPOSITORIES allowlist + per-repo RepoRoles (decision 0079) and the runs-as-cards UI (cf9b8a0d72a3). Needs a fresh port (~1500 lines + e2e). Recorded in apps/mvp/docs/work/ci-parity-manual-run.md "Engine slice landed, 2026-11-01" |
+| 31e8e9eacc16, 67917e16d7 docs regen | SUPERSEDED | regen of superseded/blocked content; docs:check on landed tree passed |
+
+Tests (mini): vitest worker/ci/{Realm,Realm.workerd,RepoFlow,Triggers}.test.ts worker/{RepoRuns,ExecutionHost}.test.ts: 6 files, 74 tests passed; RepoFlow.test.ts after a needs case: 14 passed, Realm/RepoFlow/Triggers/RepoRuns 100% on all metrics (exit 1 only from the global threshold on a partial run). pnpm typecheck (apps/mvp, 4 projects): exit 0. pnpm docs:check: exit 0.
+
+### Sub-lane home-3 (DONE)
 
 
 
@@ -539,11 +636,11 @@ Source: ~/smithers heads in `briefs/stranded/home-2.md`. Workspace `sa-home-2`.
 | F3.26 | `e1095b962f` (older `d88d0cf0df`, `197cebb305`) | SUPERSEDED | The stack landed on 10-21: `eb56b104a3`, `08d98613b5`, `2ae1b8c5d6`, `c440790fe9`, `fb9b691356`, `d12b9cc772`. `fb23abf0de` (read a Cloudflare run again only when its change feed moves) is on main in the later form: RunsStore follows `REMOTE_RUN_SHAPE_ROUTE` and engine events skip cloud roots (`if (!onCloud(rootId)) return`), with `c8dffce533`/`e3c8b6ea5a`; decision renumbered `0026-watching-a-todo-run.md`. The missing harness hooks (`remote.hold`/`deliveries`) belong to that replaced test. |
 | F3.29 | `48208181b8` (same `14cd4d44e8`) | SUPERSEDED | Generated only (public-api baseline entry for `github/Statuses.d.ts`, target index); main has `Statuses.ts` and its baseline entry, regenerated since. |
 | F3.35 | `8d6d9f946c` | SUPERSEDED | Generated only, with an unresolved conflict in the baseline; same Statuses entry as F3.29, on main. |
-| F3.15 | `514c5839a7` | IN PROGRESS (sub-builder `home-3-chat`) | Not on main: `retryAnswer` still `Option.getOrThrow`s the question and calls `ask` (clears the draft); takeBack, branch delivery and first-text timing unchanged. Receipt validation (finding 7) is on main (`Existing` schema in chat/api.ts). Re-implementing on current chat code. |
-| F3.20 | `30c93e58e5` | IN PROGRESS (with F3.15) | Earlier alternative of the same seven chat findings (decision `0028-chat-draft-and-delivery-isolation.md`); judged with F3.15. |
-| F3.24 | `88f0d76616` | IN PROGRESS (with F3.15) | Same change as F3.20, 47 s older. |
-| F3.32 | `c9ccd9c40f` | IN PROGRESS (sub-builder `home-3-drafts`) | Partly on main: `4656e2586b`/`858ebca3fb` lock Save inside its transaction. Not on main: `saved_revision` receipts, answer locking, completed-round fencing, `RepoAdmissionLost`. Porting the regressions to find what still fails. |
-| F3.33 | `7440233936` (older `9ff3087d68`) | IN PROGRESS (with F3.32) | Undescribed snapshots of the F3.32 commit. |
+| F3.15 | `514c5839a7` | LANDED | `cb2ff93fc4` "🐛 fix(mvp): chat retries and withdrawals keep drafts in their own conversation": findings 1-6 re-implemented on current chat code (retry keeps the draft/shared prompt, retry without a local question is a no-op, takeBack after navigation keeps its own conversation's draft, every open shape counts toward the pill, first-text timing in the answer's conversation, branch-open failure during confirmation is `Outbox.Retry`). Finding 7 (200 receipt validation) SUPERSEDED: on main as the `Existing` schema in chat/api.ts. Mini: 9 new regressions fail on main source and pass; 148 chat tests and `pnpm typecheck` pass. Not landed: the head's work note `chat-regressions-212049.md` (in-progress tracker; facts are in the commit and chat.md). |
+| F3.20 | `30c93e58e5` | LANDED (with F3.15) | Same seven findings; landed in `cb2ff93fc4`. Its decision `0028-chat-draft-and-delivery-isolation.md` not landed: the behavior is documented in apps/mvp/docs/features/chat.md, and 0028 is taken on main. |
+| F3.24 | `88f0d76616` | LANDED (with F3.15) | Same change as F3.20, 47 s older; landed in `cb2ff93fc4`. |
+| F3.32 | `c9ccd9c40f` | LANDED | `d6a5df2821` "🐛 fix(mvp): serialize draft writes and fence admission" (saved_revision migration renumbered 0087, decision 0146, RepoAdmissionLost) plus `d0ec8e7db9` (two extra regressions, sub-builder home-3-drafts). Save locking was already on main (`4656e2586b`, `858ebca3fb`). Not landed: work note `worker-concurrency-261971.md` (findings in decision 0146). Out of scope: three RepoReads findings the original never reproduced. Details: ~/smithers-builders/stranded-audit-home-3-drafts.md. |
+| F3.33 | `7440233936` (older `9ff3087d68`) | LANDED (with F3.32) | Undescribed snapshots of F3.32; landed via `d6a5df2821`, `d0ec8e7db9`. |
 | F3.37 | `6b11187a07` (older `ea9f72d317`, `b6d3a4ffb2`, `b763b2c97b`) | LANDED | `96cd0fd31f`, `2101a501a2`, `6d7863a034` (original three subjects). Not on main: repo-view and .smithers/flows still on `@pierre/diffs ^1.3.6`, workerPool.ts unchanged since `04f89c41cf`, and `docs/proposals/pierre-oss-survey.md` absent (main's tracker: "record the survey in its proposal (not present in this checkout)"). Mini: repo-view check passes, bun 186 pass 0 fail (100% coverage), review flow renderWalkthroughHtml 14 pass, frozen lockfile install passes, `pnpm docs:check` passes, target index unchanged. |
 | F3.38 | `df9aecf75d` | SUPERSEDED / SCAFFOLD | Same change `vokunrsx` as F3.16 (14:19 snapshot; decision then named `0025-review-queue.md`); judged with F3.16. |
 | F3.39 | `702ffac454` | SUPERSEDED / SCAFFOLD | Same change `vokunrsx` as F3.16 (14:14 snapshot); judged with F3.16. |
@@ -724,20 +821,119 @@ All 14 families are SUPERSEDED. Nothing landed: main carries each intent in anot
 - F7.10: NativeSnapshotSpawner.ts and NativeCheckpoints.ts with their tests, and the ProcessSandbox tweak. Main settled #3416 with `bdaff86a61` and `513062ec45`.
 - Every apps/app, apps/backend and packages/backend hunk: deleted by `82b5490dbe`.
 
+### Sub-lane leftovers (DONE)
+
+
+
+
+stranded-audit/leftovers, 2026-11-01. Two items that did not fit main, re-implemented and landed. Workspace sa-leftovers forgotten and deleted.
+
+| Head | Name | Decision | Pushed main ids / evidence |
+| --- | --- | --- | --- |
+| `e72b2cbf` | builder/mobile-w8: `apps/mvp/tests/FullPageScreenshot.browser.test.ts` | LANDED (with a capture fix) | `79716581f0` 🐛 fix(mvp): end full-page captures on a recorded frame of the restored viewport. Mini: 12/12 loops of FullPageScreenshot + Recording + RecordingPaints + frames tests (35 tests each); `pnpm typecheck` 4/4 projects green; eslint has no findings (only "File ignored" warnings, e2e/ and tests/ are outside eslint.config.js). |
+| `11354f162d` | ci-agent: 🧪 test(cli): measure human-wait budgets with a controlled clock | LANDED (re-implemented) | `73c00d52fe` (original subject). Mini: 22/22 passes (10 + 12), about 2 s each; main's real-wait version took 45978 ms. `vibelang -p tsconfig.test.json --noEmit` green, dprint clean. Mutation check: removing `- run.suspendedMillis` in Budget.ts fails it with `flows/agent/BudgetExceeded: The run has been running for 44000 ms of its 12000 ms budget`. |
+
+#### 1. FullPageScreenshot: the real cause
+
+Chromium's screencast, which Playwright records, sends a frame only when the compositor draws. A rAF acknowledgment (`painted()`) with nothing changed draws nothing. Probes on the mini (frames observed with `page.screencast.start({ onFrame })`):
+
+- A full-page capture at 2330-2630 ms sent one frame inside the interval (2426 ms, the tall surface), then no frame until the next draw: the viewport screenshot at 3088 ms. Same in 3/3 runs. So the recording keeps the gray-margin picture past `capture.end` until the page next changes.
+- A static page can send no frame before the first capture. In 4 of 8 runs the recording's first frame was a frame inside a capture, or the final screenshot (a 1 s video). Playwright starts the video at its first frame, so the gray frames moved to the start of the video, outside the excluded intervals. That produced both reported failures: `expected 2 to be greater than 3` and `expected 128 to be greater than 158`.
+- A viewport `page.screenshot()` always drew a frame (11/11).
+
+Fix: `fullPageScreenshot` ends each interval with `recordCurrentPicture(page)`, a viewport screenshot (`caret: "initial"`), before the final `painted()`. The recording then holds the restored page from inside the interval. The landed test pins the recording's first frame with `recordCurrentPicture` after `setContent` and keeps app-d's hold of ten sample slots. A second, deterministic test checks that each capture's last recorded frame shows the restored page at the right edge.
+
+Red/green on the mini:
+
+| Variant | Result |
+| --- | --- |
+| Neither fix, original test with hold | 9/10 pass; 1 fail `expected 128 to be greater than 158` |
+| Deterministic test, capture fix removed | 0/6 pass |
+| Deterministic test, with the fix | 6/6 pass |
+| Full file plus recording tests, with the fix | 12/12 pass |
+
+Not changed: the e2e fixtures (`fixtures.ts`, `mobile.spec.ts`, `devices.ts`) still assume the recording's first frame is `startedAt`. Real flows navigate right away, so their first frame is early. A static page that never draws before its first capture would still shift. This is recorded here; it is not in scope.
+
+#### 2. Human-wait budget with a controlled clock
+
+Why the stranded version timed out: it aged the pending delegation once, right after the answer. On current main the new host records a newer delegation (sequence 2) before it adopts the run. That delegation is stamped at the frozen time, so `now - requestedAtMs` never reaches `Ownership.heartbeatStaleAfter` (30 s) and `hostsPark` never adopts the run. Probe: seq 1 at +14001, seq 2 at +15001, then parked with no change for 5 s; after a jump of 31 s the run completed within 1 s.
+
+Re-implementation: a scoped fiber, started after the answer commits, polls `runtime.pendingResumes` every 50 ms (real sleep). It moves the controlled clock to `requestedAtMs + heartbeatStaleAfter` for every pending delegation until none is left. That is parked time. The rest keeps the stranded intent: one second per provider response, a 13 s parked advance, both durable compositions, replay assertions and the 12 s ceiling. The diagnostic `failureFacts` returned `[]` on main's event payload, so I replaced it with `budgetRefusals`, which extracts `flows/agent/BudgetExceeded: …` lines from the failure. The mutation run above shows it working.
+
+Not run: the linux-only `//packages/smithers:test` gate. The change is to one test file only; no src or coverage change.
+
+#### Hunks not landed
+
+- None from either item. Probe files (`tests/FullPageProbe.browser.test.ts`, `.probe-leftovers.sh`, `test/MainHumanWaitProbe.test.ts`) were mine, temporary, and deleted before commit: SCAFFOLD.
+
+### Sub-lane evict (DONE)
+
+
+
+
+| Head | Name | Decision | Pushed main ids / evidence |
+| --- | --- | --- | --- |
+| `e8a39377e9` | 🔒 fix(mvp): a refused person never sees issues the device still holds, and the device forgets them | LANDED (re-implemented) | `e6e1f71db8` on main, same subject, `Source: ~/smithers e8a39377e9`. The original patch failed 21 of 26 hunks; re-implemented on main's role-based access (decisions 0079, 0110). |
+| `2bb993d7cb` | ✅ test(mvp): in a real browser, a refusal hides the issue the device still holds | BLOCKED | Its mechanism no longer applies on main: it revokes access with a shape `403` (`faults.shapes.refuse`), and decision 0110 makes transport refusals change availability only, never authority. A real-browser proof on main needs (1) a dev stack that syncs a public repository's issues through the GitHub App (`E2E_SYNCED_REPOSITORY`), which the Mac mini lacks (no App, no GitHub token: the original ran only on a workspace's own alchemy dev stage), and (2) a way to make ChatApi's role answer refuse that visitor mid-test (a repository going private), which no e2e fault switch provides. Unrun specs were not landed. The same behavior is proved on Node devices with real SQLite, ChatApi, Postgres and Electric (`issues.test.ts`, below). |
+
+#### What landed in `e6e1f71db8`
+
+- SDK `@smthrs/effect-electric` `ElectricCollection.evict` (`src/ElectricCollection.ts`, `src/internal/fence.ts`):
+  ends Electric's sync session (requests aborted), truncates every row in one sync transaction (on the device with
+  `persist`) that stores Electric's `reset` resume state, and starts a new session that syncs from `offset=-1` once its
+  `ShapeSource` answers. Each session writes through a fence that closes when the next starts. A persisted collection
+  nobody read yet evicts its stored rows. Docs (`docs/api.md`, `docs/sync-policy.md`), changeset, catalog
+  (`docs/libraries.md`), regenerated `.smithers/target-index.json`.
+- apps/mvp `IssuesStore` (`src/features/issues/store.ts`): each time authority comes to refuse the person
+  (`sign_in`/`forbidden`), evict the repository's summaries, details, comments, sync and triage rows, and an opened
+  issue's details and comments. Shapes wait at the authority gate and resync from the start on a re-grant. Log
+  `issues.access.refused`, span `issues.access.evict`, counter `smithers_issue_access_evictions{status}`. Docs:
+  `docs/features/issues.md`, `docs/observability.md`.
+- Tests: `issues.test.ts` new "a refusal evicts what the device holds" (visitor's cached public issue; repository goes
+  private; reload asks to sign in; stored rows 0); "loading" test now expects the cached issue evicted once session
+  authority refuses. SDK: 4 evict tests and `fence.test.ts`.
+
+#### Hunks not carried, with reasons
+
+- `view.ts` `listProps` returning no issues on refusal, and `pageOf` refusal-first: main already has the page half
+  (`pageOf`, decision 0094, 7c481b16c7/c4954e045c), and its screens return early on `list.refused`.
+- "Shapes stay ended in that tab; `reconnect` does nothing": conflicts with main, where a re-granted reader must sync
+  again (`src/features/issues/source.test.ts` "a public receipt releases them" failed with it). Replaced by a session
+  restart. A first attempt answering a synthetic `409` made Electric mark the live handle expired and log stale-cache
+  warnings; dropped.
+- The subset-snapshot body read in `ElectricCollection.ts`: unrelated to eviction.
+- A watcher program (`Persistence` lock) evicts only its own session; the stored rows go when the writer program evicts
+  (documented).
+- No decision record: the change follows decisions 0079, 0094 and 0110 and is easy to reverse.
+
+#### Test evidence (Mac mini)
+
+- `packages/effect-electric`: `pnpm check` 0, `eslint src examples` 0, `dprint check src docs test/fence.test.ts` 0,
+  `vitest run` 12 files / 231 tests passed, coverage 100/100/100/100, no `[Electric]` warnings from the evict tests.
+  Full `pnpm lint` fails on dprint import order in `test/fixtures.ts`, `test/ShapeProxy.test.ts` and
+  `test/ElectricCollection.test.ts` import lines, all untouched by this change (pre-existing).
+- `apps/mvp`: `pnpm typecheck` 0 (all four projects). `vitest run src/features/issues src/features/pulls`: 19 files /
+  205 tests passed.
+- `apps/mvp` full `vitest run src`: 3001 passed, 3 failed in 6 files (`boot.test.ts`, `agent/memory.test.ts`,
+  `branch/creationFlows.test.ts`, `conversations/conversations.test.ts`, `views/agentViews.test.ts`,
+  `views/steps.test.ts`). Source swap on plain main@origin `e1fdb6f0f2`: the same 6 files fail with the same 4
+  assertions, so they are pre-existing.
+- `pnpm docs:check` not run: the package docs are not mirrored to the site (no sync target found).
+
 ## w12-hold classification
 
-Repository `/Users/williamcory/smithers-builders/w12-hold`, main `6c9e4781c25b`, judged against main@origin `6c9e4781c25b` on 2026-11-01T21:54:50.131Z.
+Repository `/Users/williamcory/smithers-builders/w12-hold`, main `e1fdb6f0f2da`, judged against main@origin `e1fdb6f0f2da` on 2026-11-02T01:42:48.472Z.
 
-Candidates: `((((~::main@origin & ~empty() & ~::remote_bookmarks(remote=origin)) ~ (::builder/effect-upgrade)) ~ (ffff3716e2a45a8bbab851a15e5f4156610db00f | 8ee0914777ec051e7778d6ae33429f3a91bde2c7 | d0b12c3f8d96a81ae939177488a94ff8ba85fd4d | e4fb834958bb6c5b5d80254ae67fe70f4b717f94 | 4dce3bd5070d19c35c554d75ff3f5f70e74749ce | 97c78e94dfe0c608b5780676f00aadf04f4a9bd7 | ac6590d309835b46d6c0347af3d768c45e8e3d91 | 0f8adf382af79e02f0c74c93da7ba17fc1751a59 | d2d7d8f7b89d2765c1d0e8faadf1a9ba7a6fee29)) ~ (5356281d2c86c1e9fa43dcde02c78b1f90900b8e | d9433f7d9559b4c2a636e34e766c45c20a20717f | 25fe9caea654fdfb7dd732984c6ca569f8d0fc27 | 9842d0dac564c5f1f2d684d29341abd097b1c976 | f4193da1f003c1ae5f714a588c18af697aa5eaf4 | d70c4c7e6c428e8baace9f2acf31158452545f35 | 77e93371cd358e7e82321596124f0d6772861361 | a0ba741501508ff0c952cce16bdec0ac977f6193 | 107c2246243b385067b6bb2a7fb94f647b4681aa | 111398d233a313f0b1e9d2282f5f5a8cfa2d1e9f | 431475c85d84aa2db3b48f8da885f20a09548d96 | 277279d68a811e0e1d32f03cac07cb9b920839ea | 4bd5040d4111b03783a7f1ae1d050f69f959adb6 | 14fca91d4820e60a4aab96d863efc0822621c4f4 | 30b277aa8b45889d16cb15aa52971a9f61d8b073 | 20d59a74a920c04703ad3a5e12fafdcfcf147b11 | 1325322365e393ea13becb8608b8568312044065 | c44bab163af6885e9971ebab385a8ca8b266126a | b5990d2e87ac82ff7494760c62190961b5aec90a | 2bcee2bec52c1d62a235e48f41619dd62e254f70 | 7389892fb171988d418a1617b75a218d4ea7bda5 | fdf3f4da60556d538d5eb1f102cf58baedc82a57 | 8b33b7788b997d8d1fd0cdaaee1a03d637670724 | e8f94ce49e48ed0af76bb20bdd129e8e9c92cddb | 901862197b5642ad6e304b1fd727d32ae0a0a2d6 | 510a1a0304191f052ce11218d2537de1377176ef | 7504a5ba811ee45deaa745c8a151a62f0483b3bb | 3160cbee11dd2fa3dadbf8c65ac2d88fd21068c6 | ab89e7a7c973d11476e4b0c9c9aef3787e10a697 | 3c4ccd0422d22c6a4251f31a90ba269628ec4b61 | e6fdfd5f9d86bede90823827a37da40ce8bb32f0 | d2ceeb34a444ed0c50238a8d6272b01b6a69084f | 1618c13101ac7f848ff92829ace7916825164e69 | 48ea27fcba71ba866d0c8368d1f300dcc2dac74c | 0d319bb581aa8d2f2adabaf1a904ab6f50465de2 | d298e28c69ec5d8be7d50705ec6fb9211d495d3d | bf278ccf87ea519676efc211d88dde34cb36718e | fd18a46a270947c18ca1d9aaf34a1cee10bb5178 | 13031faed001a44a44d565d92058fd0a1150bc14 | 5a5188c3863f3d1e5c80c089b4f4cd6f65f3b76b | eb3b11378b1c9f6aea3c46f376f5972eff192fa5 | 1c1a9ead295d56b750e6f008ffaa46f82ea4e7b5 | 7e7d3feec0fb810700a28cf34dc3111b5ba6739a | 7e45312746dda94240dbc6adba992d20b05c76f0 | 5a196da7c3b9bce5c1b110e8ceea4a2e754fd7d6 | 5841b7785661a8839c429e82c0be34747cbda508 | 38c0317caa320b555da1f868addfa849a5a8ce1c | 39264571c1a2783194a51ddeff71cf5d672cc5e0 | 7b05e245c1f09ec2584d9ee8a8bec9a1bb897061 | 02d1fbebe40bb8e6aa7331a36c29774dc8276a2e | 7c88c069afd2573f71b9f8db6d15845629512351 | 1f91d73d107f067d9618aade9a750b38c77cf25c | 76fe638842dd852ed02bd764ef163bb2e71f790c | b8a87d2bcc6956e1bf96d93d34e86e32501c99a8 | 9c6e49d4e2a75393469847e9de9da1da691f8389 | b636f2f4571ddf33c3a69a28184c0054fc778b32 | 3776738d91b6b22f625e698abc1ea0e55e74d0c9 | f30a506107e255db06650714782f72b2fdbaba35 | 124b51500737095b51bf6f2f7a3c218eaea5664a | 4f69da058ba2fa6e3eaa88065824b78d85b40b08 | 00f2dfa3d267a797b9ba4eea1cad90e6510a378e | 8bd536f03d6b27577e217811cf55500da0a41a0b | 20df56a71511247565128372a5658c8c0d3d862e | 9b62438578ca98325d538c05f50e2b9ffb0a2d78 | 17e603ea13218f492b82e428fafd043cd0fbccc0 | 6bcb9b0814fc2dabf05e35da41cd834fa5d65d07 | a216d51b518337816ba061e0da2ea7e3e627d0c5 | 6eccfa2d079fc4ec85bd52095f21f47939d6497b | 64bf3986871fbb25f71d9ef27e03755a1881d478 | 26286033e674557aaa63e1fc6ac8a35b0bd8fb99 | 519d349632a657d966be2f883cedf504f45ec2f8 | 1eacce126864867526fc820c07d7d2767cc61d42 | b92e356ddf2e280219fffde018094f086e1e225d | 9ed6887fe2efce4bab6218617c87e2a3386ba254 | 5e64a9889727371f4b55376832febcd60f2f31ac | 67a3e0d725334dcd52c8a9bd53ebfd85fecbdfd4 | b172929e46406559c061a9611e0b24988f368b73 | 917247a928fca6748098cc383f554bc18840e56d | 786ee142cbdb2c7ca190e01b346bef021dc375c3 | c16b4b6144b2aca79f64aa7a91b28882cab8283e | 970761687d98070dc82fa69ebccc5cbe318712aa | 1c52701d2210bffaa090c4875131b963a84a7095 | 32b36b3ad5bf649d9e936e3f7de51f5e7331ef6c | d93426840880b616c16128431204311043ea8f2a | 5c1bb9243d0602c7caddf2c7096a1a9ab688b815 | 611f35904a501ca24ad9778b258e56017018fdbd | 6b4b5f0bb38c2c0ce095dd5178627c24075ae8a0 | e69498bdb4a3dd145dde993bd80e06f3df597ebc | a3bbb017ecff6f3972f93953895695105d1a9fb8 | 14be484068759d9fb748e1d8bf432bcacf04ae33 | 42cc8df67f3f253f085642e8508fb1dce3241277 | 38ed41735ec66eef24653792536a3f3d22ff2e1f | 703fba100dd8c21748c0a88c25d0edb5c1c08027 | 6154adae2ecf01c6022ebfa94676dec72c2c020e | 70eec44f4a26a5c9f54a8b0ac125c7b738e2e5b2 | 083088c3ee865d52f3d76e3fa6e4b151d0f57ae5 | c9505769926b24341c8bbe4e2858ff3f8630d704 | 52c5a7bce08150a35f8c769096f7ed573e16c306 | 90dc6138d279313fe8aecb1aca8f7c957b1af453 | c1ef5ec9724adb5f052ac6dcbc688e35301339fd | bd442dbf200f851016cac4721ee441c081e41650 | 9805ed6f22d932446793e3a35471d345a4c22c03 | 89daf1b0bad7b80ed6d8d728552b8e53c0d985a8 | c6e6b4a4927ea265a07b910b645107ad310827d1 | 52368d768fbad3a26d36e71e6c5fb134108e043e | baccf09f890557356b939289d84567791e9064ef | d00ce5c7f53fdf20d99d5a465fcd5028b166a8aa | ac08e83d6ff172cfad586a0c8891e0ae0b1d68df | c60c3589a59f5b3131094e129604e98ef8d00570 | 9bfc360130a68549168cb04c90b46c583c171420 | c1461ae353759437a6ce15c0ca05272ae6b3e3fd | 32a3da6f4089e070a329c804ad6e1d92e01c068e | 3f65bee777af731344e6d5c629d3bc0e45337cc6 | 0b5ca7e4c0607eadb0e31b06ed5cab0af65bc690 | 1096c7474128258e26e183e7874dd163cc5995a7 | f23eb7fa8c9c6c775898e523ecd118de654b8abb | 2a29672b3d6aeb5801e5245b7b7e4d2493d75044 | b4a05c37b0571815b34d25dcc190ce0d2520a83b | 650a4fdd8c66c67492c63a03e8fa2a2e32ae3e58 | d426662a2aa5128a8d57897616e26151f7760d95 | e8ca8466a175a5ee33c43b88f285bed6643d4602 | df65588e311b33b7273fc22b031c883539c988e2 | 1d99f6fcfb643488df8a51aab6934e37bff23d39 | 61a5b5acc3abca32522b770e76aed107aec22e63 | 397f7a861ee0c2659f953248a57ae6a59d7c3ec3 | 14dba61b3056d21e686aed18ba055198d652c1b5 | 96c0b6c4267df61367e8aff0430bd9753716f9ef | 5c55ae04d0aa2ec72d5e970b38dc1c013e500041 | a9724b95ea256542c744d2a19aaafb33ec495e64 | dd250a0666ec52ee2bf0783ef6dffa61172a240a | 55f9c98cd4356cdbcc7048cffa279a7641a78d65 | a7265606e8950f033550dc06ace48979065178f5 | b9e2970a2b26c6a53c2d8186b3a48e7d20f863d5 | 21160d1b2fe4bcb5a9e1875cef0270db3d9b354d | 7858e77d66d5e9c1c5d3f4424245f6612126fcc9 | 6f013b6891467ae0b878c5f4caa29c5524125adc | a8341ba45ac53fbbd86caaec3aec5b2a2371487b | 7575e2bf3564c725c49e341ebaacd2fb043d38f2 | 2a50961ba2206162138050189e2b06b9a6b91dd2 | 12821869f10167cd73cd5888eccce088446dceb0 | 66ae96c242fb4d7cecf27313a7fb5b10059397e3 | c83465b6369eb69c749fc9098a40a52cccaeb110 | 7bc8871466b1500037036fac735cfbc30076d9d4 | 1103e962731a331c4f0b9f3fa44a9a54d82b3b13 | 97ea73bd3399e4c951eac9681101422fca790990 | b060409297f4e399ff3b690179fefd3dc2c9d49a | 377c3c527690aee83cc52fbb239313bf48f9c1a7 | d14d990171084b70dc93ddb1df0d4f9026f5f921 | 29e8535a3cbe9a541a59ac8566c6689893c6aec5 | 3a1386b0b067398601b48e6139744b08427d4983 | 4925109b6fa70c8ec7a494dbe407022ece54714b | 662bb4c9a4134d344de4827b4234017c66788178)) ~ ((description(substring:"🧪 fix(cli): read and claim the takeover fixture under one writer") | description(substring:"🧪 fix(mvp): release the zombie probe FIFO as its owner") | description(substring:"🐛 fix(cli): share the engine memo map during native materialization") | description(substring:"🧪 fix(control): isolate PostgreSQL inventory fixtures") | description(substring:"📝 docs: regenerate Effect 4.1 API and reference artifacts") | description(substring:"🔎 chore(control): trace resume stages across host restart") | description(substring:"🧪 test(agent): exercise policy defaults and reader race failures") | description(substring:"🐛 fix(persistence): preserve stored schema fingerprints across union formatting changes") | description(substring:"📝 docs: record Effect 4.1 compatibility fixes and validation") | description(substring:"🔒 fix(control): redact Effect 4.1 protocol defects at serialization") | description(substring:"🧪 fix(cli): exercise terminal cleanup through native WebSocket transport") | description(substring:"🐛 fix(cli): preserve guided input under Effect terminal capability checks") | description(substring:"🐛 fix(database): classify native SQL acquisition defects as storage failures") | description(substring:"🧪 fix(agent): synchronize restart and quota tests with durable parks and I/O") | description(substring:"🧪 fix(electric): drain the response before checking completion records") | description(substring:"🧪 fix(database): test refused logins independently of local trust auth") | description(substring:"🐛 fix(patterns): commit per-item progress before continuing a round") | description(substring:"🧪 fix(docs): validate configured deployment routes offline") | description(substring:"🐛 fix(build): preserve WebSocket exports in private 4.1 adapters") | description(substring:"🐛 fix(home): send installation to its instructions") | description(substring:"📝 fix(docs): match the conversation command access policy") | description(substring:"📝 fix(docs): keep the published rc.16 quickstart on its Effect cohort") | description(substring:"🐛 fix(build): align Undici pins with the Effect 4.1 adapter") | description(substring:"🐛 fix(platform-node): mount tool packages beyond nested module scopes") | description(substring:"🧪 test(build-cli): install real fixture dependencies within confinement") | description(substring:"🧪 test(engine-store): await child and queue persistence on the real clock") | description(substring:"🧪 test(gateway): require strict framing and redacted decoder defects") | description(substring:"🐛 fix(control): preserve observed waits over unversioned approval history") | description(substring:"🧪 test(runtime): expose durable step and CLI startup failures") | description(substring:"🧪 test(platform-bun): require nonmutating jj snapshot probes") | description(substring:"🐛 fix(observability): normalize native SDK OTLP numbers before transport") | description(substring:"🐛 fix(plan): preserve schema identity bytes across Effect 4.1") | description(substring:"🧪 test(journal): observe SQL polling and renewal on the real clock") | description(substring:"🐛 fix(build-cli): preserve declared dependency reads in scratch runs") | description(substring:"🧪 test(targets): match the current repository pipeline") | description(substring:"🧪 test(flows): synchronize journal overflow with its persistence barrier") | description(substring:"🐛 fix(control): preserve trusted external schemes with absolute adapter URLs") | description(substring:"🐛 fix(capability): validate release grants and exclude refusal test sources") | description(substring:"🐛 fix(alchemy): migrate OAuth and host services to native crypto families") | description(substring:"🐛 fix(build-cli): tag the unrecorded affected-gates failure") | description(substring:"🐛 fix(build-cli): initialize the sealed result-cache tree in scratch runs") | description(substring:"🧪 test(model-host): exclude the hidden agents command from grants") | description(substring:"🧪 test(harness): give calibration integration tests real source provenance") | description(substring:"♻️ refactor(platform-node): remove superseded confinement branches") | description(substring:"🧪 test(agent): await terminal outcomes after cooldown wakes") | description(substring:"🧪 test(platform-node): exercise source edits after TypeScript erasure") | description(substring:"🧪 test(platform-node): wait for explicit lifecycle receipts") | description(substring:"🐛 fix(observability): classify retry and flow-realm refusals") | description(substring:"🐛 fix(engine-store): restore current and legacy serialized failure exits") | description(substring:"🔒 fix(process): keep redacted words out of native spawn errors") | description(substring:"🐛 fix(database): surface migration failures through the typed channel") | description(substring:"🐛 fix(platform-browser): keep receipt reconciliation failures typed") | description(substring:"🐛 fix(process): preserve prototype-named environment entries in Effect 4.1") | description(substring:"🐛 fix(process): reject shell arguments consistently with Effect 4.1") | description(substring:"🐛 fix(process): preserve both halves of additional descriptors") | description(substring:"🐛 fix(lint): validate Vibe-only examples through the compiler") | description(substring:"🐛 fix(sql): narrow SQL insert batches for Effect 4.1") | description(substring:"🐛 fix(receipts): retain original keys for native key enumeration") | description(substring:"🐛 fix(http): preserve extension methods when rebuilding requests") | description(substring:"🐛 fix(socket): retain the ws transport through Effect NodeWS") | description(substring:"🐛 fix(process): preserve redacted arguments until host execution") | description(substring:"🐛 fix(crypto): use Effect digest and secure random families") | description(substring:"🐛 fix(filesystem): supply guarded directory entries for Effect 4.1") | description(substring:"🐛 fix(filesystem): implement Effect no-follow metadata reads") | description(substring:"🐛 fix(platform-browser): identify the SQLite WASM SQL driver") | description(substring:"🐛 fix(database): adopt Effect scoped transaction acquisition") | description(substring:"⬆️ chore(deps): pin the Effect cohort to 4.1.0")) & committer_date(after:"2026-10-29"))`.
+Candidates: `((((~::main@origin & ~empty() & ~::remote_bookmarks(remote=origin)) ~ (::builder/effect-upgrade)) ~ (c611edaced1e312b97ab368a7ecb10a7471dfbf0 | cffe1a19ea044a72ae11814bcf917f57da713a29)) ~ (d7f78f322eb0ab30774567a7fb5da431e34cb67c | ce76b7db9d1e96b70af69af895ce3405ed6cce7c | a18463f362c961c69831241f875d73a83b7ec2d8 | ce573689e458a7f775031eb532c9c839a9f0a732 | 66c605c5dae59ce810b10368e52ecb4ca055d2d2 | a73f55bf60147d7f568b5e4c081b4bbbf78a12f1 | 9bf30b880faed3320c2c1b7f66ed5cb0c8431845 | 529136c596569247cdbce8c42b47a13cd092d67f)) ~ ((description(substring:"🧪 fix(cli): read and claim the takeover fixture under one writer") | description(substring:"🧪 fix(mvp): release the zombie probe FIFO as its owner") | description(substring:"🐛 fix(cli): share the engine memo map during native materialization") | description(substring:"🧪 fix(control): isolate PostgreSQL inventory fixtures") | description(substring:"📝 docs: regenerate Effect 4.1 API and reference artifacts") | description(substring:"🔎 chore(control): trace resume stages across host restart") | description(substring:"🧪 test(agent): exercise policy defaults and reader race failures") | description(substring:"🐛 fix(persistence): preserve stored schema fingerprints across union formatting changes") | description(substring:"📝 docs: record Effect 4.1 compatibility fixes and validation") | description(substring:"🔒 fix(control): redact Effect 4.1 protocol defects at serialization") | description(substring:"🧪 fix(cli): exercise terminal cleanup through native WebSocket transport") | description(substring:"🐛 fix(cli): preserve guided input under Effect terminal capability checks") | description(substring:"🐛 fix(database): classify native SQL acquisition defects as storage failures") | description(substring:"🧪 fix(agent): synchronize restart and quota tests with durable parks and I/O") | description(substring:"🧪 fix(electric): drain the response before checking completion records") | description(substring:"🧪 fix(database): test refused logins independently of local trust auth") | description(substring:"🐛 fix(patterns): commit per-item progress before continuing a round") | description(substring:"🧪 fix(docs): validate configured deployment routes offline") | description(substring:"🐛 fix(build): preserve WebSocket exports in private 4.1 adapters") | description(substring:"🐛 fix(home): send installation to its instructions") | description(substring:"📝 fix(docs): match the conversation command access policy") | description(substring:"📝 fix(docs): keep the published rc.16 quickstart on its Effect cohort") | description(substring:"🐛 fix(build): align Undici pins with the Effect 4.1 adapter") | description(substring:"🐛 fix(platform-node): mount tool packages beyond nested module scopes") | description(substring:"🧪 test(build-cli): install real fixture dependencies within confinement") | description(substring:"🧪 test(engine-store): await child and queue persistence on the real clock") | description(substring:"🧪 test(gateway): require strict framing and redacted decoder defects") | description(substring:"🐛 fix(control): preserve observed waits over unversioned approval history") | description(substring:"🧪 test(runtime): expose durable step and CLI startup failures") | description(substring:"🧪 test(platform-bun): require nonmutating jj snapshot probes") | description(substring:"🐛 fix(observability): normalize native SDK OTLP numbers before transport") | description(substring:"🐛 fix(plan): preserve schema identity bytes across Effect 4.1") | description(substring:"🧪 test(journal): observe SQL polling and renewal on the real clock") | description(substring:"🐛 fix(build-cli): preserve declared dependency reads in scratch runs") | description(substring:"🧪 test(targets): match the current repository pipeline") | description(substring:"🧪 test(flows): synchronize journal overflow with its persistence barrier") | description(substring:"🐛 fix(control): preserve trusted external schemes with absolute adapter URLs") | description(substring:"🐛 fix(capability): validate release grants and exclude refusal test sources") | description(substring:"🐛 fix(alchemy): migrate OAuth and host services to native crypto families") | description(substring:"🐛 fix(build-cli): tag the unrecorded affected-gates failure") | description(substring:"🐛 fix(build-cli): initialize the sealed result-cache tree in scratch runs") | description(substring:"🧪 test(model-host): exclude the hidden agents command from grants") | description(substring:"🧪 test(harness): give calibration integration tests real source provenance") | description(substring:"♻️ refactor(platform-node): remove superseded confinement branches") | description(substring:"🧪 test(agent): await terminal outcomes after cooldown wakes") | description(substring:"🧪 test(platform-node): exercise source edits after TypeScript erasure") | description(substring:"🧪 test(platform-node): wait for explicit lifecycle receipts") | description(substring:"🐛 fix(observability): classify retry and flow-realm refusals") | description(substring:"🐛 fix(engine-store): restore current and legacy serialized failure exits") | description(substring:"🔒 fix(process): keep redacted words out of native spawn errors") | description(substring:"🐛 fix(database): surface migration failures through the typed channel") | description(substring:"🐛 fix(platform-browser): keep receipt reconciliation failures typed") | description(substring:"🐛 fix(process): preserve prototype-named environment entries in Effect 4.1") | description(substring:"🐛 fix(process): reject shell arguments consistently with Effect 4.1") | description(substring:"🐛 fix(process): preserve both halves of additional descriptors") | description(substring:"🐛 fix(lint): validate Vibe-only examples through the compiler") | description(substring:"🐛 fix(sql): narrow SQL insert batches for Effect 4.1") | description(substring:"🐛 fix(receipts): retain original keys for native key enumeration") | description(substring:"🐛 fix(http): preserve extension methods when rebuilding requests") | description(substring:"🐛 fix(socket): retain the ws transport through Effect NodeWS") | description(substring:"🐛 fix(process): preserve redacted arguments until host execution") | description(substring:"🐛 fix(crypto): use Effect digest and secure random families") | description(substring:"🐛 fix(filesystem): supply guarded directory entries for Effect 4.1") | description(substring:"🐛 fix(filesystem): implement Effect no-follow metadata reads") | description(substring:"🐛 fix(platform-browser): identify the SQLite WASM SQL driver") | description(substring:"🐛 fix(database): adopt Effect scoped transaction acquisition") | description(substring:"⬆️ chore(deps): pin the Effect cohort to 4.1.0")) & committer_date(after:"2026-10-29"))`.
 
 | Class | Commits |
 |---|---|
 | EMPTY-ISH | 4 |
-| ON-MAIN | 261 |
-| PARTIAL | 171 |
-| SCAFFOLD | 4 |
-| STRANDED | 26 |
-| SUPERSEDED | 178 |
+| ON-MAIN | 291 |
+| PARTIAL | 132 |
+| SCAFFOLD | 2 |
+| STRANDED | 3 |
+| SUPERSEDED | 212 |
 
 ### Heads
 
@@ -745,22 +941,22 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 
 | Head | Bookmark / working copy | Commits | Classes | Net on/superseded/missing/partial (lines) | Missing files |
 |---|---|---|---|---|---|
-| `51b4598687` | cfg-build@ | 11 | SUPERSEDED 4, ON-MAIN 6, PARTIAL 1 | 120/3/2/3 (16) | apps/mvp/docs/decisions/0128-gates-on-cloudflare-job-machines.md (11), apps/mvp/docs/rulings.md (1), apps/mvp/docs/work/cf-gates.md (2), apps/mvp/worker/BranchSandboxes.ts (1) |
-| `60fb9113b5` | ci-agent@ | 61 | PARTIAL 37, STRANDED 18, SUPERSEDED 4, SCAFFOLD 2 | 38/22/194/52 (3688) | .changeset/agent-resume-admission.md (6), .changeset/cheap-credential-url-candidates.md (2), .changeset/ci-agent-fault-classes.md (6), .changeset/cli-native-bootstrap.md (8) |
+| `51b4598687` | cfg-build@ | 11 | SUPERSEDED 5, ON-MAIN 5, PARTIAL 1 | 118/5/2/3 (16) | apps/mvp/docs/decisions/0128-gates-on-cloudflare-job-machines.md (11), apps/mvp/docs/rulings.md (1), apps/mvp/docs/work/cf-gates.md (2), apps/mvp/worker/BranchSandboxes.ts (1) |
+| `60fb9113b5` | ci-agent@ | 61 | SUPERSEDED 30, ON-MAIN 29, PARTIAL 2 | 271/20/5/10 (128) | packages/smithers/agent/harness/src/internal/RealmFlowBundle.ts (1), packages/smithers/agent/model-host/test/HostTools.test.ts (1), packages/smithers/agent/test/Agent.test.ts (50), packages/smithers/a |
 | `9dae978249` |  | 14 | ON-MAIN 7, SUPERSEDED 5, PARTIAL 2 | 120/0/2/2 (50) | apps/mvp/worker/RepoApi.test.ts (2), apps/mvp/worker/test/harness.ts (1), apps/mvp/worker/test/reset.test.ts (42), apps/mvp/worker/test/reset.ts (5) |
-| `801ae69887` |  | 23 | STRANDED 4, ON-MAIN 10, SUPERSEDED 5, PARTIAL 4 | 124/4/98/9 (1432) | .github/scripts/ci/cloud.sh (46), .github/scripts/ci/cloud.test.ts (4), .github/workflows/ci.yml (62), .smithers/flows/evidence/check-evidence.mjs (5) |
-| `79b7a879cd` | builder/ci-shard | 3 | PARTIAL 3 | 2/0/87/8 (1305) | .github/workflows/ci.yml (62), .smithers/flows/evidence/check-evidence.mjs (5), .smithers/flows/evidence/check-receipts.test.mjs (11), .smithers/flows/release/pack-release.test.mjs (12) |
+| `801ae69887` |  | 23 | ON-MAIN 16, SUPERSEDED 5, PARTIAL 2 | 227/4/2/2 (50) | apps/mvp/worker/RepoApi.test.ts (2), apps/mvp/worker/test/harness.ts (1), apps/mvp/worker/test/reset.test.ts (42), apps/mvp/worker/test/reset.ts (5) |
+| `79b7a879cd` | builder/ci-shard | 3 | ON-MAIN 2, PARTIAL 1 | 96/0/0/1 (1) | .smithers/flows/release/pack-release.test.mjs (1) |
 | `9445aa0c85` | builder/ci-flows2 | 4 | ON-MAIN 4 | 0/0/0/0 (0) |  |
-| `4ed2c81157` | builder/bb6-cli | 28 | SUPERSEDED 8, ON-MAIN 20 | 0/0/0/0 (0) |  |
+| `4ed2c81157` | builder/bb6-cli | 28 | SUPERSEDED 9, ON-MAIN 19 | 0/0/0/0 (0) |  |
 | `3033b230f6` | builder/drift-helper | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
-| `d2b355bf5e` |  | 43 | SUPERSEDED 9, ON-MAIN 30, PARTIAL 3, EMPTY-ISH 1 | 222/3/3/2 (9) | .github/workflows/ci.yml (2), PACKAGE.ts (5), packages/smithers/build/targets/src/GithubCiGen.ts (1), packages/smithers/flows/platform-browser/package.json (1) |
-| `3cdca413c0` | builder/ci-release | 24 | ON-MAIN 21, SUPERSEDED 2, PARTIAL 1 | 89/0/6/6 (39) | .smithers/flows/release/check-npm-dedupe.mjs (14), .smithers/flows/release/pack-release.mjs (10), .smithers/flows/release/pack-release.test.mjs (10), .smithers/flows/release/release-graph.test.mjs (3) |
-| `c1d2717c45` | builder/ci-ui | 14 | ON-MAIN 12, PARTIAL 2 | 65/3/7/2 (10) | .changeset/ci-playwright-toolchain.md (1), .github/workflows/ci.yml (2), PACKAGE.ts (2), packages/smithers/build/targets/src/GithubCiGen.ts (2) |
+| `d2b355bf5e` |  | 43 | SUPERSEDED 10, ON-MAIN 29, PARTIAL 3, EMPTY-ISH 1 | 219/5/3/3 (12) | .github/workflows/ci.yml (2), PACKAGE.ts (5), packages/smithers/build/targets/src/GithubCiGen.ts (4), packages/smithers/flows/platform-browser/package.json (1) |
+| `3cdca413c0` | builder/ci-release | 24 | ON-MAIN 20, SUPERSEDED 3, PARTIAL 1 | 88/1/6/6 (39) | .smithers/flows/release/check-npm-dedupe.mjs (14), .smithers/flows/release/pack-release.mjs (10), .smithers/flows/release/pack-release.test.mjs (10), .smithers/flows/release/release-graph.test.mjs (3) |
+| `c1d2717c45` | builder/ci-ui | 14 | ON-MAIN 12, SUPERSEDED 1, PARTIAL 1 | 65/4/7/1 (9) | .changeset/ci-playwright-toolchain.md (1), .github/workflows/ci.yml (2), PACKAGE.ts (2), packages/smithers/build/targets/src/GithubCiGen.ts (2) |
 | `d16b924d3c` | builder/ci-drift | 6 | SUPERSEDED 3, ON-MAIN 3 | 0/0/0/0 (0) |  |
-| `6447f92bba` | builder/ci-flows | 18 | ON-MAIN 14, SUPERSEDED 4 | 0/0/0/0 (0) |  |
-| `0b4ecc8849` | builder/ci-build | 7 | ON-MAIN 4, SUPERSEDED 3 | 0/0/0/0 (0) |  |
+| `6447f92bba` | builder/ci-flows | 18 | ON-MAIN 13, SUPERSEDED 5 | 0/0/0/0 (0) |  |
+| `0b4ecc8849` | builder/ci-build | 7 | ON-MAIN 3, SUPERSEDED 4 | 0/0/0/0 (0) |  |
 | `adb4c688e3` | builder/ci-repo | 11 | ON-MAIN 7, SUPERSEDED 2, EMPTY-ISH 1, PARTIAL 1 | 47/2/1/0 (1) | packages/smithers/flows/platform-browser/package.json (1) |
-| `32db9cc7f2` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
+| `32db9cc7f2` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `1423db6ecc` |  | 6 | PARTIAL 2, ON-MAIN 4 | 202/1/2/0 (2) | .smithers/flows/release/fixtures/public-api-baseline.json (1), packages/smithers/flows/engine-store/test/CycleDetectionSql.test.ts (1) |
 | `c0347a9c39` |  | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `c499102e10` |  | 3 | ON-MAIN 1, PARTIAL 1, SUPERSEDED 1 | 56/2/1/3 (10) | apps/mvp/docs/work/w17-private.md (7), apps/mvp/src/features/chat/engineAvailability.test.ts (1), apps/mvp/src/screens/branch/BranchScreen.tsx (2) |
@@ -768,11 +964,11 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `aa86bdc1ff` | builder/w17-ui | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
 | `cc87e618b5` |  | 3 | SUPERSEDED 1, ON-MAIN 2 | 0/0/0/0 (0) |  |
 | `a33f7fcaea` | builder/auth | 16 | ON-MAIN 1, SUPERSEDED 6, PARTIAL 8, SCAFFOLD 1 | 383/16/0/2 (3) | apps/mvp/worker/Answers.ts (2), apps/mvp/worker/RepoApi.ts (1) |
-| `2bf9537d13` | lander/w8mig-held | 30 | EMPTY-ISH 1, PARTIAL 29 | 33/0/1714/522 (119267) | .smithers/coding-project.json (3), .smithers/flows/coding/command-receipts.ts (1), .smithers/flows/coding/steering.ts (2), .smithers/flows/package.json (1) |
-| `9d424aa53e` |  | 30 | EMPTY-ISH 1, PARTIAL 29 | 33/0/1714/522 (119267) | .smithers/coding-project.json (3), .smithers/flows/coding/command-receipts.ts (1), .smithers/flows/coding/steering.ts (2), .smithers/flows/package.json (1) |
-| `321ccd7c31` |  | 12 | SCAFFOLD 2, PARTIAL 7, SUPERSEDED 3 | 314/14/154/18 (1955) | .changeset/confirmed-machine-ownership.md (1), apps/mvp/db/Database.test.ts (25), apps/mvp/db/Database.ts (6), apps/mvp/db/migrations/0072_sandbox_daily_limit.ts (14) |
-| `1ba8d1efde` | builder/toasts2 | 23 | STRANDED 4, PARTIAL 18, ON-MAIN 1 | 8/0/170/18 (2433) | apps/mvp/docs/decisions/0121-operation-progress.md (27), apps/mvp/docs/features/issues.md (2), apps/mvp/docs/features/notifications.md (8), apps/mvp/docs/features/todos.md (9) |
-| `f02a185170` |  | 4 | PARTIAL 4 | 8/0/170/18 (2432) | apps/mvp/docs/decisions/0121-operation-progress.md (27), apps/mvp/docs/features/issues.md (2), apps/mvp/docs/features/notifications.md (8), apps/mvp/docs/features/todos.md (9) |
+| `2bf9537d13` | lander/w8mig-held | 30 | EMPTY-ISH 1, PARTIAL 29 | 33/0/1714/522 (119259) | .smithers/coding-project.json (3), .smithers/flows/coding/command-receipts.ts (1), .smithers/flows/coding/steering.ts (2), .smithers/flows/package.json (1) |
+| `9d424aa53e` |  | 30 | EMPTY-ISH 1, PARTIAL 29 | 33/0/1714/522 (119259) | .smithers/coding-project.json (3), .smithers/flows/coding/command-receipts.ts (1), .smithers/flows/coding/steering.ts (2), .smithers/flows/package.json (1) |
+| `321ccd7c31` |  | 12 | SCAFFOLD 2, PARTIAL 7, SUPERSEDED 3 | 314/14/154/18 (1954) | .changeset/confirmed-machine-ownership.md (1), apps/mvp/db/Database.test.ts (25), apps/mvp/db/Database.ts (6), apps/mvp/db/migrations/0072_sandbox_daily_limit.ts (14) |
+| `1ba8d1efde` | builder/toasts2 | 23 | STRANDED 3, PARTIAL 18, ON-MAIN 2 | 9/0/169/18 (2429) | apps/mvp/docs/decisions/0121-operation-progress.md (27), apps/mvp/docs/features/issues.md (2), apps/mvp/docs/features/notifications.md (8), apps/mvp/docs/features/todos.md (9) |
+| `f02a185170` |  | 4 | PARTIAL 4 | 9/0/169/18 (2428) | apps/mvp/docs/decisions/0121-operation-progress.md (27), apps/mvp/docs/features/issues.md (2), apps/mvp/docs/features/notifications.md (8), apps/mvp/docs/features/todos.md (9) |
 | `62d8a6f3ce` |  | 20 | PARTIAL 7, SUPERSEDED 8, ON-MAIN 5 | 343/15/115/13 (876) | apps/mvp/db/Database.test.ts (17), apps/mvp/db/Database.ts (2), apps/mvp/db/migrations/0072_sandbox_daily_limit.ts (14), apps/mvp/docs/decisions/0122-who-may-ask.md (62) |
 | `4bbb57c3f9` | builder/w15-webkit | 1 | ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `86f688d42c` |  | 1 | SUPERSEDED 1 | 0/0/0/0 (0) |  |
@@ -781,10 +977,10 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | `55d2437b03` |  | 3 | PARTIAL 1, ON-MAIN 1, SUPERSEDED 1 | 47/5/2/1 (15) | apps/mvp/e2e/flow-editor-storage.spec.ts (12), apps/mvp/e2e/repo-browse.spec.ts (3) |
 | `dab3fbbb2c` |  | 2 | SUPERSEDED 1, ON-MAIN 1 | 0/0/0/0 (0) |  |
 | `bf9dcdee57` |  | 3 | SUPERSEDED 1, ON-MAIN 2 | 0/0/0/0 (0) |  |
-| `39d8ecdc5b` |  | 16 | ON-MAIN 6, SUPERSEDED 9, PARTIAL 1 | 73/81/1/0 (2) | apps/site/package.json (2) |
-| `e72b2cbf43` | builder/mobile-w8 | 1 | PARTIAL 1 | 0/0/20/1 (214) | apps/mvp/docs/work/mobile-w8.md (44), apps/mvp/e2e/README.md (8), apps/mvp/e2e/frames.test.ts (30), apps/mvp/e2e/frames.ts (10) |
-| `a80b82ce4b` | builder/bb5-app | 13 | PARTIAL 3, SUPERSEDED 7, ON-MAIN 3 | 404/38/1/3 (4) | apps/mvp/src/features/commands/commands.test.ts (1), apps/mvp/src/features/commands/commands.ts (1), apps/mvp/worker/index.ts (1), apps/site/package.json (1) |
-| `d1d3cc9af8` | builder/w12-followups | 1 | PARTIAL 1 | 65/11/3/1 (4) | apps/mvp/src/features/commands/commands.test.ts (2), apps/mvp/src/features/commands/commands.ts (2) |
+| `39d8ecdc5b` |  | 16 | ON-MAIN 5, SUPERSEDED 9, PARTIAL 2 | 73/81/1/0 (2) | apps/site/package.json (2) |
+| `e72b2cbf43` | builder/mobile-w8 | 1 | PARTIAL 1 | 16/1/2/2 (6) | apps/mvp/e2e/fullPageScreenshot.ts (3), apps/mvp/e2e/mobile-baseline.ts (2), apps/mvp/tests/fixtures/mobile-layout.tsx (1) |
+| `a80b82ce4b` | builder/bb5-app | 13 | PARTIAL 3, SUPERSEDED 7, ON-MAIN 3 | 402/40/1/3 (4) | apps/mvp/src/features/commands/commands.test.ts (1), apps/mvp/src/features/commands/commands.ts (1), apps/mvp/worker/index.ts (1), apps/site/package.json (1) |
+| `d1d3cc9af8` | builder/w12-followups | 1 | PARTIAL 1 | 64/12/3/1 (4) | apps/mvp/src/features/commands/commands.test.ts (2), apps/mvp/src/features/commands/commands.ts (2) |
 | `64c69c1597` | builder/bb4-docs | 39 | ON-MAIN 23, PARTIAL 3, SUPERSEDED 13 | 151/4/2/5 (27) | apps/site/package.json (2), apps/site/public/docs/reference/cli.md (3), apps/site/public/llms-full.txt (3), apps/site/src/content/docs/docs/reference/cli.md (3) |
 | `717f550e01` | builder/bb4-app2 | 11 | PARTIAL 6, ON-MAIN 2, SUPERSEDED 3 | 49/4/44/13 (390) | apps/mvp/docs/features/issues.md (1), apps/mvp/docs/features/notifications.md (3), apps/mvp/docs/features/todos.md (1), apps/mvp/docs/work/bugbash4-app2.md (20) |
 | `36145de11d` | builder/bb3-cli | 10 | ON-MAIN 8, SUPERSEDED 2 | 0/0/0/0 (0) |  |
@@ -811,16 +1007,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 
 | Workspace | Directory | Why |
 |---|---|---|
-| land-effect | `/Users/williamcory/smithers-builders/ws-land-effect` | process cwd, edited .git-blame-ignore-revs |
-| le-base | `/Users/williamcory/smithers-builders/ws-le-base` | edited .git-blame-ignore-revs |
-| sa-app-b | `/Users/williamcory/smithers-builders/ws-sa-app-b` | edited .git-blame-ignore-revs |
-| sa-app-c | `/Users/williamcory/smithers-builders/ws-sa-app-c` | edited .git-blame-ignore-revs |
-| sa-app-d | `/Users/williamcory/smithers-builders/ws-sa-app-d` | edited .git-blame-ignore-revs |
-| sa-ci-a | `/Users/williamcory/smithers-builders/ws-sa-ci-a1` | edited .git-blame-ignore-revs |
-| sa-ci-a-main | `/Users/williamcory/smithers-builders/ws-sa-ci-a-main` | process cwd, edited .git-blame-ignore-revs |
-| sa-ci-a2 | `/Users/williamcory/smithers-builders/ws-sa-ci-a2` | process cwd, edited .git-blame-ignore-revs |
-| sa-ci-b | `/Users/williamcory/smithers-builders/ws-sa-ci-b` | edited .git-blame-ignore-revs |
-| 152 commits | `` | committed in the last 6 hours |
+| land-effect | `/Users/williamcory/smithers-builders/ws-land-effect` | edited .changeset/crypto-uuid-v5.md |
+| mx-held | `/Users/williamcory/smithers-builders/ws-mx-held` | edited .git-blame-ignore-revs |
+| 8 commits | `` | committed in the last 6 hours |
 
 ### Commits
 
@@ -882,7 +1071,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-25 05:48 | `356ea97f5e` | PARTIAL | 5/0/113/23 | 9d424aa53e | ♻️ refactor(gateway): @smthrs/gateway is written in VibeLang | .smithers/flows/coding/command-receipts.ts: import { CommandReceipt } from "../../../packages/smithers/gateway/src/RuntimeBr; packages/smithers/gateway/PACKAGE.ts: testSources: Input.glob("{test,examples}/**/*.{ts,vibe}" |
 | 2026-10-26 17:35 | `2f041dbd22` | PARTIAL | 3/0/89/1 | lander/w8mig-held | ⬆️ chore(deps): VibeLang 0.0.9 | .smithers/flows/package.json: "vibelang": "0.0.9"; .smithers/flows/review/seeded-bugs/package.json: "vibelang": "0.0.9" |
 | 2026-10-26 17:35 | `740ee4b309` | PARTIAL | 3/0/89/1 | 9d424aa53e | ⬆️ chore(deps): VibeLang 0.0.9 | .smithers/flows/package.json: "vibelang": "0.0.9"; .smithers/flows/review/seeded-bugs/package.json: "vibelang": "0.0.9" |
-| 2026-10-26 21:13 | `e72b2cbf43` | PARTIAL | 0/0/20/1 | builder/mobile-w8 | 🐛 fix(mvp): keep screenshot captures out of edited mobile recordings | apps/mvp/docs/work/mobile-w8.md: the old media path; the saved production measurements retain the flash regressio; apps/mvp/e2e/README.md: Mobile layout audits retain full-document PNG evidence and original recordings. |
+| 2026-10-26 21:13 | `e72b2cbf43` | PARTIAL | 16/1/2/2 | builder/mobile-w8 | 🐛 fix(mvp): keep screenshot captures out of edited mobile recordings | apps/mvp/e2e/fullPageScreenshot.ts: return await page.screenshot({ ...(path === undefined ? {} : { path }), fullPage; apps/mvp/e2e/mobile-baseline.ts: const current = await fullPageScreenshot(page, info.outputPath(`${nam |
 | 2026-10-26 22:07 | `b541b10c4b` | SUPERSEDED | 6/5/0/0 | 3760d55952 | 🐛 fix(repo-view): render sanitized README HTML and hide comments | apps/mvp/docs/work/bb2-markdown.md: main carried then changed it: a056df6fe4 (📝 docs(markdown): record rendering policy and W12 validation) |
 | 2026-10-26 22:08 | `b207c70a23` | SUPERSEDED | 16/2/0/0 | builder/bb2-webkit | 🔎 fix(storage): expose flow editor restore and SQL admission failures | apps/mvp/docs/work/bugbash3-flows-storage.md: changed later in its stack (head 9bd3469684) |
 | 2026-10-26 22:10 | `3fcc12729e` | SUPERSEDED | 9/2/0/0 | 3760d55952 | 🐛 fix(markdown): hide leading YAML metadata in document previews | apps/mvp/e2e/markdown-rendering.spec.ts: main carried then changed it: 98b17d082e (🐛 fix(markdown): keep list continuation lines inside their items) |
@@ -1060,11 +1249,11 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-27 04:39 | `9386a89272` | ON-MAIN | 1/0/0/0 | builder/bb4-docs | 📝 fix(docs): qualify maintenance skill paths from the repository root |  |
 | 2026-10-27 04:39 | `da248aac19` | ON-MAIN | 6/0/0/0 | builder/bb4-docs | 📝 fix(flows): pin and execute the documented published install |  |
 | 2026-10-27 04:39 | `ed31d06135` | SUPERSEDED | 1/2/0/0 | builder/bb4-docs | 🐛 fix(cli): describe the TUI budget as an override | apps/site/scripts/gen-cli-data.test.mjs: changed later in its stack (head 64c69c1597) |
-| 2026-10-27 04:41 | `92f06ac601` | SUPERSEDED | 4/3/0/0 | 39d8ecdc5b | 🐛 fix(cli): forward TUI daily cap and workspace flags | apps/mvp/docs/work/bugbash4-cli-docs.md: changed later in its stack (head 39d8ecdc5b) |
+| 2026-10-27 04:41 | `92f06ac601` | PARTIAL | 4/2/0/1 | 39d8ecdc5b | 🐛 fix(cli): forward TUI daily cap and workspace flags | packages/smithers/test/TuiFlags.test.ts: afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: ; apps/mvp/docs/work/bugbash4-cli-docs.md: changed later in its stack (head 39d8ecdc5b) |
 | 2026-10-27 04:42 | `28d08fc1a0` | PARTIAL | 40/4/0/1 | builder/bb5-app | 🐛 fix(mvp): return 404 for unsupported app documents | apps/mvp/worker/index.ts: const status = isAppRoute(url.pathname) ? 200 : 404; apps/mvp/docs/work/bugbash4-bb5-app.md: changed later in its stack (head a80b82ce4b) |
 | 2026-10-27 04:43 | `97edf0d6d6` | SUPERSEDED | 1/2/0/0 | 39d8ecdc5b | 📝 fix(docs): reference deferred clock and native fact namespaces | packages/smithers/flows/engine-store/docs/api.md: main carried then changed it: 3b734cb691 (🧹 fix(lint): enforce import scopes and clear workspace gates) |
 | 2026-10-27 04:43 | `058c34053a` | PARTIAL | 3/1/1/0 | 39d8ecdc5b | 📝 fix(engine): identify the owner and failure channel of identity conflicts | apps/site/package.json: "check:docs": "node --test --test-concurrency=1 scripts/support-matrix.test.mjs ; packages/smithers/flows/engine/docs/api.md: main carried then changed it: 3b734cb691 (🧹 fix(lint): enforce import |
-| 2026-10-27 04:43 | `cc3f9671d0` | ON-MAIN | 2/0/0/0 | 39d8ecdc5b | 📝 fix(cli): describe the actual TUI token cap default |  |
+| 2026-10-27 04:43 | `cc3f9671d0` | SUPERSEDED | 1/1/0/0 | 39d8ecdc5b | 📝 fix(cli): describe the actual TUI token cap default | packages/smithers/test/TuiFlags.test.ts: main carried then changed it: cc218226f2 (⚡ perf(cli): complete cache handoff for late process journeys) |
 | 2026-10-27 04:44 | `a4271e418c` | SUPERSEDED | 5/1/0/0 | 39d8ecdc5b | 🐛 fix(cli): avoid loading browser sync through the native runtime barrel | apps/mvp/docs/work/bugbash4-cli-docs.md: changed later in its stack (head 39d8ecdc5b) |
 | 2026-10-27 04:46 | `026021612a` | SUPERSEDED | 1/45/0/0 | 39d8ecdc5b | 📝 fix(docs): document verified public flow API members | apps/site/src/content/docs/docs/reference/api/canonical.mdx: main carried then changed it: 3b734cb691 (🧹 fix(lint): enforce import scopes and clear workspace gates) |
 | 2026-10-27 04:47 | `00b4fbb9e6` | SUPERSEDED | 2/1/0/0 | builder/bb5-app | 🔀 chore(mvp): integrate pending write-admission prerequisite | apps/mvp/docs/features/issues.md: main carried then changed it: b450a52fc2 (🐛 fix(mvp): repair mobile layout and explain private browser limits) |
@@ -1083,8 +1272,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-27 05:19 | `f6cb5dd0af` | ON-MAIN | 20/0/0/0 | builder/bb5-app | 🐛 fix(mvp): redact repository paths before browser telemetry leaves |  |
 | 2026-10-27 05:40 | `1d67551546` | ON-MAIN | 10/0/0/0 | builder/bb5-app | 🐛 fix(mvp): settle visitor issue counts from public snapshots |  |
 | 2026-10-27 05:42 | `32087e268b` | SUPERSEDED | 17/4/0/0 | builder/bb5-app | 🐛 fix(mvp): explain unavailable repository issue lists | apps/mvp/src/features/repo/actions.ts: main carried then changed it: 8800f22acb (🔒 feat(mvp): guide first run and narrow AUTH-8 to repository conversations and clone caps) |
-| 2026-10-27 05:51 | `a80b82ce4b` | PARTIAL | 239/17/1/1 | builder/bb5-app | 🐛 fix(mvp): durably admit every device write before returning | apps/mvp/src/features/commands/commands.test.ts: import { Deferred, Effect, type ManagedRuntime, Metric } from "effect"; apps/mvp/src/features/commands/commands.ts: readonly choose: (index: number, how: "accept" \| "compl |
-| 2026-10-27 06:22 | `d1d3cc9af8` | PARTIAL | 65/11/3/1 | builder/w12-followups | 🐛 fix(mvp): repair W12 production followups | apps/mvp/src/features/commands/commands.test.ts: import { choose as chooseCommand, submit as submitCommand } from "./actions"; apps/mvp/src/features/commands/commands.test.ts: Commands \| Chat \| ChatStore \| CommandsStore  |
+| 2026-10-27 05:51 | `a80b82ce4b` | PARTIAL | 237/19/1/1 | builder/bb5-app | 🐛 fix(mvp): durably admit every device write before returning | apps/mvp/src/features/commands/commands.test.ts: import { Deferred, Effect, type ManagedRuntime, Metric } from "effect"; apps/mvp/src/features/commands/commands.ts: readonly choose: (index: number, how: "accept" \| "compl |
+| 2026-10-27 06:22 | `d1d3cc9af8` | PARTIAL | 64/12/3/1 | builder/w12-followups | 🐛 fix(mvp): repair W12 production followups | apps/mvp/src/features/commands/commands.test.ts: import { choose as chooseCommand, submit as submitCommand } from "./actions"; apps/mvp/src/features/commands/commands.test.ts: Commands \| Chat \| ChatStore \| CommandsStore  |
 | 2026-10-27 09:38 | `509d4fcaf0` | SUPERSEDED | 6/4/0/0 | builder/auth 321ccd7c31 | 📝 docs(site): walk the quickstart through the first run | apps/site/docs/app/pages/quickstart.md: changed later in its stack (head a33f7fcaea, 321ccd7c31, 62d8a6f3ce) |
 | 2026-10-27 09:38 | `da66767c1d` | PARTIAL | 55/9/0/2 | builder/auth 321ccd7c31 | ✨ feat(mvp): guide a new person's first run on /app | apps/mvp/docs/features/first-run.md: \| `tests/FirstRun.test.ts` \| the views' markup in each state: the one sign-in li; apps/mvp/tests/FirstRun.test.ts: test("the steps, the composer's place and the header's sign-in, for  |
 | 2026-10-27 09:38 | `b17602651c` | SUPERSEDED | 14/4/0/0 | builder/auth 321ccd7c31 | 🧪 test(mvp): brand-new local people and a scripted hello for end-to-end tests | apps/mvp/e2e/devices.ts: changed later in its stack (head a33f7fcaea, 321ccd7c31, 62d8a6f3ce) |
@@ -1163,7 +1352,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-27 17:40 | `3de55a2662` | ON-MAIN | 2/0/0/0 | 618f8d2383 | 🎨 style(effect-tanstack-db): satisfy the existing formatter gate |  |
 | 2026-10-27 17:46 | `e547c3cc7f` | ON-MAIN | 3/0/0/0 | 618f8d2383 | 📝 docs(mvp): record confirmed write-source cleanup |  |
 | 2026-10-27 18:06 | `303d0545eb` | SUPERSEDED | 6/1/0/0 | 618f8d2383 | 🧪 test(mvp): cover refused write-source receipts | apps/mvp/docs/work/w14-writes.md: main carried then changed it: a48a1333fc (🐛 fix(mvp): retire slash issue receipts without form navigation) |
-| 2026-10-27 19:24 | `f02a185170` | PARTIAL | 10/0/132/6 | f02a185170 | 🐛 fix(mvp): reconcile progress across interrupted write admission | apps/mvp/docs/decisions/0121-operation-progress.md: On reload, a Commit notice is presentation rather than admission evidence. Recon; apps/mvp/docs/features/issues.md: A resumed Create issue stays Requested while its rec |
+| 2026-10-27 19:24 | `f02a185170` | PARTIAL | 11/0/131/6 | f02a185170 | 🐛 fix(mvp): reconcile progress across interrupted write admission | apps/mvp/docs/decisions/0121-operation-progress.md: On reload, a Commit notice is presentation rather than admission evidence. Recon; apps/mvp/docs/features/issues.md: A resumed Create issue stays Requested while its rec |
 | 2026-10-27 19:24 | `62d8a6f3ce` | PARTIAL | 13/1/1/0 | 62d8a6f3ce | 🧪 test(cli): cover MCP lifetime and operator error branches | apps/mvp/docs/work/package-bugbash4-cli.md: owner: bb6-cli2; packages/smithers/test/McpTransport.test.ts: main carried then changed it: c57aa856b6 (✅ test(cli): check MCP tool middleware against a fixture install) |
 | 2026-10-27 20:47 | `c19955e568` | PARTIAL | 9/3/3/0 | builder/auth 321ccd7c31 | 🐛 fix(mvp): close failed TODO starts and scope recovered writes and slash authority | apps/mvp/docs/decisions/0122-who-may-ask.md: Failed TODO startup stops the actual container before closing its durable budget; apps/mvp/worker/branch/Budget.test.ts: expect(await runtime.runPromiseExit(Budget.failedWake( |
 | 2026-10-27 20:51 | `4bbb57c3f9` | ON-MAIN | 30/0/0/0 | builder/w15-webkit | 🧪 fix(mvp): isolate WebKit devices and prove departure diagnostics |  |
@@ -1176,7 +1365,7 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-28 00:35 | `1e7acbc65d` | PARTIAL | 0/5/22/1 | builder/toasts2 | 🐛 fix(mvp): correlate Commit progress with its admitting tab | apps/mvp/docs/decisions/0121-operation-progress.md: Commit’s local progress schema v2 adds optional stable tab ownership without cha; apps/mvp/docs/features/notifications.md: A Commit intent retains its originating tab I |
 | 2026-10-28 00:35 | `d42c45a647` | PARTIAL | 0/0/1/1 | builder/toasts2 | 🐛 fix(mvp): release the synchronous Discard action immediately | apps/mvp/docs/work/toasts2.md: updated: 2026-10-28T05:03:00Z; apps/mvp/src/features/todos/actions.ts: yield* store.removeDraft(draft.value).pipe(Effect.andThen(record("discard_draft" |
 | 2026-10-28 00:35 | `3a5762c084` | PARTIAL | 0/2/18/0 | builder/toasts2 | 🐛 fix(mvp): retain consumed draft identities across delivery retries | apps/mvp/docs/decisions/0121-operation-progress.md: Draft removal retains an id-only receipt before deleting its matching source, se; apps/mvp/docs/features/todos.md: Discard and Commit cleanup persist an id-only draft-r |
-| 2026-10-28 00:35 | `83eb2a5099` | STRANDED | 0/0/1/0 | builder/toasts2 | 🧪 test(platform-browser): assert mode bits without privileged access checks | packages/smithers/flows/platform-browser/test/BrowserFileSystem.test.ts: expect(yield* (Effect.flip(fileSystem.access(path("wo.txt"), { readable: true }) |
+| 2026-10-28 00:35 | `83eb2a5099` | ON-MAIN | 1/0/0/0 | builder/toasts2 | 🧪 test(platform-browser): assert mode bits without privileged access checks |  |
 | 2026-10-28 00:35 | `1be995b47a` | PARTIAL | 1/0/16/0 | builder/toasts2 | 🐛 fix(platform-browser): announce recovery for unfinished progress inspection | apps/mvp/docs/decisions/0121-operation-progress.md: Unfinished engine progress is inspected again on a new leader announcement, incl; apps/mvp/docs/features/notifications.md: Retained Commit sources recheck repository au |
 | 2026-10-28 00:35 | `296075d579` | ON-MAIN | 3/0/0/0 | builder/toasts2 | 🎨 style(platform-browser): satisfy the existing formatter gate |  |
 | 2026-10-28 00:35 | `b700372146` | PARTIAL | 2/2/26/0 | builder/toasts2 | 🐛 fix(mvp): preserve terminal proof across presentation rollback | apps/mvp/docs/decisions/0121-operation-progress.md: Confirmed engine progress lives in a local collection independently of the persi; apps/mvp/src/features/attention/actions.ts: const current = yield* progress.get(id); a |
@@ -1211,8 +1400,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-29 02:09 | `e689ef98a2` | ON-MAIN | 3/0/0/0 | 1423db6ecc | 🐛 fix(build-cli): retain failure metadata for large argument vectors |  |
 | 2026-10-29 02:09 | `b0984dc702` | ON-MAIN | 2/0/0/0 | 1423db6ecc | 🐛 fix(build): clear infrastructure test lint errors |  |
 | 2026-10-29 03:38 | `1423db6ecc` | PARTIAL | 7/0/1/0 | 1423db6ecc | 🔧 fix(docs): budget measured guarded documentation checks | .smithers/flows/release/fixtures/public-api-baseline.json: "Executor.d.ts": "d131186e53ec62594bed1e7ae0d06df6022f95cfee63bfc9b51b7bb4617a32 |
-| 2026-10-29 11:11 | `32db9cc7f2` | ON-MAIN | 35/0/0/0 | 32db9cc7f2 | 🐛 fix(cli): load provider SDKs only when selected |  |
-| 2026-10-29 16:18 | `7354f3b969` | STRANDED | 0/0/1/0 | 60fb9113b5 | 📝 docs(ci): track assigned agent CI repairs | apps/mvp/docs/work/ci-agent-reds.md: entries in `docs/libraries.md`, plus flow, harness, run-store and engine-store; |
+| 2026-10-29 11:11 | `32db9cc7f2` | SUPERSEDED | 34/1/0/0 | 32db9cc7f2 | 🐛 fix(cli): load provider SDKs only when selected | packages/smithers/src/cli/ControlBridge.ts: main carried then changed it: fa717a6d0a (🐛 fix(control): drain run logs after the committed terminal state) |
+| 2026-10-29 16:18 | `7354f3b969` | SUPERSEDED | 0/1/0/0 | 60fb9113b5 | 📝 docs(ci): track assigned agent CI repairs | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
 | 2026-10-29 16:18 | `2c7297fbd5` | ON-MAIN | 2/0/0/0 | d2b355bf5e | 📚 docs(ci): record restored repository-contract gates |  |
 | 2026-10-29 16:18 | `bb784f2323` | ON-MAIN | 14/0/0/0 | d2b355bf5e | 🧪 fix(views): cover installation and reload deadline recovery |  |
 | 2026-10-29 16:18 | `22e998f20e` | SUPERSEDED | 9/1/0/0 | d2b355bf5e | 🐛 fix(conformance): follow private UI and release staging contracts | packages/repo-targets/conformance/workspaceInventory.test.ts: main carried then changed it: 333e31a579 (🧪 fix(conformance): pin the terminal unit directory selector) |
@@ -1258,8 +1447,8 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-29 16:22 | `b161773259` | ON-MAIN | 1/0/0/0 | builder/ci-release | 🐛 fix(docs): use the public model entry in the Jev fixture |  |
 | 2026-10-29 16:23 | `81c0d9cb67` | ON-MAIN | 2/0/0/0 | builder/ci-release | 🐛 fix(ci): inventory the provider load flow during discovery |  |
 | 2026-10-29 16:23 | `cb712caea6` | ON-MAIN | 5/0/0/0 | builder/ci-release | 🐛 fix(release): retain failed packing command diagnostics |  |
-| 2026-10-29 16:24 | `4f8aed9953` | SCAFFOLD | 1/0/1/0 | 60fb9113b5 | 🧪 test(cli): check scaffolded prompts with the VibeLang compiler | packages/smithers/test/Init.test.ts: const compiler = join(dirname(createRequire(import.meta.url).resolve("vibelang/p |
-| 2026-10-29 16:24 | `d9045203de` | SCAFFOLD | 0/0/1/1 | 60fb9113b5 | 🧪 test(cli): resolve Vitest independently of temporary pnpm shims | packages/smithers/test/CliTestLanes.test.ts: const vitest = join(dirname(createRequire(import.meta.url).resolve("vitest/packa; packages/smithers/test/CliTestLanes.test.ts: .replaceAll("pnpm exec vitest", `${quote(process |
+| 2026-10-29 16:24 | `4f8aed9953` | ON-MAIN | 2/0/0/0 | 60fb9113b5 | 🧪 test(cli): check scaffolded prompts with the VibeLang compiler |  |
+| 2026-10-29 16:24 | `d9045203de` | SUPERSEDED | 1/1/0/0 | 60fb9113b5 | 🧪 test(cli): resolve Vitest independently of temporary pnpm shims | packages/smithers/test/CliTestLanes.test.ts: main carried then changed it: fd2b368517 (⚡ perf(cli): share one compiler coordinator across bounded tests) |
 | 2026-10-29 16:24 | `d6fe514103` | ON-MAIN | 2/0/0/0 | d2b355bf5e | 🧪 fix(platform-node): decode TLS fixture URLs before spawning Node |  |
 | 2026-10-29 16:24 | `5eb80dadff` | ON-MAIN | 5/0/0/0 | builder/ci-flows | 🧪 test(engine-store): use database time at queue crash boundaries |  |
 | 2026-10-29 16:24 | `3c166a0df0` | PARTIAL | 2/0/7/2 | builder/ci-release | 🐛 fix(release): resolve workspace links before staging registry artifacts | .smithers/flows/release/check-npm-dedupe.mjs: import { readWorkspaceManifests, resolveWorkspaceDependencies } from "./pack-rel; .smithers/flows/release/check-npm-dedupe.mjs: for (const section of ["dependencies", "devDep |
@@ -1270,12 +1459,12 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-29 16:29 | `dd2b870ca6` | ON-MAIN | 2/0/0/0 | d2b355bf5e | 🐛 fix(release): declare the kernel's HTTP write capability |  |
 | 2026-10-29 16:29 | `dde82dc3b5` | SUPERSEDED | 4/1/0/0 | d2b355bf5e | 🧪 fix(capability): scan authoring grants without test fixtures | .smithers/flows/README.md: main carried then changed it: 454bbb1c89 (🧪 fix(ci): isolate artifact assertions and format lane docs) |
 | 2026-10-29 16:29 | `6423d995cb` | ON-MAIN | 10/0/0/0 | d2b355bf5e | 📚 fix(docs): make reference examples compile independently |  |
-| 2026-10-29 16:29 | `eea02689c1` | ON-MAIN | 1/0/0/0 | d2b355bf5e | 🧪 test(targets): match the pipeline after the SCOPE-3 removal |  |
+| 2026-10-29 16:29 | `eea02689c1` | SUPERSEDED | 0/1/0/0 | d2b355bf5e | 🧪 test(targets): match the pipeline after the SCOPE-3 removal | packages/smithers/build/targets/test/GithubWorkflow.test.ts: main carried then changed it: 9a82813033 (⚡️ fix(ci): shard package and workspace suites by hosted durations) |
 | 2026-10-29 16:29 | `1a0c678078` | ON-MAIN | 4/0/0/0 | builder/ci-flows | 🧪 test(platform-browser): supply Chromium Web Locks under Bun |  |
 | 2026-10-29 16:29 | `4b1e923656` | ON-MAIN | 2/0/0/0 | builder/ci-build | 🐛 fix(release): declare the kernel's HTTP write capability |  |
 | 2026-10-29 16:29 | `6bdf51d4e3` | SUPERSEDED | 4/1/0/0 | builder/ci-build | 🧪 fix(capability): scan authoring grants without test fixtures | .smithers/flows/README.md: main carried then changed it: 454bbb1c89 (🧪 fix(ci): isolate artifact assertions and format lane docs) |
 | 2026-10-29 16:29 | `9ef18bf672` | ON-MAIN | 10/0/0/0 | builder/ci-build | 📚 fix(docs): make reference examples compile independently |  |
-| 2026-10-29 16:29 | `7ae823d30d` | ON-MAIN | 1/0/0/0 | builder/ci-build | 🧪 test(targets): match the pipeline after the SCOPE-3 removal |  |
+| 2026-10-29 16:29 | `7ae823d30d` | SUPERSEDED | 0/1/0/0 | builder/ci-build | 🧪 test(targets): match the pipeline after the SCOPE-3 removal | packages/smithers/build/targets/test/GithubWorkflow.test.ts: main carried then changed it: 9a82813033 (⚡️ fix(ci): shard package and workspace suites by hosted durations) |
 | 2026-10-29 16:31 | `fce533f0a1` | ON-MAIN | 5/0/0/0 | d2b355bf5e | 🐛 fix(sandbox): compare guest worktree roots as physical paths |  |
 | 2026-10-29 16:31 | `7461646591` | ON-MAIN | 5/0/0/0 | builder/ci-drift | 🐛 fix(sandbox): compare guest worktree roots as physical paths |  |
 | 2026-10-29 16:33 | `daebd7b638` | ON-MAIN | 3/0/0/0 | builder/ci-flows | 🐛 fix(platform-node): remove an obsolete grant-widening guard |  |
@@ -1290,30 +1479,30 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-29 16:35 | `e532588ad8` | ON-MAIN | 1/0/0/0 | d2b355bf5e | 🧪 fix(tui): retain redacted Cloud refusal details |  |
 | 2026-10-29 16:35 | `f8c19b5dea` | ON-MAIN | 6/0/0/0 | d2b355bf5e | 🧪 fix(tui): verify answerable final-frame questions |  |
 | 2026-10-29 16:35 | `4668539df9` | SUPERSEDED | 13/2/0/0 | d2b355bf5e | 🐛 fix(build-cli): admit planned dependency installations in confined trees | apps/mvp/docs/work/ci-red-build.md: main carried then changed it: 8fc31b5507 (🐛 fix(build-cli): tag artifact known-red refusals) |
-| 2026-10-29 16:35 | `f93e1bea1d` | PARTIAL | 0/0/0/1 | builder/ci-ui | 🧪 fix(targets): align the pipeline roster with SCOPE-3 | packages/smithers/build/targets/test/GithubWorkflow.test.ts: // SCOPE-3 removed the legacy browser app and Go-backend jobs. |
+| 2026-10-29 16:35 | `f93e1bea1d` | SUPERSEDED | 0/1/0/0 | builder/ci-ui | 🧪 fix(targets): align the pipeline roster with SCOPE-3 | packages/smithers/build/targets/test/GithubWorkflow.test.ts: main carried then changed it: 9a82813033 (⚡️ fix(ci): shard package and workspace suites by hosted durations) |
 | 2026-10-29 16:35 | `44a58646e8` | ON-MAIN | 1/0/0/0 | builder/ci-ui | 🧪 fix(ui): measure the mobile bell through its unread count |  |
 | 2026-10-29 16:35 | `7b565f0392` | ON-MAIN | 1/0/0/0 | builder/ci-ui | 🧪 fix(tui): retain redacted Cloud refusal details |  |
 | 2026-10-29 16:35 | `ba427fb4f2` | ON-MAIN | 6/0/0/0 | builder/ci-ui | 🧪 fix(tui): verify answerable final-frame questions |  |
 | 2026-10-29 16:35 | `eedd42fa61` | SUPERSEDED | 13/2/0/0 | builder/ci-build | 🐛 fix(build-cli): admit planned dependency installations in confined trees | apps/mvp/docs/work/ci-red-build.md: main carried then changed it: 8fc31b5507 (🐛 fix(build-cli): tag artifact known-red refusals) |
 | 2026-10-29 16:35 | `fb8f1a5ff2` | ON-MAIN | 1/0/0/0 | builder/ci-release | 📝 docs(work): record release CI repair evidence |  |
 | 2026-10-29 16:39 | `de641aa8bc` | ON-MAIN | 4/0/0/0 | builder/ci-release | 🐛 fix(views): match the CLI Node support floor |  |
-| 2026-10-29 16:40 | `86e87aadbf` | STRANDED | 0/0/2/0 | 60fb9113b5 | 🧪 test(control): isolate inventory snapshots from tail reconciliation | packages/smithers/control/test/SqlControlRuntime.test.ts: import { ConfigProvider, Context, type Crypto, Deferred, Effect, Exit, Fiber, La; packages/smithers/control/test/SqlControlRuntime.test.ts: ConfigProvider.fromUnk |
+| 2026-10-29 16:40 | `86e87aadbf` | SUPERSEDED | 1/1/0/0 | 60fb9113b5 | 🧪 test(control): isolate inventory snapshots from tail reconciliation | packages/smithers/control/test/SqlControlRuntime.test.ts: landed as a0d15298a7 (same author and time, committed later) |
 | 2026-10-29 16:40 | `c6763e4df8` | ON-MAIN | 8/0/0/0 | builder/ci-flows | 🧪 test(engine-store): configure real connection-loss endpoints |  |
 | 2026-10-29 16:41 | `61d96e6d4d` | ON-MAIN | 1/0/0/0 | builder/ci-release | 🐛 fix(ci): read flow fixture inventory through jj or mirror receipt |  |
-| 2026-10-29 16:42 | `2119f31718` | PARTIAL | 0/0/6/2 | 60fb9113b5 | 🧪 test(electric): provision required integration services for CI | packages/effect-electric/PACKAGE.ts: testProgram: Smithers.file("//packages/effect-electric/scripts/test-services.mjs; packages/effect-electric/README.md: Postgres and Electric containers with Docker Compose when the def |
-| 2026-10-29 16:42 | `c77b44254c` | STRANDED | 0/0/2/0 | 60fb9113b5 | 🧪 test(harbor): accept supported curl refusal exit codes | packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_seal.py: refused_connect = seal.verdict(SEALED.replace("github.com/ 56 000 403", "github.; packages/smithers/agent/harness/benchmarks/harbor/fixtures/check |
-| 2026-10-29 16:42 | `990f3e67c6` | PARTIAL | 1/0/2/0 | 60fb9113b5 | 🧪 test(gateway): require safe request decoding defects | packages/smithers/gateway/test/GatewayServer.test.ts: // Like handler defects, decode failures carry only the safe sentence.; packages/smithers/gateway/test/GatewayServer.test.ts: expect(frame.exit.cause[0]?.defect).toEq |
+| 2026-10-29 16:42 | `2119f31718` | ON-MAIN | 8/0/0/0 | 60fb9113b5 | 🧪 test(electric): provision required integration services for CI |  |
+| 2026-10-29 16:42 | `c77b44254c` | ON-MAIN | 2/0/0/0 | 60fb9113b5 | 🧪 test(harbor): accept supported curl refusal exit codes |  |
+| 2026-10-29 16:42 | `990f3e67c6` | ON-MAIN | 3/0/0/0 | 60fb9113b5 | 🧪 test(gateway): require safe request decoding defects |  |
 | 2026-10-29 16:43 | `5706bb95fc` | ON-MAIN | 3/0/0/0 | d2b355bf5e | 🐛 fix(build-cli): tag artifact known-red refusals |  |
 | 2026-10-29 16:43 | `0b4ecc8849` | ON-MAIN | 3/0/0/0 | builder/ci-build | 🐛 fix(build-cli): tag artifact known-red refusals |  |
 | 2026-10-29 16:44 | `f6a98f4a65` | ON-MAIN | 4/0/0/0 | builder/ci-release | 🐛 fix(observability): constrain API peers to the supported SDK range |  |
-| 2026-10-29 16:48 | `ac46d42797` | PARTIAL | 45/1/0/3 | d2b355bf5e | 🔒 fix(ci): run Drift's gates unprivileged and delete the dormant root setup | PACKAGE.ts: knownRed: ".github/ci-known-red.json",; packages/repo-targets/contracts/drift-job.test.mjs: const { default: YAML } = await import('yaml'); .smithers/flows/release/fixtures/public-api-baseline.json: main carr |
+| 2026-10-29 16:48 | `ac46d42797` | PARTIAL | 44/1/0/4 | d2b355bf5e | 🔒 fix(ci): run Drift's gates unprivileged and delete the dormant root setup | PACKAGE.ts: knownRed: ".github/ci-known-red.json",; packages/repo-targets/contracts/drift-job.test.mjs: const { default: YAML } = await import('yaml'); .smithers/flows/release/fixtures/public-api-baseline.json: main carr |
 | 2026-10-29 16:48 | `3dc525a89b` | ON-MAIN | 2/0/0/0 | d2b355bf5e | 📝 docs(site): regenerate the sandbox API page and llms bundle after the physical-root note |  |
-| 2026-10-29 16:48 | `d16b924d3c` | SUPERSEDED | 45/4/0/0 | builder/ci-drift | 🔒 fix(ci): run Drift's gates unprivileged and delete the dormant root setup | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: 522c2d02e6 (🔧 fix(ci): reconcile browser setup and regenerate W25 outputs) |
+| 2026-10-29 16:48 | `d16b924d3c` | SUPERSEDED | 44/5/0/0 | builder/ci-drift | 🔒 fix(ci): run Drift's gates unprivileged and delete the dormant root setup | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: 522c2d02e6 (🔧 fix(ci): reconcile browser setup and regenerate W25 outputs) |
 | 2026-10-29 16:48 | `3add4b9fb1` | ON-MAIN | 2/0/0/0 | builder/ci-drift | 📝 docs(site): regenerate the sandbox API page and llms bundle after the physical-root note |  |
 | 2026-10-29 16:51 | `3fb642651b` | ON-MAIN | 10/0/0/0 | builder/ci-flows | 🧪 test(platform-cloudflare): provision the container egress image |  |
 | 2026-10-29 17:01 | `8933fbe083` | ON-MAIN | 14/0/0/0 | d2b355bf5e | 🔎 fix(tui): retain erased PTY diagnostics and pane status |  |
 | 2026-10-29 17:01 | `266b0417ef` | ON-MAIN | 14/0/0/0 | builder/ci-ui | 🔎 fix(tui): retain erased PTY diagnostics and pane status |  |
-| 2026-10-29 17:05 | `b3c25603c5` | PARTIAL | 1/0/15/8 | 60fb9113b5 | 🐛 fix(agent): admit each durable resume delegation once | .changeset/agent-resume-admission.md: per run. Concurrent approval callbacks and journal notifications consume one off; packages/smithers/agent/README.md: wakes and explicit operator resumes keep their existing ownership |
+| 2026-10-29 17:05 | `b3c25603c5` | ON-MAIN | 24/0/0/0 | 60fb9113b5 | 🐛 fix(agent): admit each durable resume delegation once |  |
 | 2026-10-29 17:07 | `626f5177df` | ON-MAIN | 2/0/0/0 | d2b355bf5e | 🧪 fix(tui): await rendered form and budget input |  |
 | 2026-10-29 17:07 | `715289f0a0` | ON-MAIN | 2/0/0/0 | d2b355bf5e | 🧪 fix(tui): recognize wrapped Vim filenames before resize |  |
 | 2026-10-29 17:07 | `d490bb851a` | ON-MAIN | 4/0/0/0 | d2b355bf5e | 🐛 fix(tui): commit card focus before the next terminal key |  |
@@ -1321,92 +1510,92 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-29 17:07 | `4e4dcd0b7c` | ON-MAIN | 2/0/0/0 | builder/ci-ui | 🧪 fix(tui): recognize wrapped Vim filenames before resize |  |
 | 2026-10-29 17:07 | `fc2e3df4fd` | ON-MAIN | 4/0/0/0 | builder/ci-ui | 🐛 fix(tui): commit card focus before the next terminal key |  |
 | 2026-10-29 17:13 | `ba8c828d5c` | SUPERSEDED | 5/1/0/0 | builder/ci-flows | 🧪 test(platform-browser): expire reads after worker admission | packages/smithers/flows/platform-browser/docs/testing.md: landed as a6488efb27 (same author and time, committed later) |
-| 2026-10-29 17:22 | `67612def33` | ON-MAIN | 11/0/0/0 | builder/ci-release | 🐛 fix(release): reuse library builds completed by the release graph |  |
+| 2026-10-29 17:22 | `67612def33` | SUPERSEDED | 10/1/0/0 | builder/ci-release | 🐛 fix(release): reuse library builds completed by the release graph | .smithers/flows/release/pack-release.mjs: main carried then changed it: 618be78a70 (✨ feat(sandbox): the box image runs the deploy's own smthrs, packed from its commit (0144)) |
 | 2026-10-29 17:39 | `0f4d7d1cec` | ON-MAIN | 9/0/0/0 | d2b355bf5e | 🐛 fix(tui): preserve Node SIGPIPE handling during flow execution |  |
 | 2026-10-29 17:39 | `bcd9cdaae9` | ON-MAIN | 9/0/0/0 | builder/ci-ui | 🐛 fix(tui): preserve Node SIGPIPE handling during flow execution |  |
-| 2026-10-29 17:49 | `ecefae103d` | PARTIAL | 1/1/1/1 | 60fb9113b5 | 🧪 test(agent): bound real-engine coverage worker contention | packages/smithers/agent/README.md: are interrupted before completion; deadlines and coverage thresholds stay fixed.; packages/smithers/agent/test/examples/use-cases/tweet-thread.test.ts: const result = yield* runtime.pol |
-| 2026-10-29 17:52 | `29316a597f` | ON-MAIN | 1/0/0/0 | builder/ci-flows | 🧪 test(targets): follow the SCOPE-3 pipeline inventory |  |
+| 2026-10-29 17:49 | `ecefae103d` | SUPERSEDED | 2/2/0/0 | 60fb9113b5 | 🧪 test(agent): bound real-engine coverage worker contention | packages/smithers/agent/README.md: main carried then changed it: 75ca81036a (⚡ perf(agent): finish the complete queue with three workers) |
+| 2026-10-29 17:52 | `29316a597f` | SUPERSEDED | 0/1/0/0 | builder/ci-flows | 🧪 test(targets): follow the SCOPE-3 pipeline inventory | packages/smithers/build/targets/test/GithubWorkflow.test.ts: main carried then changed it: 9a82813033 (⚡️ fix(ci): shard package and workspace suites by hosted durations) |
 | 2026-10-29 18:01 | `6447f92bba` | ON-MAIN | 2/0/0/0 | builder/ci-flows | 📝 docs(ci): record passing flow engine and host gates |  |
 | 2026-10-29 18:05 | `55afdb287c` | ON-MAIN | 1/0/0/0 | builder/ci-release | 📝 docs(work): record remaining release gate repairs |  |
 | 2026-10-29 18:08 | `ca184cecec` | PARTIAL | 1/0/0/9 | 60fb9113b5 | 🧪 test(agent): cover policy fallback and unreadable state boundaries | packages/smithers/agent/test/Agent.test.ts: Effect.updateContext((_: Context.Context<FlowRuntime.FlowRuntime \| FlowRuntime.F; packages/smithers/agent/test/Agent.test.ts: "recovers quota after its cooldown ($resetAtEpochM |
 | 2026-10-29 18:19 | `725d74d19d` | ON-MAIN | 7/0/0/0 | builder/ci-release | 🐛 fix(build): preserve package imports in CommonJS distributions |  |
 | 2026-10-29 18:23 | `7f63bcc661` | ON-MAIN | 1/0/0/0 | builder/ci-release | 🧪 test(release): isolate each missing artifact in packing checks |  |
-| 2026-10-29 18:27 | `9c89fe74fa` | PARTIAL | 0/0/8/1 | 60fb9113b5 | 🧪 test(agent): provision ModelStep PostgreSQL through the declared target | packages/smithers/agent/PACKAGE.ts: /** ModelStep's durable and process-boundary cases require an authenticated Post; packages/smithers/agent/README.md: The declared test target provisions PostgreSQL for ModelStep's dura |
-| 2026-10-29 18:39 | `39754ceeaf` | PARTIAL | 0/0/3/1 | 60fb9113b5 | 🐛 fix(runtime): type host probes without Node ambient declarations | .changeset/portable-flow-host-types.md: Allow portable flow consumers to typecheck without Node ambient declarations.; packages/smithers/flows/engine-store/src/internal/NodeJournal.ts: host: { readonly process?: { readon |
+| 2026-10-29 18:27 | `9c89fe74fa` | ON-MAIN | 9/0/0/0 | 60fb9113b5 | 🧪 test(agent): provision ModelStep PostgreSQL through the declared target |  |
+| 2026-10-29 18:39 | `39754ceeaf` | SUPERSEDED | 3/1/0/0 | 60fb9113b5 | 🐛 fix(runtime): type host probes without Node ambient declarations | packages/smithers/flows/engine-store/src/internal/NodeJournal.ts: main carried then changed it: f441e866e3 (🚨 fix(cli): satisfy lint on the CI-repair stack's new modules) |
 | 2026-10-29 18:43 | `fc9cf80964` | ON-MAIN | 5/0/0/0 | d2b355bf5e | 🐛 fix(ci): retain packaged terminal failure artifacts |  |
 | 2026-10-29 18:43 | `c1d2717c45` | ON-MAIN | 5/0/0/0 | builder/ci-ui | 🐛 fix(ci): retain packaged terminal failure artifacts |  |
 | 2026-10-29 18:45 | `4d85e90640` | SUPERSEDED | 8/2/0/0 | builder/ci-release | 🐛 fix(cli): install the PostgreSQL peer required by public declarations | packages/smithers/package.json: landed as ad31a575b6 (same author and time, committed later) |
 | 2026-10-29 18:45 | `6fabeddc43` | ON-MAIN | 3/0/0/0 | builder/ci-release | 🐛 fix(sandbox): construct generic command payload schemas explicitly |  |
-| 2026-10-29 18:48 | `e2f760682b` | PARTIAL | 0/6/18/0 | 60fb9113b5 | ⚡ perf(cli): reuse validated VibeLang compiles across suite phases | packages/smithers/test/CliTestLanes.test.ts: const isolatedCache = execFileSync(process.execPath, ["-e", "process.stdout.writ; packages/smithers/test/CodeDriftLiveHost.test.ts: import { expect, it, onTestFailed } from "v |
-| 2026-10-29 18:55 | `65e49580f6` | PARTIAL | 13/1/2/0 | d2b355bf5e | 🔧 chore(ci): stage W25 subset projection regeneration | .github/workflows/ci.yml: id: setup; .github/workflows/ci.yml: id: setup; .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: 55801588bb (🔧 chore: regenerate W26 API baseline, target |
+| 2026-10-29 18:48 | `e2f760682b` | SUPERSEDED | 15/9/0/0 | 60fb9113b5 | ⚡ perf(cli): reuse validated VibeLang compiles across suite phases | packages/smithers/PACKAGE.ts: main carried then changed it: fd2b368517 (⚡ perf(cli): share one compiler coordinator across bounded tests) |
+| 2026-10-29 18:55 | `65e49580f6` | PARTIAL | 12/2/2/0 | d2b355bf5e | 🔧 chore(ci): stage W25 subset projection regeneration | .github/workflows/ci.yml: id: setup; .github/workflows/ci.yml: id: setup; .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: 55801588bb (🔧 chore: regenerate W26 API baseline, target |
 | 2026-10-29 18:55 | `0779172c5e` | ON-MAIN | 2/0/0/0 | d2b355bf5e | 🐛 fix(ci): select the cloud contract test by path |  |
 | 2026-10-29 19:15 | `712e5abbac` | ON-MAIN | 13/0/0/0 | builder/ci-release | 🐛 fix(build): retain module metadata in native CommonJS libraries |  |
 | 2026-10-29 19:27 | `c38c2da7db` | ON-MAIN | 5/0/0/0 | builder/ci-release | 🐛 fix(release): preserve published guide pins across future cuts |  |
-| 2026-10-29 19:43 | `d5b7b32e00` | STRANDED | 0/0/5/0 | 60fb9113b5 | 🧪 test(cli): await real native recovery admission | packages/smithers/test/fixtures/native-control-portable.ts: import * as NativeControl from "../../src/internal/NativeControl.ts"; packages/smithers/test/fixtures/native-control-portable.ts: let admissionObserved: (runId: |
+| 2026-10-29 19:43 | `d5b7b32e00` | ON-MAIN | 5/0/0/0 | 60fb9113b5 | 🧪 test(cli): await real native recovery admission |  |
 | 2026-10-29 19:54 | `584f58678c` | ON-MAIN | 1/0/0/0 | d2b355bf5e | 🧪 fix(conformance): pin the terminal unit directory selector |  |
 | 2026-10-29 19:58 | `a8ffa71f5f` | ON-MAIN | 5/0/0/0 | builder/bb6-cli | ✅ test(build-cli): cover Owners.ts bounded upstream claims, text rendering, and rdeps |  |
 | 2026-10-29 20:12 | `eafbdb61fc` | ON-MAIN | 1/0/0/0 | d2b355bf5e | 🧪 test(ci): cover cache-free Nix and shared CI artifacts |  |
 | 2026-10-29 20:17 | `6d548f8900` | ON-MAIN | 4/0/0/0 | builder/ci-release | 🐛 fix(release): follow relocated native host dependencies in consumer profiles |  |
 | 2026-10-29 20:18 | `3cdca413c0` | ON-MAIN | 9/0/0/0 | builder/ci-release | 🐛 fix(release): exercise the quickstart against its published package contract |  |
 | 2026-10-29 20:22 | `16aa6a0432` | SUPERSEDED | 20/1/0/0 | builder/bb6-cli | ♻️ refactor(cli): drop unreachable host and root fallbacks | packages/smithers/src/Cli.ts: landed as 8e27a6d593 (same author and time, committed later) |
-| 2026-10-29 20:27 | `621c1fcc65` | SUPERSEDED | 0/4/0/0 | 60fb9113b5 | ⚡ perf(cli): split the coverage tail into smaller groups | packages/smithers/PACKAGE.ts: changed later in its stack (head 60fb9113b5) |
-| 2026-10-29 20:28 | `327dd4df36` | PARTIAL | 0/1/2/0 | 60fb9113b5 | 🐛 fix(cli): preserve the declared serial fault tier in coverage shards | packages/smithers/README.md: The coverage target follows `vitest.config.ts`. Process-killing cases stay in; packages/smithers/test/CliTestLanes.test.ts: it("schedules every default CLI test file once without leaving the  |
+| 2026-10-29 20:27 | `621c1fcc65` | SUPERSEDED | 0/4/0/0 | 60fb9113b5 | ⚡ perf(cli): split the coverage tail into smaller groups | packages/smithers/PACKAGE.ts: main carried then changed it: fd2b368517 (⚡ perf(cli): share one compiler coordinator across bounded tests) |
+| 2026-10-29 20:28 | `327dd4df36` | SUPERSEDED | 1/2/0/0 | 60fb9113b5 | 🐛 fix(cli): preserve the declared serial fault tier in coverage shards | packages/smithers/PACKAGE.ts: main carried then changed it: fd2b368517 (⚡ perf(cli): share one compiler coordinator across bounded tests) |
 | 2026-10-29 20:38 | `7a2cf43532` | ON-MAIN | 10/0/0/0 | builder/bb6-cli | ♻️ refactor(cli): expose host service seams and drop a dead evaluation mapping |  |
-| 2026-10-29 20:55 | `eafab11705` | PARTIAL | 0/0/8/1 | 60fb9113b5 | ⚡ perf(cli): bound canonical spelling scan work | packages/smithers/test/CanonicalSpellings.test.ts: import { describe, expect, it, onTestFailed } from "vitest"; packages/smithers/test/CanonicalSpellings.test.ts: progress?.("served") |
+| 2026-10-29 20:55 | `eafab11705` | SUPERSEDED | 7/2/0/0 | 60fb9113b5 | ⚡ perf(cli): bound canonical spelling scan work | packages/smithers/test/CanonicalSpellings.test.ts: main carried then changed it: b2e64afeb1 (⚡ perf(cli): avoid parsing unrelated escaped SDK source) |
 | 2026-10-29 21:20 | `fcfb1c3832` | ON-MAIN | 1/0/0/0 | builder/bb6-cli | ✅ test(build-cli): cover PackageRunner Clean, Materialize, inert GitHub and gate-refusal arms |  |
 | 2026-10-29 21:22 | `c447197348` | ON-MAIN | 8/0/0/0 | builder/bb6-cli | ✅ test(cli): cover Evaluation and HostService |  |
 | 2026-10-29 21:22 | `af4b667173` | ON-MAIN | 1/0/0/0 | builder/bb6-cli | 🐛 fix(cli): keep setup handoff timeout and oversized-body refusals |  |
 | 2026-10-29 21:22 | `8c826a2252` | ON-MAIN | 1/0/0/0 | builder/bb6-cli | ✅ test(build-cli): cover PackageRunner direct Serve failure and empty Markdown page |  |
 | 2026-10-29 21:24 | `0ba67527f4` | ON-MAIN | 5/0/0/0 | d2b355bf5e | 🧪 fix(ci): isolate artifact assertions and format lane docs |  |
-| 2026-10-29 21:31 | `11354f162d` | PARTIAL | 0/0/5/2 | 60fb9113b5 | 🧪 test(cli): measure human-wait budgets with a controlled clock | packages/smithers/test/ModuleHumanWaitBudget.test.ts: * each cost one second; host scheduling and process startup keep real sleeps.; packages/smithers/test/ModuleHumanWaitBudget.test.ts: import { Duration, Effect, Layer, |
-| 2026-10-29 21:34 | `759e200e38` | STRANDED | 0/0/1/0 | 60fb9113b5 | 🧪 test(cli): scope lease receipts to the external-worker executions | packages/smithers/test/fixtures/external-peer-scenario.ts: const recorded = decisions(root).filter((entry) => executionIds.has(entry.runId) |
-| 2026-10-29 21:40 | `e1611c2f72` | STRANDED | 0/0/5/0 | 60fb9113b5 | 🧪 test(cli): await metadata-only cancellation settlement | packages/smithers/test/NativeCancelledModuleCleanup.test.ts: import { expect, it, onTestFailed } from "vitest"; packages/smithers/test/NativeCancelledModuleCleanup.test.ts: const record = (stage: string) => progress.push |
+| 2026-10-29 21:31 | `11354f162d` | PARTIAL | 5/0/1/1 | 60fb9113b5 | 🧪 test(cli): measure human-wait budgets with a controlled clock | packages/smithers/test/ModuleHumanWaitBudget.test.ts: for (const key of ["used", "max", "next"]) if (typeof record[key] === "number") ; packages/smithers/test/ModuleHumanWaitBudget.test.ts: return { kind: events[0]?.kind |
+| 2026-10-29 21:34 | `759e200e38` | ON-MAIN | 1/0/0/0 | 60fb9113b5 | 🧪 test(cli): scope lease receipts to the external-worker executions |  |
+| 2026-10-29 21:40 | `e1611c2f72` | ON-MAIN | 5/0/0/0 | 60fb9113b5 | 🧪 test(cli): await metadata-only cancellation settlement |  |
 | 2026-10-29 21:59 | `063636e139` | ON-MAIN | 6/0/0/0 | builder/bb6-cli | ✅ test(cli): cover Cli, ControlBridge, operator Memory and Triggers |  |
 | 2026-10-29 22:38 | `759aed8a89` | ON-MAIN | 6/0/0/0 | builder/bb6-cli | 🐛 fix(cli): cancel MCP parse-error drain waits with their session |  |
 | 2026-10-29 22:39 | `a0852e64ca` | ON-MAIN | 3/0/0/0 | builder/bb6-cli | 🐛 fix(build-cli): map owners paths spelled through a symlinked workspace alias |  |
-| 2026-10-29 22:41 | `33af5ba050` | STRANDED | 0/0/5/0 | 60fb9113b5 | 🧪 test(cli): bind timeout injection to catalog construction | packages/smithers/test/NativeControlPlan.test.ts: import { Context, Effect, Layer, Logger, PlatformError, Schema, Stream } from "e; packages/smithers/test/NativeControlPlan.test.ts: const mark = (stage: string) => stages |
+| 2026-10-29 22:41 | `33af5ba050` | ON-MAIN | 5/0/0/0 | 60fb9113b5 | 🧪 test(cli): bind timeout injection to catalog construction |  |
 | 2026-10-29 22:47 | `a2e09fb3a2` | ON-MAIN | 2/0/0/0 | builder/bb6-cli | ✅ test(cli): pin the message identity test to a fixture-owned memory database |  |
 | 2026-10-29 22:55 | `6dd3785e96` | ON-MAIN | 3/0/0/0 | builder/bb6-cli | 🐛 fix(cli): run the documented smthrs mcp doctor |  |
 | 2026-10-29 22:55 | `e8e539bfb6` | ON-MAIN | 5/0/0/0 | builder/bb6-cli | ✅ test(cli): check MCP tool middleware against a fixture install |  |
-| 2026-10-29 23:01 | `40db842d28` | PARTIAL | 1/1/5/0 | 60fb9113b5 | 🔎 test(cli): retain safe adoption process diagnostics | packages/smithers/PACKAGE.ts: Smithers.file("test/fixtures/cli-exit-observer.ts"),; packages/smithers/test/ModuleSourceSnapshotCli.test.ts: slow.push({ stage: began.stage, durationMs: event.elapsedMs - began.elapsedMs, t |
-| 2026-10-29 23:26 | `7aca1b947c` | SUPERSEDED | 0/3/0/0 | 60fb9113b5 | 📝 docs(ci): record completed CLI fixture repairs | apps/mvp/docs/work/ci-agent-reds.md: changed later in its stack (head 60fb9113b5) |
+| 2026-10-29 23:01 | `40db842d28` | ON-MAIN | 7/0/0/0 | 60fb9113b5 | 🔎 test(cli): retain safe adoption process diagnostics |  |
+| 2026-10-29 23:26 | `7aca1b947c` | SUPERSEDED | 0/3/0/0 | 60fb9113b5 | 📝 docs(ci): record completed CLI fixture repairs | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
 | 2026-10-30 00:23 | `4d9d5762c1` | ON-MAIN | 7/0/0/0 | builder/bb6-cli | 🐛 fix(cli): resume evaluations after durable-store failure |  |
-| 2026-10-30 01:00 | `36781cbe96` | PARTIAL | 1/3/4/2 | 60fb9113b5 | ⚡ perf(test): preserve caller-owned Node compile caches | packages/repo-targets/test-utils/process-cache-temp-cleanup.test.mjs: test(`test scratch and ${shared ? "shared" : "owned"} loader caches after ${fail; packages/repo-targets/test-utils/process-cache-temp-cleanup.test.mjs |
-| 2026-10-30 02:18 | `7a68f0e341` | SUPERSEDED | 1/5/0/0 | 60fb9113b5 | ⚡ perf(cli): release long fixed test groups earlier | packages/smithers/PACKAGE.ts: changed later in its stack (head 60fb9113b5) |
-| 2026-10-30 02:49 | `4284e05451` | STRANDED | 0/0/6/0 | 60fb9113b5 | 🧪 test(cli): inspect refused input admissions without another host boot | packages/smithers/test/FileFlowInputCli.test.ts: let stages: Array<{ command: string; elapsedMs: number; state: string; lifetime?; packages/smithers/test/FileFlowInputCli.test.ts: progress.push({ command: verb, elapsedMs |
-| 2026-10-30 03:34 | `b6d5c554f3` | PARTIAL | 1/2/4/1 | 60fb9113b5 | ⚡ perf(cli): share one compiler coordinator across bounded tests | packages/smithers/PACKAGE.ts: "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_C; packages/smithers/README.md: workers, retaining its configured coverage gate. Its Node and content-validated |
-| 2026-10-30 04:36 | `34d7dd5a65` | PARTIAL | 0/2/2/1 | 60fb9113b5 | ⚡ perf(cli): keep offline host preloads out of compiler workers | packages/smithers/README.md: compiler worker threads. Per-file results remain visible before suite completion; packages/smithers/test/ScriptedNativeHostPreload.test.ts: it("carries the offline host into child processes w |
-| 2026-10-30 05:36 | `7c22f39aa9` | PARTIAL | 0/1/7/0 | 60fb9113b5 | 🐛 fix(cli): schedule peer recovery before the coverage tail | packages/smithers/PACKAGE.ts: Smithers.file("test/support/cli-sequencer.ts"),; packages/smithers/README.md: The native peer-recovery file leads cold runs: its eight long process scenarios; apps/mvp/docs/work/ci-agent-red |
-| 2026-10-30 05:40 | `f3c87542d3` | PARTIAL | 1/0/9/1 | 60fb9113b5 | ⚡ perf(cli): preserve child caches across V8 coverage workers | packages/smithers/PACKAGE.ts: "SMITHERS_CLI_DISABLE_COMPILE_CACHE=\"${SMITHERS_CLI_DISABLE_COMPILE_CACHE-${NOD; packages/smithers/test/CliChildCaches.test.ts: console.log(JSON.stringify({ cached: Boolean(getCompileCacheD |
-| 2026-10-30 06:13 | `e4e5a06c22` | PARTIAL | 0/2/8/2 | 60fb9113b5 | 🐛 fix(control): drain run logs after the committed terminal state | .changeset/run-log-journal-settlement.md: Keep the control journal's recorded run status alongside observed engine status.; packages/smithers/README.md: Run log following drains through the control journal's committed te |
+| 2026-10-30 01:00 | `36781cbe96` | SUPERSEDED | 5/5/0/0 | 60fb9113b5 | ⚡ perf(test): preserve caller-owned Node compile caches | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: fa717a6d0a (🐛 fix(control): drain run logs after the committed terminal state) |
+| 2026-10-30 02:18 | `7a68f0e341` | SUPERSEDED | 1/5/0/0 | 60fb9113b5 | ⚡ perf(cli): release long fixed test groups earlier | packages/smithers/PACKAGE.ts: main carried then changed it: fd2b368517 (⚡ perf(cli): share one compiler coordinator across bounded tests) |
+| 2026-10-30 02:49 | `4284e05451` | ON-MAIN | 6/0/0/0 | 60fb9113b5 | 🧪 test(cli): inspect refused input admissions without another host boot |  |
+| 2026-10-30 03:34 | `b6d5c554f3` | SUPERSEDED | 2/6/0/0 | 60fb9113b5 | ⚡ perf(cli): share one compiler coordinator across bounded tests | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
+| 2026-10-30 04:36 | `34d7dd5a65` | SUPERSEDED | 3/2/0/0 | 60fb9113b5 | ⚡ perf(cli): keep offline host preloads out of compiler workers | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
+| 2026-10-30 05:36 | `7c22f39aa9` | SUPERSEDED | 6/2/0/0 | 60fb9113b5 | 🐛 fix(cli): schedule peer recovery before the coverage tail | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
+| 2026-10-30 05:40 | `f3c87542d3` | SUPERSEDED | 10/1/0/0 | 60fb9113b5 | ⚡ perf(cli): preserve child caches across V8 coverage workers | packages/smithers/test/temporaryEnvironment.ts: main carried then changed it: 50ee1b1d45 (⚡ perf(cli): restore scoped caches at binary process boundaries) |
+| 2026-10-30 06:13 | `e4e5a06c22` | SUPERSEDED | 8/4/0/0 | 60fb9113b5 | 🐛 fix(control): drain run logs after the committed terminal state | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
 | 2026-10-30 06:50 | `b72ac91ae4` | SUPERSEDED | 134/3/0/0 | builder/bb6-cli | 🐛 fix(build-cli): validate scratch publication and planned authority | apps/mvp/docs/work/package-bugbash4-cli.md: main carried then changed it: 892bbbf763 (🐛 fix(build-cli): type gate refusals and retain execution receipts) |
 | 2026-10-30 06:59 | `5a53586532` | ON-MAIN | 10/0/0/0 | builder/bb6-cli | 🧪 test(cli): exercise injected durable evaluation hosts |  |
-| 2026-10-30 07:00 | `3c7d50500b` | PARTIAL | 1/0/1/0 | 60fb9113b5 | 🧪 test(cli): assert the explicit child cache environment | packages/smithers/test/EnvironmentCli.test.ts: compile: env.NODE_COMPILE_CACHE |
-| 2026-10-30 07:11 | `b5e58c94be` | PARTIAL | 0/1/1/0 | 60fb9113b5 | 🧪 test(cli): isolate cross-host lease expiry from local observation | packages/smithers/test/fixtures/external-peer-scenario.ts: const peerOwner = { hostId: "external-peer-other-host", pid: process.pid, nonce:; packages/smithers/test/fixtures/external-peer-scenario.ts: main carried then ch |
-| 2026-10-30 07:16 | `52a9645020` | PARTIAL | 0/1/6/2 | 60fb9113b5 | 🐛 fix(cli): close health probes before releasing discovery | .changeset/native-health-shutdown.md: Keep native health discovery registered until its probes finish shutting down,; packages/smithers/README.md: Native health observation stops probes before releasing its durable disco |
+| 2026-10-30 07:00 | `3c7d50500b` | ON-MAIN | 2/0/0/0 | 60fb9113b5 | 🧪 test(cli): assert the explicit child cache environment |  |
+| 2026-10-30 07:11 | `b5e58c94be` | SUPERSEDED | 1/1/0/0 | 60fb9113b5 | 🧪 test(cli): isolate cross-host lease expiry from local observation | packages/smithers/test/fixtures/external-peer-scenario.ts: landed as 1352229d91 (same author and time, committed later) |
+| 2026-10-30 07:16 | `52a9645020` | SUPERSEDED | 8/1/0/0 | 60fb9113b5 | 🐛 fix(cli): close health probes before releasing discovery | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
 | 2026-10-30 07:27 | `2bed55e9dd` | PARTIAL | 6/2/1/1 | 801ae69887 | 🐛 fix(mvp): remove catalog DDL from conversation test resets | apps/mvp/worker/test/reset.test.ts: expect(yield* sql`SELECT message_id FROM message_pins UNION ALL SELECT message_i; apps/mvp/worker/test/reset.ts: * empty tables. Repeated schema migrations bloat that catalog on a long |
 | 2026-10-30 07:27 | `63942d2a02` | PARTIAL | 6/2/1/1 | 9dae978249 | 🐛 fix(mvp): remove catalog DDL from conversation test resets | apps/mvp/worker/test/reset.test.ts: expect(yield* sql`SELECT message_id FROM message_pins UNION ALL SELECT message_i; apps/mvp/worker/test/reset.ts: * empty tables. Repeated schema migrations bloat that catalog on a long |
 | 2026-10-30 07:41 | `d2b355bf5e` | SUPERSEDED | 0/5/0/0 | d2b355bf5e | 🔧 chore(ci): regenerate W25 projections and schema without ci-flows | .smithers/flows/release/fixtures/public-api-baseline.json: main carried then changed it: 522c2d02e6 (🔧 fix(ci): reconcile browser setup and regenerate W25 outputs) |
 | 2026-10-30 08:04 | `4306a2b055` | SUPERSEDED | 7/2/0/0 | 801ae69887 | 🐛 fix(mvp): bound test catalog state with an owned real stack | apps/mvp/docs/infrastructure.md: main carried then changed it: e825e36ce4 (🐛 fix(mvp): sort UTC timestamps and bound fixture cancellation) |
 | 2026-10-30 08:04 | `caef8cac17` | SUPERSEDED | 7/2/0/0 | 9dae978249 | 🐛 fix(mvp): bound test catalog state with an owned real stack | apps/mvp/docs/infrastructure.md: main carried then changed it: e825e36ce4 (🐛 fix(mvp): sort UTC timestamps and bound fixture cancellation) |
-| 2026-10-30 08:07 | `cae048e782` | PARTIAL | 0/18/10/0 | 60fb9113b5 | ⚡ perf(cli): restore scoped caches at binary process boundaries | packages/smithers/PACKAGE.ts: Smithers.file("test/support/node-child.ts"),; packages/smithers/test/Bin.test.ts: const result = spawnNodeSync(["--no-warnings", "--import", scriptedHost, executa; packages/smithers/test/Bin |
+| 2026-10-30 08:07 | `cae048e782` | SUPERSEDED | 24/4/0/0 | 60fb9113b5 | ⚡ perf(cli): restore scoped caches at binary process boundaries | packages/smithers/test/Bin.test.ts: main carried then changed it: a9f30dca47 (⚡ perf(cli): distribute serial binary contracts across the bounded pool) |
 | 2026-10-30 08:30 | `aeb83aa719` | SUPERSEDED | 1/1/0/0 | 801ae69887 | 🧪 test(mvp): exercise triage pause through its durable public API | apps/mvp/src/features/issues/issues.test.ts: main carried then changed it: 83e2659e60 (🧪 test(mvp): confirm session before testing a privileged replay) |
 | 2026-10-30 08:30 | `f47a2df62d` | SUPERSEDED | 1/1/0/0 | 9dae978249 | 🧪 test(mvp): exercise triage pause through its durable public API | apps/mvp/src/features/issues/issues.test.ts: main carried then changed it: 83e2659e60 (🧪 test(mvp): confirm session before testing a privileged replay) |
-| 2026-10-30 08:46 | `e591f265ba` | PARTIAL | 0/3/5/1 | 60fb9113b5 | 🐛 fix(engine-store): sample timer deadlines in their own fibers | .changeset/queued-clock-deadline.md: Compute a durable timer's remaining delay in its timer fiber. A clock advance; packages/smithers/agent/test/examples/use-cases/tweet-thread.test.ts: import { onTestFailed, vi } from " |
+| 2026-10-30 08:46 | `e591f265ba` | SUPERSEDED | 6/3/0/0 | 60fb9113b5 | 🐛 fix(engine-store): sample timer deadlines in their own fibers | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: f778157ede (⚡ perf(cli): load bootstrap modules with native TypeScript) |
 | 2026-10-30 08:58 | `653286dc42` | SUPERSEDED | 31/2/0/0 | 801ae69887 | 🐛 fix(mvp): keep device fixtures local and scope backend-only tests | apps/mvp/src/features/chat/chat.test.ts: main carried then changed it: aeb6a24009 (🧪 test(mvp): control transient display time and isolate backend fixtures) |
 | 2026-10-30 08:58 | `be2c8cbb71` | SUPERSEDED | 31/2/0/0 | 9dae978249 | 🐛 fix(mvp): keep device fixtures local and scope backend-only tests | apps/mvp/src/features/chat/chat.test.ts: main carried then changed it: aeb6a24009 (🧪 test(mvp): control transient display time and isolate backend fixtures) |
 | 2026-10-30 09:47 | `3bdf374783` | PARTIAL | 10/0/0/1 | 801ae69887 | 🐛 fix(mvp): isolate WAL writes and settle optional clone metadata | apps/mvp/worker/RepoApi.test.ts: // PostgreSQL keeps microseconds; the request's Clock reads milliseconds. Set an |
 | 2026-10-30 09:47 | `10cd4df2eb` | PARTIAL | 10/0/0/1 | 9dae978249 | 🐛 fix(mvp): isolate WAL writes and settle optional clone metadata | apps/mvp/worker/RepoApi.test.ts: // PostgreSQL keeps microseconds; the request's Clock reads milliseconds. Set an |
 | 2026-10-30 09:55 | `3033b230f6` | ON-MAIN | 10/0/0/0 | builder/drift-helper | 🐛 fix(ci): install native filesystem helper for Drift |  |
-| 2026-10-30 09:58 | `8237bc6f56` | PARTIAL | 1/3/3/7 | 60fb9113b5 | ⚡ perf(cli): distribute serial binary contracts across the bounded pool | packages/smithers/PACKAGE.ts: Smithers.file("test/support/bin.ts"),; packages/smithers/test/Bin.test.ts: /** Real executable contracts, scheduled in the bounded CLI worker pool. */; apps/mvp/docs/work/ci-agent-reds.md: c |
+| 2026-10-30 09:58 | `8237bc6f56` | SUPERSEDED | 11/3/0/0 | 60fb9113b5 | ⚡ perf(cli): distribute serial binary contracts across the bounded pool | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: c99d93fa76 (⚡ perf(cli): dispatch binary process contracts before short unit files) |
 | 2026-10-30 09:58 | `330e7da2a9` | ON-MAIN | 2/0/0/0 | 801ae69887 | 🧪 test(mvp): give comment admission its signed-in actor |  |
 | 2026-10-30 09:58 | `a26c42db5a` | ON-MAIN | 2/0/0/0 | 9dae978249 | 🧪 test(mvp): give comment admission its signed-in actor |  |
 | 2026-10-30 10:22 | `8d60454912` | SUPERSEDED | 51/5/0/0 | 801ae69887 | 🧪 test(mvp): control transient display time and isolate backend fixtures | apps/mvp/docs/infrastructure.md: main carried then changed it: 70039f6151 (🧪 test(mvp): hold display time while a done toast syncs late) |
 | 2026-10-30 10:22 | `b05f717c18` | SUPERSEDED | 51/5/0/0 | 9dae978249 | 🧪 test(mvp): control transient display time and isolate backend fixtures | apps/mvp/docs/infrastructure.md: main carried then changed it: 70039f6151 (🧪 test(mvp): hold display time while a done toast syncs late) |
-| 2026-10-30 10:33 | `84c88d46ab` | PARTIAL | 0/1/2/0 | 60fb9113b5 | ⚡ perf(cli): dispatch binary process contracts before short unit files | packages/smithers/test/CliTestLanes.test.ts: /[/\\]Bin(?:Startup\|Routing\|Runtime\|Migration\|Launch\|Scaffold)?\.test\.ts$/.test; packages/smithers/test/support/cli-sequencer.ts: if (/\/Bin(?:Launch\|Migration\|Runtime\|Scaffo |
+| 2026-10-30 10:33 | `84c88d46ab` | SUPERSEDED | 1/2/0/0 | 60fb9113b5 | ⚡ perf(cli): dispatch binary process contracts before short unit files | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
 | 2026-10-30 10:52 | `ceb4ee7f1f` | SUPERSEDED | 4/1/0/0 | 801ae69887 | 🧪 test(mvp): confirm session before testing a privileged replay | apps/mvp/src/features/issues/issues.test.ts: main carried then changed it: 0305a4a909 (🧪 test(mvp): make shared issue fixtures wait for confirmed authority) |
 | 2026-10-30 10:52 | `2c0b5d1788` | SUPERSEDED | 4/1/0/0 | 9dae978249 | 🧪 test(mvp): confirm session before testing a privileged replay | apps/mvp/src/features/issues/issues.test.ts: main carried then changed it: 0305a4a909 (🧪 test(mvp): make shared issue fixtures wait for confirmed authority) |
-| 2026-10-30 10:56 | `6925324ce0` | ON-MAIN | 6/0/0/0 | builder/bb6-cli | 🧪 test(cli): retain subprocess stage diagnostics |  |
+| 2026-10-30 10:56 | `6925324ce0` | SUPERSEDED | 5/1/0/0 | builder/bb6-cli | 🧪 test(cli): retain subprocess stage diagnostics | packages/smithers/test/RunObservabilityCli.test.ts: main carried then changed it: ed42593998 (🔎 test(cli): retain live-run startup and child-cache receipts) |
 | 2026-10-30 11:01 | `4ed2c81157` | SUPERSEDED | 33/1/0/0 | builder/bb6-cli | 🐛 fix(build-cli): type gate refusals and retain execution receipts | packages/smithers/build/build-cli/test/RawErrorSites.test.ts: main carried then changed it: 31365ca555 (🧪 fix(build-cli): pin merged raw error count and format the owners table) |
 | 2026-10-30 11:10 | `90dae8ce09` | ON-MAIN | 5/0/0/0 | 801ae69887 | 🧪 test(mvp): make shared issue fixtures wait for confirmed authority |  |
 | 2026-10-30 11:10 | `3144df937b` | ON-MAIN | 5/0/0/0 | 9dae978249 | 🧪 test(mvp): make shared issue fixtures wait for confirmed authority |  |
@@ -1415,9 +1604,9 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-30 11:28 | `ac7f4d45c1` | PARTIAL | 0/0/0/1 | builder/ci-shard | 🧪 fix(release): follow removal of the global docs banner | .smithers/flows/release/pack-release.test.mjs: // c95d756e removed the global release banner; the install contract remains. |
 | 2026-10-30 11:43 | `9f473a3b8a` | ON-MAIN | 3/0/0/0 | 801ae69887 | 🧪 test(mvp): force concurrent draft saves to overlap |  |
 | 2026-10-30 11:43 | `2796cd1f6e` | ON-MAIN | 3/0/0/0 | 9dae978249 | 🧪 test(mvp): force concurrent draft saves to overlap |  |
-| 2026-10-30 11:52 | `a805868e85` | PARTIAL | 0/0/14/2 | 801ae69887 | ✨ feat(build-cli): select every target in one package | packages/smithers/build/build-cli/docs/cli.md: The nonrecursive `//package:*` wildcard selects that package's public targets; packages/smithers/build/build-cli/src/Cli.ts: return Label.isWildcard(parsed) |
-| 2026-10-30 11:52 | `cec6cb6841` | PARTIAL | 0/0/14/2 | builder/ci-shard | ✨ feat(build-cli): select every target in one package | packages/smithers/build/build-cli/docs/cli.md: The nonrecursive `//package:*` wildcard selects that package's public targets; packages/smithers/build/build-cli/src/Cli.ts: return Label.isWildcard(parsed) |
-| 2026-10-30 11:57 | `4a09864158` | PARTIAL | 1/1/6/2 | 60fb9113b5 | 🐛 fix(cli): finish log following after a proven local writer crash | .changeset/run-log-journal-settlement.md: A terminal engine whose recorded local writer is proven dead drains and exits; packages/smithers/PACKAGE.ts: Smithers.file("test/fixtures/run-event-orphan-writer.ts"),; apps/mvp/ |
+| 2026-10-30 11:52 | `a805868e85` | ON-MAIN | 16/0/0/0 | 801ae69887 | ✨ feat(build-cli): select every target in one package |  |
+| 2026-10-30 11:52 | `cec6cb6841` | ON-MAIN | 16/0/0/0 | builder/ci-shard | ✨ feat(build-cli): select every target in one package |  |
+| 2026-10-30 11:57 | `4a09864158` | SUPERSEDED | 9/1/0/0 | 60fb9113b5 | 🐛 fix(cli): finish log following after a proven local writer crash | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
 | 2026-10-30 11:59 | `169ec7475a` | ON-MAIN | 1/0/0/0 | 801ae69887 | 🧪 fix(engine): bound private dispatch contract inspection |  |
 | 2026-10-30 11:59 | `b897a593cc` | ON-MAIN | 1/0/0/0 | builder/ci-flows2 | 🧪 fix(engine): bound private dispatch contract inspection |  |
 | 2026-10-30 12:16 | `adc5c64c07` | ON-MAIN | 10/0/0/0 | 801ae69887 | 🐛 fix(sandbox): fence redelivered detached workers before output opens |  |
@@ -1428,45 +1617,45 @@ Net: the head against its fork point with main: hunks on main / superseded / mis
 | 2026-10-30 12:16 | `7bc0f58f0d` | ON-MAIN | 1/0/0/0 | builder/ci-flows2 | 🧪 fix(sync): keep fuzz insertion markers outside the seed alphabet |  |
 | 2026-10-30 12:19 | `9ca5b309d0` | ON-MAIN | 12/0/0/0 | 801ae69887 | 🐛 fix(mvp): sort UTC timestamps and bound fixture cancellation |  |
 | 2026-10-30 12:19 | `deb0d0035b` | ON-MAIN | 12/0/0/0 | 9dae978249 | 🐛 fix(mvp): sort UTC timestamps and bound fixture cancellation |  |
-| 2026-10-30 12:55 | `77f35ed412` | STRANDED | 0/0/3/0 | 60fb9113b5 | 🧪 test(cli): assert cancellation exits from committed receipts | packages/smithers/test/NativeCancellationCli.test.ts: import { childEnvironment } from "./support/node-child.ts"; packages/smithers/test/NativeCancellationCli.test.ts: XDG_CONFIG_HOME: join(root, "config") |
-| 2026-10-30 12:57 | `f79adc5131` | PARTIAL | 0/4/10/1 | 60fb9113b5 | ⚡ perf(cli): load bootstrap modules with native TypeScript | .changeset/cli-native-bootstrap.md: the declaration loader before running commands. Preserve shared Effect identity,; packages/smithers/build/build-cli/docs/concepts/declaration-loading.md: TypeScript/CommonJS loader; `i |
+| 2026-10-30 12:55 | `77f35ed412` | ON-MAIN | 3/0/0/0 | 60fb9113b5 | 🧪 test(cli): assert cancellation exits from committed receipts |  |
+| 2026-10-30 12:57 | `f79adc5131` | SUPERSEDED | 7/8/0/0 | 60fb9113b5 | ⚡ perf(cli): load bootstrap modules with native TypeScript | .changeset/cli-native-bootstrap.md: main carried then changed it: 3d3ebadf92 (🐛 fix(cli): preserve persisted callback compiler identities) |
 | 2026-10-30 12:57 | `2c0adafc41` | ON-MAIN | 2/0/0/0 | 801ae69887 | 📝 docs(mvp): record timeout repair verification |  |
 | 2026-10-30 12:57 | `6b985b4f92` | ON-MAIN | 2/0/0/0 | 9dae978249 | 📝 docs(mvp): record timeout repair verification |  |
-| 2026-10-30 13:47 | `961ae3d923` | PARTIAL | 0/2/3/0 | 60fb9113b5 | ⚡ perf(cli): schedule cold test files from actual source sizes | packages/smithers/test/CliTestLanes.test.ts: statSync,; packages/smithers/test/support/cli-sequencer.ts: const sizes = new Map(files.map((file) => [file.moduleId, statSync(file.moduleId; apps/mvp/docs/work/ci-agent-reds. |
-| 2026-10-30 14:51 | `47d50dfda6` | PARTIAL | 0/0/8/1 | 60fb9113b5 | 🐛 fix(cli): preserve persisted callback compiler identities | .changeset/cli-native-bootstrap.md: retain the established compiler before importing callback bodies so persisted; packages/smithers/build/build-cli/docs/concepts/declaration-loading.md: graph: changing a callback's comp |
-| 2026-10-30 14:52 | `e8dc2d90e7` | PARTIAL | 2/0/73/5 | 801ae69887 | ⚡️ fix(ci): shard package and workspace suites by hosted durations | .github/workflows/ci.yml: timeout-minutes: 40; .github/workflows/ci.yml: run: "pnpm exec smthrs ci '//packages/smithers:*' --jobs 2 --known-red '.github/ |
-| 2026-10-30 14:52 | `79b7a879cd` | PARTIAL | 2/0/73/5 | builder/ci-shard | ⚡️ fix(ci): shard package and workspace suites by hosted durations | .github/workflows/ci.yml: timeout-minutes: 40; .github/workflows/ci.yml: run: "pnpm exec smthrs ci '//packages/smithers:*' --jobs 2 --known-red '.github/ |
-| 2026-10-30 15:15 | `b384bd8140` | PARTIAL | 0/0/5/1 | 60fb9113b5 | ⚡ perf(cli): retain owned caches through guide shell launches | packages/smithers/test/HistoryForkResumeCli.test.ts: import { childEnvironment } from "./support/node-child.ts"; packages/smithers/test/HistoryForkResumeCli.test.ts: env: childEnvironment({ |
-| 2026-10-30 15:16 | `7e46e8c25b` | SUPERSEDED | 0/1/0/0 | 60fb9113b5 | 📝 docs(ci): retain bootstrap proofs and the remaining CLI deadline | apps/mvp/docs/work/ci-agent-reds.md: changed later in its stack (head 60fb9113b5) |
-| 2026-10-30 16:05 | `5a201d9d94` | PARTIAL | 0/0/17/1 | 60fb9113b5 | ⚡ perf(cli): complete cache handoff for late process journeys | packages/smithers/test/BackendLocal.test.ts: import { childEnvironment } from "./support/node-child.ts"; packages/smithers/test/ChangeCodeGuide.test.ts: import { childEnvironment } from "./support/node-child.ts" |
-| 2026-10-30 16:14 | `1373f0beef` | PARTIAL | 1/0/2/0 | 60fb9113b5 | ⚡ perf(cli): start process journeys before large unit tables | packages/smithers/test/CliTestLanes.test.ts: actual.files.findIndex((file) => file.replaceAll("\\", "/").endsWith(`/${name}.t; packages/smithers/test/support/cli-sequencer.ts: return source.includes("node:child_process") |
-| 2026-10-30 17:26 | `2ad70a597f` | STRANDED | 0/0/7/0 | 60fb9113b5 | ⚡ perf(cli): bound the complete test queue at six workers | packages/smithers/PACKAGE.ts: // One compiler coordinator shares transforms across six worker processes.; packages/smithers/PACKAGE.ts: `${vitest} --fileParallelism --maxWorkers=6 --coverage.enabled=true --reporter=g |
-| 2026-10-30 18:18 | `f966373c7a` | PARTIAL | 1/0/1/3 | 60fb9113b5 | ⚡ perf(cli): check public type contracts with the native compiler | packages/smithers/test/BackendCommands.test.ts: import { spawnNodeSync } from "./support/node-child.ts"; packages/smithers/test/BackendCommands.test.ts: const compiler = join(dirname(createRequire(import.meta.url).resolv |
-| 2026-10-30 18:25 | `e29e7c3f59` | STRANDED | 0/0/2/0 | 60fb9113b5 | 🔎 test(cli): retain guide stages in the final failure summary | packages/smithers/test/QuickstartGuides.test.ts: import { expect, it, onTestFailed, onTestFinished } from "vitest"; packages/smithers/test/QuickstartGuides.test.ts: for (const error of task.result?.errors ?? []) error.me |
-| 2026-10-30 18:28 | `cdf83b1657` | STRANDED | 0/0/3/0 | 60fb9113b5 | ⚡ perf(cli): avoid parsing unrelated escaped SDK source | packages/smithers/test/CanonicalSpellings.test.ts: !/(?:(?<![\w@/.-])\|\\[bfnrtv0])s\\?m\\?t\\?h\\?r\\?s\b\|s\\?m\\?i\\?t\\?h\\?e\\?r; packages/smithers/test/CanonicalSpellings.test.ts: ...["\\n", "\\r", "\\t", "\\b", "\\f |
-| 2026-10-30 18:40 | `b9dcef1528` | PARTIAL | 1/0/2/0 | 60fb9113b5 | ⚡ perf(cli): bound guide controls to Bash startup | packages/smithers/test/QuickstartGuides.test.ts: clean && name === "script-the-cli" ? "printf \"%s\" \"$approval\"" : ""; packages/smithers/test/QuickstartGuides.test.ts: expect(old.stderr).toMatch(/bashrc:.*unbound vari |
-| 2026-10-30 19:16 | `8fad6f8801` | PARTIAL | 0/0/3/1 | 60fb9113b5 | ⚡ perf(cli): keep offline SDK preloads out of the native compiler | packages/smithers/test/ScriptedNativeHostPreload.test.ts: import { childEnvironment } from "./support/node-child.ts"; packages/smithers/test/ScriptedNativeHostPreload.test.ts: env: childEnvironment({ ...process.env, NODE |
-| 2026-10-30 19:16 | `9f62b36b03` | STRANDED | 0/0/3/0 | 801ae69887 | 🐛 fix(ci): give the local gate runner one gate per CI shard | .github/scripts/ci/cloud.sh: packages-2) echo 'js jj foundry postgres sshd' ;;; .github/scripts/ci/cloud.sh: pnpm exec smthrs ci '//packages/smithers:*' --jobs 2 --known-red '.github/ci-kno |
-| 2026-10-30 19:17 | `84ea99c528` | STRANDED | 0/0/4/0 | 801ae69887 | 🔧 chore: regenerate the API baseline and docs projections for W27 | .smithers/flows/release/fixtures/public-api-baseline.json: "Label.d.ts": "63a4eb34c3c602133547698b1d0927d6e1f0c561dca3302b9a50b0450cd20468"; .smithers/flows/release/fixtures/public-api-baseline.json: "GithubCiGen.d.ts":  |
-| 2026-10-30 19:20 | `ce35b398ed` | PARTIAL | 1/0/6/0 | 60fb9113b5 | 🔎 test(cli): retain live-run startup and child-cache receipts | packages/smithers/test/RunObservabilityCli.test.ts: if (isMainThread) recordStage(process.argv[1]?.endsWith("bin.ts") \|\| process.arg; packages/smithers/test/RunObservabilityCli.test.ts: ["--no-warnings", "--import", boot |
-| 2026-10-30 19:47 | `647a368ca5` | STRANDED | 0/0/2/0 | 801ae69887 | 🐛 fix(ci): time the build-cli importRules target in the shard measurements | packages/repo-targets/ci/timings.json: "platform": "ubuntu-latest"; packages/repo-targets/ci/timings.json: "//packages/smithers/build/build-cli:importRules": 892, |
-| 2026-10-30 19:52 | `3e5157fcd3` | STRANDED | 0/0/2/0 | 60fb9113b5 | 🧪 test(cli): assert the required PostgreSQL declaration dependency | packages/smithers/test/Readme.test.ts: it("describes the manifest's shared Effect peer, private adapter and required SQ; packages/smithers/test/Readme.test.ts: expect(manifest.dependencies["@effect/sql-pg"]).toBe(manifes |
+| 2026-10-30 13:47 | `961ae3d923` | SUPERSEDED | 3/2/0/0 | 60fb9113b5 | ⚡ perf(cli): schedule cold test files from actual source sizes | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
+| 2026-10-30 14:51 | `47d50dfda6` | SUPERSEDED | 8/1/0/0 | 60fb9113b5 | 🐛 fix(cli): preserve persisted callback compiler identities | packages/smithers/src/internal/Bootstrap.ts: main carried then changed it: 6477188f0f (⚡ perf(cli): import Node services by subpath, not the platform barrel) |
+| 2026-10-30 14:52 | `e8dc2d90e7` | ON-MAIN | 80/0/0/0 | 801ae69887 | ⚡️ fix(ci): shard package and workspace suites by hosted durations |  |
+| 2026-10-30 14:52 | `79b7a879cd` | ON-MAIN | 80/0/0/0 | builder/ci-shard | ⚡️ fix(ci): shard package and workspace suites by hosted durations |  |
+| 2026-10-30 15:15 | `b384bd8140` | SUPERSEDED | 5/1/0/0 | 60fb9113b5 | ⚡ perf(cli): retain owned caches through guide shell launches | packages/smithers/test/QuickstartGuides.test.ts: main carried then changed it: 26b5f0f38a (🔎 test(cli): retain guide stages in the final failure summary) |
+| 2026-10-30 15:16 | `7e46e8c25b` | SUPERSEDED | 0/1/0/0 | 60fb9113b5 | 📝 docs(ci): retain bootstrap proofs and the remaining CLI deadline | apps/mvp/docs/work/ci-agent-reds.md: main carried then changed it: 4cf4474942 (📝 docs: record remaining CI reds and current validation limits) |
+| 2026-10-30 16:05 | `5a201d9d94` | ON-MAIN | 18/0/0/0 | 60fb9113b5 | ⚡ perf(cli): complete cache handoff for late process journeys |  |
+| 2026-10-30 16:14 | `1373f0beef` | ON-MAIN | 3/0/0/0 | 60fb9113b5 | ⚡ perf(cli): start process journeys before large unit tables |  |
+| 2026-10-30 17:26 | `2ad70a597f` | ON-MAIN | 7/0/0/0 | 60fb9113b5 | ⚡ perf(cli): bound the complete test queue at six workers |  |
+| 2026-10-30 18:18 | `f966373c7a` | ON-MAIN | 5/0/0/0 | 60fb9113b5 | ⚡ perf(cli): check public type contracts with the native compiler |  |
+| 2026-10-30 18:25 | `e29e7c3f59` | ON-MAIN | 2/0/0/0 | 60fb9113b5 | 🔎 test(cli): retain guide stages in the final failure summary |  |
+| 2026-10-30 18:28 | `cdf83b1657` | ON-MAIN | 3/0/0/0 | 60fb9113b5 | ⚡ perf(cli): avoid parsing unrelated escaped SDK source |  |
+| 2026-10-30 18:40 | `b9dcef1528` | ON-MAIN | 3/0/0/0 | 60fb9113b5 | ⚡ perf(cli): bound guide controls to Bash startup |  |
+| 2026-10-30 19:16 | `8fad6f8801` | ON-MAIN | 4/0/0/0 | 60fb9113b5 | ⚡ perf(cli): keep offline SDK preloads out of the native compiler |  |
+| 2026-10-30 19:16 | `9f62b36b03` | ON-MAIN | 3/0/0/0 | 801ae69887 | 🐛 fix(ci): give the local gate runner one gate per CI shard |  |
+| 2026-10-30 19:17 | `84ea99c528` | ON-MAIN | 4/0/0/0 | 801ae69887 | 🔧 chore: regenerate the API baseline and docs projections for W27 |  |
+| 2026-10-30 19:20 | `ce35b398ed` | ON-MAIN | 7/0/0/0 | 60fb9113b5 | 🔎 test(cli): retain live-run startup and child-cache receipts |  |
+| 2026-10-30 19:47 | `647a368ca5` | ON-MAIN | 2/0/0/0 | 801ae69887 | 🐛 fix(ci): time the build-cli importRules target in the shard measurements |  |
+| 2026-10-30 19:52 | `3e5157fcd3` | ON-MAIN | 2/0/0/0 | 60fb9113b5 | 🧪 test(cli): assert the required PostgreSQL declaration dependency |  |
 | 2026-10-30 19:53 | `e062be9ad0` | PARTIAL | 1/2/0/1 | 51b4598687 | 📝 docs(mvp): rule and design gates on Cloudflare job machines | apps/mvp/docs/decisions/0128-gates-on-cloudflare-job-machines.md: # 0128: Gates run as repository flows on Cloudflare job machines; apps/mvp/docs/rulings.md: landed as e7c8133635 (same author and time, committed later) |
-| 2026-10-30 19:57 | `801ae69887` | STRANDED | 0/0/2/0 | 801ae69887 | ⚡️ fix(ci): parse the workflows once in the gate runner contract | .github/scripts/ci/cloud.test.ts: // Parsed once: ci.yml carries every shard, and parsing it per gate passed; .github/scripts/ci/cloud.test.ts: expect(workflowCommands).toContain(commands[0]) |
+| 2026-10-30 19:57 | `801ae69887` | ON-MAIN | 2/0/0/0 | 801ae69887 | ⚡️ fix(ci): parse the workflows once in the gate runner contract |  |
 | 2026-10-30 20:01 | `51b4598687` | SUPERSEDED | 7/1/0/0 | 51b4598687 |  | apps/mvp/infra/gate/entry.sh: main carried then changed it: 6c9e4781c2 (📝 docs(mvp): point the gates' code and docs at decision 0145) |
 | 2026-10-30 20:01 | `641370fcac` | ON-MAIN | 6/0/0/0 | 51b4598687 | 🧪 test(mvp): prove the gate on a smithers-gates-* stage |  |
 | 2026-10-30 20:01 | `28fb70388e` | ON-MAIN | 2/0/0/0 | 51b4598687 | ✨ feat(mvp): deploy a prebuilt branch sandbox image with SANDBOX_IMAGE |  |
-| 2026-10-30 20:01 | `4db333c2a2` | SUPERSEDED | 8/1/0/0 | 51b4598687 | ✨ feat(mvp): refuse a repository flow whose job names an undeclared machine | apps/mvp/worker/ci/RepoFlow.ts: main carried then changed it: 6c9e4781c2 (📝 docs(mvp): point the gates' code and docs at decision 0145) |
+| 2026-10-30 20:01 | `4db333c2a2` | SUPERSEDED | 8/1/0/0 | 51b4598687 | ✨ feat(mvp): refuse a repository flow whose job names an undeclared machine | apps/mvp/worker/ci/RepoFlow.ts: main carried then changed it: 7bf773f965 (✨ feat(mvp): a repository flow's inputs read in the realm, a run by hand's inputs and Retry failed's jobs in repo/Run, and a run whose jobs failed |
 | 2026-10-30 20:01 | `3e707fe4aa` | SUPERSEDED | 0/1/0/0 | 51b4598687 | 🧪 test(mvp): skip the live GitHub read unless GitHub itself answered | apps/mvp/worker/RepoUpstream.test.ts: main carried then changed it: 6c9e4781c2 (📝 docs(mvp): point the gates' code and docs at decision 0145) |
 | 2026-10-30 20:01 | `54fb506722` | ON-MAIN | 2/0/0/0 | 51b4598687 | 🐛 fix(mvp): check a job's commit out over an image's base checkout |  |
 | 2026-10-30 20:01 | `3770b2e850` | ON-MAIN | 4/0/0/0 | 51b4598687 | 🐛 fix(mvp): release a job's machine without checkpointing its checkout |  |
 | 2026-10-30 20:10 | `667a4d4157` | ON-MAIN | 7/0/0/0 | 51b4598687 | 🧪 test(mvp): run the two internet-bound tests offline |  |
-| 2026-10-30 20:11 | `0a8e3a686b` | ON-MAIN | 44/0/0/0 | 51b4598687 | ✨ feat(sandbox): run CI job graphs in waves with needs and named machines |  |
+| 2026-10-30 20:11 | `0a8e3a686b` | SUPERSEDED | 42/2/0/0 | 51b4598687 | ✨ feat(sandbox): run CI job graphs in waves with needs and named machines | apps/mvp/docs/features/ci.md: main carried then changed it: 7bf773f965 (✨ feat(mvp): a repository flow's inputs read in the realm, a run by hand's inputs and Retry failed's jobs in repo/Run, and a run whose jobs failed r |
 | 2026-10-30 20:28 | `64a277abbb` | SUPERSEDED | 49/3/0/0 | 51b4598687 | ✨ feat(mvp): declare the gate job machine and run-scoped artifacts | apps/mvp/worker/BranchSandboxes.ts: landed as 3f5d7d17aa (same author and time, committed later) |
-| 2026-10-30 20:59 | `c3eda3ccd4` | STRANDED | 0/0/4/0 | 60fb9113b5 | 🧪 test(cli): pass the owned compile cache to SSH children | packages/smithers/test/ExecutionEnvironmentSsh.integration.test.ts: import { afterAll, beforeAll, describe, expect, it, onTestFailed } from "vitest"; packages/smithers/test/ExecutionEnvironmentSsh.integration.test.ts: co |
-| 2026-10-30 21:01 | `bc51864ee7` | STRANDED | 0/0/1/0 | 60fb9113b5 | 📝 docs: record remaining CI reds and current validation limits | apps/mvp/docs/work/ci-agent-reds.md: - Gateway: passed, 38.7 seconds, including committed grants and unreadable selec |
-| 2026-10-30 21:01 | `d8b5f275b7` | STRANDED | 0/0/6/0 | 60fb9113b5 | ⚡ perf(journal): skip impossible credential URL candidates | .changeset/cheap-credential-url-candidates.md: Avoid credential URL scans on journal text without the matcher's required litera; packages/smithers/flows/journal/docs/concepts/redaction.md: literals before running the sam |
-| 2026-10-30 21:01 | `c4b8d05b26` | STRANDED | 0/0/2/0 | 60fb9113b5 | ⚡ perf(agent): finish the complete queue with three workers | packages/smithers/agent/README.md: The coverage suite uses at most three workers. Each file opens real engines;; packages/smithers/agent/vitest.config.ts: // its target deadline. Two workers leave the queue unfinished at |
-| 2026-10-30 21:01 | `c0fcb5e008` | STRANDED | 0/0/4/0 | 60fb9113b5 | 🔎 test(cli): retain successful and failed startup stages | packages/smithers/test/RunObservabilityCli.test.ts: import { describe, expect, it, onTestFailed, onTestFinished, vi } from "vitest"; packages/smithers/test/RunObservabilityCli.test.ts: stages: (lines.length > 32 ? [...li |
-| 2026-10-30 21:14 | `60fb9113b5` | PARTIAL | 18/20/0/2 | 60fb9113b5 |  | packages/smithers/build/build-cli/src/engine.ts: import * as EffectNodePath from "@effect/platform-node/NodePath"; packages/smithers/test/CliStartupModules.test.ts: expect(loaded.some((url) => url.includes("/@effect/plat |
+| 2026-10-30 20:59 | `c3eda3ccd4` | ON-MAIN | 4/0/0/0 | 60fb9113b5 | 🧪 test(cli): pass the owned compile cache to SSH children |  |
+| 2026-10-30 21:01 | `bc51864ee7` | ON-MAIN | 1/0/0/0 | 60fb9113b5 | 📝 docs: record remaining CI reds and current validation limits |  |
+| 2026-10-30 21:01 | `d8b5f275b7` | ON-MAIN | 6/0/0/0 | 60fb9113b5 | ⚡ perf(journal): skip impossible credential URL candidates |  |
+| 2026-10-30 21:01 | `c4b8d05b26` | ON-MAIN | 2/0/0/0 | 60fb9113b5 | ⚡ perf(agent): finish the complete queue with three workers |  |
+| 2026-10-30 21:01 | `c0fcb5e008` | ON-MAIN | 4/0/0/0 | 60fb9113b5 | 🔎 test(cli): retain successful and failed startup stages |  |
+| 2026-10-30 21:14 | `60fb9113b5` | SUPERSEDED | 21/19/0/0 | 60fb9113b5 |  | .probe-ci-agent/attr.mjs: main has no .probe-ci-agent (package removed) |
 | 2026-10-30 21:30 | `9dae978249` | ON-MAIN | 15/0/0/0 | 9dae978249 | 🧪 test(mvp): hold display time while a done toast syncs late |  |
