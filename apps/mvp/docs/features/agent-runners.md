@@ -183,6 +183,18 @@ afterSeconds? }` or `Cancelled { processTreeGone }`. Usage an agent doesn't repo
 
 The route is off: it answers `404 not_found`, which the runner reads as no credential, so a public repository fetches as before and a private one fails `workspace` as it did before the route. It stays off until the security review's findings on decision 0148 are fixed. As designed, a runner fetches a private repository with a token the host mints for each job ([decision 0148](../decisions/0148-runner-git-credential.md)): the App's installation token for that one repository, `contents: read` only, spent 50 minutes after minting. The runner passes it to git in the command's own environment, never on a command line, in a file or a log, and clones a missing mirror with it, so a private repository's mirror needs no deploy key or person's token on the machine. A public repository, or a host without the App, fetches as before.
 
+## Audit
+
+`GET /api/runners/audit`, for an Admin of the deployment's own repository acting in person (`403` for anyone else,
+an Admin of another repository included), lists every live runner on every repository: `repoId`, `name`, `addedBy`
+(the registrant's person id) and `addedByLogin`, `addedAt`, `labels`, `seenAt`, and its repository's
+`installation: { recorded, checkedAt }`. `github_repositories` keeps no time an installation was first recorded;
+`checkedAt` is its `checked_at`, which every write of that row sets (the answer names it in `installationTime`). A
+runner is flagged `no_installation` where none is recorded, and `installation_recorded_after_added` where the
+installation's row was last written after the runner was added: before 2026-11-02 such a registration could take the
+deployment-wide role instead of the role GitHub gives on the repository
+([decision 0148](../decisions/0148-runner-git-credential.md)). It never answers a token or a token's digest.
+
 ## Admission
 
 A runner admits jobs by its own machine, never by a host rule ([decision 0144](../decisions/0144-half-load-and-cloudflare-overflow.md)):

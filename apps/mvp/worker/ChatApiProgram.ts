@@ -58,6 +58,7 @@ import * as PersonalApi from "./personal/Api.ts"
 import { PersonalModels } from "./personal/Models.ts"
 import * as SecretsApi from "./secrets/Api.ts"
 import * as RunnerAdmin from "./runners/Admin.ts"
+import * as RunnerAudit from "./runners/Audit.ts"
 import * as RunnersApi from "./runners/Api.ts"
 import * as FleetApi from "./runners/FleetApi.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
@@ -196,6 +197,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       gitCredential: GitCredential.make(yield* GitHubConfig.configured, database),
     })
     const runnerAdmin = yield* RunnerAdmin.make(database)
+    // Every live runner and its repository's installation, for the deployment's Admins (decision 0148).
+    const runnerAudit = RunnerAudit.make(database)
     // Custom domains (docs/features/domains.md): a Maintainer's, through the deployment's provider; off without one.
     const domainsApi = yield* DomainsApi.make(yield* GitHubConfig.repository, database)
     const domainProvider = yield* DomainsConfig.provider(options).pipe(
@@ -391,6 +394,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           return yield* runnersApi.fetch.pipe(Effect.provide(RunContent.transcriptsLayer(runContents)))
         }
         if (FleetApi.handles(path)) return yield* fleet.fetch.pipe(Effect.provide(signedIn))
+        if (RunnerAudit.handles(path)) return yield* runnerAudit.fetch.pipe(Effect.provide(signedIn))
         // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>`, `.../agents/<name>` and
         // `.../overflow/cloudflare`, which mints and seals the overflow runner's token.
         if (RunnerAdmin.handles(path)) {
