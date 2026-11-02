@@ -17,6 +17,13 @@ export type Classified =
   | { readonly kind: "unknown" }
   | { readonly kind: "refused"; readonly status: number }
 
+/**
+ * The longest wait a failure's own instant asks for that this honors, in milliseconds: the GitHub proxy's
+ * `x-smithers-retry-at` is capped as `@smthrs/integrations` caps `Retry-After` (`CredentialHttp.MAX_RETRY_AFTER_MS`),
+ * so a far-future instant can't hold a role read, or a step, for hours.
+ */
+export const MAX_WAIT_MILLIS = 60_000
+
 const numberOf = (value: unknown): number | undefined => (typeof value === "number" ? value : undefined)
 
 /** Reads a failure from `@smthrs/integrations`: its classification and status, never its message. */
@@ -26,7 +33,8 @@ export const classify = (error: unknown): Classified => {
   if (details["outcomeUnknown"] === true) return { kind: "unknown" }
   if (details["retryable"] === true || details["rateLimited"] === true) {
     const retryAt = typeof details["retryAt"] === "string" ? Date.parse(details["retryAt"]) - Date.now() : undefined
-    const wait = numberOf(details["retryAfterMillis"]) ?? (retryAt !== undefined && retryAt > 0 ? retryAt : undefined)
+    const wait = numberOf(details["retryAfterMillis"]) ??
+      (retryAt !== undefined && retryAt > 0 ? Math.min(retryAt, MAX_WAIT_MILLIS) : undefined)
     return wait === undefined ? { kind: "retry" } : { kind: "retry", retryAfterMillis: wait }
   }
   const status = numberOf(details["status"])

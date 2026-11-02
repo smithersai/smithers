@@ -590,16 +590,21 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
   test("GitHub's rate limit: 429 rate_limited with GitHub's wait, which the device waits out and sends again", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "write")
-    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "30" } })
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "1" } })
     const h = await githubHarness(runtime, { own: OWN, actor: await maya(), github })
     const write = createWrite()
     const limited = await h.fetch(route, post(write))
     expect([limited.status, limited.headers.get("retry-after"), await limited.json()]).toEqual([
       429,
-      "30",
+      "1",
       { code: "rate_limited" },
     ])
     expect(refusalOf(429)).toBeUndefined()
+    // Sent again inside GitHub's wait: refused the same, asking GitHub nothing.
+    const early = await h.fetch(route, post(write))
+    expect([early.status, early.headers.get("retry-after"), await early.json()]).toEqual([429, "1", { code: "rate_limited" }])
+    expect(permissionReads(h)).toHaveLength(1)
+    await new Promise((done) => setTimeout(done, 1_100))
     expect((await h.fetch(route, post(write))).status).toBe(202)
   })
 

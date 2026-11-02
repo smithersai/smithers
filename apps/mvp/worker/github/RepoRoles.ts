@@ -22,15 +22,16 @@ import * as Tokens from "./Tokens.ts"
 export const FRESH_SECONDS = 5 * 60
 
 /**
- * After GitHub failed a write's second read (`refresh`) for a person on a repository, how long this isolate refuses
- * another for them without asking, in seconds: writes that all found the row expired don't each ask a GitHub that just
- * failed.
+ * After GitHub failed or overran a read of a person's role on a repository, how long every request for them there is
+ * refused without asking, in seconds, kept in the row (`read_failed`, migration 0090), so it holds across isolates. A
+ * rate limit cools for GitHub's own wait instead, when it said one. `refreshCooldownSeconds: 0` cools nothing.
  */
 export const REFRESH_COOLDOWN_SECONDS = 10
 
 /**
- * How long one read of an expired row may take in all, its wait for another request's read included (at most 5 s of
- * it): it holds a Postgres transaction and connection while GitHub answers, and GitHub's own client waits up to 30 s.
+ * How long a request may take to resolve a role from a row that isn't fresh, in all: its looks at the row, its claim,
+ * GitHub (whose own client would wait up to 30 s) and its cleanup. No transaction or connection is held while GitHub
+ * answers. Known bound: see docs/features/issues.md (a transaction's start and the driver's cancel drain).
  */
 export const READ_DEADLINE: Duration.Input = "10 seconds"
 
@@ -177,7 +178,7 @@ export interface Options {
   readonly local?: boolean
   /** With `local`, local development's people's roles on other repositories (`LocalRoles`). */
   readonly localRoles?: LocalRoles
-  /** `REFRESH_COOLDOWN_SECONDS` unless set. */
+  /** `REFRESH_COOLDOWN_SECONDS` unless set; `0` cools nothing, a rate limit included (tests of each refusal). */
   readonly refreshCooldownSeconds?: number
   /** `READ_DEADLINE` unless set. */
   readonly refreshDeadline?: Duration.Input
@@ -296,9 +297,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const fromRow = (actor: Actor, repository: Repository, configured: NonNullable<Option.Option.Value<typeof app>>) =>
       Effect.gen(function* () {
         const endsAt = yield* deadlineFromNow
+        // The first read of the row, bounded by Postgres itself at the request's deadline (`bounded`), so a lock on the
+        // table can't hold it past the deadline whatever the client's cancellation does. Only a row that isn't fresh goes
+        // on to `readExpired`.
         const budget = yield* budgetOf(endsAt)
-        const cached = yield* within(endsAt, inDatabase(bounded(cachedRole(repository.id, actor.subject.id), budget, budget)))
-        if (Option.isSome(cached)) return { source: "cached", resolved: heldBy(repository, actor, cached.value) }
+        const state = yield* within(endsAt, inDatabase(bounded(readState(repository.id, actor.subject.id, undefined), budget, budget)))
+        if (Option.isSome(state.fresh)) return { source: "cached", resolved: heldBy(repository, actor, state.fresh.value) }
         return yield* readExpired(actor, repository, configured, undefined, "github", endsAt)
       })
 
@@ -342,7 +346,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const state = yield* within(endsAt, inDatabase(bounded(readState(repoId, personId, after), budget, budget)))
           if (Option.isSome(state.fresh)) return { source: "reused", resolved: heldBy(repository, actor, state.fresh.value) }
           if (state.claim?.failed === true) {
-            return yield* new RoleRefused({ code: "unavailable", retryAfterSeconds: Math.max(1, Math.ceil(state.claim.remainingSeconds)) })
+            return yield* new RoleRefused({ code: state.claim.refusal, retryAfterSeconds: Math.max(1, Math.ceil(state.claim.remainingSeconds)) })
           }
           if (state.claim === undefined) {
             const remaining = yield* left
@@ -359,18 +363,38 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 }),
                 Effect.result,
               )
-              const cools = read._tag === "Failure" && (read.failure.code === "github_unavailable" || read.failure.code === "unavailable")
+              // When GitHub refused or the read overran: the hold runs from then, not from when its cleanup gets the row.
+              // Monotonic, so the Worker's wall clock (which may be off from the database's) never enters the hold.
+              const failedAt = (yield* Clock.Clock).monotonicTimeNanosUnsafe()
+              // GitHub or Postgres not answering, or the deadline, cools the next reads for the cooldown; a rate limit for
+              // GitHub's own wait, else the cooldown. The App not installed there is an answer, and cools nothing.
+              const failure = read._tag === "Failure" ? read.failure : undefined
+              const refusal = failure?.code === "rate_limited"
+                ? "rate_limited" as const
+                : failure?.code === "github_unavailable" || failure?.code === "unavailable"
+                ? "unavailable" as const
+                : undefined
+              const coolSeconds = refusal === "rate_limited" ? failure?.retryAfterSeconds ?? cooldownSeconds : cooldownSeconds
+              const cools = refusal !== undefined && cooldownSeconds > 0
               // The cleanup has what is left of the deadline, at least a moment: one that can't finish leaves the lease
               // to expire on its own.
-              yield* inDatabase(cools ? coolRead(repoId, personId, lease, cooldownSeconds) : releaseRead(repoId, personId, lease)).pipe(
-                Effect.timeoutOrElse({ duration: Duration.millis(Math.max(100, yield* left)), orElse: () => Effect.void }),
-                Effect.ignore,
-              )
+              // What is left of the wait since the refusal, by the Worker's monotonic clock, at most 60 s: the database adds
+              // it to its cleanup transaction's start, before any wait for a lock, in its own clock.
+              const remainingMillis = Effect.map(Effect.service(Clock.Clock), (clock) =>
+                clampHold(coolSeconds * 1000 - Number(clock.monotonicTimeNanosUnsafe() - failedAt) / 1e6))
+              const held = yield* (cools
+                ? Effect.flatMap(remainingMillis, (millis) => coolRead(repoId, personId, lease, millis, refusal!))
+                : Effect.as(releaseRead(repoId, personId, lease), Option.none<number>())).pipe(
+                  inDatabase,
+                  Effect.timeoutOrElse({ duration: Duration.millis(Math.max(100, yield* left)), orElse: () => Effect.succeed(Option.none<number>()) }),
+                  Effect.orElseSucceed(() => Option.none<number>()),
+                )
               if (read._tag === "Failure") {
                 // The next request for this person and repository is refused for the cooldown: say so.
-                return yield* cools && read.failure.retryAfterSeconds === undefined && cooldownSeconds > 0
-                  ? new RoleRefused({ code: read.failure.code, retryAfterSeconds: Math.ceil(cooldownSeconds) })
-                  : read.failure
+                if (!cools) return yield* read.failure
+                // What is left of the hold, as the database recorded it; else as this Worker counts it.
+                const leftMillis = Option.isSome(held) ? held.value : yield* remainingMillis
+                return yield* new RoleRefused({ code: read.failure.code, retryAfterSeconds: Math.max(1, Math.ceil(leftMillis / 1000)) })
               }
               return { source, resolved: read.success }
             }
@@ -519,19 +543,22 @@ const readState = (repoId: string, personId: string, after: string | undefined) 
       readonly fresh: boolean
       readonly claimed: boolean
       readonly failed: boolean
+      readonly refusal: "unavailable" | "rate_limited" | null
       readonly remainingSeconds: number | null
     }>`
       SELECT role, checked_at::text AS "checkedAt",
         checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS})
           ${after === undefined ? sql`` : sql`AND checked_at > ${after}::timestamptz`} AS fresh,
-        coalesce(read_until > clock_timestamp(), false) AS claimed, read_failed AS failed,
+        coalesce(read_until > clock_timestamp(), false) AS claimed, read_failed AS failed, read_refusal AS refusal,
         EXTRACT(EPOCH FROM read_until - clock_timestamp())::float8 AS "remainingSeconds"
       FROM github_repo_roles WHERE repo_id = ${repoId} AND person_id = ${personId}`
     return {
       fresh: row !== undefined && row.fresh
         ? Option.some({ role: decodeRole(row.role), checkedAt: row.checkedAt })
         : Option.none<{ readonly role: Role | null; readonly checkedAt: string }>(),
-      claim: row !== undefined && row.claimed ? { failed: row.failed, remainingSeconds: row.remainingSeconds ?? 0 } : undefined,
+      claim: row !== undefined && row.claimed
+        ? { failed: row.failed, refusal: row.refusal ?? "unavailable" as const, remainingSeconds: row.remainingSeconds ?? 0 }
+        : undefined,
     }
   })
 
@@ -548,7 +575,7 @@ export const claimRead = (repoId: string, personId: string, after: string | unde
       INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at, read_until, read_failed)
       VALUES (${repoId}, ${personId}, NULL, '-infinity', clock_timestamp() + make_interval(secs => ${leaseMillis / 1000}), false)
       ON CONFLICT (repo_id, person_id) DO UPDATE
-      SET read_until = clock_timestamp() + make_interval(secs => ${leaseMillis / 1000}), read_failed = false
+      SET read_until = clock_timestamp() + make_interval(secs => ${leaseMillis / 1000}), read_failed = false, read_refusal = NULL
       WHERE (github_repo_roles.read_until IS NULL OR github_repo_roles.read_until <= clock_timestamp())
         AND NOT (github_repo_roles.checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS})
           ${after === undefined ? sql`` : sql`AND github_repo_roles.checked_at > ${after}::timestamptz`})
@@ -559,25 +586,32 @@ export const claimRead = (repoId: string, personId: string, after: string | unde
 /** Ends the claim `lease` named, unless another request has claimed the read since. */
 const releaseRead = (repoId: string, personId: string, lease: string) =>
   bounded(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
-    UPDATE github_repo_roles SET read_until = NULL, read_failed = false
+    UPDATE github_repo_roles SET read_until = NULL, read_failed = false, read_refusal = NULL
     WHERE repo_id = ${repoId} AND person_id = ${personId} AND read_until = ${lease}::timestamptz`), CLEANUP_LOCK_MILLIS, CLEANUP_STATEMENT_MILLIS)
 
-/** Keeps the claim `lease` named for the cooldown from now, as failed: the next read is refused with the wait. */
-const coolRead = (repoId: string, personId: string, lease: string, cooldownSeconds: number) =>
-  bounded(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
-    UPDATE github_repo_roles SET read_until = clock_timestamp() + make_interval(secs => ${cooldownSeconds}), read_failed = true
-    WHERE repo_id = ${repoId} AND person_id = ${personId} AND read_until = ${lease}::timestamptz`), CLEANUP_LOCK_MILLIS, CLEANUP_STATEMENT_MILLIS)
+/** The longest a cooling hold lasts, in milliseconds: what `@smthrs/integrations` honors of a server-named wait. */
+const MAX_HOLD_MILLIS = 60_000
 
-/** The person's fresh role on `repoId`, no role included; `None` when there is no fresh row. */
-const cachedRole = (repoId: string, personId: string) =>
-  Effect.gen(function* () {
+/** `millis` as a hold: finite, at least 0, at most `MAX_HOLD_MILLIS`. */
+const clampHold = (millis: number) => Number.isFinite(millis) ? Math.min(MAX_HOLD_MILLIS, Math.max(0, millis)) : 0
+
+/**
+ * Keeps the claim `lease` named, as failed, for `holdMillis` from the start of its own short transaction (`now()`, the
+ * database's clock, taken at its BEGIN, before the UPDATE waits for any lock; a statement's own timestamp is set after
+ * a table lock it waits on while it is parsed): the next read is refused with what is left of the wait. Answers
+ * what is left by the database's clock once written; `None` when another request had claimed the read since.
+ */
+const coolRead = (repoId: string, personId: string, lease: string, holdMillis: number, refusal: "unavailable" | "rate_limited") =>
+  bounded(Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string }>`
-      SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles
-      WHERE repo_id = ${repoId} AND person_id = ${personId}
-        AND checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS})`
-    return Option.map(Option.fromNullishOr(row), (found) => ({ role: decodeRole(found.role), checkedAt: found.checkedAt }))
-  })
+    const [row] = yield* sql<{ readonly leftMillis: number }>`
+      UPDATE github_repo_roles
+      SET read_until = now() + make_interval(secs => ${clampHold(holdMillis) / 1000}), read_failed = true,
+        read_refusal = ${refusal}
+      WHERE repo_id = ${repoId} AND person_id = ${personId} AND read_until = ${lease}::timestamptz
+      RETURNING (EXTRACT(EPOCH FROM read_until - clock_timestamp()) * 1000)::float8 AS "leftMillis"`
+    return Option.map(Option.fromNullishOr(row), (written) => Math.max(0, written.leftMillis))
+  }), CLEANUP_LOCK_MILLIS, CLEANUP_STATEMENT_MILLIS)
 
 /** Postgres' clock now, and the person's GitHub account as sign-in recorded it, when there is one. */
 const observe = (personId: string) =>

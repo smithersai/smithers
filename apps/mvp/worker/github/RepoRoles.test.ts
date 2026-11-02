@@ -3,7 +3,7 @@
 // deployment's own repository, GitHub's, read with the App and kept for 5 minutes, on any other; every refusal; and the
 // row a write's transaction locks. Unhappy paths give it a faulty GitHub or an unreachable Postgres; nothing intercepts
 // a request.
-import { ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted } from "effect"
+import { Clock, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -668,13 +668,14 @@ describe("claiming the read of an expired row", () => {
 
   test("a claim that waited for the row gets a lease counted from when it got it", async () => {
     await expired()
-    const { done } = await holdRow(700)
+    // Held 500 ms, inside a claim's 1 s lock wait, against a 100 ms lease.
+    const { done } = await holdRow(500)
     const startedAt = Date.now()
-    const claiming = claim(undefined, 300)
+    const claiming = claim(undefined, 100)
     await done
     const claimed = await claiming
     // The claim waited for the row: longer than its lease, which still runs from when it got the row.
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(500)
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(350)
     expect(claimed._tag).toBe("Some")
     const [{ live }] = await sql(runtime, `SELECT read_until > clock_timestamp() AS live FROM github_repo_roles`) as Array<{ live: boolean }>
     expect(live).toBe(true)
@@ -758,5 +759,124 @@ describe("claiming the read of an expired row", () => {
     expect(results.map((result) => refusal(result)?.code)).toEqual(Array(5).fill("unavailable"))
     expect(tookMillis).toBeLessThan(1_800)
     expect(github.seen("GET", /\/permission$/)).toEqual([])
+  })
+})
+
+// Fable's review of 265e9898, 2026-11-02: a rate limit cools the next reads too, for GitHub's own wait.
+describe("a rate limit cools the reads after it", () => {
+  test("a burst for one expired row under GitHub's 429 asks GitHub once, and each is refused rate_limited with the wait", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "30" } })
+    const made = await roles(github)
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
+    const results = await Promise.all(Array.from({ length: 6 }, () => resolve(made)))
+    expect(results.map((result) => refusal(result)?.code)).toEqual(Array(6).fill("rate_limited"))
+    for (const result of results) expect(refusal(result)?.retryAfterSeconds).toBeGreaterThanOrEqual(25)
+    // The next request inside GitHub's wait asks no one either.
+    expect(refusal(await resolve(made))?.code).toBe("rate_limited")
+    expect(github.seen("GET", /\/permission$/)).toHaveLength(1)
+  })
+})
+
+// Codex review of c4a86962: migration 0091 adds its CHECK without validating the table's rows, so it never scans the
+// table under its ACCESS EXCLUSIVE lock; new rows are still checked.
+describe("migration 0091 on a populated table", () => {
+  test("adds read_refusal with a CHECK it doesn't validate against existing rows, and checks new ones", async () => {
+    const migration = (await import("../../db/migrations/0091_github_repo_role_read_refusal.ts")).default
+    await sql(runtime, `ALTER TABLE github_repo_roles DROP COLUMN read_refusal`)
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role)
+      SELECT 'github/acme/r' || n, '${MAYA}', 'member' FROM generate_series(1, 200) AS n`)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(migration)))
+    expect(await sql(runtime, `SELECT count(*)::int AS n FROM github_repo_roles WHERE read_refusal IS NULL`)).toEqual([{ n: 200 }])
+    expect(await sql(runtime, `SELECT convalidated FROM pg_constraint
+      WHERE conrelid = 'github_repo_roles'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%read_refusal%'`))
+      .toEqual([{ convalidated: false }])
+    await expect(sql(runtime, `UPDATE github_repo_roles SET read_refusal = 'nonsense' WHERE repo_id = 'github/acme/r1'`)).rejects.toThrow()
+  })
+})
+
+// Codex review of c4a86962: a rate limit's hold runs from GitHub's refusal, not from when its cleanup got the row.
+describe("a rate limit's hold", () => {
+  test("ends GitHub's wait after the refusal, however long the cleanup waited, and answers what is left of it", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    let refuseNow: () => void = () => {}
+    const refusing = new Promise<void>((resolve) => { refuseNow = resolve })
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "3" }, hold: () => refusing })
+    const made = await roles(github, { refreshDeadline: "6 seconds" })
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
+    const answering = resolve(made)
+    await vi.waitFor(() => expect(github.seen("GET", /\/permission$/)).toHaveLength(1), { timeout: 5_000 })
+    // A migration's lock on the whole table for 1.5 s from just before GitHub refuses: the cleanup waits for it.
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const locked = Effect.runSync(Deferred.make<void>())
+    const held = runtime.runPromise(Effect.provide(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`LOCK TABLE github_repo_roles IN ACCESS EXCLUSIVE MODE`
+        yield* Deferred.succeed(locked, undefined)
+        yield* Effect.promise(() => new Promise((done) => setTimeout(done, 1_500)))
+      }))), scratch.database))
+    await Effect.runPromise(Deferred.await(locked))
+    const refusedAt = Date.now()
+    refuseNow()
+    const answered = refusal(await answering)
+    expect(Date.now() - refusedAt).toBeGreaterThanOrEqual(1_200)
+    await held
+    // The persisted hold ends 3 s after the refusal, not 3 s after the cleanup got the table.
+    const [{ endsAt }] = await sql(runtime, `SELECT (EXTRACT(EPOCH FROM read_until) * 1000)::float8 AS "endsAt" FROM github_repo_roles`) as Array<{ endsAt: number }>
+    expect(endsAt - refusedAt).toBeGreaterThan(2_600)
+    expect(endsAt - refusedAt).toBeLessThan(3_400)
+    // The answer is what is left of it: 1.5 s of the 3 s went to the cleanup.
+    expect(answered?.code).toBe("rate_limited")
+    expect(answered?.retryAfterSeconds).toBeLessThanOrEqual(2)
+  })
+
+})
+
+// Codex review of 50b7e135: the hold is in the database's clock, so the Worker's clock can't stretch or erase it.
+describe("a cooling hold in the database's clock", () => {
+  const expired = () => sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+    VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
+  /** The real clock, its wall time `offsetMillis` off; its monotonic time is the real one. */
+  const offset = (offsetMillis: number): Clock.Clock => {
+    const real = Effect.runSync(Effect.service(Clock.Clock))
+    return Object.assign(Object.create(real) as Clock.Clock, {
+      currentTimeMillisUnsafe: () => real.currentTimeMillisUnsafe() + offsetMillis,
+      currentTimeMillis: Effect.sync(() => real.currentTimeMillisUnsafe() + offsetMillis),
+      currentTimeNanosUnsafe: () => real.currentTimeNanosUnsafe() + BigInt(offsetMillis) * 1_000_000n,
+      currentTimeNanos: Effect.sync(() => real.currentTimeNanosUnsafe() + BigInt(offsetMillis) * 1_000_000n),
+    })
+  }
+  const resolveOn = (made: RepoRoles.RepoRoles, clock: Clock.Clock) =>
+    Effect.runPromise(Effect.result(made.resolve(maya, OTHER).pipe(Effect.provideService(Clock.Clock, clock))))
+  const heldFor = async () => {
+    const [{ heldMillis }] = await sql(runtime, `SELECT (EXTRACT(EPOCH FROM read_until - clock_timestamp()) * 1000)::float8 AS "heldMillis" FROM github_repo_roles`) as Array<{ heldMillis: number }>
+    return heldMillis
+  }
+
+  test.each([120_000, -120_000])("a Worker clock %i ms off still holds GitHub's 3 s wait, and answers it", async (offsetMillis) => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "3" } })
+    const made = await roles(github)
+    await expired()
+    const answered = refusal(await resolveOn(made, offset(offsetMillis)))
+    expect(answered?.code).toBe("rate_limited")
+    expect(answered?.retryAfterSeconds).toBeGreaterThanOrEqual(2)
+    expect(answered?.retryAfterSeconds).toBeLessThanOrEqual(3)
+    const held = await heldFor()
+    expect(held).toBeGreaterThan(2_000)
+    expect(held).toBeLessThanOrEqual(3_000)
+  })
+
+  test("a wait past 60 s holds 60 s", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "100000" } })
+    const made = await roles(github)
+    await expired()
+    const answered = refusal(await resolve(made))
+    expect(answered?.retryAfterSeconds).toBeLessThanOrEqual(60)
+    expect(await heldFor()).toBeLessThanOrEqual(60_000)
   })
 })
