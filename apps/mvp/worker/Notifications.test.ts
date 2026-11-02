@@ -63,7 +63,7 @@ const wait = (execution = "run/call/0.0") => ({
 })
 
 /** A tracked branch of `repoId` with its conversation, as `branch/track` records one. */
-const branch = async (repoId = REPOSITORY.id, name = `feature-${crypto.randomUUID().slice(0, 8)}`) => {
+const branch = async (repoId: string = REPOSITORY.id, name = `feature-${crypto.randomUUID().slice(0, 8)}`) => {
   const branchId = crypto.randomUUID()
   const conversationId = crypto.randomUUID()
   await sql(`INSERT INTO branches (id, repo_id, name, mode) VALUES ($1, $2, $3, 'open')`, branchId, repoId, name)
@@ -164,10 +164,11 @@ describe("a run's reports route to its launcher and the people on its branch", (
       expect.objectContaining({ recipient: "person-ann", state: "working", mine: true, quiet: false, version: 1 }),
       expect.objectContaining({ recipient: "person-ben", state: "working", mine: false, quiet: true, version: 1 }),
     ])
+    // A watcher's row says only that an agent runs there, and links to it: never the question or who asked.
     expect(await rowOf(subject, "person-ben")).toMatchObject({
       kind: "run",
-      actor: "ann",
-      title: "Deploy the docs preview sentinel-7c1d",
+      actor: null,
+      title: expect.stringMatching(/^Agent run/),
       href: "/app",
     })
 
@@ -205,7 +206,8 @@ describe("a run's reports route to its launcher and the people on its branch", (
 
     expect(a.count(Notifications.routed, { kind: "run", state: "done" })).toBe(2)
     expect(a.span("runs.fold").length).toBeGreaterThan(0)
-    // No record carries a question or a title.
+    // No record carries a question or a title, and no one but the launcher has them.
+    expect(JSON.stringify((await rows(subject)).filter((row) => row.recipient !== "person-ann"))).not.toMatch(/sentinel-7c1d|Which/)
     expect(recorded(a)).not.toContain("sentinel-7c1d")
     expect(recorded(a)).not.toContain("Which branch")
   })
@@ -755,5 +757,56 @@ describe("repoEventOf and titleOf", () => {
     expect(Notifications.titleOf("x".repeat(100))).toBe(`${"x".repeat(79)}…`)
     expect(Notifications.titleOf("  \nsecond line")).toBeNull()
     expect(Notifications.titleOf(null)).toBeNull()
+  })
+})
+
+describe("a run on a repository's branch quotes its question only to its launcher (decision 0079)", () => {
+  /** A run of `launcher`'s on a new branch of acme/gizmos (`named`, else a fresh name), which `watcher` follows. */
+  const run = async (launcher: string, watcher: string, named?: string) => {
+    const { branchId, conversationId, name } = await branch("github/acme/gizmos", named)
+    await sql(`INSERT INTO watches (principal_id, subject, level) VALUES ($1, $2, 'all')`, watcher, `branch:${branchId}`)
+    const runId = crypto.randomUUID()
+    await sql(`INSERT INTO runs (id, flow, status, waiting, wait, version, launched_by, conversation_id, branch_id, repo_id)
+      VALUES ($1, 'agent', 'needs_you', 'input', $2::jsonb, 1, $3, $4, $5, 'github/acme/gizmos')`,
+      runId, JSON.stringify({ ...wait(), prompt: "Ship the acquisition sentinel-5e2f?" }), launcher, conversationId, branchId)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Notifications.foldRun(runId, "lena"))))
+    return { runId, place: `Agent run · acme/gizmos/${name}` }
+  }
+
+  test("a watcher whose access there ended reads the run, the repository and the branch, and the link; never the question", async () => {
+    const { runId, place } = await run("person-lena", "person-wes")
+    const watcherRow = await rowOf(Notifications.runSubject(runId), "person-wes")
+    expect(watcherRow).toMatchObject({ title: place, actor: null })
+    expect(JSON.stringify(watcherRow)).not.toMatch(/sentinel-5e2f|lena/)
+    expect(await rowOf(Notifications.runSubject(runId), "person-lena")).toMatchObject({
+      title: "Ship the acquisition sentinel-5e2f?",
+      actor: "lena",
+    })
+  })
+
+  test("a launcher whose first role read never heard from GitHub still hears of their run", async () => {
+    await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at) VALUES ('github/acme/gizmos', 'person-una', NULL, '-infinity')
+      ON CONFLICT (repo_id, person_id) DO UPDATE SET role = NULL, checked_at = '-infinity'`)
+    const { runId } = await run("person-una", "person-wes")
+    expect(await rowOf(Notifications.runSubject(runId), "person-una")).toMatchObject({ title: "Ship the acquisition sentinel-5e2f?" })
+  })
+
+  test("a launcher whose cached role there says none or less than a Member hears nothing of it", async () => {
+    for (const [launcher, role] of [["person-lex", null], ["person-gia", "guest"]] as const) {
+      await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/gizmos', $1, $2)
+        ON CONFLICT (repo_id, person_id) DO UPDATE SET role = EXCLUDED.role`, launcher, role)
+      const { runId, place } = await run(launcher, "person-wes")
+      expect(await rowOf(Notifications.runSubject(runId), launcher)).toBeUndefined()
+      expect(await rowOf(Notifications.runSubject(runId), "person-wes")).toMatchObject({ title: place })
+    }
+  })
+
+  test("a 255-character branch name is cut to a title's length", async () => {
+    const long = `b${"x".repeat(254)}`
+    const { runId } = await run("person-lena", "person-wes", long)
+    const live = (await rowOf(Notifications.runSubject(runId), "person-wes"))!.title!
+    expect(live).toHaveLength(80)
+    expect(live.startsWith("Agent run · acme/gizmos/bxxx")).toBe(true)
+    expect(live.endsWith("…")).toBe(true)
   })
 })

@@ -187,11 +187,22 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
       SELECT recipient, state, mine, quiet, title, version FROM notifications WHERE subject = ${subject} FOR UPDATE`
     const before = new Map(existing.map((row) => [row.recipient, row]))
     // Every recipient hears only of a branch they may still open (worker/branch/Access.ts): only a Member follows one
-    // (`watch`), so each is checked as one, against the branch's shares as they are now.
+    // (`watch`), so each is checked as one, against the branch's shares as they are now. Their role on the branch's
+    // repository is the deployment's, not necessarily their access there, so only the launcher's row quotes the run,
+    // and not while a recorded read there (`github_repo_roles`) says they hold none or less than a Member's. A row a
+    // read claimed before GitHub answered (`checked_at` -infinity) recorded nothing.
     const policy = run.branchId === null ? undefined : yield* policyOf(run.branchId)
-    const mayRead = (principal: string) => run.branchId === null
-      ? principal === run.launchedBy
-      : policy !== undefined && canView(underPolicy(policy, principal, "member"))
+    const [launcher] = run.repoId === null ? [] : yield* sql<{ readonly revoked: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM github_repo_roles WHERE repo_id = ${run.repoId} AND person_id = ${run.launchedBy}
+          AND checked_at <> '-infinity' AND (role IS NULL OR role NOT IN ('member', 'maintainer', 'admin'))
+      ) AS revoked`
+    const mayRead = (principal: string) =>
+      principal === run.launchedBy && launcher?.revoked === true
+        ? false
+        : run.branchId === null
+        ? principal === run.launchedBy
+        : policy !== undefined && canView(underPolicy(policy, principal, "member"))
     const deliveries = Inbox.route({
       launcher: run.launchedBy,
       state,
@@ -216,9 +227,14 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
       ? `${repoPath(run.repoId)}/tree/${run.branchName}`
       : HOME_HREF
     let written = 0
+    // What anyone but the launcher reads: the run, its repository and branch, and the link. The page checks access.
+    const place = run.repoId !== null && run.branchName !== null ? `${repoPath(run.repoId).slice(1)}/${run.branchName}` : null
+    // Cut to a title's length (`titleOf`): a branch's name may be longer than a row holds.
+    const shared = place === null ? "Agent run" : titleOf(`Agent run · ${place}`) ?? "Agent run"
     for (const delivery of all) {
       const old = before.get(delivery.recipient)
-      const title = delivery.state === "needs_you" ? titleOf(run.prompt) : titleOf(run.question)
+      const own = delivery.recipient === run.launchedBy
+      const title = !own ? shared : delivery.state === "needs_you" ? titleOf(run.prompt) : titleOf(run.question)
       if (old !== undefined && old.state === delivery.state && old.quiet === delivery.quiet && old.title === title) continue
       // A run that asks again while it still needs the person asks a new question: it shows again too.
       const again = old !== undefined && delivery.state === "needs_you" && old.state === "needs_you" && old.title !== title
@@ -231,10 +247,11 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
         INSERT INTO notifications (recipient, subject, kind, state, mine, quiet, run_id, repo_id, conversation_id, actor,
           title, href, version)
         VALUES (${delivery.recipient}, ${subject}, 'run', ${delivery.state}, ${delivery.mine}, ${delivery.quiet}, ${runId},
-          ${run.repoId}, ${run.conversationId}, ${launcherLogin ?? null}, ${title}, ${href}, ${version})
+          ${run.repoId}, ${run.conversationId}, ${own ? launcherLogin ?? null : null}, ${title}, ${href}, ${version})
         ON CONFLICT (recipient, subject) DO UPDATE SET
           state = EXCLUDED.state, mine = EXCLUDED.mine, quiet = EXCLUDED.quiet, title = EXCLUDED.title,
-          actor = COALESCE(EXCLUDED.actor, notifications.actor), href = EXCLUDED.href, version = EXCLUDED.version,
+          actor = CASE WHEN EXCLUDED.mine THEN COALESCE(EXCLUDED.actor, notifications.actor) END, href = EXCLUDED.href,
+          version = EXCLUDED.version,
           occurred_at = now(), updated_at = now()`
       written += 1
       yield* Metric.update(Metric.withAttributes(routed, { kind: "run", state: delivery.state }), 1)
@@ -314,7 +331,7 @@ export const repoEventOf = (
           kind: "main",
           repoId: repository.id,
           ref: push.after,
-          title: `${repository.owner}/${repository.name}`,
+          title: titleOf(`${repository.owner}/${repository.name}`),
           actor: null,
           occurredAt: typeof push.repository.pushed_at === "number" ? new Date(push.repository.pushed_at * 1000) : now,
           href: path,
@@ -328,7 +345,7 @@ export const repoEventOf = (
         kind: "release",
         repoId: repository.id,
         ref: published.release.tag_name,
-        title: `${repository.owner}/${repository.name}`,
+        title: titleOf(`${repository.owner}/${repository.name}`),
         actor: null,
         occurredAt: Number.isNaN(at) ? now : new Date(at),
         href: `${path}/tree/${published.release.tag_name}`,
