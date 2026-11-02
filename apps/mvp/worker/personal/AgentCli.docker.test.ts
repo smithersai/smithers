@@ -6,12 +6,11 @@
 import { execFile, spawnSync } from "node:child_process"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import { fileURLToPath } from "node:url"
+import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import * as Agents from "./Agents.ts"
 
-const image = "smithers-branch-sandbox:test"
-const context = fileURLToPath(new URL("../../infra/sandbox", import.meta.url))
+const image = sandboxImage
 const PLACEHOLDER = `smthrs-secret-${"cd".repeat(32)}`
 /** The person's numeric user as a box maps it. `SANDBOX_TEST_USER` overrides it where rootless containers can't map that id. */
 const PERSON = process.env["SANDBOX_TEST_USER"] ?? "585780777:2000"
@@ -128,7 +127,6 @@ describe.skipIf(!present)("a subscription's agent in a real box", () => {
     )
 
   beforeAll(async () => {
-    must(["build", "-t", image, context])
     server = createServer(vendor)
     await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", resolve))
     port = (server.address() as AddressInfo).port

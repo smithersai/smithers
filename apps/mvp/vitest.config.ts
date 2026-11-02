@@ -15,7 +15,8 @@ export default defineConfig({
       fileURLToPath(new URL("../../packages/repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
       fileURLToPath(new URL("../../packages/repo-targets/test-utils/test-process-environment.mjs", import.meta.url)),
       // A fresh Electric replication connection for the run (db/ElectricReplication.ts).
-      fileURLToPath(new URL("./db/electricReplication.globalSetup.ts", import.meta.url))
+      fileURLToPath(new URL("./db/electricReplication.globalSetup.ts", import.meta.url)),
+      fileURLToPath(new URL("./worker/test/sandboxImage.globalSetup.ts", import.meta.url))
     ],
     include: [
       "PACKAGE.test.ts",

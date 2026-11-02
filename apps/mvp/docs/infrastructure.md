@@ -591,3 +591,5 @@ even if reading the body fails. Compare the failed read with its proxy record
 and the serving Workers' invocation outcomes and wall/CPU durations. Aggregate
 success counts alone cannot establish that a particular body reached a client;
 a later successful probe does not resolve an earlier truncation.
+
+The real sandbox Docker suites share `worker/test/sandboxImage.globalSetup.ts`: when selected, they pack this checkout’s CLI with `infra/sandbox/pack-cli.mjs` and build the deployment Dockerfile once before test workers start. A targeted run without these suites does no image work.

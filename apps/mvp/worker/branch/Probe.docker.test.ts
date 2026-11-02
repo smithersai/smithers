@@ -1,12 +1,11 @@
 // The idle probe in a real branch sandbox: PID 1 is tini, which reaps orphans. The probe still ignores zombies and
 // the box's own idle process. A person's running process keeps it awake. Skips only when Docker is absent.
 import { execFileSync, spawnSync } from "node:child_process"
-import { fileURLToPath } from "node:url"
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest"
+import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { PROBE } from "./Machine.ts"
 
-const image = "smithers-branch-sandbox:test"
-const context = fileURLToPath(new URL("../../infra/sandbox", import.meta.url))
+const image = sandboxImage
 
 const docker = (args: ReadonlyArray<string>) => spawnSync("docker", args, { encoding: "utf8" })
 const present = docker(["--version"]).status === 0
@@ -31,10 +30,6 @@ const zombies = () => Number(read([
 const probe = () => exec("0:0", ["sh", "-c", PROBE, "probe", "60"])
 
 describe.skipIf(!present)("the idle probe in a real container", () => {
-  beforeAll(() => {
-    execFileSync("docker", ["build", "-t", image, context], { stdio: "inherit" })
-  }, 600_000)
-
   beforeEach(() => {
     const started = docker(["run", "-d", "--rm", image])
     container = started.stdout.trim()

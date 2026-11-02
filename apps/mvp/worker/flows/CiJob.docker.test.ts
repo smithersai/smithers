@@ -2,13 +2,13 @@
 // sandbox's image (infra/sandbox), checking out one commit of a public GitHub repository by its id with the machine's
 // own checkout (worker/branch/Checkout.ts) and running its steps with `docker exec`. Two jobs run on two containers at
 // once; one exits 1 and settles failed while its sibling settles passed. Skips only when Docker is absent.
-import { execFileSync, spawn, spawnSync } from "node:child_process"
-import { fileURLToPath } from "node:url"
+import { spawn, spawnSync } from "node:child_process"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { CiJob, type SandboxTools } from "@smthrs/sandbox"
 import { Effect, Exit, Layer, Schema } from "effect"
-import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
+import { afterAll, describe, expect, test } from "vitest"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
 import { checkoutArgv } from "../branch/Checkout.ts"
 import { noCommands } from "../test/commands.ts"
@@ -17,13 +17,12 @@ import { CheckoutFailed } from "../branch/Sandboxes.ts"
 import { runFlow } from "../test/flowHost.ts"
 import * as CiJobMachine from "./CiJobMachine.ts"
 
-const image = "smithers-branch-sandbox:test"
+const image = sandboxImage
 /**
  * Who a job's commands run as in the box: a user of its own in the `workspace` group, as the machine runs the `ci`
  * user's (worker/branch/Users.ts), never root and never the box's own `smithers`, whose idle process keeps it up.
  */
 const BOX_USER = "104242:2000"
-const context = fileURLToPath(new URL("../../infra/sandbox", import.meta.url))
 const docker = (args: ReadonlyArray<string>) => spawnSync("docker", args, { encoding: "utf8" })
 const present = docker(["--version"]).status === 0
 
@@ -100,10 +99,6 @@ const Pipeline = Flow.make("ci/docker-pipeline", {
 })
 
 describe.skipIf(!present)("CI jobs in real containers", () => {
-  beforeAll(() => {
-    execFileSync("docker", ["build", "-t", image, context], { stdio: "inherit" })
-  }, 900_000)
-
   test("two jobs on two machines at once: node and pnpm at the commit pass, a job that exits 1 fails", async () => {
     const target: CiJob.Target = { run: `ci:docker-${Date.now()}`, repo: REPO, sha, ref: "refs/heads/main" }
     const registration = Layer.mergeAll(

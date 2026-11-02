@@ -9,12 +9,11 @@ import { execFileSync, spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { CONTAINER_CA, SETUP, TRUST } from "./SandboxEgress.ts"
 
-const image = "smithers-branch-sandbox:test"
-const context = fileURLToPath(new URL("../../infra/sandbox", import.meta.url))
+const image = sandboxImage
 const PLACEHOLDER = `smthrs-secret-${"ab".repeat(32)}`
 /** A person's numeric user in the `workspace` group, with no passwd entry, as a deployed box runs a shell. */
 const PERSON = "585780777:2000"
@@ -29,10 +28,6 @@ const must = (args: ReadonlyArray<string>, input?: string) => {
   if (run.status !== 0) throw new Error(`docker ${args[0]} failed (${run.status}): ${(run.stdout + run.stderr).slice(-4000)}`)
   return run.stdout
 }
-
-beforeAll(() => {
-  if (present) must(["build", "-t", image, context])
-}, 900_000)
 
 /** A running box: its id, a root shell, a script run as root with `input` on stdin, and a person's login shell. */
 const box = () => {
