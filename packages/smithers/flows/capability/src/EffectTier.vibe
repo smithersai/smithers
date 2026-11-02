@@ -4,8 +4,6 @@
  * @since 0.1.0
  */
 
-import { Schema } from "effect"
-
 /**
  * Schema for the durability and retry semantics of an effect.
  *

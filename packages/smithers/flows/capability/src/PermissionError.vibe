@@ -4,10 +4,9 @@
  * @since 0.1.0
  */
 
-import { Schema } from "effect"
-import { GrantStoreError } from "./GrantStoreError.ts"
-import { PermissionDenied } from "./PermissionDenied.ts"
-import { PermissionRequired } from "./PermissionRequired.ts"
+import { GrantStoreError } from "./GrantStoreError.vibe"
+import { PermissionDenied } from "./PermissionDenied.vibe"
+import { PermissionRequired } from "./PermissionRequired.vibe"
 
 /**
  * Every failure the capability kernel can add to a guarded Host call.

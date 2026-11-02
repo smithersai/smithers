@@ -3,12 +3,9 @@
  *
  * @since 0.1.0
  */
-
-import { Option } from "effect"
-import type { PlatformError } from "effect/PlatformError"
-import { isPermissionError } from "./isPermissionError.ts"
-import type { PermissionErrorPayload } from "./PermissionErrorPayload.ts"
-
+import { Option } from "effect";
+import type { PlatformError } from "effect/PlatformError";
+import type { PermissionErrorPayload } from "./PermissionErrorPayload.ts";
 /**
  * Recovers the structured permission failure a `toPlatformError`
  * projection carries, so an attended surface can still reply to the request
@@ -21,7 +18,4 @@ import type { PermissionErrorPayload } from "./PermissionErrorPayload.ts"
  * @since 0.1.0
  * @slop
  */
-export const fromPlatformError = (error: PlatformError): Option.Option<PermissionErrorPayload> =>
-  error.reason._tag === "PermissionDenied" && isPermissionError(error.reason.cause)
-    ? Option.some(error.reason.cause)
-    : Option.none()
+export declare const fromPlatformError: (error: PlatformError) => Option.Option<PermissionErrorPayload>;

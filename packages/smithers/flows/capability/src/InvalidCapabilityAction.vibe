@@ -4,8 +4,6 @@
  * @since 0.1.0
  */
 
-import { Schema } from "effect"
-
 /**
  * An action outside the closed vocabulary was handed to {@link format}.
  * `code` is always `invalid_capability_action`.

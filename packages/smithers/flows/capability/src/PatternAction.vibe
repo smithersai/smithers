@@ -5,8 +5,7 @@
  * @since 0.1.0
  */
 
-import { Schema } from "effect"
-import { Action } from "./Action.ts"
+import { Action } from "./Action.vibe"
 
 /**
  * Schema for action selectors accepted in capability patterns.

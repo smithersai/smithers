@@ -5,12 +5,12 @@
  */
 
 import { matches, withinMatchBudget } from "./Capability.ts"
-import type { Capability } from "./ExactCapability.ts"
+import type { Capability } from "./ExactCapability.vibe"
 import { dotSegmentForms } from "./internal/hasDotSegment.ts"
 import { matchesAction } from "./internal/matchesAction.ts"
 import { matchesResource } from "./internal/matchesResource.ts"
-import type { Rule } from "./Rule.ts"
-import type { RuleEffect } from "./RuleEffect.ts"
+import type { Rule } from "./Rule.vibe"
+import type { RuleEffect } from "./RuleEffect.vibe"
 
 /**
  * Evaluates ordered permission rules.

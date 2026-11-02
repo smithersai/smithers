@@ -4,8 +4,7 @@
  * @since 0.1.0
  */
 
-import { Option } from "effect"
-import { CapabilityPattern } from "./CapabilityPattern.ts"
+import { CapabilityPattern } from "./CapabilityPattern.vibe"
 import { isPatternAction } from "./internal/isPatternAction.ts"
 import { maxResourceLength } from "./maxResourceLength.ts"
 
@@ -30,7 +29,7 @@ import { maxResourceLength } from "./maxResourceLength.ts"
  * @category parsing
  * @slop
  */
-export const parsePattern = (input: string): Option.Option<CapabilityPattern> => {
+export const parsePattern = (input: string): Option<CapabilityPattern> => {
   const components = input.split(":")
   if (components[0] === "*") {
     if (components.length < 2) {

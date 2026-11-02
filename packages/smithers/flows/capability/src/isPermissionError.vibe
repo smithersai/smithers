@@ -5,10 +5,9 @@
  */
 
 import { isRecord } from "@smthrs/canonical"
-import { Schema } from "effect"
 import { Action, EffectTier, maxResourceLength } from "./Capability.ts"
-import { GrantStoreError } from "./GrantStoreError.ts"
-import { GrantStoreErrorCode } from "./GrantStoreErrorCode.ts"
+import { GrantStoreError } from "./GrantStoreError.vibe"
+import { GrantStoreErrorCode } from "./GrantStoreErrorCode.vibe"
 import { isPlainObject } from "./internal/isPlainObject.ts"
 import type { PermissionErrorPayload } from "./PermissionErrorPayload.ts"
 

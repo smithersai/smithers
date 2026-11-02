@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { PatternAction } from "../PatternAction.ts"
+import { PatternAction } from "../PatternAction.vibe"
 
 const patternActions: ReadonlySet<string> = new Set(PatternAction.literals)
 
