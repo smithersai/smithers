@@ -29,10 +29,12 @@ node ops/issues/track.mjs comment --repo smithersai/vibelang --issue <N> --body-
 node ops/issues/track.mjs parent  --repo smithersai/smithers --issue <N> --parent smithersai/vibelang#<M>
 ```
 
-- **Who writes.** The identity file at `--identity` or `$SMITHERS_ISSUE_IDENTITY`: JSON with `login`, and `cookie` plus `personId` (issues and comments), `runnerToken` (links) and `githubToken` (sub-issues). It refuses to write without the file or as a person's login. `--dry-run` sends nothing and prints each request with each secret named, not shown.
-- **Reuse.** `open` reads the repository's issues shape and reuses an open issue whose body has the same `key: <kind>:<id>` line, or whose normalized title matches; otherwise it creates one with a write id derived from the key. Labels go in the body's marker block, since the writes route takes none.
-- **Public content.** Everything sent goes through `ops/issues/scrub.mjs`: it redacts credentials, home and internal paths, machine names, account names, emails and private repository names (passed at run time, never committed), and fails closed, exit 2, on a title, label or ref that needs a redaction.
-- **Sub-issues.** GitHub's, with its limits checked first: 100 children per parent, eight levels, the same owner (any repository of it).
+- **Who writes.** The identity file at `--identity` or `$SMITHERS_ISSUE_IDENTITY`: JSON with `login`, and `cookie` plus `personId` (issues and comments), `runnerToken` (links) and `githubToken` (labels and sub-issues, triage on the repository). Before any write it asks who the credentials are, `GET /api/auth/session` for the cookie and GitHub's `GET /user` for the token, and refuses a mismatch with the file or a person's login. `--dry-run` sends nothing and prints each request with each secret named, not shown.
+- **Reuse and labels.** `open` reads the repository's issues shape and reuses an open issue whose body has the same `key: <kind>:<id>` line, or whose normalized title matches; otherwise it creates one with a write id derived from the key. Then it applies the labels on GitHub, creating the missing ones when the token may, and answers `missingLabels` for those it could not; the body's marker block lists them too.
+- **Public content.** Everything sent goes through `ops/issues/scrub.mjs`: it redacts credentials, absolute home and machine paths (never a repository-relative path or a `name@version` file), machine names, account names, emails and private repository names (passed at run time, never committed), and fails closed, exit 2, on a title, label or ref that needs a redaction.
+- **Sub-issues.** GitHub's, with its limits checked first: 100 children per parent, eight levels, the same owner (any repository of it). It looks first: a child already under that parent is a no-op, and one under another parent is refused unless `--replace`.
+- **Pacing.** Every GitHub-bound mutation (an issue or comment through smithers.sh, a label, a sub-issue) waits one 7.5 s slot, 480 an hour and 8 a minute, under GitHub's 500 and 80; work links have their own pacer. A 429, a 503 or a rate-limit 403 waits `retry-after`, else `x-ratelimit-reset`, else a minute doubling.
+- **Filing a plan.** `node ops/issues/file.mjs --plan <plan.jsonl> --state <state.jsonl> [--limit n] [--dry-run]` files the importer's plan in order (the tree, then drafts and the queue, then findings), each row created, attached under its parent, labeled and linked. Each stage goes to the mode-600 state file as it finishes, so a rerun resumes exactly; with the file lost, the `key:` marker finds each issue again.
 - **The importer.** `node ops/issues/import.mjs --out <plan.jsonl> [--draft <source>=<file>]...` reads the open merge-queue entries, the open spec-review and scoped-review findings and the example-repository migration findings on the lane host (read-only), main's pending fuzz gaps, and the agents' drafts; deduplicates by key and title; scrubs; places each in the tree; and writes a mode-600 plan with every dropped record and why. It posts nothing.
 
 ## Routes
@@ -86,7 +88,8 @@ Settings: `E2E_TRACKING_REPOSITORY`, `E2E_TRACKING_RECORDS`, `E2E_TRACKING_SEED_
 | `worker/github/WorkLinks.test.ts` | the route: a Member's and a runner's posts, out-of-order posts, refusals, the list's status and filter, the shape's authorization |
 | `ops/work-links/link.test.ts` | the client's request, its token handling and its waits |
 | `ops/issues/scrub.test.ts` | the public-content scrub: what it redacts, what it keeps, and failing closed |
-| `ops/issues/track.test.ts` | the lane helper: identity refusals, dry runs without secrets, reuse, links, sub-issues and GitHub's limits |
+| `ops/issues/track.test.ts` | the lane helper: identity refusals and verification, dry runs without secrets, reuse, labels, links, pacing and rate limits, look-first sub-issues and GitHub's limits |
+| `ops/issues/file.test.ts` | filing a plan in order, resuming after a crash without creating twice, and finding issues again by key |
 | `ops/issues/sources.test.ts` | the importer's records per source, and the tree's placement, parts and depth |
 | `ops/issue-tracking/records.test.ts` | the import's scrubbing, its records and links, and their order |
 | `e2e/issue-tracking.spec.ts` | production: volume, import, links and status, above |

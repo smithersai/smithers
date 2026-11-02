@@ -1,7 +1,8 @@
 // The public-content scrub for issues on public repositories (ops/issues/track.mjs and ops/issues/import.mjs).
 //
 // Issues on smithersai/smithers and smithersai/vibelang are public. Before any title, body, label, ref or comment
-// leaves this machine it goes through `clean`: it redacts what it can (credentials, home and internal paths, machine
+// leaves this machine it goes through `clean`: it redacts what it can (credentials, absolute home and machine paths,
+// never a repository-relative one, machine
 // names, account names, emails, private repository names) and then checks the result. A field that still breaks a rule
 // after redaction, or one that must never be redacted into shape (a title, a label, a ref, a private key), fails closed:
 // the caller must not post it, and reports the rule that refused it, never the text.
@@ -49,15 +50,25 @@ const redactions = (privateRepos, publicRepos) => [
   ["host", /nyc-?\d+/gi, "[host]"],
   ["host", /\b(?:latitude|(?:mac[ -]?)?mini)\b/gi, "[host]"],
   ["host", /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[host]"],
-  ["email", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "[email]"],
+  ["email", EMAIL, "[email]"],
   // Home paths, whole: `~/x` is as private as `/home/lane/x` on a machine nobody outside can read.
-  ["home-path", /(?:\/(?:Users|home)\/(?:[A-Za-z0-9._-]+)?|\$HOME|\$\{HOME\}|(?<![\w.~])~(?=\/))(?:\/[^\s`'"),\]}>]*)?/g, "[path]"],
+  ["home-path", /(?:(?<![\w.~/-])\/(?:Users|home)\/(?:[A-Za-z0-9._-]+)?|\$HOME|\$\{HOME\}|(?<![\w.~])~(?=\/))(?:\/[^\s`'"),\]}>]*)?/g, "[path]"],
   ["system-path", /(?<![\w./-])\/(?:private|tmp|var|opt|root|mnt|srv|run|data|etc|scratch|Volumes)\/[^\s`'"),\]}>]*/g, "[path]"],
   ["private-repo", qualifiedRepo, (match) => (publicRepos.has(match) ? match : "[repo]")],
   ...privateRepos.filter(distinctive).map((name) => ["private-repo", new RegExp(`(?<![\\w/-])${escape(name)}(?![\\w-])`, "gi"), "[repo]"]),
   ["account", /\b(?:claude|codex|kimi)-\d+[a-z]?\b/gi, "[account]"],
 ]
 
+/**
+ * An email: a local part not glued to a path segment, then a domain of labels that each hold a letter and a real
+ * top-level domain that is not a file extension. So `patches/knip@6.38.0.patch` and `pkg@1.2.3` stay, while
+ * `ops@example.com` goes.
+ */
+const EMAIL = new RegExp(
+  String.raw`(?<![\w./@-])[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]*[A-Za-z][A-Za-z0-9-]*\.)+` +
+    String.raw`(?!(?:patch|tsx?|jsx?|mjs|cjs|mts|cts|md|json|vibex?|go|txt|log|ya?ml|toml|lock|css|html|png|svg|zip|tgz|gz)\b)[A-Za-z]{2,24}\b(?![.-]?[\w])`,
+  "g",
+)
 const qualifiedRepo = new RegExp(`\\b(?:${CHECKED_OWNERS.join("|")})\\/[A-Za-z0-9._-]+(?<![.])`, "g")
 /** Token-shaped: a run of 24 or more holding upper case, lower case and a digit, or of 32 or more letters past f and digits. */
 const opaque = (text) =>
@@ -72,10 +83,10 @@ const distinctive = (name) => typeof name === "string" && (name.includes("-") ||
 
 /** Rules a field must meet after redaction. A field that breaks one fails closed. */
 const checks = (privateRepos, publicRepos) => [
-  ["home-path", /\/(?:Users|home)\//],
+  ["home-path", /(?<![\w.~/-])\/(?:Users|home)\//],
   ["host", /nyc-?\d+|\b[a-z0-9-]+\.local\b|\b(?:latitude|mini)\b/i],
   ["account", /\b(?:claude|codex)-\d+\b/i],
-  ["email", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/],
+  ["email", new RegExp(EMAIL.source)],
   ["credential", /-----BEGIN [A-Z ]*PRIVATE KEY|\b(?:gh[pousr]_|github_pat_|sk-|xox[abpr]-|glpat-)[A-Za-z0-9_]{12,}/],
   ["private-repo", new RegExp(`\\b(?:${CHECKED_OWNERS.join("|")})\\/[A-Za-z0-9._-]+`, "g"), (match) => !publicRepos.has(match)],
   ...privateRepos.map((name) => ["private-repo", new RegExp(`(?:^|[\\s/:(\`'"])(?:${CHECKED_OWNERS.join("|")})\\/${escape(name)}(?![\\w-])`, "i")]),

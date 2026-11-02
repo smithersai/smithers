@@ -25,6 +25,15 @@ describe("the public-content scrub", () => {
     expect(clean(text)).toMatchObject({ ok: true, text, rules: [] })
   })
 
+  test("keeps repository-relative paths and name@version files, while absolute paths and emails beside them go", () => {
+    for (const kept of ["packages/website/src/page/home/notePlayerDemo.ts", "patches/knip@6.38.0.patch", "src/Users/list.ts", "pkg@1.2.3", "@alchemy.run/aws"]) {
+      expect(clean(kept)).toMatchObject({ ok: true, text: kept, rules: [] })
+      expect(clean(kept, { kind: "exact" })).toMatchObject({ ok: true })
+    }
+    const out = clean("packages/website/src/page/home/notePlayerDemo.ts from /home/lane/x, patches/knip@6.38.0.patch, mail ops@example.com")
+    expect(out.text).toBe("packages/website/src/page/home/notePlayerDemo.ts from [path], patches/knip@6.38.0.patch, mail [email]")
+  })
+
   test("redacts a private repository, qualified always and bare when distinctive, from names it is given", () => {
     const out = clean("see smithersai/Secret-Vault, Secret-Vault itself, smithersai/ui, and smithersai/smithers", { privateRepos: ["Secret-Vault", "ui"] })
     expect(out.text).toBe("see [repo], [repo] itself, [repo], and smithersai/smithers")

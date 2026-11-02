@@ -9,24 +9,35 @@
 //   node ops/issues/track.mjs comment --repo <o/n> --issue <N> --body-file <f> [--dry-run]
 //   node ops/issues/track.mjs parent  --repo <o/n> --issue <N> --parent <o/n>#<M> [--replace] [--dry-run]
 //
+// Filing a whole import plan, paced and resumable, is ops/issues/file.mjs, which uses these parts.
+//
 // Who: the identity file at --identity or $SMITHERS_ISSUE_IDENTITY, JSON:
 //   { "login": "<GitHub login>", "personId": "...", "cookie": "<smithers.sh session cookie header>",
-//     "runnerToken": "<runner token>", "githubToken": "<GitHub token, for sub-issues>" }
-// It never writes unless that file exists and its login is set and is not a person's (`PEOPLE`, Will's login): the
-// author is an agent identity. Secrets are read from the file only, never from argv, and never printed.
+//     "runnerToken": "<runner token>", "githubToken": "<GitHub token with triage on the repository>" }
+// Before any write it asks who each credential belongs to: smithers.sh's `GET /api/auth/session` for the cookie (its
+// person and login) and GitHub's `GET /user` for the token (its login). It refuses when either differs from the file's
+// login or person, or when any of them is a person's login (`PEOPLE`, Will's): the author is an agent identity.
+// Secrets are read from the file only, never from argv, and never printed.
 //
 // Everything sent goes through the public-content scrub (scrub.mjs) first; a field that cannot be made clean stops
 // the command with the field and rule named, exit 2. `--dry-run` prints every request it would make, with
 // credentials shown as `[identity <field>]`, and sends nothing.
 //
-// `open` searches before it creates: an open issue whose normalized title matches, or whose body carries the
-// `key: <kind:id>` marker line, is reused and its number printed. Labels go in the body's marker block, since the
-// writes route takes no labels yet (docs/features/issues.md#routes).
+// `open` searches before it creates: an open issue whose body carries the `key: <kind:id>` marker line, or whose
+// normalized title matches, is reused and its number printed. Then it applies the labels on GitHub, creating any the
+// repository lacks when the token may, and says which it could not; the body's marker block keeps them too.
+//
+// Pacing: every mutation bound for GitHub (an issue or comment through smithers.sh, a label, a sub-issue) waits for
+// the GitHub pacer, one every 7.5 s by default (480 an hour, 8 a minute), under GitHub's secondary limits of 500 content
+// creations an hour and 80 a minute (docs.github.com, "Rate limits for the REST API", checked 2026-11-02). smithers.sh's
+// own writes (work links) have their own pacer. A 429, a 503, or a 403 that says it is a rate limit waits for
+// `retry-after`, else `x-ratelimit-reset`, else a minute doubling to 30, and tries again, at most 8 times.
 //
 // Sub-issues are GitHub's own (`POST /repos/{o}/{n}/issues/{parent}/sub_issues` with the child's issue id). GitHub's
 // limits, checked 2026-11-02 (docs.github.com, "Adding sub-issues" and REST "Sub-issues"): 100 sub-issues per parent,
 // eight levels of nesting, and the child must belong to the same repository owner as the parent (another repository
-// of the same owner is fine). Each is checked before the write and refused with its name.
+// of the same owner is fine). It looks first: a child already under that parent is a no-op, and a child under another
+// parent is refused unless `--replace`.
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { parseArgs } from "node:util"
@@ -36,6 +47,11 @@ import { cleanRecord } from "./scrub.mjs"
 export const PEOPLE = ["roninjin10"]
 export const MAX_SUB_ISSUES = 100
 export const MAX_DEPTH = 8
+/** One GitHub-bound mutation every 7.5 s: 480 an hour and 8 a minute, under 500 and 80. */
+export const GITHUB_EVERY_MS = 7500
+/** smithers.sh's own writes, which create nothing on GitHub. */
+export const SMITHERS_EVERY_MS = 500
+const GITHUB_API = "https://api.github.com"
 const KINDS = ["assignee", "session", "queue", "pr", "merge", "review"]
 const STATES = ["working", "queued", "open", "passed", "failed", "merged", "done", "closed"]
 
@@ -83,9 +99,11 @@ export const parentRefOf = (text) => {
   return { owner: match[1], name: match[2], number: Number(match[3]) }
 }
 
+const isPerson = (login) => typeof login === "string" && PEOPLE.includes(login.trim().toLowerCase())
+
 /**
  * The identity, read from its file, checked for writing. Returns the parsed identity, or throws `Refused` naming why
- * it may not write: no file, no login, or a person's login.
+ * it may not write: no file, no login, or a person's login. Who the credentials belong to is `verifyIdentity`'s.
  */
 export const identityOf = (path, read = (p) => readFileSync(p, "utf8"), exists = existsSync) => {
   if (path === undefined || path === "") throw new Refused("identity", "no identity: set --identity or SMITHERS_ISSUE_IDENTITY", 3)
@@ -98,8 +116,36 @@ export const identityOf = (path, read = (p) => readFileSync(p, "utf8"), exists =
   }
   const login = typeof identity.login === "string" ? identity.login.trim() : ""
   if (login === "") throw new Refused("identity", "the identity names no login", 3)
-  if (PEOPLE.includes(login.toLowerCase())) throw new Refused("identity", `the identity's login is a person's (${login}); issues are written by an agent identity`, 3)
+  if (isPerson(login)) throw new Refused("identity", `the identity's login is a person's (${login}); issues are written by an agent identity`, 3)
   return { ...identity, login }
+}
+
+/**
+ * Asks who each credential belongs to and refuses a mismatch: the cookie's session (`/api/auth/session`: signed in,
+ * its person and login) and the GitHub token (`GET /user`: its login and id), each against the file's login and
+ * person, and neither a person's. `needs` names the credentials the command will use. A dry run asks nothing.
+ */
+export const verifyIdentity = async (client, identity, needs = ["cookie", "githubToken"]) => {
+  if (client.dryRun) return { verified: false }
+  const out = { verified: true }
+  if (needs.includes("cookie")) {
+    const { status, answer } = await client.send({ url: "/api/auth/session" })
+    if (status !== 200 || answer?.signedIn !== true) throw new Refused("identity", "the identity's session is not signed in on smithers.sh", 3)
+    if (isPerson(answer.login)) throw new Refused("identity", `the session belongs to a person (${answer.login})`, 3)
+    if (String(answer.login).toLowerCase() !== identity.login.toLowerCase()) {
+      throw new Refused("identity", `the session belongs to ${answer.login}, not ${identity.login}`, 3)
+    }
+    if (identity.personId !== undefined && answer.personId !== identity.personId) throw new Refused("identity", "the session belongs to another person than the file's personId", 3)
+    out.personId = answer.personId
+  }
+  if (needs.includes("githubToken")) {
+    const { status, answer } = await client.send({ url: `${GITHUB_API}/user`, use: "github" })
+    if (status !== 200 || typeof answer?.login !== "string") throw new Refused("identity", `GitHub does not accept the identity's token: HTTP ${status}`, 3)
+    if (isPerson(answer.login)) throw new Refused("identity", `the GitHub token belongs to a person (${answer.login})`, 3)
+    if (answer.login.toLowerCase() !== identity.login.toLowerCase()) throw new Refused("identity", `the GitHub token belongs to ${answer.login}, not ${identity.login}`, 3)
+    out.githubId = answer.id
+  }
+  return out
 }
 
 /** Fails closed when any field of `record` can't be made clean; returns the cleaned record. */
@@ -144,58 +190,110 @@ const auth = (identity, use) => {
   }
 }
 
+/** Spaces calls at least `everyMs` apart, from the last call's start. */
+export const pacerOf = ({ everyMs, now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) => {
+  let last = -Infinity
+  return {
+    wait: async () => {
+      const wait = last + everyMs - now()
+      if (wait > 0) await sleep(wait)
+      last = now()
+    },
+  }
+}
+
+/** How long a refused answer asks to wait, or undefined when it is not a rate limit to wait out. */
+export const retryWaitOf = (status, headers, backoff, now = Date.now()) => {
+  const retryAfter = Number(headers.get("retry-after"))
+  const reset = Number(headers.get("x-ratelimit-reset")) * 1000 - now
+  const limited = status === 429 || status === 503 || (status === 403 && (headers.has("retry-after") || headers.get("x-ratelimit-remaining") === "0"))
+  if (!limited) return undefined
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000
+  if (Number.isFinite(reset) && reset > 0) return reset + 1000
+  return backoff
+}
+
 /**
  * A client for one run: `send` makes a request, or in a dry run records it and answers `dryAnswer`. `requests` is
- * what a dry run prints, with secrets named.
+ * what a dry run prints, with secrets named. Every mutation waits for its destination's pacer, and a rate limit is
+ * waited out (`retryWaitOf`).
  */
-export const clientOf = ({ origin, identity, dryRun, fetch = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) => {
+export const clientOf = ({
+  origin,
+  identity,
+  dryRun,
+  fetch = globalThis.fetch,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  now = () => Date.now(),
+  githubEveryMs = GITHUB_EVERY_MS,
+  smithersEveryMs = SMITHERS_EVERY_MS,
+}) => {
   const requests = []
-  const send = async ({ method = "GET", url, use = "session", body, dryAnswer }) => {
+  const pacers = { github: pacerOf({ everyMs: githubEveryMs, now, sleep }), smithers: pacerOf({ everyMs: smithersEveryMs, now, sleep }) }
+  const send = async ({ method = "GET", url, use = "session", body, dryAnswer, pace }) => {
     const { headers, shown } = auth(identity, use)
     const full = url.startsWith("http") ? url : `${origin}${url}`
     if (dryRun) {
       requests.push({ method, url: full, headers: shown, ...(body === undefined ? {} : { body }) })
       return { status: 0, answer: dryAnswer, headers: new Headers() }
     }
-    let wait = 5000
+    const pacer = method === "GET" ? undefined : pacers[pace ?? (use === "github" ? "github" : "smithers")]
+    let backoff = 60_000
     for (let attempt = 1; ; attempt++) {
+      if (pacer !== undefined) await pacer.wait()
       const response = await fetch(full, {
         method,
-        headers: { ...headers, ...(body === undefined ? {} : { "content-type": "application/json", origin }) },
+        headers: { ...headers, ...(body === undefined ? {} : { "content-type": "application/json", ...(use === "github" ? {} : { origin }) }) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       })
       const answer = await response.json().catch(() => undefined)
-      if ((response.status !== 429 && response.status !== 503) || attempt >= 5) return { status: response.status, answer, headers: response.headers }
-      const retryAfter = Number(response.headers.get("retry-after"))
-      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : wait)
-      wait *= 2
+      const wait = retryWaitOf(response.status, response.headers, backoff, now())
+      if (wait === undefined || attempt >= 8) return { status: response.status, answer, headers: response.headers }
+      await sleep(wait)
+      backoff = Math.min(backoff * 2, 30 * 60_000)
     }
   }
-  return { send, requests }
+  return { send, requests, dryRun }
 }
 
-/** Every row of a repository's issues shape (Electric), read to its end. Rows as the shape sends them. */
-export const shapeRows = async (client, { owner, name }) => {
+/**
+ * A repository's issues shape (Electric), read to its end once and then for changes only: `rows()` answers every
+ * row as the shape sends it, fetching only what changed since the last call.
+ */
+export const shapeReaderOf = (client, { owner, name }) => {
   const rows = new Map()
   let offset = "-1"
   let handle
-  for (let page = 0; page < 200; page++) {
-    const query = new URLSearchParams({ repo: `${owner}/${name}`, offset, ...(handle === undefined ? {} : { handle }) })
-    const { status, answer, headers } = await client.send({ url: `/api/shapes/items?${query}`, dryAnswer: [{ headers: { control: "up-to-date" } }] })
-    if (status !== 0 && status !== 200) throw new Refused("search", `the issue search failed: HTTP ${status}`, 1)
-    let upToDate = false
-    for (const message of Array.isArray(answer) ? answer : []) {
-      if (message?.headers?.control === "up-to-date") upToDate = true
-      const op = message?.headers?.operation
-      if (op === "delete") rows.delete(message.key)
-      else if (op !== undefined) rows.set(message.key, { ...(rows.get(message.key) ?? {}), ...message.value })
-    }
-    if (upToDate || status === 0) break
-    offset = headers.get("electric-offset") ?? offset
-    handle = headers.get("electric-handle") ?? handle
+  return {
+    rows: async () => {
+      for (let page = 0; page < 500; page++) {
+        const query = new URLSearchParams({ repo: `${owner}/${name}`, offset, ...(handle === undefined ? {} : { handle }) })
+        const { status, answer, headers } = await client.send({ url: `/api/shapes/items?${query}`, dryAnswer: [{ headers: { control: "up-to-date" } }] })
+        if (status === 409) {
+          rows.clear()
+          offset = "-1"
+          handle = undefined
+          continue
+        }
+        if (status !== 0 && status !== 200) throw new Refused("search", `the issue search failed: HTTP ${status}`, 1)
+        let upToDate = false
+        for (const message of Array.isArray(answer) ? answer : []) {
+          if (message?.headers?.control === "up-to-date") upToDate = true
+          const op = message?.headers?.operation
+          if (op === "delete") rows.delete(message.key)
+          else if (op !== undefined) rows.set(message.key, { ...(rows.get(message.key) ?? {}), ...message.value })
+        }
+        offset = headers.get("electric-offset") ?? offset
+        handle = headers.get("electric-handle") ?? handle
+        if (upToDate || status === 0) break
+      }
+      return [...rows.values()]
+    },
   }
-  return [...rows.values()]
 }
+
+/** Every row of a repository's issues shape, read to its end. */
+export const shapeRows = (client, repo) => shapeReaderOf(client, repo).rows()
 
 /** The open issue `open` reuses: the same key marker or write id first, then the same normalized title. */
 export const findMatch = (rows, { title, key, writeId }) => {
@@ -208,90 +306,152 @@ export const findMatch = (rows, { title, key, writeId }) => {
   return byTitle === undefined ? undefined : { number: Number(byTitle.number), by: "title" }
 }
 
-/** GitHub's issue (for its id), its parent chain's depth and the parent's sub-issue count; refuses past a limit. */
-export const attach = async (client, { child, parent, replace = false }) => {
-  const api = "https://api.github.com"
+/** `{ owner, name, number }` of an issue GitHub answered, from its `url`. */
+const refOfIssue = (answer) => {
+  const match = /repos\/([^/]+)\/([^/]+)\/issues\/(\d+)$/.exec(answer?.url ?? "")
+  return match === null ? undefined : { owner: match[1], name: match[2], number: Number(match[3]) }
+}
+const same = (a, b) => a.owner.toLowerCase() === b.owner.toLowerCase() && a.name.toLowerCase() === b.name.toLowerCase() && a.number === b.number
+const show = (ref) => `${ref.owner}/${ref.name}#${ref.number}`
+
+/**
+ * Files `child` under `parent` as a GitHub sub-issue. It looks first: the child's current parent is answered as is
+ * when it is `parent` (`noop`), refused when it is another unless `replace`. Then GitHub's limits: the same owner,
+ * 100 children, eight levels.
+ */
+export const attach = async (client, { child, parent, replace = false, cache }) => {
   if (child.owner.toLowerCase() !== parent.owner.toLowerCase()) {
     throw new Refused("cross_owner", `GitHub refuses a sub-issue from another owner: ${child.owner} under ${parent.owner}`, 4)
   }
-  const issue = await client.send({ url: `${api}/repos/${child.owner}/${child.name}/issues/${child.number}`, use: "github", dryAnswer: { id: "<id of the child>" } })
-  if (issue.status !== 0 && issue.status !== 200) throw new Refused("github", `GitHub has no issue ${child.owner}/${child.name}#${child.number}: HTTP ${issue.status}`, 1)
-  const summary = await client.send({ url: `${api}/repos/${parent.owner}/${parent.name}/issues/${parent.number}`, use: "github", dryAnswer: { sub_issues_summary: { total: 0 } } })
-  if (summary.status !== 0 && summary.status !== 200) throw new Refused("github", `GitHub has no parent ${parent.owner}/${parent.name}#${parent.number}: HTTP ${summary.status}`, 1)
+  const current = await client.send({ url: `${GITHUB_API}/repos/${child.owner}/${child.name}/issues/${child.number}/parent`, use: "github", dryAnswer: undefined })
+  const now = current.status === 200 ? refOfIssue(current.answer) : undefined
+  if (now !== undefined && same(now, parent)) return { parent: show(parent), noop: true }
+  if (now !== undefined && !replace) throw new Refused("has_parent", `${show(child)} is already under ${show(now)}; pass --replace to move it`, 4)
+  const issue = await client.send({ url: `${GITHUB_API}/repos/${child.owner}/${child.name}/issues/${child.number}`, use: "github", dryAnswer: { id: "<id of the child>" } })
+  if (issue.status !== 0 && issue.status !== 200) throw new Refused("github", `GitHub has no issue ${show(child)}: HTTP ${issue.status}`, 1)
+  const summary = await client.send({ url: `${GITHUB_API}/repos/${parent.owner}/${parent.name}/issues/${parent.number}`, use: "github", dryAnswer: { sub_issues_summary: { total: 0 } } })
+  if (summary.status !== 0 && summary.status !== 200) throw new Refused("github", `GitHub has no parent ${show(parent)}: HTTP ${summary.status}`, 1)
   const total = summary.answer?.sub_issues_summary?.total ?? 0
   if (total >= MAX_SUB_ISSUES) throw new Refused("children_limit", `the parent already has ${total} sub-issues, GitHub's limit is ${MAX_SUB_ISSUES}`, 4)
-  // Depth: the parent's own ancestors, walked up; the child goes one level below the parent.
+  // Depth: the parent's own ancestors, walked up (a cache of known parents saves the walk); the child goes one below.
   let depth = 1
   let at = parent
+  const seen = new Set([show(child)])
   for (; depth <= MAX_DEPTH; depth++) {
-    const up = await client.send({ url: `${api}/repos/${at.owner}/${at.name}/issues/${at.number}/parent`, use: "github", dryAnswer: undefined })
-    if (up.status !== 200 || up.answer?.number === undefined) break
-    const repo = /repos\/([^/]+)\/([^/]+)\/issues/.exec(up.answer.url ?? "") ?? [undefined, at.owner, at.name]
-    at = { owner: repo[1], name: repo[2], number: up.answer.number }
+    if (seen.has(show(at))) throw new Refused("cycle", `${show(child)} is an ancestor of ${show(parent)}`, 4)
+    seen.add(show(at))
+    const known = cache?.get(show(at))
+    if (known === null) break
+    const up = known !== undefined ? { status: 200, answer: { url: `x/repos/${known.owner}/${known.name}/issues/${known.number}` } }
+      : await client.send({ url: `${GITHUB_API}/repos/${at.owner}/${at.name}/issues/${at.number}/parent`, use: "github", dryAnswer: undefined })
+    const next = up.status === 200 ? refOfIssue(up.answer) : undefined
+    cache?.set(show(at), next ?? null)
+    if (next === undefined) break
+    at = next
   }
   if (depth + 1 > MAX_DEPTH) throw new Refused("depth_limit", `the parent is at level ${depth}; GitHub nests at most ${MAX_DEPTH} levels`, 4)
   const posted = await client.send({
     method: "POST",
-    url: `${api}/repos/${parent.owner}/${parent.name}/issues/${parent.number}/sub_issues`,
+    url: `${GITHUB_API}/repos/${parent.owner}/${parent.name}/issues/${parent.number}/sub_issues`,
     use: "github",
-    body: { sub_issue_id: issue.answer?.id, ...(replace ? { replace_parent: true } : {}) },
+    body: { sub_issue_id: issue.answer?.id, ...(now !== undefined ? { replace_parent: true } : {}) },
     dryAnswer: {},
   })
-  if (posted.status === 0 || posted.status === 201) return { parent: `${parent.owner}/${parent.name}#${parent.number}`, depth: depth + 1 }
-  throw new Refused("github", `GitHub refused the sub-issue: HTTP ${posted.status}${posted.status === 422 ? " (a limit, an existing parent without --replace, or a cycle)" : ""}`, 1)
+  if (posted.status === 0 || posted.status === 201) {
+    cache?.set(show(child), { ...parent })
+    return { parent: show(parent), depth: depth + 1, ...(now !== undefined ? { replaced: show(now) } : {}) }
+  }
+  throw new Refused("github", `GitHub refused the sub-issue: HTTP ${posted.status}${posted.status === 422 ? " (a limit or a cycle)" : ""}`, 1)
 }
 
-/** `open`: find, else create and wait for its number; then the parent, if asked. */
+/**
+ * Applies `labels` to issue `number` on GitHub: it lists the repository's labels (once per run with `cache`), creates
+ * the missing ones, and adds every label it has. Returns `{ labelsApplied, missingLabels }`: the labels it could not
+ * create, which the token's role may not allow.
+ */
+export const applyLabels = async (client, { owner, name, number, labels, cache }) => {
+  if (labels.length === 0) return { labelsApplied: true, missingLabels: [] }
+  const repo = `${owner}/${name}`.toLowerCase()
+  let known = cache?.get(repo)
+  if (known === undefined) {
+    known = new Set()
+    for (let page = 1; page <= 50; page++) {
+      const { status, answer } = await client.send({ url: `${GITHUB_API}/repos/${owner}/${name}/labels?per_page=100&page=${page}`, use: "github", dryAnswer: [] })
+      if (status !== 0 && status !== 200) throw new Refused("github", `GitHub did not list the labels: HTTP ${status}`, 1)
+      for (const label of Array.isArray(answer) ? answer : []) known.add(String(label.name).toLowerCase())
+      if (!Array.isArray(answer) || answer.length < 100) break
+    }
+    cache?.set(repo, known)
+  }
+  const missing = []
+  for (const label of labels.filter((label) => !known.has(label.toLowerCase()))) {
+    const { status } = await client.send({ method: "POST", url: `${GITHUB_API}/repos/${owner}/${name}/labels`, use: "github", body: { name: label, color: "ededed" }, dryAnswer: {} })
+    if (status === 0 || status === 201 || status === 422) known.add(label.toLowerCase())
+    else missing.push(label)
+  }
+  const apply = labels.filter((label) => !missing.includes(label))
+  if (apply.length > 0) {
+    const { status } = await client.send({ method: "POST", url: `${GITHUB_API}/repos/${owner}/${name}/issues/${number}/labels`, use: "github", body: { labels: apply }, dryAnswer: [] })
+    if (status !== 0 && status !== 200) throw new Refused("github", `GitHub refused the labels: HTTP ${status}`, 1)
+  }
+  return { labelsApplied: missing.length === 0, missingLabels: missing }
+}
+
+/**
+ * Finds or creates the issue and answers its number: `{ number, reused, by, writeId }`. `reader` is a shape reader
+ * to reuse across calls. A created issue's number comes from the shape once GitHub numbered it.
+ */
+export const ensureIssue = async (client, { repo, title, body, key, reader, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) => {
+  const { owner, name } = repoOf(repo)
+  const shape = reader ?? shapeReaderOf(client, { owner, name })
+  const writeId = writeIdOf(`${repo}:${key ?? normalizeTitle(title)}`)
+  const match = findMatch(await shape.rows(), { title, key, writeId })
+  if (match !== undefined) return { number: match.number, reused: true, by: match.by, writeId }
+  const { status, answer } = await client.send({ method: "POST", url: `/api/repos/${owner}/${name}/writes`, body: { writeId, op: "issue/create", title, body }, dryAnswer: { writeId }, pace: "github" })
+  if (status !== 0 && status !== 200 && status !== 202) throw new Refused(answer?.code ?? "refused", `the issue was not created: HTTP ${status} ${answer?.code ?? ""}`, 1)
+  if (status === 0) return { number: null, reused: false, by: null, writeId }
+  for (let tries = 0; tries < 60; tries++) {
+    await sleep(2000)
+    const found = findMatch(await shape.rows(), { title, key, writeId })
+    if (found !== undefined) return { number: found.number, reused: false, by: null, writeId }
+  }
+  throw new Refused("pending", `created as write ${writeId}; GitHub has not numbered it yet, run again`, 1)
+}
+
+/** `open`: find, else create; then its labels on GitHub, then its parent, if asked. */
 export const open = async (client, { repo, title, body, key, labels = [], parent, origin }, options = {}) => {
   const { owner, name } = repoOf(repo)
-  const marker = markerOf({ key, labels })
-  const record = scrubbed({ title, body: bodyWithMarker(body, marker), labels }, options)
-  const writeId = writeIdOf(`${repo}:${key ?? normalizeTitle(title)}`)
-  const rows = await shapeRows(client, { owner, name })
-  const match = findMatch(rows, { title: record.title, key, writeId })
-  let number = match?.number
-  let reused = match !== undefined
-  if (number === undefined) {
-    const { status, answer } = await client.send({
-      method: "POST",
-      url: `/api/repos/${owner}/${name}/writes`,
-      body: { writeId, op: "issue/create", title: record.title, body: record.body },
-      dryAnswer: { writeId },
-    })
-    if (status !== 0 && status !== 200 && status !== 202) throw new Refused(answer?.code ?? "refused", `the issue was not created: HTTP ${status} ${answer?.code ?? ""}`, 1)
-    if (status !== 0) {
-      for (let tries = 0; tries < 30 && number === undefined; tries++) {
-        await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(2000)
-        number = findMatch(await shapeRows(client, { owner, name }), { title: record.title, key, writeId })?.number
-      }
-      if (number === undefined) throw new Refused("pending", `created as write ${writeId}; GitHub has not numbered it yet, run open again`, 1)
-    }
-    reused = false
-  }
-  const placed = parent === undefined ? undefined : await attach(client, { child: { owner, name, number: number ?? 0 }, parent: parentRefOf(parent) })
-  return { repo, number: number ?? null, reused, by: match?.by ?? null, writeId, labels: record.labels, labelsApplied: false, origin, parent: placed?.parent ?? null }
+  const record = scrubbed({ title, body: bodyWithMarker(body, markerOf({ key, labels })), labels }, options)
+  const found = await ensureIssue(client, { repo, title: record.title, body: record.body, key, sleep: options.sleep })
+  const number = found.number ?? "<number>"
+  const applied = await applyLabels(client, { owner, name, number, labels: record.labels })
+  const placed = parent === undefined ? undefined : await attach(client, { child: { owner, name, number: found.number ?? 0 }, parent: parentRefOf(parent) })
+  return { repo, number: found.number, reused: found.reused, by: found.by, writeId: found.writeId, labels: record.labels, ...applied, origin, parent: placed?.parent ?? null }
 }
 
-export const link = async (client, { repo, issue, ...flags }, options = {}) => {
+/** Posts links to an issue (1 to 50), as the runner when the identity has its token. */
+export const postLinks = async (client, { repo, issue, links }, options = {}) => {
   const { owner, name } = repoOf(repo)
-  const body = scrubbed({ links: [linkOf(flags)] }, options)
-  const { status, answer } = await client.send({ method: "POST", url: `/api/repos/${owner}/${name}/issues/${Number(issue)}/links`, use: "runner", body, dryAnswer: { links: 1, changed: 1 } })
+  const body = scrubbed({ links }, options)
+  const { status, answer } = await client.send({ method: "POST", url: `/api/repos/${owner}/${name}/issues/${Number(issue)}/links`, use: "runner", body, dryAnswer: { links: links.length, changed: links.length }, pace: "smithers" })
   if (status !== 0 && status !== 200) throw new Refused(answer?.code ?? "refused", `the link was refused: HTTP ${status} ${answer?.code ?? ""}`, 1)
   return answer
 }
+
+export const link = (client, { repo, issue, ...flags }, options = {}) => postLinks(client, { repo, issue, links: [linkOf(flags)] }, options)
 
 export const comment = async (client, { repo, issue, body }, options = {}) => {
   const { owner, name } = repoOf(repo)
   const record = scrubbed({ body }, options)
   if (record.body.trim() === "") throw new Refused("invalid", "the comment is empty", 1)
   const writeId = writeIdOf(`${repo}#${issue}:${createHash("sha256").update(record.body).digest("hex")}`)
-  const { status, answer } = await client.send({ method: "POST", url: `/api/repos/${owner}/${name}/writes`, body: { writeId, op: "issue/comment", number: Number(issue), body: record.body }, dryAnswer: { writeId } })
+  const { status, answer } = await client.send({ method: "POST", url: `/api/repos/${owner}/${name}/writes`, body: { writeId, op: "issue/comment", number: Number(issue), body: record.body }, dryAnswer: { writeId }, pace: "github" })
   if (status !== 0 && status !== 200 && status !== 202) throw new Refused(answer?.code ?? "refused", `the comment was refused: HTTP ${status} ${answer?.code ?? ""}`, 1)
   return { writeId }
 }
 
 /** Private repository names for the scrub, from a local file of one name per line (never committed). */
-const privateReposOf = (path) =>
+export const privateReposOf = (path) =>
   path !== undefined && existsSync(path) ? readFileSync(path, "utf8").split("\n").map((line) => line.trim()).filter(Boolean) : []
 
 const main = async () => {
@@ -319,11 +479,10 @@ const main = async () => {
     },
   })
   const dryRun = values["dry-run"]
-  const identityPath = values.identity ?? process.env.SMITHERS_ISSUE_IDENTITY
   // A dry run needs no identity, and shows whose it would be when one is there; a write needs a valid one.
   let identity
   try {
-    identity = identityOf(identityPath)
+    identity = identityOf(values.identity ?? process.env.SMITHERS_ISSUE_IDENTITY)
   } catch (error) {
     if (!dryRun) throw error
   }
@@ -333,6 +492,8 @@ const main = async () => {
     if (values["body-file"] === undefined) throw new Refused("invalid", "--body-file is required", 1)
     return readFileSync(values["body-file"], "utf8")
   }
+  const needs = { open: ["cookie", "githubToken"], comment: ["cookie"], parent: ["githubToken"], link: identity?.runnerToken === undefined ? ["cookie"] : [] }[command]
+  if (needs !== undefined) await verifyIdentity(client, identity, needs)
   let result
   if (command === "open") {
     if (values.title === undefined) throw new Refused("invalid", "--title is required", 1)
