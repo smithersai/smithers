@@ -36,6 +36,7 @@ import {
   TimeoutWaitingForMatchError,
   TimeoutWaitingForTxIdError
 } from "@tanstack/electric-db-collection"
+import * as Clock from "effect/Clock"
 import * as Data from "effect/Data"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -316,7 +317,7 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     const woken = yield* Latch.make(false)
     const restart = yield* Latch.make(false)
     // The policy's wait, ended early by `reconnect`.
-    const policy = (options.retry ?? SyncPolicy.defaultPolicy).pipe(
+    const policy = SyncPolicy.respectingRetryAfter(options.retry ?? SyncPolicy.defaultPolicy).pipe(
       Schedule.modifyDelay(({ duration }) =>
         Effect.raceFirst(Effect.sleep(duration), woken.await).pipe(Effect.as(Duration.zero))
       )
@@ -337,7 +338,12 @@ export function make<A extends Row<unknown>, E = never, R = never>(
           // Its body is read only to free the connection; a body that fails to read changes nothing.
           yield* Effect.tryPromise(() => response.arrayBuffer()).pipe(Effect.ignore)
           yield* publish({ _tag: "Failed", status: response.status })
-          return yield* new RequestFailed({ status: response.status })
+          // Its `retry-after` is the least the policy waits before the next attempt.
+          const retryAfterMs = SyncPolicy.retryAfterMs(
+            response.headers.get("retry-after"),
+            yield* Clock.currentTimeMillis
+          )
+          return yield* new RequestFailed({ status: response.status, retryAfterMs })
         }
         // Electric reads a 4xx itself.
         if (!response.ok) {

@@ -258,14 +258,17 @@ interface Source {
 }
 const ShapeSource: Context.Reference<Source>
 const fetchSource: Source
-class RequestFailed extends Data.TaggedError("RequestFailed")<{ readonly status?: number }> {}
+class RequestFailed extends Data.TaggedError("RequestFailed")<{
+  readonly status?: number
+  readonly retryAfterMs?: number
+}> {}
 ```
 
 | Export          | Is                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ShapeSource`   | The service, a `Context.Reference` whose default is `fetchSource`.                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `fetchSource`   | The real source: each request sent with the `fetch` in Effect's `FetchHttpClient.Fetch`, the global one unless a program provides one, with `cache: "no-store"`, so the HTTP cache never answers or keeps a shape request. A live request (a long poll) is sent with `priority: "low"`, so on a page whose shapes hold all six of a browser's HTTP/1.1 connections to an origin, its other requests take the next free connection instead of queueing behind the long polls. |
-| `RequestFailed` | A shape request failed on the network (no `status`) or with a 5xx or 429. The sync policy is stepped with it.                                                                                                                                                                                                                                                                                                                                                                |
+| `RequestFailed` | A shape request failed on the network (no `status`) or with a 5xx or 429, with its `retry-after` as `retryAfterMs`. The sync policy is stepped with it.                                                                                                                                                                                                                                                                                                                      |
 
 ### Opening a shape on demand: `gated`
 
@@ -358,7 +361,17 @@ interface Backoff {
 
 const backoff: (options: Backoff) => Schedule.Schedule<Duration.Duration>
 const defaultPolicy: Schedule.Schedule<Duration.Duration>
+const MAX_RETRY_AFTER_MS: number
+const retryAfterMs: (header: string | null | undefined, nowMs: number) => number | undefined
+const respectingRetryAfter: <Out, E, R>(
+  policy: Schedule.Schedule<Out, RequestFailed, E, R>
+) => Schedule.Schedule<Out, RequestFailed, E, R>
 ```
+
+`retryAfterMs` reads a `retry-after` header (delay seconds or an HTTP date) in
+milliseconds, at most `MAX_RETRY_AFTER_MS` (1 minute), or `undefined` when it
+is absent or malformed. `respectingRetryAfter` waits at least each failure's
+`retryAfterMs`; every collection applies it to its `retry`.
 
 `backoff` waits `initial`, doubling after each failure in a row up to `max`,
 forever, each wait jittered to between 80% and 120% of its delay.

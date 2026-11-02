@@ -39,7 +39,16 @@ import * as Stream from "effect/Stream"
  * @category errors
  * @since 0.1.0
  */
-export class RequestFailed extends Data.TaggedError("RequestFailed")<{ readonly status?: number }> {}
+export class RequestFailed extends Data.TaggedError("RequestFailed")<{
+  readonly status?: number
+  /**
+   * The response's `retry-after`, in milliseconds: the least the sync policy waits before it sends the request again
+   * (`SyncPolicy.respectingRetryAfter`).
+   *
+   * @since 0.2.0
+   */
+  readonly retryAfterMs?: number | undefined
+}> {}
 
 /**
  * A shape source: it sends one shape request and answers with Electric's

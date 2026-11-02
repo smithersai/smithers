@@ -57,6 +57,18 @@ don't all return at once.
 A collection given no `retry` uses it, so a device that went offline syncs
 again by itself within about 10 seconds of coming back.
 
+## `retry-after`
+
+A 5xx or 429 that carries `retry-after` says how long the server needs. The
+collection reads it, as delay seconds or an HTTP date, into the failure's
+`retryAfterMs` (at most `SyncPolicy.MAX_RETRY_AFTER_MS`, 1 minute), and waits
+at least that long, whatever the policy's delay: the default policy would
+retry a `503` with `retry-after: 5` after about 1, 2 and 4 seconds, each sent
+before the server is ready, and now waits 5 seconds each time. A longer policy
+delay stands. `reconnect` still ends the wait at once. Apply the same floor to
+your own schedule with `SyncPolicy.respectingRetryAfter(schedule)`; the
+collection applies it to every `retry`.
+
 ## `reconnect`
 
 `reconnect` ends every wait at once: each request waiting out the policy is

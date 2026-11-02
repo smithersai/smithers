@@ -7,7 +7,8 @@
  * the request again. `reconnect` ends every wait at once. A schedule that
  * ends gives the failure to Electric, which stops the shape until
  * `reconnect`; the default never ends, so a device that went offline syncs
- * again by itself when it comes back.
+ * again by itself when it comes back. A response's `retry-after` is the least
+ * the collection waits (`respectingRetryAfter`), whatever the policy says.
  *
  * @since 0.1.0
  */
@@ -15,6 +16,7 @@
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
+import type { RequestFailed } from "./ShapeSource.ts"
 
 /**
  * An exponential backoff: `initial`, doubling to `max`.
@@ -52,3 +54,46 @@ export const backoff = (options: Backoff): Schedule.Schedule<Duration.Duration> 
  * @since 0.1.0
  */
 export const defaultPolicy: Schedule.Schedule<Duration.Duration> = backoff({ initial: "1 second", max: "10 seconds" })
+
+/**
+ * The longest `retry-after` a collection honors, in milliseconds: 1 minute. A longer one, a server's mistake or
+ * another origin's, would leave a device's rows stale for as long; `reconnect` still ends any wait at once.
+ *
+ * @category constants
+ * @since 0.2.0
+ */
+export const MAX_RETRY_AFTER_MS = 60_000
+
+/**
+ * A `retry-after` header's delay in milliseconds at `nowMs`, from its delay seconds or its HTTP date (RFC 9110
+ * §10.2.3), at most `MAX_RETRY_AFTER_MS`; a date already past is 0. Undefined when the header is absent or malformed.
+ *
+ * @category constructors
+ * @since 0.2.0
+ */
+export const retryAfterMs = (header: string | null | undefined, nowMs: number): number | undefined => {
+  const value = header?.trim()
+  if (value === undefined || value === "") return undefined
+  const ms = /^\d+$/.test(value)
+    ? Number(value) * 1_000
+    : /[a-z]/i.test(value) && !Number.isNaN(Date.parse(value))
+    ? Math.max(0, Date.parse(value) - nowMs)
+    : undefined
+  return ms === undefined ? undefined : Math.min(ms, MAX_RETRY_AFTER_MS)
+}
+
+/**
+ * `policy`, waiting at least each failure's `retryAfterMs` before the next attempt. A 503 from Electric's gateway
+ * says how long its object needs (`retry-after: 5`); a policy that retries sooner sends requests that fail again.
+ * A failure without one waits the policy's own delay.
+ *
+ * @category combinators
+ * @since 0.2.0
+ */
+export const respectingRetryAfter = <Out, E, R>(
+  policy: Schedule.Schedule<Out, RequestFailed, E, R>
+): Schedule.Schedule<Out, RequestFailed, E, R> =>
+  Schedule.modifyDelay(policy, ({ duration, input }) =>
+    Effect.succeed(
+      input.retryAfterMs === undefined ? duration : Duration.max(duration, Duration.millis(input.retryAfterMs))
+    ))
