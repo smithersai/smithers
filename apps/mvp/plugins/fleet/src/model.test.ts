@@ -117,3 +117,18 @@ describe("machines and the counts", () => {
     expect(summaryOf([], machines, NOW)).toMatchObject({ online: 2, held: 1, machines: 3 })
   })
 })
+
+
+test("malformed times stay unreported, missing titles stay short, and tied run keys sort deterministically", () => {
+  const rows = runsOf([
+    run("z", { queuedAt: "invalid", claimedAt: null, endedAt: "invalid", lastEventAt: "invalid", title: null }),
+    run("a", { queuedAt: "invalid", claimedAt: null }),
+    run("queued", { state: "queued", queuedAt: "invalid", claimedAt: null }),
+    run("fallback", { claimedAt: null, queuedAt: ago(60_000) }),
+  ], NOW)
+  expect(rows.map((row) => row.key)).toEqual(["queued", "fallback", "a", "z"])
+  expect(rows.find((row) => row.key === "z")).toMatchObject({ label: "T412", duration: "0h00m", lastEventMs: null })
+  expect(rows.find((row) => row.key === "fallback")?.duration).toBe("0h01m")
+  expect(rows.find((row) => row.key === "queued")?.duration).toBe("0h00m")
+  expect(summaryOf([run("failed", { state: "failed", endedAt: null })], [], NOW).failedToday).toBe(0)
+})

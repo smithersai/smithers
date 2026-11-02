@@ -143,3 +143,16 @@ test("phase and arc markers carry the last covered answer, excluding the unsumma
   expect(railMarkers(messages, "arc").map(({ start, end }) => [start, end])).toEqual([["q0", "a3"]])
   expect(railMarkers([{ ...messages[0]!, phase: phase(999) }], "phase")).toEqual([])
 })
+
+
+test("a phase or arc without a complete covered exchange never draws a partial marker", () => {
+  const mark = (covered: number) => JSON.stringify({ title: "Research", summary: "Evidence", closed: true, covered })
+  const question = { id: "q", role: "user", status: "done", text: "Question" }
+  const answer = { id: "a", questionId: "q", role: "assistant", status: "done", text: "Answer" }
+  for (const covered of [0, -1, 0.5, 999]) {
+    expect(railMarkers([{ ...question, phase: mark(covered), arc: mark(covered) }, answer], "phase")).toEqual([])
+    expect(railMarkers([{ ...question, phase: mark(1), arc: mark(covered) }, answer], "arc")).toEqual([])
+  }
+  expect(railMarkers([{ ...question, phase: mark(1), arc: mark(1) }], "phase")).toEqual([])
+  expect(railMarkers([{ ...question, phase: mark(1), arc: mark(1) }], "arc")).toEqual([])
+})

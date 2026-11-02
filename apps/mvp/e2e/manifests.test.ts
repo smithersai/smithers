@@ -57,3 +57,12 @@ describe("a test's media", () => {
     expect(recordable("skipped")).toBe(false)
   })
 })
+
+
+it("resolves recordings beside a manifest placed directly in the results directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "e2e-root-manifest-"))
+  try {
+    writeFileSync(join(root, "flow.json"), JSON.stringify({ flow: "root", status: "passed", videos: [{ video: "video.webm" }] }))
+    expect(readManifests(root)).toEqual({ flows: [{ flow: "root", status: "passed", videos: [{ video: join(root, "video.webm") }] }], skipped: [] })
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})

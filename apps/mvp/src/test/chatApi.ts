@@ -77,6 +77,7 @@ import * as RunCredentials from "../../worker/RunCredentials.ts"
 import * as PersonalApi from "../../worker/personal/Api.ts"
 import * as BugsApi from "../../worker/bugs/Api.ts"
 import * as FeedsApi from "../../worker/feeds/Api.ts"
+import * as FleetApi from "../../worker/runners/FleetApi.ts"
 import { FEED_DOCUMENTS_TABLE } from "../features/feeds/contract"
 import { digestSync } from "@smthrs/crypto"
 import { BUG_REPORTS_TABLE } from "../features/bugs/contract"
@@ -276,7 +277,9 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   SECRETS_TABLE,
   PERSONAL_MODELS_TABLE,
   BUG_REPORTS_TABLE,
-  FEED_DOCUMENTS_TABLE
+  FEED_DOCUMENTS_TABLE,
+  "agent_runs",
+  "runners",
 ])
 
 /** The collector's feed key for `TEST_REPOSITORY` in a test ChatApi (`FEED_KEYS`). */
@@ -539,6 +542,7 @@ export class TestChatApi extends Context.Service<
         const stack = yield* StackApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // Repository feeds (worker/feeds/Api.ts), as ChatApi routes them, under `TEST_FEED_KEY` for the test repository.
         const feeds = yield* FeedsApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        const fleet = yield* FleetApi.make(roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // A repository's home, as ChatApi routes it (worker/ChatApi.ts): the curated homes a test gives, else the real ones.
         const home = HomeApi.make({ roles, mayRead: github.mayRead, maySync: github.maySync, ...(options.homes === undefined ? {} : { files: options.homes }) })
         // A repository's docs, as ChatApi routes them (worker/ChatApi.ts): the index its home names, or the curated home
@@ -798,6 +802,7 @@ export class TestChatApi extends Context.Service<
             )
           }
           if (FeedsApi.handles(path)) return feeds.fetch
+          if (FleetApi.handles(path)) return fleet.fetch
           if (DomainsApi.handles(path)) {
             return domains.fetch.pipe(
               Effect.provideService(Flows.FlowStarter, domainStarter),

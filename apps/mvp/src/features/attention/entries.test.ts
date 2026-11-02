@@ -347,3 +347,8 @@ test("a write launch occupies the shared stack; only its server receipt enters t
   expect(done).toMatchObject({ state: "done", stack: false, listed: true })
 })
 
+
+
+test("a fleet alert names Agents and the incident, independent of its actor", () => {
+  expect(wordsOf(notice({ kind: "fleet", title: "Runner offline", actor: "private" }))).toEqual({ word: "Agents", detail: "Runner offline" })
+})

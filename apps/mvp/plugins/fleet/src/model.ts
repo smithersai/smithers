@@ -196,7 +196,7 @@ export const machinesOf = (
       name: machine.name,
       state,
       ...MACHINE_WORDS[state],
-      held: state === "held" ? machine.held ?? null : null,
+      held: state === "held" ? machine.held! : null,
       running: runs.filter((run) =>
         run.runner === machine.name && (run.state === "working" || run.state === "stalled" || run.state === "stopping")
       ).length,
