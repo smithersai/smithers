@@ -135,6 +135,39 @@ describe("resolve", () => {
     expect(github.seen("GET", /\/collaborators\/sam\/permission$/)).toHaveLength(1)
   })
 
+  test("any recorded denial deletes the repository from the person's feed: a first read, and the same denial again", async () => {
+    await sql(runtime, `TRUNCATE notifications`)
+    const notice = (subject: string, repo: string = OTHER.id) =>
+      sql(runtime, `INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href)
+        VALUES ('${MAYA}', '${subject}', 'main', 'update', '${repo}', 'private', '/x')`)
+    const subjects = async () =>
+      ((await sql(runtime, `SELECT subject FROM notifications WHERE recipient = '${MAYA}' ORDER BY subject`)) as ReadonlyArray<{ subject: string }>)
+        .map((row) => row.subject)
+    await notice("main:first")
+    await notice("main:elsewhere", "github/acme/elsewhere")
+    // No row before: the first read says no role.
+    expect((await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, null, new Date().toISOString()))).role).toBeNull()
+    expect(await subjects()).toEqual(["main:elsewhere"])
+    // A row written meanwhile, then the same kind of denial read again.
+    await notice("main:second")
+    expect((await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "guest", new Date(Date.now() + 1000).toISOString()))).role)
+      .toBe("guest")
+    expect(await subjects()).toEqual(["main:elsewhere"])
+  })
+
+  test("a lowered role that is still a Member's deletes the repository's fleet alerts only; a raise deletes nothing", async () => {
+    await sql(runtime, `TRUNCATE notifications, github_repo_roles`)
+    await sql(runtime, `INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href) VALUES
+      ('${MAYA}', 'fleet:a', 'fleet', 'update', '${OTHER.id}', 'Agent run cost · acme/widgets', '/x'),
+      ('${MAYA}', 'main:x', 'main', 'update', '${OTHER.id}', 'acme/widgets', '/x')`)
+    const at = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString()
+    await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "admin", at(0)))
+    await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "maintainer", at(1)))
+    expect(await sql(runtime, `SELECT subject FROM notifications WHERE recipient = '${MAYA}' ORDER BY subject`)).toEqual([{ subject: "main:x" }])
+    await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "admin", at(2)))
+    expect(await sql(runtime, `SELECT subject FROM notifications WHERE recipient = '${MAYA}' ORDER BY subject`)).toEqual([{ subject: "main:x" }])
+  })
+
   test("refusals: no App, left out, the App not installed, a rate limit with its wait, GitHub down, Postgres down", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "write")

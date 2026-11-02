@@ -9,6 +9,7 @@ import { type Permission, roleOf } from "../GitHubAuth.ts"
 import { classify, isRateLimited, withToken } from "./Calls.ts"
 import { type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import * as Tokens from "./Tokens.ts"
+import * as FeedLocks from "../FeedLocks.ts"
 
 // A person's role on one repository (decision 0079). On the deployment's own repository (`GITHUB_REPOSITORY`) it is
 // the session's role, as sign-in reads and rechecks it. On any other repository the deployment may act on, one where
@@ -630,6 +631,46 @@ const observe = (personId: string) =>
     }
   })
 
+/** Notification rows deleted because a recorded read denied or lowered the person's role, by `scope`. */
+export const pruned = Metric.counter("smithers_notifications_pruned", {
+  description: "Notification rows deleted when a recorded read denied or lowered a person's role on their repository, by scope",
+  incremental: true,
+})
+
+/** The roles that may read a repository's feed. */
+const MEMBERS: ReadonlySet<Role> = new Set(["member", "maintainer", "admin"])
+
+/** A role's place from least to most: no role is 0. */
+const rankOf = (role: Role | null) => (role === null ? 0 : ["guest", "member", "maintainer", "admin"].indexOf(role) + 1)
+
+/**
+ * After `remember` recorded `decided` for the person on `repoId`, under their feed lock, in a statement of its own so
+ * it sees every fold that committed before it took the lock: a denial (no role, or less than a Member's), whatever the
+ * row said `before`, deletes every row of the repository from their feed; a lower role that is still a Member's
+ * deletes the repository's fleet alerts, which only Maintainers, Admins and a TODO's committer hear.
+ */
+const prune = (
+  sql: SqlClient.SqlClient,
+  repoId: string,
+  personId: string,
+  decided: Role | null,
+  before: { readonly role: string | null; readonly checkedAt: string } | undefined,
+) =>
+  Effect.gen(function* () {
+    const denied = decided === null || !MEMBERS.has(decided)
+    // A row a read claimed before GitHub answered (`-infinity`) recorded no role to lower.
+    const earlier = before === undefined || before.checkedAt === "-infinity" ? null : decodeRole(before.role)
+    if (!denied && rankOf(decided) >= rankOf(earlier)) return
+    const scope = denied ? "repository" : "fleet"
+    const deleted = yield* sql`
+      DELETE FROM notifications WHERE recipient = ${personId} AND repo_id = ${repoId}
+        AND (${denied}::boolean OR kind = 'fleet')
+      RETURNING 1`
+    if (deleted.length === 0) return
+    yield* Metric.update(Metric.withAttributes(pruned, { scope }), deleted.length)
+    yield* Effect.logInfo("github.repo_role.pruned").pipe(Effect.annotateLogs({ repoId, scope, rows: deleted.length }))
+  })
+
 /**
  * Records the person's role on `repoId` as a read that began at `asOf` found it, unless a read that began later
  * already recorded one: a slow read that saw a role never overwrites a quicker one that saw it removed. Answers the
@@ -641,17 +682,24 @@ export const remember = (repoId: string, personId: string, role: Role | null, as
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
-      yield* sql`
+      // The person's feed lock on the repository first, as every writer of their feed takes it (worker/FeedLocks.ts).
+      yield* FeedLocks.lock(sql, [{ repoId, personId }])
+      const [before] = yield* sql<{ readonly role: string | null; readonly checkedAt: string }>`
+        SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles WHERE repo_id = ${repoId} AND person_id = ${personId}`
+      const accepted = yield* sql`
         INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
         VALUES (${repoId}, ${personId}, ${role}, ${asOf}::timestamptz)
         ON CONFLICT (repo_id, person_id) DO UPDATE SET role = EXCLUDED.role, checked_at = EXCLUDED.checked_at
-        WHERE github_repo_roles.checked_at < EXCLUDED.checked_at`
+        WHERE github_repo_roles.checked_at < EXCLUDED.checked_at
+        RETURNING 1`
       const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string; readonly fresh: boolean }>`
         SELECT role, checked_at::text AS "checkedAt",
           checked_at > clock_timestamp() - make_interval(secs => ${FRESH_SECONDS}) AS fresh
         FROM github_repo_roles WHERE repo_id = ${repoId} AND person_id = ${personId}`
       // The insert or the row it conflicted with is there; nothing deletes a role row inside this transaction.
       if (row === undefined) return yield* Effect.die(new Error("github_repo_roles: the row just recorded is gone"))
-      return { role: decodeRole(row.role), checkedAt: row.checkedAt, fresh: row.fresh }
+      const decided = decodeRole(row.role)
+      if (accepted.length > 0) yield* prune(sql, repoId, personId, decided, before)
+      return { role: decided, checkedAt: row.checkedAt, fresh: row.fresh }
     }))
   })
