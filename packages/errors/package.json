@@ -110,7 +110,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-587937650a6b.tgz"
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
   },
   "peerDependencies": {
     "effect": "4.1.0"
@@ -132,8 +132,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-ef39e96004c2.tgz",
-    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-7159373887c8.tgz",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz",
+    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-94168276647a.tgz",
     "vitest": "5.0.0"
   }
 }

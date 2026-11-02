@@ -12,6 +12,6 @@
     "@smthrs/targets": "workspace:*",
     "@types/node": "26.4.1",
     "typescript": "5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-ef39e96004c2.tgz"
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz"
   }
 }
