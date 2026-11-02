@@ -79,6 +79,9 @@ export const handles = (path: string): boolean => Object.hasOwn(ROUTE_OF, path)
 
 const noStore = { "cache-control": "no-store" }
 
+/** The git-credential route answers 404 to every request (decision 0148, pending its security review's fixes). */
+const OFF: boolean = true
+
 const decodeClaim = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.ClaimRequest))
 const decodeHeartbeat = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.HeartbeatRequest))
 const decodeSettle = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.SettleRequest))
@@ -240,7 +243,8 @@ export const make = <E, R>(
 
   /**
    * Claims the oldest job the runner may take, now, among those claimable for at least `minQueuedSeconds`. The same
-   * statement checks the runner's token still names it and that it has room under its registered capacity.
+   * statement checks the runner's token still names it, that it has room under its registered capacity, and that
+   * Smithers recorded the App's installation on its repository (decision 0148).
    */
   const claimOnce = (runner: Runner, claim: string, profiles: ReadonlyArray<string>, minQueuedSeconds: number) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -250,6 +254,7 @@ export const make = <E, R>(
         WHERE key = (
           SELECT j.key FROM agent_jobs j, runners r
           WHERE r.id = ${runner.id}::uuid AND r.token_sha256 = ${runner.tokenSha256} AND r.removed_at IS NULL
+            AND EXISTS (SELECT 1 FROM github_repositories g WHERE g.repo_id = r.repo_id AND g.installation_id IS NOT NULL)
             AND j.repo_id = r.repo_id AND j.status = 'queued' AND NOT j.cancel_requested
             AND j.profile = ANY(ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(profiles)}::jsonb)))
             AND j.labels <@ r.labels
@@ -468,6 +473,9 @@ export const make = <E, R>(
    */
   const gitCredential = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
     Effect.gen(function* () {
+      // Off until the security review's findings on decision 0148 are fixed: the runner reads 404 as no credential and
+      // fetches as before.
+      if (OFF) return refuse(fields, 404, "not_found")
       const asked = yield* bodyOf(request, decodeGitCredential)
       if (asked._tag === "Refused") return refuse(fields, asked.status, "invalid")
       fields.key = asked.value.key

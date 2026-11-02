@@ -35,7 +35,7 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 import { repositoryOf } from "../github/Config.ts"
 import { stopRoute } from "../../src/features/runs/contract.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../github/test/fixtures.ts"
-import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
+import { INSTALLATION_ID, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
 import { PersonalModels } from "../personal/Models.ts"
 import { KEY, resetModels, seedKeys } from "../personal/test/harness.ts"
@@ -476,7 +476,10 @@ describe("overflow on Cloudflare (decision 0144)", { timeout: 240_000 }, () => {
     writeFileSync(ctx.config, JSON.stringify({ ...attached, admission: { loadPerCpu: 1000, diskFloorGb: 100_000 } }))
     running.push(startRunner(ctx.config).child)
 
-    // An Admin in person turns overflow on: the host mints and registers the box runner's token.
+    // An Admin in person turns overflow on, where the App's installation is recorded (decision 0148): the host mints
+    // and registers the box runner's token.
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, installation_id) VALUES ('${REPOSITORY.id}', ${INSTALLATION_ID})
+      ON CONFLICT (repo_id) DO UPDATE SET installation_id = ${INSTALLATION_ID}`)
     const scope = Effect.runSync(Scope.make())
     const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(ctx.db)), scope))
     const flows = Context.get(built.context, FlowRuntime.FlowRuntime)

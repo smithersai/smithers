@@ -27,6 +27,12 @@ beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`TRUNCATE agent_jobs, runners, runner_changes, github_repositories RESTART IDENTITY CASCADE`)))
 
+/** Records the App's installation on `repoId`, as installation discovery does (worker/github/Store.ts). */
+const recordInstallation = (repoId = REPO) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    INSERT INTO github_repositories (repo_id, installation_id) VALUES (${repoId}, 42)
+    ON CONFLICT (repo_id) DO UPDATE SET installation_id = 42`))
+
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
 const query = <A>(effect: Effect.Effect<A, unknown, SqlClient.SqlClient>) => runtime.runPromise(effect)
 
@@ -42,6 +48,7 @@ const taskOf = (repository = REPO): AgentRunner.Task => ({
 
 const register = async (name: string, repoId = REPO) => {
   const token = `token-${name}-${crypto.randomUUID()}`
+  await recordInstallation(repoId)
   await query(Store.addRunner({ repoId, name, tokenSha256: digestSync(token), labels: ["linux"], capacity: 2 }, {
     actorId: "person-admin",
     invocationKey: crypto.randomUUID(),
@@ -88,56 +95,20 @@ const claimed = async (call: Awaited<ReturnType<typeof routes>>["call"], token: 
   (await call<{ readonly job: AgentRunner.Job }>("claim", token, { profiles: ["coder-profile"], free: 1, running: [], waitSeconds: 0 })).body.job
 
 describe("a runner's git credential", () => {
-  test("is handed out for a job the runner holds, for its own repository, never cached and never logged", async () => {
+  // Off until the security review's findings on decision 0148 are fixed: a runner fetches as before, so a public
+  // repository is unaffected and a private one fails `workspace`, as it did before the route.
+  test("the route is off: 404 for a job the runner holds, and the App mints nothing", async () => {
     const token = await register("nyc-01")
     const store = Jobs.make(await database())
     await Effect.runPromise(store.start(taskOf(), "todo:1#g1"))
     const { call, asked, lines } = await routes(credential)
     const job = await claimed(call, token)
     const answer = await call("gitCredential", token, { key: job.key, claim: job.claim })
-    expect(answer.status).toBe(200)
+    expect(answer).toMatchObject({ status: 404, body: { code: "not_found" } })
     expect(answer.headers.get("cache-control")).toBe("no-store")
-    expect(answer.body).toEqual({ remote: credential.remote, username: "x-access-token", password: SECRET, expiresAt: credential.expiresAt })
-    expect(asked).toEqual([REPO])
-    const logged = lines.join("\n")
-    expect(logged).toContain("runner.gitCredential")
-    expect(logged).toContain('"outcome":"issued"')
-    expect(logged).not.toContain(SECRET)
-  })
-
-  test("is refused for a job the runner doesn't hold, another repository's job, no token, and where it can't be minted", async () => {
-    const token = await register("nyc-01")
-    const store = Jobs.make(await database())
-    await Effect.runPromise(store.start(taskOf(), "todo:1#g1"))
-    const { call, asked } = await routes(credential)
-    const job = await claimed(call, token)
-    expect((await call("gitCredential", undefined, { key: job.key, claim: job.claim })).status).toBe(401)
-    expect(await call("gitCredential", token, { key: job.key, claim: crypto.randomUUID() })).toMatchObject({ status: 409, body: { code: "not_held" } })
-    expect(await call("gitCredential", token, { key: job.key, claim: "not-a-uuid" })).toMatchObject({ status: 409, body: { code: "not_held" } })
-    expect((await call("gitCredential", token, { key: job.key })).status).toBe(400)
-    // A persisted task outside the public schema fails closed before any credential is requested.
-    await query(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE agent_jobs SET task = '{}'::jsonb`))
-    expect(await call("gitCredential", token, { key: job.key, claim: job.claim })).toMatchObject({ status: 403, body: { code: "other_repository" } })
-    // A job of another repository, held by this runner as a row could say: never that repository's credential.
-    await query(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE agent_jobs SET task = ${JSON.stringify(taskOf("github/acme/secret"))}::jsonb`))
-    expect(await call("gitCredential", token, { key: job.key, claim: job.claim })).toMatchObject({ status: 403, body: { code: "other_repository" } })
     expect(asked).toEqual([])
-    // Settled, the claim holds nothing.
-    await query(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE agent_jobs SET task = ${JSON.stringify(taskOf())}::jsonb`))
-    const outcome = { _tag: "Done", changes: { additions: [], deletions: [] }, summary: "done", usage: {} }
-    expect((await call("settle", token, { key: job.key, claim: job.claim, outcome })).body).toEqual({ recorded: true })
-    expect((await call("gitCredential", token, { key: job.key, claim: job.claim })).status).toBe(409)
-  })
-
-  test("answers 404 without a minter or where the App can't mint one", async () => {
-    const token = await register("nyc-01")
-    const store = Jobs.make(await database())
-    await Effect.runPromise(store.start(taskOf(), "todo:1#g1"))
-    const none = await routes(null)
-    const job = await claimed(none.call, token)
-    expect(await none.call("gitCredential", token, { key: job.key, claim: job.claim })).toMatchObject({ status: 404, body: { code: "app_not_installed" } })
-    const unset = await routes()
-    expect(await unset.call("gitCredential", token, { key: job.key, claim: job.claim })).toMatchObject({ status: 404, body: { code: "not_configured" } })
+    expect(lines.join("\n")).not.toContain(SECRET)
+    expect((await call("gitCredential", undefined, { key: job.key, claim: job.claim })).status).toBe(401)
   })
 })
 

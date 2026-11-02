@@ -39,6 +39,10 @@ const member: Actor.Actor = { subject: { kind: "person", id: "person-member" }, 
 beforeEach(async () => {
   await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes, repo_overflow, secret_events RESTART IDENTITY CASCADE`))
+  // Overflow is turned on, and its runner claims, only where the App's installation is recorded (decision 0148).
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES (${REPO}, 42)
+      ON CONFLICT (repo_id) DO UPDATE SET installation_id = 42`))
   await resetModels(runtime)
 })
 

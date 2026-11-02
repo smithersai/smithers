@@ -33,7 +33,7 @@ const BASE = "0123456789abcdef0123456789abcdef01234567"
 
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes RESTART IDENTITY CASCADE`)))
+    sql`TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes, github_repositories RESTART IDENTITY CASCADE`)))
 
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
 const query = <A>(effect: Effect.Effect<A, unknown, SqlClient.SqlClient>) => runtime.runPromise(effect)
@@ -54,12 +54,18 @@ const taskOf = (overrides: Partial<AgentRunner.Task> = {}): AgentRunner.Task => 
   ...overrides,
 })
 
+/** Records the App's installation on `repoId`, as installation discovery does (worker/github/Store.ts). */
+const recordInstallation = (repoId = REPO) =>
+  sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES (${repoId}, 42)
+    ON CONFLICT (repo_id) DO UPDATE SET installation_id = 42`
+
 let invocations = 0
 const by = (): Store.By => ({ actorId: "person-admin", invocationKey: `test-${++invocations}` })
 
 /** Registers runner `name` and answers its token. */
 const register = async (name: string, labels: ReadonlyArray<string> = ["linux", "nyc"], capacity = 2) => {
   const token = `token-${name}-${crypto.randomUUID()}`
+  await recordInstallation()
   await query(Store.addRunner({ repoId: REPO, name, tokenSha256: digestSync(token), labels, capacity }, by()))
   return token
 }
@@ -514,7 +520,7 @@ describe("the repository's runners and agents", () => {
   })
 
   /** The Admin routes as `actor`, with flows run to their end on the Node host before the route answers. */
-  const adminRoutes = async (actor: Actor.Actor | null) => {
+  const adminRoutes = async (actor: Actor.Actor | null, repo = "acme/widgets") => {
     const db = await database()
     const scope = Effect.runSync(Scope.make())
     const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(db)), scope))
@@ -534,7 +540,7 @@ describe("the repository's runners and agents", () => {
       Effect.provide(branchRoles(db, "acme/widgets")),
     ))
     const send = async (path: string, method: string, body?: unknown) => {
-      const response = await handler(new Request(`http://localhost/api/repos/acme/widgets/${path}`, {
+      const response = await handler(new Request(`http://localhost/api/repos/${repo}/${path}`, {
         method,
         headers: { "content-type": "application/json" },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -545,6 +551,7 @@ describe("the repository's runners and agents", () => {
   }
 
   test("an Admin in person registers a runner and names the coding agent; anyone else is refused", async () => {
+    await recordInstallation()
     const asAdmin = await adminRoutes(admin)
     const asMember = await adminRoutes(member)
     const asNobody = await adminRoutes(null)
@@ -583,6 +590,47 @@ describe("the repository's runners and agents", () => {
     } finally {
       await Promise.all([asAdmin.close(), asMember.close(), asNobody.close(), asAgent.close()])
     }
+  })
+
+  // Production b9dca623: the route fell back to the deployment-wide role where Smithers had recorded no installation,
+  // so a deployment Admin could register a runner on a private repository they can't read, and claim its jobs once the
+  // installation was recorded.
+  test("without a recorded installation, a deployment Admin registers no runner, agent or overflow", async () => {
+    for (const repo of ["acme/private", "acme/widgets"]) {
+      const asAdmin = await adminRoutes(admin, repo)
+      try {
+        expect(await asAdmin.send("runners/nyc-01", "PUT", { tokenSha256: "b".repeat(64), labels: [], capacity: 1 }))
+          .toEqual({ status: 403, body: { code: "forbidden" } })
+        expect((await asAdmin.send("agents/coder", "PUT", { labels: [], profile: "p" })).status).toBe(403)
+        expect((await asAdmin.send("overflow/cloudflare", "PUT", {})).status).toBe(403)
+      } finally {
+        await asAdmin.close()
+      }
+    }
+    expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+  })
+
+  test("with a recorded installation, the role must be the one GitHub gives there, never the deployment's", async () => {
+    // The harness has no App to ask GitHub, so nobody holds a role on a repository other than the deployment's own.
+    await recordInstallation("github/acme/private")
+    const asAdmin = await adminRoutes(admin, "acme/private")
+    try {
+      expect((await asAdmin.send("runners/nyc-01", "PUT", { tokenSha256: "b".repeat(64), labels: [], capacity: 1 })).status)
+        .toBe(403)
+    } finally {
+      await asAdmin.close()
+    }
+    expect(await sql`SELECT count(*)::int AS n FROM runners`).toEqual([{ n: 0 }])
+  })
+
+  test("a runner on a repository with no recorded installation claims none of its jobs", async () => {
+    const token = await register("nyc-01")
+    await sql`DELETE FROM github_repositories`
+    await Effect.runPromise((await jobs()).start(taskOf(), "todo:uninstalled#g1"))
+    const { claim } = await routes()
+    expect((await claim(token)).body).toEqual({ job: null })
+    await recordInstallation()
+    expect((await claim(token)).body.job?.key).toBe("todo:uninstalled#g1")
   })
 })
 
@@ -655,6 +703,7 @@ describe("unhappy paths, through a database that is down or a starter that refus
   })
 
   test("an Admin route answers 503 when its flow can't start or who is asking can't be read", async () => {
+    await recordInstallation()
     const db = await database()
     const api = await Effect.runPromise(Admin.make(db))
     const refusing = Flows.FlowStarter.of({ start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "down" })) })

@@ -5,6 +5,10 @@ Date: 2026-11-02
 
 A runner (decision 0136) checks out a TODO's base from a local jj mirror it fetches from GitHub. For a private repository the fetch needs a credential, and the runner had none: every private repository whose TODOs ran on a runner failed `workspace`. The issue-tracking proof hit it on its private repository (docs/features/work-links.md#the-proof). The runner's pull request already goes through the host: the runner sends its change, and the App writes the branch and the pull request (docs/features/agent-runners.md), so only reading was missing.
 
+## Status of the route
+
+Off since 2026-11-02: `POST /api/runners/git-credential` answers `404 not_found` to every runner, and the runner fetches without a credential, until the security review's findings are fixed. The review found that registration didn't prove the registrant's access to the repository: where Smithers had recorded no App installation, the Admin route took the deployment-wide role. Registration now needs the recorded installation and the Admin role GitHub gives on that repository, and a claim needs the recorded installation.
+
 ## Decision
 
 1. **The host mints, per job, a read-only token for one repository.** `POST /api/runners/git-credential { key, claim }` with the runner's own token answers `{ remote, username, password, expiresAt }` only while that runner holds that job (`claimed`, before its deadline), and only for the repository the runner is registered on, whatever the task names. The token is the App's installation token minted with `repositories: [<name>]` and `permissions: { contents: "read" }`: it can read that repository's contents and nothing else, and it can't write.

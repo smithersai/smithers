@@ -103,6 +103,12 @@ export class BranchRoles extends Context.Service<
      * Absent, the session's.
      */
     readonly uninstalled?: (actor: Actor, repoId: string) => Role | null
+    /**
+     * The role GitHub gives `actor` on `repoId` (`RepoRoles.resolve`), with no fallback: none where the deployment can't
+     * act on it (`RepoRoles.CANT_ACT`). What grants a machine access to the repository asks this (decision 0148).
+     * Absent, nobody holds one.
+     */
+    readonly repoRoleOn?: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused>
   }
 >()("@smthrs/mvp/branch/BranchRoles") {
   /** `BranchRoles` over `roles`, with what its database needs taken from where the layer is built. */
@@ -114,6 +120,12 @@ export class BranchRoles extends Context.Service<
           roleOn: (actor, repoId) =>
             RepoRoles.workRole(roles, actor, repositoryOf(repoId.replace(/^github\//, ""))).pipe(Effect.provideContext(context)),
           uninstalled: (actor, repoId) => RepoRoles.uninstalledRole(roles, actor, repositoryOf(repoId.replace(/^github\//, ""))),
+          repoRoleOn: (actor, repoId) =>
+            roles.resolve(actor, repositoryOf(repoId.replace(/^github\//, ""))).pipe(
+              Effect.map((resolved) => resolved.role),
+              Effect.catch((refused) => RepoRoles.CANT_ACT.has(refused.code) ? Effect.succeed(null) : Effect.fail(refused)),
+              Effect.provideContext(context),
+            ),
         })),
     )
 }
@@ -132,6 +144,18 @@ export const roleOn = (
     const roles = yield* BranchRoles
     if (installed) return yield* roles.roleOn(actor, repoId)
     return roles.uninstalled === undefined ? actor.role : roles.uninstalled(actor, repoId)
+  })
+
+/**
+ * The role `actor` holds on repository `repoId` for granting a machine access to it (decision 0148): only where Smithers
+ * recorded the App's installation, and only the role GitHub gives there (`BranchRoles.repoRoleOn`), never the
+ * deployment's session role standing in for it.
+ */
+export const repoRoleOn = (actor: Actor, repoId: string) =>
+  Effect.gen(function* () {
+    if (!(yield* installedOn(repoId))) return null
+    const roles = yield* BranchRoles
+    return roles.repoRoleOn === undefined ? null : yield* roles.repoRoleOn(actor, repoId)
   })
 
 /** Whether Smithers recorded the App's installation on repository `repoId`. */

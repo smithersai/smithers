@@ -32,7 +32,11 @@ beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`TRUNCATE agent_runs, fleet_alerts, agent_jobs, runners, runner_changes, agents, agent_changes, notifications,
       alert_channels, alert_deliveries, github_repo_roles, sessions, people, todo_attempts, todos, stacks
-      RESTART IDENTITY CASCADE`)))
+      RESTART IDENTITY CASCADE`.pipe(
+      // A runner claims only where the App's installation is recorded (decision 0148).
+      Effect.andThen(sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES (${REPO}, 42)
+        ON CONFLICT (repo_id) DO UPDATE SET installation_id = 42`),
+    ))))
 
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
 const query = <A>(effect: Effect.Effect<A, unknown, SqlClient.SqlClient>) => runtime.runPromise(effect)

@@ -12,7 +12,7 @@ import {
 } from "../../src/features/runners/contract.ts"
 import { refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
-import { installedOn, roleOn } from "../branch/Access.ts"
+import { installedOn, repoRoleOn, roleOn } from "../branch/Access.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
@@ -34,8 +34,9 @@ import * as Store from "./Store.ts"
 //   runner's token itself and seals it under SECRETS_KEY before the flow starts: no person, journal or log sees it, and
 //   each PUT rotates it. Without SECRETS_KEY it is `503 unavailable`.
 //
-// Each needs an Admin of the repository (the role they work with there, decision 0079) acting in person, never an
-// agent, flow or sandbox acting for them; the route admits the write, then starts the flow and answers 202.
+// Each needs an Admin of the repository acting in person, never an agent, flow or sandbox acting for them; the route
+// admits the write, then starts the flow and answers 202. A PUT needs the App's recorded installation on the repository
+// and the Admin role GitHub gives there (decision 0148); a GET or DELETE, the role they work with there (decision 0079).
 
 /** Admin route requests, by `kind`, `op` and `outcome`. */
 export const requests = Metric.counter("smithers_runner_admin_requests", {
@@ -111,7 +112,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
         return refuse(403, "forbidden")
       }
       const repo = repoId(route.owner, route.name)
-      const role = yield* roleOn(actor.value, repo, yield* installedOn(repo).pipe(Effect.provide(database)))
+      // A write grants a machine the repository's jobs, their prompts and code, and a pull request the App writes: it
+      // needs the App's recorded installation there and the Admin role GitHub gives there, never the deployment's
+      // (decision 0148). Reading an agent, or retiring a runner or agent, takes the role the person works with.
+      const role = op === "put"
+        ? yield* repoRoleOn(actor.value, repo).pipe(Effect.provide(database))
+        : yield* roleOn(actor.value, repo, yield* installedOn(repo).pipe(Effect.provide(database)))
       if (role !== "admin") return refuse(403, "forbidden")
       if (!isName(route.item)) return refuse(400, "invalid")
       if (route.kind === "overflow" && route.item !== "cloudflare") return refuse(404, "not_found")
