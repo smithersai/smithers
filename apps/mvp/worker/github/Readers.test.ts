@@ -228,6 +228,26 @@ const answerOf = async (response: Response) => {
   }
 }
 
+/**
+ * One shape read as a device's Electric client makes it: the route's answer, the same request again when it answers
+ * `409 must-refetch`.
+ */
+const readShape = async (h: Awaited<ReturnType<typeof harnessFor>>, path: string, headers: Record<string, string>) => {
+  let next = path
+  for (let attempt = 0;; attempt++) {
+    const response = await h.fetch(next, { headers })
+    const handle = response.headers.get("electric-handle")
+    // Electric's client (`@electric-sql/client`): a 409 names the shape's new handle; ask again from its start.
+    if (response.status !== 409 || handle === null || attempt === 3) return response
+    await response.text()
+    const url = new URL(next, "http://localhost")
+    url.searchParams.set("offset", "-1")
+    url.searchParams.set("handle", handle)
+    url.searchParams.delete("live")
+    next = `${url.pathname}${url.search}`
+  }
+}
+
 const repoParam = (repo: Repo) => `repo=${encodeURIComponent(`${repo.owner}/${repo.name}`)}`
 
 /** One repository shape a page reads: its name, its path, the table its metric counts under, and whether it refreshes a pull. */
@@ -288,6 +308,36 @@ const values = (body: string) =>
 /** A refusal at the deployment or the request's own validation: nothing about the viewer is read. */
 const beforeViewer = (answer: string) => ["404 not_found", "404 app_not_installed", "400 invalid"].includes(answer)
 
+// Main's landing of 6d9e7853, 2026-11-02: "other public, signed out" read `409` for the work links. The truncate of the
+// last cell's rows was still replicating, so Electric answered the fresh request `409 must-refetch`, which a device's
+// client follows and this file's reader didn't. Forced here: a request under the shape's handle from before a truncate
+// Electric has replicated.
+test("a shape read after a truncate follows Electric's 409 must-refetch, as a device's client does", async () => {
+  const cell = MATRIX.find((each) => each.name === "other public, signed out")!
+  await seed(cell)
+  const h = await harnessFor(cell)
+  const path = `${WORK_LINKS_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=-1`
+  const opened = await h.fetch(path)
+  expect(opened.status).toBe(200)
+  await opened.text()
+  const handle = opened.headers.get("electric-handle")!
+  await sql(runtime, `TRUNCATE work_links`)
+  // Electric has replicated the truncate once the handle's live request answers 409.
+  let offset = opened.headers.get("electric-offset")!
+  for (;;) {
+    const live = await h.fetch(`${WORK_LINKS_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=${offset}&handle=${handle}&live=true`)
+    await live.text()
+    if (live.status === 409) break
+    expect(live.status).toBe(200)
+    offset = live.headers.get("electric-offset")!
+  }
+  // The device asks on from where it was, under its handle: Electric answers must-refetch, which the client follows.
+  const answered = await answerOf(
+    await readShape(h, `${WORK_LINKS_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=${offset}&handle=${handle}`, {}),
+  )
+  expect(answered.answer).toBe("200")
+})
+
 describe("one access matrix for every reader of a repository's issues", () => {
   test.each(MATRIX)("$name", async (cell) => {
     await seed(cell)
@@ -298,7 +348,7 @@ describe("one access matrix for every reader of a repository's issues", () => {
     const bodies: Record<string, string> = {}
     const receipts: Record<string, string | null> = {}
     for (const { reader, path } of readers) {
-      const answered = await answerOf(await h.fetch(path, { headers }))
+      const answered = await answerOf(await readShape(h, path, headers))
       answers[reader] = answered.answer
       bodies[reader] = answered.body
       receipts[reader] = answered.receipt
