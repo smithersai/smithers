@@ -18,7 +18,7 @@ const rows = async (response: Response) => {
 }
 const seeded = () => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.all([
   sql`INSERT INTO agent_runs (key, repo_id, agent, generation, queued_at, account_label, context_tokens, cost_usd)
-    VALUES ('a', 'github/smithersai/vibelang', 'coder', 1, now(), 'codex-a', 1234, 1.25),
+    VALUES ('a', 'github/smithersai/vibelang', 'coder', 1, now(), 'account-a', 1234, 1.25),
       ('other', 'github/acme/other', 'coder', 1, now(), 'private-other', NULL, NULL)`,
   sql`INSERT INTO runners (id, repo_id, name, token_sha256, labels, capacity, added_by)
     VALUES (gen_random_uuid(), 'github/smithersai/vibelang', 'mini', repeat('a', 64), ARRAY['mac'], 2, 'private-person')`,
@@ -34,7 +34,7 @@ describe("the fleet's shapes", () => {
     expect(publicRuns[0]).not.toHaveProperty("account_label")
     for (const actor of [maintainer, admin]) {
       const h = await fleetHarness(runtime, { actor })
-      expect(await rows(await h.fetch(shape(AGENT_RUNS_SHAPE_ROUTE)))).toMatchObject([{ key: "a", account_label: "codex-a" }])
+      expect(await rows(await h.fetch(shape(AGENT_RUNS_SHAPE_ROUTE)))).toMatchObject([{ key: "a", account_label: "account-a" }])
       const machines = await rows(await h.fetch(shape(MACHINES_SHAPE_ROUTE)))
       expect(machines).toMatchObject([{ name: "mini", capacity: "2" }])
       expect(JSON.stringify(machines)).not.toMatch(/private-token-digest|private-person|token_sha256|added_by/)
