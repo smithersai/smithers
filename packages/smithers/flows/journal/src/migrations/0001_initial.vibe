@@ -1,0 +1,53 @@
+/**
+ * Initial durable journal event schema.
+ *
+ * @since 0.1.0
+ */
+
+import * as Dialect from "@smthrs/database/Dialect"
+import * as Effect from "effect/Effect"
+import * as SqlClient from "effect/sql/SqlClient"
+
+/**
+ * Creates the `flows_journal_events` table and its event-type index.
+ *
+ * @category migrations
+ * @since 0.1.0
+ */
+export const initial: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+
+  try Effect.suspend(effect () =>
+    sql`CREATE TABLE flows_journal_events (
+    run_id TEXT NOT NULL CHECK (length(run_id) > 0),
+    seq ${try Effect.orDie(
+      Effect.try({ try: () => Dialect.integer(sql), catch: (error) => error })
+    )} NOT NULL CHECK (${try Effect.orDie(
+      Effect.try({ try: () => Dialect.isInteger(sql, sql`seq`), catch: (error) => error })
+    )} AND seq >= 0 AND seq <= 9007199254740991),
+    event_id TEXT NOT NULL UNIQUE CHECK (length(event_id) > 0),
+    source_id TEXT NOT NULL CHECK (length(source_id) > 0),
+    source_seq ${try Effect.orDie(
+      Effect.try({ try: () => Dialect.integer(sql), catch: (error) => error })
+    )} NOT NULL CHECK (${try Effect.orDie(
+      Effect.try({ try: () => Dialect.isInteger(sql, sql`source_seq`), catch: (error) => error })
+    )} AND source_seq >= 0 AND source_seq <= 9007199254740991),
+    emitted_at_ms ${try Effect.orDie(
+      Effect.try({ try: () => Dialect.integer(sql), catch: (error) => error })
+    )} NOT NULL CHECK (${try Effect.orDie(
+      Effect.try({ try: () => Dialect.isInteger(sql, sql`emitted_at_ms`), catch: (error) => error })
+    )} AND emitted_at_ms >= 0 AND emitted_at_ms <= 9007199254740991),
+    event_type TEXT NOT NULL CHECK (length(event_type) > 0),
+    payload_json TEXT NOT NULL CHECK (${try Effect.orDie(
+      Effect.try({ try: () => Dialect.jsonValid(sql, sql`payload_json`), catch: (error) => error })
+    )}),
+    meta_json TEXT NOT NULL CHECK (${try Effect.orDie(
+      Effect.try({ try: () => Dialect.jsonValid(sql, sql`meta_json`), catch: (error) => error })
+    )}),
+    PRIMARY KEY (run_id, seq),
+    UNIQUE (run_id, source_id, source_seq)
+  )`
+  )
+
+  try Effect.suspend(() => sql`CREATE INDEX flows_journal_events_event_type_idx ON flows_journal_events (event_type)`)
+}
