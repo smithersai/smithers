@@ -264,8 +264,6 @@ const Push = Schema.Struct({
     default_branch: Schema.String,
     pushed_at: Schema.optional(Schema.NullOr(Schema.Number)),
   }),
-  head_commit: Schema.optional(Schema.NullOr(Schema.Struct({ message: Schema.String }))),
-  pusher: Schema.optional(Schema.Struct({ name: Schema.String })),
 })
 const decodePush = Schema.decodeUnknownOption(Push)
 
@@ -273,9 +271,7 @@ const Release = Schema.Struct({
   action: Schema.Literal("published"),
   release: Schema.Struct({
     tag_name: Schema.String.check(Schema.isBetweenLength(1, 255)),
-    name: Schema.optional(Schema.NullOr(Schema.String)),
     published_at: Schema.optional(Schema.NullOr(Schema.String)),
-    author: Schema.optional(Schema.NullOr(Schema.Struct({ login: Schema.String }))),
   }),
   repository: Schema.Struct({ full_name: Schema.String }),
 })
@@ -296,6 +292,11 @@ const isRepository = (fullName: string, repository: Synced) =>
  * The feed's event in GitHub's delivery `event` of `payload`, for `repository`: a push to its default branch that moved
  * it (not one that deleted it) is `main`; a published release is `release`. Anything else, or another repository's, is
  * none. `now` dates an event GitHub doesn't.
+ *
+ * Its row names only the repository (`owner/name`), the commit or the tag, and the link: never the commit's message,
+ * the release's name or who pushed. Watchers are picked by their role on the deployment's own repository, which may
+ * not be their access to this one; the page the link opens checks that, as a GitHub notification links to a private
+ * repository rather than quoting it.
  */
 export const repoEventOf = (
   event: string,
@@ -313,8 +314,8 @@ export const repoEventOf = (
           kind: "main",
           repoId: repository.id,
           ref: push.after,
-          title: titleOf(push.head_commit?.message),
-          actor: push.pusher?.name.slice(0, 100) ?? null,
+          title: `${repository.owner}/${repository.name}`,
+          actor: null,
           occurredAt: typeof push.repository.pushed_at === "number" ? new Date(push.repository.pushed_at * 1000) : now,
           href: path,
         }))
@@ -327,8 +328,8 @@ export const repoEventOf = (
         kind: "release",
         repoId: repository.id,
         ref: published.release.tag_name,
-        title: titleOf(published.release.name) ?? titleOf(published.release.tag_name),
-        actor: published.release.author?.login.slice(0, 100) ?? null,
+        title: `${repository.owner}/${repository.name}`,
+        actor: null,
         occurredAt: Number.isNaN(at) ? now : new Date(at),
         href: `${path}/tree/${published.release.tag_name}`,
       })

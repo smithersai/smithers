@@ -610,8 +610,9 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
         kind: "main",
         state: "update",
         ref: SHA("a"),
-        title: "Fix the parser sentinel-9a1e",
-        actor: "dana",
+        // The repository, the commit and the link, never the message or who pushed: the page checks access.
+        title: "acme/widgets",
+        actor: null,
         href: "/acme/widgets",
         version: 1,
       }),
@@ -633,6 +634,7 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
       expect.objectContaining({ kind: "main", repoId: REPOSITORY.id, watchers: 3, written: 2 }),
     )
     expect(JSON.stringify(h.logs)).not.toContain("sentinel-9a1e")
+    expect(JSON.stringify(await mainRows())).not.toMatch(/sentinel-9a1e|dana/)
   })
 
   test("other branches, a deleted branch, another repository and other events reach no one", async () => {
@@ -664,9 +666,9 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
       expect.objectContaining({
         recipient: ANN,
         kind: "release",
-        title: "Widgets v1.2.0",
+        title: "acme/widgets",
         ref: "v1.2.0",
-        actor: "dana",
+        actor: null,
         href: "/acme/widgets/tree/v1.2.0",
         version: 1,
       }),
@@ -718,8 +720,8 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
     )
     const again = await rows(`release:${REPOSITORY.id}:v2`)
     expect(again).toEqual([
-      expect.objectContaining({ recipient: ANN, title: "Widgets v2, again", actor: "eli", version: 2 }),
-      expect.objectContaining({ recipient: BEN, title: "Widgets v2, again", actor: "eli", version: 2 }),
+      expect.objectContaining({ recipient: ANN, title: "acme/widgets", actor: null, version: 2 }),
+      expect.objectContaining({ recipient: BEN, title: "acme/widgets", actor: null, version: 2 }),
     ])
     await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("release", release("v2")))
     expect(await rows(`release:${REPOSITORY.id}:v2`)).toEqual(again)
@@ -728,21 +730,21 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
 
 describe("repoEventOf and titleOf", () => {
   const now = new Date("2026-10-20T00:00:00Z")
-  test("dates an event GitHub doesn't, names it by its tag when it has no name, and cuts long titles", () => {
+  test("dates an event GitHub doesn't, names only the repository, and cuts long titles", () => {
     const event = Notifications.repoEventOf(
       "push",
       { ref: "refs/heads/main", after: "f".repeat(40), repository: { full_name: "acme/widgets", default_branch: "main" } },
       REPOSITORY,
       now,
     )
-    expect(Option.getOrThrow(event)).toMatchObject({ occurredAt: now, title: null, actor: null })
+    expect(Option.getOrThrow(event)).toMatchObject({ occurredAt: now, title: "acme/widgets", actor: null })
     const unnamed = Notifications.repoEventOf(
       "release",
       { action: "published", release: { tag_name: "v2", name: null, published_at: "not a date" }, repository: { full_name: "acme/widgets" } },
       REPOSITORY,
       now,
     )
-    expect(Option.getOrThrow(unnamed)).toMatchObject({ title: "v2", occurredAt: now, actor: null })
+    expect(Option.getOrThrow(unnamed)).toMatchObject({ title: "acme/widgets", ref: "v2", occurredAt: now, actor: null })
     const undated = Notifications.repoEventOf(
       "release",
       { action: "published", release: { tag_name: "v3" }, repository: { full_name: "acme/widgets" } },
