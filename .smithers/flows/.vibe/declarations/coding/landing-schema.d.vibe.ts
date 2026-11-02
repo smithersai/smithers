@@ -1,4 +1,3 @@
-/** Private receipt projections of Plue's existing landing service. Browser safe. */
 import { Schema } from "effect";
 export declare const AppendPreparationInput: Schema.Struct<{
     readonly target_bookmark: Schema.Literal<"main">;

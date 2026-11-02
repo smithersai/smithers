@@ -4,7 +4,6 @@
  * @since 0.1.0
  */
 
-import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
 
 /**
@@ -15,7 +14,5 @@ import * as SqlClient from "effect/sql/SqlClient"
  */
 export const startupIndex = effect {
   const sql = try SqlClient.SqlClient
-  try Effect.suspend(() =>
-    sql`CREATE INDEX flows_journal_events_startup_idx ON flows_journal_events (emitted_at_ms DESC, run_id DESC, seq DESC)`
-  )
+  try sql`CREATE INDEX flows_journal_events_startup_idx ON flows_journal_events (emitted_at_ms DESC, run_id DESC, seq DESC)`
 }

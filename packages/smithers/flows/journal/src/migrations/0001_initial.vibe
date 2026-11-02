@@ -49,5 +49,5 @@ export const initial: void!unknown!SqlClient.SqlClient = effect {
   )`
   )
 
-  try Effect.suspend(() => sql`CREATE INDEX flows_journal_events_event_type_idx ON flows_journal_events (event_type)`)
+  try sql`CREATE INDEX flows_journal_events_event_type_idx ON flows_journal_events (event_type)`
 }

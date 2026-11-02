@@ -1,17 +1,15 @@
 /** Private receipt projections of Plue's existing landing service. Browser safe. */
-import { Schema } from "effect"
 import { ChangeId, Resolved, SourcePublication } from "./native-schema.ts"
 import { Plan, Receipt } from "./schema.ts"
 
 const CommitId = Resolved.fields.commitId
 const PositiveId = Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
-export const AppendPreparationInput = Schema.Struct({
-  target_bookmark: Schema.Literal("main"),
-  expected_commit_id: CommitId,
-  source_commit_id: CommitId,
-  source_base_commit_id: CommitId,
-})
-export type AppendPreparationInput = typeof AppendPreparationInput.Type
+export schema AppendPreparationInput {
+  target_bookmark: "main"
+  expected_commit_id: CommitId
+  source_commit_id: CommitId
+  source_base_commit_id: CommitId
+}
 export const AppendPreparation = Schema.Struct({
   ...AppendPreparationInput.fields,
   status: Schema.Literal("prepared"),
@@ -21,8 +19,7 @@ export const AppendPreparation = Schema.Struct({
   ),
 })
 export type AppendPreparation = typeof AppendPreparation.Type
-export const LandingIdentity = Schema.Struct({ requestId: SourcePublication.fields.requestId, number: PositiveId })
-export type LandingIdentity = typeof LandingIdentity.Type
+export schema LandingIdentity { requestId: SourcePublication.fields.requestId; number: PositiveId }
 export const AppendRequest = Schema.Struct({
   commit_id: CommitId,
   expected_commit_id: CommitId,
@@ -101,12 +98,11 @@ export const LaneSubmission = Schema.Struct({
 })
 export type LaneSubmission = typeof LaneSubmission.Type
 /** The stack service's receipt: the item that now carries this candidate. */
-export const LaneReceipt = Schema.Struct({
-  itemId: Schema.NonEmptyString,
-  state: Schema.NonEmptyString,
-  source: CommitId,
-})
-export type LaneReceipt = typeof LaneReceipt.Type
+export schema LaneReceipt {
+  itemId: Schema.NonEmptyString
+  state: Schema.NonEmptyString
+  source: CommitId
+}
 /**
  * Landing without the backend: `.smithers/coding-project.json` `landing`
  * selects it for a host that has no provisioned repository binding.
@@ -117,13 +113,13 @@ export type LocalLander = typeof LocalLander.Type
 export const Lander = Schema.Literals(["backend", ...LocalLander.literals])
 export type Lander = typeof Lander.Type
 /** The one candidate commit a local lander built: the cleaned tip merged onto main, with main as its sole parent. */
-const LandingRevision = Schema.Struct({
-  changeId: ChangeId,
-  commitId: CommitId,
-  treeId: CommitId,
-  operationId: Schema.NonEmptyString,
-  parentCommitIds: Schema.Array(CommitId),
-})
+schema LandingRevision {
+  changeId: ChangeId
+  commitId: CommitId
+  treeId: CommitId
+  operationId: Schema.NonEmptyString
+  parentCommitIds: ReadonlyArray<CommitId>
+}
 export const LandingCandidate = Schema.Struct({
   lander: LocalLander,
   /** Main as the candidate was built on it. */

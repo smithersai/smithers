@@ -120,15 +120,10 @@ export const step = effect (
   // that carries none is corrupt evidence for either: the engine stamps
   // the lineage on every record it writes.
   const kind = isPlan ? "plan" : "snapshot"
-  const { lineageId } = try (Schema.decodeUnknownEffect(LineageMetadata)(entry.meta)
-    |> Effect.mapError(
-      %,
-      (cause) => error("invalid", `${kind} event ${entry.eventId} has corrupt lineage metadata`, cause)
-    ))
+  const { lineageId } = Schema.decodeUnknownEffect(LineageMetadata)(entry.meta) catch effect (cause) => { throw error("invalid", `${kind} event ${entry.eventId} has corrupt lineage metadata`, cause) }
   const lineage = state.lineages[lineageId] ?? emptyLineage
   if (isPlan) {
-    const plan = try (Schema.decodeUnknownEffect(PlanPayload)(entry.payload)
-      |> Effect.mapError(%, (cause) => error("invalid", `plan event ${entry.eventId} is corrupt`, cause)))
+    const plan = Schema.decodeUnknownEffect(PlanPayload)(entry.payload) catch effect (cause) => { throw error("invalid", `plan event ${entry.eventId} is corrupt`, cause) }
     return {
       state: {
         ...state,
@@ -140,8 +135,7 @@ export const step = effect (
       anchor: undefined
     }
   }
-  const payload = try (Schema.decodeUnknownEffect(SnapshotPayload)(entry.payload)
-    |> Effect.mapError(%, (cause) => error("invalid", `snapshot event ${entry.eventId} is corrupt`, cause)))
+  const payload = Schema.decodeUnknownEffect(SnapshotPayload)(entry.payload) catch effect (cause) => { throw error("invalid", `snapshot event ${entry.eventId} is corrupt`, cause) }
   // `carried` asserts "the same pointer as this lineage's previous anchor",
   // the cheap half of the per-frame obligation. Resolving it here, from the
   // lineage's own state, is what turns one journal row into a real tier-2
