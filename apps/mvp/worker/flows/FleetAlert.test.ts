@@ -3,7 +3,8 @@ import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Data, Effect, Exit, Layer, Logger, Metric, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
-import { expect, test } from "vitest"
+import { describe, expect, test } from "vitest"
+import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Flows from "../Flows.ts"
 import { testFile } from "../test/harness.ts"
 import * as Fleet from "../runners/Fleet.ts"
@@ -97,4 +98,64 @@ test("an alert that cannot be admitted never fails the probe or marks its incide
   ))
   expect(Effect.runSync(Metric.value(Metric.withAttributes(Fleet.raised, { kind: "offline", outcome: "not_started" })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count).toBe(1)
   expect(Effect.runSync(Metric.value(Metric.withAttributes(Fleet.raised, { kind: "offline", outcome: "started" })).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count).toBe(0)
+})
+
+describe("a bell row carries the incident's kind, its repository and its link, nothing private", () => {
+  const WIDGETS = "github/acme/widgets"
+  const query = (text: string, ...params: ReadonlyArray<unknown>) =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.orDie(sql.unsafe<Record<string, unknown>>(text, params))))
+  const bellRows = (alertId: string) =>
+    query(`SELECT recipient, title, href FROM notifications WHERE subject = $1 ORDER BY recipient`, `fleet:${alertId}`)
+  const ring = async (alert: Fleet.Alert) =>
+    runtime.runPromise(Effect.flatMap(TestDatabase.Scratch, (scratch) => FleetAlert.observedBell(alert, "github/acme/home", scratch.database)))
+
+  test("a revoked Admin whose stale cached row still says Admin hears the kind and the repository, never the title or the cost", async () => {
+    const revoked = crypto.randomUUID()
+    await query(`INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at) VALUES ($1, $2, 'admin', now() - interval '2 hours')`, WIDGETS, revoked)
+    await query(`INSERT INTO agent_runs (key, repo_id, agent, generation, queued_at, number, title, cost_usd)
+      VALUES ('private-cost', $1, 'coder', 1, now(), 9, 'acquire initech quietly', 12.5)`, WIDGETS)
+    await ring({ alertId: "cost-private", kind: "cost", repoId: WIDGETS, subject: "private-cost" })
+    expect(await bellRows("cost-private")).toEqual([
+      { recipient: revoked, title: "Agent run cost · acme/widgets", href: "/acme/widgets/stack/9" },
+    ])
+    expect(JSON.stringify(await bellRows("cost-private"))).not.toMatch(/initech|12\.50|coder/)
+  })
+
+  test("the committer: no row while a cached row says no role or less than Member; else the kind and the repository", async () => {
+    const todo = async (committer: string, number: number) => {
+      const attemptId = crypto.randomUUID()
+      const todoId = crypto.randomUUID()
+      await query(`INSERT INTO stacks (repo_id) VALUES ($1) ON CONFLICT DO NOTHING`, WIDGETS)
+      await query(`INSERT INTO todos (id, repo_id, number, title, state, position, created_by, created_login, failure)
+        VALUES ($1, $2, $3, 'acquire initech quietly', 'working', $3, $4, 'someone', 'implement')`, todoId, WIDGETS, number, committer)
+      await query(`INSERT INTO todo_attempts (id, todo_id, repo_id, ordinal, revision, status) VALUES ($1, $2, $3, 1, 1, 'running')`,
+        attemptId, todoId, WIDGETS)
+      return { alertId: Fleet.alertId.failed(attemptId), kind: "failed", repoId: WIDGETS, subject: attemptId } satisfies Fleet.Alert
+    }
+    const removed = crypto.randomUUID()
+    const guest = crypto.randomUUID()
+    const unknown = crypto.randomUUID()
+    const stale = crypto.randomUUID()
+    // A read that claimed the row and never heard from GitHub: no role recorded, not a denial.
+    const unresolved = crypto.randomUUID()
+    await query(`INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at) VALUES
+      ($1, $2, NULL, now()), ($1, $3, 'guest', now()), ($1, $4, 'admin', now() - interval '2 hours'), ($1, $5, NULL, '-infinity')`,
+      WIDGETS, removed, guest, stale, unresolved)
+    for (
+      const [committer, number, heard] of [[removed, 1, false], [guest, 2, false], [unknown, 3, true], [stale, 4, true], [unresolved, 5, true]] as const
+    ) {
+      const alert = await todo(committer, number)
+      await ring(alert)
+      const rows = await bellRows(alert.alertId)
+      // Others with cached roles are in every failure's audience; the committer is who this checks.
+      expect(rows.filter((row) => row.recipient === committer)).toEqual(heard ? [{ recipient: committer, title: "Agent run failed · acme/widgets", href: `/acme/widgets/stack/${number}` }] : [])
+      expect(JSON.stringify(rows)).not.toMatch(/initech|implement/)
+    }
+  })
+})
+
+test("a bell title with a repository's longest name is cut to a title's 200 characters", () => {
+  const title = FleetAlert.bellTitleOf("waiting", `github/${"o".repeat(100)}/${"n".repeat(100)}`)
+  expect(title).toHaveLength(200)
+  expect(title.endsWith("…")).toBe(true)
 })

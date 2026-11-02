@@ -1,11 +1,15 @@
 // Audience and shape filtering through the real HTTP handler, Postgres and Electric, including typed role faults.
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import { AGENT_RUNS_SHAPE_ROUTE, MACHINES_SHAPE_ROUTE } from "../../src/features/fleet/contract.ts"
 import * as Actor from "../Actor.ts"
 import { admin, agent, maintainer, member, refusingRoles } from "../feeds/test/harness.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
+import * as TestDatabase from "../../db/TestDatabase.ts"
+import { repositoryOf } from "../github/Config.ts"
+import { app } from "../github/test/harness.ts"
+import { accountIdOf, appKey, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { testFile } from "../test/harness.ts"
 import * as FleetApi from "./FleetApi.ts"
 import { fleetHarness } from "./test/fleet.ts"
@@ -82,5 +86,30 @@ describe("the fleet's shapes", () => {
     expect(FleetApi.handles(AGENT_RUNS_SHAPE_ROUTE)).toBe(true)
     expect(FleetApi.handles(MACHINES_SHAPE_ROUTE)).toBe(true)
     expect(FleetApi.handles("/other")).toBe(false)
+  })
+})
+
+describe("a fleet bell row's link shows nothing private to someone whose access ended (decision 0079)", () => {
+  test("a stale cached Admin row GitHub no longer backs: the runs and machines are refused before Electric", async () => {
+    const github = scriptedGitHub("smithersai", "vibelang")
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const roles = await runtime.runPromise(RepoRoles.make(scratch.database, {
+      repository: repositoryOf("smithersai/smithers"),
+      app: Option.some(app({ privateKey: await appKey() })),
+      http: github.http,
+    }))
+    const id = crypto.randomUUID()
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.all([
+      sql`INSERT INTO people (id, github_id, github_login) VALUES (${id}, ${accountIdOf("revoked")}, 'revoked')`,
+      sql`INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+        VALUES ('github/smithersai/vibelang', ${id}, 'admin', now() - interval '1 hour')`,
+    ], { discard: true })))
+    for (const path of [AGENT_RUNS_SHAPE_ROUTE, MACHINES_SHAPE_ROUTE]) {
+      const h = await fleetHarness(runtime, { actor: { subject: { kind: "person", id }, role: "member" }, roles })
+      const response = await h.fetch(shape(path))
+      expect(response.status).toBe(403)
+      expect(await response.text()).not.toMatch(/account-a|mini|coder|1\.25/)
+      expect(h.electric).toEqual([])
+    }
   })
 })

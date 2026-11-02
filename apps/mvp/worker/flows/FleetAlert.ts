@@ -23,8 +23,13 @@ import * as AlertDelivery from "./AlertDelivery.ts"
 // Who hears what (FINAL.md §4.2): a run's alerts go to the TODO's committer and the repository's Maintainers and Admins;
 // Runner offline and Cost to its Admins; Waiting for a runner to its Maintainers. A repository's roles are the ones
 // GitHub gave and `github_repo_roles` keeps (decision 0079); on the deployment's own repository, the sessions' roles.
-// The bell and the messages carry the TODO's number and title or the runner's name, never a prompt, a transcript, an
-// account path or a token.
+// A bell row says only the incident's kind and its repository, and links to what it is about (`bellTitleOf`): the
+// TODO's title, its failure, the cost and the runner's name show only on the page the link opens, whose shapes check
+// the reader's current role there (worker/runners/FleetApi.ts, worker/stack/Api.ts), as a GitHub notification links to
+// a private repository's page rather than quoting it. Recipients are picked from cached roles, so a row may reach
+// someone whose access just ended; it tells them nothing they can open. A cached row that says no role, or less than
+// the kind's, excludes the person, the committer included. The messages carry the TODO's number and title or the
+// runner's name, never a prompt, a transcript, an account path or a token.
 
 const nonNegative = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const positive = Schema.Int.check(Schema.isGreaterThan(0))
@@ -119,8 +124,8 @@ const MAX_TITLE = 200
 const clip = (text: string) => (text.length <= MAX_TITLE ? text : `${text.slice(0, MAX_TITLE - 1).replace(/[\uD800-\uDBFF]$/, "")}…`)
 
 /**
- * Each kind as a shared channel names it (decision 0149): never the TODO's title, its failure, the cost or the
- * runner's name.
+ * Each kind as a bell row and a shared channel name it (decision 0149): never the TODO's title, its failure, the
+ * cost or the runner's name.
  */
 export const KIND_WORDS: Readonly<Record<Fleet.Kind, string>> = {
   failed: "Agent run failed",
@@ -129,6 +134,10 @@ export const KIND_WORDS: Readonly<Record<Fleet.Kind, string>> = {
   cost: "Agent run cost",
   offline: "Runner offline",
 }
+
+/** A bell row's title: the kind and the repository, `Agent run failed · acme/widgets`. */
+export const bellTitleOf = (kind: Fleet.Kind, repoId: string) =>
+  clip(`${KIND_WORDS[kind]} · ${repoId.replace(/^github\//, "")}`)
 
 /** A repository's page path: `github/<owner>/<name>` → `/<owner>/<name>`. */
 const repoPath = (repoId: string) => `/${repoId.replace(/^github\//, "")}`
@@ -178,7 +187,8 @@ export const describe = (alert: Fleet.Alert) =>
 /**
  * Records incident `alert` and puts it in the bell of everyone it is for, once each (`fleet:<alert id>`): the run's
  * committer where its kind says so, and everyone whose role on the repository is at least the kind's (`AUDIENCE`):
- * from `github_repo_roles`, or on the deployment's own repository `home`, from live sessions.
+ * from `github_repo_roles`, or on the deployment's own repository `home`, from live sessions. Each row says only the kind
+ * and the repository (`bellTitleOf`).
  */
 export const bell = (alert: Fleet.Alert, home: string) =>
   Effect.gen(function* () {
@@ -195,7 +205,8 @@ export const bell = (alert: Fleet.Alert, home: string) =>
         ON CONFLICT (id) DO NOTHING`
       const rows = yield* sql<{ readonly recipient: string }>`
         INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href)
-        SELECT DISTINCT recipient, ${`fleet:${alert.alertId}`}, 'fleet', 'update', ${alert.repoId}, ${title}, ${href}
+        SELECT DISTINCT recipient, ${`fleet:${alert.alertId}`}, 'fleet', 'update', ${alert.repoId},
+          ${bellTitleOf(alert.kind, alert.repoId)}, ${href}
         FROM (
           SELECT person_id AS recipient FROM github_repo_roles
           WHERE repo_id = ${alert.repoId} AND role IN (SELECT jsonb_array_elements_text(${rolesJson}::jsonb))
@@ -204,7 +215,12 @@ export const bell = (alert: Fleet.Alert, home: string) =>
           WHERE ${alert.repoId === home}::boolean AND role IN (SELECT jsonb_array_elements_text(${rolesJson}::jsonb))
             AND revoked_at IS NULL AND expires_at > now()
           UNION
-          SELECT ${committer}::text WHERE ${committer}::text IS NOT NULL
+          -- The committer, unless a recorded read says they hold no role there, or less than Member. A row a read
+          -- claimed before GitHub answered (checked_at -infinity) recorded nothing.
+          SELECT ${committer}::text WHERE ${committer}::text IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM github_repo_roles
+            WHERE repo_id = ${alert.repoId} AND person_id = ${committer}::text AND checked_at <> '-infinity'
+              AND (role IS NULL OR role NOT IN ('member', 'maintainer', 'admin')))
         ) AS audience
         ON CONFLICT (recipient, subject) DO NOTHING
         RETURNING recipient`

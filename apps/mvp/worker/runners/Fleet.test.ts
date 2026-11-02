@@ -411,7 +411,7 @@ describe("ops/FleetAlert and ops/RunnerHealth on the Node host", () => {
 
     expect(ran.status).toBe("completed")
     expect(Exit.isSuccess(ran.exit) && ran.exit.value).toEqual({ email: { outcome: "off" }, telegram: { outcome: "sent" } })
-    const row = { subject: `fleet:${alert.alertId}`, kind: "fleet", title: "T7 drive foldkit · Stalled", href: "/acme/widgets/stack/7" }
+    const row = { subject: `fleet:${alert.alertId}`, kind: "fleet", title: "Agent run stalled · acme/widgets", href: "/acme/widgets/stack/7" }
     expect(await bells()).toEqual(
       [maintainer, admin, "person-maya"].sort().map((recipient) => ({ recipient, ...row })),
     )
@@ -453,14 +453,14 @@ describe("ops/FleetAlert and ops/RunnerHealth on the Node host", () => {
     const registration = FleetAlert.registration(await database(), HOME)
     await runFlow(FleetAlert.FleetAlert, offline, registration)
     expect(await bells()).toEqual([
-      { recipient: admin, subject: `fleet:${offline.alertId}`, kind: "fleet", title: "Runner nyc-01 offline", href: "/acme/widgets/-/fleet" },
+      { recipient: admin, subject: `fleet:${offline.alertId}`, kind: "fleet", title: "Runner offline · acme/widgets", href: "/acme/widgets/-/fleet" },
     ])
     await sql(`TRUNCATE notifications`)
     const attemptId = await todo("person-maya", 8)
     await sql(`UPDATE todos SET failure = 'implement' WHERE number = 8`)
     const failed: Fleet.Alert = { alertId: Fleet.alertId.failed(attemptId), kind: "failed", repoId: REPO, subject: attemptId }
     await runFlow(FleetAlert.FleetAlert, failed, registration)
-    expect((await bells()).map((bell) => bell.title)).toEqual(["T8 drive foldkit · Failed · implement", "T8 drive foldkit · Failed · implement", "T8 drive foldkit · Failed · implement"])
+    expect((await bells()).map((bell) => bell.title)).toEqual(["Agent run failed · acme/widgets", "Agent run failed · acme/widgets", "Agent run failed · acme/widgets"])
     // A subject that's gone rings nothing.
     const gone: Fleet.Alert = { alertId: "fleet-failed-gone", kind: "failed", repoId: REPO, subject: crypto.randomUUID() }
     const ran = await runFlow(FleetAlert.FleetAlert, gone, registration)
@@ -477,7 +477,7 @@ describe("ops/FleetAlert and ops/RunnerHealth on the Node host", () => {
     await Effect.runPromise(Jobs.make(await database()).start({ ...taskOf(), repository: HOME }, "home#g1"))
     const alert: Fleet.Alert = { alertId: "fleet-waiting-home", kind: "waiting", repoId: HOME, subject: "home#g1" }
     await runFlow(FleetAlert.FleetAlert, alert, FleetAlert.registration(await database(), HOME))
-    expect((await bells()).map((bell) => [bell.recipient, bell.title])).toEqual([[person, "Agent run · Waiting for a runner"]])
+    expect((await bells()).map((bell) => [bell.recipient, bell.title])).toEqual([[person, "Agent run waiting for a runner · smithersai/smithers"]])
   })
 
   test("ops/RunnerHealth starts one Runner offline alert per outage, for runners unseen past the threshold", async () => {

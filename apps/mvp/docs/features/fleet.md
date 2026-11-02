@@ -115,9 +115,15 @@ Durable flows, no sweeps (FINAL.md §4.2):
 - **Recovery.** A stall closes when work shows again, a wait when a runner claims the job, an outage when the runner's
   next request arrives (`fleet_alerts.closed_at`). A later stall or outage is a new incident.
 - **Who.** A repository's roles are the ones GitHub gave (`github_repo_roles`, decision 0079); on the deployment's own
-  repository, the live sessions' roles. The committer is the TODO's.
-- **The bell.** One `fleet` notification per person (`fleet:<alert id>`), in the panel only, never a toast: `Agents ·
-  T398 migfix-t3code · Stalled`, opening the TODO's page (an outage opens the fleet). The bell always works.
+  repository, the live sessions' roles. The committer is the TODO's, unless a cached row says they hold no role there,
+  or less than a Member's. The alert flow asks GitHub nothing, so a cached role may be stale: the bell row tells a
+  stale recipient nothing they can't open.
+- **The bell.** One `fleet` notification per person (`fleet:<alert id>`), in the panel only, never a toast. It says
+  only the kind and the repository, `Agent run stalled · acme/widgets`, and links to the TODO's page (an outage to the
+  fleet). The TODO's title, its failure, the cost and the runner's name show only on that page, whose shapes check the
+  reader's current role (`RepoRoles.resolve`, worker/runners/FleetApi.ts and worker/stack/Api.ts), as a GitHub
+  notification links to a private repository rather than quoting it. Rows written
+  before this change keep their old titles until a separate pass rewrites them. The bell always works.
 - **Outside the app.** A message says only the kind, the repository and the link, `Agent run failed · acme/widgets`, never the TODO's title, its failure, the cost or the runner's name ([decision 0149](../decisions/0149-shared-alert-channels-carry-no-private-content.md)). `ops/DeliverFleetAlert` sends on the deployment's email and Telegram channels, where an Admin set
   them, as every alert delivers ([spend-alerts.md](spend-alerts.md#delivery)), each with an `alert_deliveries` receipt.
   Nothing here sends to Telegram any other way.

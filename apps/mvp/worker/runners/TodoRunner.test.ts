@@ -747,30 +747,35 @@ describe("the fleet over a real runner", { timeout: 300_000 }, () => {
     const runs = [ctx.run(silent, stop.signal), ctx.run(busy, stop.signal), ctx.run(refused)]
     const state = async (number: number) =>
       ((await sql(runtime, `SELECT state FROM agent_runs WHERE number = ${number}`)) as Array<{ state: string }>)[0]?.state
+    // A bell row says the kind and the repository, and links to the TODO or the fleet: `<title> <href>` tells them apart.
+    const repo = REPOSITORY.id.replace(/^github\//, "")
+    const STALLED_1 = `Agent run stalled · ${repo} /${repo}/stack/1`
+    const FAILED_3 = `Agent run failed · ${repo} /${repo}/stack/3`
+    const OFFLINE = `Runner offline · ${repo} /${repo}/-/fleet`
     const bells = async () =>
-      (await sql(runtime, `SELECT recipient, title FROM notifications WHERE kind = 'fleet' ORDER BY title, recipient`)) as Array<
-        { recipient: string; title: string }
-      >
-    // Who heard what, by title: without the second runner's run, which may stall once its runner is killed.
+      ((await sql(runtime, `SELECT recipient, title, href FROM notifications WHERE kind = 'fleet' ORDER BY title, recipient`)) as Array<
+        { recipient: string; title: string; href: string }
+      >).map((bell) => ({ recipient: bell.recipient, title: `${bell.title} ${bell.href}` }))
+    // Who heard what: without the second runner's run, which may stall once its runner is killed.
     const heard = async () =>
-      (await bells()).map((bell) => [bell.recipient, bell.title]).filter(([, title]) => title !== "T2 Busy · Stalled")
+      (await bells()).map((bell) => [bell.recipient, bell.title]).filter(([, title]) => !title!.endsWith("/stack/2"))
     try {
       await eventually(async () => (await state(1)) === "stalled", 90_000)
-      await eventually(async () => (await bells()).some((bell) => bell.title === "T1 Silent · Stalled"), 30_000)
-      await eventually(async () => (await bells()).some((bell) => bell.title === "T3 Refused · Failed · implement"), 60_000)
+      await eventually(async () => (await bells()).some((bell) => bell.title === STALLED_1), 30_000)
+      await eventually(async () => (await bells()).some((bell) => bell.title === FAILED_3), 60_000)
       expect(await runs[2]).toMatchObject({ status: "completed" })
       // The busy run's agent says nothing either, but its tree burns CPU: work through probe after probe, never a stall.
       await new Promise((done) => setTimeout(done, 45_000))
       expect(await state(2), runner.log()).toBe("working")
       const killedAt = Date.now()
       runner.child.kill("SIGKILL")
-      await eventually(async () => (await bells()).some((bell) => bell.title === "Runner test-runner offline"), 120_000)
+      await eventually(async () => (await bells()).some((bell) => bell.title === OFFLINE), 120_000)
       expect(await heard()).toEqual([
-        ["person-ada", "Runner test-runner offline"],
-        ["person-ada", "T1 Silent · Stalled"],
-        ["person-maya", "T1 Silent · Stalled"],
-        ["person-ada", "T3 Refused · Failed · implement"],
-        ["person-maya", "T3 Refused · Failed · implement"],
+        ["person-ada", OFFLINE],
+        ["person-ada", STALLED_1],
+        ["person-maya", STALLED_1],
+        ["person-ada", FAILED_3],
+        ["person-maya", FAILED_3],
       ].sort((a, b) => a[1]!.localeCompare(b[1]!) || a[0]!.localeCompare(b[0]!)))
       // A dead runner's busy run goes quiet: if it stalled, it stalled only once its runner was gone.
       const busyStalls = (await sql(runtime, `SELECT opened_at FROM fleet_alerts WHERE kind = 'stalled' AND subject IN
