@@ -258,6 +258,8 @@ const coding = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/coding-first-red.test.ts"),
     // A rewritten stack replaces its branch on a real bare remote under a lease, and is confirmed.
     Smithers.file("//.smithers/flows/test/coding-publish-stack.test.ts"),
+    // Outside jj stacks appended to the mythical tip, over a real jj repository.
+    Smithers.file("//.smithers/flows/test/coding-outside-stack.test.ts"),
     // The coding host's bundle shim, checked against every `bun:sqlite` import
     // under `packages/smithers` and `flows`. It reads more than this target's
     // srcs name, so it belongs to this uncached runner: a cached verdict would

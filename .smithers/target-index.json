@@ -1845,6 +1845,10 @@
       },
       {
         "kind": "file",
+        "path": ".smithers/flows/test/coding-outside-stack.test.ts"
+      },
+      {
+        "kind": "file",
         "path": ".smithers/flows/test/coding-host-bundle.test.ts"
       },
       {

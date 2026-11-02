@@ -100,6 +100,12 @@ and performs bounded owner correction. A separate `coding/prototype` entry
 produces a disposable [source prototype](poc.md) without implementation or
 landing. A real fix does not require a prototype first.
 
+[`coding/AppendOutsideStack`](outside-stack.md) admits outside work: jj
+stacks other authors built on the mythical tip append to it as Changes, by
+change id, each gated by its fast checks; a red or conflicting stack is
+refused and rebased back onto its own base, and the tip fast-forwards over the
+admitted ones. Only a host that lands locally serves it.
+
 The [`coding/dispatch`](dispatch.md) entry runs exactly one agent turn: a
 prompt, a bounded session window, the seat role and model for that request,
 and the assistant messages the turn produced. It is registered

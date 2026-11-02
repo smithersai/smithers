@@ -59,6 +59,7 @@ import { jevCheckDelegate, jevCheckLayers } from "./jev-check.ts"
 import type { Landing } from "./landing.ts"
 import * as LocalLanding from "./local-landing.ts"
 import { nativeActions, NativeCoding, nativeLayer, type NativeOptions, NativeTransport } from "./native.ts"
+import * as OutsideStacks from "./outside-stack.ts"
 import { evidenceOnly } from "./planning-authority.ts"
 import { memoryLayer, type MemoryOptions } from "./planning-memory.ts"
 import { planningWikiLayers } from "./planning-wiki.ts"
@@ -197,6 +198,16 @@ export const repositoryFlowsServed = (
 export const repositoryJobsServed = (
   options: Pick<Options, "retainedRepositoryJobs" | "fixedFlowCatalog">
 ): boolean => options.retainedRepositoryJobs !== false && options.fixedFlowCatalog !== true
+
+/**
+ * Whether this host serves `coding/AppendOutsideStack` (outside-stack.ts). It
+ * moves the stack's bookmark, so only a host that lands locally serves it:
+ * never one with the backend's landing adapter, and never an installed host.
+ */
+export const outsideStacksServed = (
+  options: Pick<Options, "planning" | "landing" | "retainedRepositoryJobs">
+): boolean =>
+  options.landing === undefined && options.planning?.landing !== undefined && options.retainedRepositoryJobs !== false
 
 /** The optional routes advertised by this configured host. */
 export const configuredCodingRoutes = (
@@ -883,7 +894,17 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
             (options.retainedRepositoryJobs === false ? installVibeRegistration : vibeRegistration)
               .pipe(Layer.provide(landing)),
             cleanupModels
-          ])
+          ]),
+          ...(outsideStacksServed(options) ?
+            [
+              OutsideStacks.outsideStackLayers.pipe(Layer.provide(
+                OutsideStacks.layer({
+                  repositoryPath: options.repositoryPath,
+                  environment: options.landingEnvironment ?? options.checkEnvironment ?? {}
+                }).pipe(Layer.provide(Layer.succeed(FileSystem.FileSystem)(fs)))
+              ))
+            ] :
+            [])
         )
         // Jev, the decision-only model behind every enumerable answer this host
         // makes: the intake screen over each inbound event, the duplicates step,
