@@ -852,29 +852,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const refusalOf = (proof: Access.Proof & { readonly _tag: "Refused" }) => refuse(proof.status, proof.refusal, proof.retryAfterSeconds)
 
     /**
-     * Who may read the repository's rows (decision 0012, Consequences: until shapes are authorized per request, only a
-     * public repository's rows reach a visitor), the viewer stage alone, for the readers without the deployment's checks
-     * (the actions shape, compare, home): `None` when they may read, else the refusal.
-     */
-    const readRefusal = (target = repository) =>
-      Effect.map(access.viewerAccess(target, "session"), (proof) => proof._tag === "Readable" ? Option.none() : Option.some(refusalOf(proof)))
-
-    /** A repository shape, served only to whom `readRefusal` lets read it; the refusal is counted under its table. */
-    const readable = (table: string, columns: ReadonlyArray<string>, where = "repo_id = $1", target = repository, params: Readonly<Record<string, string>> = { "1": target.id }) =>
-      Effect.gen(function* () {
-        const refused = yield* readRefusal(target)
-        if (Option.isSome(refused)) {
-          yield* Metric.update(
-            Metric.withAttributes(Metrics.shapes, { table, status: String(refused.value.status), live: "false" }),
-            1,
-          )
-          yield* Effect.logWarning(`github.shape.${table}`).pipe(Effect.annotateLogs({ status: refused.value.status }))
-          return refused.value
-        }
-        return yield* shape(table, columns, where, params)
-      })
-
-    /**
      * `GET /api/shapes/github-writes`: the signed-in person's own writes; signed out, none; sessions unreadable, 503
      * (worker/ShapeAccess.ts), never another person's scope under the device's handle.
      */
@@ -1070,7 +1047,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const named = new URL(request.url, "http://localhost").searchParams.get("repo")
         const [owner = "", name = "", ...rest] = (named ?? `${repository.owner}/${repository.name}`).split("/")
         if (rest.length !== 0 || !isRepository(owner, name)) return refuse(400, "invalid")
-        return yield* readable(RUNS_TABLE, ACTION_COLUMNS, "repo_id = $1 AND execution IS NOT NULL", repositoryOf(`${owner}/${name}`))
+        // The repository shapes' predicate (devpriv FINAL step 5): the deployment acts on it and the App isn't absent
+        // there, then the viewer. Refusals are counted and logged as the shapes count theirs.
+        const target = repositoryOf(`${owner}/${name}`)
+        const { proof } = yield* access.repositoryReadable(target, "session")
+        if (proof._tag === "Refused") {
+          if (proof.refusal === "app_not_installed" || proof.stage === "viewer") {
+            yield* Metric.update(Metric.withAttributes(Metrics.shapes, { table: RUNS_TABLE, status: String(proof.status), live: "false" }), 1)
+            yield* Effect.logWarning(`github.shape.${RUNS_TABLE}`).pipe(Effect.annotateLogs({ status: proof.status }))
+          }
+          return refusalOf(proof)
+        }
+        return yield* shape(RUNS_TABLE, ACTION_COLUMNS, "repo_id = $1 AND execution IS NOT NULL", { "1": target.id })
       }
       // Any repository the person may read: a published branch's comparison lives on its own (docs/features/branch-publish.md).
       const compared = Compare.parseComparePath(path)
@@ -1078,9 +1066,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
         if (!isRepository(compared.owner, compared.name)) return refuse(404, "not_found")
         const target = repositoryOf(`${compared.owner}/${compared.name}`)
-        if (!mayAct(target.id)) return refuse(404, "not_found")
-        const refused = yield* readRefusal(target)
-        if (Option.isSome(refused)) return refused.value
+        // The repository shapes' predicate (devpriv FINAL step 5): the App's absence refuses too, as for the shapes.
+        const { proof } = yield* access.repositoryReadable(target, "session")
+        if (proof._tag === "Refused") return refusalOf(proof)
         if (Option.isNone(compare)) return refuse(503, "not_configured")
         return yield* compare.value(target, compared.base, compared.head).pipe(
           Effect.provide(database),
@@ -1110,5 +1098,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         ? Effect.succeed(false)
         : Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.map((absent) => !absent), Effect.orElseSucceed(() => true))
 
-    return { fetch, mayRead: (target: Repository) => Effect.map(readRefusal(target), Option.isNone), maySync }
+    /**
+     * The role route's `readable` (worker/home/Api.ts): whether the request may read `target`'s content by the shapes'
+     * predicate (devpriv FINAL step 5), the deployment's checks included, so it never says a repository the deployment
+     * doesn't act on, or where the App is absent, is readable.
+     */
+    const mayRead = (target: Repository) =>
+      Effect.map(access.repositoryReadable(target, "session"), ({ proof }) => proof._tag === "Readable")
+
+    return { fetch, mayRead, maySync }
   })

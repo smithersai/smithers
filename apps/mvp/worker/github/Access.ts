@@ -1,5 +1,6 @@
-// Who may read a repository's content (devpriv FINAL §1.1, step 0): one predicate for every reader of a repository's
-// issues, evaluated per request and never cached across requests. It answers a proof, never a boolean: who read (the
+// Who may read a repository's content (devpriv FINAL §1.1, steps 0 and 5): one predicate for every reader of a
+// repository's content (its issues' and pulls' shapes, the issue list, the actions shape, a comparison, and the role
+// route's `readable`), evaluated per request and never cached across requests. It answers a proof, never a boolean: who read (the
 // viewer the request resolved to) and by what (a role, the repository being public, or a runner's token), or why not
 // and at which stage.
 //
@@ -112,7 +113,7 @@ export const make = <E, R>(options: Options<E, R>) => {
         ? Effect.die("unreachable: cookie resolution without a cookie resolver is refused before it")
         : sessions.resolveCookie)
 
-  /** Stage 3: who may read `target`'s rows. The readers outside `repositoryReadable` (actions, compare, home) use it alone. */
+  /** Stage 3: who may read `target`'s rows, the viewer alone; `repositoryReadable` runs it after the deployment's checks. */
   const viewerAccess = (target: Repository, source: ViewerSource) =>
     Effect.gen(function* () {
       const decided = yield* personAccess(target, source)
