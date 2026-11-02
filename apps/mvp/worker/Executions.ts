@@ -18,6 +18,7 @@ import { DomainProvider } from "./domains/Provider.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
+import { recorded } from "./DurableObjectFailure.ts"
 import * as FleetAlert from "./flows/FleetAlert.ts"
 import * as Fleet from "./runners/Fleet.ts"
 import { repoId } from "../src/features/repo/contract.ts"
@@ -432,7 +433,9 @@ const object = <E, R>(
           signal: (deferredName: string) => host.signal(deferredName).pipe(Effect.provide(logs)),
           wake: () => host.wake().pipe(Effect.provide(logs)),
           cancel: () => host.cancel().pipe(Effect.provide(logs)),
-          alarm: () => host.alarm().pipe(Effect.asVoid, Effect.provide(logs)),
+          // A failure still throws, so Cloudflare retries the alarm, and is recorded by its flags and category first
+          // (worker/DurableObjectFailure.ts): an instance Cloudflare replaced mid-alarm fails its I/O.
+          alarm: () => host.alarm().pipe(Effect.asVoid, recorded("FlowExecution", "alarm"), Effect.provide(logs)),
         }
       })
     }),

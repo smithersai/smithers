@@ -3,7 +3,10 @@
 // platform causes; a message can also carry a URL, an address or a person's data, so only its category is recorded,
 // and an error's class only when it is one of `KNOWN_CLASSES`. Every reader here is total: a thrown value can be
 // anything, `Object.create(null)` or a proxy whose getters throw, and describing it must never replace it.
-// Electric's gateway records its failed calls into the object with it (infra/ElectricRelay.ts).
+// Electric's gateway records its failed calls into the object with it (infra/ElectricRelay.ts), and a FlowExecution
+// alarm that throws is recorded with it (`recorded`): on smithers.sh on 2026-11-02 those that threw "this Durable Object
+// instance is no longer active" (13:32:41Z, 14:12:03Z) left only an uncategorized exception.
+import { Cause, Clock, Effect, Exit, Metric } from "effect"
 
 /** What a failure said, by category: Cloudflare's own failures by name, never the message text. */
 export type Category =
@@ -99,3 +102,49 @@ export const describe = (error: unknown) => ({
   overloaded: flag(error, "overloaded"),
   remote: flag(error, "remote"),
 })
+
+/**
+ * Durable Object handlers that failed, by `object`, `handler`, `errorClass`, `category`, `retryable`, `overloaded` and
+ * `remote`: fixed vocabularies, no content.
+ */
+export const failures = Metric.counter("durable_object_handler_failures", {
+  description: "Durable Object handlers that failed, by object, handler and Cloudflare's error flags",
+  incremental: true,
+})
+
+/**
+ * `handler` of `object`, recording a failure as one log line `durable_object.handler.failed` (`describe`'s fields and
+ * `durationMs`; Warn when Cloudflare marks it retryable, Error otherwise) and one count on `failures`, then failing with
+ * its original cause: a thrown alarm is one Cloudflare retries. Recording never throws and never replaces the cause.
+ * Success and interruption record nothing.
+ */
+export const recorded = (object: string, handler: string) =>
+<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis
+    return yield* effect.pipe(
+      // Uninterruptible and run on every exit, an interruption from outside included: a handler interrupted while its
+      // cleanup died is recorded too. Interruption alone records nothing.
+      Effect.onExit((exit) =>
+        Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause) ? Effect.void : Effect.gen(function* () {
+          const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+          const failure = describe(Cause.squash(exit.cause))
+          yield* Metric.update(
+            Metric.withAttributes(failures, {
+              object,
+              handler,
+              errorClass: failure.errorTag,
+              category: failure.category,
+              retryable: String(failure.retryable),
+              overloaded: String(failure.overloaded),
+              remote: String(failure.remote),
+            }),
+            1,
+          )
+          yield* Effect.logWithLevel(failure.retryable ? "Warn" : "Error")("durable_object.handler.failed").pipe(
+            Effect.annotateLogs({ object, handler, ...failure, durationMs }),
+          )
+        }).pipe(Effect.catchCause(() => Effect.void))
+      ),
+    )
+  })

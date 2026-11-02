@@ -465,6 +465,7 @@ The `FlowExecution` Durable Object ([remote-flows.md](features/remote-flows.md))
 |---|---|---|---|
 | `cloudflare.execution.start` | every `start` | Info `accepted` and `duplicate`, Warn `conflict` and `failed` | `outcome`; `error.type`, the failure's tag, for `failed` |
 | `cloudflare.execution.alarm` | every alarm | Info `idle`, `settled`, `parked` and `forgotten`, Warn `retrying` | `outcome`; for `retrying`, `error.type` (the failure's tag) and `smithers.execution.attempt` |
+| `durable_object.handler.failed` | a `FlowExecution` alarm that threw, which Cloudflare then retries ([worker/DurableObjectFailure.ts](../worker/DurableObjectFailure.ts)) | Warn when Cloudflare marks the error `retryable`, Error otherwise | `object`, `handler`, `errorTag` (the error's class when `KNOWN_CLASSES` has it, else `unknown`), `category` (`connection-lost`, `reset`, `instance-inactive`, `overloaded`, `memory-limit`, `cpu-limit`, `storage-timeout`, `internal`, `other`; never the message), `retryable`, `overloaded`, `remote`, `durationMs` |
 | `repo.run.settle` | an alarm that finds a repository's run settled ([actions.md](features/actions.md)) | Info; Warn when the row couldn't be written | `runId`, `outcome` (`done`, `failed`, `stopped`, or `failed` with `errorCode`) |
 | `probe.mark` | each step of `probe/Pause` | Info | `label` |
 | `chat.answer.expire` | each step of `chat/Expire` that decided or failed ([agent.md](features/agent.md#settling)) | Info `abandoned`, `settled`, `missing`, and `waiting` (a round that found the queue moved, so the next round waits again); Warn `failed` (one attempt) | `answerId`, `outcome`; `errorCode` (`sql:<reason>`) when it failed |
@@ -475,10 +476,13 @@ Spans `cloudflare.execution.start` and `cloudflare.execution.alarm` carry `smith
 |---|---|---|---|
 | `smithers_cloudflare_execution_starts` | counter | `outcome`: `accepted`, `duplicate`, `conflict` or `failed` | `cloudflare.execution.start` `outcome` |
 | `smithers_cloudflare_execution_alarms` | counter | `outcome`: `idle`, `settled`, `parked`, `retrying` or `forgotten` | `cloudflare.execution.alarm` `outcome` |
+| `durable_object_handler_failures` | counter | `object`, `handler`, `errorClass`, `category`, `retryable`, `overloaded`, `remote` | `durable_object.handler.failed` |
 | `smithers_repo_run_writes` | counter | `op` (`record`, `settle`), `outcome` (`recorded`, `existing`; `done`, `failed`, `stopped`) | `repo.run.record`, `repo.run.settle` `outcome` |
 | `smithers_answer_expiries` | counter | `outcome`: `abandoned`, `settled`, `missing`, `waiting`, `failed`, or `not_started` (counted by ChatApi) | `chat.answer.expire` `outcome` |
 
 An answer stuck `streaming` shows as no `chat.answer.write` for its `answerId` after its `chat.question`, then, 25 minutes after its queue last moved, `chat.answer.expire` `abandoned` for it, after a `waiting` line for each round that found the queue moved. A `not_started` line comes with a `503`, so the outbox sends the question again.
+
+An alarm that throws records no `cloudflare.execution.alarm` line; Cloudflare counts it `scriptThrewException` and retries it. On smithers.sh on 2026-11-02, 33 FlowExecution alarms threw between 08:45Z and 14:12Z (22 from 10:29Z to 10:44Z, 6 from 13:20Z to 13:24Z), most after about 10 minutes, the drive budget. The two a live tail caught (13:32:41Z, 14:12:03Z) threw "Connection closed: this Durable Object instance is no longer active" after their run had settled: Cloudflare had replaced the object's instance under the alarm, so its I/O failed. The others' messages were not captured. `durable_object.handler.failed` now records each with `category: instance-inactive` and Cloudflare's flags.
 
 A run that keeps failing shows as `cloudflare.execution.alarm` lines at Warn with a rising `smithers.execution.attempt` for one `smithers.execution.id`; its `error.type` names the cause ([troubleshooting](../../../packages/smithers/flows/platform-cloudflare/docs/troubleshooting.md)).
 
