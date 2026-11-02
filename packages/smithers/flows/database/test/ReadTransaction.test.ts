@@ -14,7 +14,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Fiber, Layer, Redacted } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Dialect from "../src/Dialect.ts"
-import { PostgresDatabase } from "../src/index.ts"
+import { PostgresDatabase } from "../src/index.vibe"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 import { listening, pgbouncerUrl } from "./harness/listening.ts"
 

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { TestSchemas } from "../src/index.ts"
+import { TestSchemas } from "../src/index.vibe"
 import * as Selection from "../src/internal/PostgresSelection.ts"
 
 import { afterEach, vi } from "vitest"
