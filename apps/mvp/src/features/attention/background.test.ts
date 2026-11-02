@@ -138,6 +138,32 @@ const createIssue = async (tab: Tab, title: string) => {
   return tab.intents.pending().find((intent) => intent.flow === "issue/create")!.writeId!
 }
 
+describe("a cold device's feed", () => {
+  // The issue-tracking proof's cold waterfall (e2e/issue-waterfall.spec.ts): a person with 4,600 writes opened a page on
+  // a new device, and their feed's entries went in one transaction each. Every transaction made each live query over the
+  // entries read all of them again, so the page's main thread was busy for seconds.
+  test("the person's writes reach the feed in a few transactions, not one per write", async () => {
+    const api = await openApi()
+    const writes = 120
+    await Effect.runPromise(api.github.run(Effect.forEach(Array.from({ length: writes }, (_, at) => at), (at) =>
+      Store.insertWrite({
+        id: crypto.randomUUID(),
+        repoId: REPO_ID,
+        actorId: maya.subject.id,
+        sessionId: maya.session!,
+        via: "person",
+        payload: { op: "issue/create", title: `Write ${at}`, body: "" },
+        payloadHash: at.toString(16).padStart(64, "0"),
+      }), { discard: true })))
+    const tab = await tabOn(api, deviceOf(api))
+    let transactions = 0
+    const counting = tab.attention.entries.tanstack.subscribeChanges(() => void transactions++)
+    closing.push({ dispose: async () => counting.unsubscribe() })
+    await until(() => expect(tab.entries().filter((entry) => entry.detail === "Create issue")).toHaveLength(writes))
+    expect(transactions).toBeLessThan(10)
+  }, WITHIN)
+})
+
 describe("Create issue", () => {
   test("Requested at once, the server's Working, then Done on its issue, whose notification takes over; never Failed", async () => {
     const api = await openApi()

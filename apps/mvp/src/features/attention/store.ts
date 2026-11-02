@@ -220,10 +220,14 @@ export class AttentionStore extends Context.Service<
           const next = new Set(feed.entries.map((entry) => entry.id))
           const gone = [...before.keys()].filter((id) => !next.has(id))
           if (gone.length > 0) yield* entries.delete(gone)
+          // New entries go in one transaction: each transaction makes every live query over the entries read all of
+          // them again, so a cold device's feed of 4,600 writes, inserted one at a time, kept the page's main thread
+          // busy for seconds (e2e/issue-waterfall.spec.ts).
+          const added = feed.entries.filter((entry) => !before.has(entry.id))
+          if (added.length > 0) yield* entries.insert(added)
           for (const entry of feed.entries) {
             const old = before.get(entry.id)
-            if (old === undefined) yield* entries.insert(entry)
-            else if (changed(old, entry)) {
+            if (old !== undefined && changed(old, entry)) {
               yield* entries.update(entry.id, (draft) => { if (entry.local === undefined) delete draft.local; Object.assign(draft, entry) })
             }
             // Each toast that came to show, once per version: a log line and a count, never its words.
