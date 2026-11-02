@@ -21,13 +21,6 @@ import * as Tokens from "./Tokens.ts"
 /** How long a role read from GitHub decides, in seconds (decision 0079 §5). */
 export const FRESH_SECONDS = 5 * 60
 
-/**
- * How much longer a write's transaction keeps the row its request read: a request that read the role in its last
- * fresh second inserts its write after it, and its role hasn't changed (production, 2026-11-02: an Admin's issue
- * writes were refused `403 forbidden` every few minutes, each when the cached row expired mid-request).
- */
-export const HOLD_GRACE_SECONDS = 30
-
 /** Why `resolve` gave no role: each with its status, and GitHub's wait when it said one (decision 0079 §7). */
 export const REFUSALS = {
   not_configured: 503,
@@ -128,7 +121,7 @@ export const holds = (held: Held) =>
     const [row] = yield* sql<{ readonly role: string | null }>`
       SELECT role FROM github_repo_roles
       WHERE repo_id = ${held.repoId} AND person_id = ${held.personId}
-        AND checked_at > now() - make_interval(secs => ${FRESH_SECONDS + HOLD_GRACE_SECONDS})
+        AND checked_at > now() - make_interval(secs => ${FRESH_SECONDS})
       FOR SHARE`
     return row !== undefined && row.role === held.role
   })

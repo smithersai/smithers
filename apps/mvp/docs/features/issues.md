@@ -94,8 +94,6 @@ The Issues list offers Enable or Pause triage only after that repository's issue
 
 A lost answer is found by its marker in the same attempt. A rate limit, a 5xx or Postgres failing fails the step for its policy; every attempt finds the marker before writing, so a write reaches GitHub once. The marker stays hidden: the projection stores the body without it and its write id in `write_id`.
 
-A write's transaction keeps the role row its request read for `HOLD_GRACE_SECONDS` (30) past its 5 minutes: a request that read the row in its last fresh second and inserted after it was refused `403 forbidden` though the role hadn't changed (production, 2026-11-02, every few minutes for an Admin's issue writes). A newer read that changed the role still refuses it.
-
 ### Tokens
 
 `worker/github/Tokens.ts`. No token enters a journal, a step key, an error or a record.
