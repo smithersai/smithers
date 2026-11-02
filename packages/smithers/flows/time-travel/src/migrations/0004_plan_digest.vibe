@@ -15,14 +15,14 @@ import { step } from "../internal/MigrationStep.vibe"
  * @since 0.1.0
  * @private
  */
-export const planDigest = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const planDigest = effect {
+  const sql = try SqlClient.SqlClient
   // Older store builds added this column outside the migration ledger.
-  const columns = yield* Dialect.columns(sql, "flows_time_travel_snapshots")
+  const columns = try Effect.suspend(() => Dialect.columns(sql, "flows_time_travel_snapshots"))
   if (columns.some((column) => column.name === "plan_digest")) return
-  yield* step(
+  try step(
     "the flows_time_travel_snapshots plan_digest column",
     sql`ALTER TABLE flows_time_travel_snapshots ADD COLUMN plan_digest TEXT
       CHECK (plan_digest IS NULL OR length(plan_digest) > 0)`
   )
-})
+}
