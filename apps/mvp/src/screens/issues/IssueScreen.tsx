@@ -21,6 +21,8 @@ import {
   pageOf,
   triageControlOf,
 } from "../../features/issues/view"
+import { workByIssue, workSections } from "../../features/issues/workView"
+import { WORK_STATUS_LABELS } from "../../features/issues/work"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
@@ -42,6 +44,7 @@ export function IssueScreen() {
   const { data: synced, isReady: syncedReady } = useLiveQuery(queries.synced)
   const { data: view } = useLiveQuery(queries.view)
   const { data: access } = useLiveQuery(queries.access)
+  const { data: workRows } = useLiveQuery(queries.work)
   const { data: triage } = useLiveQuery(queries.triage)
   const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: session } = useLiveQuery(auth.queries.session)
@@ -115,6 +118,44 @@ export function IssueScreen() {
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
   const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
   const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed, answer), shown)
+  // What links this issue to the work on it (decision 0147): its status, and a section per kind with its links.
+  const work = workByIssue(workRows ?? []).get(number)
+  const sections = workSections(work)
+  const todoAside = made === undefined && !make ? null : (
+    <ItemAsideSection title={TODO} {...(made === undefined ? {} : { links: made.links })} onNavigate={(href) => void navigate({ href })}>
+      {make
+        ? (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-keyshortcuts={MAKE_TODO_KEY}
+            onClick={() => void navigate({ href: todos.actions.fromIssue(owner, repo, number) })}
+          >
+            {MAKE_TODO} <Kbd aria-hidden="true">{MAKE_TODO_KEY}</Kbd>
+          </Button>
+        )
+        : null}
+    </ItemAsideSection>
+  )
+  const workAside = work === undefined ? null : (
+    <>
+      <ItemAsideSection title="Work" data-work-status={work.status}>
+        <span className="issues-work-status">{WORK_STATUS_LABELS[work.status]}</span>
+      </ItemAsideSection>
+      {sections.map((section) => (
+        <ItemAsideSection
+          key={section.kind}
+          title={section.title}
+          data-work-kind={section.kind}
+          links={section.links.flatMap((link) => link.href === null ? [] : [{ label: link.label, href: link.href }])}
+        >
+          {section.links.filter((link) => link.href === null).map((link) => (
+            <span key={link.label} className="issues-work-link">{link.label}</span>
+          ))}
+        </ItemAsideSection>
+      ))}
+    </>
+  )
   const control = triageControlOf(item, triagePending ?? [], {
     triage: session !== undefined && mayTriage(session, confirmed, answer),
     flowOn: triage !== undefined && !triage.paused,
@@ -127,22 +168,7 @@ export function IssueScreen() {
 
         <ItemConversation
         {...shown}
-        aside={made === undefined && !make ? undefined : (
-          <ItemAsideSection title={TODO} {...(made === undefined ? {} : { links: made.links })} onNavigate={(href) => void navigate({ href })}>
-            {make
-              ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-keyshortcuts={MAKE_TODO_KEY}
-                  onClick={() => void navigate({ href: todos.actions.fromIssue(owner, repo, number) })}
-                >
-                  {MAKE_TODO} <Kbd aria-hidden="true">{MAKE_TODO_KEY}</Kbd>
-                </Button>
-              )
-              : null}
-          </ItemAsideSection>
-        )}
+        aside={todoAside === null && workAside === null ? undefined : <>{workAside}{todoAside}</>}
         headerActions={!control.shown ? undefined : (
           <>
           {item.triage === "accepted" ? <CommitmentControl value={item.commitment} pending={triagePending?.find((row) => row.number === number && row.op === "issue/commitment")?.pending} onChange={session !== undefined && mayManageTriage(session, confirmed, answer) ? (commitment) => actions.setCommitment(owner, repo, number, commitment, triagePending?.find((row) => row.number === number && row.op === "issue/commitment" && row.pending === "not_sent")?.id) : undefined} /> : null}

@@ -3,6 +3,8 @@ import { HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ISSUE_PAGE_DEFAULT, ISSUE_PAGE_MAX, ISSUES_SEGMENT, issuesRoute } from "../../src/features/issues/contract.ts"
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
+import { WORK_FILTERS, type WorkFilter, type WorkStatus } from "../../src/features/issues/work.ts"
+import { type ListedLink, workOf } from "./WorkLinks.ts"
 
 // `GET /api/repos/<owner>/<name>/issues` (docs/features/issues.md#routes): a repository's issues from Smithers'
 // projection, one page at a time, for a client that doesn't sync the whole list (the CLI, the proof, an agent). The
@@ -61,6 +63,8 @@ export interface Query {
   readonly q: string
   readonly limit: number
   readonly cursor: Cursor | undefined
+  /** Only issues whose work links reach a pull request or a queue entry, or that have any link (decision 0147). */
+  readonly work: WorkFilter | undefined
 }
 
 /** The request's query, or `undefined` when any part is one this route doesn't take. */
@@ -73,7 +77,15 @@ export const parseQuery = (search: URLSearchParams): Query | undefined => {
   const rawCursor = search.get("cursor")
   const cursor = rawCursor === null || rawCursor === "" ? undefined : decodeCursor(rawCursor)
   if (rawCursor !== null && rawCursor !== "" && cursor === undefined) return undefined
-  return { state, q: (search.get("q") ?? "").trim().slice(0, 256), limit: Math.min(limit, ISSUE_PAGE_MAX), cursor }
+  const work = search.get("work") ?? ""
+  if (work !== "" && !(WORK_FILTERS as ReadonlyArray<string>).includes(work)) return undefined
+  return {
+    state,
+    q: (search.get("q") ?? "").trim().slice(0, 256),
+    limit: Math.min(limit, ISSUE_PAGE_MAX),
+    cursor,
+    work: work === "" ? undefined : work as WorkFilter,
+  }
 }
 
 /** One issue as the route answers it. */
@@ -87,6 +99,8 @@ export interface ListedIssue {
   readonly updated_at: string
   readonly triage: string
   readonly commitment: string | null
+  /** The work on it, from its links: `none` with no links. */
+  readonly work: { readonly status: WorkStatus; readonly links: ReadonlyArray<ListedLink> }
 }
 
 interface Row {
@@ -122,10 +136,13 @@ export const page = (repoId: string, query: Query) =>
           ? sql`AND title ILIKE ${like}`
           : sql`AND (number = ${Number(number)} OR title ILIKE ${like})`}
         ${query.cursor === undefined ? sql`` : sql`AND (updated_at, number) < (${query.cursor.updatedAt}::timestamptz, ${query.cursor.number})`}
+        ${query.work === undefined ? sql`` : sql`AND EXISTS (SELECT 1 FROM work_links w WHERE w.repo_id = items.repo_id
+          AND w.number = items.number ${query.work === "pr-or-queue" ? sql`AND w.kind IN ('pr', 'queue')` : sql``})`}
       ORDER BY updated_at DESC, number DESC
       LIMIT ${query.limit + 1}`
     const shown = rows.slice(0, query.limit)
     const last = shown.at(-1)
+    const work = yield* workOf(repoId, shown.map((row) => row.number))
     const issues: Array<ListedIssue> = shown.map((row) => ({
       number: row.number,
       title: row.title,
@@ -136,6 +153,7 @@ export const page = (repoId: string, query: Query) =>
       updated_at: row.updated_at,
       triage: row.triage,
       commitment: row.commitment,
+      work: work.get(row.number) ?? { status: "none", links: [] },
     }))
     return {
       issues,

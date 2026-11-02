@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { MERGE_FLOWS } from "../pulls/contract"
 import { COMMITMENTS } from "./lifecycle"
+import { WORK_LINK_KINDS, WORK_LINK_STATES } from "./work"
 import {
   NOT_SENT_REASONS,
   PAUSED_REASONS,
@@ -215,3 +216,18 @@ export const WriteTaken = Schema.Struct({
   status: Schema.optional(Schema.Literals(WRITE_STATUSES)),
 })
 export type WriteTaken = typeof WriteTaken.Type
+
+/** One row of Postgres `work_links` (`WORK_LINK_COLUMNS`, decision 0147): what links an issue to the work on it. */
+export const WorkLinkRow = Schema.Struct({
+  id: Schema.String,
+  repoId: Schema.String,
+  number: Schema.Number,
+  kind: Schema.Literals(WORK_LINK_KINDS),
+  ref: Schema.String,
+  label: Schema.String,
+  url: Schema.NullOr(Schema.String),
+  state: Schema.NullOr(Schema.Literals(WORK_LINK_STATES)),
+  source: Schema.String,
+  updatedAt: Schema.String,
+})
+export type WorkLinkRow = typeof WorkLinkRow.Type

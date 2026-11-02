@@ -47,6 +47,8 @@ import {
   WRITES_SHAPE_ROUTE,
   WRITES_TABLE,
 } from "../../src/features/issues/contract.ts"
+import { mayAsk } from "../../src/features/auth/contract.ts"
+import { WORK_LINK_COLUMNS, WORK_LINKS_SHAPE_ROUTE, WORK_LINKS_TABLE } from "../../src/features/issues/work.ts"
 import { ACTION_COLUMNS, ACTIONS_SHAPE_ROUTE } from "../../src/features/actions/contract.ts"
 import {
   CHECK_COLUMNS,
@@ -91,6 +93,7 @@ import { apiUrl, type GitHubApp, type Repository, repositoryOf } from "./Config.
 import { Merge } from "./Merge.ts"
 import * as IssueList from "./IssueList.ts"
 import * as Metrics from "./Metrics.ts"
+import * as WorkLinks from "./WorkLinks.ts"
 import { Reconcile } from "./Reconcile.ts"
 import * as PullRefresh from "./PullRefresh.ts"
 import * as ReadToken from "./ReadToken.ts"
@@ -143,6 +146,8 @@ const REPOSITORY_SHAPES: Readonly<Record<string, { readonly table: string; reado
   // A pull request's checks are its head's `checks/Run` rows; a repository flow's runs are the repository's runs
   // (docs/features/actions.md), whose states the Checks tab doesn't read.
   [CHECKS_SHAPE_ROUTE]: { table: RUNS_TABLE, columns: CHECK_COLUMNS, where: "repo_id = $1 AND sha IS NOT NULL AND execution IS NULL" },
+  // What links each issue to the work on it (decision 0147, docs/features/work-links.md).
+  [WORK_LINKS_SHAPE_ROUTE]: { table: WORK_LINKS_TABLE, columns: WORK_LINK_COLUMNS, where: "repo_id = $1" },
 }
 
 const refuse = (status: number, code: WriteRefusal | "not_configured" | "invalid_signature", retryAfterSeconds?: number) =>
@@ -305,13 +310,14 @@ const SHAPES: ReadonlySet<string> = new Set([
   REVIEWS_SHAPE_ROUTE,
   CHECKS_SHAPE_ROUTE,
   ACTIONS_SHAPE_ROUTE,
+  WORK_LINKS_SHAPE_ROUTE,
 ])
 
 /** Whether ChatApi routes `path` here. */
 export const handles = (path: string): boolean =>
   path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined ||
   Compare.parseComparePath(path) !== undefined || Review.parseReviewPath(path) !== undefined ||
-  IssueList.parseIssuesPath(path) !== undefined
+  IssueList.parseIssuesPath(path) !== undefined || WorkLinks.parseLinksPath(path) !== undefined
 
 /**
  * How long a stale read of the issues waits for `github/Reconcile`'s start to be admitted: one idempotent Durable Object
@@ -909,10 +915,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             fields.outcome = "invalid"
             return refuse(400, "invalid")
           }
+          // A runner registered on the repository reads its issues with its own token, as it reads its jobs.
           const refused = yield* readRefusal(target)
           if (Option.isSome(refused)) {
-            fields.outcome = "refused"
-            return refused.value
+            const runner = yield* WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database), Effect.orElseSucceed(() => Option.none<string>()))
+            if (Option.isNone(runner)) {
+              fields.outcome = "refused"
+              return refused.value
+            }
+            fields.by = "runner"
           }
           const [, found] = yield* Effect.all([
             reconcileIfStale(target),
@@ -936,6 +947,75 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         )
         return response
       }).pipe(Effect.withSpan("github.issues.list", { kind: "server" }))
+
+    /**
+     * `POST /api/repos/<owner>/<name>/issues/<number>/links` (decision 0147, docs/features/work-links.md): a Member or
+     * above, in their session or a run's credential, or a runner registered on the repository, with its token, posts
+     * what links the issue to the work on it. One span and log line `work.links` and one count by outcome and who
+     * posted (`person` or `runner`); never a ref, a label or a URL.
+     */
+    const links = (named: { readonly owner: string; readonly name: string; readonly number: number }) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Record<string, string | number> = { number: named.number }
+        const refused = (status: number, code: string, outcome = code) => {
+          fields.outcome = outcome
+          return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+        }
+        const response = yield* Effect.gen(function* () {
+          if (request.method !== "POST") {
+            fields.outcome = "method"
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
+          }
+          const target = repositoryOf(`${named.owner}/${named.name}`)
+          fields.repoId = target.id
+          if (!mayAct(target.id)) return refused(404, "not_found")
+          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          if (Option.isNone(actor)) return refused(503, "unavailable")
+          let source: string
+          if (Option.isSome(actor.value)) {
+            fields.by = "person"
+            const resolved = yield* options.roles.resolve(actor.value.value, target).pipe(Effect.result)
+            if (resolved._tag === "Failure") {
+              const { code, retryAfterSeconds } = resolved.failure
+              fields.outcome = code
+              return refuse(RepoRoles.REFUSALS[code], code, retryAfterSeconds)
+            }
+            if (!mayAsk(resolved.success.role)) return refused(403, "forbidden")
+            source = actor.value.value.login ?? actor.value.value.subject.id
+          } else {
+            fields.by = "runner"
+            const runner = yield* WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database), Effect.result)
+            if (runner._tag === "Failure") return refused(503, "unavailable")
+            if (Option.isNone(runner.success)) return refused(401, "authentication")
+            source = `runner:${runner.success.value}`
+          }
+          const text = yield* readBounded(request, WorkLinks.MAX_POST_BYTES).pipe(Effect.result)
+          if (text._tag === "Failure") {
+            return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
+          }
+          const post = WorkLinks.decode(text.success)
+          const now = yield* Clock.currentTimeMillis
+          if (post === undefined || WorkLinks.fromTheFuture(post, now)) return refused(400, "invalid")
+          const written = yield* WorkLinks.write(target.id, named.number, post, source, now).pipe(Effect.provide(database), Effect.result)
+          if (written._tag === "Failure") {
+            fields.errorCode = codeOf(written.failure)
+            return refused(503, "unavailable")
+          }
+          fields.outcome = "written"
+          fields.links = written.success.links
+          fields.changed = written.success.changed
+          return HttpServerResponse.jsonUnsafe(written.success, { headers: noStore })
+        })
+        const outcome = String(fields.outcome)
+        yield* Metric.update(Metric.withAttributes(Metrics.workLinkPosts, { outcome, by: String(fields.by ?? "none") }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.work.outcome": outcome })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")("work.links").pipe(
+          Effect.annotateLogs({ ...fields, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+        )
+        return response
+      }).pipe(Effect.withSpan("work.links", { kind: "server" }))
 
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
@@ -1010,6 +1090,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (reviewed !== undefined) return yield* review(reviewed)
       const listed = IssueList.parseIssuesPath(path)
       if (listed !== undefined) return yield* issues(listed)
+      const linked = WorkLinks.parseLinksPath(path)
+      if (linked !== undefined) return yield* links(linked)
       const target = parseWritesPath(path)
       if (target !== undefined) return yield* writes(target)
       return HttpServerResponse.empty({ status: 404 })

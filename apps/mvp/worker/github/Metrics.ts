@@ -130,3 +130,9 @@ export const issueLists = Metric.counter("github_issue_lists", {
   description: "GET /api/repos/<owner>/<name>/issues requests, by outcome",
   incremental: true,
 })
+
+/** `POST .../issues/<number>/links` requests, by `outcome` and who posted (`by`: `person`, `runner` or `none`). */
+export const workLinkPosts = Metric.counter("smithers_work_link_posts", {
+  description: "POST /api/repos/<owner>/<name>/issues/<number>/links requests, by outcome and poster",
+  incremental: true,
+})

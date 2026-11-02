@@ -18,6 +18,7 @@ import {
   Sending as IssueSending,
   SyncRow,
   TriageSettings,
+  WorkLinkRow,
   WriteRow,
 } from "../features/issues/schema"
 import { CheckRow, PullCommitRow, PullRow, ReviewRow } from "../features/pulls/schema"
@@ -197,6 +198,8 @@ const synced = [
   // Version 3: a merge says how it landed its pull request (`mergeFlow`, decision 0134).
   Migrations.synced({ id: "issue-writes", version: 3, schema: WriteRow }),
   Migrations.synced({ id: "issue-triage-settings", version: 1, schema: TriageSettings, family: true }),
+  // What links each issue to the work on it (decision 0147).
+  Migrations.synced({ id: "issue-work-links", version: 1, schema: WorkLinkRow, family: true }),
   Migrations.synced({ id: "flows", version: 2, schema: FlowRow }),
   Migrations.synced({ id: "flow-drafts", version: 1, schema: FlowDraft }),
   // Version 2: the kind `spend`, a sandbox spend alert in an Admin's bell (docs/features/sandbox-budgets.md); version 3:

@@ -1,0 +1,27 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// Work links (decision 0147, docs/features/work-links.md): what links an issue to the work on it. Each row is one link
+// of one issue, keyed `<repo_id>#<number>/<kind>/<ref>` (src/features/issues/work.ts `workLinkId`), so posting it again
+// updates it. Not GitHub's: a runner or a Member posts it, `source` says which (`runner:<name>` or the login), and an
+// issue need not have synced yet. `updated_at` is when the linked thing changed, as the poster said: a post older than
+// the row changes nothing, so links posted out of order end in the newest state. Electric syncs it per repository.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`
+    CREATE TABLE work_links (
+      id text PRIMARY KEY,
+      repo_id text NOT NULL,
+      number integer NOT NULL CHECK (number >= 1),
+      kind text NOT NULL CHECK (kind IN ('assignee', 'session', 'queue', 'pr', 'merge', 'review')),
+      ref text NOT NULL CHECK (char_length(ref) BETWEEN 1 AND 200),
+      label text NOT NULL CHECK (char_length(label) BETWEEN 1 AND 200),
+      url text CHECK (url IS NULL OR (url ~ '^https://' AND char_length(url) <= 2000)),
+      state text CHECK (state IN ('working', 'queued', 'open', 'passed', 'failed', 'merged', 'done', 'closed')),
+      source text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL
+    )`
+  yield* sql`CREATE INDEX work_links_issue ON work_links (repo_id, number)`
+  yield* sql`ALTER TABLE work_links REPLICA IDENTITY FULL`
+})

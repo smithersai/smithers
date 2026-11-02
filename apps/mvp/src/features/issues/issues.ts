@@ -38,6 +38,8 @@ export interface IssuesQueries {
   /** The repository's issues, this device's own new ones first. */
   readonly list: RepoIssues["list"]["tanstack"]
   readonly publicList: RepoIssues["publicList"]["tanstack"]
+  /** What links the routed repository's issues to the work on them (decision 0147). */
+  readonly work: RepoIssues["workRows"]["tanstack"]
   /** The routed issue, once the device has it. */
   readonly item: RepoIssues["item"]["tanstack"]
   /** Its comments, this device's own last. */
@@ -110,6 +112,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           writes: store.writeRows.tanstack,
           get list() { return store.routed().list.tanstack },
           get publicList() { return store.routed().publicList.tanstack },
+          get work() { return store.routed().workRows.tanstack },
           get item() { return store.routed().item.tanstack },
           get conversation() { return store.routed().conversation.tanstack },
           get synced() { return store.routed().synced.tanstack },

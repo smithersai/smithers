@@ -20,6 +20,7 @@ import {
   TRIAGE_SETTINGS_SHAPE_ROUTE,
   WRITES_SHAPE_ROUTE,
 } from "./contract"
+import { WORK_LINKS_SHAPE_ROUTE } from "./work"
 import {
   accessQuery,
   allIssuesQuery,
@@ -53,6 +54,7 @@ import {
   SyncRow,
   TriageSettings,
   VIEW,
+  WorkLinkRow,
   WriteRow,
 } from "./schema"
 import { evictions } from "./metrics"
@@ -93,6 +95,9 @@ export interface RepoIssues {
   readonly sync: Rows<SyncRow>
   readonly triageSettings: Rows<TriageSettings>
   readonly access: Collection.Collection<Access, string>
+  /** What links each of its issues to the work on it (decision 0147). */
+  readonly workLinks: Rows<WorkLinkRow>
+  readonly workRows: LiveRows<WorkLinkRow>
   /** Its issues and pull requests, and its sync rows, every row, live: a home's `issues` block reads them. */
   readonly itemRows: LiveRows<ItemSummary>
   readonly syncRows: LiveRows<SyncRow>
@@ -207,8 +212,10 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     sync: Rows<SyncRow>,
     triageSettings: Rows<TriageSettings>,
     access: Collection.Collection<Access, string>,
+    workLinks: Rows<WorkLinkRow>,
   ) =>
     Effect.all({
+      workRows: rowsQuery(workLinks),
       itemRows: rowsQuery(items),
       syncRows: rowsQuery(sync),
       newestFirst: allIssuesQuery(items),
@@ -244,6 +251,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     getKey: byRepo,
   })
   const emptyAccess = yield* accessFor("none")
+  const emptyWork = yield* Collection.local<WorkLinkRow, string>({ id: "issue-work-links-none", schema: WorkLinkRow, getKey: byId })
   const empty: RepoIssues = {
     id: "",
     items: emptyItems,
@@ -253,7 +261,8 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     sync: emptySync,
     triageSettings: emptyTriage,
     access: emptyAccess,
-    ...(yield* queriesOf(emptyItems, emptyDetails, emptyComments, emptySync, emptyTriage, emptyAccess)),
+    workLinks: emptyWork,
+    ...(yield* queriesOf(emptyItems, emptyDetails, emptyComments, emptySync, emptyTriage, emptyAccess, emptyWork)),
     reconnect: Effect.void,
   }
 
@@ -382,6 +391,14 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         source,
         Stream.zipLatestWith(signedInChanges(auth), authority, (signedIn, status) => signedIn && status === "allowed"),
       )))
+      // What links its issues to the work on them: read on the list and the issue page, as the summaries are.
+      const workLinks = yield* ElectricCollection.make<WorkLinkRow>({
+        id: `issue-work-links:${id}`,
+        schema: WorkLinkRow,
+        getKey: byId,
+        shape: shape(WORK_LINKS_SHAPE_ROUTE, id),
+        ...kept,
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
       const access = yield* accessFor(id)
       // The session and the repository's role decide whether this person may read its issues at all. A tab with no
       // answer for it yet asks ChatApi (a route asks too, `repo.role`): until then nothing is requested.
@@ -403,7 +420,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       for (const [shape, source] of [[items, "item-summaries"], [sync, "github-sync"], [triageSettings, "triage-settings"]] as const) {
         yield* observeInitialApplied(shape, source, id.slice("github/".length)).pipe(Effect.forkIn(scope, { startImmediately: true }))
       }
-      yield* evictWhenRefused(authority, [items, details, comments, sync, triageSettings], true)
+      yield* evictWhenRefused(authority, [items, details, comments, sync, triageSettings, workLinks], true)
       // Availability follows the shape the page reads. A summary receipt never certifies a missing detail body.
       yield* followAvailability(items, access, id)
       yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "detail" }), Effect.forkIn(scope, { startImmediately: true }))
@@ -423,8 +440,9 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         sync,
         triageSettings,
         access,
-        ...(yield* queriesOf(items, details, comments, sync, triageSettings, access)),
-        reconnect: Effect.all([items.reconnect, details.reconnect, comments.reconnect, sync.reconnect, triageSettings.reconnect], {
+        workLinks,
+        ...(yield* queriesOf(items, details, comments, sync, triageSettings, access, workLinks)),
+        reconnect: Effect.all([items.reconnect, details.reconnect, comments.reconnect, sync.reconnect, triageSettings.reconnect, workLinks.reconnect], {
           discard: true,
         }),
       }
@@ -482,7 +500,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     )
     const selected: RepoIssues = {
       ...repo, details, comments, access,
-      ...(yield* queriesOf(repo.items, details, comments, repo.sync, repo.triageSettings, access)),
+      ...(yield* queriesOf(repo.items, details, comments, repo.sync, repo.triageSettings, access, repo.workLinks)),
       reconnect: Effect.all([repo.reconnect, details.reconnect, comments.reconnect], { discard: true }),
     }
     return selected

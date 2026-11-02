@@ -35,7 +35,7 @@ export const reset = (runtime: Runtime) =>
       (sql) =>
         sql`TRUNCATE github_projection_fences, items, comments, github_writes, github_sync, github_deliveries, github_repositories, sessions,
           sign_in_attempts, people, triage_settings, triage_decisions, model_usage, model_budget_days, model_roles,
-          github_repo_roles CASCADE`,
+          github_repo_roles, work_links, runners CASCADE`,
     ),
   )
 

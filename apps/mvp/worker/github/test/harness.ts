@@ -34,6 +34,7 @@ import {
   WRITES_TABLE,
 } from "../../../src/features/issues/contract.ts"
 import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE, RUNS_TABLE } from "../../../src/features/pulls/contract.ts"
+import { WORK_LINKS_TABLE } from "../../../src/features/issues/work.ts"
 import * as Actor from "../../Actor.ts"
 import * as ExecutionHost from "../../ExecutionHost.ts"
 import { FlowStarter, StartConflict } from "../../Flows.ts"
@@ -209,6 +210,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     PULL_COMMITS_TABLE,
     REVIEWS_TABLE,
     RUNS_TABLE,
+    WORK_LINKS_TABLE,
   ])
   const electric: typeof globalThis.fetch = (input, init) => {
     const upstream = new URL(input instanceof Request ? input.url : String(input))

@@ -34,6 +34,7 @@ import { StackScreen } from "./screens/stack/StackScreen"
 import { TodoScreen } from "./screens/stack/TodoScreen"
 import { listSearch } from "./features/issues/list"
 import { commitmentSearch } from "./features/issues/lifecycle"
+import { workSearch } from "./features/issues/workView"
 import { ActionRunScreen } from "./screens/actions/ActionRunScreen"
 import { ActionsScreen } from "./screens/actions/ActionsScreen"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
@@ -497,7 +498,7 @@ const issuesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.issues,
   component: IssuesScreen,
-  validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search) }),
+  validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search), ...workSearch(search) }),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params,
       load,

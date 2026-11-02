@@ -21,6 +21,8 @@ import {
   TRIAGE_OFF,
 } from "../../features/issues/contract"
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
+import { filterWork, withWork, workByIssue } from "../../features/issues/workView"
+import { WORK_FILTER_LABEL } from "../../features/issues/work"
 import { listFailureOf, listProps, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
 import "./issues-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
@@ -41,6 +43,8 @@ export function IssuesScreen() {
   const rows = session?.status === "signed_out" ? publicRows : privateRows
   const isReady = session?.status === "signed_out" ? publicReady : privateReady
   const { data: synced } = useLiveQuery(queries.synced)
+  const { data: workRows } = useLiveQuery(queries.work)
+  const work = workByIssue(workRows ?? [])
   const { data: access } = useLiveQuery(queries.access)
   const { data: unsynced } = useLiveQuery(queries.unsynced)
   const { data: triage } = useLiveQuery(queries.triage)
@@ -62,7 +66,7 @@ export function IssuesScreen() {
   const list = listProps(rows ?? [], synced, access, triage !== undefined && !triage.paused)
   const failure = listFailureOf(access, roles?.find((row) => row.id === repoId(owner, repo))?.failure,
     (list.unknown || !isReady || access?.installed !== true) && about?.view.repoId === repoId(owner, repo) ? about.about : undefined)
-  const visible = listProps(visibleRows(filterCommitment(rows ?? [], search.commitment), search), synced, access, triage !== undefined && !triage.paused).issues
+  const visible = listProps(visibleRows(filterWork(filterCommitment(rows ?? [], search.commitment), work, search.work), search), synced, access, triage !== undefined && !triage.paused).issues
   const listSync = listSyncOf(list.unknown, isReady, access)
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
@@ -122,6 +126,13 @@ export function IssuesScreen() {
             </Link>
           ))}
         </LinkTabs>
+        <LinkTabs aria-label="Work" className="issues-schedule">
+          <span className="issues-schedule-label">Work</span>
+          <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ ...search, work: undefined }}
+            aria-current={search.work === undefined ? "page" : undefined}>Any</Link>
+          <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ ...search, work: "pr-or-queue" }}
+            aria-current={search.work === "pr-or-queue" ? "page" : undefined}>{WORK_FILTER_LABEL}</Link>
+        </LinkTabs>
         {failure !== undefined ? null : listSync === "not_synced"
           ? (
             <Card><CardContent>
@@ -146,7 +157,7 @@ export function IssuesScreen() {
             size="full"
             loading={listSync === "syncing"}
             issues={withTodos(
-              visible,
+              withWork(visible, work),
               todosByIssue(todosRepoId, todoRows, owner, repo),
               session !== undefined && mayChange(session, confirmed, answer),
               (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),

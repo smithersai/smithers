@@ -38,3 +38,6 @@
 
 .issues-screen .list-search-tools { display: flex; align-items: center; gap: 0.5rem; }
 .issues-screen .list-search-tools input { flex: 1; min-width: 0; }
+/* Work links (decision 0147): the status word and a link with no address, as the aside's links read. */
+.issues-work-status { font-weight: 600; }
+.issues-work-link { display: block; overflow-wrap: anywhere; }

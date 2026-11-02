@@ -167,6 +167,12 @@
         "1": "d49a12999fa2df56"
       }
     },
+    "issue-work-links": {
+      "kind": "synced",
+      "versions": {
+        "1": "7de59aebb21b3cb5"
+      }
+    },
     "issue-writes": {
       "kind": "synced",
       "versions": {
@@ -311,10 +317,10 @@
     },
     "timeline-summaries": {
       "kind": "local",
+      "retired": true,
       "versions": {
         "1": "4bed7c4c611479a2"
-      },
-      "retired": true
+      }
     },
     "todo-drafts": {
       "kind": "local",

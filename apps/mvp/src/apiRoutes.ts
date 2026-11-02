@@ -16,7 +16,7 @@ export const ROUTE_WORDS: ReadonlySet<string> = new Set([
   "review", "reviews", "room", "run", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "shapes", "shares",
   "sign-in", "sign-out", "source", "spend-alerts", "stack", "stamp", "state", "steers", "stop", "summaries",
   "telemetry", "terminals", "test", "texts", "timeline", "todo-requests", "todos", "traces", "tree", "triage-settings",
-  "v1", "views", "watches", "web", "webhook", "write", "writes",
+  "v1", "views", "watches", "web", "webhook", "work-links", "write", "writes",
 ])
 
 /** Where the app's telemetry export goes: its own requests are never recorded through themselves. */
