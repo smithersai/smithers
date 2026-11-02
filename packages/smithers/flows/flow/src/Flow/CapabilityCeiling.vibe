@@ -5,8 +5,7 @@
 import * as Capability from "@smthrs/capability/Capability"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import * as Context from "effect/Context"
-import * as Option from "effect/Option"
-import { Capabilities } from "./Annotations.ts"
+import { Capabilities } from "./Annotations.vibe"
 
 /** Returns only explicitly declared ceilings; omission inherits.
  * @category accessors
@@ -33,11 +32,11 @@ export const parseCapabilityCeilings = (
  * @category combinators
  * @since 1.0.0
  */
-export const attenuateCapabilities = (groups: ReadonlyArray<ReadonlyArray<string>>) =>
+export const attenuateCapabilities = (groups: ReadonlyArray<ReadonlyArray<string>>): infer _ =>
   CapabilitySet.attenuateGroups(parseCapabilityCeilings(groups))
 
 /** The authority a transported ceiling describes: its groups parsed, invalid patterns dropped so they deny. */
-const authorityOf = (groups: ReadonlyArray<ReadonlyArray<string>>) =>
+const authorityOf = (groups: ReadonlyArray<ReadonlyArray<string>>): infer _ =>
   CapabilitySet.fromGroups(parseCapabilityCeilings(groups))
 
 /**

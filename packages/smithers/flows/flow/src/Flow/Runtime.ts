@@ -16,7 +16,7 @@ import * as Filter from "effect/Filter"
 import { dual, identity } from "effect/Function"
 import * as Scope from "effect/Scope"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
-import { CaptureDefects, SuspendOnFailure } from "./Annotations.ts"
+import { CaptureDefects, SuspendOnFailure } from "./Annotations.vibe"
 import { Complete, isResult, type Result, Suspended } from "./Result.ts"
 
 /**

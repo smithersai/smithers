@@ -35,7 +35,7 @@ import type { FlowExecutionNotFound } from "../FlowRuntime/FlowExecutionNotFound
 import type { FlowInstance, FlowRuntime } from "../FlowRuntime/index.ts"
 import type { RetryFromRefused } from "../FlowRuntime/RetryFromRefused.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
-import type { Outcome, To } from "./Outcome.ts"
+import type { Outcome, To } from "./Outcome.vibe"
 import type { Result } from "./Result.ts"
 import type { TypeId } from "./TypeId.ts"
 

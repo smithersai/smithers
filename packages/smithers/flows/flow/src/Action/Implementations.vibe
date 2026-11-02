@@ -62,7 +62,7 @@ export interface Implementation {
   readonly implementationVersion?: string | undefined
   readonly action: (
     payload: unknown
-  ) => Effect.Effect<unknown, unknown, Crypto.Crypto | FlowRuntime | FlowInstance>
+  ) => unknown!unknown!Crypto.Crypto | FlowRuntime | FlowInstance
 }
 
 /**
@@ -79,32 +79,30 @@ export interface Implementation {
  * @category services
  * @since 0.1.0
  */
-export class Implementations extends Context.Service<
-  Implementations,
-  {
-    /**
-     * Files an implementation under its action tag for the lifetime of the
-     * registering scope. A conflicting registration dies unless `override: true` explicitly replaces the
-     * earlier one, and closing the registering scope exposes the newest
-     * registration whose scope is still open. Which of two merged layers is later is not a guarantee Effect
-     * makes, so a substitution replaces the implementation layer in the
-     * composition rather than stacking a second one on top of it — and a
-     * NESTED provision that reaches this same table through layer
-     * memoization shadows the enclosing entry only while it lives, instead
-     * of leaking its replacement into the enclosing composition.
-     */
-    readonly add: (
-      implementation: Implementation,
-      options?: { readonly override?: boolean }
-    ) => Effect.Effect<void, never, Scope>
+export service Implementations {
+  static readonly key = "@smthrs/flow/Action/Implementations"
+  /**
+   * Files an implementation under its action tag for the lifetime of the
+   * registering scope. A conflicting registration dies unless `override: true` explicitly replaces the
+   * earlier one, and closing the registering scope exposes the newest
+   * registration whose scope is still open. Which of two merged layers is later is not a guarantee Effect
+   * makes, so a substitution replaces the implementation layer in the
+   * composition rather than stacking a second one on top of it — and a
+   * NESTED provision that reaches this same table through layer
+   * memoization shadows the enclosing entry only while it lives, instead
+   * of leaking its replacement into the enclosing composition.
+   */
+  add: (
+    implementation: Implementation,
+    options?: { readonly override?: boolean }
+  ) => void!never!Scope
 
-    /**
-     * The implementation registered for an action tag, if a layer supplied
-     * one.
-     */
-    readonly get: (name: string) => Effect.Effect<Option.Option<Implementation>>
-  }
->()("@smthrs/flow/Action/Implementations") {}
+  /**
+   * The implementation registered for an action tag, if a layer supplied
+   * one.
+   */
+  get: (name: string) => Option.Option<Implementation>!!
+}
 
 /**
  * Layer providing an implementation table scoped to the composition that
