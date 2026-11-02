@@ -70,7 +70,7 @@ export const isBranch = (name: unknown): name is string =>
  * @category constructors
  * @since 1.0.0
  */
-export const requireBranch = (name: string): string!IntegrationError =>
+export const requireBranch = effect (name: string): string!IntegrationError =>
   isBranch(name) ? name : throw new IntegrationError("invalid-config", "A branch name must follow git's ref rules.", {
     field: "branch",
     branch: typeof name === "string" ? (name as string).slice(0, 64) : typeof name,
@@ -102,7 +102,7 @@ export const getBranch = (
     return try (client.request("GET", `/repos/${repository}/git/ref/heads/${branch}`, undefined, {
       schema: RefAnswer,
     })
-      |> Effect.map(%, (answer) => Option.some({ name: branch, sha: answer.object.sha }))
+      |> try Effect.map(%, (answer) => Option.some({ name: branch, sha: answer.object.sha }))
       |> Effect.catchIf(%, (error) => error.details?.["status"] === 404, () => Option.none<Branch>()))
   }) |> Effect.withSpan(%, "GitHub.Refs.getBranch", { attributes: spanAttributes(owner, repo) })
 

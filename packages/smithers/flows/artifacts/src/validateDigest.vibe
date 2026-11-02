@@ -20,7 +20,7 @@ import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
  * @since 1.0.0-rc.0
  * @slop
  */
-export const validateDigest = (digest: string): Digest!ArtifactStoreError =>
+export const validateDigest = effect (digest: string): Digest!ArtifactStoreError =>
   typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest)
     ? digest as Digest
     : throw new ArtifactStoreError({

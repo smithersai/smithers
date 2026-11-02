@@ -15,7 +15,7 @@ import * as EffectVitest from "@effect/vitest";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 import { assert, describe, expect, type TestOptions } from "vitest";
-import { type Body } from "./internal/TestEffectRunner.ts";
+import { type Body } from "../../../src/internal/TestEffectRunner.ts";
 /** @since 0.0.0 @category testing */
 export { assert, describe, expect };
 /**

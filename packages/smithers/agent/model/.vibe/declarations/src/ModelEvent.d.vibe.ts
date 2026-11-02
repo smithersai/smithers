@@ -8,7 +8,7 @@
  * @since 0.1.0
  */
 import { Schema } from "effect";
-import { AssistantMessage } from "./ModelRequest.ts";
+import { AssistantMessage } from "../../../src/ModelRequest.ts";
 /**
  * Token counts a provider reports for one request. Every field is
  * optional: providers disagree on which counters they expose, and a missing

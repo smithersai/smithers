@@ -18,7 +18,7 @@ effect function scan() {
 
 layer(platformLayer)("FileRouter", (it) => {
   it.effect("routes directory entries by path without evaluating module bodies", effect () => {
-    const path = try Path()
+    const path = try Path.Path
     const result = try scan()
 
     expect(result.routes.map((route) => route.name)).toEqual([
@@ -38,7 +38,7 @@ layer(platformLayer)("FileRouter", (it) => {
   })
 
   it.effect("preserves registry entry precedence and diagnostics", effect () => {
-    const path = try Path()
+    const path = try Path.Path
     const result = try scan()
 
     expect(result.routes.find((route) => route.name === "mixed")?.kind).toBe("module")
@@ -51,7 +51,7 @@ layer(platformLayer)("FileRouter", (it) => {
   })
 
   it.effect("records UI companions without routing companions or colocated tests", effect () => {
-    const path = try Path()
+    const path = try Path.Path
     const result = try scan()
     const review = result.routes.find((route) => route.name === "review")
 
@@ -75,7 +75,7 @@ layer(platformLayer)("FileRouter", (it) => {
   })
 
   it.effect("resolves a relative root once and returns absolute immutable routes", effect () => {
-    const path = try Path()
+    const path = try Path.Path
     const config: { mutable root: string } = { root: path.relative(path.resolve(), root) }
     // The scan starts at once, as runPromise would start it, so the root is
     // read before the caller rewrites its config.
@@ -90,8 +90,8 @@ layer(platformLayer)("FileRouter", (it) => {
   })
 
   it.effect("preserves a literal backslash segment on POSIX", effect () => {
-    const fs = try FileSystem()
-    const path = try Path()
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
     if (path.sep !== "/") return
     const temporary = try fs.makeTempDirectoryScoped({ prefix: "smithers-fs-router-" })
     try fs.makeDirectory(`${temporary}/a\\b`, { recursive: true })
@@ -103,8 +103,8 @@ layer(platformLayer)("FileRouter", (it) => {
   })
 
   it.effect("keeps scanning when one flow declares an empty description", effect () => {
-    const fs = try FileSystem()
-    const path = try Path()
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
     const temporary = try fs.makeTempDirectoryScoped({ prefix: "smithers-fs-empty-description-" })
     const source = effect (description: string) =>
       `import * as Schema from "effect/Schema"
@@ -138,8 +138,8 @@ export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSO
     expect(called).toBe(false)
   })
   it.effect("never routes a flow or UI companion whose real path leaves the root", effect () => {
-    const fs = try FileSystem()
-    const path = try Path()
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
     const temporary = try fs.makeTempDirectoryScoped({ prefix: "smithers-fs-escape-" })
     const flows = path.join(temporary, "flows")
     const outside = path.join(temporary, "outside")

@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect";
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts";
+import type { ProviderError } from "../../../../src/RemoteChildProcessSpawner/ProviderError.ts";
 /**
  * Only adapter-selected fields reach the logger. In particular, neither the
  * error message nor its retained SDK cause is inspected or rendered.

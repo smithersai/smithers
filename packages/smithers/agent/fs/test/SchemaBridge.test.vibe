@@ -572,7 +572,7 @@ describe("SchemaBridge", () => {
     )
     expect((try failureOf(SchemaBridge.decodeInput(Schema.DateFromString, "2026-01-01"))).code).toBe("decode_failed")
     expect(
-      (try failureOf(SchemaBridge.encodeOutput(Schema.instanceOf(Date), new Date(Clock.currentTimeMillis())))).code
+      (try failureOf(SchemaBridge.encodeOutput(Schema.instanceOf(Date), new Date(try Clock.currentTimeMillis)))).code
     ).toBe("encode_failed")
   })
 
@@ -581,8 +581,8 @@ describe("SchemaBridge", () => {
       Schema.decodeTo(
         Schema.String,
         SchemaTransformation.transformEffect({
-          decode: effect (value) => `${try Prefix()}${value}`,
-          encode: effect (value) => value.slice((try Prefix()).length)
+          decode: effect (value) => `${try Prefix}${value}`,
+          encode: effect (value) => value.slice((try Prefix).length)
         })
       )
     )

@@ -107,7 +107,7 @@ const invalid = (field: string, message: string, value: unknown): IntegrationErr
     retryable: false,
   })
 
-const requireInput = (sha: string, input: Input): Record<string, string>!IntegrationError => {
+const requireInput = effect (sha: string, input: Input): Record<string, string>!IntegrationError => {
   if (typeof sha !== "string" || !SHA.test(sha)) {
     throw invalid("sha", "A commit SHA must be 40 or 64 lowercase hex digits.", sha)
   }

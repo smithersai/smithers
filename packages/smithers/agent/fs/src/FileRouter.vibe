@@ -95,8 +95,8 @@ const warningSnapshot = (warning: Descriptor.DiscoveryWarning): Warning =>
  * @since 0.1.0
  */
 export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, FileSystem.FileSystem | Path> {
-  const fileSystem = try FileSystem()
-  const path = try Path()
+  const fileSystem = try FileSystem.FileSystem
+  const path = try Path.Path
   const root = try snapshotRoot(config, path)
   const discovery = Discovery.make(fileSystem, path)
   // Confinement makes discovery refuse any entry or directory whose real

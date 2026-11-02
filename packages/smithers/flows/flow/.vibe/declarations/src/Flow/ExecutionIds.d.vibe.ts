@@ -19,7 +19,7 @@ import { Crypto } from "@smthrs/crypto";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { Any } from "./Flow.ts";
+import type { Any } from "../../../../src/Flow/Flow.ts";
 /**
  * Mints the execution id of an invocation that named none.
  *

@@ -355,7 +355,7 @@ export const decodeAnswers = <Qs extends Questions>(
   questions: Qs,
   raw: Evaluator.RawAnswers,
 ): AnswersOf<Qs>!ClassifierError =>
-  Effect.suspend(() => {
+  Effect.suspend(effect () => {
     const answers: Record<string, Answer> = Object.create(null)
     for (const [id, question] of Object.entries(questions)) {
       const decoded = decodeOne(id, question, Object.hasOwn(raw, id) ? raw[id] : undefined)

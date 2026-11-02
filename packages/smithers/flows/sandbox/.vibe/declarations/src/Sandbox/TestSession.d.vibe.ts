@@ -4,9 +4,9 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect";
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts";
-import type { TestScript } from "../RemoteChildProcessSpawner/TestScript.ts";
-import type { TestSessionProvider } from "./TestSessionProvider.ts";
+import { ProviderError } from "../../../../src/RemoteChildProcessSpawner/ProviderError.ts";
+import type { TestScript } from "../../../../src/RemoteChildProcessSpawner/TestScript.ts";
+import type { TestSessionProvider } from "../../../../src/Sandbox/TestSessionProvider.ts";
 /**
  * What a scripted session is built from.
  *

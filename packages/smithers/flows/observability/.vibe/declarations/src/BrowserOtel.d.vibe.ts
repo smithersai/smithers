@@ -7,8 +7,8 @@ import type { LogRecordProcessor } from "@opentelemetry/sdk-logs";
 import type { MetricReader } from "@opentelemetry/sdk-metrics";
 import type { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import * as Layer from "effect/Layer";
-import * as Resource from "./Resource.ts";
-import type { Configuration as ResourceConfiguration } from "./Resource.ts";
+import * as Resource from "../../../src/Resource.ts";
+import type { Configuration as ResourceConfiguration } from "../../../src/Resource.ts";
 /**
  * Browser OTEL layer options. Processors and readers are created by the
  * caller's factories, which keeps this module free of Node imports and browser

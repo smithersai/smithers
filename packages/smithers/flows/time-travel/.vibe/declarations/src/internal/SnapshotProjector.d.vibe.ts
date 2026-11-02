@@ -22,7 +22,7 @@ import type * as JournalEvent from "@smthrs/journal/JournalEvent";
 import type * as Projection from "@smthrs/journal/Projection";
 import * as Effect from "effect/Effect";
 import { type TimeTravelError } from "../TimeTravelError.vibe";
-import { type Snapshot, TimeTravelStore } from "../TimeTravelStore.ts";
+import { type Snapshot, TimeTravelStore } from "../../../../src/TimeTravelStore.ts";
 /**
  * The anchor facts one lineage has put in force.
  *

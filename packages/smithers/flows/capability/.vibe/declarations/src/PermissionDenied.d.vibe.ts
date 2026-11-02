@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import { Schema } from "effect";
-import { Capability } from "./Capability.ts";
+import { Capability } from "../../../src/Capability.ts";
 declare const PermissionDenied_base: Schema.Class<PermissionDenied, Schema.TaggedStruct<"@smthrs/capability/PermissionDenied", {
     readonly code: Schema.Literal<"permission_denied">;
     readonly capability: typeof Capability;

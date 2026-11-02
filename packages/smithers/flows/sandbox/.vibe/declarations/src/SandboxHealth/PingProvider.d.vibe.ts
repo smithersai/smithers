@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import type * as Effect from "effect/Effect";
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts";
+import type { ProviderError } from "../../../../src/RemoteChildProcessSpawner/ProviderError.ts";
 /**
  * A cheap round-trip proving that the remote sandbox is alive.
  *

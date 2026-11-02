@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 import * as Schema from "effect/Schema";
-import { Unchanged } from "../Sandbox/Work.ts";
+import { Unchanged } from "../../../../src/Sandbox/Work.ts";
 declare const Merged_base: Schema.Class<Merged, Schema.TaggedStruct<"Merged", {
     /** The jj change id holding the work. Stable across rewrites of the change. */
     readonly change: Schema.String;

@@ -32,8 +32,8 @@
  * @since 1.0.0
  */
 import { Effect, Option, Schema } from "effect";
-import { IntegrationError } from "../core/IntegrationError.ts";
-import { GitHubClient } from "./GitHubClient.ts";
+import { IntegrationError } from "../../../../src/core/IntegrationError.ts";
+import { GitHubClient } from "../../../../src/github/GitHubClient.ts";
 /**
  * One end of a pull request: its branch and the commit it points at.
  *

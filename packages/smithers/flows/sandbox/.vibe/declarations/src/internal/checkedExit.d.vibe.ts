@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect";
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts";
+import { ProviderError } from "../../../../src/RemoteChildProcessSpawner/ProviderError.ts";
 /**
  * Passes `result` through when its command exited 0, and fails with `code`
  * and `${message}: command exited <status>` otherwise.

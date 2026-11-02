@@ -8,7 +8,7 @@ import type * as Api from "@opentelemetry/api";
 import type { LoggerProvider } from "@opentelemetry/sdk-logs";
 import type { MetricReader } from "@opentelemetry/sdk-metrics";
 import * as Layer from "effect/Layer";
-import { type Configuration as ResourceConfiguration, type InvalidResourceConfiguration, Resource } from "./Resource.ts";
+import { type Configuration as ResourceConfiguration, type InvalidResourceConfiguration, Resource } from "../../../src/Resource.ts";
 /**
  * Injected providers used by the provider-neutral OTEL layer.
  *

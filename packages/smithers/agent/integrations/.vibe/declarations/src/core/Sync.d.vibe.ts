@@ -24,9 +24,9 @@
  * @since 1.0.0
  */
 import { Effect } from "effect";
-import { IntegrationError } from "./IntegrationError.ts";
+import { IntegrationError } from "../../../../src/core/IntegrationError.ts";
 import type { SourceRecord } from "./SourceRecord.vibe";
-import { SourceStore } from "./SourceStore.ts";
+import { SourceStore } from "../../../../src/core/SourceStore.ts";
 /**
  * One page of changes.
  *

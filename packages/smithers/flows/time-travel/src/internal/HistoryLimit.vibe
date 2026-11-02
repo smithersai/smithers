@@ -36,7 +36,7 @@ export const defaultMaxHistoryEntries = 100_000
  * @since 0.1.0
  * @category validators
  */
-export const resolve = (
+export const resolve = effect (
   value: number | undefined,
   fallback: number,
 ): number!TimeTravelError => {

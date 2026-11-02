@@ -7,7 +7,7 @@
  * @since 0.1.0
  */
 import { Schema } from "effect";
-import { Capability, EffectTier } from "./Capability.ts";
+import { Capability, EffectTier } from "../../../src/Capability.ts";
 declare const PermissionRequired_base: Schema.Class<PermissionRequired, Schema.TaggedStruct<"@smthrs/capability/PermissionRequired", {
     readonly code: Schema.Literal<"permission_required">;
     readonly requestId: Schema.String;

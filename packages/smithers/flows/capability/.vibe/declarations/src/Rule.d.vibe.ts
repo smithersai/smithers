@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import { Schema } from "effect";
-import { CapabilityPattern } from "./Capability.ts";
+import { CapabilityPattern } from "../../../src/Capability.ts";
 declare const Rule_base: Schema.Class<Rule, Schema.Struct<{
     readonly effect: Schema.Literals<readonly ["allow", "deny", "ask"]>;
     readonly pattern: Schema.compose<Schema.declare<CapabilityPattern, CapabilityPattern>, typeof CapabilityPattern>;

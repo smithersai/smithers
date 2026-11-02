@@ -172,7 +172,7 @@ const MAX_CHANGES = 1000
 const invalid = (field: string, message: string): IntegrationError =>
   new IntegrationError("invalid-config", message, { field, retryable: false })
 
-const requireSha = (field: string, sha: string): string!IntegrationError =>
+const requireSha = effect (field: string, sha: string): string!IntegrationError =>
   typeof sha === "string" && SHA.test(sha)
     ? sha
     : throw invalid(field, "A commit SHA must be 40 lowercase hex digits.")

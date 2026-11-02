@@ -84,7 +84,7 @@ effect function validateDecoded(
   field: "input" | "output",
 ): Effect<unknown, FsError, infer R> {
   const decoded = try SchemaBridge.recover(
-    Schema.decodeUnknownEffect(Schema.toType(schema))(snapshotDecoded(value)),
+    effect { return try Schema.decodeUnknownEffect(Schema.toType(schema))(try snapshotDecoded(value)) },
     effect () =>
       new FsError({
         code: "decode_failed",

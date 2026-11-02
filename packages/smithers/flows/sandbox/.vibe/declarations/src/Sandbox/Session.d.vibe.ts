@@ -7,8 +7,8 @@ import type * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import type { Signal } from "effect/process/ChildProcess";
 import type { Scope } from "effect/Scope";
-import type { RemoteOptions, RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts";
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts";
+import type { RemoteOptions, RemoteProcess } from "../../../../src/RemoteChildProcessSpawner/Provider.ts";
+import type { ProviderError } from "../../../../src/RemoteChildProcessSpawner/ProviderError.ts";
 /**
  * One provisioned machine, held for the scope that acquired it.
  *

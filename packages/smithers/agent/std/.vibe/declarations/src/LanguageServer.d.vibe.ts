@@ -9,7 +9,7 @@
  * @since 1.0.0
  */
 import { Context, Effect, Layer } from "effect";
-import * as StdError from "./StdError.ts";
+import * as StdError from "../../../src/StdError.ts";
 /**
  * A point in a file, addressed the way a language server addresses it.
  *

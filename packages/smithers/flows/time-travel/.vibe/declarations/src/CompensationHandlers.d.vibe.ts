@@ -38,7 +38,7 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import type { EffectRecord, EffectTier } from "./EffectBoundary.ts";
+import type { EffectRecord, EffectTier } from "../../../src/EffectBoundary.ts";
 import type { TimeTravelError } from "./TimeTravelError.vibe";
 /**
  * A handler's preflight verdict on one crossed effect: `revertible` means the

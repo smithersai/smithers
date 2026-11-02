@@ -11,7 +11,7 @@
  * @since 1.0.0
  */
 import { Effect, type Redacted } from "effect";
-import type { IntegrationError } from "./IntegrationError.ts";
+import type { IntegrationError } from "../../../../src/core/IntegrationError.ts";
 /**
  * A provider of bearer tokens.
  *

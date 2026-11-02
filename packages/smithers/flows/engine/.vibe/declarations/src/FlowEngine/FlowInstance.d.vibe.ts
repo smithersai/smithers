@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import type { Flow, FlowRuntime } from "@smthrs/flow";
-import * as Lineage from "./Lineage.ts";
+import * as Lineage from "../../../../src/FlowEngine/Lineage.ts";
 /**
  * Creates the initial `FlowInstance` state for one flow execution.
  *

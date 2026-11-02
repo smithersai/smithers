@@ -181,7 +181,7 @@ const invalid = (monitor: Monitor, seen: ReadonlySet<string>): string | undefine
 export const validate = (
   monitors: ReadonlyArray<Monitor>,
 ): ReadonlyArray<Monitor>!InvalidMonitor =>
-  Effect.suspend(() => {
+  Effect.suspend(effect () => {
     const seen = new Set<string>()
     for (const monitor of monitors) {
       const message = invalid(monitor, seen)

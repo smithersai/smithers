@@ -25,13 +25,13 @@ export declare class GitLockContention extends GitLockContention_base {
  * @since 1.0.0
  */
 export declare const Apply: Action.Declared<"@smthrs/sandbox/SandboxMerge/Apply", Schema.Struct<{
-    work: Schema.toEncoded<Schema.Union<readonly [typeof import("../Sandbox/Work.ts").Changed, typeof import("../Sandbox/Work.ts").Unchanged]>>;
+    work: Schema.toEncoded<Schema.Union<readonly [typeof import("../../../../src/Sandbox/Work.ts").Changed, typeof import("../../../../src/Sandbox/Work.ts").Unchanged]>>;
     repository: Schema.String;
     onto: Schema.String;
     message: Schema.String;
     key: Schema.String;
     fetch: Schema.optional<Schema.Union<readonly [Schema.$Array<Schema.String>, Schema.Literal<false>]>>;
-}>, Schema.Union<readonly [typeof import("./Outcome.vibe").Merged, typeof import("./Outcome.vibe").Conflicted, typeof import("../Sandbox/Work.ts").Unchanged]>, Schema.Union<readonly [typeof MergeError, typeof GitLockContention]>, Action.Requirement<"@smthrs/sandbox/SandboxMerge/Apply">>;
+}>, Schema.Union<readonly [typeof import("./Outcome.vibe").Merged, typeof import("./Outcome.vibe").Conflicted, typeof import("../../../../src/Sandbox/Work.ts").Unchanged]>, Schema.Union<readonly [typeof MergeError, typeof GitLockContention]>, Action.Requirement<"@smthrs/sandbox/SandboxMerge/Apply">>;
 /**
  * Implements {@link Apply} with the host's filesystem, spawner and mutation fence.
  * A failed command returns immediately. The engine journals the retry wait.

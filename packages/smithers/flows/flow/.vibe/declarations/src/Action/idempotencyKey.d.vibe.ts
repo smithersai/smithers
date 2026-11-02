@@ -5,7 +5,7 @@
  */
 import type { Crypto } from "@smthrs/crypto";
 import * as Effect from "effect/Effect";
-import { FlowInstance } from "../FlowRuntime/FlowInstance.ts";
+import { FlowInstance } from "../../../../src/FlowRuntime/FlowInstance.ts";
 /**
  * Computes a run-local invocation key for an internal durable operation.
  *

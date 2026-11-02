@@ -165,7 +165,7 @@ export const make = (service: Search): Search => Search.of(service)
  * @since 1.0.0
  */
 export const makeNoop = (): Search => {
-  const unavailable = () =>
+  const unavailable = effect () =>
     throw new StdError.StdError({
       code: "provider_unavailable",
       message: "No search implementation is configured",

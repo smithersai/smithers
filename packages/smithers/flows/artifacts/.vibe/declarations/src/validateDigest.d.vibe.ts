@@ -5,7 +5,7 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect from "effect/Effect";
-import type { Digest } from "./ArtifactStore.ts";
+import type { Digest } from "../../../src/ArtifactStore.ts";
 import { ArtifactStoreError } from "./ArtifactStoreError.vibe";
 /**
  * Refuses anything other than the canonical SHA-256 address representation.

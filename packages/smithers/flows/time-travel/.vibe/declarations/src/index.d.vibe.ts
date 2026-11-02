@@ -47,7 +47,7 @@
  * @category services
  * @since 0.1.0
  */
-export { ReadOnlyTimeTravel, TimeTravel } from "./TimeTravel.ts";
+export { ReadOnlyTimeTravel, TimeTravel } from "../../../src/TimeTravel.ts";
 /**
  * The `TimeTravel` module's types, re-exported so a caller annotates a
  * signature without reaching for the `@smthrs/time-travel/TimeTravel` subpath.
@@ -55,7 +55,7 @@ export { ReadOnlyTimeTravel, TimeTravel } from "./TimeTravel.ts";
  * @category models
  * @since 1.0.0
  */
-export type { ForkOptions, ForkResult, Options, Position, Projection, RateLimitDecision, ReplayOptions, RewindOptions, RewindResult, Service } from "./TimeTravel.ts";
+export type { ForkOptions, ForkResult, Options, Position, Projection, RateLimitDecision, ReplayOptions, RewindOptions, RewindResult, Service } from "../../../src/TimeTravel.ts";
 /**
  * The derived fork workspace name and the default history cap, beside the
  * service key that reads them.
@@ -63,7 +63,7 @@ export type { ForkOptions, ForkResult, Options, Position, Projection, RateLimitD
  * @category constructors
  * @since 1.0.0
  */
-export { defaultMaxHistoryEntries, forkWorkspaceName } from "./TimeTravel.ts";
+export { defaultMaxHistoryEntries, forkWorkspaceName } from "../../../src/TimeTravel.ts";
 /**
  * @category models
  * @since 0.1.0
@@ -78,22 +78,22 @@ export * as TimeTravelError from "./TimeTravelError.vibe";
  * @category services
  * @since 0.1.0
  */
-export * as TimeTravelStore from "./TimeTravelStore.ts";
+export * as TimeTravelStore from "../../../src/TimeTravelStore.ts";
 /**
  * @category layers
  * @since 0.1.0
  */
-export * as MemoryTimeTravelStore from "./MemoryTimeTravelStore.ts";
+export * as MemoryTimeTravelStore from "../../../src/MemoryTimeTravelStore.ts";
 /**
  * @category layers
  * @since 0.1.0
  */
-export * as SqlTimeTravelStore from "./SqlTimeTravelStore.ts";
+export * as SqlTimeTravelStore from "../../../src/SqlTimeTravelStore.ts";
 /**
  * @category models
  * @since 0.1.0
  */
-export * as EffectBoundary from "./EffectBoundary.ts";
+export * as EffectBoundary from "../../../src/EffectBoundary.ts";
 /**
  * @category services
  * @since 0.1.0
@@ -103,4 +103,4 @@ export * as CompensationHandlers from "./CompensationHandlers.vibe";
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts";
+export * as Migrations from "../../../src/Migrations.ts";

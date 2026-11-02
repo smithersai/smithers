@@ -1,7 +1,7 @@
 import * as AgentAction from "@smthrs/agent/AgentAction";
 import { Action } from "@smthrs/flow";
 import { Schema } from "effect";
-import { ReleaseError } from "../release-support/schema.ts";
+import { ReleaseError } from "../../../release-support/schema.ts";
 export declare const AuditDocs: AgentAction.AgentAction<"release/audit-documentation", Schema.Struct<{
     input: Schema.Struct<{
         readonly version: Schema.NonEmptyString;

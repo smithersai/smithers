@@ -6,7 +6,7 @@
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { type EffectDeclaration, ModelSelection, type Placement } from "../Descriptor.ts";
+import { type EffectDeclaration, ModelSelection, type Placement } from "../../../../src/Descriptor.ts";
 /**
  * @since 0.1.0
  * @private

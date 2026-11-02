@@ -12,7 +12,7 @@
  */
 import { Effect } from "effect";
 import type * as Cause from "effect/Cause";
-import type { Content as TextContent } from "./Prompt/jsx-runtime.ts";
+import type { Content as TextContent } from "../../../src/Prompt/jsx-runtime.ts";
 /**
  * Content accepted by the text JSX runtime.
  * @category models

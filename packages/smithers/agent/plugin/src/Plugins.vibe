@@ -62,7 +62,7 @@ const runHandler = (
   record: HandlerRecord,
   args: ReadonlyArray<unknown>,
 ): unknown!PluginError!any => {
-  const onCause = (cause: Cause<unknown>) =>
+  const onCause = effect (cause: Cause<unknown>) =>
     throw new PluginError({
       code: "hook_failed",
       message: `hook "${record.hook}" failed in plugin "${record.plugin}"`,
@@ -73,9 +73,9 @@ const runHandler = (
 
   return Effect.sync(() => record.handler(...args))
     |> Effect.catchCause(%, onCause)
-    |> Effect.flatMap(%, (result) =>
+    |> Effect.flatMap(%, effect (result) =>
       Effect.isEffect(result)
-        ? (result |> Effect.catchCause(%, onCause))
+        ? (result |> try Effect.catchCause(%, onCause))
         : throw new PluginError({
           code: "hook_failed",
           message: `hook "${record.hook}" in plugin "${record.plugin}" returned a non-Effect (${typeof result})`,

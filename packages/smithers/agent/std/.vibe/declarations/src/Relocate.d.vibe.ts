@@ -25,7 +25,7 @@
  * @since 1.0.0
  */
 import type { Schema } from "effect";
-import type { Materialized } from "./Checkpoints.ts";
+import type { Materialized } from "../../../src/Checkpoints.ts";
 /**
  * Why one input could not be pointed at a checkpoint.
  *

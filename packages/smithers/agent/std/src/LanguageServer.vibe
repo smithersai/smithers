@@ -75,7 +75,7 @@ export const LanguageServer: Context.Service<LanguageServer, LanguageServer> = C
  * @since 1.0.0
  */
 export const make = (service: LanguageServer): LanguageServer => LanguageServer.of(service)
-const unsupported = (): never!StdError.StdError =>
+const unsupported = effect (): never!StdError.StdError =>
   throw new StdError.StdError({ code: "unsupported", message: "Language server support is unavailable" })
 /**
  * A {@link LanguageServer} that reports `unsupported` for every request,

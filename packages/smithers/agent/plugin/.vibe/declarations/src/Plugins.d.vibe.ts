@@ -20,7 +20,7 @@ import * as Layer from "effect/Layer";
 import type { ArgsOf, ContextOf, KeysOfKind, SuccessOf } from "./Hooks.vibe";
 import type { FlowsHooks } from "./index.vibe";
 import { PluginError } from "./PluginError.vibe";
-import { type HandlerRecord, type Resolved } from "./Resolve.ts";
+import { type HandlerRecord, type Resolved } from "../../../src/Resolve.ts";
 /**
  * The dispatch surface.
  *

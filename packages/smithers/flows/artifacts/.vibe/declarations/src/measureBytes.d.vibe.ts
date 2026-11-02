@@ -6,7 +6,7 @@
  */
 import { type Crypto } from "@smthrs/crypto";
 import * as Effect from "effect/Effect";
-import type { Digest } from "./ArtifactStore.ts";
+import type { Digest } from "../../../src/ArtifactStore.ts";
 import { ArtifactStoreError } from "./ArtifactStoreError.vibe";
 /**
  * Measures one immutable byte snapshot without ever retaining it in an error.

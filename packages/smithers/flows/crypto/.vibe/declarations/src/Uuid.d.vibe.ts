@@ -13,7 +13,7 @@
  */
 import * as Effect from "effect/Effect";
 import type * as PlatformError from "effect/PlatformError";
-import * as Crypto from "./Crypto.ts";
+import * as Crypto from "../../../src/Crypto.ts";
 /**
  * Whether `value` is a UUID in its canonical hyphenated form, in either case.
  *

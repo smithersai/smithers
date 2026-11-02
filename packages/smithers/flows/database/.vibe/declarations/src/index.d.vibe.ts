@@ -20,28 +20,28 @@
  * @category services
  * @since 0.1.0
  */
-export * as DurableWriter from "./DurableWriter.ts";
+export * as DurableWriter from "../../../src/DurableWriter.ts";
 /**
  * @category metrics
  * @since 0.1.0
  */
-export * as DatabaseMetrics from "./DatabaseMetrics.ts";
+export * as DatabaseMetrics from "../../../src/DatabaseMetrics.ts";
 /**
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts";
+export * as Migrations from "../../../src/Migrations.ts";
 /**
  * @category models
  * @since 1.0.0
  */
-export * as UnsupportedBackend from "./UnsupportedBackend.ts";
+export * as UnsupportedBackend from "../../../src/UnsupportedBackend.ts";
 /**
  * @category drivers
  * @since 1.0.0
  */
-export * as PostgresDatabase from "./postgres/PostgresDatabase.ts";
+export * as PostgresDatabase from "../../../src/postgres/PostgresDatabase.ts";
 /** @category testing
  * @since 1.0.0
  */
-export * as TestSchemas from "./TestSchemas.ts";
+export * as TestSchemas from "../../../src/TestSchemas.ts";

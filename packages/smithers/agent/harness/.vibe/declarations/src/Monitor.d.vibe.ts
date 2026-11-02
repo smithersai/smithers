@@ -18,8 +18,8 @@
 import * as Classifier from "@smthrs/model/Classifier";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type * as AgentEvent from "./AgentEvent.ts";
-import * as Supervisor from "./Supervisor.ts";
+import type * as AgentEvent from "../../../src/AgentEvent.ts";
+import * as Supervisor from "../../../src/Supervisor.ts";
 /**
  * What a monitor watches for.
  *
