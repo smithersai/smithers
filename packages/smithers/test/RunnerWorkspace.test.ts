@@ -782,3 +782,35 @@ test(
   },
   120_000
 )
+
+// Astra's review of f7b3de5f and 281a40d4: the sweep read and unlinked its records unguarded, so a removals directory it
+// couldn't read, or a record it couldn't unlink, failed it as a defect, which ended the serve loop's sweep fiber for good.
+test("a sweep that can't read or unlink its records fails nothing, and a later sweep does what is owed", async () => {
+  const mirror = Host.mirror(root)
+  const stateDir = join(root, "state")
+  const checkout = Workspace.of(stateDir, "sweep-errors")
+  expect(made(await Effect.runPromise(Effect.exit(Workspace.create(mirror.path, mirror.base, checkout))))).toBe("made")
+  await Effect.runPromise(Workspace.scheduleRemoval(mirror.path, checkout))
+  const removals = join(stateDir, "removals")
+  const record = join(removals, `${checkout.name}.json`)
+  // The records can't be listed.
+  chmodSync(removals, 0o000)
+  try {
+    expect(Exit.isSuccess(await Effect.runPromise(Effect.exit(Workspace.sweep(stateDir))))).toBe(true)
+  } finally {
+    chmodSync(removals, 0o755)
+  }
+  expect(existsSync(checkout.dir)).toBe(true)
+  // The removal is done, but its record can't be unlinked.
+  chmodSync(removals, 0o500)
+  try {
+    expect(Exit.isSuccess(await Effect.runPromise(Effect.exit(Workspace.sweep(stateDir))))).toBe(true)
+  } finally {
+    chmodSync(removals, 0o755)
+  }
+  expect(existsSync(checkout.dir)).toBe(false)
+  expect(existsSync(record)).toBe(true)
+  // Recovered: the next sweep finds the removal done and drops the record.
+  expect(Exit.isSuccess(await Effect.runPromise(Effect.exit(Workspace.sweep(stateDir))))).toBe(true)
+  expect(existsSync(record)).toBe(false)
+}, 120_000)

@@ -200,7 +200,13 @@ export const loop = (
 
     // The removals owed for checkouts whose jobs ended (`Workspace.scheduleRemoval`), done apart from any job's slot,
     // every few seconds, after a restart too.
+    // A sweep that fails anyhow is logged and the fiber goes on: it never ends for good while the runner serves.
     yield* Workspace.sweep(config.stateDir).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.logError("runner.sweep").pipe(Effect.annotateLogs({ outcome: "failed" }))
+      ),
       Effect.andThen(Effect.sleep(`${SWEEP_SECONDS} seconds`)),
       Effect.forever,
       Effect.forkChild

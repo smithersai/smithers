@@ -766,17 +766,37 @@ export const REMOVAL_TIMEOUT_MS = 5 * 60 * 1000
 export const sweep = (stateDir: string) =>
   Effect.gen(function*() {
     const dir = removalsOf(stateDir)
-    const files = yield* Effect.sync(() =>
-      existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".json")) : []
+    // Every file-system call is guarded: one that fails is logged and asked again at the next sweep, never a defect
+    // that would end the serve loop's sweep fiber.
+    const attempt = <A>(step: string, f: () => A, otherwise: A) =>
+      Effect.try({ try: f, catch: (error) => error }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("runner.sweep").pipe(
+            Effect.annotateLogs({ step, code: (error as NodeJS.ErrnoException).code ?? "unknown" }),
+            Effect.as(otherwise)
+          )
+        )
+      )
+    const files = yield* attempt(
+      "list",
+      () => existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".json")) : [],
+      [] as ReadonlyArray<string>
     )
     for (const file of files) {
-      const owed = yield* Effect.sync(() => {
-        try {
-          return JSON.parse(readFileSync(join(dir, file), "utf8")) as { readonly mirror?: unknown }
-        } catch {
-          return undefined
-        }
-      })
+      const owed = yield* attempt(
+        "read",
+        () => {
+          try {
+            return JSON.parse(readFileSync(join(dir, file), "utf8")) as { readonly mirror?: unknown }
+          } catch (error) {
+            // A record that isn't JSON is dropped below; one that can't be read is asked again.
+            if (error instanceof SyntaxError) return undefined
+            throw error
+          }
+        },
+        null
+      )
+      if (owed === null) continue
       const name = file.slice(0, -".json".length)
       const work = join(stateDir, "work", name)
       const checkout: Checkout = {
@@ -788,7 +808,7 @@ export const sweep = (stateDir: string) =>
         started: join(stateDir, "started", name)
       }
       if (typeof owed?.mirror !== "string") {
-        yield* Effect.sync(() => rmSync(join(dir, file), { force: true }))
+        yield* attempt("unlink", () => rmSync(join(dir, file), { force: true }), undefined)
         continue
       }
       const done = yield* remove(owed.mirror, checkout).pipe(
@@ -797,7 +817,7 @@ export const sweep = (stateDir: string) =>
         // A removal that failed or ran out of time is asked again at the next sweep; an interruption is the sweep's own.
         Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.succeed(false))
       )
-      if (done) yield* Effect.sync(() => rmSync(join(dir, file), { force: true }))
+      if (done) yield* attempt("unlink", () => rmSync(join(dir, file), { force: true }), undefined)
     }
   })
 
