@@ -112,16 +112,17 @@ export const syncsHere = (access: { readonly status: string } | undefined, unsyn
   access?.status !== "elsewhere" && unsynced === undefined
 
 /**
- * The list's sync line, before its rows are known: `syncing` while the deployment syncs them (a fresh device's first
- * seconds included, as the pull requests' list says), `not_synced` only once ChatApi says the GitHub App isn't
- * installed there (`installed: false`), and nothing once the list is known.
+ * The list's sync line, before its rows are known: `syncing` while the deployment syncs them, a fresh device's first
+ * seconds included, as the pull requests' list says; nothing once the list is known. `installed` is the device's receipt
+ * for the shape's rows, false until they arrive, never a statement about the GitHub App: a repository the App can't act
+ * on goes to GitHub's list instead (`syncsHere`).
  */
 export const listSyncOf = (
   unknown: boolean,
   ready: boolean,
   access: { readonly installed?: boolean } | undefined,
-): "syncing" | "not_synced" | undefined =>
-  access?.installed === false ? "not_synced" : unknown || !ready || access?.installed !== true ? "syncing" : undefined
+): "syncing" | undefined =>
+  unknown || !ready || access?.installed !== true ? "syncing" : undefined
 
 /**
  * The list page: device rows, unknown counts until a complete sync or GitHub row arrives, the shape's refusal,

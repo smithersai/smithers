@@ -67,6 +67,13 @@ describe("work on the list and the issue page", () => {
       .toEqual({ number: 1, title: "One", state: "open", labels: ["Merged"], links: [{ label: "Merge: abc", href: "https://github.com/acme/widgets/commit/abc" }] })
   })
 
+  test("opens a link to this app in place, and any other as it is", () => {
+    expect(workSections(workByIssue([row(1, "queue", "q-1", "queued", 1, "https://smithers.test/acme/widgets/issues/9")]).get(1), "https://smithers.test")[0]!.links)
+      .toEqual([{ label: "q-1 · queued", href: "/acme/widgets/issues/9" }])
+    expect(workSections(workByIssue([row(1, "pr", "7", "open", 1, "https://github.com/acme/widgets/pull/7")]).get(1), "https://smithers.test")[0]!.links)
+      .toEqual([{ label: "7 · open", href: "https://github.com/acme/widgets/pull/7" }])
+  })
+
   test("gives the issue page a section per kind, in order, each link with its state", () => {
     expect(workSections(undefined)).toEqual([])
     expect(workSections(workByIssue(rows).get(1))).toEqual([

@@ -62,12 +62,13 @@ describe("work links", () => {
     const h = await githubHarness(runtime)
     const first = await h.fetch(route(2), post({
       links: [
-        { kind: "assignee", ref: "lane-a", label: "lane-a" },
+        { kind: "assignee", ref: "lane-a", label: "lane-a", at: "2026-11-01T09:00:00Z" },
         { kind: "session", ref: "lane:lane-a", state: "working", at: "2026-11-01T10:00:00Z", url: "https://example.test/lanes/lane-a" },
       ],
     }))
     expect([first.status, await first.json()]).toEqual([200, { links: 2, changed: 2 }])
-    const again = await h.fetch(route(2), post({ links: [{ kind: "assignee", ref: "lane-a", label: "lane-a" }] }))
+    // The same post sent again (a retry) changes nothing.
+    const again = await h.fetch(route(2), post({ links: [{ kind: "assignee", ref: "lane-a", label: "lane-a", at: "2026-11-01T09:00:00Z" }] }))
     expect(await again.json()).toEqual({ links: 1, changed: 0 })
     const statusOf = async (number: number) =>
       ((await (await h.fetch(`${list}?state=all`)).json()) as Array<Listed>).find((issue) => issue.number === number)!.work
@@ -80,17 +81,19 @@ describe("work links", () => {
     const stale = await h.fetch(route(2), post({ links: [{ kind: "queue", ref: "q-1", state: "queued", at: "2026-11-01T11:10:00Z" }] }))
     expect(await stale.json()).toEqual({ links: 1, changed: 0 })
     expect((await statusOf(2)).status).toBe("failed")
+    // The lane starts working again after its queue entry failed: the same state, newer, is the newest word.
+    await h.fetch(route(2), post({ links: [{ kind: "session", ref: "lane:lane-a", state: "working", at: "2026-11-01T11:40:00Z" }] }))
+    expect((await statusOf(2)).status).toBe("working")
     await h.fetch(route(2), post({ links: [{ kind: "pr", ref: "12", state: "open", at: "2026-11-01T12:00:00Z", url: "https://github.com/acme/widgets/pull/12" }] }))
     expect((await statusOf(2)).status).toBe("in_review")
     await h.fetch(route(2), post({ links: [{ kind: "merge", ref: "abc123", state: "merged", at: "2026-11-01T12:30:00Z" }] }))
     await h.fetch(route(2), post({ links: [{ kind: "session", ref: "lane:lane-b", state: "working", at: "2026-11-01T13:00:00Z" }] }))
     const work = await statusOf(2)
     expect(work.status).toBe("merged")
-    // Newest first: the assignee, posted without a time, has the server's.
-    expect(work.links.map((link) => link.ref)).toEqual(["lane-a", "lane:lane-b", "abc123", "12", "q-1", "lane:lane-a"])
-    expect(work.links[1]).toMatchObject({ kind: "session", state: "working", updated_at: "2026-11-01T13:00:00.000000Z" })
+    expect(work.links.map((link) => link.ref)).toEqual(["lane:lane-b", "abc123", "12", "lane:lane-a", "q-1", "lane-a"])
+    expect(work.links[0]).toMatchObject({ kind: "session", state: "working", updated_at: "2026-11-01T13:00:00.000000Z" })
     expect(work.links.find((link) => link.kind === "pr")).toMatchObject({ url: "https://github.com/acme/widgets/pull/12", label: "12" })
-    expect(h.count(Metrics.workLinkPosts, { outcome: "written", by: "person" })).toBe(8)
+    expect(h.count(Metrics.workLinkPosts, { outcome: "written", by: "person" })).toBe(9)
     expect(h.line("work.links")[0]!.annotations).toMatchObject({ outcome: "written", links: 2, changed: 2, status: 200 })
     expect(JSON.stringify(h.line("work.links").map((line) => line.annotations))).not.toContain("lane-a")
   })

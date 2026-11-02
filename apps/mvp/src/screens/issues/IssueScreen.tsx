@@ -123,7 +123,7 @@ export function IssueScreen() {
   const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed, answer), shown)
   // What links this issue to the work on it (decision 0147): its status, and a section per kind with its links.
   const work = workByIssue(workRows ?? []).get(number)
-  const sections = workSections(work)
+  const sections = workSections(work, window.location.origin)
   const todoAside = made === undefined && !make ? null : (
     <ItemAsideSection title={TODO} {...(made === undefined ? {} : { links: made.links })} onNavigate={(href) => void navigate({ href })}>
       {make
@@ -150,6 +150,7 @@ export function IssueScreen() {
           key={section.kind}
           title={section.title}
           data-work-kind={section.kind}
+          onNavigate={(href) => void navigate({ href })}
           links={section.links.flatMap((link) => link.href === null ? [] : [{ label: link.label, href: link.href }])}
         >
           {section.links.filter((link) => link.href === null).map((link) => (

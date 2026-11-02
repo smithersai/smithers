@@ -3,7 +3,7 @@
 // anything else that does the work outside Smithers. No dependencies: Node 20 or later.
 //
 //   node link.mjs --repo <owner>/<name> --issue <n> --kind <kind> --ref <ref> [--state <state>] [--label <text>]
-//                 [--url https://...] [--at <ISO time>] [--origin https://smithers.sh] [--token-file <path>]
+//                 [--url https://...] [--at <ISO time, now unless set>] [--origin https://smithers.sh] [--token-file <path>]
 //   node link.mjs --repo <owner>/<name> --issue <n> --json <file with {"links":[...]}>
 //
 // kind: assignee, session, queue, pr, merge, review. state: working, queued, open, passed, failed, merged, done,
@@ -16,11 +16,13 @@ import { homedir } from "node:os"
 import { parseArgs } from "node:util"
 
 /** The request body for the options, or an error naming what's missing. */
-export const bodyOf = (values, read = (path) => readFileSync(path, "utf8")) => {
+export const bodyOf = (values, read = (path) => readFileSync(path, "utf8"), now = () => new Date().toISOString()) => {
   if (values.json !== undefined) return JSON.parse(read(values.json))
   if (values.kind === undefined || values.ref === undefined) throw new Error("--kind and --ref are required, or --json")
   const link = { kind: values.kind, ref: values.ref }
-  for (const key of ["state", "label", "url", "at"]) if (values[key] !== undefined) link[key] = values[key]
+  for (const key of ["state", "label", "url"]) if (values[key] !== undefined) link[key] = values[key]
+  // When it happened, fixed once: a post sent again after a lost answer is the same post, and changes nothing.
+  link.at = values.at ?? now()
   return { links: [link] }
 }
 

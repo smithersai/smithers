@@ -91,8 +91,9 @@ export const runnerOf = (request: HttpServerRequest.HttpServerRequest, repoId: s
   })
 
 /**
- * Writes `post`'s links of issue `number` as `source`, in one statement. A link already there changes only for an `at`
- * no older than its own and something to change. Answers how many rows changed.
+ * Writes `post`'s links of issue `number` as `source`, in one statement. A link already there changes for a newer `at`,
+ * even with the same state: a lane that starts working again after its queue entry failed is the newest word. The same
+ * `at` changes it only when something differs, so a post sent again changes nothing. Answers how many rows changed.
  */
 export const write = (repoId: string, number: number, post: Post, source: string, now: number) =>
   Effect.gen(function* () {
@@ -118,9 +119,10 @@ export const write = (repoId: string, number: number, post: Post, source: string
         ref text, label text, url text, state text, source text, updated_at timestamptz)
       ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, url = EXCLUDED.url, state = EXCLUDED.state,
         source = EXCLUDED.source, updated_at = EXCLUDED.updated_at
-      WHERE EXCLUDED.updated_at >= work_links.updated_at
-        AND (work_links.label, work_links.url, work_links.state, work_links.source)
-          IS DISTINCT FROM (EXCLUDED.label, EXCLUDED.url, EXCLUDED.state, EXCLUDED.source)
+      WHERE EXCLUDED.updated_at > work_links.updated_at
+        OR (EXCLUDED.updated_at = work_links.updated_at
+          AND (work_links.label, work_links.url, work_links.state, work_links.source)
+            IS DISTINCT FROM (EXCLUDED.label, EXCLUDED.url, EXCLUDED.state, EXCLUDED.source))
       RETURNING id`
     return { links: rows.length, changed: changed.length }
   })

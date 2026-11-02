@@ -73,7 +73,8 @@ export function PullsScreen() {
           repo={`${owner}/${repo}`}
           size="full"
           issues={page.pulls}
-          loading={page.loading || unknown}
+          // Unknown rows show no placeholders and no busy marker: "Syncing pull requests…" says it (ARCH-5, 0002 §7).
+          loading={page.loading}
           unknown={unknown}
           emptyTitle="No pull requests"
           href={(pull) => ("href" in pull ? (pull.href as string) : undefined)}

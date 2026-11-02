@@ -448,5 +448,9 @@ test("the list's sync line says Syncing until ChatApi says the App isn't install
   expect(listSyncOf(false, false, { installed: true })).toBe("syncing")
   expect(listSyncOf(true, true, { installed: true })).toBe("syncing")
   expect(listSyncOf(false, true, { installed: true })).toBeUndefined()
-  expect(listSyncOf(true, true, { installed: false })).toBe("not_synced")
+  // `installed` is the device's receipt for the shape's rows, false until they arrive: a cold list is syncing, never
+  // "not synced" (webkit, 2026-11-02: smithersai/smithers's 4,400 rows took longer than a test's 5 s to install). A
+  // repository the App can't act on goes to GitHub's list instead (`syncsHere`).
+  expect(listSyncOf(true, true, { installed: false })).toBe("syncing")
+  expect(listSyncOf(false, true, { installed: false })).toBe("syncing")
 })

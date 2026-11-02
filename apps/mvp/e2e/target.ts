@@ -403,6 +403,13 @@ const needs = {
     met: scratchSet,
     reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository; this permits writes but does not promise synced shapes, never a smithersai one",
   },
+  trackingRepository: {
+    met: (run) =>
+      run.target === "deployment" && /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_TRACKING_REPOSITORY ?? "") &&
+      set(run, "E2E_TRACKING_RECORDS", "E2E_TRACKING_SEED_STATE") &&
+      run.repository?.(run.env.E2E_TRACKING_REPOSITORY!.toLowerCase())?.synced !== false,
+    reason: "it proves issue tracking at volume on a PRIVATE repository the test account administers and the App syncs (docs/features/work-links.md#the-proof): set E2E_TRACKING_REPOSITORY, and E2E_TRACKING_RECORDS and E2E_TRACKING_SEED_STATE to the files apps/mvp/ops/issue-tracking/collect.mjs and seed.mjs wrote; never a public repository, since the records hold private paths",
+  },
   syncedScratch: {
     met: (run) => scratchSet(run) &&
       (run.env.E2E_ISSUES_REPOSITORY!.toLowerCase() === (run.env.E2E_SYNCED_REPOSITORY ?? run.env.GITHUB_REPOSITORY ?? "smithersai/smithers").toLowerCase() ||

@@ -73,8 +73,15 @@ export interface WorkSection {
   readonly links: ReadonlyArray<{ readonly label: string; readonly href: string | null }>
 }
 
-/** The issue page's work sections, in `WORK_LINK_KINDS` order, newest link first in each. */
-export const workSections = (work: IssueWork | undefined): ReadonlyArray<WorkSection> =>
+/** A link's address as the page follows it: one on this app's own origin becomes its path, so it opens in place. */
+export const inApp = (url: string | null, origin: string): string | null =>
+  url !== null && url.startsWith(`${origin}/`) ? url.slice(origin.length) : url
+
+/**
+ * The issue page's work sections, in `WORK_LINK_KINDS` order, newest link first in each. A link to this app (`origin`),
+ * such as the issue that holds a lane's or a queue entry's record, opens in place.
+ */
+export const workSections = (work: IssueWork | undefined, origin = ""): ReadonlyArray<WorkSection> =>
   work === undefined
     ? []
     : WORK_LINK_KINDS.flatMap((kind) => {
@@ -82,6 +89,6 @@ export const workSections = (work: IssueWork | undefined): ReadonlyArray<WorkSec
       return links.length === 0 ? [] : [{
         kind,
         title: WORK_LINK_TITLES[kind],
-        links: links.map((link) => ({ label: link.state === null ? link.label : `${link.label} · ${link.state}`, href: link.url })),
+        links: links.map((link) => ({ label: link.state === null ? link.label : `${link.label} · ${link.state}`, href: inApp(link.url, origin) })),
       }]
     })

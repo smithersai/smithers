@@ -133,16 +133,7 @@ export function IssuesScreen() {
           <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ ...search, work: "pr-or-queue" }}
             aria-current={search.work === "pr-or-queue" ? "page" : undefined}>{WORK_FILTER_LABEL}</Link>
         </LinkTabs>
-        {failure !== undefined ? null : listSync === "not_synced"
-          ? (
-            <Card><CardContent>
-              <p role="status" data-list-sync="" className="issues-status-line">
-                <span>Issues not synced</span>{" "}
-                <Button asChild variant="outline" size="sm"><a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a></Button>
-              </p>
-            </CardContent></Card>
-          )
-          : listSync === "syncing" ? <p role="status" data-list-sync="" className="issues-syncing">Syncing issues…</p> : null}
+        {failure !== undefined ? null : listSync === "syncing" ? <p role="status" data-list-sync="" className="issues-syncing">Syncing issues…</p> : null}
         {(
           <div className="list-search-tools" role="search" aria-label="Search issues">
             <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
@@ -155,14 +146,15 @@ export function IssuesScreen() {
           <IssuesView
             repo={`${owner}/${repo}`}
             size="full"
-            loading={listSync === "syncing"}
             issues={withTodos(
               withWork(visible, work),
               todosByIssue(todosRepoId, todoRows, owner, repo),
               session !== undefined && mayChange(session, confirmed, answer),
               (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
             )}
-            unknown={listSync !== "syncing" && (list.unknown || !isReady || access?.installed !== true)}
+            // Until its rows are known the list shows no counts and no placeholders: the "Syncing issues…" line says it
+            // (ARCH-5, 0002 §7). `loading` would mark it busy, a spinner by another name.
+            unknown={listSync === "syncing"}
             href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
             onNavigate={(_, href) => void navigate({ href })}
             actions={session !== undefined && mayWrite(session, confirmed, answer)

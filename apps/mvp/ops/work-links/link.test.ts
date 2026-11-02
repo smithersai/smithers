@@ -10,12 +10,12 @@ describe("the work-links client", () => {
       sent.push({ url, init })
       return new Response(JSON.stringify({ links: 1, changed: 1 }), { status: 200 })
     }
-    const body = bodyOf({ kind: "queue", ref: "q-1", state: "queued", url: "https://q.example.test/q-1" })
+    const body = bodyOf({ kind: "queue", ref: "q-1", state: "queued", url: "https://q.example.test/q-1" }, undefined, () => "2026-11-02T10:00:00.000Z")
     const answer = await post({ origin: "https://smithers.test", repo: "acme/widgets", issue: "12", token: "secret-token", body, fetch })
     expect(answer).toEqual({ status: 200, answer: { links: 1, changed: 1 } })
     expect(sent[0]!.url).toBe("https://smithers.test/api/repos/acme/widgets/issues/12/links")
     expect((sent[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer secret-token")
-    expect(JSON.parse(String(sent[0]!.init.body))).toEqual({ links: [{ kind: "queue", ref: "q-1", state: "queued", url: "https://q.example.test/q-1" }] })
+    expect(JSON.parse(String(sent[0]!.init.body))).toEqual({ links: [{ kind: "queue", ref: "q-1", state: "queued", url: "https://q.example.test/q-1", at: "2026-11-02T10:00:00.000Z" }] })
     expect(String(sent[0]!.init.body)).not.toContain("secret-token")
   })
 

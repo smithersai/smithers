@@ -72,7 +72,7 @@ export const startRunner = async (
   repo: string,
   word: string,
   capacity: number,
-  options: { readonly origin?: string; readonly heartbeatSeconds?: number } = {},
+  options: { readonly origin?: string; readonly heartbeatSeconds?: number; readonly mirror?: string } = {},
 ): Promise<Runner> => {
   const state = mkdtempSync(join(tmpdir(), "agent-runner-e2e-"))
   const name = `e2e-${word}`
@@ -119,7 +119,8 @@ export const startRunner = async (
       ...(options.heartbeatSeconds === undefined ? {} : { heartbeatSeconds: options.heartbeatSeconds }),
       // The test machine's own load mustn't hold its claims (decision 0144).
       admission: { loadPerCpu: 1000, diskFloorGb: 0 },
-      repositories: { [`github/${repo.toLowerCase()}`]: { mirror: process.env.E2E_RUNNER_MIRROR! } },
+      // A mirror that doesn't exist yet is cloned with the host's read credential (decision 0148).
+      repositories: { [`github/${repo.toLowerCase()}`]: { mirror: options.mirror ?? process.env.E2E_RUNNER_MIRROR! } },
       // The runner drops its agent's stderr; the shell keeps it beside the state, for the log.
       profiles: {
         "acp-test": {
