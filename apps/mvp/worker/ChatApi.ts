@@ -8,8 +8,22 @@ import { workerBuild } from "../infra/WorkerBuild.ts"
 // takes longer than its startup limit to evaluate its modules, and with the whole program at the top level ChatApi took
 // 400 to 750 ms of it (docs/infrastructure.md#limits). worker/ChatApi.startup.test.ts checks the lazy module graph; bench/startup.ts holds the timing budget.
 
+/**
+ * Where Cloudflare runs ChatApi's requests (docs/infrastructure.md#placement): `CHATAPI_PLACEMENT_REGION`, a cloud
+ * region such as `aws:us-east-1` beside the database, read when the stack is declared. Unset, each request runs near
+ * whoever sent it, the public stack's default. A deployment value, like `FLOW_EXECUTION_LOCATION`.
+ */
+export const placementOf = (region: string | undefined): { readonly placement?: { readonly region: string } } => {
+  if (region === undefined || region === "") return {}
+  if (!/^(aws|gcp|azure):[a-z0-9-]+$/.test(region)) {
+    throw new Error(`CHATAPI_PLACEMENT_REGION is "${region}": use <provider>:<region>, such as aws:us-east-1`)
+  }
+  return { placement: { region } }
+}
+
 /** ChatApi's Worker settings; `worker/DevChatApi.ts` uses them with its own `main`. */
 export const props = {
+  ...placementOf(globalThis.process?.env?.CHATAPI_PLACEMENT_REGION),
   main: "worker/ChatApi.ts",
   // @effect/sql-pg opens its sockets with node:net, which workerd provides under nodejs_compat.
   // global_fetch_strictly_public: the global fetch always goes out to the public internet, never straight to a Worker
