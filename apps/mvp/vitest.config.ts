@@ -126,33 +126,33 @@ export default defineConfig({
         "db/migrations/0010_views.ts",
         // A repository's docs and the docs view (docs/features/docs.md).
         "worker/docs/**/*.ts",
-        "db/migrations/0043_docs_views.vibe",
+        "db/migrations/0043_docs_views.ts",
         // A repository's view and its issues view in the conversation (docs/features/views.md).
         "db/migrations/0063_app_template_views.ts",
         // Budget reservations (docs/features/model-endpoint.md#budget).
-        "db/migrations/0012_model_reservations.vibe",
+        "db/migrations/0012_model_reservations.ts",
         // A person's own flows (docs/features/flows.md#your-own-flows).
         "worker/PersonalFlows.ts",
-        "db/migrations/0015_flows.vibe",
+        "db/migrations/0015_flows.ts",
         "db/migrations/0087_flow_draft_receipts.ts",
         // Every stored prompt flow converted to flow source (docs/features/flows.md#your-own-flows).
-        "db/migrations/0025_flow_source.vibe",
+        "db/migrations/0025_flow_source.ts",
         "db/migrations/0061_flow_placement_machine.ts",
         // Unknown model spend keeps its reservation; reservations expire (docs/features/model-endpoint.md#budget).
-        "db/migrations/0017_model_charges.vibe",
+        "db/migrations/0017_model_charges.ts",
         // Model spend and its alerts to Admins (docs/features/spend-alerts.md).
         "worker/ModelSpend.ts",
         "worker/SpendAlerts.ts",
-        "db/migrations/0019_spend_alerts.vibe",
+        "db/migrations/0019_spend_alerts.ts",
         // Where spend alerts go outside the app, and their receipts (docs/features/spend-alerts.md#channels).
         "worker/AlertChannels.ts",
-        "db/migrations/0029_alert_channels.vibe",
+        "db/migrations/0029_alert_channels.ts",
         // Agent status: the runs routes and table (docs/features/agent-status.md).
         "worker/Runs.ts",
-        "db/migrations/0013_runs.vibe",
+        "db/migrations/0013_runs.ts",
         // Notifications: the feed's fold, routes and shape, and the run index's scope (docs/features/notifications.md).
         "worker/Notifications.ts",
-        "db/migrations/0020_notifications.vibe",
+        "db/migrations/0020_notifications.ts",
         // The git loop: GitHub's webhook, the writes route, the issues' shapes and the GitHub flows
         // (docs/features/issues.md). The scripted GitHub and the fixtures are test support.
         "worker/github/*.{ts,vibe}",
