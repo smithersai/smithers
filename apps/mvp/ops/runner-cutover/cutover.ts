@@ -27,7 +27,7 @@
 import { parseArgs } from "node:util"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
-import * as Database from "../../db/Database.ts"
+import * as Database from "../database/Connection.ts"
 import { deployedBuild, neonUri, scrub, secretsOf } from "../feed-barrier/confirm.ts"
 import { refuseUncheckedTls } from "../tls.mjs"
 
@@ -127,7 +127,6 @@ export const run = async (
       if (deployed !== values.release) throw new Error(`the deployment serves ${deployed}, not ${values.release}`)
       return servingOneVersion(options, fetch)
     }
-    const serving = await check()
     url = env.DATABASE_URL !== undefined && env.DATABASE_URL !== ""
       ? Redacted.make(env.DATABASE_URL)
       : await (async () => {
@@ -135,7 +134,8 @@ export const run = async (
         if (env.NEON_API_KEY === undefined || env.NEON_ORG_ID === undefined) throw new Error("NEON_API_KEY and NEON_ORG_ID are required: run under mvp-prod-env")
         return neonUri({ key: env.NEON_API_KEY, orgId: env.NEON_ORG_ID, project: values.project, stage: values.stage! }, fetch)
       })()
-    const database = Database.layer(Effect.succeed(url))
+    const database = Database.layer(url)
+    const serving = await check()
     const result = await Effect.runPromise(Effect.scoped(cutover(ENGINE_SCHEMA).pipe(Effect.provide(database))))
     if (result.outcome === "blocked") {
       io.out(JSON.stringify(result))

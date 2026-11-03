@@ -17,7 +17,7 @@
 import { parseArgs } from "node:util"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
-import * as Database from "../../db/Database.ts"
+import * as Database from "../database/Connection.ts"
 import { refuseUncheckedTls } from "../tls.mjs"
 
 /** A barrier's id: the release's first 12 characters unless named. */
@@ -92,9 +92,7 @@ export const neonUri = async (
     `/projects/${project.id}/connection_uri?branch_id=${encodeURIComponent(main[0]!.id)}` +
       `&database_name=${encodeURIComponent(database.name)}&role_name=${encodeURIComponent(database.owner_name)}`,
   )) as { readonly uri: string }
-  const url = new URL(uri)
-  url.searchParams.delete("channel_binding")
-  return Redacted.make(url.toString())
+  return Database.neonConnectionUri(uri)
 }
 
 /** The build `https://<domain>/version.json` names: what the deployment serves (dev/build.ts). */
@@ -183,8 +181,9 @@ async (
         if (env.NEON_ORG_ID === undefined || env.NEON_ORG_ID === "") throw new Error("NEON_ORG_ID is not set: run under mvp-prod-env")
         return neonUri({ key: env.NEON_API_KEY, orgId: env.NEON_ORG_ID, project: values.project, stage: values.stage! }, fetch)
       })()
+    const database = Database.layer(url)
     const work = await act({ by: values.by, release: values.release, id: values.id }, () => deployedBuild(env.APP_DOMAIN, fetch))
-    const row = await Effect.runPromise(Effect.scoped(work.pipe(Effect.provide(Database.layer(Effect.succeed(url))))))
+    const row = await Effect.runPromise(Effect.scoped(work.pipe(Effect.provide(database))))
     io.out(JSON.stringify(row))
     return 0
   } catch (error) {

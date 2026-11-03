@@ -47,7 +47,7 @@ test("the exact project, checked against the organization and the stage's genera
   expect(projectNamePattern("prod").test("smithers-mvp-ChatPostgres-dev_williamcory-a1b2c3d4")).toBe(false)
   const { asked, fetch } = neon()
   const uri = await neonUri(production, fetch)
-  expect(Redacted.value(uri)).toBe("postgresql://neondb_owner:sekret-pass@ep.example.neon.tech/neondb?sslmode=require")
+  expect(Redacted.value(uri)).toBe("postgresql://neondb_owner:sekret-pass@ep.example.neon.tech/neondb?sslmode=verify-full")
   expect(String(uri)).not.toContain("sekret")
   expect(asked.at(-1)).toBe("/projects/proud-sky-12345678/connection_uri?branch_id=br-main&database_name=neondb&role_name=neondb_owner")
 })

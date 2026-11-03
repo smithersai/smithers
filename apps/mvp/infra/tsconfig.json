@@ -24,6 +24,7 @@
   },
   "include": [
     ".",
-    "../alchemy.run.ts"
+    "../alchemy.run.ts",
+    "../ops/database"
   ]
 }

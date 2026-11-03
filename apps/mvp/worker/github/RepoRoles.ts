@@ -11,6 +11,8 @@ import { type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import * as Tokens from "./Tokens.ts"
 import { requestRay } from "../RequestRay.ts"
 import * as FeedLocks from "../FeedLocks.ts"
+import { FRESH_SECONDS } from "./RoleAge.ts"
+export { FRESH_SECONDS } from "./RoleAge.ts"
 
 // A person's role on one repository (decision 0079). On the deployment's own repository (`GITHUB_REPOSITORY`) it is
 // the session's role, as sign-in reads and rechecks it. On any other repository the deployment may act on, one where
@@ -19,9 +21,6 @@ import * as FeedLocks from "../FeedLocks.ts"
 // sign-in recorded, mapped as decision 0007 §9 says, and kept in `github_repo_roles` for `FRESH_SECONDS`. A stale row is read again before it decides anything, and
 // when GitHub can't answer, the refusal says so; a stale row never decides. Every route that acts on a repository asks
 // `resolve`; a write's transaction asks `holds` (0079 §6).
-
-/** How long a role read from GitHub decides, in seconds (decision 0079 §5). */
-export const FRESH_SECONDS = 5 * 60
 
 /**
  * After GitHub failed or overran a read of a person's role on a repository, how long every request for them there is

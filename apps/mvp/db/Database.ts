@@ -34,10 +34,10 @@ export const hyperdrive = (url: Redacted.Redacted<string>) => {
  * A Postgres client as `PgClient` and `SqlClient`, connected for as long as the scope that builds the layer.
  * A Worker builds one per request, because workerd ties a socket to the request that opened it. Statements go out
  * unnamed: past 100 named statements on a connection the driver closes the oldest, and Hyperdrive drops the
- * connection when it does (`@smthrs/database` `PostgresDatabase`).
+ * connection when it does (`@smthrs/database` `PostgresDatabase`). Standalone operations may supply verified TLS options.
  */
-export const layer = <E, R>(connectionString: Effect.Effect<Redacted.Redacted<string>, E, R>) =>
-  Layer.unwrap(Effect.map(connectionString, (url) => PgClient.layer({ url, maxConnections: 1, prepare: false })))
+export const layer = <E, R>(connectionString: Effect.Effect<Redacted.Redacted<string>, E, R>, ssl?: PgClient.PgClientConfig["ssl"]) =>
+  Layer.unwrap(Effect.map(connectionString, (url) => PgClient.layer({ url, ssl, maxConnections: 1, prepare: false })))
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */
 export const migrate = Migrator.make({})({ loader: Migrator.fromRecord(migrations) })

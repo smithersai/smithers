@@ -11,7 +11,7 @@
 import { parseArgs } from "node:util"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
-import * as Database from "../../db/Database.ts"
+import * as Database from "../database/Connection.ts"
 import { neonUri, scrub, secretsOf } from "../feed-barrier/confirm.ts"
 import { refuseUncheckedTls } from "../tls.mjs"
 
@@ -71,8 +71,9 @@ export const run = async (
         if (env.NEON_ORG_ID === undefined || env.NEON_ORG_ID === "") throw new Error("NEON_ORG_ID is not set: run under mvp-prod-env")
         return neonUri({ key: env.NEON_API_KEY, orgId: env.NEON_ORG_ID, project: values.project, stage: values.stage! }, fetch)
       })()
+    const database = Database.layer(url)
     const row = await Effect.runPromise(Effect.scoped(
-      expire(`github/${values.repo}`, values.person).pipe(Effect.provide(Database.layer(Effect.succeed(url)))),
+      expire(`github/${values.repo}`, values.person).pipe(Effect.provide(database)),
     ))
     io.out(JSON.stringify(row))
     return 0

@@ -97,7 +97,7 @@ test("the command refuses before it touches the database when the deployment isn
       : new Response(JSON.stringify({ result: { deployments: [{ versions: [{ version_id: "a", percentage: 100 }] }] } }), { status: 200 })) as unknown as typeof globalThis.fetch
   const code = await run(
     ["--release", "bbbbbbbbbbbb", "--worker", "ChatApi", "--by", "smithers-bc"],
-    { APP_DOMAIN: "smithers.example", CLOUDFLARE_API_TOKEN: "cf-secret", CLOUDFLARE_ACCOUNT_ID: "acct", DATABASE_URL: "postgres://u:sekret-pass@nowhere.invalid/db" },
+    { APP_DOMAIN: "smithers.example", CLOUDFLARE_API_TOKEN: "cf-secret", CLOUDFLARE_ACCOUNT_ID: "acct", DATABASE_URL: "postgres://u:sekret-pass@nowhere.invalid/db?sslmode=verify-full" },
     { out: (line) => lines.push(line), err: (line) => lines.push(line) },
     fetch,
   )
