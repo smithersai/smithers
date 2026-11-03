@@ -174,7 +174,7 @@ export * as CallLedger from "./CallLedger.vibe"
  * @category models
  * @since 0.1.0
  */
-export * as NarrowedCheck from "./NarrowedCheck.vibe"
+export * as NarrowedCheck from "./NarrowedCheck.ts"
 
 /**
  * @category conversions
@@ -192,7 +192,7 @@ export * as UnmovedTree from "./UnmovedTree.ts"
  * @category models
  * @since 0.1.0
  */
-export * as UnresolvedFailure from "./UnresolvedFailure.vibe"
+export * as UnresolvedFailure from "./UnresolvedFailure.ts"
 
 /**
  * @category models
@@ -204,7 +204,7 @@ export * as FailedCall from "./FailedCall.ts"
  * @category models
  * @since 0.1.0
  */
-export * as Sufficiency from "./Sufficiency.vibe"
+export * as Sufficiency from "./Sufficiency.ts"
 
 /**
  * @category models

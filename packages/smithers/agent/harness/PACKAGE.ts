@@ -141,7 +141,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/cellPrompt.ts",
         "src/internal/printsObservation.ts",
         "src/CallLedger.vibe",
-        "src/NarrowedCheck.vibe",
+        "src/NarrowedCheck.ts",
         "src/Compaction.ts",
         "src/Relevance.ts",
         "src/Supervisor.ts",
@@ -174,11 +174,11 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/CompletionClaim.ts",
         "src/Judgement.ts",
-        "src/UnresolvedFailure.vibe",
+        "src/UnresolvedFailure.ts",
         "src/FailedCall.ts",
         "src/UnmovedTree.ts",
         "src/VacuousVerification.vibe",
-        "src/Sufficiency.vibe",
+        "src/Sufficiency.ts",
         "src/CellTurn.ts"
       ]
     },

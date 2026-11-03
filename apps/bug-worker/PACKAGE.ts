@@ -20,7 +20,7 @@ const cwd = "apps/bug-worker"
 /** The worker, its schema, and the deployment description beside them. */
 const sources = [
   Smithers.glob("//apps/bug-worker/src/**/*.ts"),
-  Smithers.file("//apps/bug-worker/alchemy.run.vibe")
+  Smithers.file("//apps/bug-worker/alchemy.run.ts")
 ]
 
 /** The suite and its in-memory KV double. */
@@ -77,7 +77,7 @@ const workerDeployQualification = Smithers.NodeTest({
 /** Security review of anonymous intake and authenticated report retrieval. */
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["src/**", "alchemy.run.vibe"],
+  include: ["src/**", "alchemy.run.ts"],
   checks: [
     {
       id: "operator-gate",
@@ -116,7 +116,7 @@ const securityReview = Smithers.SecurityReview({
         "The admin token uses a literal or plaintext Config instead of requireSecret.",
         "workersDev is enabled, a domain alias escapes smithers.sh, or a missing token defaults to an empty value."
       ],
-      paths: ["alchemy.run.vibe"]
+      paths: ["alchemy.run.ts"]
     }
   ]
 })

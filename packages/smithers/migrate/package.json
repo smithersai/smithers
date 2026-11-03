@@ -36,7 +36,7 @@
     "node": ">=22.19.0"
   },
   "sideEffects": [
-    "./src/flow/bin.vibe",
+    "./src/flow/bin.ts",
     "./dist/esm/flow/bin.js",
     "./dist/cjs/flow/bin.js"
   ],
@@ -77,10 +77,7 @@
     "./flow/Repair": "./src/flow/Repair.vibe",
     "./flow/Transform": "./src/flow/Transform.ts",
     "./flow/Verify": "./src/flow/Verify.ts",
-    "./flow/bin": {
-      "types": "./.vibe/declarations/src/flow/bin.d.vibe.ts",
-      "default": "./src/flow/bin.vibe"
-    },
+    "./flow/bin": "./src/flow/bin.ts",
     "./index": "./src/index.ts"
   },
   "files": [
