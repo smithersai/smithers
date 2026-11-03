@@ -146,3 +146,33 @@ export const firstPaints = Metric.counter("github_first_paints", {
   description: "First-paint requests, by form and outcome",
   incremental: true,
 })
+
+/** Relation walks, by `outcome`. */
+export const relationWalks = Metric.counter("github_relation_walks", {
+  description: "Walks of a repository's issues for their parents, by outcome",
+  incremental: true,
+})
+
+/** Issues whose `parent_issue_url` this app couldn't read: skipped, never guessed at. */
+export const relationsUnreadable = Metric.counter("github_relations_unreadable", {
+  description: "Issues whose parent URL names no issue this app can read",
+  incremental: true,
+})
+
+/** Tree scope reads, by `outcome`. */
+export const treeScopes = Metric.counter("github_tree_scopes", {
+  description: "Reads of a tree's scope, by outcome",
+  incremental: true,
+})
+
+/** Candidate repository reads for scopes and edges, by `outcome` (`read`, `unavailable`). */
+export const treeCandidateReads = Metric.counter("github_tree_candidate_reads", {
+  description: "Reads of a tree's candidate repositories, by outcome",
+  incremental: true,
+})
+
+/** Parent membership checks, by `outcome` (`verified`, `missing`, `failed`). */
+export const relationParentChecks = Metric.counter("github_relation_parent_checks", {
+  description: "Parent membership checks, by outcome",
+  incremental: true,
+})

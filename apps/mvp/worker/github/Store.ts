@@ -2,7 +2,7 @@ import * as WriteAuthority from "../WriteAuthority.ts"
 import { fold as foldWriteNotice } from "./WriteFeed.ts"
 import { COMMITMENTS, commitmentOf } from "../../src/features/issues/lifecycle.ts"
 import { GitHub } from "@smthrs/integrations"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import {
   commentId,
@@ -14,9 +14,11 @@ import {
   type WriteStatus,
   type WriteVia,
 } from "../../src/features/issues/contract.ts"
+import { isRepository, repoId as repoIdOf } from "../../src/features/repo/contract.ts"
 import { UPDATE_METHODS } from "../../src/features/branch/contract.ts"
 import { MERGE_METHODS, type MergeFlow } from "../../src/features/pulls/contract.ts"
 import { Sealed } from "../SessionStore.ts"
+import * as Metrics from "./Metrics.ts"
 
 // The git loop's rows in Postgres (docs/features/issues.md#postgres, migration 0016_github_issues). GitHub is the truth:
 // only the server's GitHub flows write `items` and `comments`, and only under the newer-than guard, so a duplicate or
@@ -37,6 +39,139 @@ export const markedWrite = (body: string | null): string | null => {
 export const shownBody = (body: string | null): string => GitHub.Issues.withoutWriteMarker(body ?? "")
 
 /**
+ * The parent `parent_issue_url` names, as `issue_relations` keys it; undefined for one that names no issue this app could
+ * read, which is skipped and counted, never guessed at.
+ */
+export const parentNamed = (url: string): { readonly repoId: string; readonly number: number; readonly owner: string; readonly name: string; readonly id: string } | undefined => {
+  const found = /\/repos\/([^/?#]+)\/([^/?#]+)\/issues\/([1-9][0-9]*)(?:[?#].*)?$/.exec(url)
+  if (found === null || !isRepository(found[1]!, found[2]!)) return undefined
+  const number = Number(found[3])
+  if (!Number.isSafeInteger(number)) return undefined
+  const parentRepo = repoIdOf(found[1]!, found[2]!)
+  return { repoId: parentRepo, number, owner: found[1]!, name: found[2]!, id: itemId(parentRepo, number) }
+}
+
+/** The relation `issue` states: its parent's id or `null`; undefined when it states none (a pull request, an old server). */
+export const statedParent = (child: string, issue: Issue) => {
+  if (issue.sub_issues_summary === undefined || issue.sub_issues_summary === null) return undefined
+  const url = issue.parent_issue_url ?? null
+  if (url === null) return null
+  const parent = parentNamed(url)
+  return parent === undefined || parent.id === itemId(child, issue.number) ? undefined : parent
+}
+
+/**
+ * Applies what `issue`, read at `at`, says of its parent and children, under the item's advisory lock, which the caller
+ * holds in this transaction. The fence `issue_relation_seen.seen_at` orders reads by when they were made, for presence and
+ * absence alike. An edge whose parent didn't change is left alone, so a re-read sends no shape message.
+ */
+const observeRelation = (owner: string, issue: Issue, at: string) =>
+  Effect.gen(function* () {
+    const summary = issue.sub_issues_summary
+    if (summary === undefined || summary === null) return
+    const sql = yield* SqlClient.SqlClient
+    const id = itemId(owner, issue.number)
+    yield* sql`
+      INSERT INTO issue_child_counts (parent_id, repo_id, sub_total, sub_completed, observed_at)
+      VALUES (${id}, ${owner}, ${summary.total}, ${summary.completed}, ${at}::timestamptz)
+      ON CONFLICT (parent_id) DO UPDATE SET sub_total = EXCLUDED.sub_total, sub_completed = EXCLUDED.sub_completed,
+        observed_at = EXCLUDED.observed_at
+      WHERE issue_child_counts.observed_at < EXCLUDED.observed_at`
+    const parent = statedParent(owner, issue)
+    if (parent === undefined) {
+      yield* Metric.update(Metrics.relationsUnreadable, 1)
+      yield* Effect.logWarning("github.relation.unreadable").pipe(Effect.annotateLogs({ repoId: owner, number: issue.number }))
+      return
+    }
+    if (parent === null) {
+      yield* sql`
+        WITH seen AS (
+          INSERT INTO issue_relation_seen (item_id, seen_at) VALUES (${id}, ${at}::timestamptz)
+          ON CONFLICT (item_id) DO UPDATE SET seen_at = EXCLUDED.seen_at
+          WHERE issue_relation_seen.seen_at < EXCLUDED.seen_at
+          RETURNING item_id
+        )
+        DELETE FROM issue_relations WHERE child_id IN (SELECT item_id FROM seen)`
+      return
+    }
+    yield* sql`
+      WITH seen AS (
+        INSERT INTO issue_relation_seen (item_id, seen_at) VALUES (${id}, ${at}::timestamptz)
+        ON CONFLICT (item_id) DO UPDATE SET seen_at = EXCLUDED.seen_at
+        WHERE issue_relation_seen.seen_at < EXCLUDED.seen_at
+        RETURNING item_id
+      )
+      INSERT INTO issue_relations (child_id, child_repo_id, parent_id, parent_repo_id, observed_at)
+      SELECT item_id, ${owner}, ${parent.id}, ${parent.repoId}, ${at}::timestamptz FROM seen
+      ON CONFLICT (child_id) DO UPDATE SET parent_id = EXCLUDED.parent_id, parent_repo_id = EXCLUDED.parent_repo_id,
+        observed_at = EXCLUDED.observed_at
+      WHERE issue_relations.parent_id <> EXCLUDED.parent_id`
+  })
+
+/**
+ * What `github/Relations` writes of an issue it listed: its relation alone, under the same lock and fences as
+ * `upsertIssue`, so a walk of every issue updates no item row.
+ */
+export const upsertRelation = (repoId: string, issue: Issue, fetchedAt: number) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql.withTransaction(Effect.gen(function* () {
+      const id = itemId(repoId, issue.number)
+      const at = new Date(fetchedAt).toISOString()
+      yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`
+      const fence = yield* sql`SELECT item_id FROM github_projection_fences WHERE item_id = ${id} AND gone_at >= ${at}::timestamptz`
+      if (fence.length === 0) yield* observeRelation(repoId, issue, at)
+    }))
+  })
+
+/** The parent `repoId`'s issue `number` has now, and its state, as the projection holds them: none for one never read. */
+export const relationBefore = (repoId: string, number: number) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const id = itemId(repoId, number)
+    const [row] = yield* sql<{ readonly state: string | null; readonly parentId: string | null }>`
+      SELECT (SELECT state FROM items WHERE id = ${id}) AS state,
+        (SELECT parent_id FROM issue_relations WHERE child_id = ${id}) AS "parentId"`
+    return { state: row?.state ?? null, parentId: row?.parentId ?? null }
+  })
+
+/** Parent memberships needing checks, including edges whose parent has no remaining count row. */
+export const parentsToVerify = (repoId: string, limit: number) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql<{ readonly parentId: string }>`
+      WITH parents AS (
+        SELECT parent_id FROM issue_child_counts WHERE repo_id = ${repoId} AND sub_total > 0
+        UNION
+        SELECT parent_id FROM issue_relations WHERE parent_repo_id = ${repoId}
+      )
+      SELECT p.parent_id AS "parentId" FROM parents p
+      LEFT JOIN issue_parent_checks c ON c.parent_id = p.parent_id
+      ORDER BY c.attempted_at ASC NULLS FIRST, p.parent_id
+      LIMIT ${limit}`
+  })
+
+/** The children of `parentId` the projection holds. */
+export const childrenOf = (parentId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql<{ readonly childId: string; readonly childRepoId: string }>`
+      SELECT child_id AS "childId", child_repo_id AS "childRepoId" FROM issue_relations WHERE parent_id = ${parentId}`
+  })
+
+/** Records an attempt before its network call, even when the parent has no count row. */
+export const markVerificationAttempt = (repoId: string, parentId: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    INSERT INTO issue_parent_checks (parent_id, repo_id, attempted_at)
+    VALUES (${parentId}, ${repoId}, clock_timestamp())
+    ON CONFLICT (parent_id) DO UPDATE SET attempted_at = EXCLUDED.attempted_at`)
+
+/** Records that `github/Relations` successfully compared `parentId` now. */
+export const markVerified = (parentId: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`UPDATE issue_parent_checks SET verified_at = clock_timestamp() WHERE parent_id = ${parentId}`)
+
+/**
  * Upserts issue `issue` of repository `repoId`, read at `fetchedAt` (epoch ms): inserted, or updated only when GitHub's
  * `updated_at` and the read time are newer than the row's. Identical content advances only the observation fence,
  * without counting a content change. A row seen again is no longer deleted. Its triage state is what its labels say
@@ -51,6 +186,7 @@ export const upsertIssue = (repoId: string, issue: Issue, fetchedAt: number) =>
       yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`
       const fence = yield* sql`SELECT item_id FROM github_projection_fences WHERE item_id = ${id} AND gone_at >= ${at}::timestamptz`
       if (fence.length > 0) return false
+      yield* observeRelation(repoId, issue, at)
       const triage = triageOf(issue.labels.map((label) => label.name))
       const commitment = commitmentOf(issue.labels.map((label) => label.name))
       const rows = yield* sql`
@@ -135,6 +271,17 @@ export const tombstoneIssue = (repoId: string, number: number, fetchedAt: number
       yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`
       yield* sql`INSERT INTO github_projection_fences (item_id, gone_at) VALUES (${id}, ${at}::timestamptz)
         ON CONFLICT (item_id) DO UPDATE SET gone_at = GREATEST(github_projection_fences.gone_at, EXCLUDED.gone_at)`
+      // Its edge goes, and the fence stays: an older read saying "parent A" changes nothing.
+      yield* sql`
+        WITH seen AS (
+          INSERT INTO issue_relation_seen (item_id, seen_at) VALUES (${id}, ${at}::timestamptz)
+          ON CONFLICT (item_id) DO UPDATE SET seen_at = EXCLUDED.seen_at
+          WHERE issue_relation_seen.seen_at <= EXCLUDED.seen_at
+          RETURNING item_id
+        )
+        DELETE FROM issue_relations WHERE child_id IN (SELECT item_id FROM seen)`
+      yield* sql`DELETE FROM issue_child_counts WHERE parent_id = ${id} AND observed_at <= ${at}::timestamptz
+        AND NOT EXISTS (SELECT 1 FROM issue_relations WHERE parent_id = ${id})`
       const [before] = yield* sql<{ readonly live: boolean }>`
         SELECT deleted_at IS NULL AS live FROM items WHERE id = ${id} AND fetched_at <= ${at}::timestamptz
           AND NOT EXISTS (SELECT 1 FROM pulls WHERE item_id = ${id} AND fetched_at > ${at}::timestamptz)
@@ -405,18 +552,21 @@ export const settleWrite = <E = never, R = never>(id: string, settlement: Settle
 export interface SyncState {
   readonly cursor: string | null
   readonly syncedAt: number | null
+  /** Whether the last walk reached the end. */
+  readonly complete: boolean
 }
 
 /** Sync stream `stream` of `repoId`; a stream never synced has neither. */
 export const syncState = (repoId: string, stream: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly cursor: string | null; readonly syncedAt: string | null }>`
-      SELECT cursor, (extract(epoch FROM synced_at) * 1000)::bigint::text AS "syncedAt"
+    const [row] = yield* sql<{ readonly cursor: string | null; readonly syncedAt: string | null; readonly complete: boolean }>`
+      SELECT cursor, (extract(epoch FROM synced_at) * 1000)::bigint::text AS "syncedAt", complete
       FROM github_sync WHERE repo_id = ${repoId} AND stream = ${stream}`
     return {
       cursor: row?.cursor ?? null,
       syncedAt: row?.syncedAt === null || row === undefined ? null : Number(row.syncedAt),
+      complete: row?.complete === true,
     } satisfies SyncState
   })
 

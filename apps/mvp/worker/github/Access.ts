@@ -135,9 +135,15 @@ export const make = <E, R>(options: Options<E, R>) => {
       if (source === "cookie" && (yield* Sessions).resolveCookie === undefined) return refusedAt(target, "viewer", "unavailable", 503)
       const actor = yield* actorOf(source).pipe(Effect.option)
       if (Option.isNone(actor)) return refusedAt(target, "viewer", "unavailable", 503, { retryAfterSeconds: 5 })
-      const viewer: Viewer = Option.isSome(actor.value) ? { kind: "person", actor: actor.value.value } : { kind: "anonymous" }
-      if (Option.isSome(actor.value)) {
-        const resolved = yield* roles.resolve(actor.value.value, target).pipe(Effect.result)
+      return yield* accessAs(target, actor.value)
+    })
+
+  /** Stage 3 for `actor`, whom the caller already resolved. */
+  const accessAs = (target: Repository, actor: Option.Option<Actor>) =>
+    Effect.gen(function* () {
+      const viewer: Viewer = Option.isSome(actor) ? { kind: "person", actor: actor.value } : { kind: "anonymous" }
+      if (Option.isSome(actor)) {
+        const resolved = yield* roles.resolve(actor.value, target).pipe(Effect.result)
         if (resolved._tag === "Failure") {
           // Where the App can't act, nobody has a role there: the public check below decides, as for anyone. Every
           // other refusal is GitHub or Postgres not answering now.
@@ -155,7 +161,7 @@ export const make = <E, R>(options: Options<E, R>) => {
         if (Option.isNone(current)) return refusedAt(target, "viewer", "unavailable", 503, { viewer })
         if (current.value) return { _tag: "Readable", target, viewer, role: null, via: "public" } satisfies Proof
       }
-      return Option.isNone(actor.value)
+      return Option.isNone(actor)
         ? refusedAt(target, "viewer", "authentication", 401, { viewer })
         : refusedAt(target, "viewer", "forbidden", 403, { viewer })
     })
@@ -186,7 +192,23 @@ export const make = <E, R>(options: Options<E, R>) => {
       return { proof, settled: beside === undefined ? Effect.void : Effect.asVoid(Fiber.join(beside)) }
     })
 
-  return { repositoryReadable, viewerAccess }
+  /**
+   * Each of `targets` as `repositoryReadable` answers it, one proof each in their order, for one reader: who asks is
+   * resolved once, so a read across repositories costs one session read and one role read per repository. Sessions not
+   * answering refuses every one.
+   */
+  const readableAmong = (targets: ReadonlyArray<Repository>) =>
+    Effect.gen(function* () {
+      const actor = yield* actorOf("session").pipe(Effect.option)
+      return yield* Effect.forEach(targets, (target) =>
+        Effect.gen(function* () {
+          const early = yield* deploymentAccess(target)
+          if (Option.isSome(early)) return early.value
+          return Option.isNone(actor) ? refusedAt(target, "viewer", "unavailable", 503) : yield* accessAs(target, actor.value)
+        }), { concurrency: 8 })
+    })
+
+  return { repositoryReadable, readableAmong, viewerAccess }
 }
 
 export type Access = ReturnType<typeof make>

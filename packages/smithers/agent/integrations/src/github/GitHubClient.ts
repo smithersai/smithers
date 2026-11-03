@@ -181,6 +181,8 @@ export interface Page {
    * outstanding, so `items` is a prefix of the resource rather than all of it.
    */
   readonly truncated: boolean
+  /** Included only with `withNext`: the outstanding cursor URL, or `null` at the end. */
+  readonly next?: string | null | undefined
 }
 
 /**
@@ -220,10 +222,11 @@ export interface GitHubClient {
    * thousand items. Hitting the ceiling is reported as `truncated`, never as a
    * short but complete answer, because a caller that reconciles against a
    * truncated list plans work for resources it simply did not see.
+   * `withNext: true` includes the outstanding cursor URL as `next`, or `null` at the end.
    */
   readonly paginate: (
     path: string,
-    options?: { readonly perPage?: number | undefined; readonly maxPages?: number | undefined }
+    options?: { readonly perPage?: number | undefined; readonly maxPages?: number | undefined; readonly withNext?: boolean | undefined }
   ) => Effect.Effect<Page, IntegrationError>
   /**
    * How many items a list resource holds, and its first item, in one request.
@@ -740,7 +743,7 @@ const build = (
         pages += 1
       }
       yield* Effect.annotateCurrentSpan({ "github.pages": pages, "github.truncated": url !== null })
-      return { items, truncated: url !== null }
+      return { items, truncated: url !== null, ...(options?.withNext === true ? { next: url } : {}) }
     }).pipe(Effect.withSpan("GitHubClient.paginate"))
 
   const count: GitHubClient["count"] = (path, options) =>

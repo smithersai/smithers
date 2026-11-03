@@ -7,9 +7,10 @@ import { codeOf } from "../ErrorCode.ts"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
-import { readIssue } from "./Project.ts"
+import { type Fetched, fetchIssue, project } from "./Project.ts"
 import { readPull } from "./Pulls.ts"
 import * as Store from "./Store.ts"
+import { candidates } from "./TreeScope.ts"
 import type { GitHubTokens } from "./Tokens.ts"
 import type { RepoRoles } from "./RepoRoles.ts"
 
@@ -89,9 +90,35 @@ export interface Services<E = unknown, R = never> {
   readonly mayAct: (id: string) => boolean
   /** The App's login on GitHub, `<GITHUB_APP_SLUG>[bot]`, read once when the host starts: who wrote what the App wrote. */
   readonly appLogin: string
+  /** Independently configured tree candidates, in addition to recorded repositories. */
+  readonly allowedRepositories?: ReadonlyArray<string>
   /** Complete a TODO's durable wait and wake its host; delivery is retried by this step. */
   readonly invalidateTodo?: (stop: { readonly attemptId: string; readonly todoId: string; readonly baseClosed: boolean }) => Effect.Effect<void, unknown>
   readonly signalTodo?: (executionId: string, prNumber: number) => Effect.Effect<void, unknown>
+  /** Starts `github/Apply` for an issue on its own durable execution; the same request again changes nothing. */
+  readonly startApply?: (request: typeof Read.payloadSchema.Type) => Effect.Effect<void, unknown>
+}
+
+/**
+ * The parents to read again when `issue` changed: a child's parent or state moving changes its parents' counts and, on
+ * GitHub, perhaps their `updated_at`. What the row says now against what GitHub answers.
+ */
+const neighbours = (repoId: string, before: { readonly state: string | null; readonly parentId: string | null }, fetched: Fetched) => {
+  const named = (id: string | null) => {
+    if (id === null) return undefined
+    const hash = id.lastIndexOf("#")
+    return { repository: repositoryOf(id.slice("github/".length, hash)), number: Number(id.slice(hash + 1)), id }
+  }
+  if (fetched.kind === "gone") return before.parentId === null ? [] : [named(before.parentId)!]
+  const stated = Store.statedParent(repoId, fetched.issue)
+  const parentNow = stated === undefined ? before.parentId : stated === null ? null : stated.id
+  const moved = parentNow !== before.parentId
+  const closed = before.state !== null && before.state !== fetched.issue.state
+  if (!moved && !closed) return []
+  return [...new Set([before.parentId, parentNow])].flatMap((id) => {
+    const parent = named(id)
+    return parent === undefined ? [] : [parent]
+  })
 }
 
 /** What `github/Apply/read` does: one re-read with its records, never a title, a body or a login. */
@@ -111,12 +138,35 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
         token.failure.retryAfterMillis === undefined ? {} : { retryAfterMillis: token.failure.retryAfterMillis },
       )
     }
-    const projected = yield* (pull ? readPull(repository, request.number) : readIssue(repository, request.number)).pipe(
+    // The neighbours start before the projection: a retry after a crash between them finds the same difference and starts
+    // the same executions, where the other order would lose them. Each is named by the delivery and the issue, so a chain
+    // of them can't go round a cycle.
+    const reread = Effect.gen(function* () {
+      const fetched = yield* fetchIssue(repository, request.number)
+      if (services.startApply !== undefined) {
+        const delivery = request.deliveryId.split(":")[0]!
+        const before = yield* Store.relationBefore(repository.id, request.number)
+        for (const parent of neighbours(repository.id, before, fetched)) {
+          if (!services.mayAct(parent.repository.id)) continue
+          const known = yield* candidates(parent.repository.owner, services.allowedRepositories ?? [])
+          if (!known.includes(parent.repository.id)) continue
+          yield* services.startApply({
+            deliveryId: `${delivery}:${parent.id}`,
+            repo: `${parent.repository.owner}/${parent.repository.name}`,
+            number: parent.number,
+            event: request.event,
+          }).pipe(Effect.mapError(() => new ApplyUnavailable({})))
+        }
+      }
+      return yield* project(repository, request.number, fetched)
+    })
+    const projected = yield* (pull ? readPull(repository, request.number) : reread).pipe(
       withToken(token.success, services.apiBaseUrl),
       Effect.tapError((error) =>
         Effect.logWarning("github.apply").pipe(Effect.annotateLogs({ ...fields, outcome: "failed", errorCode: codeOf(error) }))
       ),
       Effect.mapError((error) => {
+        if (error instanceof ApplyUnavailable) return error
         const classified = classify(error)
         return new ApplyUnavailable(
           classified.kind === "retry" && classified.retryAfterMillis !== undefined

@@ -29,6 +29,7 @@ import { onTestFinished } from "vitest"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import {
   COMMENTS_TABLE,
+  ISSUE_RELATIONS_TABLE,
   ITEMS_TABLE,
   SYNC_TABLE,
   TRIAGE_SETTINGS_TABLE,
@@ -224,6 +225,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     REVIEWS_TABLE,
     RUNS_TABLE,
     WORK_LINKS_TABLE,
+    ISSUE_RELATIONS_TABLE,
     TODO_LEAVES_TABLE,
   ])
   const electric: typeof globalThis.fetch = (input, init) => {

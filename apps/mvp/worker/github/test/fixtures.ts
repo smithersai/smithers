@@ -35,7 +35,7 @@ export const reset = (runtime: Runtime) =>
       (sql) =>
         sql`TRUNCATE repo_about, github_projection_fences, items, comments, github_writes, github_sync, github_deliveries, github_repositories, sessions,
           sign_in_attempts, people, triage_settings, triage_decisions, model_usage, model_budget_days, model_roles,
-          github_repo_roles, work_links, runners, machine_tokens, machine_writes, machine_dispatch CASCADE`,
+          github_repo_roles, work_links, runners, machine_tokens, machine_writes, machine_dispatch, issue_relations, issue_child_counts, issue_parent_checks, issue_relation_seen CASCADE`,
     ),
   )
 
@@ -253,6 +253,8 @@ export const services = async (
     readonly signIn?: boolean
     readonly database?: Apply.Services["database"]
     readonly judge?: ModelEndpoint.Seat
+    readonly mayAct?: (id: string) => boolean
+    readonly allowedRepositories?: ReadonlyArray<string>
   } = {},
 ) => {
   const refreshes: Refreshes = []
@@ -262,14 +264,15 @@ export const services = async (
     database: options.database ?? (await database(runtime)),
     http: github.http,
     apiBaseUrl: SCRIPTED_API,
-    mayAct: () => true,
     appLogin: BOT_LOGIN,
+    allowedRepositories: [REPOSITORY.id, ...(options.allowedRepositories ?? [])],
     tokens: Tokens.make({
       app,
       keys: options.signIn === false ? Option.none() : Option.some(await keys()),
       refresh: (sessionId, generation) => Effect.sync(() => void refreshes.push({ sessionId, generation })),
     }),
     judge: () => judge,
+    mayAct: options.mayAct ?? (() => true),
   }
   return { services: value, refreshes }
 }

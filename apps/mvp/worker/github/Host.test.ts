@@ -18,6 +18,7 @@ import * as GitHubConfig from "./Config.ts"
 import * as Host from "./Host.ts"
 import * as Merge from "./Merge.ts"
 import * as Reconcile from "./Reconcile.ts"
+import * as Relations from "./Relations.ts"
 import { admit, database, judgeSeat, judging, keys, reset, signedIn, writeRow } from "./test/fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, scriptedGitHub } from "./test/scriptedGitHub.ts"
 import * as Triage from "./Triage.ts"
@@ -133,7 +134,7 @@ describe("Host", () => {
         ),
       ),
     )
-    expect(flows.flows.slice(-7)).toEqual([Apply.Apply, Reconcile.Reconcile, Write.Write, MachineWrite.MachineDispatch, Triage.TriageRun, Merge.Merge, GitHubCreation.Create])
+    expect(flows.flows.slice(-8)).toEqual([Apply.Apply, Reconcile.Reconcile, Relations.Relations, Write.Write, MachineWrite.MachineDispatch, Triage.TriageRun, Merge.Merge, GitHubCreation.Create])
     const values = new Map<string, unknown>()
     const storage: ExecutionHost.Storage = {
       get: <A>(storageKey: string) => Effect.sync(() => structuredClone(values.get(storageKey)) as A | undefined),

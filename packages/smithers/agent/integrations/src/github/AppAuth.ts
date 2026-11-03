@@ -387,3 +387,11 @@ export const make = (credentials: AppCredentials): Effect.Effect<AppAuth, Integr
  */
 export const layer = (credentials: AppCredentials): Layer.Layer<AppAuth, IntegrationError, HttpClient.HttpClient> =>
   Layer.effect(AppAuth)(make(credentials))
+
+/**
+ * Maximum repositories explicitly named by one installation token.
+ * @see https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_TOKEN_REPOSITORIES = 500

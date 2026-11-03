@@ -558,7 +558,7 @@ describe("github/MachineDispatch", () => {
     await admitAs(first)
     await d.next()
     expect(await row(first.writeId)).toMatchObject({ status: "done" })
-    expect(github.subIssueParents.get(2)).toBe(1)
+    expect(github.issues.get(2)?.parent?.number).toBe(1)
     const posts = github.seen("POST", /sub_issues$/).length
     const again = relate(1)
     await admitAs(again)
@@ -606,7 +606,7 @@ describe("github/MachineDispatch", () => {
     const d = await dispatcher(github)
     await d.tick()
     expect(await row(relate.writeId)).toMatchObject({ status: "done" })
-    expect(github.subIssueParents.get(child.number)).toBe(parent.number)
+    expect(github.issues.get(child.number)?.parent?.number).toBe(parent.number)
     expect(github.minted.map((minted) => minted.body)).toEqual([
       { repositories: ["widgets"], permissions: { issues: "write" } },
       { repositories: ["widgets"], permissions: { issues: "write" } },

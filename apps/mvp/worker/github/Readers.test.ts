@@ -13,11 +13,13 @@ import { digestSync } from "@smthrs/crypto"
 import {
   COMMENTS_SHAPE_ROUTE,
   firstPaintRoute,
+  ISSUE_EDGES_SHAPE_ROUTE,
   issuesRoute,
   ITEMS_SHAPE_ROUTE,
   ITEM_SUMMARIES_SHAPE_ROUTE,
   SYNC_SHAPE_ROUTE,
   TRIAGE_SETTINGS_SHAPE_ROUTE,
+  treeScopeRoute,
 } from "../../src/features/issues/contract.ts"
 import { CHECKS_SHAPE_ROUTE, compareRoute, PULL_COMMITS_SHAPE_ROUTE, PULL_RECEIPT_HEADER, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import { WORK_LINKS_SHAPE_ROUTE } from "../../src/features/issues/work.ts"
@@ -627,6 +629,20 @@ describe("a real signed session cookie reads every reader as its person", () => 
     }
     answers.list = (await answerOf(await h.fetch(listPath(cell), { headers }))).answer
     expect(new Set(Object.values(answers))).toEqual(new Set([expected]))
+  }, 60_000)
+
+  test.each([
+    ["the device naming its person", (personId: string) => ({ [DEVICE_PERSON_HEADER]: personId }), 200],
+    ["the device naming another person", () => ({ [DEVICE_PERSON_HEADER]: "person-someone-else" }), 401],
+  ] as const)("a tree's scope and edges with %s", async (_name, extra, expected) => {
+    await seed(cell)
+    const browser = await signedInBrowser()
+    const github = scriptedGitHub(OWN.owner, OWN.name)
+    github.private = true
+    const h = await githubHarness(runtime, { own: OWN, github, allowed: ACTED_ON, roles: rolesFor(cell.viewer, { roles: 0 }), sessions: browser.signIn.sessions })
+    const headers = { cookie: cookie(browser.cookies), ...extra(browser.personId) }
+    expect((await h.fetch(treeScopeRoute(OWN.owner, OWN.name), { headers })).status).toBe(expected)
+    expect((await readShape(h, `${ISSUE_EDGES_SHAPE_ROUTE}?${repoParam(OWN)}&offset=-1`, headers)).status).toBe(expected)
   }, 60_000)
 
   test("the first paint reads as the cookie's person alone, with the session's deadline", async () => {

@@ -25,6 +25,7 @@ import * as FleetAlert from "./flows/FleetAlert.ts"
 import * as RedactFeed from "./flows/RedactFeed.ts"
 import * as Fleet from "./runners/Fleet.ts"
 import { repoId } from "../src/features/repo/contract.ts"
+import { applyExecutionId } from "../src/features/issues/contract.ts"
 import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
@@ -35,6 +36,7 @@ import * as TodoBaseClosed from "./flows/TodoBaseClosed.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
+import * as GitHubApply from "./github/Apply.ts"
 import * as GitHubHost from "./github/Host.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as ModelFlows from "./personal/ModelFlows.ts"
@@ -379,6 +381,13 @@ const object = <E, R>(
                 executionId: `todo-closed:${stop.attemptId}`, payload: stop,
               }).pipe(Effect.flatMap((intent) => executions.getByName(intent.executionId).start(intent)),
                 Effect.provideService(RuntimeContext, runtime)),
+              startApply: (request: Parameters<NonNullable<GitHubApply.Services["startApply"]>>[0]) => {
+                const executionId = applyExecutionId(request.deliveryId)
+                return ExecutionHost.intent(GitHubApply.Apply, { executionId, payload: request }).pipe(
+                  Effect.flatMap((intent) => executions.getByName(executionId).start(intent)),
+                  Effect.provideService(RuntimeContext, runtime),
+                )
+              },
               signalTodo: (executionId: string, number: number) =>
                 executions.getByName(executionId).signal(pullClosed(number).name).pipe(
                   Effect.provideService(RuntimeContext, runtime),

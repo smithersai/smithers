@@ -1013,3 +1013,17 @@ describe("write safety regressions", () => {
     expect(fixture.requests[0]?.headers["authorization"]).toBeUndefined()
   })
 })
+
+it("returns resumable cursor URLs only when explicitly requested", async () => {
+  fixture = await startFixture((request, response) => {
+    const cursor = new URL(request.url, "http://x").searchParams.get("cursor")
+    if (cursor === "second") json(response, 200, [2])
+    else json(response, 200, [1], { link: '<?cursor=second>; rel="next"' })
+  })
+  const first = await Effect.runPromise(client().paginate("/x", { maxPages: 1, withNext: true }))
+  expect(first).toEqual({ items: [1], truncated: true, next: `${fixture.origin}/x?cursor=second` })
+  expect(fixture.requests).toHaveLength(1)
+  expect(await Effect.runPromise(client().paginate(first.next!, { maxPages: 1, withNext: true })))
+    .toEqual({ items: [2], truncated: false, next: null })
+  expect(fixture.requests).toHaveLength(2)
+})
