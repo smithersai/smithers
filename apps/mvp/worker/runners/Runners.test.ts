@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as MigrationReauthorization from "../../db/migrations/0095_runner_reauthorization.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
+import { afterBody } from "../WriteAdmission.ts"
 import { BranchRoles } from "../branch/Access.ts"
 import type * as RepoRoles from "../github/RepoRoles.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
@@ -540,7 +541,7 @@ describe("the repository's runners and agents", () => {
         ),
     })
     const api = await Effect.runPromise(Admin.make(db))
-    const handler = HttpEffect.toWebHandler(api.fetch.pipe(
+    const handler = HttpEffect.toWebHandler(api.admit(afterBody(api.fetch)).pipe(
       Effect.provideService(Flows.FlowStarter, starter),
       Effect.provide(actor === null ? signedOut : signedIn(actor)),
       Effect.provide(branchRoles(db, "acme/widgets")),
@@ -597,7 +598,7 @@ describe("the repository's runners and agents", () => {
           }),
     }))
     const api = await Effect.runPromise(Admin.make(db))
-    const handler = HttpEffect.toWebHandler(api.fetch.pipe(
+    const handler = HttpEffect.toWebHandler(api.admit(afterBody(api.fetch)).pipe(
       Effect.provideService(Flows.FlowStarter, starter),
       Effect.provide(signedIn(actor)),
       Effect.provide(roles),
@@ -660,6 +661,39 @@ describe("the repository's runners and agents", () => {
   // the authority was by then, so a body held open, or a flow run late, wrote after its registrant's role was revoked.
   // Every Admin action now carries one fence (worker/runners/Fence.ts), checked again where it writes.
   describe("the Admin action fence", () => {
+    test.each(["runners", "agents"] as const)("%s PUT held at body cannot restore a completed DELETE", async (kind) => {
+      await recordInstallation("github/acme/private")
+      await recordRole("admin")
+      const routes = await fencedRoutes()
+      const path = `${kind}/ordered`
+      const text = kind === "runners" ? RUNNER_BODY : JSON.stringify({ labels: [], profile: "p", coding: true })
+      try {
+        expect((await routes.send(path, "PUT", text)).status).toBe(202)
+        let reading!: () => void
+        let finish!: () => void
+        const read = new Promise<void>((resolve) => { reading = resolve })
+        const finished = new Promise<void>((resolve) => { finish = resolve })
+        const body = new ReadableStream<Uint8Array>({ async pull(controller) {
+          reading()
+          await finished
+          controller.enqueue(new TextEncoder().encode(text))
+          controller.close()
+        } }, { highWaterMark: 0 })
+        const putting = routes.send(path, "PUT", body)
+        await read
+        try {
+          const deleted = await routes.send(path, "DELETE")
+          expect(deleted.status).toBe(202)
+          expect((await routes.receipt(deleted.body!.execution!)).body).toMatchObject({ outcome: "removed" })
+        } finally { finish() }
+        const answer = await putting
+        expect(answer.status).toBe(202)
+        expect((await routes.receipt(answer.body!.execution!)).body).toMatchObject({ outcome: "superseded" })
+        expect(await sql`SELECT count(*)::int AS n FROM agents WHERE name = 'ordered'`).toEqual([{ n: 0 }])
+        expect(await sql`SELECT count(*)::int AS n FROM runners WHERE name = 'ordered' AND removed_at IS NULL`).toEqual([{ n: 0 }])
+      } finally { await routes.close() }
+    })
+
     test("a registration whose body arrives after the registrant's repository role was revoked is refused, and writes nothing", async () => {
       await recordInstallation("github/acme/private")
       await recordRole("admin")

@@ -406,7 +406,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           const answered = yield* options.door({ executions, database })
           if (Option.isSome(answered)) return answered.value
         }
-        return yield* WriteAdmission.afterBody(Effect.gen(function* () {
+        return yield* runnerAdmin.admit(WriteAdmission.afterBody(Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const runtime = yield* RuntimeContext
         const limited = yield* Throttle.make({
@@ -529,7 +529,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           Effect.provide(docsSource),
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         )
-        }))
+        })))
       }).pipe(
         withRequestRay,
         Effect.provideService(Conversations.homeRepositoryNames, homeRepository),

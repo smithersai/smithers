@@ -1,7 +1,7 @@
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { AgentRunner } from "@smthrs/agent"
 import { digestSync } from "@smthrs/crypto"
-import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
+import { Cause, Clock, Context, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { repoId } from "../../src/features/repo/contract.ts"
@@ -87,6 +87,33 @@ const decodeAgentBody = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentBo
 const decodeAgent = Schema.decodeUnknownEffect(AgentRunner.Agent)
 const isName = Schema.is(AgentRunner.Name)
 
+/** Ordering identity is captured before shared buffering; authority is still resolved only after EOF. */
+class Expected extends Context.Service<Expected, { readonly generation: number; readonly coding?: number }>()("runner.admin.Expected") {}
+
+export const ordered = <E, R, E2, R2>(database: Layer.Layer<SqlClient.SqlClient, E, R>, handler: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const route = parseAdminRoute(request.url.split("?")[0]!)
+    const retained = yield* Effect.serviceOption(Expected)
+    if (Option.isSome(retained)) return yield* handler.pipe(Effect.provideService(Expected, retained.value))
+    if (route === undefined || (request.method !== "PUT" && request.method !== "DELETE")) {
+      return yield* handler.pipe(Effect.provideService(Expected, { generation: -1 }))
+    }
+    const repo = repoId(route.owner, route.name)
+    const expected = yield* Effect.gen(function* () {
+      const generation = yield* Store.generationOf(Store.resourceKey(
+        route.kind === "agents" ? "agents" : "runners", repo, route.kind === "overflow" ? Overflow.RUNNER : route.item,
+      ))
+      const coding = route.kind === "agents" ? { coding: yield* Store.generationOf(Store.codingKey(repo)) } : {}
+      return { generation, ...coding }
+    }).pipe(Effect.provide(database), Effect.catchCause((cause) => Effect.gen(function* () {
+      yield* Effect.logWarning("runner.admin_order").pipe(Effect.annotateLogs({ outcome: "unavailable", errorCode: codeOf(Cause.squash(cause)) }))
+      return undefined
+    })))
+    if (expected === undefined) return HttpServerResponse.jsonUnsafe({ code: "unavailable" }, { status: 503, headers: noStore })
+    return yield* handler.pipe(Effect.provideService(Expected, expected))
+  })
+
 type Fields = Record<string, string | number | boolean>
 
 /**
@@ -169,20 +196,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
           sessionId: actor.value.session,
           ...(actor.value.alias === undefined ? {} : { alias: actor.value.alias }),
         }
-      const generation = yield* Store.generationOf(Store.resourceKey(
-        route.kind === "agents" ? "agents" : "runners",
-        repo,
-        route.kind === "overflow" ? Overflow.RUNNER : route.item,
-      )).pipe(Effect.provide(database))
-      // An agent's write may change which agent TODOs code with: it is admitted against that selection's generation too.
-      const coding = route.kind === "agents"
-        ? { coding: yield* Store.generationOf(Store.codingKey(repo)).pipe(Effect.provide(database)) }
-        : {}
+      const expected = yield* Expected
       const fence: Fence.Fence = {
         execution: executionId,
         expiresAt: (yield* Clock.currentTimeMillis) + Fence.FENCE_SECONDS * 1000,
-        generation,
-        ...coding,
+        ...expected,
         authority,
       }
       const start = (flow: (typeof AdminFlows.flows)[number], payload: unknown) =>
@@ -276,5 +294,5 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
     ).pipe(Effect.annotateLogs({ ...fields, outcome }))
     return response
   }).pipe(Effect.withSpan("runner.admin_request", { kind: "server" }))
-  return { fetch }
+  return { fetch: ordered(database, fetch), admit: <E2, R2>(handler: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>) => ordered(database, handler) }
 })

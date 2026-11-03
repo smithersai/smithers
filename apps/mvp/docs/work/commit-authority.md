@@ -1,8 +1,8 @@
 ---
 title: Commit-time write authority
-status: completed
+status: in-progress
 area: access
-owner: Codex / retro-writes follow-up
+owner: Codex / Astra repair
 updated: 2026-11-02
 links: []
 ---
@@ -222,3 +222,15 @@ cases after expanding session/alias/expiry coverage, plus worker typecheck (0 sk
 All test stdout/stderr was redirected to files. Farm admission refused a full Latitude host; the mini farm ran the
 receipts. No other lane's data was removed. No install, baseline tree or source copy was created on the Mac.
 One local commit is retained above the five parents. Nothing is landed or pushed; no review is claimed.
+
+### Astra repair 1 — request ordering
+
+The dispatch seam captures runner/agent resource and coding-selection generations before reading a write body;
+it resolves session and repository authority only after EOF. The final Store transaction compares the captured
+generations, so DELETE completing during PUT upload supersedes that PUT (including overflow's runner).
+Library entry: existing Effect SQL and Context services; no new dependency.
+
+Red: `/tmp/retro-repair-1-red-mini.log`, 2 failed, 60 filtered skips. Both exact-order regressions expected
+`outcome: superseded` and received `outcome: set`, at Runners.test.ts:690.
+
+Green: `/tmp/retro-repair-1-green.log`, Runners 62 passed, 0 skipped, farm command exit 0.

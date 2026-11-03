@@ -22,8 +22,8 @@ An Admin of the repository does each step in person; an agent, a flow or a sandb
 Registering a runner, naming an agent or turning overflow on hands a machine the repository's jobs, so it needs the
 App's recorded installation on the repository and the Admin role GitHub gives there; the deployment's own role never
 stands in for it ([decision 0148](../decisions/0148-runner-git-credential.md)). Every Admin action on a repository's runners, agents
-and overflow, `PUT` and `DELETE` alike, carries one fence (`worker/runners/Fence.ts`): the route reads the body
-whole, then who is asking and their authority (the repository's role row together with the sign-in session and alias,
+and overflow, `PUT` and `DELETE` alike, carries one fence (`worker/runners/Fence.ts`): dispatch captures the resource and coding-selection generations
+before reading the body. A DELETE that completes during a PUT upload supersedes that PUT. The route then reads who is asking and their authority (the repository's role row together with the sign-in session and alias,
 or on the deployment's own repository the sign-in session and alias), and the flow's transaction takes the resource's lock (even for a name
 not written yet), answers a replay with the outcome already recorded before it changes anything (the overflow setting
 included), then locks the rows it writes (the runner's, or the repository's agents) and the authority's rows (the
