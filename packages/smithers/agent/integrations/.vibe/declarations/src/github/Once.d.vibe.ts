@@ -133,6 +133,8 @@ export declare const pull: (owner: string, repo: string, input: {
  * An issue whose body carries the write's marker. The lookup reads the issues
  * updated since `since`, which must be a time before the write's first
  * attempt that every attempt agrees on, such as when the write was admitted.
+ * With `author`, the acting account's login, only issues it wrote match, so a
+ * marker someone copied into an issue of theirs is never the match.
  *
  * @category constructors
  * @since 1.0.0
@@ -141,15 +143,19 @@ export declare const issue: (owner: string, repo: string, input: {
     readonly title: string;
     readonly body: string;
     readonly since: string;
+    readonly author?: string | undefined;
 }) => Action.Keyed<Issues.Issue, IntegrationError, GitHubClient>;
 /**
  * A comment on issue or pull request `number` whose body carries the write's
- * marker. The lookup reads the whole thread.
+ * marker. The lookup reads the whole thread. With `author`, only comments that
+ * login wrote match.
  *
  * @category constructors
  * @since 1.0.0
  */
-export declare const comment: (owner: string, repo: string, number: number, body: string) => Action.Keyed<Issues.IssueComment, IntegrationError, GitHubClient>;
+export declare const comment: (owner: string, repo: string, number: number, body: string, options?: {
+    readonly author?: string | undefined;
+}) => Action.Keyed<Issues.IssueComment, IntegrationError, GitHubClient>;
 /**
  * A review on pull request `number` against head `commitId` whose body
  * carries the write's marker. The lookup reads every review.
