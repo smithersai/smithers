@@ -131,7 +131,7 @@
      "relative": "packages/smithers/flows/platform-cloudflare/src"
     },
     null,
-    "2r01htocyalFYw2WS2NNoSgnfZwiKXKzUotvV-p0QCU",
+    "PNvcm7tjkizCqKoUCDGgH4lSLUIcZvBM-0hdoBBmtnI",
     [],
     {
      "recursive": true,
@@ -2350,8 +2350,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
@@ -2385,8 +2385,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -2399,15 +2399,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -2448,8 +2448,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
@@ -3204,8 +3204,8 @@
     "path": {
      "relative": "packages/smithers/flows/step-cache/src/CacheStoreMetrics.vibe"
     },
-    "size": 4517,
-    "hash": "hTNIDUNgFJ9Xy8FK8DqbA7rxp9Ejhu1P0no0M6V3tj0"
+    "size": 4510,
+    "hash": "ddedd35rIVTSgnQM5lpUjqy2XPCl7fbrarVkrfRVYhE"
    },
    {
     "path": {
@@ -3323,15 +3323,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -3372,8 +3372,8 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/Metric.vibe"
     },
-    "size": 2935,
-    "hash": "XXXhfdHsrISiQL-9OYXdun1P5hmUMFMUukdWLG859ss"
+    "size": 2926,
+    "hash": "agxT2sS_fPGrTrYLKC82EdAhmacBoDpXqiBi2IwGa3Q"
    },
    {
     "path": {
@@ -3400,8 +3400,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
     },
-    "size": 5241,
-    "hash": "JO_KokRTYoaAfg_TXfxIkOm2WSWR9EmmsM5E__718es"
+    "size": 5230,
+    "hash": "0LLzrFtd-OyretNOj-AKWa17Kb_79-iCaTcT0zBy-4I"
    },
    {
     "path": {
@@ -3603,8 +3603,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -3687,8 +3687,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -3736,8 +3736,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -3778,8 +3778,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -4219,8 +4219,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -4359,15 +4359,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/Encoded.vibe"
     },
-    "size": 15365,
-    "hash": "ePdnivZA8MDmCtMUVOSeLRLJzoM3dfFwudXpQMMX_5I"
+    "size": 15350,
+    "hash": "pRQXTh_-X81irAiJXXamyVG2X9qXwZjvwXr3fBUSIq4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
     },
-    "size": 2224,
-    "hash": "wU_2S9aIe6CLhOhWz7TsA9p3vINTxD8o4Jh2tnx527A"
+    "size": 2221,
+    "hash": "0b4AvKWi513qOmacbu7zpMSsNZ5Bjscf82CWUZgnpLs"
    },
    {
     "path": {
@@ -4394,8 +4394,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/SnapshotBoundary.vibe"
     },
-    "size": 1488,
-    "hash": "kdlJBqK9sGgXpptwPI6kbpk-9Y3WEpcUrsuy-DYCZZo"
+    "size": 1483,
+    "hash": "RNyG78FFKArZrOc08jPVo0atR2pF7WPQCBEdugoxOyE"
    },
    {
     "path": {
@@ -4562,22 +4562,22 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/StepFact.vibe"
     },
-    "size": 2106,
-    "hash": "4p5BwxZdwwqDTkEe6XaRTdBpC9svUS3xGkJGFphRfmo"
+    "size": 2103,
+    "hash": "b3kkgDyilW3C-FW4fdO4ounbiKeP_KuJRi79-7KoC5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/EventTally.vibe"
     },
-    "size": 801,
-    "hash": "jqNAp8SGRoVgR2UGFcQbDqD4VnG7fA7oCOkc8hwA_Nw"
+    "size": 800,
+    "hash": "_DXFihbOGu_VKm5BvOTjgOjn52C9LseZwxmqEucrkvQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
     },
-    "size": 963,
-    "hash": "h558rP8T8bGGWY1J39KkFj2H_C3ZwzleEC_jdLro1WY"
+    "size": 962,
+    "hash": "MWPlQMr_t56pVGgwDW0MWW24aMFIVC-RYfA3thfgK7w"
    },
    {
     "path": {
@@ -4590,8 +4590,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
     },
-    "size": 4805,
-    "hash": "TV_P427Tpq3T5TcSdUJ13uwDMQgjY6FQgBXaWOQ7ORA"
+    "size": 4800,
+    "hash": "0MAnTLasHh_cI-vlZtI_0FpjmdWsh6Itt25uXOU7e9c"
    },
    {
     "path": {
@@ -4639,8 +4639,8 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
     },
-    "size": 1367,
-    "hash": "KMRUmP-9Pq4fef97WjRMVwdSdKCtuF_hiS_zyvdpojA"
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
    },
    {
     "path": {
@@ -5309,17 +5309,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.ts"
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
     },
-    "size": 2921,
-    "hash": "VNjZOtePPQZAnxBTcZ9gzBrLrLUnYBx4jSLMJvyDJWk"
+    "size": 2737,
+    "hash": "a9KGU0UuXB4RjwVMqEfo52m2eaXaB0j9SWJP2uejvv8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/platform-cloudflare/src/CloudflareHost.vibe"
     },
     "size": 2986,
-    "hash": "WMc6la3Hzbz9Ph__SNzsEnondzx2SmEJmX3EPJRBgPU"
+    "hash": "hQ27AiVDbl8IiFp7L5gCqhUtQ-pJIJyaBQ8EbaNIRCM"
    },
    {
     "path": {
@@ -6032,15 +6032,15 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/LogFailures.vibe"
     },
-    "size": 8172,
-    "hash": "KZ0DKsnfIZXpT-B1xROygJ2MTtfo01_oQ_LGO16Oz1I"
+    "size": 8231,
+    "hash": "WiHAfm-UTtqtJnlqhn2PJ_lh1HAfCqzhZK7tHVaZrJ4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/src/Logger.vibe"
     },
-    "size": 4057,
-    "hash": "DFOye44VkywJcRTzQrDFNYi8fufFOwSg_-8lhY0sIpo"
+    "size": 4049,
+    "hash": "2Jaz9cbbJkjlBix6Y0fTpBYrBZJpHCWc7-urbA1_lhk"
    },
    {
     "path": {
@@ -6634,8 +6634,8 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/Otel.vibe"
     },
-    "size": 4440,
-    "hash": "pjne_6wE5LEN1pOZBSagtW5u4Qp0RmyBR77tkEnldgo"
+    "size": 4431,
+    "hash": "adzQ1ff3g1rRIOBrwwy2LtuzzMGGi3a9bGxeReD23p0"
    },
    {
     "path": {
@@ -6746,8 +6746,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Healthy.vibe"
     },
-    "size": 339,
-    "hash": "e195Sj5hH7_Ga1G2tvq8FpTESUmpF901N-0Bd0iBNfo"
+    "size": 338,
+    "hash": "rrZHTtdeKmDsO3F3meFyEGfUY4cr84r2wMWEOZ-lbro"
    },
    {
     "path": {
@@ -6760,8 +6760,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Unhealthy.vibe"
     },
-    "size": 546,
-    "hash": "FHbnFQ1hWnIdbGBE22zC4wV6y3wLweGnccVFCyp4AO4"
+    "size": 545,
+    "hash": "1HJF7D42E_ypjaZ6_jrlvv59LU_SFrnlJQXNDGFcCZ8"
    },
    {
     "path": {
@@ -6781,8 +6781,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/SandboxHealth.vibe"
     },
-    "size": 358,
-    "hash": "95iJWK2gLOwpYQzQi5IeMyZXMXnteaDblzoKemFthZM"
+    "size": 357,
+    "hash": "rGaA_WYZA8rwyzaewcktHTpRXED8T0y14FAF3zqYbfI"
    },
    {
     "path": {
@@ -6865,8 +6865,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/Session.vibe"
     },
-    "size": 4827,
-    "hash": "w_3ZpIa5O0iuosDDaa0AEMliP-QXmn7oHOwrAUO-iPA"
+    "size": 4826,
+    "hash": "Ocp-bm33x6VMEpisKUEZNeLZ-dj-aV5BaFPjfdORr0U"
    },
    {
     "path": {
@@ -7040,8 +7040,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
     },
-    "size": 2817,
-    "hash": "g2uaNsEVZhEUfbVDsqwxlt-hc_Unis2J6OXJxyOKE34"
+    "size": 2813,
+    "hash": "YSBjWmDQ2oGbRNcic1vjalrestrGfnFUYzzI-jSfgI4"
    },
    {
     "path": {
@@ -7068,8 +7068,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/ApplyAction.vibe"
     },
-    "size": 2366,
-    "hash": "OWAuAX-VNG5E0BRRh9r7ELxganrcJBDjXwgHwu-gbk4"
+    "size": 2361,
+    "hash": "7E7uy730JudwXaJoZadtqo7WTueR9RHmDY_XdsYnzHc"
    },
    {
     "path": {
@@ -7264,8 +7264,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/GarbageCollector.vibe"
     },
-    "size": 2187,
-    "hash": "N8zt2gZvQqKcHH7jSfSxpIepOXeLa06Nzswi2mmpSO0"
+    "size": 2185,
+    "hash": "MDVNHtqVaWs6-IUjD-VcxN7vYcrdgClJKstn8CvU-eQ"
    },
    {
     "path": {
@@ -7313,15 +7313,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/linuxSignals.vibe"
     },
-    "size": 1120,
-    "hash": "OOGXY-0D1CqDzXKRKl4eUa6sUoveH0hZpDGv8GmnCKo"
+    "size": 1119,
+    "hash": "6w_ZfPNlZGxbdfNM3lVL2tiZZ-kCydlYEknfNWBLafA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/teardownWarning.vibe"
     },
-    "size": 738,
-    "hash": "zsfn-_YUEMAyYvyrbECrPoBjz0-Rdaeoa3rQfLrWSR8"
+    "size": 737,
+    "hash": "R5b2pzw492Bz_jwMpOBUw0byPT9v3WZ2nXTr6Vp93as"
    },
    {
     "path": {
@@ -7334,8 +7334,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/MicrosandboxReattachRefusal.vibe"
     },
-    "size": 955,
-    "hash": "4bhCLBfBffYTY1euwo_rvXyk1IDzd7cFmnDnXuPcQ08"
+    "size": 953,
+    "hash": "SyUNx7qmNgt0MkiuKg9uDHU5Hj4hpJczm9yHeO_ybCA"
    },
    {
     "path": {
@@ -7383,8 +7383,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/checkedExit.vibe"
     },
-    "size": 689,
-    "hash": "G07GgpqTvWNjaA5LXP2h6N5ov98oUeXjZJw4GwIK8YA"
+    "size": 688,
+    "hash": "CT2FGidUnyyKIkypbuNN6bVXROIWKaAhhuPbK5JLbOs"
    },
    {
     "path": {
@@ -7495,15 +7495,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/SandboxUnhealthy.vibe"
     },
-    "size": 1122,
-    "hash": "o79-32FOxsDh8OBY8sKS5wPqdvJCuUBKsJKraQjgOK8"
+    "size": 1120,
+    "hash": "-gD4FIcOJ9azykzUsMeRGsrRcVn5MqD5jUNDZbDEFs8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/Reporter.vibe"
     },
-    "size": 1013,
-    "hash": "Lfkg6dJjU8cyLnS_o78K8uKvf_-TXZdpaFaLhblE3Es"
+    "size": 1011,
+    "hash": "3SweM61inWWjetgKW0JEsFwyeVi6hPLZD3OFvNSeX5Y"
    },
    {
     "path": {
@@ -8146,8 +8146,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/TimeTravelError.vibe"
     },
-    "size": 3639,
-    "hash": "DpdTg1S6trQ7oHOCYU8LHPBrVueC2uFaDag_PWA3VMo"
+    "size": 3637,
+    "hash": "anuv20sOo5yC0RwmLGqxY2OMY6sU42VKppCkI8h4kAU"
    },
    {
     "path": {
@@ -8160,15 +8160,15 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/CompensationHandlers.vibe"
     },
-    "size": 6185,
-    "hash": "jLsJRKT8UH7hFvPgh9BkdxrlLUS0CtXt2bWnWFTXzHg"
+    "size": 6183,
+    "hash": "grEO7yk1xIbBmsm-aN0fbPyzNdYljm0RZBHPr0kfsno"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/Frame.vibe"
     },
-    "size": 4451,
-    "hash": "Dn2Igp6Nu62WhCXXuagpm1GcFupL-sCyNZ9pd0f_Kt0"
+    "size": 4448,
+    "hash": "xm63ypu-BFlt4UMCxXB9E1lJ1sdjv1dx2I3NyeHA6TM"
    },
    {
     "path": {
@@ -8195,15 +8195,15 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/HistoryLimit.vibe"
     },
-    "size": 2168,
-    "hash": "OHh-Qz12fq8hlgmgex2Cv4WW2WNiYjnYpfBAshgsQbk"
+    "size": 2166,
+    "hash": "E87aJ1xVTymqZsTFnAlvwLOa7Gn1PTYmn1wKPwoeh0w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
     },
-    "size": 3851,
-    "hash": "bg2um5O7B6qxJtcwuNDIhuWyZCojkw-eqcJwJrXACpI"
+    "size": 3859,
+    "hash": "p91vkMn3zzGIacmG19Yr9wbaICfMqAeWrqyHOTEoLac"
    },
    {
     "path": {
@@ -8405,8 +8405,8 @@
     "path": {
      "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Observed.vibe"
     },
-    "size": 2218,
-    "hash": "HuvZkTxubGEheRrv-sOOTHGxJKhVv1SkAKXZtFT-b3g"
+    "size": 2217,
+    "hash": "LQr53SBMrnpipCZpM7-d8R-QfifPcufrHOOx77uoDac"
    },
    {
     "path": {
@@ -8426,8 +8426,8 @@
     "path": {
      "relative": "packages/smithers/flows/platform-cloudflare/src/internal/FailureDetail.vibe"
     },
-    "size": 5797,
-    "hash": "rFvuuxcqau4XVibPIypu8fXGdKw3UHnaPYCdEuM5c9U"
+    "size": 5794,
+    "hash": "lY9Fu04xdQQQfRAalqrGDo1DCu0gnab92_eh3Gs_dWI"
    },
    {
     "path": {
@@ -10529,7 +10529,7 @@
     "relative": "packages/smithers/flows/engine-store/src/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.ts"
+    "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
    },
    {
     "relative": "packages/smithers/flows/platform-cloudflare/src/CloudflareHost.vibe"
@@ -11297,9 +11297,109 @@
     "category": "warning",
     "code": "EK4837",
     "text": "StartTimedOut extends Schema.TaggedError; a schema error declaration, schema error StartTimedOut { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+    },
+    "line": 18,
+    "column": 45,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#PlatformError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+    },
+    "line": 19,
+    "column": 17,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#systemError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+    },
+    "line": 35,
+    "column": 54,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+    },
+    "line": 35,
+    "column": 79,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#layerNoop` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+    },
+    "line": 75,
+    "column": 72,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+    },
+    "line": 76,
+    "column": 23,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+    },
+    "line": 77,
+    "column": 23,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+    },
+    "line": 78,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#systemError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    }
   ],
   "outputs": [
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+     }
+    ],
+    "code": "/**\n * The services a Worker cannot serve, present and refusing.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as PlatformError from \"effect/PlatformError\";\nimport * as Sink from \"effect/Sink\";\nimport * as Stream from \"effect/Stream\";\nimport * as FileSystem from \"effect/FileSystem\";\nimport * as Layer from \"effect/Layer\";\nimport * as ChildProcessSpawner from \"effect/process/ChildProcessSpawner\";\n/**\n * The refusal every filesystem call answers with.\n *\n * `PermissionDenied`, never `NotFound`: a caller that reads `NotFound` as\n * \"absent\" would go on to create the file, and a guarded kernel path must\n * fail closed.\n */\nconst fileSystemRefusal = (method) => PlatformError.systemError({\n    _tag: \"PermissionDenied\",\n    module: \"FileSystem\",\n    method,\n    description: \"not_installed: a Cloudflare Worker has no filesystem\"\n});\nconst refuse = (method) => () => Effect.fail(fileSystemRefusal(method));\n/**\n * A `FileSystem` whose every operation fails. `exists` fails too rather than\n * answering `false`, for the reason {@link fileSystemRefusal} gives.\n *\n * @category layers\n * @since 1.0.0\n */\nexport const layerFileSystem = FileSystem.layerNoop({\n    access: refuse(\"access\"),\n    chmod: refuse(\"chmod\"),\n    chown: refuse(\"chown\"),\n    copy: refuse(\"copy\"),\n    copyFile: refuse(\"copyFile\"),\n    exists: refuse(\"exists\"),\n    glob: refuse(\"glob\"),\n    link: refuse(\"link\"),\n    makeDirectory: refuse(\"makeDirectory\"),\n    makeTempDirectory: refuse(\"makeTempDirectory\"),\n    makeTempDirectoryScoped: refuse(\"makeTempDirectoryScoped\"),\n    makeTempFile: refuse(\"makeTempFile\"),\n    makeTempFileScoped: refuse(\"makeTempFileScoped\"),\n    open: refuse(\"open\"),\n    readDirectory: refuse(\"readDirectory\"),\n    readFile: refuse(\"readFile\"),\n    readFileString: refuse(\"readFileString\"),\n    readLink: refuse(\"readLink\"),\n    realPath: refuse(\"realPath\"),\n    remove: refuse(\"remove\"),\n    rename: refuse(\"rename\"),\n    sink: () => Sink.fail(fileSystemRefusal(\"sink\")),\n    stat: refuse(\"stat\"),\n    stream: () => Stream.fail(fileSystemRefusal(\"stream\")),\n    symlink: refuse(\"symlink\"),\n    truncate: refuse(\"truncate\"),\n    utimes: refuse(\"utimes\"),\n    watch: () => Stream.fail(fileSystemRefusal(\"watch\")),\n    writeFile: refuse(\"writeFile\"),\n    writeFileString: refuse(\"writeFileString\")\n});\n/**\n * A `ChildProcessSpawner` whose every spawn fails with `NotFound`, the tag a\n * Node or Bun host reports for a program that is not installed.\n *\n * @category layers\n * @since 1.0.0\n */\nexport const layerChildProcessSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.make(() => Effect.fail(PlatformError.systemError({\n    _tag: \"NotFound\",\n    module: \"ChildProcess\",\n    method: \"spawn\",\n    description: \"not_installed: a Cloudflare Worker cannot start a process\"\n}))));\n",
+    "map": {
+     "version": 3,
+     "file": "Refusals.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Refusals.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
    {
     "paths": [
      {
@@ -11317,7 +11417,7 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;;;;;;;;;;GAaG;;AAEH,OAAO,EAAe,SAAS,EAAE,MAAM,gBAAgB,CAAA;AACvD,OAAO,EAAE,aAAa,EAAE,MAAM,sBAAsB,CAAA;AACpD,OAAO,KAAK,EAAE,MAAM,YAAY,CAAA;AAGhC,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,KAAK,IAAI,MAAM,aAAa,CAAA;AAEnC,OAAO,KAAK,QAAQ,MAAM,wBAAwB,CAAA;AAkBlD,yEAAyE;AACzE,MAAM,eAAe,GAA4B,KAAK,CAAC,OAAO,CAC5D,eAAe,CAAC,KAAK,EACrB,KAAK,CAAC,OAAO,CAAC,eAAe,CAAC,WAAW,CAAC,CAAC,EAAE,QAAQ,EAAE,QAAQ,EAAE,CAAC,CACnE,CAAA;AAED;;;;;;;;;;;;;;;;;;;;GAoBG;AACH,MAAM,CAAC,MAAM,KAAK,GAAgC,KAAK,CAAC,QAAQ,CAC9D,aAAa,CAAC,eAAe,EAC7B,IAAI,CAAC,KAAK,EACV,eAAe,EACf,QAAQ,CAAC,eAAe,EACxB,QAAQ,CAAC,wBAAwB,EACjC,EAAE,CAAC,SAAS,CAAC,EAAE,CAAC,CACjB,CAAC,IAAI,CAAC,KAAK,CAAC,YAAY,CAAC,SAAS,CAAC,KAAK,CAAC,CAAC,CAAA"
+     "mappings": "AAAA;;;;;;;;;;;;;GAaG;;AAEH,OAAO,EAAe,SAAS,EAAE,MAAM,gBAAgB,CAAA;AACvD,OAAO,EAAE,aAAa,EAAE,MAAM,sBAAsB,CAAA;AACpD,OAAO,KAAK,EAAE,MAAM,YAAY,CAAA;AAGhC,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,KAAK,IAAI,MAAM,aAAa,CAAA;AAEnC,OAAO,KAAK,QAAQ,MAAM,wBAA0B,CAAA;AAkBpD,yEAAyE;AACzE,MAAM,eAAe,GAA4B,KAAK,CAAC,OAAO,CAC5D,eAAe,CAAC,KAAK,EACrB,KAAK,CAAC,OAAO,CAAC,eAAe,CAAC,WAAW,CAAC,CAAC,EAAE,QAAQ,EAAE,QAAQ,EAAE,CAAC,CACnE,CAAA;AAED;;;;;;;;;;;;;;;;;;;;GAoBG;AACH,MAAM,CAAC,MAAM,KAAK,GAAgC,KAAK,CAAC,QAAQ,CAC9D,aAAa,CAAC,eAAe,EAC7B,IAAI,CAAC,KAAK,EACV,eAAe,EACf,QAAQ,CAAC,eAAe,EACxB,QAAQ,CAAC,wBAAwB,EACjC,EAAE,CAAC,SAAS,CAAC,EAAE,CAAC,CACjB,CAAC,IAAI,CAAC,KAAK,CAAC,YAAY,CAAC,SAAS,CAAC,KAAK,CAAC,CAAC,CAAA"
     }
    },
    {
@@ -11386,7 +11486,7 @@
       "relative": "packages/smithers/flows/platform-cloudflare/src/internal/FailureDetail.vibe"
      }
     ],
-    "code": "/**\n * What an alarm's failure log says beyond the failure's tag: enough to name\n * a failed schema migration and the database's answer, without quoting a\n * flow's content.\n *\n * A flow step's failure may quote a prompt or a provider, so for most\n * failures the log keeps the tag alone. A migration is different: its\n * statements and the server's answer to them are the engine's own schema\n * text. For a `MigrationError` the detail names the migration, the statement\n * that failed and the database's message. For any failure that reached the\n * database it names the SQL error's kind and SQLSTATE code, which carry no\n * content, and for a lost or refused connection the driver's text for it. A data exception (SQLSTATE class `22`) quotes the value it\n * rejected, so its message is left out even under a migration.\n *\n * @since 1.0.0\n */\nimport * as Tracer from \"effect/Tracer\";\nimport * as Cause from \"effect/Cause\";\nimport * as Effect from \"effect/Effect\";\nimport * as Exit from \"effect/Exit\";\n/** How Effect's `Migrator` names a migration that failed. */\nconst failedMigration = /^Migration \"([^\"]+)\" failed$/;\nconst sqlState = /^[0-9A-Z]{5}$/;\n/** The longest statement or message the log keeps. */\nconst maxText = 1000;\n/** How many client spans the recorder keeps: a failed statement's span is among the last few. */\nconst recentSpans = 16;\nconst asRecord = (value) => typeof value === \"object\" && value !== null ? value : undefined;\n/** The error and each `cause` beneath it, outermost first, at most 8 deep. A `SqlError`'s `cause` is its reason. */\nconst chain = (error) => {\n    const errors = [];\n    for (let current = asRecord(error); current !== undefined && errors.length < 8; current = asRecord(current.cause)) {\n        errors.push(current);\n    }\n    return errors;\n};\n/** Text the log may keep: credentials in a URL's user part removed, and cut to {@link maxText}. */\nconst text = (value) => value.replace(/([a-z][a-z0-9+.-]*:\\/\\/)[^\\s/@]*@/gi, \"$1<redacted>@\").slice(0, maxText);\n/**\n * The detail for a failed alarm's log line and span, from its `cause` and\n * `statement`, the text of the last SQL statement that failed during it\n * ({@link withFailedStatement}):\n *\n * - `db.error`: the SQL error's kind (`ConnectionError`, `SqlSyntaxError`, ...);\n * - `db.error.message`: for a `ConnectionError`, the driver's text for it\n *   (`PgConnection: Connection closed`), which carries no content;\n * - `db.response.status_code`: its SQLSTATE code;\n * - under a `MigrationError` only: `db.migration` (`<id>_<name>`),\n *   `db.migration.kind`, `error.message` (the migration error's own text),\n *   `db.error.message` (the database's message) and `db.query.text`\n *   (`statement`).\n *\n * @category telemetry\n * @since 1.0.0\n */\nexport const detail = (cause, statement) => {\n    const errors = chain(Cause.squash(cause));\n    const result = {};\n    const sql = errors.findIndex((error) => error._tag === \"SqlError\");\n    // The reason may be beyond the bounded chain.\n    const reason = sql === -1 ? undefined : errors[sql + 1];\n    if (reason !== undefined) {\n        result[\"db.error\"] = String(reason._tag);\n        // A lost or refused connection's own text is the driver's (\"PgConnection:\n        // Connection closed\", \"PgConnection: Connection timed out\"), never a row or\n        // a statement, and it says which of those happened.\n        if (reason._tag === \"ConnectionError\")\n            result[\"db.error.message\"] = text(String(reason.message));\n    }\n    const code = errors.map((error) => error.code).find((value) => typeof value === \"string\" && sqlState.test(value));\n    if (code !== undefined)\n        result[\"db.response.status_code\"] = code;\n    const quotesValue = code !== undefined && code.startsWith(\"22\");\n    const migration = errors.find((error) => error._tag === \"MigrationError\");\n    if (migration === undefined)\n        return result;\n    const message = String(migration.message);\n    result[\"error.message\"] = text(message);\n    const named = failedMigration.exec(message);\n    if (named !== null)\n        result[\"db.migration\"] = named[1];\n    result[\"db.migration.kind\"] = String(migration.kind);\n    // The innermost error is the database's own answer.\n    if (sql !== -1 && !quotesValue)\n        result[\"db.error.message\"] = text(String(errors[errors.length - 1].message));\n    if (statement !== undefined)\n        result[\"db.query.text\"] = text(statement);\n    return result;\n};\n/**\n * Runs `effect` under the current tracer, keeping the last few client spans\n * it opens, and answers its exit with the text (`db.query.text`) of the last\n * SQL statement whose span ended in failure, if any. Every span still goes to\n * the current tracer unchanged.\n *\n * @category telemetry\n * @since 1.0.0\n */\nexport const withFailedStatement = (effect) => Effect.flatMap(Effect.tracer, (base) => {\n    const recent = [];\n    const tracer = Tracer.make({\n        span(options) {\n            const span = base.span(options);\n            if (options.kind === \"client\") {\n                recent.push(span);\n                if (recent.length > recentSpans)\n                    recent.shift();\n            }\n            return span;\n        },\n        context: base.context,\n    });\n    return Effect.map(Effect.exit(Effect.withTracer(effect, tracer)), (exit) => {\n        let statement;\n        for (const span of recent) {\n            const query = span.attributes.get(\"db.query.text\");\n            if (span.status._tag === \"Ended\" && Exit.isFailure(span.status.exit) && typeof query === \"string\") {\n                statement = query;\n            }\n        }\n        return [exit, statement];\n    });\n});\n",
+    "code": "/**\n * What an alarm's failure log says beyond the failure's tag: enough to name\n * a failed schema migration and the database's answer, without quoting a\n * flow's content.\n *\n * A flow step's failure may quote a prompt or a provider, so for most\n * failures the log keeps the tag alone. A migration is different: its\n * statements and the server's answer to them are the engine's own schema\n * text. For a `MigrationError` the detail names the migration, the statement\n * that failed and the database's message. For any failure that reached the\n * database it names the SQL error's kind and SQLSTATE code, which carry no\n * content, and for a lost or refused connection the driver's text for it. A data exception (SQLSTATE class `22`) quotes the value it\n * rejected, so its message is left out even under a migration.\n *\n * @since 1.0.0\n */\nimport * as Tracer from \"effect/Tracer\";\nimport * as Cause from \"effect/Cause\";\nimport * as Effect from \"effect/Effect\";\nimport * as Exit from \"effect/Exit\";\n/** How Effect's `Migrator` names a migration that failed. */\nconst failedMigration = /^Migration \"([^\"]+)\" failed$/;\nconst sqlState = /^[0-9A-Z]{5}$/;\n/** The longest statement or message the log keeps. */\nconst maxText = 1000;\n/** How many client spans the recorder keeps: a failed statement's span is among the last few. */\nconst recentSpans = 16;\nconst asRecord = (value) => typeof value === \"object\" && value !== null ? value : undefined;\n/** The error and each `cause` beneath it, outermost first, at most 8 deep. A `SqlError`'s `cause` is its reason. */\nconst chain = (error) => {\n    const errors = [];\n    for (let current = asRecord(error); current !== undefined && errors.length < 8; current = asRecord(current.cause)) {\n        errors.push(current);\n    }\n    return errors;\n};\n/** Text the log may keep: credentials in a URL's user part removed, and cut to {@link maxText}. */\nconst text = (value) => value.replace(/([a-z][a-z0-9+.-]*:\\/\\/)[^\\s/@]*@/gi, \"$1<redacted>@\").slice(0, maxText);\n/**\n * The detail for a failed alarm's log line and span, from its `cause` and\n * `statement`, the text of the last SQL statement that failed during it\n * ({@link withFailedStatement}):\n *\n * - `db.error`: the SQL error's kind (`ConnectionError`, `SqlSyntaxError`, ...);\n * - `db.error.message`: for a `ConnectionError`, the driver's text for it\n *   (`PgConnection: Connection closed`), which carries no content;\n * - `db.response.status_code`: its SQLSTATE code;\n * - under a `MigrationError` only: `db.migration` (`<id>_<name>`),\n *   `db.migration.kind`, `error.message` (the migration error's own text),\n *   `db.error.message` (the database's message) and `db.query.text`\n *   (`statement`).\n *\n * @category telemetry\n * @since 1.0.0\n */\nexport const detail = (cause, statement) => {\n    const errors = chain(Cause.squash(cause));\n    const result = {};\n    const sql = errors.findIndex((error) => error._tag === \"SqlError\");\n    // The reason may be beyond the bounded chain.\n    const reason = sql === -1 ? undefined : errors[sql + 1];\n    if (reason !== undefined) {\n        result[\"db.error\"] = String(reason._tag);\n        // A lost or refused connection's own text is the driver's (\"PgConnection:\n        // Connection closed\", \"PgConnection: Connection timed out\"), never a row or\n        // a statement, and it says which of those happened.\n        if (reason._tag === \"ConnectionError\")\n            result[\"db.error.message\"] = text(String(reason.message));\n    }\n    const code = errors.map((error) => error.code).find((value) => typeof value === \"string\" && sqlState.test(value));\n    if (code !== undefined)\n        result[\"db.response.status_code\"] = code;\n    const quotesValue = code !== undefined && code.startsWith(\"22\");\n    const migration = errors.find((error) => error._tag === \"MigrationError\");\n    if (migration === undefined)\n        return result;\n    const message = String(migration.message);\n    result[\"error.message\"] = text(message);\n    const named = failedMigration.exec(message);\n    if (named !== null)\n        result[\"db.migration\"] = named[1];\n    result[\"db.migration.kind\"] = String(migration.kind);\n    // The innermost error is the database's own answer.\n    if (sql !== -1 && !quotesValue)\n        result[\"db.error.message\"] = text(String(errors[errors.length - 1].message));\n    if (statement !== undefined)\n        result[\"db.query.text\"] = text(statement);\n    return result;\n};\n/**\n * Runs `effect` under the current tracer, keeping the last few client spans\n * it opens, and answers its exit with the text (`db.query.text`) of the last\n * SQL statement whose span ended in failure, if any. Every span still goes to\n * the current tracer unchanged.\n *\n * @category telemetry\n * @since 1.0.0\n */\nexport const withFailedStatement = (effect) => Effect.flatMap(Effect.tracer, (base) => {\n    const recent = [];\n    const tracer = Tracer.make({\n        span(options) {\n            const span = base.span(options);\n            if (options.kind === \"client\") {\n                recent.push(span);\n                if (recent.length > recentSpans)\n                    recent.shift();\n            }\n            return span;\n        },\n        context: base.context\n    });\n    return Effect.map(Effect.exit(Effect.withTracer(effect, tracer)), (exit) => {\n        let statement;\n        for (const span of recent) {\n            const query = span.attributes.get(\"db.query.text\");\n            if (span.status._tag === \"Ended\" && Exit.isFailure(span.status.exit) && typeof query === \"string\") {\n                statement = query;\n            }\n        }\n        return [exit, statement];\n    });\n});\n",
     "map": {
      "version": 3,
      "file": "FailureDetail.js",

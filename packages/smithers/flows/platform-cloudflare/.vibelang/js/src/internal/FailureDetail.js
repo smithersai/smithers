@@ -109,7 +109,7 @@ export const withFailedStatement = (effect) => Effect.flatMap(Effect.tracer, (ba
             }
             return span;
         },
-        context: base.context,
+        context: base.context
     });
     return Effect.map(Effect.exit(Effect.withTracer(effect, tracer)), (exit) => {
         let statement;
