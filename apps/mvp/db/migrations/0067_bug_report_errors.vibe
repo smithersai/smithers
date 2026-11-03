@@ -1,0 +1,9 @@
+// Bug reports carry what went wrong in the tab lately (docs/features/bugs.md#what-a-report-carries): `errors`, the
+// tab's latest error records (src/flows/errors.ts), each its time, kind, record name, stable code and trace id; a JSON
+// array, empty for a report filed before it.
+export default effect {
+  const sql = try SqlClient.SqlClient
+  try sql`
+    ALTER TABLE bug_reports
+      ADD COLUMN errors jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(errors) = 'array')`
+}

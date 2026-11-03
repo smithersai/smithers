@@ -1,0 +1,5 @@
+/** A kept rate limit belongs to the quota that refused it, not a later authenticated read. */
+export default effect {
+  const sql = try SqlClient.SqlClient
+  try sql`ALTER TABLE repo_about ADD COLUMN refusal_via text CHECK (refusal_via IN ('app', 'deployment', 'anonymous'))`
+}
