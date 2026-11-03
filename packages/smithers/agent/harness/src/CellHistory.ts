@@ -14,6 +14,8 @@
  * @since 0.1.0
  */
 
+import { Context, Effect, Layer } from "effect"
+
 /**
  * One cell the current turn executed.
  *
@@ -35,9 +37,9 @@ export interface ExecutedCell {
  */
 export interface Service {
   /** Records the source of one cell the controller is executing. */
-  readonly record: (source: string) => void!!
+  readonly record: (source: string) => Effect.Effect<void>
   /** Every cell this turn executed, oldest first. */
-  readonly cells: () => ReadonlyArray<ExecutedCell>!!
+  readonly cells: () => Effect.Effect<ReadonlyArray<ExecutedCell>>
 }
 
 /**
@@ -59,16 +61,16 @@ export class CellHistory extends Context.Service<CellHistory, Service>()("@smthr
  * @category constructors
  * @since 0.1.0
  */
-export const make: Service!! = effect {
+export const make: Effect.Effect<Service> = Effect.sync(() => {
   const recorded: Array<ExecutedCell> = []
   return CellHistory.of({
-    record: effect (source) =>
-      {
+    record: (source) =>
+      Effect.sync(() => {
         recorded.push({ ordinal: recorded.length, source })
-      },
-    cells: effect () => [...recorded],
+      }),
+    cells: () => Effect.sync(() => [...recorded])
   })
-}
+})
 
 /**
  * Constructs a history over a fixed cell list.
@@ -83,7 +85,7 @@ export const make: Service!! = effect {
 export const makeCells = (cells: ReadonlyArray<ExecutedCell>): Service =>
   CellHistory.of({
     record: () => Effect.void,
-    cells: () => cells,
+    cells: () => Effect.succeed(cells)
   })
 
 /**
@@ -95,8 +97,8 @@ export const makeCells = (cells: ReadonlyArray<ExecutedCell>): Service =>
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
   CellHistory.of({
     record: () => Effect.void,
-    cells: () => [],
-    ...overrides,
+    cells: () => Effect.succeed([]),
+    ...overrides
   })
 
 /**
@@ -105,7 +107,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer<CellHistory> = Layer.effect(CellHistory)(make)
+export const layer: Layer.Layer<CellHistory> = Layer.effect(CellHistory)(make)
 
 /**
  * Provides a history over a fixed cell list.
@@ -113,7 +115,7 @@ export const layer: Layer<CellHistory> = Layer.effect(CellHistory)(make)
  * @category layers
  * @since 0.1.0
  */
-export const layerCells = (cells: ReadonlyArray<ExecutedCell>): Layer<CellHistory> =>
+export const layerCells = (cells: ReadonlyArray<ExecutedCell>): Layer.Layer<CellHistory> =>
   Layer.succeed(CellHistory)(makeCells(cells))
 
 /**
@@ -122,5 +124,5 @@ export const layerCells = (cells: ReadonlyArray<ExecutedCell>): Layer<CellHistor
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop = (overrides: Partial<Service> = {}): Layer<CellHistory> =>
+export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<CellHistory> =>
   Layer.succeed(CellHistory)(makeNoop(overrides))

@@ -19,7 +19,7 @@ import { resolveNamespace } from "./internal/ResolveNamespace.vibe"
 import { MemoryError } from "./MemoryError.vibe"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
-import * as Recall from "./Recall.vibe"
+import * as Recall from "./Recall.ts"
 import * as WithMemory from "./WithMemory.ts"
 
 /**

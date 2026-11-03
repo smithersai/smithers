@@ -7,7 +7,7 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { step } from "../internal/MigrationStep.vibe"
+import { step } from "../internal/MigrationStep.ts"
 
 /**
  * Creates the original time-travel tables and indexes.

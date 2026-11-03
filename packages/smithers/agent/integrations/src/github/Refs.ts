@@ -20,6 +20,7 @@
  * @since 1.0.0
  */
 
+import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { requireRepositoryPath } from "./Repository.ts"
@@ -43,10 +44,10 @@ export interface Branch {
   readonly sha: string
 }
 
-schema RefAnswer {
-  ref: string
-  object: { sha: string; type: string }
-}
+const RefAnswer = Schema.Struct({
+  ref: Schema.String,
+  object: Schema.Struct({ sha: Schema.String, type: Schema.String })
+})
 
 const SEGMENT = /^[A-Za-z0-9._-]+$/
 const SHA = /^[0-9a-f]{40}$/
@@ -61,8 +62,8 @@ const SHA = /^[0-9a-f]{40}$/
  * @since 1.0.0
  */
 export const isBranch = (name: unknown): name is string =>
-  typeof name === "string" && name.length > 0 && name.length <= MAX_BRANCH_LENGTH && !name.includes("..")
-  && name.split("/").every((segment) => SEGMENT.test(segment) && !segment.startsWith(".") && !segment.endsWith(".lock"))
+  typeof name === "string" && name.length > 0 && name.length <= MAX_BRANCH_LENGTH && !name.includes("..") &&
+  name.split("/").every((segment) => SEGMENT.test(segment) && !segment.startsWith(".") && !segment.endsWith(".lock"))
 
 /**
  * `name` when {@link isBranch} holds, else an `invalid-config` failure.
@@ -70,16 +71,18 @@ export const isBranch = (name: unknown): name is string =>
  * @category constructors
  * @since 1.0.0
  */
-export const requireBranch = effect (name: string): string!IntegrationError =>
-  isBranch(name) ? name : throw new IntegrationError("invalid-config", "A branch name must follow git's ref rules.", {
-    field: "branch",
-    branch: typeof name === "string" ? (name as string).slice(0, 64) : typeof name,
-    retryable: false,
-  })
+export const requireBranch = (name: string): Effect.Effect<string, IntegrationError> =>
+  isBranch(name) ? Effect.succeed(name) : Effect.fail(
+    new IntegrationError("invalid-config", "A branch name must follow git's ref rules.", {
+      field: "branch",
+      branch: typeof name === "string" ? (name as string).slice(0, 64) : typeof name,
+      retryable: false
+    })
+  )
 
 const spanAttributes = (owner: string, repo: string): Record<string, unknown> => ({
   "github.owner": owner,
-  "github.repo": repo,
+  "github.repo": repo
 })
 
 /**
@@ -93,18 +96,19 @@ const spanAttributes = (owner: string, repo: string): Record<string, unknown> =>
 export const getBranch = (
   owner: string,
   repo: string,
-  name: string,
-): Option<Branch>!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const branch = try requireBranch(name)
-    return try (client.request("GET", `/repos/${repository}/git/ref/heads/${branch}`, undefined, {
-      schema: RefAnswer,
-    })
-      |> try Effect.map(%, (answer) => Option.some({ name: branch, sha: answer.object.sha }))
-      |> Effect.catchIf(%, (error) => error.details?.["status"] === 404, () => Option.none<Branch>()))
-  }) |> Effect.withSpan(%, "GitHub.Refs.getBranch", { attributes: spanAttributes(owner, repo) })
+  name: string
+): Effect.Effect<Option.Option<Branch>, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const branch = yield* requireBranch(name)
+    return yield* client.request("GET", `/repos/${repository}/git/ref/heads/${branch}`, undefined, {
+      schema: RefAnswer
+    }).pipe(
+      Effect.map((answer) => Option.some({ name: branch, sha: answer.object.sha })),
+      Effect.catchIf((error) => error.details?.["status"] === 404, () => Effect.succeed(Option.none<Branch>()))
+    )
+  }).pipe(Effect.withSpan("GitHub.Refs.getBranch", { attributes: spanAttributes(owner, repo) }))
 
 /**
  * The branches whose names start with `prefix`:
@@ -120,27 +124,35 @@ export const listBranches = (
   owner: string,
   repo: string,
   prefix: string,
-  options?: { readonly maxPages?: number | undefined },
-): { readonly items: ReadonlyArray<Branch>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
+  options?: { readonly maxPages?: number | undefined }
+): Effect.Effect<
+  { readonly items: ReadonlyArray<Branch>; readonly truncated: boolean },
+  IntegrationError,
+  GitHubClient
+> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
     // A prefix is a branch name cut short: `smithers/t12-` is valid once its last segment is completed.
-    const valid = try requireBranch(`${prefix}x`)
+    const valid = yield* requireBranch(`${prefix}x`)
     const path = `/repos/${repository}/git/matching-refs/heads/${valid.slice(0, -1)}`
-    const page = try client.paginate(path, { maxPages: options?.maxPages })
+    const page = yield* client.paginate(path, { maxPages: options?.maxPages })
     const items: Array<Branch> = []
     for (const item of page.items) {
-      const ref = Schema.decodeUnknownEffect(RefAnswer)(item) catch effect (cause) => { throw new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
-              method: "GET",
-              path,
-            }, { cause }) }
+      const ref = yield* Schema.decodeUnknownEffect(RefAnswer)(item).pipe(
+        Effect.mapError((cause) =>
+          new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
+            method: "GET",
+            path
+          }, { cause })
+        )
+      )
       if (ref.ref.startsWith("refs/heads/")) {
         items.push({ name: ref.ref.slice("refs/heads/".length), sha: ref.object.sha })
       }
     }
     return { items, truncated: page.truncated }
-  }) |> Effect.withSpan(%, "GitHub.Refs.listBranches", { attributes: spanAttributes(owner, repo) })
+  }).pipe(Effect.withSpan("GitHub.Refs.listBranches", { attributes: spanAttributes(owner, repo) }))
 
 /**
  * Creates branch `name` at commit `sha`: `POST /repos/{owner}/{repo}/git/refs`.
@@ -154,21 +166,23 @@ export const listBranches = (
 export const createBranch = (
   owner: string,
   repo: string,
-  input: { readonly name: string; readonly sha: string },
-): Branch!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const branch = try requireBranch(input.name)
+  input: { readonly name: string; readonly sha: string }
+): Effect.Effect<Branch, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const branch = yield* requireBranch(input.name)
     if (typeof input.sha !== "string" || !SHA.test(input.sha)) {
-      throw new IntegrationError("invalid-config", "A commit SHA must be 40 lowercase hex digits.", {
-        field: "sha",
-        retryable: false,
-      })
+      return yield* Effect.fail(
+        new IntegrationError("invalid-config", "A commit SHA must be 40 lowercase hex digits.", {
+          field: "sha",
+          retryable: false
+        })
+      )
     }
-    const answer = try client.request("POST", `/repos/${repository}/git/refs`, {
+    const answer = yield* client.request("POST", `/repos/${repository}/git/refs`, {
       ref: `refs/heads/${branch}`,
-      sha: input.sha,
+      sha: input.sha
     }, { schema: RefAnswer })
     return { name: branch, sha: answer.object.sha }
-  }) |> Effect.withSpan(%, "GitHub.Refs.createBranch", { attributes: spanAttributes(owner, repo) })
+  }).pipe(Effect.withSpan("GitHub.Refs.createBranch", { attributes: spanAttributes(owner, repo) }))

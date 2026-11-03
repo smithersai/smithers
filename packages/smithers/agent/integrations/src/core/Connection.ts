@@ -19,7 +19,7 @@
  */
 
 import type { Credential } from "@smthrs/control/Credential"
-import { type Redacted } from "effect"
+import { Effect, type Redacted, Schema } from "effect"
 import { IntegrationError } from "./IntegrationError.ts"
 
 /**
@@ -38,7 +38,7 @@ export const ConnectionId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9]
  */
 export const CredentialReference = Schema.Struct({
   id: Schema.NonEmptyString,
-  name: Schema.NonEmptyString,
+  name: Schema.NonEmptyString
 })
 
 /**
@@ -61,7 +61,7 @@ export const Connection = Schema.Struct({
   /** The containers the connection may be used with. Empty means none: allowlists fail closed. */
   containers: Schema.Array(Schema.NonEmptyString),
   /** A provider API origin override, for enterprise hosts and fixture servers. */
-  apiBaseUrl: Schema.optionalKey(Schema.String),
+  apiBaseUrl: Schema.optionalKey(Schema.String)
 })
 
 /**
@@ -107,7 +107,7 @@ export const containersAllowed = (connection: Pick<Connection, "containers">, co
  * @category models
  * @since 1.0.0
  */
-export type Authorize = (principal: string, connection: Connection) => boolean!IntegrationError
+export type Authorize = (principal: string, connection: Connection) => Effect.Effect<boolean, IntegrationError>
 
 /**
  * A fail-closed host policy.
@@ -124,8 +124,9 @@ export const personalPolicy = (options: {
   readonly shared?: Authorize | undefined
 }): Authorize => {
   const personal = new Set(options.personalPrincipals)
-  const shared = options.shared ?? (() => true)
-  return (principal, connection) => connection.personal ? personal.has(principal) : shared(principal, connection)
+  const shared = options.shared ?? (() => Effect.succeed(true))
+  return (principal, connection) =>
+    connection.personal ? Effect.succeed(personal.has(principal)) : shared(principal, connection)
 }
 
 /**
@@ -145,25 +146,31 @@ export const resolveSecret = (options: {
   readonly connection: Connection
   readonly principal: string
   readonly authorize: Authorize
-}): Redacted.Redacted<string>!IntegrationError => {
+}): Effect.Effect<Redacted.Redacted<string>, IntegrationError> => {
   const { connection, principal } = options
   const details = { connectionId: connection.id, provider: connection.provider, principal, retryable: false }
-  return effect {
-    const allowed = try options.authorize(principal, connection)
+  return Effect.gen(function*() {
+    const allowed = yield* options.authorize(principal, connection)
     if (allowed !== true) {
-      throw new IntegrationError(
-        "permission-denied",
-        `Principal "${principal}" may not use connection "${connection.id}".`,
-        details,
+      return yield* Effect.fail(
+        new IntegrationError(
+          "permission-denied",
+          `Principal "${principal}" may not use connection "${connection.id}".`,
+          details
+        )
       )
     }
-    return options.credentials.resolve({ id: connection.credential.id, name: connection.credential.name }) catch effect (error) => { throw new IntegrationError(
+    return yield* options.credentials.resolve({ id: connection.credential.id, name: connection.credential.name }).pipe(
+      Effect.mapError((error) =>
+        new IntegrationError(
           // A refused or unknown reference is a denial; storage that is absent
           // or cannot open the sealed value leaves the connection unusable.
           error._tag === "/control/Unauthorized" ? "permission-denied" : "credentials-missing",
           `The credential for connection "${connection.id}" could not be resolved.`,
           { ...details, credentialFailure: error.code },
-          { cause: error },
-        ) }
-  }
+          { cause: error }
+        )
+      )
+    )
+  })
 }

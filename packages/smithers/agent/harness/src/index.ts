@@ -138,7 +138,7 @@ export * as DoneText from "./DoneText.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as CellHistory from "./CellHistory.vibe"
+export * as CellHistory from "./CellHistory.ts"
 
 /**
  * @category constructors

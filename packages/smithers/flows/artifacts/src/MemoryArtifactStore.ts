@@ -10,7 +10,7 @@ import * as Metric from "effect/Metric"
 import type { Service } from "./ArtifactStore.ts"
 import { ArtifactMissing } from "./ArtifactStoreError.vibe"
 import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
-import { measureBytes } from "./measureBytes.vibe"
+import { measureBytes } from "./measureBytes.ts"
 import { snapshotBytes } from "./snapshotBytes.vibe"
 import { validateDigest } from "./validateDigest.vibe"
 

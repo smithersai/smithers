@@ -54,7 +54,7 @@ import {
   retryAfterHeader,
   transportCause,
   webHeaders
-} from "../core/CredentialHttp.vibe"
+} from "../core/CredentialHttp.ts"
 import { IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
 import { redactedError } from "../core/RedactedError.ts"
 import * as Environment from "../Environment.ts"

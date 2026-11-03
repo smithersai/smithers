@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Embedding from "../src/Embedding.vibe"
+import * as Embedding from "../src/Embedding.ts"
 
 const embeddingService = Effect.service(Embedding.Embedding)
 

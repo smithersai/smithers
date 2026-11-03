@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as MemoryError from "../src/MemoryError.vibe"
 import * as MemoryStore from "../src/MemoryStore.ts"
-import * as Recall from "../src/Recall.vibe"
+import * as Recall from "../src/Recall.ts"
 import * as Fts from "../src/RecallFts.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
 

@@ -19,7 +19,7 @@ import { Deferred, Effect, type Layer, Option, Redacted, Result, Schema, Stream 
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import type * as Cell from "../src/Cell.ts"
-import * as CellHistory from "../src/CellHistory.vibe"
+import * as CellHistory from "../src/CellHistory.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"

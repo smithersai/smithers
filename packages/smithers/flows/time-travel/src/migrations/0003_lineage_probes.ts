@@ -7,7 +7,7 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { step } from "../internal/MigrationStep.vibe"
+import { step } from "../internal/MigrationStep.ts"
 
 /**
  * Indexes journal records that produce lineage edges.

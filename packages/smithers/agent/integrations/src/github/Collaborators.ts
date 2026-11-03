@@ -9,6 +9,7 @@
  * @since 1.0.0
  */
 
+import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { requireRepositoryPath } from "./Repository.ts"
@@ -44,17 +45,19 @@ export const LOGIN_PATTERN =
 const PermissionAnswer = Schema.Struct({
   permission: Schema.String,
   role_name: Schema.String,
-  user: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.Number }))),
+  user: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.Number })))
 })
 
-const requireLogin = effect (login: string): string!IntegrationError =>
+const requireLogin = (login: string): Effect.Effect<string, IntegrationError> =>
   typeof login === "string" && LOGIN_PATTERN.test(login)
-    ? encodeURIComponent(login)
-    : throw new IntegrationError("invalid-config", "A GitHub login is not a valid account name.", {
-      field: "login",
-      login: typeof login === "string" ? login.slice(0, 64) : typeof login,
-      retryable: false,
-    })
+    ? Effect.succeed(encodeURIComponent(login))
+    : Effect.fail(
+      new IntegrationError("invalid-config", "A GitHub login is not a valid account name.", {
+        field: "login",
+        login: typeof login === "string" ? login.slice(0, 64) : typeof login,
+        retryable: false
+      })
+    )
 
 /**
  * `login`'s permission on the repository:
@@ -71,30 +74,30 @@ const requireLogin = effect (login: string): string!IntegrationError =>
 export const permission = (
   owner: string,
   repo: string,
-  login: string,
-): Option<Permission>!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const account = try requireLogin(login)
-    return try (client.request(
+  login: string
+): Effect.Effect<Option.Option<Permission>, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const account = yield* requireLogin(login)
+    return yield* client.request(
       "GET",
       `/repos/${repository}/collaborators/${account}/permission`,
       undefined,
-      { schema: PermissionAnswer },
-    )
-      |> try Effect.map(%, (answer) =>
+      { schema: PermissionAnswer }
+    ).pipe(
+      Effect.map((answer) =>
         Option.some<Permission>({
           permission: answer.permission,
           roleName: answer.role_name,
-          ...(answer.user === undefined || answer.user === null ? {} : { userId: answer.user.id }),
-        }))
-      |> Effect.catchIf(
-        %,
+          ...(answer.user === undefined || answer.user === null ? {} : { userId: answer.user.id })
+        })
+      ),
+      Effect.catchIf(
         (error) => error.details?.["status"] === 404,
-        () => Option.none<Permission>(),
-      ))
-  })
-  |> Effect.withSpan(%, "GitHub.Collaborators.permission", {
-    attributes: { "github.owner": owner, "github.repo": repo },
-  })
+        () => Effect.succeed(Option.none<Permission>())
+      )
+    )
+  }).pipe(
+    Effect.withSpan("GitHub.Collaborators.permission", { attributes: { "github.owner": owner, "github.repo": repo } })
+  )

@@ -26,7 +26,7 @@ export * as AppAuth from "./github/AppAuth.ts"
  * @category getters
  * @since 1.0.0
  */
-export * as Collaborators from "./github/Collaborators.vibe"
+export * as Collaborators from "./github/Collaborators.ts"
 
 /**
  * @category constructors
@@ -80,7 +80,7 @@ export * as Proxy from "./github/Proxy.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Pulls from "./github/Pulls.vibe"
+export * as Pulls from "./github/Pulls.ts"
 
 /**
  * @category services
@@ -92,7 +92,7 @@ export * as RateLimit from "./github/RateLimit.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Refs from "./github/Refs.vibe"
+export * as Refs from "./github/Refs.ts"
 
 /**
  * @category constructors

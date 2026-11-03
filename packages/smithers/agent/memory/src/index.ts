@@ -25,7 +25,7 @@ export * as Database from "./Database.vibe"
 /**
  * @category embeddings @since 0.1.0
  */
-export * as Embedding from "./Embedding.vibe"
+export * as Embedding from "./Embedding.ts"
 
 /**
  * @category flows @since 0.1.0
@@ -67,7 +67,7 @@ export * as Namespace from "./Namespace.vibe"
 /**
  * @category recall @since 0.1.0
  */
-export * as Recall from "./Recall.vibe"
+export * as Recall from "./Recall.ts"
 
 /**
  * @category recall @since 0.1.0

@@ -48,18 +48,19 @@ const format = (bytes: Uint8Array): string => {
  * @category constructors
  * @since 1.0.0-rc.17
  */
-export const v5 = effect (
+export const v5 = (
   namespace: string,
-  name: string,
-): string!PlatformError.PlatformError!Crypto.Crypto => {
-  if (!isUuid(namespace)) return try Effect.die(new TypeError("Uuid.v5: namespace is not a UUID"))
-  const nameBytes = encoder.encode(name)
-  const input = new Uint8Array(16 + nameBytes.length)
-  input.set(bytesOf(namespace), 0)
-  input.set(nameBytes, 16)
-  const digest = (Crypto.Crypto()).digest("SHA-1", input)
-  const bytes = digest.slice(0, 16)
-  bytes[6] = (bytes[6]! & 0x0f) | 0x50
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80
-  return format(bytes)
-}
+  name: string
+): Effect.Effect<string, PlatformError.PlatformError, Crypto.Crypto> =>
+  Effect.gen(function*() {
+    if (!isUuid(namespace)) return yield* Effect.die(new TypeError("Uuid.v5: namespace is not a UUID"))
+    const nameBytes = encoder.encode(name)
+    const input = new Uint8Array(16 + nameBytes.length)
+    input.set(bytesOf(namespace), 0)
+    input.set(nameBytes, 16)
+    const digest = yield* (yield* Crypto.Crypto).digest("SHA-1", input)
+    const bytes = digest.slice(0, 16)
+    bytes[6] = (bytes[6]! & 0x0f) | 0x50
+    bytes[8] = (bytes[8]! & 0x3f) | 0x80
+    return format(bytes)
+  })

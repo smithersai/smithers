@@ -1,7 +1,5 @@
 {
-  "vibe": {
-  // vibelang --fix-vip-only refused 1 call that may have run before VIP-1 (decided detail 274): EK4802 is an error until each is migrated by hand; remove this setting when --fix-vip-only refuses none.
-  "severities": {"EK4802": "error"}, "sidecarDir": ".vibe/declarations" },
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
     "rootDirs": [".",".vibe/declarations"],
     "moduleSuffixes": ["", ".d.vibe"],

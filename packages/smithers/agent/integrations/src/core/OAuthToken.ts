@@ -56,7 +56,7 @@ import { Clock, Duration, Effect, Option, Redacted, Ref, Schema, Semaphore } fro
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type { AccessTokenSource } from "./AccessToken.vibe"
-import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.vibe"
+import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.ts"
 import { IntegrationError, isIntegrationError } from "./IntegrationError.ts"
 import { redactedError } from "./RedactedError.ts"
 

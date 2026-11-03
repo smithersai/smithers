@@ -41,7 +41,7 @@
     "./CallLedger": "./src/CallLedger.vibe",
     "./Cell": "./src/Cell.ts",
     "./CellCalls": "./src/CellCalls.ts",
-    "./CellHistory": "./src/CellHistory.vibe",
+    "./CellHistory": "./src/CellHistory.ts",
     "./CellTurn": "./src/CellTurn.ts",
     "./CellValidation": "./src/CellValidation.ts",
     "./Compaction": "./src/Compaction.ts",

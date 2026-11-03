@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Bank from "../src/Bank.vibe"
 import * as BankInternal from "../src/internal/ResolveNamespace.vibe"
 import * as Namespace from "../src/Namespace.vibe"
-import * as Recall from "../src/Recall.vibe"
+import * as Recall from "../src/Recall.ts"
 
 describe("Recall", () => {
   it("ranks by score, newest update, key, then bank for every binding", () => {

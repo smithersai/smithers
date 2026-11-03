@@ -51,7 +51,7 @@ import * as HistoryLimit from "./internal/HistoryLimit.vibe"
 import * as Recovery from "./internal/Recovery.ts"
 import * as Replay from "./internal/Replay.ts"
 import * as Rewind from "./internal/Rewind.ts"
-import * as SnapshotProjector from "./internal/SnapshotProjector.vibe"
+import * as SnapshotProjector from "./internal/SnapshotProjector.ts"
 import { error, type TimeTravelError } from "./TimeTravelError.vibe"
 import { type Rebinding, StepOverride, TimeTravelStore } from "./TimeTravelStore.ts"
 

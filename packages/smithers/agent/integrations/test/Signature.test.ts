@@ -7,7 +7,7 @@ import {
   GITHUB_SIGNATURE_PREFIX,
   type VerifyOptions,
   verifySignature
-} from "../src/core/Signature.vibe"
+} from "../src/core/Signature.ts"
 
 const SECRET = "shared-secret-correct"
 const BODY = JSON.stringify({ branch: "main" })
