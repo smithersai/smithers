@@ -47,15 +47,23 @@
  */
 
 import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import { constTrue } from "effect/Function"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpBody from "effect/http/HttpBody"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import type * as HttpMethod from "effect/http/HttpMethod"
 import type * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
+import * as Url from "effect/http/Url"
 import * as Metric from "effect/Metric"
+import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
+import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { valueProblem } from "./Binding.vibe"
@@ -133,7 +141,7 @@ export const refusals = {
   secret_not_allowed: 403,
   insecure_scheme: 403,
   too_many_placeholders: 403,
-  headers_too_large: 431,
+  headers_too_large: 431
 } as const
 
 /**
@@ -164,7 +172,7 @@ export class Refused extends Schema.TaggedError<Refused>()("@smthrs/secrets/Egre
  * @since 0.1.0
  */
 export class Unavailable extends Schema.TaggedError<Unavailable>()("@smthrs/secrets/Egress/Unavailable", {
-  code: Schema.Literals(["secret", "value", "audit", "upstream"]),
+  code: Schema.Literals(["secret", "value", "audit", "upstream"])
 }) {}
 
 /**
@@ -183,7 +191,7 @@ export class Broken extends Schema.TaggedError<Broken>()("@smthrs/secrets/Egress
  */
 export class SecretUnavailable extends Schema.TaggedError<SecretUnavailable>()(
   "@smthrs/secrets/Egress/SecretUnavailable",
-  { name: Schema.String },
+  { name: Schema.String }
 ) {}
 
 /**
@@ -193,10 +201,10 @@ export class SecretUnavailable extends Schema.TaggedError<SecretUnavailable>()(
  * @category services
  * @since 0.1.0
  */
-export service Vault {
-  static readonly key = "@smthrs/secrets/Egress/Vault"
-  reveal: (name: string) => Redacted.Redacted<string>!SecretUnavailable
-}
+export class Vault extends Context.Service<
+  Vault,
+  { readonly reveal: (name: string) => Effect.Effect<Redacted.Redacted<string>, SecretUnavailable> }
+>()("@smthrs/secrets/Egress/Vault") {}
 
 /**
  * One decision, as the audit records it: never a value, a path or a header.
@@ -220,7 +228,7 @@ export interface Entry {
  */
 export class AuditUnavailable extends Schema.TaggedError<AuditUnavailable>()(
   "@smthrs/secrets/Egress/AuditUnavailable",
-  {},
+  {}
 ) {}
 
 /**
@@ -230,10 +238,10 @@ export class AuditUnavailable extends Schema.TaggedError<AuditUnavailable>()(
  * @category services
  * @since 0.1.0
  */
-export service Audit {
-  static readonly key = "@smthrs/secrets/Egress/Audit"
-  record: (entry: Entry) => void!AuditUnavailable
-}
+export class Audit extends Context.Service<
+  Audit,
+  { readonly record: (entry: Entry) => Effect.Effect<void, AuditUnavailable> }
+>()("@smthrs/secrets/Egress/Audit") {}
 
 /**
  * The host's answer, scrubbed: its status, its headers without hop-by-hop
@@ -258,7 +266,7 @@ export interface Answer {
  */
 export const requests: Metric.Counter<number> = Metric.counter("secret_egress_requests", {
   description: "Requests through the secrets egress, by outcome",
-  incremental: true,
+  incremental: true
 })
 
 /** Never forwarded: hop-by-hop headers (RFC 9110 §7.6.1), the host, and the length, which the client sets. */
@@ -273,7 +281,7 @@ const dropped: ReadonlySet<string> = new Set([
   "transfer-encoding",
   "upgrade",
   "host",
-  "content-length",
+  "content-length"
 ])
 
 /** Never answered: hop-by-hop headers, and the encoding and length the client's decoding and scrubbing changed. */
@@ -298,7 +306,7 @@ const readable = (name: string, value: string): string => {
 
 /** `value` with each placeholder in `values` replaced, a Basic credential decoded and encoded again. */
 const substituted = (name: string, value: string, values: ReadonlyMap<string, string>): string => {
-  const swap = (text: string): string => {
+  const swap = (text: string) => {
     let swapped = text
     for (const [placeholder, secret] of values) swapped = swapped.split(placeholder).join(secret)
     return swapped
@@ -346,7 +354,7 @@ export interface Denied {
  */
 export const decide = (
   request: { readonly method: string; readonly url: string; readonly headers: Readonly<Record<string, string>> },
-  policy: Policy,
+  policy: Policy
 ): Allowed | Denied => {
   // Placeholders first, so every refusal names the secrets the request carried.
   const found = new Set<string>()
@@ -355,8 +363,12 @@ export const decide = (
   }
   const known = new Map(policy.secrets.map((secret) => [secret.placeholder, secret]))
   const carried = [...found].flatMap((placeholder) => known.get(placeholder)?.name ?? [])
-  const url = URL.parse(request.url)
-  if (url === null) return { _tag: "Denied", host: "", code: "invalid_url", secrets: carried }
+  let url: URL
+  try {
+    url = new URL(request.url)
+  } catch {
+    return { _tag: "Denied", host: "", code: "invalid_url", secrets: carried }
+  }
   const host = url.protocol === "https:" || url.protocol === "http:" ? url.hostname : ""
   const denied = (code: Refusal): Denied => ({ _tag: "Denied", host, code, secrets: carried })
   if (host === "" || url.username !== "" || url.password !== "") return denied("invalid_url")
@@ -396,136 +408,129 @@ const headerBytes = (headers: Readonly<Record<string, string>>): number => {
  */
 export const execute = (
   request: HttpClientRequest.HttpClientRequest,
-  policy: Policy,
-): Answer!Refused | Unavailable!HttpClient.HttpClient | Vault | Audit =>
-  withSpan(
-    effect {
-      const startedAt = try Clock.currentTimeMillis
-      // The caller's services: its logger, metrics and span, for the outcome an answer's body settles once it has
-      // streamed, which a host may do outside the request's services.
-      const services = try Effect.context<never>()
-      const method = request.method
-      const url = Url.make(request.url, request.urlParams, undefined).pipe(Result.map((parsed) => parsed.href))
-      const decision = decide({
-        method,
-        url: Result.getOrElse(url, () => ""),
-        headers: request.headers,
-      }, policy)
-      const settle = effect (outcome: string, status: number, secrets: number) => {
-        const durationMs = (try Clock.currentTimeMillis) - startedAt
-        try Metric.update(Metric.withAttributes(requests, { outcome }), 1)
-        try Effect.annotateLogs(
-          Effect.logWithLevel(outcome === "forwarded" ? "Info" : "Warn")("secrets.egress"),
-          { outcome, host: decision.host, method, status, secrets, durationMs },
+  policy: Policy
+): Effect.Effect<Answer, Refused | Unavailable, HttpClient.HttpClient | Vault | Audit> =>
+  Effect.gen(function*() {
+    const startedAt = yield* Clock.currentTimeMillis
+    // The caller's services: its logger, metrics and span, for the outcome an answer's body settles once it has
+    // streamed, which a host may do outside the request's services.
+    const services = yield* Effect.context<never>()
+    const method = request.method
+    const url = Url.make(request.url, request.urlParams, undefined).pipe(Result.map((parsed) => parsed.href))
+    const decision = decide({
+      method,
+      url: Result.getOrElse(url, () => ""),
+      headers: request.headers
+    }, policy)
+    const audit = yield* Audit
+    const settle = (outcome: string, status: number, secrets: number) =>
+      Effect.gen(function*() {
+        const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        yield* Metric.update(Metric.withAttributes(requests, { outcome }), 1)
+        yield* Effect.logWithLevel(outcome === "forwarded" ? "Info" : "Warn")("secrets.egress").pipe(
+          Effect.annotateLogs({ outcome, host: decision.host, method, status, secrets, durationMs })
         )
-      }
-      try Effect.annotateCurrentSpan({ "server.address": decision.host, "http.request.method": method })
-      /** The span's outcome and status, while the span is open: a body ends after it closed. */
-      const mark = effect (outcome: string, status: number) =>
-        try Effect.annotateCurrentSpan({ "smithers.egress.outcome": outcome, "http.response.status_code": status })
-      const refuse = effect (code: Refusal, secrets: ReadonlyArray<string>) => {
-        try mark(code, refusals[code])
-        // A refusal stands whether or not it is recorded: nothing is sent either way.
-        Audit.record({ host: decision.host, method, outcome: code, secrets }) catch () => undefined
-        try settle(code, refusals[code], secrets.length)
-        throw new Refused({ code })
-      }
-      const unavailable = effect (code: Unavailable["code"], secrets: number) => {
-        const status = code === "upstream" ? 502 : 503
-        try mark(`unavailable_${code}`, status)
-        try settle(`unavailable_${code}`, status, secrets)
-        throw new Unavailable({ code })
-      }
-
-      if (decision._tag === "Denied") return try refuse(decision.code, decision.secrets)
-      const { used } = decision
-      const revealed = try Effect.catchCause(
-        forEach(policy.secrets, effect (secret) => ({ secret, value: try Vault.reveal(secret.name) })),
-        // Any other failure, a defect included, is the vault's and fails closed.
-        effect (cause) => {
-          if (Cause.hasInterruptsOnly(cause)) try Effect.interrupt
-          return undefined
-        },
-      )
-      if (revealed === undefined) return try unavailable("secret", used.length)
-      const values = new Map<string, string>()
-      for (const { secret, value } of revealed) {
-        if (!used.includes(secret)) continue
-        if (valueProblem(Redacted.value(value)) !== undefined) return try unavailable("value", used.length)
-        values.set(secret.placeholder, Redacted.value(value))
-      }
-      const scrubber = Scrub.make(revealed.map(({ secret, value }) => ({ value, replacement: secret.placeholder })))
-
-      const headers: Record<string, string> = {}
-      for (const [name, value] of Object.entries(forwardable(request.headers))) {
-        headers[name] = substituted(name, value, values)
-      }
-      if (scrubber.active) {
-        headers["accept-encoding"] = "identity"
-        delete headers["range"]
-        delete headers["if-range"]
-      }
-      if (headerBytes(headers) > maximumHeaderBytes) {
-        return try refuse("headers_too_large", used.map((secret) => secret.name))
-      }
-
-      const recorded = try Effect.option(Audit.record({
-        host: decision.host,
-        method,
-        outcome: "forwarded",
-        secrets: used.map((secret) => secret.name),
-      }))
-      if (Option.isNone(recorded)) return try unavailable("audit", used.length)
-
-      const client = try HttpClient.HttpClient
-      const init = try Effect.serviceOption(FetchHttpClient.RequestInit)
-      // Effect 4.1 types a request's method as any string and HttpClientRequest.make as taking an
-      // HttpMethod; 4.0 typed both as HttpMethod. The method goes upstream unchanged, as it did.
-      const outgoing = HttpClientRequest.make(method as HttpMethod)(Result.getOrThrow(url), {
-        headers,
-        body: request.body,
       })
-      const sent = try Effect.catchCause(
-        effect {
-          provide FetchHttpClient.RequestInit = { ...Option.getOrUndefined(init), redirect: "manual" },             HttpClient.TracerDisabledWhen = constTrue {
-            return try client.execute(outgoing)
-          }
-        },
-        // The client's error holds the substituted request: dropped here, whole, so no value reaches a failure.
-        effect (cause) => {
-          if (Cause.hasInterruptsOnly(cause)) try Effect.interrupt
-          return undefined
-        },
+    yield* Effect.annotateCurrentSpan({ "server.address": decision.host, "http.request.method": method })
+    /** The span's outcome and status, while the span is open: a body ends after it closed. */
+    const mark = (outcome: string, status: number) =>
+      Effect.annotateCurrentSpan({ "smithers.egress.outcome": outcome, "http.response.status_code": status })
+    const refuse = (code: Refusal, secrets: ReadonlyArray<string>) =>
+      Effect.gen(function*() {
+        yield* mark(code, refusals[code])
+        // A refusal stands whether or not it is recorded: nothing is sent either way.
+        yield* audit.record({ host: decision.host, method, outcome: code, secrets }).pipe(Effect.ignore)
+        yield* settle(code, refusals[code], secrets.length)
+        return yield* new Refused({ code })
+      })
+    const unavailable = (code: Unavailable["code"], secrets: number) => {
+      const status = code === "upstream" ? 502 : 503
+      return mark(`unavailable_${code}`, status).pipe(
+        Effect.andThen(settle(`unavailable_${code}`, status, secrets)),
+        Effect.andThen(Effect.fail(new Unavailable({ code })))
       )
-      if (sent === undefined) return try unavailable("upstream", used.length)
-      try mark("forwarded", sent.status)
+    }
 
-      const answered: Record<string, string> = {}
-      for (const [name, value] of Object.entries(sent.headers)) {
-        if (!droppedAnswer.has(name)) answered[name] = scrubber.text(value)
-      }
-      const body = scrubber.stream(
-        sent.stream.pipe(
-          // The client's error holds the request: dropped here. Fetch answers a bodiless response, such as a
-          // redirect's, with no body at all, which reaches the guest as an empty one.
-          Stream.catch((error): Stream.Stream<never, Broken> =>
-            error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(new Broken())
-          ),
-        ),
-      ).pipe(
-        Stream.onExit(effect (exit) =>
-          try Effect.provideContext(
-            settle(Exit.isSuccess(exit) ? "forwarded" : "broken", sent.status, used.length),
-            services,
-          )
-        ),
+    if (decision._tag === "Denied") return yield* refuse(decision.code, decision.secrets)
+    const { used } = decision
+    const vault = yield* Vault
+    const revealed = yield* Effect.forEach(policy.secrets, (secret) =>
+      Effect.map(vault.reveal(secret.name), (value) => ({ secret, value }))).pipe(
+        // Any other failure, a defect included, is the vault's and fails closed.
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(undefined)
+        )
       )
-      return { status: sent.status, headers: answered, body }
-    },
-    "Egress.execute",
-    { kind: "client" },
-  )
+    if (revealed === undefined) return yield* unavailable("secret", used.length)
+    const values = new Map<string, string>()
+    for (const { secret, value } of revealed) {
+      if (!used.includes(secret)) continue
+      if (valueProblem(Redacted.value(value)) !== undefined) return yield* unavailable("value", used.length)
+      values.set(secret.placeholder, Redacted.value(value))
+    }
+    const scrubber = Scrub.make(revealed.map(({ secret, value }) => ({ value, replacement: secret.placeholder })))
 
+    const headers: Record<string, string> = {}
+    for (const [name, value] of Object.entries(forwardable(request.headers))) {
+      headers[name] = substituted(name, value, values)
+    }
+    if (scrubber.active) {
+      headers["accept-encoding"] = "identity"
+      delete headers["range"]
+      delete headers["if-range"]
+    }
+    if (headerBytes(headers) > maximumHeaderBytes) {
+      return yield* refuse("headers_too_large", used.map((secret) => secret.name))
+    }
+
+    const recorded = yield* audit.record({
+      host: decision.host,
+      method,
+      outcome: "forwarded",
+      secrets: used.map((secret) => secret.name)
+    }).pipe(Effect.option)
+    if (Option.isNone(recorded)) return yield* unavailable("audit", used.length)
+
+    const client = yield* HttpClient.HttpClient
+    const init = yield* Effect.serviceOption(FetchHttpClient.RequestInit)
+    // Effect 4.1 types a request's method as any string and HttpClientRequest.make as taking an
+    // HttpMethod; 4.0 typed both as HttpMethod. The method goes upstream unchanged, as it did.
+    const outgoing = HttpClientRequest.make(method as HttpMethod.HttpMethod)(Result.getOrThrow(url), {
+      headers,
+      body: request.body
+    })
+    const sent = yield* client.execute(outgoing).pipe(
+      Effect.provideService(FetchHttpClient.RequestInit, { ...Option.getOrUndefined(init), redirect: "manual" }),
+      Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+      // The client's error holds the substituted request: dropped here, whole, so no value reaches a failure.
+      Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(undefined))
+    )
+    if (sent === undefined) return yield* unavailable("upstream", used.length)
+    yield* mark("forwarded", sent.status)
+
+    const answered: Record<string, string> = {}
+    for (const [name, value] of Object.entries(sent.headers)) {
+      if (!droppedAnswer.has(name)) answered[name] = scrubber.text(value)
+    }
+    const body = scrubber.stream(
+      sent.stream.pipe(
+        // The client's error holds the request: dropped here. Fetch answers a bodiless response, such as a
+        // redirect's, with no body at all, which reaches the guest as an empty one.
+        Stream.catch((error): Stream.Stream<never, Broken> =>
+          error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(new Broken())
+        )
+      )
+    ).pipe(
+      Stream.onExit((exit) =>
+        settle(Exit.isSuccess(exit) ? "forwarded" : "broken", sent.status, used.length).pipe(
+          Effect.provideContext(services)
+        )
+      )
+    )
+    return { status: sent.status, headers: answered, body }
+  }).pipe(Effect.withSpan("Egress.execute", { kind: "client" }))
+
+/** Statuses whose answer has no body (RFC 9110 §6.4.1). */
 const bodiless: ReadonlySet<number> = new Set([204, 205, 304])
 
 /**
@@ -538,27 +543,31 @@ const bodiless: ReadonlySet<number> = new Set([204, 205, 304])
  * @category egress
  * @since 0.1.0
  */
-export const forward = effect (
+export const forward = (
   request: HttpServerRequest.HttpServerRequest,
-  policy: Policy,
-): HttpServerResponse.HttpServerResponse!never!HttpClient.HttpClient | Vault | Audit => {
+  policy: Policy
+): Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpClient.HttpClient | Vault | Audit> => {
   const method = request.method
   const body = method === "GET" || method === "HEAD"
     ? HttpBody.empty
     : HttpBody.stream(request.stream, request.headers["content-type"])
   // Effect 4.1 types a request's method as any string and HttpClientRequest.make as taking an
   // HttpMethod; 4.0 typed both as HttpMethod. The method goes upstream unchanged, as it did.
-  const outgoing = HttpClientRequest.make(method as HttpMethod)(request.originalUrl, {
+  const outgoing = HttpClientRequest.make(method as HttpMethod.HttpMethod)(request.originalUrl, {
     headers: request.headers,
-    body,
+    body
   })
-  return effect {
-    const answer = try execute(outgoing, policy)
-    return method === "HEAD" || bodiless.has(answer.status)
-      ? HttpServerResponse.empty({ status: answer.status, headers: answer.headers })
-      : HttpServerResponse.stream(answer.body, { status: answer.status, headers: answer.headers })
-  } catch (failure) => match (failure) {
-    when Refused: HttpServerResponse.text(failure.code, { status: refusals[failure.code] });
-    when Unavailable: HttpServerResponse.text(failure.code, { status: failure.code === "upstream" ? 502 : 503 });
-  }
+  return execute(outgoing, policy).pipe(
+    Effect.map((answer) =>
+      method === "HEAD" || bodiless.has(answer.status)
+        ? HttpServerResponse.empty({ status: answer.status, headers: answer.headers })
+        : HttpServerResponse.stream(answer.body, { status: answer.status, headers: answer.headers })
+    ),
+    Effect.catchTags({
+      "@smthrs/secrets/Egress/Refused": (refused) =>
+        Effect.succeed(HttpServerResponse.text(refused.code, { status: refusals[refused.code] })),
+      "@smthrs/secrets/Egress/Unavailable": (failed) =>
+        Effect.succeed(HttpServerResponse.text(failed.code, { status: failed.code === "upstream" ? 502 : 503 }))
+    })
+  )
 }
