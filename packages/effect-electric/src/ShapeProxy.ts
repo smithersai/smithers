@@ -298,8 +298,9 @@ const noStore = { "cache-control": "private, no-store" } as const
  * - Unless `cache` is `"public"`, an SSE opt-in (`live_sse` or
  *   `experimental_live_sse`, present with a first value other than `"false"`)
  *   is 400 without calling Electric. Long polling checks access per request.
- * - Electric unreachable is 502. Otherwise Electric's status, headers and body
- *   stream back.
+ * - Electric unreachable is 502, and Electric's own 401 or 403, or a redirect,
+ *   is a no-store 503 with its body cancelled, so an outward 401 or 403 is only
+ *   ever the host's. Otherwise Electric's status, headers and body stream back.
  * - A refusal, and unless `cache` is `"public"` every other response, a 405
  *   and a 502 included, carries `cache-control: private, no-store` in place
  *   of Electric's caching
@@ -462,6 +463,16 @@ export const make = <R = never>(
     if (Option.isNone(response)) {
       yield* ended(502, "electric")
       return HttpServerResponse.empty({ status: 502, headers: ownHeaders })
+    }
+    // Electric refusing this proxy is a bad deploy (its secret, its gateway), and says nothing of the person asking: a
+    // browser reads an outward 401 or 403 as the host's own decision (`Refused`). A redirect is no answer either: the
+    // browser's fetch follows it by default, to a target whose 403 would skip this. Each stays a retryable failure,
+    // never cached, and its body is cancelled, so a bad deploy's retries hold no upstream connection open.
+    const upstreamStatus = response.value.status
+    if (upstreamStatus === 401 || upstreamStatus === 403 || (upstreamStatus >= 300 && upstreamStatus < 400 && upstreamStatus !== 304)) {
+      yield* Stream.runDrain(response.value.stream).pipe(Effect.timeout("10 millis"), Effect.ignore)
+      yield* ended(503, "electric")
+      return HttpServerResponse.empty({ status: 503, headers: { "retry-after": "5", ...ownHeaders, ...noStore } })
     }
     const { status, headers, stream } = response.value
     yield* answered(status, "electric")

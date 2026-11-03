@@ -57,6 +57,8 @@ type Fault =
   | { readonly _tag: "hold" }
   | { readonly _tag: "breakBody" }
   | { readonly _tag: "endlessBody" }
+  | { readonly _tag: "redirect"; readonly status: number; readonly location: string }
+  | { readonly _tag: "refuseEndless"; readonly status: number }
 
 /** The proxy with `options`, recording every log line, span, count and upstream URL. */
 const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServerRequest>> = {}) => {
@@ -67,6 +69,7 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
   const registry = new Map()
   let fault: Fault | undefined
   let held = 0
+  let cancelled = 0
 
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
@@ -100,6 +103,17 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
           new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode("[")) }),
           { status: 200, headers: { "content-type": "application/json" } }
         )
+      case "redirect":
+        // An upstream client that doesn't follow redirects hands the proxy the 3xx itself.
+        return new Response(null, { status: fault.status, headers: { location: fault.location } })
+      case "refuseEndless":
+        return new Response(
+          new ReadableStream({
+            start: (controller) => controller.enqueue(new TextEncoder().encode("refused")),
+            cancel: () => void cancelled++
+          }),
+          { status: fault.status }
+        )
       case undefined:
         return globalThis.fetch(input, init)
     }
@@ -127,6 +141,8 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
     logs,
     spans,
     held: () => held,
+    /** How many upstream bodies the proxy cancelled. */
+    cancelled: () => cancelled,
     fault: (next: Fault | undefined) => {
       fault = next
     },
@@ -170,6 +186,51 @@ describe("refusals: no Electric needed", () => {
       expect(h.line()?.annotations).toMatchObject({ status, bytes: 0, outcome: "complete" })
       expect(h.count(ShapeProxy.defaultMetric, { status: String(status), live: "false" })).toBe(1)
     }
+  })
+
+  // Astra on the 403 wipe: a client now wipes a repository on a shape's 403. Electric refusing the proxy's own credentials
+  // is a bad deploy, not a person's refusal, and must never read as one.
+  test.each([401, 403])("Electric's own %i reaches the browser as a retryable 503", async (status) => {
+    const h = harness()
+    h.fault({ _tag: "empty", status })
+    const response = await h.request("?offset=-1")
+    expect(response.status).toBe(503)
+    expect(response.headers.get("retry-after")).toBe("5")
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    expect((await response.arrayBuffer()).byteLength).toBe(0)
+    await until(() => expect(h.logs).toHaveLength(1))
+    expect(h.line()?.annotations).toMatchObject({ status: 503, bytes: 0, outcome: "complete" })
+  })
+
+  // Astra on 0d916150: an upstream redirect passed to the browser, whose fetch follows it by default, so a 403 at its
+  // target reached the shape client without this guard.
+  test.each([301, 302, 303, 307, 308])("an upstream %i is a retryable 503, with nothing for the browser's fetch to follow", async (status) => {
+    const h = harness()
+    h.fault({ _tag: "redirect", status, location: "http://elsewhere.test/v1/shape" })
+    // As a browser's fetch would see it, which follows a redirect unless told otherwise.
+    const response = await h.fetch("http://app.test/api/shape?offset=-1", { redirect: "manual" })
+    expect(response.status).toBe(503)
+    expect(response.headers.get("location")).toBeNull()
+    expect(response.headers.get("retry-after")).toBe("5")
+  })
+
+  // Astra on 0d916150: the 503 for a public shape carried no cache-control.
+  test.each([401, 403])("Electric's own %i is a no-store 503 on a public shape, SSE included", async (status) => {
+    for (const search of ["?offset=-1", "?offset=-1&live_sse=true", "?offset=-1&experimental_live_sse=true"]) {
+      const h = harness({ cache: "public" })
+      h.fault({ _tag: "empty", status })
+      const response = await h.request(search)
+      expect([search, response.status, response.headers.get("cache-control")]).toEqual([search, 503, "private, no-store"])
+    }
+  })
+
+  // Astra on 0d916150: a refused upstream body was left open, and a bad deploy's retries piled them up.
+  test.each([401, 403])("the body of Electric's own %i is cancelled, never left open", async (status) => {
+    const h = harness()
+    h.fault({ _tag: "refuseEndless", status })
+    const response = await h.request("?offset=-1")
+    expect(response.status).toBe(503)
+    await until(() => expect(h.cancelled()).toBe(1))
   })
 
   test("upstream failures carry the proxy's own correlation, never a browser-supplied request id", async () => {
