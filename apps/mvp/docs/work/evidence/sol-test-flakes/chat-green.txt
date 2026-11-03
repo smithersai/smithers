@@ -1,0 +1,12 @@
+Mini, pnpm test (owned real Postgres/Electric), --maxWorkers=3; chat + TestEndpoints.
+ ✓ src/features/chat/chat.test.ts > asking > orders the conversation by Postgres position, across devices 1680ms
+ ✓ src/features/chat/chat.test.ts > admission > a question the outbox can't store stays unsent, and Retry sends it once the outbox can 1329ms
+ ✓ src/features/chat/chat.test.ts > the device store > a question queued as one person is never shown or sent as the next person on the device; the outbox keeps it 1320ms
+ Test Files  2 passed (2)
+      Tests  111 passed (111)
+   Duration  184.01s (tests 94%, transform 4%, import 1%)
+Command exit 0; Compose removed only the run-owned containers and network.
+
+Latest default test driver, caller-owned isolated services on Latitude:
+TestEndpoints: 27 passed, command exit 0.
+Owned mode also passed TestEndpoints: 27 passed, command exit 0.

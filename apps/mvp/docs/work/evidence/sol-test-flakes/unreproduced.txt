@@ -1,0 +1,64 @@
+Original three-worker file run
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 35847ms
+
+Three independent two-overflow-test invocations
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 33359ms
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 34633ms
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 33984ms
+
+Five independent invocations with two bounded CPU burners on two CPUs
+LOAD RUN 1 cpus [0, 1] burners 2 boundSeconds 240
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 35412ms
+LOAD END 1 exit 0 burnersAlive 2
+LOAD RUN 2 cpus [0, 1] burners 2 boundSeconds 240
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 36088ms
+LOAD END 2 exit 0 burnersAlive 2
+LOAD RUN 3 cpus [0, 1] burners 2 boundSeconds 240
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 35254ms
+LOAD END 3 exit 0 burnersAlive 2
+LOAD RUN 4 cpus [0, 1] burners 2 boundSeconds 240
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 41211ms
+LOAD END 4 exit 0 burnersAlive 2
+LOAD RUN 5 cpus [0, 1] burners 2 boundSeconds 240
+ ✓ worker/runners/TodoRunner.test.ts > overflow on Cloudflare (decision 0144) > a job the held attached runner leaves is taken by the overflow box's runner, whose model calls and claims carry only placeholders, and settles Done 39954ms
+LOAD END 5 exit 0 burnersAlive 2
+
+Named idle case under two bounded CPU burners on two CPUs
+LOAD RUN 1 cpus [0, 1] burners 2 boundSeconds 240
+ ✓ worker/branch/Probe.docker.test.ts > the idle probe in a real container > the box's own idle process is not work 176098ms (repeat x9)
+LOAD END 1 exit 0 burnersAlive 2
+
+Five real-Postgres invocations under two bounded CPU burners
+LOAD RUN 1 cpus [43, 44]
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 2443ms
+LOAD RUN 2 cpus [43, 44]
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 2557ms
+LOAD RUN 3 cpus [43, 44]
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 2386ms
+LOAD RUN 4 cpus [43, 44]
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 2606ms
+LOAD RUN 5 cpus [43, 44]
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 2779ms
+
+Three disposable real-Postgres matrix legs under bounded load; SQLite legs skipped
+LOAD RUN 1 cpus [16, 17] burners 2 boundSeconds 240
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 16164ms
+LOAD END 1 exit 0 burnersAlive 0
+LOAD RUN 2 cpus [16, 17] burners 2 boundSeconds 240
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 18008ms
+LOAD END 2 exit 0 burnersAlive 2
+LOAD RUN 3 cpus [16, 17] burners 2 boundSeconds 240
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 10363ms
+LOAD END 3 exit 0 burnersAlive 2
+
+Two heavier real-Postgres matrix legs: eight bounded CPU burners on one CPU
+LOAD RUN 1 cpus [0] burners 8 boundSeconds 240
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 6454ms
+LOAD END 1 exit 0 burnersAlive 8
+LOAD RUN 2 cpus [0] burners 8 boundSeconds 240
+ ✓ test/DriveWrites.test.ts > one alarm's writes over Postgres > eight not-found clones acquire independent writer locks before any is released 14162ms
+LOAD END 2 exit 0 burnersAlive 8
+
+No 40P01, named idle-case failure, or eight-clone failure reproduced.
+The first moderate DriveWrites matrix run outlasted its CPU workers; only nine of ten DriveWrites runs were loaded for the whole invocation.
+The original combined app run failed three other Probe cases while launching a numeric-user process (status 128/1); the named idle case passed.

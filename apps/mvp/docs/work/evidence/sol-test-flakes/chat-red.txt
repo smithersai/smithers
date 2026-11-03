@@ -1,0 +1,24 @@
+Clean chat.test.ts baseline, --maxWorkers=3, mini unit fixture (shared Postgres and Electric).
+
+ FAIL  src/features/chat/chat.test.ts > asking > orders the conversation by Postgres position, across devices
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/features/chat/chat.test.ts:260:56
+    258|     const a = await openChat()
+    259|     const first = asked((await a.actions.ask("one")))
+    260|     await until(() => expect(a.synced(first.answerId)).toBe(true))
+       |                                                        ^
+    261|     await a.onApi(a.api.askElsewhere("two"))
+    262|     const third = asked((await a.actions.ask("three")))
+
+
+Electric at failure: initial messages shape returned 503 after 5892 ms.
+Electric server: Failed to create snapshot for shape: Snapshot timed out while waiting for a table lock.
+47 snapshot table-lock timeouts, 33 schema-change snapshot errors, 21 distinct chat schemas in the same 32-second server window.
+The same run also failed admission recovery (question stayed queued) and cross-person queued-question isolation (30 s wall budget).
