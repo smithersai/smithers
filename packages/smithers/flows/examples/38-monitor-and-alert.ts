@@ -17,7 +17,7 @@ import { Registry } from "@smthrs/registry"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { parkRun } from "./park-run.ts"
+import { parkRun } from "./park-run.vibe"
 
 /** What the supervision loop concluded. */
 export interface Summary {

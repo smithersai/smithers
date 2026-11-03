@@ -131,7 +131,7 @@
      "relative": "packages/smithers/flows/src"
     },
     null,
-    "UPGe-NItqOqevgAZN3Btucw18Xxcnf2aUoeo8NICkrE",
+    "MPZnlz5pVvgsupz10pb-b205-XpjDDBKWDS21H0Nbng",
     [],
     {
      "recursive": true,
@@ -345,8 +345,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
-    "size": 10177,
-    "hash": "c8DDzn-eAe02bg8GdRdgBqFoqDXPcSGjkqjKHuZ2gNQ"
+    "size": 10315,
+    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
    },
    {
     "path": {
@@ -387,15 +387,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
-    "size": 17535,
-    "hash": "ptYwS6ZsXv6SWAIC2pOWo-G6DvCscMYdXdnuxPCoknI"
+    "size": 15515,
+    "hash": "GLTe11R7D_Y-lDK2NQwjyjpFvfA2U1oWShbV7jfHzRA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/package.json"
     },
-    "size": 6630,
-    "hash": "fM_hrWjB5ISOcj3FwbihVW-PkjMb2srZ81lnfrjRzbk"
+    "size": 6772,
+    "hash": "qy6gKQsD47Ts9JXYNY2jOS59z_0g4SQQXifBZOaOqjk"
    },
    {
     "path": {
@@ -408,8 +408,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/package.json"
     },
-    "size": 6950,
-    "hash": "m6akr-kt6yybb951zImjEb8hkDotUVwRe2Pq9qVPdkE"
+    "size": 7088,
+    "hash": "DPklUsEU_TMdU-FzRQHkBhavAOFMwS-U9QqsoKmCdw0"
    },
    {
     "path": {
@@ -506,8 +506,8 @@
     "path": {
      "relative": "packages/smithers/flows/sync/package.json"
     },
-    "size": 14417,
-    "hash": "UuXWPJpetv7HKlmxnTxenABrhYJ66y0Cpw5b7fjzf58"
+    "size": 14547,
+    "hash": "3wmJGewAu4UyRTvTPdHj4VC9y4dhHeupa9ZQhknlDYQ"
    },
    {
     "path": {
@@ -2251,8 +2251,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
@@ -2286,8 +2286,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -2300,15 +2300,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -2349,8 +2349,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
@@ -3147,8 +3147,8 @@
     "path": {
      "relative": "packages/smithers/flows/step-cache/src/CacheStoreMetrics.vibe"
     },
-    "size": 4517,
-    "hash": "hTNIDUNgFJ9Xy8FK8DqbA7rxp9Ejhu1P0no0M6V3tj0"
+    "size": 4510,
+    "hash": "ddedd35rIVTSgnQM5lpUjqy2XPCl7fbrarVkrfRVYhE"
    },
    {
     "path": {
@@ -3385,15 +3385,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -3434,8 +3434,8 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/Metric.vibe"
     },
-    "size": 2935,
-    "hash": "XXXhfdHsrISiQL-9OYXdun1P5hmUMFMUukdWLG859ss"
+    "size": 2926,
+    "hash": "agxT2sS_fPGrTrYLKC82EdAhmacBoDpXqiBi2IwGa3Q"
    },
    {
     "path": {
@@ -3462,8 +3462,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
     },
-    "size": 5241,
-    "hash": "JO_KokRTYoaAfg_TXfxIkOm2WSWR9EmmsM5E__718es"
+    "size": 5230,
+    "hash": "0LLzrFtd-OyretNOj-AKWa17Kb_79-iCaTcT0zBy-4I"
    },
    {
     "path": {
@@ -3665,8 +3665,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -3749,8 +3749,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -3798,8 +3798,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -3840,8 +3840,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -4281,8 +4281,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -4421,15 +4421,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/Encoded.vibe"
     },
-    "size": 15365,
-    "hash": "ePdnivZA8MDmCtMUVOSeLRLJzoM3dfFwudXpQMMX_5I"
+    "size": 15350,
+    "hash": "pRQXTh_-X81irAiJXXamyVG2X9qXwZjvwXr3fBUSIq4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
     },
-    "size": 2224,
-    "hash": "wU_2S9aIe6CLhOhWz7TsA9p3vINTxD8o4Jh2tnx527A"
+    "size": 2221,
+    "hash": "0b4AvKWi513qOmacbu7zpMSsNZ5Bjscf82CWUZgnpLs"
    },
    {
     "path": {
@@ -4456,8 +4456,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/SnapshotBoundary.vibe"
     },
-    "size": 1488,
-    "hash": "kdlJBqK9sGgXpptwPI6kbpk-9Y3WEpcUrsuy-DYCZZo"
+    "size": 1483,
+    "hash": "RNyG78FFKArZrOc08jPVo0atR2pF7WPQCBEdugoxOyE"
    },
    {
     "path": {
@@ -4624,22 +4624,22 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/StepFact.vibe"
     },
-    "size": 2106,
-    "hash": "4p5BwxZdwwqDTkEe6XaRTdBpC9svUS3xGkJGFphRfmo"
+    "size": 2103,
+    "hash": "b3kkgDyilW3C-FW4fdO4ounbiKeP_KuJRi79-7KoC5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/EventTally.vibe"
     },
-    "size": 801,
-    "hash": "jqNAp8SGRoVgR2UGFcQbDqD4VnG7fA7oCOkc8hwA_Nw"
+    "size": 800,
+    "hash": "_DXFihbOGu_VKm5BvOTjgOjn52C9LseZwxmqEucrkvQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
     },
-    "size": 963,
-    "hash": "h558rP8T8bGGWY1J39KkFj2H_C3ZwzleEC_jdLro1WY"
+    "size": 962,
+    "hash": "MWPlQMr_t56pVGgwDW0MWW24aMFIVC-RYfA3thfgK7w"
    },
    {
     "path": {
@@ -4652,8 +4652,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
     },
-    "size": 4805,
-    "hash": "TV_P427Tpq3T5TcSdUJ13uwDMQgjY6FQgBXaWOQ7ORA"
+    "size": 4800,
+    "hash": "0MAnTLasHh_cI-vlZtI_0FpjmdWsh6Itt25uXOU7e9c"
    },
    {
     "path": {
@@ -4701,8 +4701,8 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
     },
-    "size": 1367,
-    "hash": "KMRUmP-9Pq4fef97WjRMVwdSdKCtuF_hiS_zyvdpojA"
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
    },
    {
     "path": {
@@ -5114,8 +5114,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine-store/src/RunInspection.ts"
     },
-    "size": 37651,
-    "hash": "x7Ypw-foOjcFGIGJ8M34g7E5VcS24_U7Rz6FneaJY94"
+    "size": 37649,
+    "hash": "bs8mQKGPrVSgszWPhkzlK_EtoeCBwwZMb8RAHFPsZAo"
    },
    {
     "path": {
@@ -5371,24 +5371,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/src/internal/RegistryArgs.ts"
+     "relative": "packages/smithers/flows/src/internal/RegistryArgs.vibe"
     },
     "size": 731,
     "hash": "UkGKEYmaT_Kk-8XkNk1Oxh4jMuUXMrmehmromvrCCYo"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/src/internal/RuntimeOptions.ts"
+     "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
     },
-    "size": 12191,
-    "hash": "AOmCDbRquB1M0UalPuKsCJ4JJYOT3r8TfLejo10lZ6s"
+    "size": 12152,
+    "hash": "4C1xNvdBNJosQZynxh5D7n1LWTol7C_7qFMKYizyNBY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/src/Runtime.ts"
     },
-    "size": 8869,
-    "hash": "e2OySTS0zKbiw5ImCPJC99PUUOdw7dlIoBIBwKt-8jQ"
+    "size": 8877,
+    "hash": "Roowlbh2O1s2ocFUbxj86G7gMrIQT2GQK9Umzum6eiQ"
    },
    {
     "path": {
@@ -5996,15 +5996,15 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/LogFailures.vibe"
     },
-    "size": 8172,
-    "hash": "KZ0DKsnfIZXpT-B1xROygJ2MTtfo01_oQ_LGO16Oz1I"
+    "size": 8231,
+    "hash": "WiHAfm-UTtqtJnlqhn2PJ_lh1HAfCqzhZK7tHVaZrJ4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/src/Logger.vibe"
     },
-    "size": 4057,
-    "hash": "DFOye44VkywJcRTzQrDFNYi8fufFOwSg_-8lhY0sIpo"
+    "size": 4049,
+    "hash": "2Jaz9cbbJkjlBix6Y0fTpBYrBZJpHCWc7-urbA1_lhk"
    },
    {
     "path": {
@@ -6598,8 +6598,8 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/Otel.vibe"
     },
-    "size": 4440,
-    "hash": "pjne_6wE5LEN1pOZBSagtW5u4Qp0RmyBR77tkEnldgo"
+    "size": 4431,
+    "hash": "adzQ1ff3g1rRIOBrwwy2LtuzzMGGi3a9bGxeReD23p0"
    },
    {
     "path": {
@@ -6710,8 +6710,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Healthy.vibe"
     },
-    "size": 339,
-    "hash": "e195Sj5hH7_Ga1G2tvq8FpTESUmpF901N-0Bd0iBNfo"
+    "size": 338,
+    "hash": "rrZHTtdeKmDsO3F3meFyEGfUY4cr84r2wMWEOZ-lbro"
    },
    {
     "path": {
@@ -6724,8 +6724,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Unhealthy.vibe"
     },
-    "size": 546,
-    "hash": "FHbnFQ1hWnIdbGBE22zC4wV6y3wLweGnccVFCyp4AO4"
+    "size": 545,
+    "hash": "1HJF7D42E_ypjaZ6_jrlvv59LU_SFrnlJQXNDGFcCZ8"
    },
    {
     "path": {
@@ -6745,8 +6745,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/SandboxHealth.vibe"
     },
-    "size": 358,
-    "hash": "95iJWK2gLOwpYQzQi5IeMyZXMXnteaDblzoKemFthZM"
+    "size": 357,
+    "hash": "rGaA_WYZA8rwyzaewcktHTpRXED8T0y14FAF3zqYbfI"
    },
    {
     "path": {
@@ -6829,8 +6829,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/Session.vibe"
     },
-    "size": 4827,
-    "hash": "w_3ZpIa5O0iuosDDaa0AEMliP-QXmn7oHOwrAUO-iPA"
+    "size": 4826,
+    "hash": "Ocp-bm33x6VMEpisKUEZNeLZ-dj-aV5BaFPjfdORr0U"
    },
    {
     "path": {
@@ -6939,10 +6939,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.vibe"
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.ts"
     },
-    "size": 5324,
-    "hash": "lCSfio3UrxetUEKmnC5x8rgrBo-D8awyvhVQFGIAavE"
+    "size": 5528,
+    "hash": "beCRCp7jcZEb36QFWV7rtXvR-8B-7jFBP3TWZVlav3g"
    },
    {
     "path": {
@@ -6976,8 +6976,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/index.ts"
     },
-    "size": 2242,
-    "hash": "AZ0pt8KqQq-yi3N43UtXPLdmNAxutT-jrpjdWBvmmTA"
+    "size": 2240,
+    "hash": "GyHQP1itUkaNLMzSIukCmXjZ6qM6JBXrm5nYNq9XlCI"
    },
    {
     "path": {
@@ -7004,8 +7004,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
     },
-    "size": 2817,
-    "hash": "g2uaNsEVZhEUfbVDsqwxlt-hc_Unis2J6OXJxyOKE34"
+    "size": 2813,
+    "hash": "YSBjWmDQ2oGbRNcic1vjalrestrGfnFUYzzI-jSfgI4"
    },
    {
     "path": {
@@ -7032,8 +7032,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/ApplyAction.vibe"
     },
-    "size": 2366,
-    "hash": "OWAuAX-VNG5E0BRRh9r7ELxganrcJBDjXwgHwu-gbk4"
+    "size": 2361,
+    "hash": "7E7uy730JudwXaJoZadtqo7WTueR9RHmDY_XdsYnzHc"
    },
    {
     "path": {
@@ -7228,8 +7228,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/GarbageCollector.vibe"
     },
-    "size": 2187,
-    "hash": "N8zt2gZvQqKcHH7jSfSxpIepOXeLa06Nzswi2mmpSO0"
+    "size": 2185,
+    "hash": "MDVNHtqVaWs6-IUjD-VcxN7vYcrdgClJKstn8CvU-eQ"
    },
    {
     "path": {
@@ -7277,15 +7277,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/linuxSignals.vibe"
     },
-    "size": 1120,
-    "hash": "OOGXY-0D1CqDzXKRKl4eUa6sUoveH0hZpDGv8GmnCKo"
+    "size": 1119,
+    "hash": "6w_ZfPNlZGxbdfNM3lVL2tiZZ-kCydlYEknfNWBLafA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/teardownWarning.vibe"
     },
-    "size": 738,
-    "hash": "zsfn-_YUEMAyYvyrbECrPoBjz0-Rdaeoa3rQfLrWSR8"
+    "size": 737,
+    "hash": "R5b2pzw492Bz_jwMpOBUw0byPT9v3WZ2nXTr6Vp93as"
    },
    {
     "path": {
@@ -7298,8 +7298,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/MicrosandboxReattachRefusal.vibe"
     },
-    "size": 955,
-    "hash": "4bhCLBfBffYTY1euwo_rvXyk1IDzd7cFmnDnXuPcQ08"
+    "size": 953,
+    "hash": "SyUNx7qmNgt0MkiuKg9uDHU5Hj4hpJczm9yHeO_ybCA"
    },
    {
     "path": {
@@ -7347,8 +7347,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/checkedExit.vibe"
     },
-    "size": 689,
-    "hash": "G07GgpqTvWNjaA5LXP2h6N5ov98oUeXjZJw4GwIK8YA"
+    "size": 688,
+    "hash": "CT2FGidUnyyKIkypbuNN6bVXROIWKaAhhuPbK5JLbOs"
    },
    {
     "path": {
@@ -7459,15 +7459,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/SandboxUnhealthy.vibe"
     },
-    "size": 1122,
-    "hash": "o79-32FOxsDh8OBY8sKS5wPqdvJCuUBKsJKraQjgOK8"
+    "size": 1120,
+    "hash": "-gD4FIcOJ9azykzUsMeRGsrRcVn5MqD5jUNDZbDEFs8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/Reporter.vibe"
     },
-    "size": 1013,
-    "hash": "Lfkg6dJjU8cyLnS_o78K8uKvf_-TXZdpaFaLhblE3Es"
+    "size": 1011,
+    "hash": "3SweM61inWWjetgKW0JEsFwyeVi6hPLZD3OFvNSeX5Y"
    },
    {
     "path": {
@@ -8110,8 +8110,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/TimeTravelError.vibe"
     },
-    "size": 3639,
-    "hash": "DpdTg1S6trQ7oHOCYU8LHPBrVueC2uFaDag_PWA3VMo"
+    "size": 3637,
+    "hash": "anuv20sOo5yC0RwmLGqxY2OMY6sU42VKppCkI8h4kAU"
    },
    {
     "path": {
@@ -8124,15 +8124,15 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/CompensationHandlers.vibe"
     },
-    "size": 6185,
-    "hash": "jLsJRKT8UH7hFvPgh9BkdxrlLUS0CtXt2bWnWFTXzHg"
+    "size": 6183,
+    "hash": "grEO7yk1xIbBmsm-aN0fbPyzNdYljm0RZBHPr0kfsno"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/Frame.vibe"
     },
-    "size": 4451,
-    "hash": "Dn2Igp6Nu62WhCXXuagpm1GcFupL-sCyNZ9pd0f_Kt0"
+    "size": 4448,
+    "hash": "xm63ypu-BFlt4UMCxXB9E1lJ1sdjv1dx2I3NyeHA6TM"
    },
    {
     "path": {
@@ -8159,29 +8159,29 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/HistoryLimit.vibe"
     },
-    "size": 2168,
-    "hash": "OHh-Qz12fq8hlgmgex2Cv4WW2WNiYjnYpfBAshgsQbk"
+    "size": 2166,
+    "hash": "E87aJ1xVTymqZsTFnAlvwLOa7Gn1PTYmn1wKPwoeh0w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
     },
-    "size": 3851,
-    "hash": "bg2um5O7B6qxJtcwuNDIhuWyZCojkw-eqcJwJrXACpI"
+    "size": 3859,
+    "hash": "p91vkMn3zzGIacmG19Yr9wbaICfMqAeWrqyHOTEoLac"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.ts"
+     "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
     },
-    "size": 704,
-    "hash": "_UbmOoHisGC3Cppj_gbhMDmO_Y85XD1GYnw7CL752Ps"
+    "size": 674,
+    "hash": "JWtYDlq9qz4di5H3ZkEYScie5hhVwqimDKxu2_Zy1ws"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
     },
-    "size": 20625,
-    "hash": "ztR0cn56YS5ucdImv9OOw3k725tuSst-eQlYUPm_qDo"
+    "size": 20627,
+    "hash": "UMtwURlnMHws0YL8wt4HH10TR_tsQAM8EviLGKOjuKg"
    },
    {
     "path": {
@@ -8208,8 +8208,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Rewind.ts"
     },
-    "size": 54169,
-    "hash": "axPAAZxOx74fPs3i6YtCPNcssnaEwUbgmdntmbiKGB4"
+    "size": 54171,
+    "hash": "YPSWF2AZrrdl_P3V04PP0wyv0jdsAM4F-N_lG20yaa4"
    },
    {
     "path": {
@@ -8262,24 +8262,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
     },
-    "size": 6255,
-    "hash": "LrBv501ZspaqIO6wXKeJ5P0WdCF5QtheWYES6ny1SHk"
+    "size": 6205,
+    "hash": "fStKb_KsLbmL0V1eWwWk6UZHGDMKfIuvg0ojQqENQ3Y"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
     },
-    "size": 3459,
-    "hash": "k9r714Vu2fKUSbr4XWEA_xc5dkFtzhpJoHxllS1nTPw"
+    "size": 3395,
+    "hash": "CKZ9tNtoHIXhB6M58NYKVe92R_jho77o95KtxRlssfE"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
     },
-    "size": 1304,
-    "hash": "bUfqz63oQ-X6cqpUuw8LbRFW6Qsq3bXPWuN8MEcFZTY"
+    "size": 1278,
+    "hash": "3wyqIqCTKjTp7lrtlhIWU7tbwmmsAa6jdJbFbRZnyLE"
    },
    {
     "path": {
@@ -8297,17 +8297,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
     },
-    "size": 1077,
-    "hash": "bD_Tr-sTD7Mf41PqpzJhOcrooclcFI8AZIYUBkBhYg8"
+    "size": 1051,
+    "hash": "on_Rs6j67fUrmaGFJW6lB4_r4sGqulnucdbT3gVvJ_Y"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
     },
-    "size": 2304,
-    "hash": "fEItzVC29d01bjRZlFhfnRsxE9HCkxLMpwPhpiWRqJs"
+    "size": 2312,
+    "hash": "WuEQAZSrmp8CtWK1i9iTY_i4hkpEbXtzxFj9yOAQ9YI"
    },
    {
     "path": {
@@ -10420,10 +10420,10 @@
     "relative": "packages/smithers/flows/engine-store/src/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/src/internal/RegistryArgs.ts"
+    "relative": "packages/smithers/flows/src/internal/RegistryArgs.vibe"
    },
    {
-    "relative": "packages/smithers/flows/src/internal/RuntimeOptions.ts"
+    "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
    },
    {
     "relative": "packages/smithers/flows/src/Runtime.ts"
@@ -10615,7 +10615,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSessionProvider.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.vibe"
+    "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.ts"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/base64.ts"
@@ -10975,7 +10975,7 @@
     "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.ts"
+    "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
@@ -11014,13 +11014,13 @@
     "relative": "packages/smithers/flows/time-travel/src/internal/MigrationStep.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/migrations/0004_plan_digest.vibe"
@@ -11029,7 +11029,7 @@
     "relative": "packages/smithers/flows/time-travel/src/migrations/0005_operation_id.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
@@ -11687,6 +11687,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
+    },
+    "line": 157,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "RuntimeConfigurationError extends Schema.TaggedError; a schema error declaration, schema error RuntimeConfigurationError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/step-cache/src/CacheStore.vibe"
     },
     "line": 192,
@@ -11766,6 +11776,47 @@
     "text": "LineageMetadata holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema LineageMetadata { … }.\n  Its quick fix writes schema LineageMetadata { lineageId: Schema.NonEmptyString }; vibelang --fix applies every such fix in the project."
    }
   ],
-  "outputs": []
+  "outputs": [
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/src/internal/RegistryArgs.vibe"
+     }
+    ],
+    "code": "/** Registry arguments shared by runtime factories.\n * @since 1.0.0\n */\nimport * as Layer from \"effect/Layer\";\n/** The registry layer the arguments name, or an empty layer when none was passed.\n * The empty branch can only be selected when all three registry types are never.\n * @since 1.0.0\n * @category layers\n */\nexport const registryLayer = (args) => (args[0] ?? Layer.empty);\n",
+    "map": {
+     "version": 3,
+     "file": "RegistryArgs.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/src/internal/RegistryArgs.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;GAEG;AAEH,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AAUrC;;;;GAIG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,CAAU,IAA2B,EAAwB,EAAE,CAC1F,CAAC,IAAI,CAAC,CAAC,CAAC,IAAI,KAAK,CAAC,KAAK,CAAyB,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
+     }
+    ],
+    "code": "/** Runtime configuration shared by injected and native hosts.\n * @since 1.0.0\n */\nimport { Action } from \"@smthrs/flow\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable failure raised synchronously for invalid runtime construction input.\n *\n * @since 1.0.0\n * @category errors\n */\nexport class RuntimeConfigurationError extends Schema.TaggedError()(\"@smthrs/flows/RuntimeConfigurationError\", {\n    code: Schema.Literal(\"invalid_runtime_configuration\"),\n    field: Schema.String,\n    message: Schema.String\n}) {\n}\nconst invalidConfiguration = (field, message) => new RuntimeConfigurationError({ code: \"invalid_runtime_configuration\", field, message });\n/**\n * Decodes one named option and reports the option that was wrong.\n *\n * A single struct decode would answer \"options\" for every refusal, and the\n * whole point of {@link RuntimeConfigurationError.field} is that an embedder\n * can tell an empty `filename` from an empty `owner.hostId` without reading\n * prose. Decoding field by field makes the name come from the call site rather\n * than from walking a schema issue tree. A host package decodes the options it\n * adds, such as a database filename, through this so its refusals carry the\n * same error and the host's own `label`.\n *\n * @since 1.0.0\n * @category validation\n */\nexport const decodeField = (field, schema, value, expectation, label = \"Runtime\") => {\n    try {\n        return Schema.decodeUnknownSync(schema)(value);\n    }\n    catch {\n        throw invalidConfiguration(field, `${label} ${field} ${expectation}`);\n    }\n};\nconst nonEmpty = \"must be a non-empty string\";\n/**\n * The sweep a runtime accepts: absent, `\"process\"`, or one host-driven\n * execution named by a non-empty id.\n */\nconst Sweep = Schema.UndefinedOr(Schema.Union([\n    Schema.Literal(\"process\"),\n    Schema.Struct({ host: Schema.NonEmptyString, flow: Schema.optionalKey(Schema.NonEmptyString) })\n]));\n/**\n * Captures the injected runtime's options as one immutable record.\n *\n * Throws `RuntimeConfigurationError` naming the first option that is wrong,\n * with `label` leading its message. `layer` calls it; a host package that\n * composes the engine itself calls it before reading the options.\n *\n * @since 1.0.0\n * @category validation\n */\nexport const validate = (options, label = \"Runtime\") => {\n    // A JavaScript caller can omit `owner` entirely, so the field is read off a\n    // possibly-absent record rather than dereferenced.\n    const owner = options.owner;\n    const hostId = decodeField(\"owner.hostId\", Schema.NonEmptyString, owner?.hostId, nonEmpty, label);\n    const isAlive = options.isAlive;\n    if (typeof isAlive !== \"function\") {\n        throw invalidConfiguration(\"isAlive\", `${label} isAlive must be a function`);\n    }\n    const canExecute = options.canExecute;\n    if (canExecute !== undefined && typeof canExecute !== \"function\") {\n        throw invalidConfiguration(\"canExecute\", `${label} canExecute must be a function when supplied`);\n    }\n    const canActivate = options.canActivate;\n    if (canActivate !== undefined && typeof canActivate !== \"function\") {\n        throw invalidConfiguration(\"canActivate\", `${label} canActivate must be a function when supplied`);\n    }\n    const requestResume = options.requestResume;\n    if (requestResume !== undefined && typeof requestResume !== \"function\") {\n        throw invalidConfiguration(\"requestResume\", `${label} requestResume must be a function when supplied`);\n    }\n    // Decoded rather than trusted: this value is cache key material, and a\n    // malformed one would silently key every sealed result of this host.\n    const cacheEnvironment = options.cacheEnvironment === undefined ? undefined : decodeField(\"cacheEnvironment\", Action.CacheEnvironment, options.cacheEnvironment, \"must name every runtime layer and capability group\", label);\n    // A ref a reader cannot resolve is not a revision: a declared one is refused\n    // where it is written rather than recorded onto every page of every run. A\n    // reader is checked for its shape only; its answers are checked by the store\n    // that asks for them, because none of them exists yet.\n    const sourceRevision = options.sourceRevision === undefined || typeof options.sourceRevision === \"function\"\n        ? options.sourceRevision\n        : decodeField(\"sourceRevision\", Schema.NonEmptyString, options.sourceRevision, nonEmpty, label);\n    const privilegedJj = options.privilegedJj;\n    if (privilegedJj !== undefined && !Layer.isLayer(privilegedJj)) {\n        throw invalidConfiguration(\"privilegedJj\", `${label} privilegedJj must be a Layer when supplied`);\n    }\n    const sweep = decodeField(\"sweep\", Sweep, options.sweep, \"must be \\\"process\\\" or { host: <execution id> }\", label);\n    const placement = options.placement === undefined\n        ? undefined\n        : decodeField(\"placement\", Schema.NonEmptyString, options.placement, nonEmpty, label);\n    const resumeConcurrency = options.resumeConcurrency === undefined\n        ? undefined\n        : decodeField(\"resumeConcurrency\", Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)), options.resumeConcurrency, \"must be a positive integer\", label);\n    return Object.freeze({\n        owner: Object.freeze({ hostId }),\n        isAlive,\n        canExecute,\n        canActivate,\n        requestResume,\n        cacheEnvironment,\n        sourceRevision,\n        privilegedJj,\n        sweep,\n        resumeConcurrency,\n        placement\n    });\n};\n",
+    "map": {
+     "version": 3,
+     "file": "RuntimeOptions.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   }
+  ]
  }
 }

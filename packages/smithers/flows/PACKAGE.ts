@@ -127,7 +127,7 @@ const securityReview = Smithers.SecurityReview({
         "privilegedJj provided beside the engine instead of only to EngineStore.layerWithPrivilegedJj.",
         "Caller-supplied options read after validate returns, so a caller can change them after construction."
       ],
-      paths: ["src/Runtime.ts", "src/internal/RuntimeOptions.ts"]
+      paths: ["src/Runtime.ts", "src/internal/RuntimeOptions.vibe"]
     },
     {
       id: "docs-copyable-snippets",
