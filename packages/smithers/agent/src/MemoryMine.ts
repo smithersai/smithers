@@ -32,8 +32,8 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
-import * as Wiki from "./internal/memory/wiki.ts"
-import * as MemoryCalibration from "./MemoryCalibration.ts"
+import * as Wiki from "./internal/memory/wiki.vibe"
+import * as MemoryCalibration from "./MemoryCalibration.vibe"
 
 /**
  * The most paragraphs one reply offers as candidates.

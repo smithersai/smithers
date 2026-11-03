@@ -8,9 +8,9 @@ import type * as Schema from "effect/Schema"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import type { Condition, Health } from "../../../examples/use-cases/monitor-workflow.ts"
-import { layer, MonitorWorkflow, rules } from "../../../examples/use-cases/monitor-workflow.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import type { Condition, Health } from "../../../examples/use-cases/monitor-workflow.vibe"
+import { layer, MonitorWorkflow, rules } from "../../../examples/use-cases/monitor-workflow.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "monitor-workflow-"))
 

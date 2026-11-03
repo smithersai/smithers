@@ -33,8 +33,8 @@ import { Cause, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } f
 import { describe, expect, it } from "vitest"
 import type * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import type * as QuotaPolicy from "../src/QuotaPolicy.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
+import type * as QuotaPolicy from "../src/QuotaPolicy.vibe"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {

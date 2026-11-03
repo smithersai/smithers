@@ -9,9 +9,9 @@ import type * as Schema from "effect/Schema"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import type { SqlCheck } from "../../../examples/use-cases/sql-analyst-dashboard.ts"
-import { layer, SqlAnalystDashboard } from "../../../examples/use-cases/sql-analyst-dashboard.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import type { SqlCheck } from "../../../examples/use-cases/sql-analyst-dashboard.vibe"
+import { layer, SqlAnalystDashboard } from "../../../examples/use-cases/sql-analyst-dashboard.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "sql-analyst-dashboard-"))
 

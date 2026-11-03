@@ -18,7 +18,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Seat from "../src/Seat.ts"
+import * as Seat from "../src/Seat.vibe"
 import * as SeatRouter from "../src/SeatRouter.ts"
 
 type Size = SeatRouter.Answers["size"]

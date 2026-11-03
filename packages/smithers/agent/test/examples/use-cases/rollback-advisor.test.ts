@@ -8,8 +8,8 @@ import * as Schedule from "effect/Schedule"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import { approvalTask, layer, RollbackAdvisor } from "../../../examples/use-cases/rollback-advisor.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import { approvalTask, layer, RollbackAdvisor } from "../../../examples/use-cases/rollback-advisor.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "rollback-advisor-"))
 

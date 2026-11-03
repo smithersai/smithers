@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Issue } from "../../../examples/use-cases/github-issues.vibe"
 import { GitHubIssues, layer } from "../../../examples/use-cases/github-issues.vibe"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "github-issues-"))
 

@@ -69,9 +69,9 @@ import * as CellPlugin from "./CellPlugin.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
 import * as Commits from "./internal/memory/commits.ts"
 import * as Pack from "./internal/memory/pack.ts"
-import * as Repo from "./internal/memory/repo.ts"
-import * as Wiki from "./internal/memory/wiki.ts"
-import * as MemoryCalibration from "./MemoryCalibration.ts"
+import * as Repo from "./internal/memory/repo.vibe"
+import * as Wiki from "./internal/memory/wiki.vibe"
+import * as MemoryCalibration from "./MemoryCalibration.vibe"
 
 /**
  * The flow's name, and the plugin's.

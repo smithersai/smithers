@@ -3,9 +3,9 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import type { ScanResult } from "../../../examples/use-cases/repo-janitor.ts"
-import { empty, layer, RepoJanitor } from "../../../examples/use-cases/repo-janitor.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import type { ScanResult } from "../../../examples/use-cases/repo-janitor.vibe"
+import { empty, layer, RepoJanitor } from "../../../examples/use-cases/repo-janitor.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "repo-janitor-"))
 

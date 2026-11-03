@@ -17,10 +17,7 @@ import type { ControlFacts } from "@smthrs/control"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Fault from "@smthrs/flow/Fault"
 import * as HarnessError from "@smthrs/harness/HarnessError"
-import * as Duration from "effect/Duration"
-import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Budget from "./Budget.ts"
 
@@ -190,34 +187,33 @@ export const layerFlowLimit = (
  * failure, a Stop or a park that could not be recorded, is not the flow's
  * declared error, so it fails the drive as a defect carrying the typed error.
  */
-const limited = <A, E, R>(
+const limited = effect <A, E, R>(
   subject: string,
   flowName: string,
   limitMillis: number,
-  drive: Effect.Effect<A, E, R>
-): Effect.Effect<A, E, R | FlowRuntime.FlowInstance> =>
-  Effect.gen(function*() {
-    const parking = yield* Effect.serviceOption(Budget.Parking)
-    if (Option.isNone(parking) || !parking.value.guardsTimeouts) return yield* drive
-    const guard = parking.value
-    const admitted = yield* Effect.orDie(guard.admit(subject))
-    if (admitted._tag === "park") return yield* parkOn(admitted.parked)
-    return yield* drive.pipe(Effect.timeoutOrElse({
-      duration: Duration.millis(limitMillis),
-      orElse: () =>
-        Effect.orDie(guard.trip(
-          new Timeout({
-            source: "tool-call",
-            subject,
-            limitMillis,
-            message: `${flowName} ran past its ${limitMillis} ms limit.`
-          })
-        )).pipe(Effect.flatMap(parkOn))
-    }))
-  })
+  drive: A!E!R
+): A!E!R | FlowRuntime.FlowInstance => {
+  const parking = try Effect.serviceOption(Budget.Parking)
+  if (Option.isNone(parking) || !parking.value.guardsTimeouts) return try drive
+  const guard = parking.value
+  const admitted = try Effect.orDie(guard.admit(subject))
+  if (admitted._tag === "park") return try parkOn(admitted.parked)
+  return try (drive |> Effect.timeoutOrElse(%, {
+    duration: Duration.millis(limitMillis),
+    orElse: () =>
+      Effect.orDie(guard.trip(
+        new Timeout({
+          source: "tool-call",
+          subject,
+          limitMillis,
+          message: `${flowName} ran past its ${limitMillis} ms limit.`
+        })
+      )) |> Effect.flatMap(%, parkOn)
+  }))
+}
 
 /** Suspends the current execution on a guard's park, declaring its wait. */
-const parkOn = (parked: Budget.Parked): Effect.Effect<never, never, FlowRuntime.FlowInstance> =>
+const parkOn = (parked: Budget.Parked): never!!FlowRuntime.FlowInstance =>
   Effect.flatMap(FlowRuntime.FlowInstance, (instance) => {
     instance.waiting = parked.waiting
     return Flow.suspend(instance)

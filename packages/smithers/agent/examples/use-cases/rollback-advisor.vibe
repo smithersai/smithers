@@ -52,7 +52,7 @@ type Outcome = typeof Outcome.Type
 /** The durable question a person answers before the write. */
 export const approvalTask = "rollback-advisor/approve"
 
-const Approval = Schema.Struct({ approved: Schema.Boolean, note: Schema.String })
+schema Approval { approved: boolean; note: string }
 const approvalSchema = {
   type: "object",
   properties: { approved: { type: "boolean" }, note: { type: "string" } },

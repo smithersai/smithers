@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import { CheckFailed, layer, Smoketest } from "../../../examples/use-cases/smoketest.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import { CheckFailed, layer, Smoketest } from "../../../examples/use-cases/smoketest.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "smoketest-"))
 

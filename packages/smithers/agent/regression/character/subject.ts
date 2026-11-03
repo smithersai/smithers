@@ -44,7 +44,7 @@ import {
   QuotaPolicy,
   Seat
 } from "../../src/index.ts"
-import * as ScriptedJudge from "../../src/ScriptedJudge.ts"
+import * as ScriptedJudge from "../../src/ScriptedJudge.vibe"
 import { FlowEngine } from "../../../flows/engine/src/index.ts"
 import { Flow, FlowRuntime } from "../../../flows/flow/src/index.ts"
 import { Capability, GrantStore, Permission, Workspace } from "../../../flows/kernel/src/index.ts"

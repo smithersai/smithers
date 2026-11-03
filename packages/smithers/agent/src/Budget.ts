@@ -96,7 +96,7 @@ import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import { failureJson } from "./internal/FailureJson.vibe"
-import type * as RunawayGuard from "./RunawayGuard.ts"
+import type * as RunawayGuard from "./RunawayGuard.vibe"
 
 /**
  * What a composition wants done when a budget runs out.

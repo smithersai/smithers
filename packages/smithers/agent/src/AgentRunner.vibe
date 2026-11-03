@@ -478,11 +478,12 @@ export type Standing =
  * @category services
  * @since 1.0.0
  */
-export class AgentJobs extends Context.Service<AgentJobs, {
-  readonly start: (task: Task, key: string) => Effect.Effect<void, AgentJobsUnavailable>
-  readonly status: (key: string) => Effect.Effect<Standing, AgentJobsUnavailable>
-  readonly cancel: (key: string) => Effect.Effect<void, AgentJobsUnavailable>
-}>()("@smthrs/agent/AgentRunner/AgentJobs") {}
+export service AgentJobs {
+  static readonly key = "@smthrs/agent/AgentRunner/AgentJobs"
+  start: (task: Task, key: string) => void!AgentJobsUnavailable
+  status: (key: string) => Standing!AgentJobsUnavailable
+  cancel: (key: string) => void!AgentJobsUnavailable
+}
 
 /**
  * The origin and generation of a generation key, `<origin>#g<generation>`.

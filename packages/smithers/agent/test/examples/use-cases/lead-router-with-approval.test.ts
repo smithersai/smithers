@@ -8,8 +8,8 @@ import * as Schedule from "effect/Schedule"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import { approvalTask, layer, LeadRouterWithApproval } from "../../../examples/use-cases/lead-router-with-approval.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import { approvalTask, layer, LeadRouterWithApproval } from "../../../examples/use-cases/lead-router-with-approval.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "lead-router-with-approval-"))
 

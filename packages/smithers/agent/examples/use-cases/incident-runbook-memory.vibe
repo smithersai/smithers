@@ -21,7 +21,6 @@ import { MemoryError } from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
@@ -84,7 +83,7 @@ export const Output = Schema.Struct({
 /** The durable question a person answers before the write. */
 export const approvalTask = "incident-runbook-memory/ratify"
 
-const Approval = Schema.Struct({ approved: Schema.Boolean, note: Schema.String })
+schema Approval { approved: boolean; note: string }
 const approvalSchema = {
   type: "object",
   properties: { approved: { type: "boolean" }, note: { type: "string" } },
@@ -286,15 +285,15 @@ const rulePrefix = "rule/"
 /** The memory steps' implementations over the store. */
 const memorySteps = Layer.mergeAll(
   RecallKnowledge.toLayer(({ topic }) =>
-    Effect.gen(function*() {
-      const store = yield* MemoryStore.MemoryStore
+    effect {
+      const store = try MemoryStore.MemoryStore
       // Idempotent; creates the FTS index on first use. Its index spans every
       // namespace of the kind, so the namespace filter keeps recall to this team.
-      yield* store.enableFts("user")
+      try store.enableFts("user")
       // Only live knowledge: accepted, and not superseded by an accepted note.
-      const rules = yield* store.listNotes({ namespace, prefix: rulePrefix })
-      const lessons = yield* store.searchFts({ namespace, query: topic, prefix: lessonPrefix })
-      const onCall = yield* store.getFact({ namespace, key: "on-call" })
+      const rules = try store.listNotes({ namespace, prefix: rulePrefix })
+      const lessons = try store.searchFts({ namespace, query: topic, prefix: lessonPrefix })
+      const onCall = try store.getFact({ namespace, key: "on-call" })
       return {
         rules: rules.map((note) => note.text),
         lessons: lessons.map((row) => row.text),
@@ -302,15 +301,15 @@ const memorySteps = Layer.mergeAll(
         onCall: typeof onCall?.value === "string" ? onCall.value : "unassigned",
         lessonCount: lessons.length
       }
-    })
+    }
   ),
   RecordLessons.toLayer(({ lessons, topic }) =>
-    Effect.gen(function*() {
-      const store = yield* MemoryStore.MemoryStore
-      const { executionId } = yield* FlowRuntime.FlowInstance
+    effect {
+      const store = try MemoryStore.MemoryStore
+      const { executionId } = try FlowRuntime.FlowInstance
       const lessonIds: Array<string> = []
       for (const [i, lesson] of lessons.lessons.entries()) {
-        const note = yield* store.putNote({
+        const note = try store.putNote({
           namespace,
           id: `${lessonPrefix}${executionId}/${i}`,
           text: lesson,
@@ -320,14 +319,14 @@ const memorySteps = Layer.mergeAll(
         lessonIds.push(note.id)
       }
       return { lessonIds, summary: lessons.summary }
-    })
+    }
   ),
   ProposeRule.toLayer(({ distilled, lessonIds, topic }) =>
-    Effect.gen(function*() {
-      const store = yield* MemoryStore.MemoryStore
-      const { executionId } = yield* FlowRuntime.FlowInstance
+    effect {
+      const store = try MemoryStore.MemoryStore
+      const { executionId } = try FlowRuntime.FlowInstance
       // Pending until ratified, so the lessons it supersedes stay live.
-      const note = yield* store.putNote({
+      const note = try store.putNote({
         namespace,
         id: `${rulePrefix}${executionId}`,
         text: distilled.rule,
@@ -337,16 +336,16 @@ const memorySteps = Layer.mergeAll(
         provenance: { runId: executionId, nodeId: "distill", iteration: 0 }
       })
       return { ruleNoteId: note.id, rationale: distilled.rationale }
-    })
+    }
   ),
   RatifyRule.toLayer(({ ruleNoteId }) =>
-    Effect.gen(function*() {
-      const store = yield* MemoryStore.MemoryStore
-      const before = (yield* store.listNotes({ namespace })).length
-      yield* store.setNoteStatus({ id: ruleNoteId, status: "accepted" })
-      const after = (yield* store.listNotes({ namespace })).length
+    effect {
+      const store = try MemoryStore.MemoryStore
+      const before = (try store.listNotes({ namespace })).length
+      try store.setNoteStatus({ id: ruleNoteId, status: "accepted" })
+      const after = (try store.listNotes({ namespace })).length
       return { ratifiedNoteId: ruleNoteId, supersededCount: before - after + 1 }
-    })
+    }
   )
 ).pipe(Layer.provide(Layer.orDie(MemoryStore.layer)))
 

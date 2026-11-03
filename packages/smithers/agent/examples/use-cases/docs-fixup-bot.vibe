@@ -205,7 +205,7 @@ export const DocsFixupBot = Flow.make("examples/DocsFixupBot", {
 export interface Host {
   readonly openPullRequest: (
     request: typeof PullRequestRequest.Type
-  ) => Effect.Effect<typeof PullRequest.Type>
+  ) => typeof PullRequest.Type!!
 }
 
 /** Every step the flow calls, with the host's pull-request step. */

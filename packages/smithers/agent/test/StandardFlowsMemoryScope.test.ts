@@ -41,8 +41,8 @@ import { Cause, Context, Deferred, Effect, Exit, Layer, Option, Schema, Scope, S
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
 import * as StandardFlows from "../src/StandardFlows.ts"
 import * as Safety from "./Safety.ts"
 

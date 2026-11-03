@@ -22,7 +22,6 @@ import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type { FlowsHooks, FlowsPlugin } from "@smthrs/plugin"
 import { make as makePlugin } from "@smthrs/plugin"
-import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
 /**

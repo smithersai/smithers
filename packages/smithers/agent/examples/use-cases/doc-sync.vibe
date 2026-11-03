@@ -169,7 +169,7 @@ export const DocSync = Flow.make("examples/DocSync", {
 
 /** What a host supplies for the step that leaves the model. */
 export interface Host {
-  readonly openPullRequest: (request: PullRequestRequest) => Effect.Effect<typeof PullRequest.Type>
+  readonly openPullRequest: (request: PullRequestRequest) => typeof PullRequest.Type!!
 }
 
 /** Every step the flow calls, the child flow it starts, and the host's pull-request step. */

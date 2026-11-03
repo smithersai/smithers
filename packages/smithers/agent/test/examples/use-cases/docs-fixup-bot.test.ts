@@ -3,9 +3,9 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { BrokenExample, PullRequestRequest } from "../../../examples/use-cases/docs-fixup-bot.ts"
-import { DocsFixupBot, layer } from "../../../examples/use-cases/docs-fixup-bot.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import type { BrokenExample, PullRequestRequest } from "../../../examples/use-cases/docs-fixup-bot.vibe"
+import { DocsFixupBot, layer } from "../../../examples/use-cases/docs-fixup-bot.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "docs-fixup-bot-"))
 

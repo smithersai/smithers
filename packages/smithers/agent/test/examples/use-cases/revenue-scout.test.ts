@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, RevenueScout } from "../../../examples/use-cases/revenue-scout.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import { layer, RevenueScout } from "../../../examples/use-cases/revenue-scout.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "revenue-scout-"))
 

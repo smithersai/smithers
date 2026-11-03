@@ -11,8 +11,8 @@ import type * as Schema from "effect/Schema"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { CalendarNegotiator, layer } from "../../../examples/use-cases/calendar-negotiator-with-approval.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import { CalendarNegotiator, layer } from "../../../examples/use-cases/calendar-negotiator-with-approval.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "calendar-negotiator-"))
 

@@ -18,15 +18,13 @@
  *
  * @since 1.0.0-rc.0
  */
-
-import { HarnessError } from "@smthrs/harness/HarnessError"
-import * as ModelCatalog from "@smthrs/model/ModelCatalog"
-import * as Context from "effect/Context"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Seat from "./Seat.ts"
-import type * as SeatRouter from "./SeatRouter.ts"
-
+import { HarnessError } from "@smthrs/harness/HarnessError";
+import * as ModelCatalog from "@smthrs/model/ModelCatalog";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Seat from "./Seat.vibe";
+import type * as SeatRouter from "../../../src/SeatRouter.ts";
 /**
  * The resolver: one seat string in, one resolved seat out.
  *
@@ -34,17 +32,16 @@ import type * as SeatRouter from "./SeatRouter.ts"
  * @since 1.0.0-rc.0
  */
 export interface Service {
-  /** The declared role accompanies a graph-selected concrete seat. */
-  readonly resolve: (id: string, declaredRole?: string) => Effect.Effect<Seat.Seat, Seat.SeatUnresolved>
-  /**
-   * How the host routes `id` by the routing graph instead of resolving it to
-   * one seat, as a declared {@link Seat.auto} routes: a host that maps a role
-   * to `auto` answers here with the phase the role routes as. `undefined`,
-   * or no method, resolves `id` as declared.
-   */
-  readonly routedAs?: ((id: string) => Routed | undefined) | undefined
+    /** The declared role accompanies a graph-selected concrete seat. */
+    readonly resolve: (id: string, declaredRole?: string) => Effect.Effect<Seat.Seat, Seat.SeatUnresolved>;
+    /**
+     * How the host routes `id` by the routing graph instead of resolving it to
+     * one seat, as a declared {@link Seat.auto} routes: a host that maps a role
+     * to `auto` answers here with the phase the role routes as. `undefined`,
+     * or no method, resolves `id` as declared.
+     */
+    readonly routedAs?: ((id: string) => Routed | undefined) | undefined;
 }
-
 /**
  * A seat id the host routes by the graph: the phase it routes as, or
  * `undefined` for Jev to classify.
@@ -53,27 +50,24 @@ export interface Service {
  * @since 1.0.0
  */
 export interface Routed {
-  readonly phase: SeatRouter.Phase | undefined
+    readonly phase: SeatRouter.Phase | undefined;
 }
-
+declare const SeatResolver_base: Context.ServiceClass<SeatResolver, "@smthrs/agent/SeatResolver", Service>;
 /**
  * The {@link Service} tag.
  *
  * @category services
  * @since 1.0.0-rc.0
  */
-export class SeatResolver extends Context.Service<SeatResolver, Service>()(
-  "@smthrs/agent/SeatResolver"
-) {}
-
+export declare class SeatResolver extends SeatResolver_base {
+}
 /**
  * Builds a {@link Service} from an implementation of its one method.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const make = (implementation: Service): Service => SeatResolver.of(implementation)
-
+export declare const make: (implementation: Service) => Service;
 /**
  * A {@link Service} that resolves nothing.
  *
@@ -84,30 +78,21 @@ export const make = (implementation: Service): Service => SeatResolver.of(implem
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const makeNoop = (overrides: Partial<Service> = {}): Service =>
-  make({
-    resolve: (id) => Effect.fail(new Seat.SeatUnresolved({ seat: id, message: "No seat resolver is configured" })),
-    ...overrides
-  })
-
+export declare const makeNoop: (overrides?: Partial<Service>) => Service;
 /**
  * Provides {@link SeatResolver} from an implementation.
  *
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layer = (implementation: Service): Layer.Layer<SeatResolver> =>
-  Layer.succeed(SeatResolver)(make(implementation))
-
+export declare const layer: (implementation: Service) => Layer.Layer<SeatResolver>;
 /**
  * Provides {@link makeNoop}.
  *
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<SeatResolver> =>
-  Layer.succeed(SeatResolver)(makeNoop(overrides))
-
+export declare const layerNoop: (overrides?: Partial<Service>) => Layer.Layer<SeatResolver>;
 /**
  * The context window, in tokens, of a known model id, with a conservative
  * floor for models the catalog has not met. Never zero: zero is `CellTurn`'s
@@ -117,16 +102,12 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<SeatRes
  * @category resolvers
  * @since 1.0.0-rc.0
  */
-export const contextWindowTokensFor = ModelCatalog.contextWindowTokensFor
-
+export declare const contextWindowTokensFor: typeof ModelCatalog.contextWindowTokensFor;
 /**
  * Resolves steered context budgets through the host's seat vocabulary.
  *
  * @category resolvers
  * @since 1.0.0-rc.0
  */
-export const contextWindowResolver = (self: Service): (id: string) => Effect.Effect<number, HarnessError> => (id) =>
-  self.resolve(id).pipe(
-    Effect.map((seat) => seat.contextWindowTokens),
-    Effect.mapError((cause) => new HarnessError({ code: "assembly_failed", message: cause.message, cause }))
-  )
+export declare const contextWindowResolver: (self: Service) => (id: string) => Effect.Effect<number, HarnessError>;
+export {};

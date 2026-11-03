@@ -264,7 +264,7 @@ export const PlaywrightTestAgent = Flow.make("examples/PlaywrightTestAgent", {
 
 /** What a host supplies for the step that leaves the model. */
 export interface Host {
-  readonly runTests: (request: typeof RunRequest.Type) => Effect.Effect<TestRun>
+  readonly runTests: (request: typeof RunRequest.Type) => TestRun!!
 }
 
 /** Every step the flow calls, with the host's test runner. */

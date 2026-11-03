@@ -25,7 +25,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as Seat from "./Seat.ts"
+import * as Seat from "./Seat.vibe"
 
 /**
  * One system-prompt variant: what kind of task it fits and the system text a

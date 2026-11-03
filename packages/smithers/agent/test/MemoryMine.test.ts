@@ -26,8 +26,8 @@ import { Cause, Deferred, Effect, Exit, Layer, Metric, Option, Schema, Scope, St
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as MemoryMine from "../src/MemoryMine.ts"
-import { answererFor } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
+import { answererFor } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
 import * as Safety from "./Safety.ts"
 
 const bank = "project-0123456789abcdef"

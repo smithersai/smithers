@@ -16,7 +16,7 @@
  * @since 1.0.0
  */
 
-import { headOf, size } from "./repo.ts"
+import { headOf, size } from "./repo.vibe"
 
 /**
  * One selected item with its text.

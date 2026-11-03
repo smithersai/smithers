@@ -116,14 +116,14 @@ export const Classify = AgentAction.make("examples/ClassifierSwitchboard/Classif
 })
 
 /** The props each domain prompt was rendered with. */
-const HandlerPayload = Schema.Struct({
-  itemId: Schema.String,
-  content: Schema.String,
-  priority: Classified.fields.priority,
-  confidence: Schema.Number,
-  reasoning: Schema.String,
-  metadata: Schema.Record(Schema.String, Schema.String)
-})
+schema HandlerPayload {
+  itemId: string
+  content: string
+  priority: Classified.fields.priority
+  confidence: number
+  reasoning: string
+  metadata: Readonly<Record<string, string>>
+}
 
 const handler = <const Tag extends string>(tag: Tag, domain: string, role: string) =>
   AgentAction.make(tag, {

@@ -25,7 +25,7 @@ import { Effect, Layer, Option, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
 import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
 
 const decoder = new TextDecoder()

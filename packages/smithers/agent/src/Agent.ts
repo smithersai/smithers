@@ -90,8 +90,8 @@ import * as Checkpointed from "./Checkpointed.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
 import * as CallIdentity from "./internal/CallIdentity.ts"
 import * as MemoryMine from "./MemoryMine.ts"
-import * as QuotaPolicy from "./QuotaPolicy.ts"
-import * as Seat from "./Seat.ts"
+import * as QuotaPolicy from "./QuotaPolicy.vibe"
+import * as Seat from "./Seat.vibe"
 import * as StandardFlows from "./StandardFlows.ts"
 
 /**

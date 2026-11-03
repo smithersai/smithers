@@ -25,9 +25,9 @@ import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentAction from "../src/AgentAction.ts"
 import * as Budget from "../src/Budget.ts"
-import * as QuotaPolicy from "../src/QuotaPolicy.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 import * as StandardFlows from "../src/StandardFlows.ts"
 
 const Result = Schema.Struct({ summary: Schema.String, keyPoints: Schema.Array(Schema.String) })

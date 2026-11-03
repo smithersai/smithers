@@ -3,9 +3,9 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import type { Classified } from "../../../examples/use-cases/service-desk-dispatcher.ts"
-import { layer, ServiceDeskDispatcher } from "../../../examples/use-cases/service-desk-dispatcher.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import type { Classified } from "../../../examples/use-cases/service-desk-dispatcher.vibe"
+import { layer, ServiceDeskDispatcher } from "../../../examples/use-cases/service-desk-dispatcher.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "service-desk-dispatcher-"))
 
