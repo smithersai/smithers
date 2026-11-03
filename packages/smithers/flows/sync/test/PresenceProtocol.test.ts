@@ -3,7 +3,7 @@
  * a decoder answers `undefined` for anything the protocol does not define.
  */
 import { describe, expect, it } from "@effect/vitest"
-import * as PresenceProtocol from "../src/PresenceProtocol.ts"
+import * as PresenceProtocol from "../src/PresenceProtocol.vibe"
 
 const participant = (id: string, state: string | null = null): PresenceProtocol.Participant => ({
   id,

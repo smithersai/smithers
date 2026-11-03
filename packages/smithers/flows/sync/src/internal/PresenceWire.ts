@@ -5,7 +5,7 @@
  * @since 1.0.0-rc.17
  */
 
-import type { Participant } from "../PresenceProtocol.ts"
+import type { Participant } from "../PresenceProtocol.vibe"
 
 const utf8 = new TextEncoder()
 
