@@ -67,7 +67,7 @@ export * as FailureCopy from "./FailureCopy.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as Model from "./Model.ts"
+export * as Model from "./Model.vibe"
 
 /**
  * @since 1.0.0-rc.0

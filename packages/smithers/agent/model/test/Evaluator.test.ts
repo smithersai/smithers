@@ -17,7 +17,7 @@ import * as TestClock from "effect/testing/TestClock"
 import type { TestContext } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as Evaluator from "../src/Evaluator.ts"
-import * as Model from "../src/Model.ts"
+import * as Model from "../src/Model.vibe"
 import { ModelError } from "../src/ModelError.vibe"
 
 describe("public evaluator failures", () => {

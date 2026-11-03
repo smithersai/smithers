@@ -79,7 +79,7 @@ export const Model: Context.Service<Model, Model> = Context.Service("/model/Mode
  * @category references
  * @since 1.0.0
  */
-export const Liveness: Context.Reference<Effect.Effect<void>> = Context.Reference<Effect.Effect<void>>(
+export const Liveness: Context.Reference<void!!> = Context.Reference<void!!>(
   "/model/Model/Liveness",
   { defaultValue: () => Effect.void }
 )
