@@ -1,6 +1,4 @@
 {
-  // vibelang --fix-vip-only refused 3 calls that may have run before VIP-1 (decided detail 274): EK4802 is an error until each is migrated by hand; remove this setting when --fix-vip-only refuses none.
-  "vibe": {"severities": {"EK4802": "error"}},
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",

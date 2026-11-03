@@ -79,7 +79,7 @@ layer(platformLayer)("FileRouter", (it) => {
     const config: { mutable root: string } = { root: path.relative(path.resolve(), root) }
     // The scan starts at once, as runPromise would start it, so the root is
     // read before the caller rewrites its config.
-    const pending = fork (FileRouter.scan(config), { startImmediately: true })
+    const pending = try Effect.forkChild (FileRouter.scan(config), { startImmediately: true })
     config.root = "/"
     const result = join pending
 
