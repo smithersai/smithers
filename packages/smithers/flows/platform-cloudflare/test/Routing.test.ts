@@ -379,6 +379,28 @@ for (const target of Postgres.targets) {
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
     })
 
+    it.live("a child's alarm costs at most 215 round trips: a lone read of an engine table is one", () => {
+      const schema = Postgres.freshSchema()
+      return Effect.gen(function*() {
+        const scope = yield* Scope.make()
+        const trace = yield* Scope.provide(StatementTrace.proxy(target.url), scope)
+        const objects = Objects.make({
+          flows,
+          runtime: runtime({ record: Effect.succeed, database: Postgres.database(schema, trace.url) })
+        })
+        const parentId = `parent-${randomUUID()}`
+        const intent = yield* ExecutionObject.intent(Parent, { executionId: parentId, payload: { label: "once" } })
+        yield* ExecutionObject.start(objects.object(parentId).storage, intent, Effect.void)
+        yield* objects.alarm(parentId)
+        const childId = [...objects.objects.keys()].find((id) => id !== parentId)!
+        const before = trace.roundTrips()
+        yield* objects.alarm(childId)
+        // 276 before a lone read named its schema (decision 0150's engine query cuts, 2026-11-03).
+        expect(trace.roundTrips() - before).toBeLessThanOrEqual(215)
+        yield* Scope.close(scope, Exit.void)
+      }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
+    })
+
     it.live("a child's failure fails its parent", () => {
       const c = setup(target)
       const parentId = `guardian-${randomUUID()}`

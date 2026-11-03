@@ -1,0 +1,92 @@
+/**
+ * A lone read of the engine's tables, with their schema named in its text.
+ *
+ * The client's search path is set per transaction, because a pooler hands each
+ * transaction another server connection, so a lone statement costs four round
+ * trips: `BEGIN`, the schema, the statement and `COMMIT`. A read that names its
+ * tables' schema needs none of the other three. One TODO alarm made 31 such
+ * reads, 93 of its 276 round trips, each holding a pooled connection throughout
+ * (2026-11-03, `platform-cloudflare/test/Routing.test.ts`).
+ *
+ * Every engine table is named `flows_*`. `qualify` rewrites a statement only
+ * when it can prove the statement is one plain `SELECT` over those tables, and
+ * answers undefined for everything else, which stays framed. A name the rewrite
+ * misses fails loudly: outside the search path it resolves nowhere, unless
+ * `public` holds a table of that name, and each table position is checked so
+ * that no name is missed.
+ */
+
+const REFUSED =
+  /\b(for\s+(no\s+key\s+)?update|for\s+(key\s+)?share|current_schema|current_schemas|set_config|nextval|setval|currval|to_regclass|into)\b|\bpg_\w+|::\s*regclass/i
+
+/** The code of `sql` between its literals and quoted identifiers, or undefined if it can't be split with certainty. */
+const segments = (sql: string): ReadonlyArray<{ readonly code: boolean; readonly text: string }> | undefined => {
+  const parts: Array<{ readonly code: boolean; readonly text: string }> = []
+  let start = 0
+  for (let at = 0; at < sql.length; at++) {
+    const char = sql[at]!
+    if (
+      char === ";" || (char === "$" && sql[at + 1] === "$") || (char === "-" && sql[at + 1] === "-") ||
+      (char === "/" && sql[at + 1] === "*")
+    ) {
+      return undefined
+    }
+    if (char !== "'" && char !== "\"") continue
+    parts.push({ code: true, text: sql.slice(start, at) })
+    let end = at + 1
+    for (;;) {
+      const next = sql.indexOf(char, end)
+      if (next < 0) return undefined
+      if (sql[next + 1] !== char) {
+        end = next + 1
+        break
+      }
+      end = next + 2
+    }
+    const quoted = sql.slice(at, end)
+    // A quoted name could be a table's: the rewrite doesn't look inside it.
+    if (char === "\"" && /^"flows_/i.test(quoted)) {
+      const before = sql.slice(0, at).trimEnd()
+      if (/\b(from|join)$/i.test(before)) return undefined
+    }
+    parts.push({ code: false, text: quoted })
+    start = end
+    at = end - 1
+  }
+  parts.push({ code: true, text: sql.slice(start) })
+  return parts
+}
+
+/**
+ * `sql` with `schema` named on each `flows_*` table, when it is one plain read
+ * of only those tables; undefined when it isn't, or when that can't be proved.
+ *
+ * @category internals
+ * @since 1.0.0
+ */
+export const qualify = (sql: string, schema: string): string | undefined => {
+  if (!/^\s*select\b/i.test(sql)) return undefined
+  const parts = segments(sql)
+  if (parts === undefined) return undefined
+  const code = parts.filter((part) => part.code).map((part) => part.text).join(" \u0000 ")
+  if (REFUSED.test(code)) return undefined
+  // Each name in a table position must be an engine table, or a subquery's parenthesis.
+  let tables = 0
+  for (const match of code.matchAll(/\b(?:from|join)\s+([^\s(),]+|\()/gi)) {
+    if (match[1] === "(") continue
+    if (!/^flows_\w+$/i.test(match[1]!)) return undefined
+    tables++
+  }
+  if (tables === 0) return undefined
+  // A second table in a comma join isn't in a position the check above reads.
+  if (
+    /\b(?:from|join)\s+flows_\w+(?:\s+(?!where\b|group\b|order\b|limit\b|on\b|join\b|inner\b|left\b|right\b|cross\b|full\b|having\b|union\b|offset\b)(?:as\s+)?\w+)?\s*,/i
+      .test(code)
+  ) {
+    return undefined
+  }
+  const name = `"${schema.replaceAll("\"", "\"\"")}"`
+  return parts
+    .map((part) => part.code ? part.text.replace(/(?<![\w.])flows_\w+/gi, (table) => `${name}.${table}`) : part.text)
+    .join("")
+}

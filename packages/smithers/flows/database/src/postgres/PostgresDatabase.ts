@@ -59,6 +59,7 @@ import * as ReadTransaction from "../internal/ReadTransaction.ts"
 import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.ts"
 import * as WriteLock from "../internal/WriteLock.ts"
 import * as WriteTally from "../internal/WriteTally.ts"
+import { qualify } from "./QualifiedRead.ts"
 
 export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
 
@@ -353,12 +354,23 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
               : Effect.andThen(Effect.orDie(rollback(conn)), exit))
       )
     )
+  // A plain read of the engine's own tables names their schema instead: one
+  // round trip in place of four (`QualifiedRead`).
+  const lone = <A>(
+    conn: Connection,
+    sql: string,
+    run: (text: string) => Effect.Effect<A, SqlError>
+  ): Effect.Effect<A, SqlError> => {
+    const qualified = qualify(sql, schema)
+    return qualified === undefined ? alone(conn, run(sql)) : run(qualified)
+  }
   const statements = (conn: Connection): Connection => ({
-    execute: (sql, params, transformRows) => alone(conn, conn.execute(sql, params, transformRows)),
-    executeRaw: (sql, params) => alone(conn, conn.executeRaw(sql, params)),
-    executeValues: (sql, params) => alone(conn, conn.executeValues(sql, params)),
-    executeValuesUnprepared: (sql, params) => alone(conn, conn.executeValuesUnprepared(sql, params)),
-    executeUnprepared: (sql, params, transformRows) => alone(conn, conn.executeUnprepared(sql, params, transformRows)),
+    execute: (sql, params, transformRows) => lone(conn, sql, (text) => conn.execute(text, params, transformRows)),
+    executeRaw: (sql, params) => lone(conn, sql, (text) => conn.executeRaw(text, params)),
+    executeValues: (sql, params) => lone(conn, sql, (text) => conn.executeValues(text, params)),
+    executeValuesUnprepared: (sql, params) => lone(conn, sql, (text) => conn.executeValuesUnprepared(text, params)),
+    executeUnprepared: (sql, params, transformRows) =>
+      lone(conn, sql, (text) => conn.executeUnprepared(text, params, transformRows)),
     // A stream commits after its last row; one abandoned early, failed or
     // interrupted rolls back when its scope closes.
     executeStream: (sql, params, transformRows) =>
