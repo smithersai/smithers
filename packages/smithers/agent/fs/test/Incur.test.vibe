@@ -7,6 +7,8 @@ import * as Route from "../src/Route.vibe"
 import visible from "./fixtures/command/visible.ts"
 import { failureOf, latchedInvoke, makeRoute, recordedImports, recordedModule, refinedModule } from "./helpers.vibe"
 import { removeDirectory, spyOnConsole, writeStuckModule } from "./modules.ts"
+import { Request } from "./hostGlobals.ts"
+import { hostGlobals } from "./hostGlobals.ts"
 
 // Every test runs with `it.live`: a CLI keeps the services of the fiber that
 // created it, so a test clock would freeze its metadata deadline and a test
@@ -152,7 +154,7 @@ effect function call(cli: Cli, transport: typeof transports[number]) {
 describe("Incur projection", () => {
   it.live("bounds a native import stuck in top-level await and discovers sibling routes", effect () => {
     const gate = makeGate()
-    const globals = globalThis as { mutable fsMetadataGate?: Promise<void> }
+    const globals = hostGlobals as { mutable fsMetadataGate?: Promise<void> }
     globals.fsMetadataGate = gate.promise
     const { directory, source } = try sync(async () => writeStuckModule())
     const { cli } = try makeCli([makeRoute("a-stuck", source), makeRoute("review")])

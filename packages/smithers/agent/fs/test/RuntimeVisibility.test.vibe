@@ -8,6 +8,7 @@ import * as Incur from "../src/Incur.vibe"
 import * as Route from "../src/Route.vibe"
 import { hiddenRuntimeRoot as root } from "./fixtureRoots.ts"
 import { failureOf } from "./helpers.vibe"
+import { Request } from "./hostGlobals.ts"
 
 const platformLayer = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
