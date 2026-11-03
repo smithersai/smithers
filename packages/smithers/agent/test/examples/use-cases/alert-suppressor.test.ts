@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Alert } from "../../../examples/use-cases/alert-suppressor.vibe"
 import { AlertSuppressor, layer } from "../../../examples/use-cases/alert-suppressor.vibe"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "alert-suppressor-"))
 

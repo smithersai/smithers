@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { InvoiceApprovalWatch, layer } from "../../../examples/use-cases/invoice-approval-watch.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import { InvoiceApprovalWatch, layer } from "../../../examples/use-cases/invoice-approval-watch.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "invoice-approval-watch-"))
 

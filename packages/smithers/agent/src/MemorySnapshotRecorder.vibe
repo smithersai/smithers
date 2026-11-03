@@ -11,31 +11,28 @@
 
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import * as SnapshotRecorder from "@smthrs/memory/SnapshotRecorder"
-import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
-const record = <R>(
+const record = effect <R>(
   engine: EngineLike.EngineLike,
   identity: SnapshotRecorder.Identity,
-  effect: Effect.Effect<SnapshotRecorder.Snapshot, never, R>
-): Effect.Effect<SnapshotRecorder.Snapshot, never, R> =>
-  Effect.gen(function*() {
-    const services = yield* Effect.context<R>()
-    return yield* engine.record({
-      name: "memory-snapshot",
-      identity: {
-        session: identity.lineageId,
-        frame: identity.iteration,
-        boundary: "opening-context"
-      },
-      success: SnapshotRecorder.Snapshot,
-      execute: Effect.provideContext(effect, services)
-    }).pipe(
-      // Continuing with a live value after the recorder fails would recreate
-      // the replay divergence this adapter exists to prevent.
-      Effect.orDie
-    )
+  effect: SnapshotRecorder.Snapshot!!R
+): SnapshotRecorder.Snapshot!!R => {
+  const services = try Effect.context<R>()
+  return try (engine.record({
+    name: "memory-snapshot",
+    identity: {
+      session: identity.lineageId,
+      frame: identity.iteration,
+      boundary: "opening-context"
+    },
+    success: SnapshotRecorder.Snapshot,
+    execute: Effect.provideContext(effect, services)
   })
+    // Continuing with a live value after the recorder fails would recreate
+    // the replay divergence this adapter exists to prevent.
+    |> Effect.orDie(%))
+}
 
 /**
  * Builds the memory recorder backed by a harness engine.

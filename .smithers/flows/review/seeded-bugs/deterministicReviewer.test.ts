@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect, Result, Stream } from "effect";
 import * as Cell from "../../../../packages/smithers/agent/harness/src/Cell.ts";
 import { readFileSync } from "node:fs";
-import * as SeatResolver from "../../../../packages/smithers/agent/src/SeatResolver.ts";
+import * as SeatResolver from "../../../../packages/smithers/agent/src/SeatResolver.vibe";
 import { addedLines, readPrompt, replacedLines, reviewDiff } from "./deterministicReviewer.ts";
 import { loadCorpus } from "./labels.ts";
 import { scriptedModel, scriptedSeats } from "./scriptedSeats.vibe";

@@ -4,7 +4,7 @@ import * as Recall from "@smthrs/memory/Recall"
 import * as Source from "@smthrs/memory/Source"
 import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as MemorySnapshotRecorder from "../src/MemorySnapshotRecorder.ts"
+import * as MemorySnapshotRecorder from "../src/MemorySnapshotRecorder.vibe"
 
 describe("MemorySnapshotRecorder", () => {
   it("replays the opening snapshot through EngineLike.record for a resumed source", async () => {

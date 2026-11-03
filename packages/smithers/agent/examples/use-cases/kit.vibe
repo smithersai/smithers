@@ -22,9 +22,7 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Option from "effect/Option"
 import type * as Schema from "effect/Schema"
-import * as Stream from "effect/Stream"
 
 /**
  * Answers one model request.
@@ -143,13 +141,13 @@ export const run = <
   options: RunOptions<ROut, RIn>
 ) =>
   Effect.scoped(
-    flow.execute(payload, { executionId: options.executionId }).pipe(
-      Effect.provide(
+    flow.execute(payload, { executionId: options.executionId })
+      |> Effect.provide(
+        %,
         Layer.mergeAll(options.actions, Interpreter.layer(flow)).pipe(
           Layer.provideMerge(agents(options.script)),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(TestNodeRuntime.durableEngine(options.filename, "examples-use-cases"))
         )
       )
-    )
   )

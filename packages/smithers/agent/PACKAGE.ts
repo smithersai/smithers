@@ -56,12 +56,12 @@ const importRules = ImportRules({
   rules: [
     {
       kind: "forbidHostModules",
-      files: ["src/Memory.ts", "src/MemoryCalibration.ts", "src/MemoryMine.ts", "src/PromoteFlows.ts"],
+      files: ["src/Memory.ts", "src/MemoryCalibration.vibe", "src/MemoryMine.ts", "src/PromoteFlows.vibe"],
       because: "sdk.platform-neutral: memory and promotion receive host services through Effect."
     },
     {
       kind: "forbidCalls",
-      files: ["src/Memory.ts", "src/MemoryCalibration.ts", "src/MemoryMine.ts", "src/PromoteFlows.ts"],
+      files: ["src/Memory.ts", "src/MemoryCalibration.vibe", "src/MemoryMine.ts", "src/PromoteFlows.vibe"],
       callees: ["*.runPromise", "*.runSync", "*.runFork", "*.runCallback"],
       because: "effect.boundary-only: these library functions return Effects."
     },
@@ -196,7 +196,7 @@ const securityReview = Smithers.SecurityReview({
         "makeMemory or a custom store accepting file keys outside .smithers/flows/<id>/ because only the id is validated.",
         "Rollback or generation cleanup removing a path that was not staged by this save."
       ],
-      paths: ["src/FlowStore.ts", "src/PromoteFlows.ts"]
+      paths: ["src/FlowStore.ts", "src/PromoteFlows.vibe"]
     },
     {
       id: "promoted-flow-activation",
@@ -208,7 +208,7 @@ const securityReview = Smithers.SecurityReview({
         "A saved flow's declared capabilities not intersected with the writing run's capability ceiling when it is later invoked.",
         "Executable module loading that runs a flow whose content digest differs from the approved execution digest."
       ],
-      paths: ["src/PromoteFlows.ts", "src/Agent.ts", "src/AgentSession.ts", "src/CellPlugin.ts"]
+      paths: ["src/PromoteFlows.vibe", "src/Agent.ts", "src/AgentSession.ts", "src/CellPlugin.ts"]
     },
     {
       id: "capability-envelope-attenuation",
@@ -301,8 +301,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Budget.ts",
-        "src/RunawayGuard.ts",
-        "src/QuotaPolicy.ts",
+        "src/RunawayGuard.vibe",
+        "src/QuotaPolicy.vibe",
         "src/FlowEngineLike.ts",
         "src/ModelStep.ts",
         "src/internal/ModelStep.ts",
@@ -319,7 +319,7 @@ const securityReview = Smithers.SecurityReview({
         "supervisorMemory or MemorySnapshotRecorder writing a sentence without redaction.",
         "Fields renamed (spent, generation params) to dodge redaction that could still carry secret values."
       ],
-      paths: ["src/AgentSession.ts", "src/Agent.ts", "src/EventSink.ts", "src/MemorySnapshotRecorder.ts"]
+      paths: ["src/AgentSession.ts", "src/Agent.ts", "src/EventSink.ts", "src/MemorySnapshotRecorder.vibe"]
     },
     {
       id: "seat-routing-injection",
@@ -331,7 +331,7 @@ const securityReview = Smithers.SecurityReview({
         "A system-prompt variant choice that changes capabilities rather than only prompt text.",
         "ScriptedJudge answers reachable in production composition."
       ],
-      paths: ["src/SeatRouter.ts", "src/SeatResolver.ts", "src/Seat.ts", "src/AgentAction.ts", "src/ScriptedJudge.ts"]
+      paths: ["src/SeatRouter.ts", "src/SeatResolver.vibe", "src/Seat.vibe", "src/AgentAction.ts", "src/ScriptedJudge.vibe"]
     },
     {
       id: "smithers-plugin-ports",
@@ -343,7 +343,7 @@ const securityReview = Smithers.SecurityReview({
         "smithers.run declaring no capabilities, so the envelope never gates which flow it starts.",
         "Port error messages returned to the model that expose host paths or credentials."
       ],
-      paths: ["src/SmithersPlugin.ts"]
+      paths: ["src/SmithersPlugin.vibe"]
     }
   ]
 })

@@ -23,7 +23,7 @@ import { ExternalJob, Fault, type Flow, SpanFailure } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
-import * as AgentRunner from "./AgentRunner.ts"
+import * as AgentRunner from "./AgentRunner.vibe"
 
 /**
  * Why an external agent step failed: a runner's {@link AgentRunner.FAILURES}
@@ -151,11 +151,10 @@ const attributes = (handle: Handle) => ({
 })
 
 /** Runs `self` in the operation's span, with the job's key on every log line it writes. */
-const traced = (operation: string, handle: Handle) => <A, E, R>(self: Effect.Effect<A, E, R>) =>
-  self.pipe(
-    Effect.annotateLogs({ key: handle.key, agent: handle.agent }),
-    SpanFailure.withSpan(`agent.external.${operation}`, { attributes: attributes(handle) })
-  )
+const traced = (operation: string, handle: Handle) => <A, E, R>(self: A!E!R) =>
+  self
+  |> Effect.annotateLogs({ key: handle.key, agent: handle.agent })(%)
+  |> SpanFailure.withSpan(`agent.external.${operation}`, { attributes: attributes(handle) })(%)
 
 const count = (handle: Handle, outcome: string, reason?: string) =>
   Metric.update(
@@ -224,71 +223,74 @@ export const make = <const Tag extends string, P extends Schema.Struct.Fields | 
   const start = (payload: PayloadOf<P>, key: string) =>
     Effect.suspend(() => {
       const { handle, task } = handleOf(payload, key)
-      return Effect.gen(function*() {
+      return effect {
         if (!isTask(task)) {
-          return yield* Effect.die(new TypeError(`ExternalAgent ${tag}: task(payload) is not an AgentRunner.Task`))
+          return try Effect.die(new TypeError(`ExternalAgent ${tag}: task(payload) is not an AgentRunner.Task`))
         }
-        const store = yield* AgentRunner.AgentJobs
-        yield* store.start(task, key)
-        yield* count(handle, "started")
-        yield* Effect.logInfo("An external agent job was queued")
+        const store = try AgentRunner.AgentJobs
+        try store.start(task, key)
+        try count(handle, "started")
+        try Effect.logInfo("An external agent job was queued")
         return handle
-      }).pipe(traced("start", handle))
+      } |> traced("start", handle)(%)
     })
   const status = (handle: Handle) =>
-    Effect.gen(function*() {
-      const store = yield* AgentRunner.AgentJobs
-      const standing = yield* store.status(handle.key)
-      yield* Effect.annotateCurrentSpan({ "smithers.external_agent.standing": standing._tag })
+    effect {
+      const store = try AgentRunner.AgentJobs
+      const standing = try store.status(handle.key)
+      try Effect.annotateCurrentSpan({ "smithers.external_agent.standing": standing._tag })
       if (standing._tag === "Running") return { _tag: "Running" as const }
       if (standing._tag === "Again") {
-        yield* count(handle, "again")
-        yield* Effect.logInfo("An external agent job ended retryable")
+        try count(handle, "again")
+        try Effect.logInfo("An external agent job ended retryable")
         return { _tag: "Lost" as const }
       }
       return { _tag: "Exited" as const, exitCode: exitCodeOf(standing.outcome) }
-    }).pipe(traced("status", handle))
+    } |> traced("status", handle)(%)
   const collect = (handle: Handle) =>
-    Effect.gen(function*() {
-      const store = yield* AgentRunner.AgentJobs
-      const standing = yield* store.status(handle.key)
+    effect {
+      const store = try AgentRunner.AgentJobs
+      const standing = try store.status(handle.key)
       if (standing._tag !== "Ended") {
-        return yield* new ExternalJob.Again({ message: `Job ${handle.key} read as open after it ended` })
+        throw new ExternalJob.Again({ message: `Job ${handle.key} read as open after it ended` })
       }
       const outcome = standing.outcome
       if (outcome._tag === "Done") {
-        yield* count(handle, "done")
-        yield* Effect.logInfo("An external agent job finished").pipe(Effect.annotateLogs({ outcome: "done" }))
+        try count(handle, "done")
+        try (Effect.logInfo("An external agent job finished") |> Effect.annotateLogs({ outcome: "done" })(%))
         return {
           changes: outcome.changes,
           summary: outcome.summary,
           usage: outcome.usage,
-          generation: AgentRunner.parseKey(handle.key).generation
+          generation: (try Effect.orDie(Effect.try({
+            try: () => AgentRunner.parseKey(handle.key),
+            catch: (error) => error
+          }))).generation
         }
       }
       // The store answers Retryable only as Again, so an ended job is Failed or Cancelled here.
       const reason = outcome._tag === "Failed" ? outcome.reason : "cancelled"
-      yield* count(handle, "failed", reason)
-      yield* Effect.logWarning("An external agent job failed").pipe(Effect.annotateLogs({ outcome: reason }))
-      return yield* new AgentFailed({ reason })
-    }).pipe(traced("collect", handle))
+      try count(handle, "failed", reason)
+      try (Effect.logWarning("An external agent job failed") |> Effect.annotateLogs({ outcome: reason })(%))
+      throw new AgentFailed({ reason })
+    } |> traced("collect", handle)(%)
   const cancel = (handle: Handle) =>
-    Effect.gen(function*() {
-      const store = yield* AgentRunner.AgentJobs
-      yield* store.cancel(handle.key)
-      yield* Effect.logInfo("An external agent job was cancelled")
-    }).pipe(traced("cancel", handle))
+    effect {
+      const store = try AgentRunner.AgentJobs
+      try store.cancel(handle.key)
+      try Effect.logInfo("An external agent job was cancelled")
+    } |> traced("cancel", handle)(%)
   // The store may have queued a key whose start never answered. Its cancel of a key not yet started wins over a
   // later start of it.
   const abandon = (payload: PayloadOf<P>, key: string) =>
     Effect.suspend(() => {
       const { handle } = handleOf(payload, key)
-      return Effect.gen(function*() {
-        const store = yield* AgentRunner.AgentJobs
-        yield* store.cancel(key)
-        yield* count(handle, "abandoned")
-        yield* Effect.logInfo("An external agent job was abandoned before its start answered")
-      }).pipe(traced("abandon", handle))
+      return effect {
+        const store = try AgentRunner.AgentJobs
+        try store.cancel(key)
+        try count(handle, "abandoned")
+        try Effect.logInfo("An external agent job was abandoned before its start answered")
+      } |> traced("abandon", handle)(%)
     })
   const toLayer = () =>
     implement({

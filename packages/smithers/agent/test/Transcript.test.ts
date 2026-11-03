@@ -1,7 +1,7 @@
 /** Transcript events: what a runner may send of an agent's session, scrubbed and bounded before it leaves. */
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as AgentRunner from "../src/AgentRunner.ts"
+import * as AgentRunner from "../src/AgentRunner.vibe"
 import * as Transcript from "../src/Transcript.ts"
 
 const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length

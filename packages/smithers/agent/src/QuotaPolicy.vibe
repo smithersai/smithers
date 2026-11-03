@@ -377,4 +377,4 @@ export const defaultMaxParks = 8
  * @category accessors
  * @since 0.1.0
  */
-export const current: Effect.Effect<Service, never, QuotaClassifier> = QuotaClassifier
+export const current: Service!never!QuotaClassifier = QuotaClassifier

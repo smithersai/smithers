@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { CommandWatchdog, layer } from "../../../examples/use-cases/command-watchdog.vibe"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "command-watchdog-"))
 

@@ -10,8 +10,8 @@ import {
   DefendingCode,
   layer,
   targetSource
-} from "../../../examples/use-cases/defending-code.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+} from "../../../examples/use-cases/defending-code.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "defending-code-"))
 

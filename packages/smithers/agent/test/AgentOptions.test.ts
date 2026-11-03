@@ -44,8 +44,8 @@ import type * as AgentAction from "../src/AgentAction.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
 import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {

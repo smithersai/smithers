@@ -24,14 +24,10 @@
  *
  * @since 1.0.0-rc.0
  */
-
-import * as Fault from "@smthrs/flow/Fault"
-import * as Evaluator from "@smthrs/model/Evaluator"
-import type * as Model from "@smthrs/model/Model"
-import type * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
-import type * as FlowEngineLike from "./FlowEngineLike.ts"
-
+import type * as Model from "@smthrs/model/Model";
+import type * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import type * as FlowEngineLike from "../../../src/FlowEngineLike.ts";
 /**
  * One resolved seat: the declared id, the resolved provider model id, the model
  * to stream from, the route that seals its requests, and the model's context
@@ -41,26 +37,28 @@ import type * as FlowEngineLike from "./FlowEngineLike.ts"
  * @since 1.0.0-rc.0
  */
 export interface Seat {
-  /** The declared seat string this record was resolved from. */
-  readonly id: string
-  /** The resolved provider model id used for generation and compaction. */
-  readonly modelId: string
-  readonly model: Model.Model
-  readonly route: FlowEngineLike.RouteResolver
-  /** Zero disables compaction, so a resolver must never report it. */
-  readonly contextWindowTokens: number
-  /** Host-owned selection refreshed before sealing each new model call. */
-  readonly refresh?: ((callKey?: string) => Effect.Effect<Seat, SeatUnresolved>) | undefined
+    /** The declared seat string this record was resolved from. */
+    readonly id: string;
+    /** The resolved provider model id used for generation and compaction. */
+    readonly modelId: string;
+    readonly model: Model.Model;
+    readonly route: FlowEngineLike.RouteResolver;
+    /** Zero disables compaction, so a resolver must never report it. */
+    readonly contextWindowTokens: number;
+    /** Host-owned selection refreshed before sealing each new model call. */
+    readonly refresh?: ((callKey?: string) => Effect.Effect<Seat, SeatUnresolved>) | undefined;
 }
-
 /**
  * Constructs a resolved seat.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const make = (seat: Seat): Seat => seat
-
+export declare const make: (seat: Seat) => Seat;
+declare const SeatUnresolved_base: Schema.Class<SeatUnresolved, Schema.TaggedStruct<"@smthrs/agent/Seat/SeatUnresolved", {
+    readonly seat: Schema.String;
+    readonly message: Schema.String;
+}>, import("effect/Cause").YieldableError>;
 /**
  * A seat the host could not turn into a model route: an unknown provider, a
  * missing API key, an invalid endpoint.
@@ -68,14 +66,8 @@ export const make = (seat: Seat): Seat => seat
  * @category errors
  * @since 1.0.0-rc.0
  */
-export class SeatUnresolved extends Schema.TaggedError<SeatUnresolved>()(
-  "@smthrs/agent/Seat/SeatUnresolved",
-  {
-    seat: Schema.String,
-    message: Schema.String
-  }
-) {}
-
+export declare class SeatUnresolved extends SeatUnresolved_base {
+}
 /**
  * The declared seat that asks Jev to pick the model: see
  * {@link module:SeatRouter}.
@@ -83,8 +75,12 @@ export class SeatUnresolved extends Schema.TaggedError<SeatUnresolved>()(
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const auto = "auto"
-
+export declare const auto = "auto";
+declare const SeatUnrouted_base: Schema.Class<SeatUnrouted, Schema.TaggedStruct<"@smthrs/agent/Seat/SeatUnrouted", {
+    readonly seat: Schema.String;
+    readonly reason: Schema.Literals<readonly ["interrupted", "no_candidates", "unconfigured", "unreachable", "refused", "empty", "timeout", "invalid_answer", "invalid_question"]>;
+    readonly message: Schema.String;
+}>, import("effect/Cause").YieldableError>;
 /**
  * A seat Jev could not pick. `reason` is `unconfigured` when no catalog or
  * judge is bound, `no_candidates` when the catalog offers no seat the routing
@@ -94,30 +90,8 @@ export const auto = "auto"
  * @category errors
  * @since 1.0.0-rc.0
  */
-export class SeatUnrouted extends Schema.TaggedError<SeatUnrouted>()(
-  "@smthrs/agent/Seat/SeatUnrouted",
-  {
-    seat: Schema.String,
-    reason: Schema.Literals([
-      "interrupted",
-      "no_candidates",
-      ...Evaluator.EvaluatorErrorCode.literals
-    ]),
-    message: Schema.String
-  }
-) {}
-
-Fault.register("@smthrs/agent/Seat/SeatUnresolved", "user")
-Fault.register(
-  "@smthrs/agent/Seat/SeatUnrouted",
-  {
-    interrupted: "infra",
-    no_candidates: "factory",
-    ...Evaluator.faults
-  } satisfies Fault.Rows<SeatUnrouted["reason"]>,
-  "reason"
-)
-
+export declare class SeatUnrouted extends SeatUnrouted_base {
+}
 /**
  * The model id half of a seat string.
  *
@@ -129,7 +103,5 @@ Fault.register(
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const modelIdOf = (id: string): string => {
-  const separator = id.indexOf(":")
-  return separator < 0 ? id : id.slice(separator + 1)
-}
+export declare const modelIdOf: (id: string) => string;
+export {};

@@ -196,7 +196,7 @@ export const DocsPatcher = Flow.make("examples/DocsPatcher", {
 export interface Host {
   readonly createPullRequest: (
     request: typeof PullRequestRequest.Type
-  ) => Effect.Effect<typeof PullRequest.Type>
+  ) => typeof PullRequest.Type!!
 }
 
 /** Every step the flow calls, with the host's pull-request step. */

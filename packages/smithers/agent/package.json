@@ -107,8 +107,8 @@
       "default": "./.vibelang/js/src/Memory.js"
     },
     "./MemoryCalibration": {
-      "types": "./src/MemoryCalibration.ts",
-      "vibelang-source": "./src/MemoryCalibration.ts",
+      "types": "./.vibe/declarations/src/MemoryCalibration.d.vibe.ts",
+      "vibelang-source": "./src/MemoryCalibration.vibe",
       "default": "./.vibelang/js/src/MemoryCalibration.js"
     },
     "./MemoryMine": {
@@ -117,33 +117,33 @@
       "default": "./.vibelang/js/src/MemoryMine.js"
     },
     "./MemorySnapshotRecorder": {
-      "types": "./src/MemorySnapshotRecorder.ts",
-      "vibelang-source": "./src/MemorySnapshotRecorder.ts",
+      "types": "./.vibe/declarations/src/MemorySnapshotRecorder.d.vibe.ts",
+      "vibelang-source": "./src/MemorySnapshotRecorder.vibe",
       "default": "./.vibelang/js/src/MemorySnapshotRecorder.js"
     },
     "./PromoteFlows": {
-      "types": "./src/PromoteFlows.ts",
-      "vibelang-source": "./src/PromoteFlows.ts",
+      "types": "./.vibe/declarations/src/PromoteFlows.d.vibe.ts",
+      "vibelang-source": "./src/PromoteFlows.vibe",
       "default": "./.vibelang/js/src/PromoteFlows.js"
     },
     "./QuotaPolicy": {
-      "types": "./src/QuotaPolicy.ts",
-      "vibelang-source": "./src/QuotaPolicy.ts",
+      "types": "./.vibe/declarations/src/QuotaPolicy.d.vibe.ts",
+      "vibelang-source": "./src/QuotaPolicy.vibe",
       "default": "./.vibelang/js/src/QuotaPolicy.js"
     },
     "./RunawayGuard": {
-      "types": "./src/RunawayGuard.ts",
-      "vibelang-source": "./src/RunawayGuard.ts",
+      "types": "./.vibe/declarations/src/RunawayGuard.d.vibe.ts",
+      "vibelang-source": "./src/RunawayGuard.vibe",
       "default": "./.vibelang/js/src/RunawayGuard.js"
     },
     "./Seat": {
-      "types": "./src/Seat.ts",
-      "vibelang-source": "./src/Seat.ts",
+      "types": "./.vibe/declarations/src/Seat.d.vibe.ts",
+      "vibelang-source": "./src/Seat.vibe",
       "default": "./.vibelang/js/src/Seat.js"
     },
     "./SeatResolver": {
-      "types": "./src/SeatResolver.ts",
-      "vibelang-source": "./src/SeatResolver.ts",
+      "types": "./.vibe/declarations/src/SeatResolver.d.vibe.ts",
+      "vibelang-source": "./src/SeatResolver.vibe",
       "default": "./.vibelang/js/src/SeatResolver.js"
     },
     "./SeatRouter": {
@@ -152,8 +152,8 @@
       "default": "./.vibelang/js/src/SeatRouter.js"
     },
     "./SmithersPlugin": {
-      "types": "./src/SmithersPlugin.ts",
-      "vibelang-source": "./src/SmithersPlugin.ts",
+      "types": "./.vibe/declarations/src/SmithersPlugin.d.vibe.ts",
+      "vibelang-source": "./src/SmithersPlugin.vibe",
       "default": "./.vibelang/js/src/SmithersPlugin.js"
     },
     "./StandardFlows": {
@@ -177,23 +177,23 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./ScriptedJudge": {
-      "types": "./src/ScriptedJudge.ts",
-      "vibelang-source": "./src/ScriptedJudge.ts",
+      "types": "./.vibe/declarations/src/ScriptedJudge.d.vibe.ts",
+      "vibelang-source": "./src/ScriptedJudge.vibe",
       "default": "./.vibelang/js/src/ScriptedJudge.js"
     },
     "./Acp": {
-      "types": "./src/Acp.ts",
-      "vibelang-source": "./src/Acp.ts",
+      "types": "./.vibe/declarations/src/Acp.d.vibe.ts",
+      "vibelang-source": "./src/Acp.vibe",
       "default": "./.vibelang/js/src/Acp.js"
     },
     "./AgentRunner": {
-      "types": "./src/AgentRunner.ts",
-      "vibelang-source": "./src/AgentRunner.ts",
+      "types": "./.vibe/declarations/src/AgentRunner.d.vibe.ts",
+      "vibelang-source": "./src/AgentRunner.vibe",
       "default": "./.vibelang/js/src/AgentRunner.js"
     },
     "./ExternalAgent": {
-      "types": "./src/ExternalAgent.ts",
-      "vibelang-source": "./src/ExternalAgent.ts",
+      "types": "./.vibe/declarations/src/ExternalAgent.d.vibe.ts",
+      "vibelang-source": "./src/ExternalAgent.vibe",
       "default": "./.vibelang/js/src/ExternalAgent.js"
     },
     "./Transcript": {

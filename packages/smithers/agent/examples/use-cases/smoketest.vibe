@@ -133,12 +133,10 @@ export const Smoketest = Flow.make("examples/Smoketest", {
 
 /** What a host supplies for the steps that run commands. */
 export interface Host {
-  readonly setup: (request: { readonly directory: string; readonly setupCmd: string }) => Effect.Effect<
-    typeof SetupResult.Type
-  >
+  readonly setup: (request: { readonly directory: string; readonly setupCmd: string }) => typeof SetupResult.Type!!
   readonly runCheck: (
     request: { readonly name: string; readonly cmd: string; readonly directory: string; readonly timeoutMs: number }
-  ) => Effect.Effect<CheckResult, CheckFailed>
+  ) => CheckResult!CheckFailed
 }
 
 /** Every step the flow calls, as the host implements them. */

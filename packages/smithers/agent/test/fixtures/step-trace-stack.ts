@@ -16,10 +16,10 @@ import * as Agent from "../../src/Agent.ts"
 import * as AgentAction from "../../src/AgentAction.ts"
 import * as Budget from "../../src/Budget.ts"
 import * as EventSink from "../../src/EventSink.ts"
-import * as QuotaPolicy from "../../src/QuotaPolicy.ts"
-import * as ScriptedJudge from "../../src/ScriptedJudge.ts"
-import * as Seat from "../../src/Seat.ts"
-import * as SeatResolver from "../../src/SeatResolver.ts"
+import * as QuotaPolicy from "../../src/QuotaPolicy.vibe"
+import * as ScriptedJudge from "../../src/ScriptedJudge.vibe"
+import * as Seat from "../../src/Seat.vibe"
+import * as SeatResolver from "../../src/SeatResolver.vibe"
 
 export const Step = AgentAction.make("agent/test/trace/Step", {
   payload: { input: Schema.String },

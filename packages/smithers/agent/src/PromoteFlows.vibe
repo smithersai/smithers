@@ -32,8 +32,6 @@ import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import type * as Context from "effect/Context"
-import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as FlowStore from "./FlowStore.ts"
 
@@ -214,17 +212,16 @@ export const source = (
     FlowBinding.provide(
       FlowBinding.make({
         flow: showScriptFlow,
-        handler: (input) =>
-          Effect.gen(function*() {
-            const history = yield* CellHistory.CellHistory
-            const cells = yield* history.cells()
-            const rules = options.bestPractices ?? bestPractices
-            return {
-              cells: cells.map((cell) => ({ ordinal: cell.ordinal, source: cell.source })),
-              bestPractices: input.bestPractices === undefined ? rules : `${rules}\n${input.bestPractices}`,
-              template: options.template ?? flowTemplate
-            }
-          })
+        handler: effect (input) => {
+          const history = try CellHistory.CellHistory
+          const cells = try history.cells()
+          const rules = options.bestPractices ?? bestPractices
+          return {
+            cells: cells.map((cell) => ({ ordinal: cell.ordinal, source: cell.source })),
+            bestPractices: input.bestPractices === undefined ? rules : `${rules}\n${input.bestPractices}`,
+            template: options.template ?? flowTemplate
+          }
+        }
       }),
       services
     ),
@@ -232,37 +229,32 @@ export const source = (
       FlowBinding.make({
         flow: writeFlowFlow,
         publicError: (error: FlowStore.FlowStoreError) => error.message,
-        handler: (input) =>
-          Effect.gen(function*() {
-            // Checked here as well as in the store, because a store that keeps
-            // nothing would otherwise answer a bad id with "nowhere to save"
-            // and send the model off to fix the wrong thing.
-            yield* FlowStore.validateId(input.id)
-            yield* Effect.annotateCurrentSpan({ flow: input.id })
-            const store = yield* FlowStore.FlowStore
-            const written = yield* store.write(input.id, filesFor(input))
-            // The registry is optional and its rescan is best effort: the files
-            // are already saved, so a rescan that failed makes the flow appear
-            // one refresh later rather than making the save a lie.
-            const registry = yield* Effect.serviceOption(Registry.Registry)
-            const warning = yield* Option.match(registry, {
-              onNone: () => Effect.succeed(undefined),
-              onSome: (found) =>
-                found.refresh().pipe(
-                  Effect.as(undefined),
-                  Effect.catch((error) =>
-                    Effect.gen(function*() {
-                      yield* Effect.annotateCurrentSpan({ discovery: "failed", "error.type": error.code })
-                      yield* Effect.logWarning("Saved flow registry refresh failed").pipe(
-                        Effect.annotateLogs({ code: error.code })
-                      )
-                      return `Flow saved; registry refresh failed (${error.code}).`
-                    })
-                  )
-                )
-            })
-            return warning === undefined ? { files: written.files } : { files: written.files, warning }
+        handler: effect (input) => {
+          // Checked here as well as in the store, because a store that keeps
+          // nothing would otherwise answer a bad id with "nowhere to save"
+          // and send the model off to fix the wrong thing.
+          try FlowStore.validateId(input.id)
+          try Effect.annotateCurrentSpan({ flow: input.id })
+          const store = try FlowStore.FlowStore
+          const written = try store.write(input.id, filesFor(input))
+          // The registry is optional and its rescan is best effort: the files
+          // are already saved, so a rescan that failed makes the flow appear
+          // one refresh later rather than making the save a lie.
+          const registry = try Effect.serviceOption(Registry.Registry)
+          const warning = try Option.match(registry, {
+            onNone: () => Effect.succeed(undefined),
+            onSome: (found) =>
+              found.refresh()
+              |> Effect.as(%, undefined)
+              |> Effect.catch(%, effect (error) => {
+                try Effect.annotateCurrentSpan({ discovery: "failed", "error.type": error.code })
+                try (Effect.logWarning("Saved flow registry refresh failed")
+                  |> Effect.annotateLogs({ code: error.code })(%))
+                return `Flow saved; registry refresh failed (${error.code}).`
+              })
           })
+          return warning === undefined ? { files: written.files } : { files: written.files, warning }
+        }
       }),
       services
     )

@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, SocialInboxRouter } from "../../../examples/use-cases/social-inbox-router.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import { layer, SocialInboxRouter } from "../../../examples/use-cases/social-inbox-router.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "social-inbox-router-"))
 

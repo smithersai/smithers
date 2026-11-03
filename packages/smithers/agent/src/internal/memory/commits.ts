@@ -11,7 +11,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { headOf, run } from "./repo.ts"
+import { headOf, run } from "./repo.vibe"
 
 /**
  * One candidate commit. `text` is what Jev reads and what a pack renders.

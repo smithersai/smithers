@@ -82,7 +82,7 @@ import * as ChildFlows from "./ChildFlows.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
 import * as AgentTerminal from "./internal/AgentTerminal.ts"
 import * as AgentTerminalCommand from "./internal/AgentTerminalCommand.ts"
-import * as RunawayGuard from "./RunawayGuard.ts"
+import * as RunawayGuard from "./RunawayGuard.vibe"
 
 /** These refusal classes carry host-authored text separately from diagnostic causes. */
 const publicRefusal = (error: { readonly message: string }): string => error.message

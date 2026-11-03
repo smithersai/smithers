@@ -28,7 +28,7 @@
  *
  * @since 0.1.0
  */
-import * as ScriptedJudge from "../src/ScriptedJudge.ts"
+import * as ScriptedJudge from "../src/ScriptedJudge.vibe"
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
