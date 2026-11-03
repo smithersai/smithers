@@ -7,9 +7,10 @@ import { beforeEach, describe, expect, test } from "vitest"
 import { REPOSITORY, reset, services as githubServices } from "../github/test/fixtures.ts"
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
-import { testFile } from "../test/harness.ts"
+import { testFile, uuid } from "../test/harness.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Dispatch from "./Dispatch.ts"
+import * as Pause from "../flows/Pause.ts"
 
 const runtime = testFile("ci_dispatch")
 beforeEach(() => reset(runtime))
@@ -301,4 +302,36 @@ test.each([undefined, "other/repo", "acme/widgets", "fault"])("both steps use th
   const denied = Dispatch.steps({ ...services, repositories: new Set<string>(), start: () => Effect.die("must not start") })
   expect(await run(denied.match({ request }))).toEqual({ flows: [], outcome: "not_allowed" })
   expect(await run(denied.start({ request, flows: ["ci"] }))).toEqual([])
+})
+
+// Drive the real start step once, so its durable retry cannot hide a leaked ownership row.
+test.each(["conflict", "unavailable"] as const)("triggered %s rolls back ownership before retry", async (failure) => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const { services } = await githubServices(runtime, github)
+  const request = { ...pushed(SHA), delivery: uuid() }
+  const executionId = Dispatch.runExecutionId("ci", request.delivery)
+  const values = new Map<string, unknown>()
+  const storage: ExecutionHost.Storage = {
+    get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),
+    put: (key, value) => Effect.sync(() => void values.set(key, structuredClone(value))),
+    delete: (key) => Effect.sync(() => values.delete(key)),
+    setAlarm: () => Effect.void, deleteAlarm: () => Effect.void,
+  }
+  if (failure === "conflict") await runtime.runPromise(Effect.flatMap(
+    ExecutionHost.intent(Pause.Pause, { executionId, payload: { label: "victim", pauseMs: 60_000 } }),
+    (intent) => ExecutionHost.recordStart(storage, intent),
+  ))
+  const before = structuredClone(values)
+  const impl = Dispatch.steps({ ...services, repositories: new Set(["acme/widgets"]),
+    start: (flow, options) => failure === "unavailable" ? Effect.fail(new Error("unavailable"))
+      : ExecutionHost.intent(flow, { ...options, payload: options.payload as never }).pipe(
+        Effect.flatMap((intent) => ExecutionHost.recordStart(storage, intent)),
+      ),
+  })
+  const result = await runtime.runPromise(Effect.result(impl.start({ request, flows: ["ci"] })))
+  expect(result._tag).toBe("Failure")
+  const rows = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`SELECT execution FROM runs WHERE execution = ${executionId}`))
+  expect(rows, "triggered rejection must leave no repository ownership").toEqual([])
+  expect(values).toEqual(before)
 })

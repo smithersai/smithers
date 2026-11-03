@@ -4,7 +4,7 @@ import { Node } from "@smthrs/plan"
 import { CiJob } from "@smthrs/sandbox"
 import { Cause, Config, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import type { SqlClient } from "effect/sql"
+import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
 import { withToken } from "../github/Calls.ts"
 import { repositoryOf } from "../github/Config.ts"
@@ -285,12 +285,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
               ...(errorCode === undefined ? {} : { errorCode }),
             })),
           )
-        return RepoRuns.record({
+        return Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(RepoRuns.record({
           execution: executionId, repoId: `github/${request.repo.toLowerCase()}`, flow,
           sha: request.sha, ref: request.ref, event: request.event, launchedBy: "github",
         }).pipe(
-          Effect.provide(services.database),
           Effect.andThen(services.start(RepoFlow.Run, { executionId, payload })),
+        ))).pipe(
+          Effect.provide(services.database),
           Effect.tap(() => record("started")),
           Effect.catchCause((cause) =>
             record("not_started", codeOf(Cause.squash(cause))).pipe(Effect.andThen(Effect.fail(new DispatchUnavailable())))
