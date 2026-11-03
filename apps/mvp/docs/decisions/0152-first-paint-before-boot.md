@@ -29,6 +29,10 @@ starts after 2 s.
 4. **Hand-over without a gap.** The app's boot adopts the shell's hold as its own (`PageWipe.open(adopted)`), and
    letting go of it ends the paint first. The node goes once the page shows itself or why it can't, and an answer
    arriving after that is never painted.
+5. **It never blocks a person.** It covers the empty page only until the app renders anything to act on, then sits in
+   the page's flow, in a slot the page leaves for it. The first build kept it over the page until the list's whole
+   sync finished: 15-25 s on 4,360 issues, with rows and search hidden under it, and proof (a)'s search at 7.5 s
+   against its 5 s budget.
 
 ## Why this is safe before step 3
 

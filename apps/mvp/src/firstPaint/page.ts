@@ -31,3 +31,15 @@ export const verifyingFetch = (fetch: typeof globalThis.fetch, shell: Shell | un
     return response
   }
 }
+
+/**
+ * Tells `shell` each location the app's router moves to, until the returned function stops it. A paint read for another
+ * path or search goes then, whether or not the page's DOM changes.
+ */
+export const followRoute = (
+  shell: Shell | undefined,
+  history: { readonly subscribe: (listener: () => void) => () => void; readonly location: { readonly pathname: string; readonly search: string } },
+): (() => void) | undefined => {
+  if (shell === undefined) return undefined
+  return history.subscribe(() => shell.routed(history.location.pathname, history.location.search))
+}

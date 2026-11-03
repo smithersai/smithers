@@ -1,4 +1,4 @@
-import { SETTLED_ATTRIBUTE } from "./shell"
+import { SETTLED_ATTRIBUTE, SLOT_ATTRIBUTE } from "./shell"
 
 /**
  * What an issue page or issues list sets on its `main` once it shows the page itself, or why it can't (sign in, Not
@@ -6,3 +6,10 @@ import { SETTLED_ATTRIBUTE } from "./shell"
  * nothing of its own to show yet, leaves it off.
  */
 export const SETTLED = { [SETTLED_ATTRIBUTE]: "settled" } as const
+
+/**
+ * What an issue page or issues list sets on an empty element where its title or rows will show, while it has neither:
+ * the first paint sits there, in the page's flow, so it covers none of the page's controls. Taking the element away
+ * with the page's own rows ends the paint.
+ */
+export const SLOT = { [SLOT_ATTRIBUTE]: "" } as const

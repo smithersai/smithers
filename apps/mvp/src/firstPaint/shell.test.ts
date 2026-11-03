@@ -8,10 +8,12 @@ import {
   deadlineOf,
   FIRST_PAINT_NODE,
   HAND_OVER_WITHIN_MS,
+  PLACED_ATTRIBUTE,
   requestOf,
   routeOf,
   sameViewer,
   SETTLED_ATTRIBUTE,
+  SLOT_ATTRIBUTE,
   type ShellHost,
   startShell,
 } from "./shell"
@@ -368,6 +370,112 @@ describe("the shell", () => {
     expect(shell.outcome()).toBe("deadline")
   })
 
+  describe("it never covers what a person can act on", () => {
+    const mount = (html: string) => {
+      const root = document.getElementById("root") ?? document.body.appendChild(Object.assign(document.createElement("div"), { id: "root" }))
+      root.innerHTML = html
+      return root
+    }
+    const placed = (b: ReturnType<typeof browser>) => b.node()!.hasAttribute(PLACED_ATTRIBUTE)
+
+    test("over the empty page; once the app renders anything to act on, in the page's flow after it", async () => {
+      for (const actionable of ["<main></main>", "<button>x</button>", "<input />", "<a href='/'>x</a>"]) {
+        document.body.replaceChildren()
+        const root = mount("<div></div>")
+        const b = browser()
+        const shell = startShell(b.host)!
+        await b.paint(painted())
+        expect(placed(b)).toBe(false)
+        b.mutate()
+        expect(placed(b)).toBe(false)
+        root.innerHTML = actionable
+        b.mutate()
+        expect(placed(b)).toBe(true)
+        expect(root.compareDocumentPosition(b.node()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        // Placed once: it stays there, and it still goes on a revocation.
+        const parent = b.node()!.parentNode
+        b.mutate()
+        expect(b.node()!.parentNode).toBe(parent)
+        shell.revoke()
+        expect(b.node()).toBeNull()
+      }
+    })
+
+    test("an answer that arrives after the app rendered is in its flow from the start", async () => {
+      const root = mount(`<main><div ${SLOT_ATTRIBUTE}></div></main>`)
+      const b = browser()
+      startShell(b.host)
+      await b.paint(painted())
+      expect(placed(b)).toBe(true)
+      expect(root.querySelector(`[${SLOT_ATTRIBUTE}]`)!.contains(b.node())).toBe(true)
+    })
+
+    test("sits in the page's slot, follows a new slot, and goes when the page takes the slot away", async () => {
+      const root = mount("")
+      const b = browser()
+      const shell = startShell(b.host)!
+      await b.paint(painted())
+      root.innerHTML = `<main id="pending"><div ${SLOT_ATTRIBUTE}></div></main>`
+      b.mutate()
+      expect(root.querySelector("#pending [" + SLOT_ATTRIBUTE + "]")!.contains(b.node())).toBe(true)
+      const node = b.node()!
+      b.mutate()
+      expect(node.isConnected).toBe(true)
+      // The route's page replaces the pending one: the paint moves with it, detached in between.
+      root.innerHTML = `<main id="page"><div ${SLOT_ATTRIBUTE}></div></main>`
+      expect(node.isConnected).toBe(false)
+      b.mutate()
+      expect(root.querySelector("#page [" + SLOT_ATTRIBUTE + "]")!.contains(b.node())).toBe(true)
+      expect(shell.outcome()).toBe("painted")
+      // The page's own rows replace the slot: the paint is over, and its answer with it.
+      root.innerHTML = `<main id="page"><ul><li>row</li></ul></main>`
+      b.mutate()
+      expect([b.node(), shell.outcome()]).toEqual([null, "handed_over"])
+      await b.settle()
+      expect(b.lock.held).toBe(false)
+    })
+  })
+
+  test("the router moving to another path or search ends it, with no DOM change; back or forward too", async () => {
+    const same = browser()
+    const shell = startShell(same.host)!
+    await same.paint(painted())
+    shell.routed("/acme/app/issues/7", "")
+    expect(shell.outcome()).toBe("painted")
+    shell.routed("/acme/app/issues/8", "")
+    expect([same.node(), shell.outcome()]).toEqual([null, "navigated"])
+
+    // The router's first replace: the same issue, slash and search aside, keeps it.
+    const canonical = browser({ path: "/acme/app/issues/7/", search: "?x=1" })
+    const kept = startShell(canonical.host)!
+    await canonical.paint(painted())
+    kept.routed("/acme/app/issues/7", "?x=1")
+    kept.routed("/acme/app/issues/7", "")
+    expect(kept.outcome()).toBe("painted")
+    kept.routed("/acme/app/issues/70", "")
+    expect(kept.outcome()).toBe("navigated")
+    document.body.replaceChildren()
+
+    // A list: the same path, slash aside, keeps it; any search filters it away.
+    const list = () => painted({ issue: undefined, list: [ISSUE] })
+    const searched = browser({ path: "/acme/app/issues/" })
+    const other = startShell(searched.host)!
+    await searched.paint(list())
+    other.routed("/acme/app/issues", "")
+    expect(other.outcome()).toBe("painted")
+    other.routed("/acme/app/issues", "?q=x")
+    expect(other.outcome()).toBe("navigated")
+
+    const back = browser()
+    const third = startShell(back.host)!
+    await back.paint(painted())
+    back.dispatch(new Event("popstate"))
+    expect(third.outcome()).toBe("painted")
+    back.location.pathname = "/acme/app/issues/8"
+    back.dispatch(new Event("popstate"))
+    expect([back.node(), third.outcome()]).toEqual([null, "navigated"])
+  })
+
   test("frozen, the node hides; resumed past the hand-over cap, it goes", async () => {
     const b = browser()
     const shell = startShell(b.host)!
@@ -407,10 +515,10 @@ describe("the shell", () => {
     root.remove()
 
     for (const move of [{ pathname: "/acme/app/pulls" }, { search: "?q=x" }]) {
-      const moved = browser()
+      const moved = browser({ path: "/acme/app/issues" })
       const other = startShell(moved.host)!
       Object.assign(moved.location, move)
-      await moved.paint(painted())
+      await moved.paint(painted({ issue: undefined, list: [ISSUE] }))
       expect([moved.node(), other.outcome()]).toEqual([null, "navigated"])
     }
   })

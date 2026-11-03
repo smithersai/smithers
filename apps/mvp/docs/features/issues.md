@@ -188,8 +188,10 @@ device store and syncs as it always does; the first paint only stands in until t
    nothing when sign-out's wipe mark (`smithers-wipe`) is present or can't be read. Otherwise it holds
    `smithers-data`, the Web Lock a wipe waits on, shared, reads the mark again once granted, and only then reads the
    [first-paint route](#routes) with the cookie, `no-store`, waiting at most 2.5 s.
-2. **The paint.** The answer is painted with `textContent` only into `#first-paint`, a node over the page outside
-   `#root`. It lives in that node and the shell's memory: never in a collection, OPFS, IndexedDB, local or session
+2. **The paint.** The answer is painted with `textContent` only into `#first-paint`. It covers the empty page only
+   until the app renders anything a person can act on. From then on it sits in the page's flow, in the empty
+   `data-first-paint-slot` element the page leaves where its rows or title will show (else after the app), so search,
+   New issue and every other control work while the page syncs. It lives in that node and the shell's memory: never in a collection, OPFS, IndexedDB, local or session
    storage or any cache. Its deadline is `sentAt + (expiresAt - serverNow)`, both read from Postgres in the session's
    own lookup (`clock_timestamp()` beside `expires_at`), and it shows at most 30 s from the paint. An answer that
    arrives after the app's page showed itself, or after the route moved on, is never painted.
@@ -201,7 +203,7 @@ device store and syncs as it always does; the first paint only stands in until t
 4. **Hand-over.** The app's boot adopts the shell's hold as its own `smithers-data` hold with no gap
    (`PageWipe.open(adopted)`, `src/wipe.ts`): the shell hands it over only while it holds it and the mark is absent;
    otherwise it revokes and the boot runs as it did before. Letting go of the adopted hold ends the paint first. The
-   node goes once the issue page or the list marks its
+   node goes once the page takes its slot away with its own rows or title, or the issue page or the list marks its
    `main` `data-first-paint="settled"`, which it does once it shows the page itself or why it can't (sign in, Not
    found, GitHub's list), or once the route changes.
 

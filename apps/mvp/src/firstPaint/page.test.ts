@@ -2,14 +2,21 @@
 // answer the page reads, so a paint read for anyone else goes as that answer arrives.
 import { describe, expect, test } from "vitest"
 import { SESSION_ROUTE } from "../features/auth/contract"
-import { takeShell, verifyingFetch } from "./page"
+import { followRoute, takeShell, verifyingFetch } from "./page"
 import { FIRST_PAINT_GLOBAL, type SessionAnswer, type Shell } from "./shell"
 import { SETTLED } from "./settled"
 
 const recording = () => {
   const answers: Array<SessionAnswer> = []
-  const shell: Shell = { handOver: () => undefined, verify: (answer) => void answers.push(answer), revoke: () => {}, outcome: () => "pending" }
-  return { shell, answers }
+  const routes: Array<[string, string]> = []
+  const shell: Shell = {
+    handOver: () => undefined,
+    verify: (answer) => void answers.push(answer),
+    routed: (pathname, search) => void routes.push([pathname, search]),
+    revoke: () => {},
+    outcome: () => "pending",
+  }
+  return { shell, answers, routes }
 }
 
 describe("the app's side of the first paint", () => {
@@ -19,6 +26,18 @@ describe("the app's side of the first paint", () => {
     expect(takeShell(target)).toBe(shell)
     expect(takeShell(target)).toBeUndefined()
     expect(SETTLED).toEqual({ "data-first-paint": "settled" })
+  })
+
+  test("the router's locations reach the shell, from the history's own location", () => {
+    const { shell, routes } = recording()
+    let listener = () => {}
+    const stop = () => {}
+    const history = { location: { pathname: "/a", search: "" }, subscribe: (heard: () => void) => { listener = heard; return stop } }
+    expect(followRoute(undefined, history)).toBeUndefined()
+    expect(followRoute(shell, history)).toBe(stop)
+    history.location = { pathname: "/b", search: "?q=1" }
+    listener()
+    expect(routes).toEqual([["/b", "?q=1"]])
   })
 
   test("without a shell, fetch is the page's own", () => {

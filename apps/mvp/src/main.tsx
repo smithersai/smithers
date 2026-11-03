@@ -27,13 +27,14 @@ import { deviceRegistry } from "./device/registry"
 import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
 import "./styles/fonts.css"
 import { markStage } from "./bootStages"
-import { takeShell, verifyingFetch } from "./firstPaint/page"
+import { followRoute, takeShell, verifyingFetch } from "./firstPaint/page"
 
 // The boot's first stage: the bundle has loaded and runs (src/bootStages.ts).
 markStage(performance, "page")
 // The first paint's shell, when index.html's inline script painted, or is about to paint, for this route
 // (src/firstPaint/shell.ts): this page adopts its `smithers-data` hold and checks its viewer against every session answer.
 const firstPaint = takeShell(window)
+followRoute(firstPaint, router.history)
 
 // The build this bundle is, which vite.config.ts names from the deployed revision (`version.json` beside the app);
 // `dev` under the dev server and wherever the build named none.

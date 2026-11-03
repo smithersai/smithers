@@ -25,7 +25,7 @@ import { workByIssue, workSections } from "../../features/issues/workView"
 import { WORK_STATUS_LABELS } from "../../features/issues/work"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
-import { SETTLED } from "../../firstPaint/settled"
+import { SETTLED, SLOT } from "../../firstPaint/settled"
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
 
 // /$owner/$repo/issues/$number: one issue and its comments, this device's own last with their chip, "Open on GitHub ↗",
@@ -104,7 +104,7 @@ export function IssueScreen() {
         <PageBody width="wide">
           {back}
           {/* The repository's warm summaries name the issue before its own shape brings the body and comments. */}
-          {summary === undefined ? null : <ItemConversation {...conversationProps({ ...summary, body: "" }, [], { owner, name: repo })} />}
+          {summary === undefined ? <div {...SLOT} /> : <ItemConversation {...conversationProps({ ...summary, body: "" }, [], { owner, name: repo })} />}
           <OfflineFallback>
             <Card><CardContent>
               <p role="status">Syncing issue…</p>

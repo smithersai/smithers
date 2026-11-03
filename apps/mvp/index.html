@@ -27,7 +27,11 @@
       @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) #first-paint { background: #0d1514; color: #e3ebe8; } }
       html[data-theme="dark"] #first-paint { background: #0d1514; color: #e3ebe8; }
       #first-paint[hidden] { display: none; }
-      #first-paint main { max-width: 72rem; margin: 0 auto; padding: 4.5rem 1.5rem; }
+      #first-paint .first-paint-body { max-width: 72rem; margin: 0 auto; padding: 4.5rem 1.5rem; }
+      /* Once the app has rendered anything to act on, the paint sits in its flow and covers nothing. */
+      #first-paint[data-placed] { position: static; inset: auto; z-index: auto; overflow: visible; background: none; }
+      #first-paint[data-placed] .first-paint-body { padding: 0.5rem 1rem; max-width: none; }
+      #first-paint[data-placed] .first-paint-repo, #first-paint[data-placed] .first-paint-list-title { display: none; }
       #first-paint h1 { font-size: 1.5rem; line-height: 1.3; margin: 0.5rem 0; overflow-wrap: anywhere; }
       #first-paint .first-paint-repo, #first-paint .first-paint-meta, #first-paint li span { opacity: 0.7; margin: 0; }
       #first-paint ul { list-style: none; padding: 0; margin: 1rem 0; }

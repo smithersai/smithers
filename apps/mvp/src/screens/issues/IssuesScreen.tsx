@@ -28,7 +28,7 @@ import "./issues-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
 import { repoId } from "../../features/repo/contract"
-import { SETTLED } from "../../firstPaint/settled"
+import { SETTLED, SLOT } from "../../firstPaint/settled"
 
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
 // chip and the TODOs made from it, Make TODO in its menu for a Member (docs/features/todos.md#from-an-issue), New issue
@@ -69,6 +69,9 @@ export function IssuesScreen() {
     (list.unknown || !isReady || access?.installed !== true) && about?.view.repoId === repoId(owner, repo) ? about.about : undefined)
   const visible = listProps(visibleRows(filterWork(filterCommitment(rows ?? [], search.commitment), work, search.work), search), synced, access, triage !== undefined && !triage.paused).issues
   const listSync = listSyncOf(list.unknown, isReady, access)
+  // Still syncing, with no row of its own to show yet, and no filter: the first paint's rows may stand in.
+  const awaitingRows = failure === undefined && listSync === "syncing" && visible.length === 0 &&
+    search.q === undefined && search.commitment === undefined && search.work === undefined && search.sort === undefined
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
   const header = <RepoHeader backTarget={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
@@ -103,7 +106,7 @@ export function IssuesScreen() {
     )
   }
   return (
-    <main className="issues-screen" aria-label="Issues" {...(failure === undefined && listSync === "syncing" ? {} : SETTLED)}>{header}
+    <main className="issues-screen" aria-label="Issues" {...(awaitingRows ? {} : SETTLED)}>{header}
       <PageBody width="wide">
         {failure === undefined ? null : (
           <Card><CardContent>
@@ -185,6 +188,7 @@ export function IssuesScreen() {
               : undefined}
           />
         )}
+        {awaitingRows ? <div {...SLOT} /> : null}
         {list.notSent.length === 0 ? null : (
           <ul className="issues-not-sent" aria-label="Not sent">
             {list.notSent.map((write) => (

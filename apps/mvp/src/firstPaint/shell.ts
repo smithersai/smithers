@@ -16,7 +16,9 @@ import { DATA_LOCK, WIPE } from "../wipe"
 // - revoke (remove the node, drop the answer, abort what is pending, let go of the hold) on a wipe-channel message, the
 //   mark appearing, `pagehide`, the deadline, or the page's first session answer naming someone else (`verify`);
 // - hand over: the app's page adopts the hold as its own `smithers-data` hold with no gap (`handOver`, src/wipe.ts
-//   `open`), and the node goes once the app shows the page itself (`data-first-paint="settled"`) or the route changes.
+//   `open`), and the node goes once the app shows the page itself (`data-first-paint="settled"`) or the route changes;
+// - it never blocks a person: it covers the empty page only until the app renders anything to act on. From then on it
+//   sits in the page's flow, in the slot the page left for it (`data-first-paint-slot`), else after the app.
 
 /** The global the shell leaves for the app: the shell's hand-over, its viewer check and its revocation. */
 export const FIRST_PAINT_GLOBAL = "__smithersFirstPaint"
@@ -26,6 +28,15 @@ export const FIRST_PAINT_NODE = "first-paint"
 
 /** The attribute an app page sets once it shows the page the first paint stood in for, or why it can't. */
 export const SETTLED_ATTRIBUTE = "data-first-paint"
+
+/** The empty element an app page leaves where its rows or title will show, for the paint to sit in until they do. */
+export const SLOT_ATTRIBUTE = "data-first-paint-slot"
+
+/** Set on the node once it sits in the page's flow: it covers nothing, and the page's controls stay usable. */
+export const PLACED_ATTRIBUTE = "data-placed"
+
+/** What a person can act on: once the app has rendered any of it, the paint never covers the page. */
+const ACTIONABLE = "#root main, #root button, #root input, #root a"
 
 /** The longest a paint stays without a hand-over, from when it painted. */
 export const HAND_OVER_WITHIN_MS = 30_000
@@ -110,6 +121,11 @@ export interface Shell {
   readonly handOver: () => (() => void) | undefined
   /** The page's session answer: a paint read for anyone else goes. */
   readonly verify: (session: SessionAnswer) => void
+  /**
+   * The router's location: a paint read for any other path or search goes in that task. A navigation between two pages
+   * whose DOM doesn't change, such as two issues still loading, reaches the shell only this way.
+   */
+  readonly routed: (pathname: string, search: string) => void
   /** Removes the node and drops the answer, and lets go of the hold unless the page adopted it. */
   readonly revoke: (why?: Ended) => void
   /** How the shell's paint stands, for the app's boot record: `painted`, `none`, or why it ended. */
@@ -131,6 +147,9 @@ export interface ShellHost {
   readonly mark: (name: string) => void
 }
 
+/** `path` without its trailing slash. */
+const bare = (path: string) => path.replace(/\/$/, "")
+
 /** Whether the wipe mark is absent: `false` when present or unreadable. */
 const unmarked = (marks: ShellHost["marks"]) => {
   try {
@@ -145,7 +164,8 @@ const unmarked = (marks: ShellHost["marks"]) => {
 const render = (doc: ShellHost["document"], route: Route, answer: FirstPaint): HTMLElement => {
   const node = doc.createElement("div")
   node.id = FIRST_PAINT_NODE
-  const main = doc.createElement("main")
+  const main = doc.createElement("div")
+  main.className = "first-paint-body"
   node.append(main)
   const repository = doc.createElement("p")
   repository.className = "first-paint-repo"
@@ -163,6 +183,7 @@ const render = (doc: ShellHost["document"], route: Route, answer: FirstPaint): H
     main.append(heading, meta)
   } else {
     const heading = doc.createElement("h1")
+    heading.className = "first-paint-list-title"
     heading.textContent = "Issues"
     const list = doc.createElement("ul")
     for (const issue of answer.list!) {
@@ -200,6 +221,8 @@ export const startShell = (host: ShellHost): Shell | undefined => {
   const asking = new AbortController()
   const timers: Array<number> = []
   const wipes = host.channel(WIPE)
+  // The route the read was for: the page moving on from it ends the paint, before or after it shows.
+  const { pathname } = win.location
 
   const letGo = () => {
     asking.abort()
@@ -224,6 +247,13 @@ export const startShell = (host: ShellHost): Shell | undefined => {
     host.mark(`smithers.first_paint.${why}`)
   }
 
+  // Still the page the read was for: the same path, whatever its trailing slash (the router's first replace drops it);
+  // for a list, no search, as any search filters what it shows. A search says nothing of which issue a page shows.
+  const sameRoute = (nextPath: string, nextSearch: string) =>
+    bare(nextPath) === bare(pathname) && (route.kind === "issue" || nextSearch === "")
+  const routed = (nextPath: string, nextSearch: string) => {
+    if (!sameRoute(nextPath, nextSearch)) end("navigated")
+  }
   wipes.onmessage = () => end("wipe")
   const on = <K extends string>(target: { addEventListener: (k: K, l: (e: never) => void) => void; removeEventListener: (k: K, l: (e: never) => void) => void }, kind: K, listener: (event: never) => void) => {
     target.addEventListener(kind, listener)
@@ -234,6 +264,8 @@ export const startShell = (host: ShellHost): Shell | undefined => {
     else if (event.key === null) end("mark")
   }) as never)
   on(win as never, "pagehide", (() => end("pagehide")) as never)
+  // Back or forward, before the app's router exists to say so.
+  on(win as never, "popstate", (() => routed(win.location.pathname, win.location.search)) as never)
   // Hidden or frozen, the node hides; visible or resumed, the clock and the mark are checked first, as a hidden or
   // frozen page's timers may not have run.
   const hide = () => {
@@ -249,15 +281,32 @@ export const startShell = (host: ShellHost): Shell | undefined => {
   on(doc as never, "freeze", hide as never)
   on(doc as never, "resume", recheck as never)
 
-  // The route the read was for: the page moving on from it ends the paint, before or after it shows.
-  const { pathname, search } = win.location
   /** Whether the paint should go now: the route moved on, or the app's page already shows itself. */
   const superseded = () =>
-    win.location.pathname !== pathname || win.location.search !== search
+    !sameRoute(win.location.pathname, win.location.search)
       ? "navigated"
       : doc.querySelector(`#root [${SETTLED_ATTRIBUTE}="settled"]`) !== null
       ? "handed_over"
       : undefined
+
+  // Where the node sits: over the empty page, until there is something to act on; then in the page's slot, or after
+  // the app. A slot the app took away with the node in it is the app showing the page itself.
+  const place = () => {
+    const shown = node!
+    const slot = doc.querySelector(`#root [${SLOT_ATTRIBUTE}]`)
+    if (slot !== null) {
+      if (shown.parentNode !== slot) {
+        shown.setAttribute(PLACED_ATTRIBUTE, "")
+        slot.append(shown)
+      }
+      return
+    }
+    if (!shown.isConnected) return end("handed_over")
+    if (!shown.hasAttribute(PLACED_ATTRIBUTE) && doc.querySelector(ACTIONABLE) !== null) {
+      shown.setAttribute(PLACED_ATTRIBUTE, "")
+      doc.body.append(shown)
+    }
+  }
 
   const paint = (answer: FirstPaint) => {
     if (state !== "pending") return
@@ -278,9 +327,11 @@ export const startShell = (host: ShellHost): Shell | undefined => {
     // The app's page shows itself, or the route moves on: the node goes, and so does the answer.
     const watch = host.observe(() => {
       const why = superseded()
-      if (why !== undefined) end(why)
+      if (why !== undefined) return end(why)
+      place()
     })
     listeners.push(() => watch.disconnect())
+    place()
   }
 
   // The hold first, then the read; nothing private exists outside it.
@@ -333,6 +384,7 @@ export const startShell = (host: ShellHost): Shell | undefined => {
       session = answer
       if (seed !== undefined && !sameViewer(seed.viewer, answer)) end("person_mismatch")
     },
+    routed,
     revoke: (why = "revoked") => end(why),
     outcome: () => state,
   }
