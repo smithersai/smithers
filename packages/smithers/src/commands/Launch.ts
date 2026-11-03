@@ -7,6 +7,7 @@
 import { Control as ControlService, type ControlSchema } from "@smthrs/control"
 import { type BudgetOnExceeded, deadlineMillis } from "@smthrs/registry/Descriptor"
 import { Effect, Option } from "effect"
+import { randomUUID } from "node:crypto"
 import { resolve } from "node:path"
 import * as CliError from "../CliError.ts"
 import * as Detached from "../Detached.ts"
@@ -25,7 +26,11 @@ export const resume = (planOrRunId: string, allowCodeDrift = false, quiet = fals
   Effect.gen(function*() {
     const control = yield* ControlService.Control
     const parkSequence = yield* Settlement.latestResumablePark(control, planOrRunId)
-    const key = parkSequence === undefined ? `cli:resume:${planOrRunId}` : `cli:resume:${planOrRunId}:${parkSequence}`
+    // Scoped to the park it resumes, and unique to this command: a resume whose process died before the run moved
+    // recorded its receipt and nothing else, so a key from the park alone made every later resume replay that receipt
+    // (`AlreadyApplied`) and resume nothing. Retries inside this command reuse the one key.
+    const park = parkSequence === undefined ? `cli:resume:${planOrRunId}` : `cli:resume:${planOrRunId}:${parkSequence}`
+    const key = `${park}:${randomUUID()}`
     const receipt = yield* control.resume({
       runId: planOrRunId,
       // A refused resume records no receipt, so the retry with the override

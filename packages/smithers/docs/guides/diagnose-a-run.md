@@ -67,7 +67,7 @@ released executions, and prints the receipt with `handedTo` and the run's new
 ```json
 {
   "_tag": "Accepted",
-  "receiptId": "cli:resume:run-1:4",
+  "receiptId": "cli:resume:run-1:4:0b6c1e9e-5f3a-4f7e-9a51-2d0c8a6b3f10",
   "runId": "run-1",
   "handedTo": { "hostId": "mac", "pid": 78502 },
   "status": "parked",
@@ -78,7 +78,7 @@ released executions, and prints the receipt with `handedTo` and the run's new
 If the host does not take it up within 15 seconds, the command fails with
 `resume_not_taken_up` and names the host's process. The request stays recorded
 for that process. If the process is stuck, stop it and run `runs resume`
-again; a run whose host has exited is resumed by the command itself. Each
+again; a run whose host has exited is resumed by the command itself. Each `runs resume` is its own request, keyed to the park and the command: one killed before the run moved never makes a later one answer `AlreadyApplied`. Each
 resume covers the releases that exist when the host takes it up, so a later
 lapse needs another `runs resume`.
 

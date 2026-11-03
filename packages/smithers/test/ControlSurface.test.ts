@@ -550,7 +550,7 @@ describe("Control surface", () => {
     expect(receipt.value).toMatchObject({
       _tag: "Accepted",
       runId,
-      receiptId: `cli:resume:${runId}:1`
+      receiptId: expect.stringMatching(new RegExp(`^cli:resume:${runId}:1:[0-9a-f-]{36}$`))
     })
     expect(watched).toContainEqual({ runId, follow: false })
     expect(watched).toContainEqual({ runId, afterSequence: 1 })

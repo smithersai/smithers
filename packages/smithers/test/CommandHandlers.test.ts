@@ -607,13 +607,37 @@ describe("lifecycle verbs", () => {
       )
     )
 
-    // The key is `cli:resume:<runId>` when no park was ever committed, so the
+    // The key was `cli:resume:<runId>` when no park was ever committed, so the
     // second call reuses the first one's receipt. Replaying it answered
     // `AlreadyApplied` for a run that had since been cancelled: the release validation
     // smoke got that answer for `run --resume` against a completed run and for
     // `approve` against another, and neither says anything about the run.
     expect(result.first).toMatchObject({ _tag: "Accepted" })
     expect(result.second).toMatchObject({ _tag: "Terminal", status: "cancelled" })
+  })
+
+  it("resumes again after an earlier resume of the same park stopped before it settled", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const launched = yield* launch()
+        // The first resume is accepted, then its process is gone before the run moves: nothing parks or settles.
+        const first = yield* json(["--json", "run", launched.runId, "--resume"])
+        const second = yield* json(["--json", "run", launched.runId, "--resume"])
+        return { first, second }
+      }).pipe(
+        Effect.timeout("20 seconds"),
+        Effect.provide(ExecutorOwnership.layer(false)),
+        Effect.provide(testControl),
+        Effect.provide(services),
+        Effect.provide(NodeServices.layer)
+      )
+    )
+
+    // Keyed by the park alone, the second resume replayed the first's receipt and answered `AlreadyApplied`,
+    // so a run whose resume was killed could never be resumed again (issues/file-tree's resume test, 2026-11-03).
+    expect(result.first).toMatchObject({ _tag: "Accepted" })
+    expect(result.second).toMatchObject({ _tag: "Accepted" })
+    expect((result.second as { receiptId: string }).receiptId).not.toBe((result.first as { receiptId: string }).receiptId)
   })
 
   it("delivers a named JSON signal to a run", async () => {
