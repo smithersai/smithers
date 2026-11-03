@@ -9,8 +9,8 @@ import type { LogRecordProcessor } from "@opentelemetry/sdk-logs"
 import type { MetricReader } from "@opentelemetry/sdk-metrics"
 import type { SpanProcessor } from "@opentelemetry/sdk-trace-base"
 import * as Layer from "effect/Layer"
-import * as Resource from "./Resource.ts"
-import type { Configuration as ResourceConfiguration } from "./Resource.ts"
+import * as Resource from "./Resource.vibe"
+import type { Configuration as ResourceConfiguration } from "./Resource.vibe"
 
 /**
  * Browser OTEL layer options. Processors and readers are created by the

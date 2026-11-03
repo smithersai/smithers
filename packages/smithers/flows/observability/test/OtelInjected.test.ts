@@ -5,7 +5,7 @@ import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "
 import { Effect, Metric } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import * as Otel from "../src/Otel.vibe"
-import * as Resource from "../src/Resource.ts"
+import * as Resource from "../src/Resource.vibe"
 import { effectVersion } from "./fixtures/effectVersion.ts"
 
 /**

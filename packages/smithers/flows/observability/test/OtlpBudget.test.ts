@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Logger, Metric } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Otlp from "../src/Otlp.ts"
-import * as Resource from "../src/Resource.ts"
+import * as Resource from "../src/Resource.vibe"
 import { effectVersion } from "./fixtures/effectVersion.ts"
 import { boundaryResources } from "./fixtures/resources.ts"
 
