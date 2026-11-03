@@ -17,7 +17,7 @@ import * as CanonicalJson from "./CanonicalJson.ts"
 import * as Endpoint from "./Endpoint.ts"
 import * as Framing from "./Framing.vibe"
 import * as CallTiming from "./internal/CallTiming.vibe"
-import * as WireTrace from "./internal/WireTrace.ts"
+import * as WireTrace from "./internal/WireTrace.vibe"
 import * as Model from "./Model.vibe"
 import { ModelError } from "./ModelError.vibe"
 import { type ModelEvent, type Settle, settledMessage, type Timing, type Usage } from "./ModelEvent.vibe"
@@ -26,7 +26,7 @@ import * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
 import * as OpenAIResponses from "./OpenAIResponses.ts"
 import type * as Protocol from "./Protocol.vibe"
 import * as RequestExecutor from "./RequestExecutor.ts"
-import * as TraceSink from "./WireTrace.ts"
+import * as TraceSink from "./WireTrace.vibe"
 
 /**
  * The credential-free representation used to construct a sealed model step.

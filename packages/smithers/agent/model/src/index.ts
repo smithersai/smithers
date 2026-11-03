@@ -150,4 +150,4 @@ export * as Route from "./Route.ts"
 export * as ToolStream from "./ToolStream.vibe"
 
 /** @since 1.0.0 */
-export * as WireTrace from "./WireTrace.ts"
+export * as WireTrace from "./WireTrace.vibe"

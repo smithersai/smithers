@@ -25,7 +25,7 @@ const fields = [
     "budget",
     "scope",
     "used",
-    "max",
+    "max"
 ];
 /** A snapshot of the copy's fields; like Fault.of, a field whose read throws is missing. */
 const record = (value) => {
@@ -51,7 +51,7 @@ const providers = {
     gemini: "Gemini",
     moonshot: "Kimi",
     openai: "OpenAI",
-    openrouter: "OpenRouter",
+    openrouter: "OpenRouter"
 };
 /**
  * The account a seat or route runs on, by its provider prefix: `OpenAI`,
@@ -69,12 +69,12 @@ const model = {
     invalid_request: ["Model rejected the request", "Change the request and resume.", [
             "resume",
             "switch-model",
-            "details",
+            "details"
         ]],
     context_overflow: ["Model context is full", "Shorten the context and resume.", [
             "resume",
             "switch-model",
-            "details",
+            "details"
         ]],
     no_route: ["Model route unavailable", "Choose another model.", ["switch-model", "resume", "details"]],
     authentication: ["Model sign-in required", "Sign in and resume.", ["resume", "switch-model", "details"]],
@@ -82,7 +82,7 @@ const model = {
             "resume",
             "switch-model",
             "wait",
-            "details",
+            "details"
         ]],
     // An account with no credit left: another model is the way on.
     quota_exceeded: ["quota exhausted", "Restore account quota and resume.", ["switch-model", "resume", "details"]],
@@ -90,29 +90,29 @@ const model = {
     content_policy: ["Model declined the request", "Change the request and resume.", [
             "resume",
             "switch-model",
-            "details",
+            "details"
         ]],
     provider_internal: ["Model service failed", "The provider had a problem.", [
             "resume",
             "switch-model",
-            "details",
+            "details"
         ]],
     transport: ["Model connection failed", "The connection closed before a response.", [
             "resume",
             "switch-model",
-            "details",
+            "details"
         ]],
     call_timeout: ["Model call timed out", "The response took too long.", ["resume", "switch-model", "details"]],
     invalid_provider_output: ["Model response was invalid", "Choose another model or resume.", [
             "resume",
             "switch-model",
-            "details",
+            "details"
         ]],
     unknown: ["Model call failed", "The provider did not give a usable response.", [
             "resume",
             "switch-model",
-            "details",
-        ]],
+            "details"
+        ]]
 };
 const harness = {
     assembly_failed: ["Worker setup failed", "The worker could not start."],
@@ -124,7 +124,7 @@ const harness = {
     completion_unjudged: ["Worker result could not be checked", "The result was not verified."],
     completion_incomplete: ["Worker left work unfinished", "Resume to finish it."],
     claim_unproven: ["Worker claim was unproven", "The worker could not verify its claim."],
-    suspended: ["Worker paused", "Resume when ready."],
+    suspended: ["Worker paused", "Resume when ready."]
 };
 /** Causes that name what happened better than the model or harness wrapper around them. */
 const causes = {
@@ -132,17 +132,17 @@ const causes = {
     "/harness/CellTurn/RepeatedFailure": ["Worker repeated one failure", "It stopped after five identical frames.", [
             "resume",
             "switch-model",
-            "details",
+            "details"
         ]],
     // Another model cannot change a person's answer, or their silence.
     "@smthrs/flow/HumanTaskFailed/rejected": ["Answer rejected", "The person did not accept the answer.", [
             "resume",
-            "details",
+            "details"
         ]],
     "@smthrs/flow/HumanTaskFailed/timeout": ["No answer in time", "Nobody answered before the deadline.", [
             "resume",
-            "details",
-        ]],
+            "details"
+        ]]
 };
 /**
  * Walks wrapped causes and turns typed failure codes into safe UI copy.
@@ -194,7 +194,7 @@ export const describe = (error, seat) => {
             headline: "Model sign-in required",
             fault,
             line: typeof message === "string" && message !== "" ? message.slice(0, 240) : "Sign in and resume.",
-            actions: ["resume", "switch-model", "details"],
+            actions: ["resume", "switch-model", "details"]
         };
     }
     if (unrouted !== undefined) {
@@ -213,7 +213,7 @@ export const describe = (error, seat) => {
                             : isEvaluatorCode(unrouted.reason) && typeof unrouted.message === "string" && unrouted.message !== ""
                                 ? Evaluator.publicMessage({ code: unrouted.reason, message: unrouted.message }).slice(0, 240)
                                 : "The model router could not pick a model.",
-            actions: ["switch-model", "resume", "details"],
+            actions: ["switch-model", "resume", "details"]
         };
     }
     if (budget !== undefined) {
@@ -225,7 +225,7 @@ export const describe = (error, seat) => {
                 line: measured
                     ? `$${budget.used.toFixed(2)} of $${budget.max.toFixed(2)} used.`
                     : "The run spent its budget.",
-                actions: ["resume", "details"],
+                actions: ["resume", "details"]
             };
         }
         const daily = budget.scope === "daily";
@@ -236,7 +236,7 @@ export const describe = (error, seat) => {
             line: measured
                 ? `${Math.round(budget.used)} of ${budget.max} ${tokens ? "tokens" : "ms"} used${daily ? " today" : ""}.`
                 : "The run spent its budget.",
-            actions: ["resume", "details"],
+            actions: ["resume", "details"]
         };
     }
     if (evaluator !== undefined && isEvaluatorCode(evaluator.code) && typeof evaluator.message === "string") {
@@ -247,9 +247,9 @@ export const describe = (error, seat) => {
                 code: evaluator.code,
                 message: evaluator.message,
                 status: typeof evaluator.status === "number" ? evaluator.status : undefined,
-                resetAtEpochMillis: typeof evaluator.resetAtEpochMillis === "number" ? evaluator.resetAtEpochMillis : undefined,
+                resetAtEpochMillis: typeof evaluator.resetAtEpochMillis === "number" ? evaluator.resetAtEpochMillis : undefined
             }),
-            actions: ["resume", "details"],
+            actions: ["resume", "details"]
         };
     }
     const code = found?.code;
@@ -271,17 +271,17 @@ export const describe = (error, seat) => {
                     day: "numeric",
                     hour: "2-digit",
                     minute: "2-digit",
-                    hour12: false,
+                    hour12: false
                 }).replace(",", "")}.`,
             actions: code === "quota_exceeded" && !isTerminalRefusal({
                 code,
                 httpStatus: typeof found.httpStatus === "number" ? found.httpStatus : undefined,
                 quotaScope: found.quotaScope === "model" || found.quotaScope === "account" ? found.quotaScope : undefined,
                 resetAtEpochMillis: typeof found.resetAtEpochMillis === "number" ? found.resetAtEpochMillis : undefined,
-                retryAfterMillis: typeof found.retryAfterMillis === "number" ? found.retryAfterMillis : undefined,
+                retryAfterMillis: typeof found.retryAfterMillis === "number" ? found.retryAfterMillis : undefined
             })
                 ? ["switch-model", "resume", "wait", "details"]
-                : actions,
+                : actions
         };
     }
     const harnessCopy = found?._tag === "/harness/HarnessError" && typeof code === "string"
@@ -295,6 +295,6 @@ export const describe = (error, seat) => {
         headline: "Worker stopped unexpectedly",
         fault,
         line: "The worker stopped before finishing.",
-        actions: ["resume", "switch-model", "details"],
+        actions: ["resume", "switch-model", "details"]
     };
 };

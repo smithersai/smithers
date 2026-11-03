@@ -44,7 +44,7 @@ const bounded = (stream, sse, limits) => Stream.suspend(() => {
         if (responseBytes > responseLimit) {
             return yield* Effect.fail(new ModelError({
                 code: "invalid_provider_output",
-                message: `Model response exceeds ${responseLimit} bytes`,
+                message: `Model response exceeds ${responseLimit} bytes`
             }));
         }
         yield* runtime.$forOf((function* (iterable_1) {
@@ -67,7 +67,7 @@ const bounded = (stream, sse, limits) => Stream.suspend(() => {
             if (recordBytes > recordLimit) {
                 return yield* Effect.fail(new ModelError({
                     code: "invalid_provider_output",
-                    message: `Model stream record exceeds ${recordLimit} bytes`,
+                    message: `Model stream record exceeds ${recordLimit} bytes`
                 }));
             }
             return runtime.$normal;
@@ -101,7 +101,7 @@ export const makeSse = (limits = {}) => ({
             frames = [];
             return emitted;
         }), Stream.flattenIterable);
-    }),
+    })
 });
 /**
  * Incrementally decodes bounded UTF-8 SSE. Empty events and the [DONE] sentinel
@@ -121,7 +121,7 @@ export const sse = makeSse();
  */
 export const makeNdjson = (limits = {}) => ({
     id: "ndjson",
-    frame: (stream) => bounded(stream, false, limits).pipe(Stream.decodeText, Stream.splitLines, Stream.filter((line) => line.trim() !== "")),
+    frame: (stream) => bounded(stream, false, limits).pipe(Stream.decodeText, Stream.splitLines, Stream.filter((line) => line.trim() !== ""))
 });
 /**
  * One JSON document per line, under the default record and response budgets.

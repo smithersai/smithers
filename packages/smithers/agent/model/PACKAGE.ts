@@ -72,7 +72,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Route.ts",
         "src/OpenAIChatGPT.vibe",
         "src/ModelRequest.ts",
-        "src/internal/WireTrace.ts"
+        "src/internal/WireTrace.vibe"
       ]
     },
     {
