@@ -54,13 +54,13 @@ export interface MakeOptions<R = never> {
  * @since 0.1.0
  */
 export interface RuntimeOptions<I, A, Review, E, R, E2, R2, E3, R3> {
-  readonly produce: (input: I) => Effect.Effect<A, E, R>
-  readonly review: (output: A, round: number) => Effect.Effect<Review, E2, R2>
+  readonly produce: (input: I) => A!E!R
+  readonly review: (output: A, round: number) => Review!E2!R2
   readonly revise: (input: {
     readonly output: A
     readonly review: Review
     readonly round: number
-  }) => Effect.Effect<A, E3, R3>
+  }) => A!E3!R3
   readonly maxRounds: number
   readonly stall?: Stalling.RuntimeOptions<A> | undefined
 }
@@ -240,7 +240,7 @@ export const make = <R = never>(options: MakeOptions<R>): ReviewLoopFlow<R> => {
 export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
   input: I,
   options: RuntimeOptions<I, A, Review, E, R, E2, R2, E3, R3>
-): Effect.Effect<Settled<A, Review>, E | E2 | E3 | PatternError, R | R2 | R3> => {
+): Settled<A, Review>!E | E2 | E3 | PatternError!R | R2 | R3 => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the option object in between must not reach it.
   const stages = { produce: options.produce, review: options.review, revise: options.revise }
@@ -256,12 +256,14 @@ export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
   const stall = Stalling.resolve("ReviewLoop", options.stall)
   if (stall instanceof PatternError) return Effect.fail(stall)
   const signals = options.stall?.signals ?? ((output: A) => ({ output }))
-  return Effect.gen(function*() {
-    const observe = Stalling.tracker(stall, signals)
-    let output = yield* stages.produce(input)
+  return effect {
+    const observe = try Effect.orDie(
+      Effect.try({ try: () => Stalling.tracker(stall, signals), catch: (error) => error })
+    )
+    let output = try stages.produce(input)
     let round = 1
     while (true) {
-      const review = yield* stages.review(output, round)
+      const review = try stages.review(output, round)
       if (accepted(review)) {
         const approved: Approved<A> = { _tag: "Approved", output }
         return approved
@@ -270,14 +272,18 @@ export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
         const spent: Exhausted<A, Review> = { _tag: "Exhausted", output, review }
         return spent
       }
-      const stalled = observe(output)
+      const stalled = try Effect.orDie(Effect.try({ try: () => observe(output), catch: (error) => error }))
       if (stalled !== undefined) {
-        if (stalled.on === "escalate") return yield* Effect.fail(Stalling.escalated("ReviewLoop", stalled.rounds))
+        if (stalled.on === "escalate") {
+          throw try Effect.orDie(
+            Effect.try({ try: () => Stalling.escalated("ReviewLoop", stalled.rounds), catch: (error) => error })
+          )
+        }
         const parked: Stalled<A, Review> = { _tag: "Stalled", output, review, stalled }
         return parked
       }
-      output = yield* stages.revise({ output, review, round })
+      output = try stages.revise({ output, review, round })
       round += 1
     }
-  })
+  }
 }

@@ -20,7 +20,7 @@ import * as Failure from "./internal/Failure.vibe"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.vibe"
-import * as Pattern from "./Pattern.ts"
+import * as Pattern from "./Pattern.vibe"
 import { PatternError } from "./PatternError.vibe"
 
 schema ApprovalInput { input: Schema.Unknown; reason: string; scope: string }

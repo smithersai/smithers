@@ -17,7 +17,7 @@ import { expect } from "vitest"
 import * as DelegationChain from "../src/DelegationChain.vibe"
 import * as Escalation from "../src/Escalation.vibe"
 import { PatternError } from "../src/PatternError.vibe"
-import * as ReviewLoop from "../src/ReviewLoop.ts"
+import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import { execute } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 

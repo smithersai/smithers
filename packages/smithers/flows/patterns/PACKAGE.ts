@@ -52,7 +52,7 @@ const securityReview = Smithers.SecurityReview({
         "Runbook.run with onDeny \"skip\" or \"fail\" treating a thrown or undefined approval result as approval, or a risky/critical step called without an approval call.",
         "Intervene with dryRun true still calling apply, or make and run disagreeing on whether apply is reachable."
       ],
-      paths: ["src/Intervene.vibe", "src/Runbook.ts", "src/Pattern.ts"]
+      paths: ["src/Intervene.vibe", "src/Runbook.vibe", "src/Pattern.vibe"]
     },
     {
       id: "accepted-decision-strict",
@@ -67,7 +67,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/Compose.vibe",
-        "src/ReviewLoop.ts",
+        "src/ReviewLoop.vibe",
         "src/DelegationChain.vibe",
         "src/Escalation.vibe",
         "src/Supervisor.ts",
@@ -88,7 +88,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Decorate.ts",
         "src/internal/Compose.vibe",
         "src/Intervene.vibe",
-        "src/Runbook.ts"
+        "src/Runbook.vibe"
       ]
     },
     {
@@ -108,10 +108,10 @@ const securityReview = Smithers.SecurityReview({
         "src/Supervisor.ts",
         "src/Trellis.ts",
         "src/DelegationChain.vibe",
-        "src/Recursion.ts",
+        "src/Recursion.vibe",
         "src/MapReduce.vibe",
         "src/Optimizer.ts",
-        "src/ReviewLoop.ts",
+        "src/ReviewLoop.vibe",
         "src/internal/Stalling.ts",
         "src/Bounded.vibe",
         "src/MergeQueue.vibe",
@@ -132,7 +132,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Supervisor.ts",
         "src/Panel.vibe",
         "src/Bounded.vibe",
-        "src/Quarantine.ts",
+        "src/Quarantine.vibe",
         "src/Sidecar.ts",
         "src/CheckSuite.vibe",
         "src/Burndown.ts"

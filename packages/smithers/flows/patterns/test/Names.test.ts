@@ -6,8 +6,8 @@ import { expect } from "vitest"
 import * as Debate from "../src/Debate.vibe"
 import * as MergeQueue from "../src/MergeQueue.vibe"
 import * as Optimizer from "../src/Optimizer.ts"
-import * as Pattern from "../src/Pattern.ts"
-import * as ReviewLoop from "../src/ReviewLoop.ts"
+import * as Pattern from "../src/Pattern.vibe"
+import * as ReviewLoop from "../src/ReviewLoop.vibe"
 
 // Every pattern member is a `@smthrs/flow` flow, and a pattern's declared name
 // is the flow TAG, which is where `Compose.label`'s answer lands.
