@@ -43,13 +43,13 @@ export interface Options {
    */
   readonly isAlive: Ownership.LivenessCheck
   /** Routes shared-store runs to the host configured for their workspace. */
-  readonly canExecute?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
+  readonly canExecute?: ((row: RunStore.RunRow) => boolean!!) | undefined
   /**
    * Read-only host admission rechecked in the native activation transaction.
    * Use captured native reads and synchronous local probes only; external I/O
    * and module loading belong in `canExecute`.
    */
-  readonly canActivate?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
+  readonly canActivate?: ((row: RunStore.RunRow) => boolean!!) | undefined
   /**
    * Records, for a host that keeps one, that the engine has asked a parked
    * execution to resume — a durable clock fired, a durable deferred
@@ -61,7 +61,7 @@ export interface Options {
    * @since 1.0.0-rc.0
    */
   readonly requestResume?:
-    | ((executionId: string, reason: EngineStore.RequestedResumeReason) => Effect.Effect<void>)
+    | ((executionId: string, reason: EngineStore.RequestedResumeReason) => void!!)
     | undefined
   /**
    * The complete runtime environment a sealed step's recorded result may be

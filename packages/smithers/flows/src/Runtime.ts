@@ -42,11 +42,11 @@ import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { type RegistryArgs, registryLayer } from "./internal/RegistryArgs.ts"
+import { type RegistryArgs, registryLayer } from "./internal/RegistryArgs.vibe"
 
-export { type RegistryArgs, registryLayer } from "./internal/RegistryArgs.ts"
-export { decodeField, type Options, RuntimeConfigurationError, validate } from "./internal/RuntimeOptions.ts"
-import { type Options, validate } from "./internal/RuntimeOptions.ts"
+export { type RegistryArgs, registryLayer } from "./internal/RegistryArgs.vibe"
+export { decodeField, type Options, RuntimeConfigurationError, validate } from "./internal/RuntimeOptions.vibe"
+import { type Options, validate } from "./internal/RuntimeOptions.vibe"
 
 /** Records a phase without changing its memoization or resource scope. */
 const observed = <A, E, R>(phase: string, layer: Layer.Layer<A, E, R>) =>

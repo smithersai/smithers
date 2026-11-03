@@ -16,7 +16,7 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { parkRun } from "./park-run.ts"
+import { parkRun } from "./park-run.vibe"
 
 /** The declared step the flow's body names; the wait lives in its implementation. */
 export const Post = Action.make("examples/Post", {

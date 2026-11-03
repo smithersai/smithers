@@ -31,10 +31,10 @@ import { RpcClient, RpcSerialization, RpcServer } from "effect/rpc"
 import * as Schema from "effect/Schema"
 
 /** A safe, serializable deployment failure; never contains request credentials. */
-export class DeploymentError extends Schema.TaggedError<DeploymentError>()("DeploymentError", {
-  reason: Schema.Literals(["transport", "status"]),
-  status: Schema.optional(Schema.Number)
-}) {}
+export schema error DeploymentError {
+  reason: "transport" | "status"
+  status?: number
+}
 
 /** Sends one release to the deploy endpoint with the deploy token. */
 export const PushRelease = Action.make("examples/PlacedDeploy/PushRelease", {
@@ -61,22 +61,36 @@ export const deploy = Placement.remote({ target: "deploy" })
  * there. A host without the variable fails with `SecretUnavailable`.
  */
 export const push = (read: SecretProxy.Read, endpoint: string) => ({ version }: { readonly version: string }) =>
-  Effect.gen(function*() {
-    const vault = SecretProxy.makeVault({ read })
-    const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret("DEPLOY_TOKEN"), [endpoint]))
-    const boundary = vault.request(new URL(endpoint).origin)
-    const client = yield* HttpClient.HttpClient
-    const response = yield* client.execute(
+  (effect {
+    const vault = try Effect.orDie(Effect.try({ try: () => SecretProxy.makeVault({ read }), catch: (error) => error }))
+    const placeholder = try Effect.orDie(
+      Effect.try({
+        try: () => vault.mint(Secret.HttpSecret(Secret.Secret("DEPLOY_TOKEN"), [endpoint])),
+        catch: (error) => error
+      })
+    )
+    const boundary = try Effect.orDie(
+      Effect.try({ try: () => vault.request(new URL(endpoint).origin), catch: (error) => error })
+    )
+    const client = try HttpClient.HttpClient
+    const response = client.execute(
       HttpClientRequest.post(new URL("/release", endpoint).href).pipe(
-        HttpClientRequest.setHeader("authorization", boundary.substitute(`Bearer ${placeholder}`)),
+        HttpClientRequest.setHeader(
+          "authorization",
+          try Effect.orDie(
+            Effect.try({ try: () => boundary.substitute(`Bearer ${placeholder}`), catch: (error) => error })
+          )
+        ),
         HttpClientRequest.bodyText(version)
       )
-    ).pipe(Effect.mapError(() => new DeploymentError({ reason: "transport" })))
+    ) catch effect () => {
+      throw new DeploymentError({ reason: "transport" })
+    }
     if (response.status < 200 || response.status >= 300) {
-      return yield* Effect.fail(new DeploymentError({ reason: "status", status: response.status }))
+      throw new DeploymentError({ reason: "status", status: response.status })
     }
     return { version, status: response.status }
-  }).pipe(Effect.withSpan("examples.deploy.push"))
+  }) |> withSpan(%, "examples.deploy.push")
 
 /**
  * The holder: a durable engine that serves `PushRelease` over HTTP on
@@ -96,15 +110,13 @@ export const holder = <E, R>(
       Layer.provide(FlowProxyServer.layerRpcHandlers([served])),
       Layer.provide(RpcSerialization.layerJson),
       Layer.provide(
-        HttpRouter.middleware(Effect.succeed((handler) =>
-          Effect.gen(function*() {
-            const request = yield* HttpServerRequest.HttpServerRequest
-            if (!credential || request.headers.authorization !== `Bearer ${credential}`) {
-              return HttpServerResponse.empty({ status: 401 })
-            }
-            return yield* handler
-          })
-        )).layer
+        HttpRouter.middleware(Effect.succeed(effect (handler) => {
+          const request = try HttpServerRequest.HttpServerRequest
+          if (!credential || request.headers.authorization !== `Bearer ${credential}`) {
+            return HttpServerResponse.empty({ status: 401 })
+          }
+          return try handler
+        })).layer
       )
     )
   ).pipe(
@@ -139,17 +151,17 @@ export const caller = (
         deploy: {
           _tag: "Proxy",
           connect: (group) =>
-            RpcClient.make(group).pipe(
-              Effect.provide(
-                RpcClient.layerProtocolHttp({
-                  url: holderUrl,
-                  transformClient: HttpClient.mapRequest(
-                    HttpClientRequest.setHeader("authorization", `Bearer ${holderCredential ?? ""}`)
-                  )
-                }).pipe(
-                  Layer.provide(RpcSerialization.layerJson),
-                  Layer.provide(FetchHttpClient.layer)
+            RpcClient.make(group)
+            |> Effect.provide(
+              %,
+              RpcClient.layerProtocolHttp({
+                url: holderUrl,
+                transformClient: HttpClient.mapRequest(
+                  HttpClientRequest.setHeader("authorization", `Bearer ${holderCredential ?? ""}`)
                 )
+              }).pipe(
+                Layer.provide(RpcSerialization.layerJson),
+                Layer.provide(FetchHttpClient.layer)
               )
             )
         }

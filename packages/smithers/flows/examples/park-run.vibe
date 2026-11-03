@@ -26,26 +26,30 @@ const suspended = Schema.is(Schema.Struct({
  * the current durable suspension through the reader's still-open RunStore.
  * No durable cancellation is requested; a fresh engine can resume the run.
  */
-export const parkRun = <A, E, R, ROut, E2, RIn>(
+export const parkRun = effect <A, E, R, ROut, E2, RIn>(
   executionId: string,
-  execute: Effect.Effect<A, E, R>,
+  execute: A!E!R,
   runtime: Layer.Layer<ROut, E2, RIn>
-) =>
-  Effect.gen(function*() {
-    yield* Effect.gen(function*() {
-      const journal = yield* Journal.Journal
-      const caller = yield* Effect.forkScoped(execute)
-      yield* Effect.raceFirst(
-        journal.stream({ runId: JournalEvent.RunId.make(executionId) }).pipe(
-          Stream.filter((entry) => entry.eventType === EventTypes.runDecision && suspended(entry.payload)),
-          Stream.runHead
-        ),
-        Fiber.join(caller).pipe(Effect.andThen(Effect.die(new Error(`Run ${executionId} completed before parking`))))
-      )
-    }).pipe(Effect.scoped, Effect.provide(Layer.fresh(runtime)))
-    const store = yield* RunStore.RunStore
-    const row = yield* store.get(executionId)
-    if (row.status !== "suspended" || row.cancelRequestedAtMs !== null) {
-      return yield* Effect.die(new Error(`Run ${executionId} did not remain suspended after engine shutdown`))
+) => {
+  try effect {
+    provide Layer.fresh(runtime) {
+      return try (effect {
+        const journal = try Journal.Journal
+        const caller = try Effect.forkScoped(execute)
+        try Effect.raceFirst(
+          journal.stream({ runId: JournalEvent.RunId.make(executionId) }).pipe(
+            Stream.filter((entry) => entry.eventType === EventTypes.runDecision && suspended(entry.payload)),
+            Stream.runHead
+          ),
+          Fiber.join(caller) |>
+            Effect.andThen(%, Effect.die(new Error(`Run ${executionId} completed before parking`)))
+        )
+      } |> Effect.scoped(%))
     }
-  })
+  }
+  const store = try RunStore.RunStore
+  const row = try store.get(executionId)
+  if (row.status !== "suspended" || row.cancelRequestedAtMs !== null) {
+    return try Effect.die(new Error(`Run ${executionId} did not remain suspended after engine shutdown`))
+  }
+}

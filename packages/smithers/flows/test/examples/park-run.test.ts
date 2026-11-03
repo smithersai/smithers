@@ -13,7 +13,7 @@ import * as Stream from "effect/Stream"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parkRun } from "../../examples/park-run.ts"
+import { parkRun } from "../../examples/park-run.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-park-run-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
