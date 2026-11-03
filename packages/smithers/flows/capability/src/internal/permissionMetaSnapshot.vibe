@@ -5,7 +5,6 @@
  * @since 0.1.0
  */
 
-import { Schema, SchemaIssue } from "effect"
 import { isPlainObject } from "./isPlainObject.ts"
 
 // Match the kernel GrantStore envelope without depending on the kernel.

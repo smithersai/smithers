@@ -9,7 +9,6 @@
  * @since 1.0.0-rc.0
  */
 
-import { Context, Effect } from "effect"
 import { type Capability, CapabilityPattern, matches, subsumes } from "./Capability.ts"
 
 const CapabilitySetTypeId: unique symbol = Symbol.for("@smthrs/kernel/CapabilitySet")
@@ -231,7 +230,7 @@ const CurrentCapabilities: Context.Reference<CapabilitySet> = Context.Reference<
  * @category accessors
  * @since 1.0.0-rc.0
  */
-export const current: Effect.Effect<CapabilitySet> = CurrentCapabilities
+export const current: CapabilitySet!! = CurrentCapabilities
 
 /**
  * Runs an effect with authority intersected with one additional any-of group.
@@ -241,8 +240,8 @@ export const current: Effect.Effect<CapabilitySet> = CurrentCapabilities
  */
 export const attenuate = (
   patterns: ReadonlyArray<CapabilityPattern>
-): <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R> =>
-<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+): <A, E, R>(effect: A!E!R) => A!E!R =>
+<A, E, R>(effect: A!E!R): A!E!R =>
   Effect.updateService(
     effect,
     CurrentCapabilities,
@@ -254,6 +253,5 @@ export const attenuate = (
  * @since 1.0.0
  */
 export const attenuateGroups =
-  (groups: ReadonlyArray<ReadonlyArray<CapabilityPattern>>) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  (groups: ReadonlyArray<ReadonlyArray<CapabilityPattern>>) => <A, E, R>(effect: A!E!R): A!E!R =>
     groups.reduce((effect, group) => attenuate(group)(effect), effect)

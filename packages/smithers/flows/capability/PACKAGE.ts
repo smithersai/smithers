@@ -162,10 +162,10 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/isPermissionError.vibe",
-        "src/decodePermissionError.ts",
+        "src/decodePermissionError.vibe",
         "src/fromPlatformError.vibe",
         "src/internal/isPlainObject.ts",
-        "src/internal/permissionMetaSnapshot.ts",
+        "src/internal/permissionMetaSnapshot.vibe",
         "src/internal/capabilitySnapshot.ts"
       ]
     },
