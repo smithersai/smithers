@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 
-import { JjInternalFault } from "./JjInternalFault.vibe"
+import { JjInternalFault } from "./JjInternalFault.ts"
 
 /** Git's pathname quoting, rather than JSON's unsupported \u escapes. */
 const quotePath = (path: string): string => {

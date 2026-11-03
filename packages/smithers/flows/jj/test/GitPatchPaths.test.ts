@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { quoteGitPatchPaths } from "../src/internal/gitPatchPaths.ts"
-import { JjInternalFault } from "../src/internal/JjInternalFault.vibe"
+import { JjInternalFault } from "../src/internal/JjInternalFault.ts"
 
 const paths = (...names: ReadonlyArray<string>): string => names.map((name) => JSON.stringify(name)).join("\n") + "\n"
 
