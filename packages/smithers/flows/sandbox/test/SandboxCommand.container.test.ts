@@ -15,8 +15,8 @@ import type { Readable } from "node:stream"
 import { afterAll, beforeAll } from "vitest"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
-import * as SandboxCommand from "../src/SandboxCommand/index.ts"
-import * as SandboxTools from "../src/SandboxTools/index.ts"
+import * as SandboxCommand from "../src/SandboxCommand/index.vibe"
+import * as SandboxTools from "../src/SandboxTools/index.vibe"
 
 const cli = ["docker", "podman"].find((name) => spawnSync(name, ["info"], { stdio: "ignore" }).status === 0)
 const image = "docker.io/library/debian:trixie-slim"

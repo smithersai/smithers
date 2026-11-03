@@ -106,20 +106,20 @@
     },
     "./SandboxSupervision/*": null,
     "./SandboxTools": {
-      "types": "./src/SandboxTools/index.ts",
-      "vibelang-source": "./src/SandboxTools/index.ts",
+      "types": "./.vibe/declarations/src/SandboxTools/index.d.vibe.ts",
+      "vibelang-source": "./src/SandboxTools/index.vibe",
       "default": "./.vibelang/js/src/SandboxTools/index.js"
     },
     "./SandboxTools/*": null,
     "./SandboxCommand": {
-      "types": "./src/SandboxCommand/index.ts",
-      "vibelang-source": "./src/SandboxCommand/index.ts",
+      "types": "./.vibe/declarations/src/SandboxCommand/index.d.vibe.ts",
+      "vibelang-source": "./src/SandboxCommand/index.vibe",
       "default": "./.vibelang/js/src/SandboxCommand/index.js"
     },
     "./SandboxCommand/*": null,
     "./CiJob": {
-      "types": "./src/CiJob/index.ts",
-      "vibelang-source": "./src/CiJob/index.ts",
+      "types": "./.vibe/declarations/src/CiJob/index.d.vibe.ts",
+      "vibelang-source": "./src/CiJob/index.vibe",
       "default": "./.vibelang/js/src/CiJob/index.js"
     },
     "./CiJob/*": null,

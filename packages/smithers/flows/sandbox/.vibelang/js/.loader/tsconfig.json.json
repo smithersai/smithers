@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/sandbox"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -75,7 +75,7 @@
      "relative": "packages/smithers/flows/sandbox/src"
     },
     null,
-    "RxsGtfqlGVnd6wPeCtqMTmjR24Q1UrwyrckoSIN0BW4",
+    "saPCMTAKTqBtz0ozHAnUu9Ll1PMQIQCgLe2bbsqjQew",
     [],
     {
      "recursive": true,
@@ -244,7 +244,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -269,7 +269,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -284,7 +284,7 @@
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "UJEoLkJ7MXGmJYIzXPkyA3-7p_k52_D8URkKB_Ofs-w"
    },
    {
     "path": {
@@ -297,8 +297,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/package.json"
     },
-    "size": 16607,
-    "hash": "P7jKyE4biR9cisWhmRF3xXU4alY2DC6K3YP6dyC_ciE"
+    "size": 16691,
+    "hash": "iLfYU4HX6Y-TrGaUdEEoyXzTbCIm1oj2He7oBLm3VTE"
    },
    {
     "path": {
@@ -312,63 +312,63 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
    },
    {
     "path": {
@@ -1319,13 +1319,6 @@
    },
    {
     "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/index.d.ts"
-    },
-    "size": 388,
-    "hash": "aZwVtgnZI41FKBhynqDscJq6k8LE2tlaSqwCfA-N0JM"
-   },
-   {
-    "path": {
      "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/version.d.ts"
     },
     "size": 91,
@@ -1956,6 +1949,13 @@
    },
    {
     "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/index.d.ts"
+    },
+    "size": 388,
+    "hash": "aZwVtgnZI41FKBhynqDscJq6k8LE2tlaSqwCfA-N0JM"
+   },
+   {
+    "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
     },
     "size": 1331,
@@ -2040,17 +2040,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.vibe"
     },
-    "size": 2782,
-    "hash": "KKsSqGJAA18n-UpJT8Az80RmvVKiozu0pP8y-M_kgfc"
+    "size": 2697,
+    "hash": "h9FIHdufR4YW8v56XJGcuHORsiV4-oBIV9y2lKo9Jzk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/make.ts"
     },
-    "size": 1212,
-    "hash": "LnUUpRJW634tkaFYehe7tmreLBCWAZQiyvCA8Ke1w6M"
+    "size": 1214,
+    "hash": "f3PfoD0L7N_mALRrtmo9rVUU9p5liIR-SvOC4qUHyKk"
    },
    {
     "path": {
@@ -2068,17 +2068,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.ts"
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
     },
-    "size": 9346,
-    "hash": "QK10g9WSR8cI2Z46_EWgpKj9LOvcbEwe_cpFoJ3-GM0"
+    "size": 9014,
+    "hash": "t2ath_srbJdyg0CYT0GAiDdFR5fgdDbbPmcOXu6V23Q"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/index.ts"
     },
-    "size": 629,
-    "hash": "2hTsv9BtetrIlEK_ordKX_Eo7kXgrKwZNEYsuA4Ybd0"
+    "size": 631,
+    "hash": "vfF3Gq_8AkHDGti30KOXRSo2r4E29n594mRW4A8LBSk"
    },
    {
     "path": {
@@ -2096,17 +2096,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.ts"
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.vibe"
     },
-    "size": 2897,
-    "hash": "WPOO2gHbTFzPBQmLt4UnfBceJR5SXAI2EXe7pHQYvtM"
+    "size": 2847,
+    "hash": "nmwDAA_KQDOM1P06o7VgeYlINiWSAkj0LQXoAreNbWY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/commandProvider.ts"
     },
-    "size": 4628,
-    "hash": "AAhlPb6th3kZqL7I4QMVNEuiZhwXedNZD8agsqmh9hc"
+    "size": 4630,
+    "hash": "IA1sjkwBcdC-bIO2-mClO3ZbNwmUG8MSxAYzWdVthqo"
    },
    {
     "path": {
@@ -2131,7 +2131,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.vibe"
     },
     "size": 798,
     "hash": "xu4JFcncu1J3bAEpgJHhx2Cnum_UMaU3UitfUpjoJQQ"
@@ -2147,15 +2147,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/index.ts"
     },
-    "size": 509,
-    "hash": "jl6hu4NqZO2sceDvzH5xs42I0vhsKUu3AXcw8zJOmt8"
+    "size": 513,
+    "hash": "h3NqV-n59SLcRGC4erQItXu6k4YpM-gMI__p54Xf8Hs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"
     },
-    "size": 5980,
-    "hash": "Ex1qaGPpo8-EEM99aDZMJb9EdvUFp9qSCuYOczyCZmg"
+    "size": 5982,
+    "hash": "N1N_b6Q1Ps2-5TPdyineZRk-uaH8XhueGUc5Qafblb8"
    },
    {
     "path": {
@@ -2180,10 +2180,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.ts"
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.vibe"
     },
-    "size": 2949,
-    "hash": "9Qa_PfcbQmJtdP4UcElYzA3U-3JxG0MycM606X-CPO4"
+    "size": 2885,
+    "hash": "AmEeCtOKnC9XujztPXRRR6jCkgJkvOd5VjIXkWzshMA"
    },
    {
     "path": {
@@ -2196,8 +2196,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSessionProvider.ts"
     },
-    "size": 390,
-    "hash": "55p1fXpXKvYr0mNoL_SCmvKoHRoS49MYpR8fS3e2FuY"
+    "size": 392,
+    "hash": "5ERXfPPEEdaw0nbR7lUp5DfHQfinwXrFaOyxU4Mv5yc"
    },
    {
     "path": {
@@ -2245,15 +2245,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/job.ts"
     },
-    "size": 12449,
-    "hash": "xfpxlyF2s6AEqk-OpQcogQdmOH6Zouo5Kxne_kBxnyk"
+    "size": 12451,
+    "hash": "SDDuFA2RogL1Q2XPiOE1H9LmnJxJsvXnTZDeELy4Zg8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/index.ts"
     },
-    "size": 2240,
-    "hash": "GyHQP1itUkaNLMzSIukCmXjZ6qM6JBXrm5nYNq9XlCI"
+    "size": 2244,
+    "hash": "4eBOwihZSjoeztXXVxTxv17rmpxe2NBhuBpBHEJMh84"
    },
    {
     "path": {
@@ -3664,24 +3664,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
     },
-    "size": 54224,
-    "hash": "1b9nCAJBVxsN-e5ujPmk5X0j0lVDmqQOaCvg0kd4pv8"
+    "size": 53156,
+    "hash": "Y7WcNvn5LSjsFliy5zkO_E6R7h7oncazOI0FljJl45Y"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.vibe"
     },
-    "size": 10452,
-    "hash": "aQvuTmYTusydrrS2Zo19QFdrnRuM1XuORz67dTA3tMg"
+    "size": 10336,
+    "hash": "EUZxsV4HMNW3QVq6XJb89CEAhkmVgmnXSCdP2thScng"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/CiJob/index.ts"
+     "relative": "packages/smithers/flows/sandbox/src/CiJob/index.vibe"
     },
-    "size": 19659,
-    "hash": "Ws4j1dpXIDHF0I6njeIxMI3EN-8eBQJMQdEVCBIRO_w"
+    "size": 19483,
+    "hash": "bqISpatlaY4CSLSo9T2NcxF43jPAnfoUYMXendE4BiQ"
    },
    {
     "path": {
@@ -3757,8 +3757,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxConformance/check.ts"
     },
-    "size": 29370,
-    "hash": "ibRuI-0iXdmxIS-LwkjTbyTR6MElK7TEKuOfhXGzem0"
+    "size": 29374,
+    "hash": "KKN8uTu7GhegDoCb50gLc54izPo81FVC1ROIJOaT5XE"
    },
    {
     "path": {
@@ -3792,8 +3792,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
     },
-    "size": 625,
-    "hash": "8eYhjDA8w7GBaY71br2OO6PYHH_Lf8LrnP4_KWaUhDo"
+    "size": 1107,
+    "hash": "hvMBMUZnlpwwL-E3fshAgtJhx2-VICh5i9-__JpOHbk"
    },
    {
     "path": {
@@ -3820,8 +3820,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
     },
-    "size": 16756,
-    "hash": "8e20GC9bg3UGBEhtVRfQGKlwajnM-IMO7rLRWvx28Y8"
+    "size": 17266,
+    "hash": "Wc9eOXzfHIxxWHOafZ2mz42hCKpVTvTzr1WIfbc0H_o"
    },
    {
     "path": {
@@ -3883,8 +3883,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts"
     },
-    "size": 12614,
-    "hash": "aYNC5pqhZMmvFuV3vSdirQs9ObcoUH2wuwavEWfgrYs"
+    "size": 12616,
+    "hash": "tRQUpZ56CkclY-AsMt4vpHHgORkg3QWgB_yDmpwiW7Q"
    },
    {
     "path": {
@@ -3960,8 +3960,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/make.ts"
     },
-    "size": 18427,
-    "hash": "i-LrAtM1qnl2ZGlsYXHE8V0pQFf6PcKXf1DbNTwNQGs"
+    "size": 18429,
+    "hash": "Nnfhyo4zQqXV7YysHycGW5Q-QCQ4YJ1KkYo8u5Xpa30"
    },
    {
     "path": {
@@ -3974,8 +3974,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CommandSandbox/make.ts"
     },
-    "size": 12262,
-    "hash": "o_Q_O8eRMJAdwbLTmS8nPj5Ib49VOD2ix1s1kBDhZ-4"
+    "size": 12264,
+    "hash": "-ge8AOD9tVEvbxo5YLiKjPA9A93u4sWo8ayaQV3EFU4"
    },
    {
     "path": {
@@ -3988,8 +3988,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/KubernetesSandbox/make.ts"
     },
-    "size": 21812,
-    "hash": "kFfwHyLpUDxl106G7csBfGPSrYUyz2h1pVGcXUgvqZ4"
+    "size": 21814,
+    "hash": "1rHeoZuBXRYFX0E6jfzkDZdJ9-WncSK1IgSP0dCKuDI"
    },
    {
     "path": {
@@ -4009,8 +4009,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/JustBashSandbox/make.ts"
     },
-    "size": 10274,
-    "hash": "rFx3gQDHmsLDsp_jP6A6uLh-PZ-cY5V6rzEa11D_LGY"
+    "size": 10276,
+    "hash": "gXGtL4C_LqvO3XVRsqA3Dzt0rWUBfeD9sw2W0bEoO7Y"
    },
    {
     "path": {
@@ -4107,15 +4107,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
     },
-    "size": 38687,
-    "hash": "VOczQMtISvJE3i6bOVBLsHz-d63nJsCFXIsj4v50GgQ"
+    "size": 38689,
+    "hash": "eWYFtDpJev1Dx-IOO-0dOglkow3SCVccHsQvcNq1nzg"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.ts"
+     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.vibe"
     },
-    "size": 6910,
-    "hash": "OBTdBYbjR-0BitXboOpEMrlVXlyoYX5YNAsCEzSyjhY"
+    "size": 6641,
+    "hash": "Esaz9dnzBZZLigdKluNn7TkZP-SYwW_0qjVlhDG5GBc"
    },
    {
     "path": {
@@ -4128,8 +4128,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/index.ts"
     },
-    "size": 708,
-    "hash": "B2TIaWYpudzFkPvl4JZgt5nwJfNxzUcO9e_xFX7nNpg"
+    "size": 710,
+    "hash": "keECoEL4fVOlpx4S3dhN7J03bdsUQNCKqK0p7rnO_2I"
    },
    {
     "path": {
@@ -4170,8 +4170,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/VercelSandbox/make.ts"
     },
-    "size": 16614,
-    "hash": "cF1Sr6FPA3rQ56kGjTC1SLG9RVX97GnW9c2UguShU1I"
+    "size": 16616,
+    "hash": "mcOnzudTc2IJOEDf52t74HaO59fhNd0KBXn3R3fzCrg"
    },
    {
     "path": {
@@ -4191,8 +4191,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DaytonaSandbox/make.ts"
     },
-    "size": 14754,
-    "hash": "7a5rBPqfG_3Hkomr5vOIGPEbsLomZ5vMIlebiWmIzgs"
+    "size": 14756,
+    "hash": "J08PKDjJ958rzLPgFm9-PKkOP37bMJ67Xa09P5gKIIo"
    },
    {
     "path": {
@@ -4219,8 +4219,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/AwsSandbox/make.ts"
     },
-    "size": 39982,
-    "hash": "sGxb3oOsxGKf-7SeQ5ECEBARIe42GNOXPIWaWtFJ6xI"
+    "size": 39984,
+    "hash": "u32ONpswrPd_3Hy2K3gg1Gu4qgAWDgMmUzNXF-CQm0I"
    },
    {
     "path": {
@@ -4240,8 +4240,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CloudflareSandbox/make.ts"
     },
-    "size": 10171,
-    "hash": "j9xkfsyexEcJfnUETyftrTdaN24Nr--OyTaQo0o7-3g"
+    "size": 10173,
+    "hash": "sSoXSA6Aq9Af4Cs7sOj23Ee56ZoUndzc4GugGVGB0-E"
    },
    {
     "path": {
@@ -4280,7 +4280,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.vibe"
     },
     "size": 926,
     "hash": "_mJ60ZanEm52CIoZQUVIumyO5isB5MGrOS-N3AWUnC0"
@@ -4289,15 +4289,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/index.ts"
     },
-    "size": 1208,
-    "hash": "xYGWhe5KJ6e3h3tW6_HHqPynNzPwMwRNtqMyt_DknB4"
+    "size": 1210,
+    "hash": "Xzmwi_1ORxtT_0zt24wHBcuB6LEXufFPjChvf9I6erk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/index.ts"
     },
-    "size": 3505,
-    "hash": "pDnPptGLcHw8y_oHoFd-p2Z8e9v-IUh-EeK0wvATG8Y"
+    "size": 3511,
+    "hash": "6GyC7aliv_bz2zwax9n5pR0pZXRMaipE1pT3xOnI28o"
    },
    {
     "path": {
@@ -5273,7 +5273,7 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/ProbeOptions.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/make.ts"
@@ -5285,7 +5285,7 @@
     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/Violation.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.ts"
+    "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/index.ts"
@@ -5297,7 +5297,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/Session.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.ts"
+    "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/commandProvider.ts"
@@ -5312,7 +5312,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/fileSystem.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layerNoop.vibe"
@@ -5333,7 +5333,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/Work.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.ts"
+    "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSessionState.ts"
@@ -5876,13 +5876,13 @@
     "relative": "packages/smithers/flows/flow/src/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/CiJob/index.ts"
+    "relative": "packages/smithers/flows/sandbox/src/CiJob/index.vibe"
    },
    {
     "relative": "packages/smithers/flows/jj/src/Jj.ts"
@@ -6068,7 +6068,7 @@
     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.ts"
+    "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.vibe"
@@ -6140,7 +6140,7 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/make.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/index.ts"
@@ -6172,6 +6172,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/sandbox/src/CiJob/index.vibe"
+    },
+    "line": 252,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "MachineUnavailable extends Schema.TaggedError; a schema error declaration, schema error MachineUnavailable { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.vibe"
     },
     "line": 388,
@@ -6192,6 +6202,116 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 31,
+    "column": 21,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 32,
+    "column": 39,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provide wraps a program in a call; write it as a block: provide Layer { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 43,
+    "column": 42,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 44,
+    "column": 37,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 64,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 65,
+    "column": 52,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 100,
+    "column": 49,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 101,
+    "column": 55,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 121,
+    "column": 24,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 150,
+    "column": 42,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 152,
+    "column": 24,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/Session.vibe"
     },
     "line": 80,
@@ -6209,6 +6329,16 @@
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.vibe"
+    },
+    "line": 77,
+    "column": 20,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provide wraps a program in a call; write it as a block: provide Layer { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
    },
    {
     "file": {
@@ -6269,6 +6399,126 @@
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.vibe"
+    },
+    "line": 24,
+    "column": 74,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.vibe"
+    },
+    "line": 25,
+    "column": 16,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 100,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "Read holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema Read { … }.\n  Its quick fix writes schema Read { tool: \"read\"; path: GuestPath }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 121,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "List holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema List { … }.\n  Its quick fix writes schema List { tool: \"list\"; path?: GuestPath }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 195,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "RunResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema RunResult { … }.\n  Its quick fix writes schema RunResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 213,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "ReadResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema ReadResult { … }.\n  Its quick fix writes schema ReadResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 227,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "WriteResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema WriteResult { … }.\n  Its quick fix writes schema WriteResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 255,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "ListResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema ListResult { … }.\n  Its quick fix writes schema ListResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 304,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "DiffResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema DiffResult { … }.\n  Its quick fix writes schema DiffResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 340,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "ToolRefused extends Schema.TaggedError; a schema error declaration, schema error ToolRefused { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 351,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "ToolLost extends Schema.TaggedError; a schema error declaration, schema error ToolLost { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 363,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "ToolUnavailable extends Schema.TaggedError; a schema error declaration, schema error ToolUnavailable { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
    },
    {
     "file": {
@@ -6545,6 +6795,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.vibe"
+     }
+    ],
+    "code": "/**\n * Probes sandbox liveness under a deadline.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { boundedMessage } from \"../internal/boundedMessage.js\";\nimport { Healthy } from \"./Healthy.js\";\nimport { Unhealthy } from \"./Unhealthy.js\";\n/**\n * Default deadline used when a probe does not specify one.\n *\n * @private\n * @since 0.1.0\n */\nconst defaultDeadline = \"5 seconds\";\n/**\n * Runs one ping under a deadline and reports a typed health state.\n *\n * A failed ping becomes `Unhealthy(reason: \"ping_failed\")`; a ping that\n * outlives the deadline becomes `Unhealthy(reason: \"unresponsive\")`. The\n * probe opens a `SandboxHealth.probe` span annotated with the outcome.\n *\n * A failed ping is logged at debug level as its provider `code` and its\n * `message`, bounded at 512 characters with control characters collapsed, and\n * the verdict carries that same bounded message. The `ProviderError` itself,\n * and above all its `cause`, never reaches a logger from here: adapters attach\n * raw vendor errors there, which can quote credentials, request headers,\n * proxies, or response bodies, and rendering an arbitrary object can throw or\n * run without bound. A host that wants the raw failure taps the ping it hands\n * in, `Effect.tapError` on `PingProvider.ping`, and applies its own redaction.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const probe = (provider, options) => { var topic_1; return (topic_1 = Effect.tap(Effect.timeoutOrElse(Effect.matchEffect(provider.ping, {\n    onSuccess: () => Effect.succeed(new Healthy()),\n    onFailure: (error) => {\n        const message = boundedMessage(error.message);\n        return Effect.as(Effect.logDebug(\"sandbox ping failed\", { code: error.code, message }), new Unhealthy({\n            component: \"sandbox\",\n            reason: \"ping_failed\",\n            message\n        }));\n    }\n}), {\n    duration: options?.deadline ?? defaultDeadline,\n    orElse: () => Effect.succeed(new Unhealthy({\n        component: \"sandbox\",\n        reason: \"unresponsive\",\n        message: \"sandbox ping did not answer within the probe deadline\"\n    }))\n}), (state) => Effect.annotateCurrentSpan({ outcome: state._tag === \"Healthy\" ? \"healthy\" : state.reason })), Effect.withSpan(\"SandboxHealth.probe\", {}, { captureStackTrace: false })(topic_1)); };\n",
+    "map": {
+     "version": 3,
+     "file": "probe.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,cAAc,EAAE,MAAM,+BAA+B,CAAA;AAE9D,OAAO,EAAE,OAAO,EAAE,MAAM,cAAgB,CAAA;AAGxC,OAAO,EAAE,SAAS,EAAE,MAAM,gBAAkB,CAAA;AAE5C;;;;;GAKG;AACH,MAAM,eAAe,GAAmB,WAAW,CAAA;AAEnD;;;;;;;;;;;;;;;;;;GAkBG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CACnB,QAAsB,EACtB,OAAsB,EACP,EAAE,kCA6Bd,MAAM,CAAC,GAAG,CA5Bb,MAAM,CAAC,aAAa,CAClB,MAAM,CAAC,WAAW,CAAC,QAAQ,CAAC,IAAI,EAAE;IAChC,SAAS,EAAE,GAAkB,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,IAAI,OAAO,EAAE,CAAC;IAC7D,SAAS,EAAE,CAAC,KAAK,EAAiB,EAAE;QAClC,MAAM,OAAO,GAAG,cAAc,CAAC,KAAK,CAAC,OAAO,CAAC,CAAA;QAC7C,OACK,MAAM,CAAC,EAAE,CADP,MAAM,CAAC,QAAQ,CAAC,qBAAqB,EAAE,EAAE,IAAI,EAAE,KAAK,CAAC,IAAI,EAAE,OAAO,EAAE,CAAC,EAGxE,IAAI,SAAS,CAAC;YACZ,SAAS,EAAE,SAAS;YACpB,MAAM,EAAE,aAAa;YACrB,OAAO;SACR,CAAC,CACH,CAAA;IACL,CAAC;CACF,CAAC,EACF;IACE,QAAQ,EAAE,OAAO,EAAE,QAAQ,IAAI,eAAe;IAC9C,MAAM,EAAE,GAAG,EAAE,CACX,MAAM,CAAC,OAAO,CACZ,IAAI,SAAS,CAAC;QACZ,SAAS,EAAE,SAAS;QACpB,MAAM,EAAE,cAAc;QACtB,OAAO,EAAE,uDAAuD;KACjE,CAAC,CACH;CACJ,CACF,EACgB,CAAC,KAAK,EAAE,EAAE,CACzB,MAAM,CAAC,mBAAmB,CAAC,EAAE,OAAO,EAAE,KAAK,CAAC,IAAI,KAAK,SAAS,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAC,KAAK,CAAC,MAAM,EAAE,CAAC,CAAC,EAC5F,MAAM,CAAC,QAAQ,CAAC,qBAAqB,EAAE,EAAE,EAAE,EAAE,iBAAiB,EAAE,KAAK,EAAE,CAAC,SAAG,IAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/Commands.vibe"
      }
     ],
@@ -6560,6 +6830,26 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG;AAoEH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,kBAAkB,GAAmB,WAAW,CAAA;AAE7D;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,kBAAkB,GAAG,KAAK,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+     }
+    ],
+    "code": "/**\n * Runs the provider conformance suite.\n *\n * @since 0.1.0\n */\nimport * as ChildProcess from \"effect/process/ChildProcess\";\nimport * as ChildProcessSpawner from \"effect/process/ChildProcessSpawner\";\nimport * as Exit from \"effect/Exit\";\nimport * as Option from \"effect/Option\";\nimport * as Stream from \"effect/Stream\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { boundedCheck } from \"../internal/boundedCheck.js\";\nimport { defaultCheckTimeout, elapsed } from \"../internal/deadline.js\";\nimport { describeExit } from \"../internal/describeExit.js\";\nimport { layer } from \"../RemoteChildProcessSpawner/layer.js\";\nimport { make as makeHealth } from \"../SandboxHealth/make.js\";\nimport { defaultCopiesStdin, defaultStopsWithin } from \"./Commands.js\";\n/**\n * Runs one check against a fresh session, so a check that leaves a session\n * unusable cannot decide the next one, and under a deadline, so an adapter\n * that never answers is convicted instead of hanging the suite with it.\n *\n * The deadline covers the whole check, session acquisition and stream\n * consumption included: every one of `open`, `spawn`, a stdout stream that\n * never ends, `ping`, and `kill` can hang, and only the wait after a\n * successful kill was ever bounded.\n */\nconst inSession = (provider, deadline, effect) => boundedCheck(Effect.provide(effect, layer(provider)), deadline);\nconst writesItsOutput = (provider, commands, deadline) => Effect.map(inSession(provider, deadline, Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) => spawner.string(ChildProcess.make(commands.writes, { shell: commands.shell ?? false })))), (exit) => Exit.isSuccess(exit) && exit.value === commands.output ? undefined : {\n    check: \"writes-its-output\",\n    expected: `stdout ${JSON.stringify(commands.output)}`,\n    actual: describeExit(exit)\n});\nconst reportsANonzeroExit = (provider, commands, deadline) => Effect.map(inSession(provider, deadline, Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) => spawner.exitCode(ChildProcess.make(commands.fails, { shell: commands.shell ?? false })))), (exit) => Exit.isSuccess(exit) && exit.value === commands.failureCode ? undefined : {\n    check: \"reports-a-nonzero-exit\",\n    expected: `exit code ${commands.failureCode}`,\n    actual: describeExit(exit)\n});\nconst answersAPing = (provider, deadline) => Effect.map(inSession(provider, deadline, makeHealth(provider).check), (exit) => Exit.isSuccess(exit) && exit.value._tag === \"Healthy\" ? undefined : {\n    check: \"answers-a-ping\",\n    expected: \"a healthy probe while the session is open\",\n    actual: describeExit(exit)\n});\nconst signalsARunningCommand = (provider, commands, deadline) => Effect.map(inSession(provider, deadline, Effect.scoped(Effect_1.gen(function* () {\n    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;\n    const handle = yield* spawner.spawn(ChildProcess.make(commands.runs, { shell: commands.shell ?? false }));\n    yield* handle.kill();\n    // A `kill` that RETURNS is not a `kill` that happened. An adapter whose\n    // signal goes nowhere satisfies the type and leaves every cancelled\n    // action's process running in the sandbox, which is the failure this\n    // whole seam exists to prevent, so the process has to be observed\n    // stopping.\n    //\n    // HOW it stopped is not the subject. A provider that reports a\n    // signalled process as a failed `exitCode` is as conforming as one that\n    // reports a status, so the exit is captured rather than awaited.\n    const stopped = yield* Effect.raceFirst(Effect.map(Effect.exit(handle.exitCode), Option.some), Effect.as(elapsed(commands.stopsWithin ?? defaultStopsWithin), Option.none()));\n    if (Option.isNone(stopped) || commands.survivor === undefined)\n        return { stopped, survived: false };\n    // The handle is the wrapper shell, and a shell that dies while its\n    // child lives on satisfies everything above. The second look asks the\n    // machine itself whether the command's work is still there.\n    const survivor = yield* spawner.exitCode(ChildProcess.make(commands.survivor, { shell: commands.shell ?? false }));\n    return { stopped, survived: survivor === 0 };\n}))), (exit) => Exit.isSuccess(exit) && Option.isSome(exit.value.stopped) && !exit.value.survived ? undefined : {\n    check: \"signals-a-running-command\",\n    expected: \"a declared `kill` stops a live process and everything it started\",\n    actual: Exit.isSuccess(exit) && Option.isNone(exit.value.stopped)\n        ? \"the command was still running after the signal\"\n        : Exit.isSuccess(exit) && exit.value.survived\n            ? \"the command's work was still running after its handle reported it stopped\"\n            : describeExit(exit)\n});\n/** The text the stdin check sends and expects back, newline-free so a pty transport cannot reframe it. */\nconst stdinFixture = \"sandbox-conformance-stdin\";\nconst deliversStandardInput = (provider, commands, deadline) => Effect.map(inSession(provider, deadline, Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) => spawner.string(ChildProcess.make(commands.copiesStdin ?? defaultCopiesStdin, {\n    shell: commands.shell ?? false,\n    stdin: Stream.make(new TextEncoder().encode(stdinFixture))\n})))), (exit) => \n// `includes`, not equality: a transport whose channel is a pseudo-terminal\n// echoes the input alongside the command's own output, which is a\n// documented property of that channel rather than a lost input.\nExit.isSuccess(exit) && exit.value.includes(stdinFixture) ? undefined : {\n    check: \"delivers-standard-input\",\n    expected: `stdout containing ${JSON.stringify(stdinFixture)}, the bytes given as stdin`,\n    actual: describeExit(exit)\n});\n/**\n * Checks one provider against the `Provider` contract.\n *\n * A plugin that ships a provider runs this in its own test suite and asserts\n * the result is empty. The suite is the contract in executable form: what the\n * prose in `RemoteChildProcessSpawner` promises callers, stated as behavior an\n * adapter has to produce. It runs the checks through the real adapter layer,\n * because a provider that satisfies the interface but not the adapter is of no\n * use to a caller.\n *\n * The optional capabilities are checked only when the provider declares them.\n * A provider without `ping` is not asked to answer one, a provider without\n * `kill` is not asked to signal, and a provider that does not declare `stdin`\n * is not asked to deliver any: those are documented absences, not defects. A\n * provider that DOES declare one is held to it, `stdin` included — the flag is\n * what makes the adapter hand the bytes over, so a suite that took it at its\n * word would pass an adapter that sets it and drops them.\n *\n * Every check runs under {@link CheckOptions.checkTimeout} on the platform\n * timer rather than the ambient `Clock`, so an adapter that never answers\n * yields a named violation instead of a hang, under a frozen test clock too.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const check = (provider, commands, options = {}) => Effect_1.gen(function* () {\n    const deadline = options.checkTimeout ?? defaultCheckTimeout;\n    const found = [\n        yield* writesItsOutput(provider, commands, deadline),\n        yield* reportsANonzeroExit(provider, commands, deadline),\n        ...provider.stdin === true ? [yield* deliversStandardInput(provider, commands, deadline)] : [],\n        ...provider.ping === undefined ? [] : [yield* answersAPing(provider, deadline)],\n        ...provider.kill === undefined ? [] : [yield* signalsARunningCommand(provider, commands, deadline)]\n    ];\n    return found.filter((violation) => violation !== undefined);\n});\n",
+    "map": {
+     "version": 3,
+     "file": "check.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {
@@ -6585,6 +6875,46 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.vibe"
+     }
+    ],
+    "code": "/**\n * Defines the sandbox lifecycle contract.\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\n/**\n * Sandbox provider service tag.\n *\n * Provider packages may expose this tag in addition to passing the configured\n * service directly to consumers, the way the spawner-level provider does.\n *\n * @category services\n * @since 0.1.0\n */\nexport const Provider = Context.Service(\"@smthrs/sandbox/Sandbox/Provider\");\n",
+    "map": {
+     "version": 3,
+     "file": "Provider.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,OAAO,MAAM,gBAAgB,CAAA;AAgDzC;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAwC,OAAO,CAAC,OAAO,CAC1E,kCAAkC,CACnC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.vibe"
+     }
+    ],
+    "code": "/**\n * Provides sandbox health services as Effect layers.\n *\n * @since 0.1.0\n */\nimport * as Layer from \"effect/Layer\";\nimport { make } from \"./make.js\";\nimport { SandboxHealth } from \"./SandboxHealth.js\";\n/**\n * Provides `SandboxHealth` backed by the given provider's ping.\n *\n * Layer form of {@link make}, so a provider without `ping` provides the noop\n * service that always answers `Healthy`.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = (provider, options) => Layer.sync(SandboxHealth, () => make(provider, options));\n",
+    "map": {
+     "version": 3,
+     "file": "layer.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,EAAE,IAAI,EAAE,MAAM,WAAW,CAAA;AAGhC,OAAO,EAAE,aAAa,EAAE,MAAM,oBAAsB,CAAA;AAGpD;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CACnB,QAA8D,EAC9D,OAAsB,EACA,EAAE,CAAC,KAAK,CAAC,IAAI,CAAC,aAAa,EAAE,GAAG,EAAE,CAAC,IAAI,CAAC,QAAQ,EAAE,OAAO,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layerNoop.vibe"
      }
     ],
@@ -6600,6 +6930,86 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,EAAE,QAAQ,EAAE,MAAM,eAAiB,CAAA;AAC1C,OAAO,EAAE,aAAa,EAAE,MAAM,oBAAsB,CAAA;AAGpD;;;;;GAKG;AACH,MAAM,CAAC,MAAM,SAAS,GAAyB,KAAK,CAAC,IAAI,CAAC,aAAa,EAAE,QAAQ,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.vibe"
+     }
+    ],
+    "code": "/**\n * Runs a unit of work on a provisioned machine and returns what it changed.\n *\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport { hostContext } from \"./layerHost.js\";\nimport { capture, resolveBase, Work } from \"./Work.js\";\n/**\n * The schema of {@link Sandboxed} for a body whose result `result` encodes.\n * Use it as an action's success, so the journal records the work with the\n * result and a crash after the machine is gone loses neither.\n *\n * @category models\n * @since 1.0.0\n */\nexport const Sandboxed = (result) => Schema.Struct({ result, work: Work });\n/**\n * Acquires one machine, runs `body` with the machine's host surface (the\n * services `layerHost` provides), and captures the checkout's work before\n * the machine is released.\n *\n * The base is resolved right after the provider hands the session over, so a\n * provider that refreshes its checkout during acquisition (`jj new\n * main@origin`) is measured from the commit it refreshed to. The capture runs\n * inside the scope that holds the machine, ahead of its teardown: a provider\n * that deletes its machine on release, as Smithers Cloud does, has already\n * yielded the diff. A body that fails fails the run, and no work is captured.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const run = (provider, options, body) => Effect.scoped(Effect_1.gen(function* () {\n    const session = yield* provider.acquire(options.session);\n    const base = yield* resolveBase(session, { checkout: options.checkout, revision: options.base });\n    const context = yield* hostContext(session, options);\n    const result = yield* Effect.provide(body, context);\n    const work = yield* capture(session, { checkout: options.checkout, base });\n    return { result, work };\n}));\n",
+    "map": {
+     "version": 3,
+     "file": "run.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC,OAAO,EAAa,WAAW,EAAyB,MAAM,gBAAgB,CAAA;AAE9E,OAAO,EAAE,OAAO,EAA2C,WAAW,EAAE,IAAI,EAAE,MAAM,WAAW,CAAA;AA+B/F;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAuB,MAAS,EAAE,EAAE,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,MAAM,EAAE,IAAI,EAAE,IAAI,EAAE,CAAC,CAAA;AAEnG;;;;;;;;;;;;;;GAcG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,CACjB,QAAkB,EAClB,OAAmB,EACnB,IAAW,EACqD,EAAE,CAClE,MAAM,CAAC,MAAM,CAAC,a,CAAA;IACZ,MAAM,OAAO,UAAO,QAAQ,CAAC,OAAO,CAAC,OAAO,CAAC,OAAO,CAAC,CAAA;IACrD,MAAM,IAAI,UAAO,WAAW,CAAC,OAAO,EAAE,EAAE,QAAQ,EAAE,OAAO,CAAC,QAAQ,EAAE,QAAQ,EAAE,OAAO,CAAC,IAAI,EAAE,CAAC,CAAA;IAC7F,MAAM,OAAO,UAAO,WAAW,CAAC,OAAO,EAAE,OAAO,CAAC,CAAA;IACjD,MAAM,MAAM,UAAO,MAAM,CAAC,OAAO,CAAC,IAAI,EAAE,OAAO,CAAC,CAAA;IAChD,MAAM,IAAI,UAAO,OAAO,CAAC,OAAO,EAAE,EAAE,QAAQ,EAAE,OAAO,CAAC,QAAQ,EAAE,IAAI,EAAE,CAAC,CAAA;IACvE,OAAO,EAAE,MAAM,EAAE,IAAI,EAAE,CAAA;AACzB,CAAC,CAAA,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+     }
+    ],
+    "code": "/**\n * Typed tools on a sandbox's working copy: run a command, read, write and list\n * files, and git status and diff, each over one `Sandbox.Session`.\n *\n * The sandbox exposes itself and these tools; it knows nothing about agents.\n * An agent, a button or an API route reaches a machine through them alike,\n * from whatever host runs it.\n *\n * - **Typed both ways.** A tool's input is a {@link Call} and its output a\n *   {@link Result}, both Schemas, so a durable flow declares them as its\n *   payload and success and its journal keeps them.\n * - **Bounded.** A command runs for at most `limits.maxTimeoutSeconds`. Each\n *   output stream, a read, a listing and a diff return at most their limit\n *   and say when they cut.\n * - **Confined.** Every path is taken under the session's workdir. A path\n *   that leaves it is refused before anything runs.\n * - **At most once.** {@link execute} fences a command by its call id in the\n *   guest. The same call again answers the result the first attempt recorded,\n *   or fails {@link ToolLost} when that attempt never finished. It never runs\n *   a command twice.\n * - **Portable.** The scripts are POSIX `sh` with git. A guest with GNU\n *   `timeout` stops a command's whole process group at its deadline; without\n *   it, the command's own process.\n *\n * {@link checkpoint} and {@link restore} carry a working copy from one machine\n * to the next: the commit it is based on, and a binary patch from that commit\n * covering every tracked and untracked change.\n *\n * Nothing here records a path, a command, a file's content or output in\n * telemetry: spans carry the tool, the outcome and byte counts.\n *\n * @since 1.0.0-rc.17\n */\nimport * as Stream from \"effect/Stream\";\nimport { withSpan } from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport { Fault } from \"@smthrs/flow\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport { ProviderErrorCode } from \"../RemoteChildProcessSpawner/ProviderError.js\";\n/**\n * The tools' bounds.\n *\n * - `commandLength`: the longest command, in characters.\n * - `pathLength`: the longest path, in characters.\n * - `defaultTimeoutSeconds`, `maxTimeoutSeconds`: how long a command runs\n *   when it names no timeout, and at most.\n * - `outputBytes`: the bytes of each output stream a command returns.\n * - `fileBytes`: the largest file a write takes, and the bytes a read returns.\n * - `listEntries`: the entries a listing returns.\n * - `diffBytes`: the bytes a diff returns.\n * - `diffPaths`: the paths a diff may name.\n * - `checkpointBytes`: the largest working-copy patch a checkpoint takes.\n * - `maxObserveWaitSeconds`: the longest {@link observe} waits for a\n *   command to end.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const limits = {\n    commandLength: 16 * 1024,\n    pathLength: 4096,\n    defaultTimeoutSeconds: 60,\n    maxTimeoutSeconds: 600,\n    outputBytes: 64 * 1024,\n    fileBytes: 1024 * 1024,\n    listEntries: 1000,\n    diffBytes: 256 * 1024,\n    diffPaths: 100,\n    checkpointBytes: 8 * 1024 * 1024,\n    maxObserveWaitSeconds: 60\n};\nconst GuestPath = Schema.String.check(Schema.isMaxLength(limits.pathLength));\n/**\n * Run `command` with `sh -c` in the workdir, or in `cwd` under it, with no\n * input, for at most `timeoutSeconds` (`limits.defaultTimeoutSeconds` unless\n * set).\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Run = Schema.Struct({\n    tool: Schema.Literal(\"run\"),\n    command: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(limits.commandLength)),\n    cwd: Schema.optional(GuestPath),\n    timeoutSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: limits.maxTimeoutSeconds })))\n});\n/**\n * Read the text of the file at `path`.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Read = Schema.Struct({ tool: Schema.Literal(\"read\"), path: GuestPath });\n/**\n * Write `content` to the file at `path`, making its directories; it replaces\n * what was there.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Write = Schema.Struct({\n    tool: Schema.Literal(\"write\"),\n    path: GuestPath,\n    content: Schema.String.check(Schema.isMaxLength(limits.fileBytes))\n});\n/**\n * List the directory at `path`, the workdir unless set.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const List = Schema.Struct({ tool: Schema.Literal(\"list\"), path: Schema.optional(GuestPath) });\n/**\n * The working copy's git status.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Status = Schema.Struct({\n    tool: Schema.Literal(\"status\"),\n    /** Compare the complete working tree with this immutable base, including local commits. */\n    base: Schema.optional(Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)))\n});\n/**\n * The working copy's changes from `HEAD` as a unified diff, untracked files\n * as new ones, limited to `paths` when set.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Diff = Schema.Struct({\n    tool: Schema.Literal(\"diff\"),\n    paths: Schema.optional(Schema.Array(GuestPath).check(Schema.isMaxLength(limits.diffPaths)))\n});\n/**\n * One tool call: its input, tagged by `tool`.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Call = Schema.Union([Run, Read, Write, List, Status, Diff]);\n/**\n * Every tool's name.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const tools = [\"run\", \"read\", \"write\", \"list\", \"status\", \"diff\"];\n/**\n * Whether a tool changes the working copy: `run` and `write`.\n *\n * @category predicates\n * @since 1.0.0-rc.17\n */\nexport const mutates = (tool) => tool === \"run\" || tool === \"write\";\n/**\n * What a command did: its exit code, whether its timeout stopped it, and the\n * first `limits.outputBytes` of each stream with the stream's whole size.\n * `truncated` is true when either stream was cut.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const RunResult = Schema.Struct({\n    tool: Schema.Literal(\"run\"),\n    exitCode: Schema.Int,\n    timedOut: Schema.Boolean,\n    stdout: Schema.String,\n    stderr: Schema.String,\n    stdoutBytes: Schema.Int,\n    stderrBytes: Schema.Int,\n    truncated: Schema.Boolean\n});\n/**\n * A file's text: its first `limits.fileBytes` bytes as UTF-8, its size, and\n * whether it was cut. `path` is relative to the workdir.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const ReadResult = Schema.Struct({\n    tool: Schema.Literal(\"read\"),\n    path: Schema.String,\n    content: Schema.String,\n    bytes: Schema.Int,\n    truncated: Schema.Boolean\n});\n/**\n * A written file: its path relative to the workdir, and its size.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const WriteResult = Schema.Struct({ tool: Schema.Literal(\"write\"), path: Schema.String, bytes: Schema.Int });\n/**\n * One directory entry: its name, its kind, and a file's size.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Entry = Schema.Struct({\n    name: Schema.String,\n    kind: Schema.Literals([\"file\", \"directory\", \"symlink\", \"other\"]),\n    bytes: Schema.Int\n});\n/**\n * A directory's entries, in name order, at most `limits.listEntries`.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const ListResult = Schema.Struct({\n    tool: Schema.Literal(\"list\"),\n    path: Schema.String,\n    entries: Schema.Array(Entry),\n    truncated: Schema.Boolean\n});\n/**\n * One changed path in git's short form: `index` and `worktree` are the two\n * status letters (`?` for untracked), and `from` a rename's old path.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const StatusEntry = Schema.Struct({\n    path: Schema.String,\n    index: Schema.String,\n    worktree: Schema.String,\n    from: Schema.optional(Schema.String)\n});\n/**\n * The working copy's status: its branch (`null` when detached) and every\n * changed path.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const StatusResult = Schema.Struct({\n    tool: Schema.Literal(\"status\"),\n    branch: Schema.NullOr(Schema.String),\n    entries: Schema.Array(StatusEntry)\n});\n/**\n * A unified diff: its first `limits.diffBytes` bytes, its size, and whether\n * it was cut.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const DiffResult = Schema.Struct({\n    tool: Schema.Literal(\"diff\"),\n    diff: Schema.String,\n    bytes: Schema.Int,\n    truncated: Schema.Boolean\n});\n/**\n * One tool's output, tagged by `tool` as its call is.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Result = Schema.Union([RunResult, ReadResult, WriteResult, ListResult, StatusResult, DiffResult]);\n/**\n * Why a tool refused a call, before or without changing anything:\n *\n * - `path`: the path leaves the workdir;\n * - `not_found`: nothing is at the path;\n * - `not_a_file`: the path is a directory, where a file was meant;\n * - `not_a_directory`: the path is not a directory, where one was meant;\n * - `not_a_repository`: the workdir is not a git working copy;\n * - `too_large`: the content or the working copy's patch is over its limit.\n *\n * @category errors\n * @since 1.0.0-rc.17\n */\nexport class ToolRefused extends Schema.TaggedError()(\"@smthrs/sandbox/SandboxTools/ToolRefused\", {\n    reason: Schema.Literals([\"path\", \"not_found\", \"not_a_file\", \"not_a_directory\", \"not_a_repository\", \"too_large\"])\n}) {\n}\n/**\n * The command was started by an earlier attempt of the same call, which never\n * recorded how it ended: it may have run, and it is not run again.\n *\n * @category errors\n * @since 1.0.0-rc.17\n */\nexport class ToolLost extends Schema.TaggedError()(\"@smthrs/sandbox/SandboxTools/ToolLost\", {}) {\n}\n/**\n * The session failed: the machine couldn't run the tool. `code` is the\n * provider's failure kind; a caller may try the call again. `exitCode` is the\n * tool's script's own exit code when the script ran and failed (`code`\n * `unknown`), which names the step that failed; absent when the session\n * itself failed.\n *\n * @category errors\n * @since 1.0.0-rc.17\n */\nexport class ToolUnavailable extends Schema.TaggedError()(\"@smthrs/sandbox/SandboxTools/ToolUnavailable\", { code: ProviderErrorCode, exitCode: Schema.optional(Schema.Number) }) {\n}\n// What each failure is to the flow engine, which retries a keyed step's infrastructure faults by default: a refusal is\n// the caller's, a lost command stays lost, and a session that couldn't answer is tried again, classed by its provider's\n// code as `ProviderError` is (@smthrs/flow's `Fault`).\nFault.register(\"@smthrs/sandbox/SandboxTools/ToolRefused\", \"user\");\nFault.register(\"@smthrs/sandbox/SandboxTools/ToolLost\", \"dependency\");\nFault.register(\"@smthrs/sandbox/SandboxTools/ToolUnavailable\", {\n    unavailable: \"infra\",\n    timeout: \"infra\",\n    spawn_error: \"bug\",\n    not_found: \"bug\",\n    aborted: \"bug\",\n    unknown: \"bug\"\n});\n/**\n * What a tool can fail with.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const ToolFailure = Schema.Union([ToolRefused, ToolLost, ToolUnavailable]);\n/**\n * The absolute path `path` names under `workdir`, or `undefined` when it\n * leaves it. A relative path is taken under the workdir; `.` and `..` are\n * resolved by name, so a symbolic link is followed only by the guest.\n *\n * @category paths\n * @since 1.0.0-rc.17\n */\nexport const resolve = (workdir, path) => {\n    if (path.includes(\"\\0\"))\n        return undefined;\n    const root = `/${workdir.split(\"/\").filter((segment) => segment !== \"\").join(\"/\")}`;\n    const segments = [];\n    for (const segment of (path.startsWith(\"/\") ? path : `${root}/${path}`).split(\"/\")) {\n        if (segment === \"\" || segment === \".\")\n            continue;\n        if (segment === \"..\") {\n            if (segments.pop() === undefined)\n                return undefined;\n            continue;\n        }\n        segments.push(segment);\n    }\n    const resolved = `/${segments.join(\"/\")}`;\n    return resolved === root || resolved.startsWith(root === \"/\" ? \"/\" : `${root}/`) ? resolved : undefined;\n};\n/** `absolute`, under `workdir`, as a result names it: relative, `.` for the workdir itself. */\nconst relative = (workdir, absolute) => {\n    const root = `/${workdir.split(\"/\").filter((segment) => segment !== \"\").join(\"/\")}`;\n    return absolute === root ? \".\" : absolute.slice(root === \"/\" ? 1 : root.length + 1);\n};\nconst quote = (value) => `'${value.replaceAll(\"'\", `'\\\\''`)}'`;\n/** A shell command that runs `body` with `args` as its positional parameters. */\nconst script = (body, args) => [`sh -c ${quote(body)} sandbox-tool`, ...args.map(quote)].join(\" \");\nconst decoder = new TextDecoder();\nconst text = (bytes) => decoder.decode(bytes);\n/** The bytes a stream sent, keeping at most `max`. */\nconst kept = (stream, max) => Effect.map(Stream.runFold(stream, () => ({ chunks: [], size: 0 }), (acc, chunk) => {\n    const room = max - acc.size;\n    if (room > 0) {\n        const part = chunk.byteLength > room ? chunk.subarray(0, room) : chunk;\n        acc.chunks.push(part);\n        acc.size += part.byteLength;\n    }\n    return acc;\n}), ({ chunks, size }) => {\n    const bytes = new Uint8Array(size);\n    let offset = 0;\n    for (const chunk of chunks) {\n        bytes.set(chunk, offset);\n        offset += chunk.byteLength;\n    }\n    return bytes;\n});\nconst unavailable = (error) => new ToolUnavailable({ code: error.code });\n/** Runs `command`, feeding it `stdin`: its exit code and at most `max` bytes of its standard output. */\nconst gather = (session, command, max, stdin) => Effect.mapError(Effect.scoped(Effect_1.gen(runtime.$joinedFrame(function* () {\n    const process = yield* session.spawn(command, stdin === undefined ? {} : { stdin });\n    const [stdout, , code] = yield* Effect.all([\n        kept(process.stdout, max),\n        kept(process.stderr, 0),\n        process.exitCode\n    ], { concurrency: \"unbounded\" });\n    return { stdout, code };\n}))), unavailable);\n/** The first line of `bytes`, split on spaces, and what follows it. A script that exits 0 always prints that line. */\nconst headed = (bytes) => {\n    const end = bytes.indexOf(10);\n    return { header: text(bytes.subarray(0, end)).split(\" \"), body: bytes.subarray(end + 1) };\n};\n/** Exit codes the scripts answer for a refusal. */\nconst refusals = {\n    20: \"not_a_directory\",\n    21: \"not_a_file\",\n    44: \"not_found\",\n    69: \"not_a_repository\"\n};\n/**\n * The script's exit code `code` as a refusal, the lost fence, something the script needed that didn't answer (76:\n * `unavailable`, worth trying again), or the session failing.\n */\nconst failedWith = (code) => {\n    const reason = refusals[code];\n    if (reason !== undefined)\n        return new ToolRefused({ reason });\n    if (code === 76)\n        return new ToolUnavailable({ code: \"unavailable\" });\n    return code === 75 ? new ToolLost() : new ToolUnavailable({ code: \"unknown\", exitCode: code });\n};\nconst refused = (reason) => Effect.fail(new ToolRefused({ reason }));\n/**\n * The start identity of process `$1`: its start time in clock ticks since boot, read from `/proc` where the guest has\n * one, else `-`. A pid the guest reuses, or one a restarted box hands out again, has another; a process that has exited\n * and waits to be reaped has `-`. Always one word, so a record of several reads back field by field.\n */\nconst IDENT = `ident() {\n  i=\n  [ -r \"/proc/$1/stat\" ] && i=$(sed 's/^.*) //' \"/proc/$1/stat\" | { read -r state rest; [ \"$state\" != Z ] && printf '%s\\\\n' \"$rest\" | cut -d' ' -f19; })\n  printf '%s\\\\n' \"\\${i:--}\"\n}`;\n/**\n * Runs command `$4` in `$3` for at most `$2` seconds under fence directory `$1`, which exists. Each file it writes is\n * written whole: `pid` (its own pid, which leads its process group, its start in epoch seconds, the box's identity and\n * its own), `child` (the command's process, which leads the command's group under `timeout`, and its identity), `out`\n * and `err` (the command's streams), then `exit` (the exit code, and 1 when the timeout stopped it). A cwd that isn't a\n * directory ends `20 0` with no output; a fence cancelled before the command began ends `143 0`. A TERM to the runner\n * stops the command's group too, even before `child` is written, and the runner ends without an exit.\n */\nconst RUNNER = `d=$1; t=$2; cwd=$3; cmd=$4\n${IDENT}\nstart=$(date +%s)\nprintf '%s %s %s %s\\\\n' \"$$\" \"$start\" \"$(ident 1)\" \"$(ident $$)\" >\"$d/pid.tmp\" && mv -f -- \"$d/pid.tmp\" \"$d/pid\" || exit 125\nc=\ntrap 'trap - TERM; if [ -n \"$c\" ]; then kill -TERM \"-$c\" 2>/dev/null || kill -TERM \"$c\" 2>/dev/null; fi; exit 143' TERM\ntimed=0\nif [ -e \"$d/cancelled\" ]; then code=143; : >\"$d/out\"; : >\"$d/err\"\nelif [ ! -d \"$cwd\" ]; then code=20\nelse\n  watchdog=\n  if command -v timeout >/dev/null 2>&1; then\n    (cd -- \"$cwd\" && exec timeout -k 5 \"$t\" sh -c \"$cmd\") </dev/null >\"$d/out\" 2>\"$d/err\" &\n    c=$!\n  else\n    (cd -- \"$cwd\" && exec sh -c \"$cmd\") </dev/null >\"$d/out\" 2>\"$d/err\" &\n    c=$!\n    (sleep \"$t\"; kill -TERM \"$c\"; sleep 5; kill -KILL \"$c\") </dev/null >/dev/null 2>&1 &\n    watchdog=$!\n  fi\n  printf '%s %s\\\\n' \"$c\" \"$(ident \"$c\")\" >\"$d/child.tmp\" && mv -f -- \"$d/child.tmp\" \"$d/child\"\n  wait \"$c\"\n  code=$?\n  [ -z \"$watchdog\" ] || kill \"$watchdog\" 2>/dev/null\n  case $code in 124|137|143) [ $(($(date +%s) - start)) -ge \"$t\" ] && timed=1 ;; esac\nfi\nprintf '%s %s\\\\n' \"$code\" \"$timed\" >\"$d/exit.tmp\" && mv -f -- \"$d/exit.tmp\" \"$d/exit\" || exit 125`;\n/**\n * Answers how the command under fence `$d` ended: exit 75 when it never recorded it, 20 for a cwd that wasn't a\n * directory, else its exit code, whether it timed out and each stream's size, then the first `$max` bytes of each.\n */\nconst ANSWER = `[ -f \"$d/exit\" ] || exit 75\nread -r code timed <\"$d/exit\"\n[ \"$timed\" = 0 ] && [ \"$code\" = 20 ] && [ ! -f \"$d/out\" ] && exit 20\nprintf '%s %s %s %s\\\\n' \"$code\" \"$timed\" $(($(wc -c <\"$d/out\"))) $(($(wc -c <\"$d/err\")))\nhead -c \"$max\" -- \"$d/out\"\nhead -c \"$max\" -- \"$d/err\"`;\n/** The runner `$1` with the rest of its arguments, in the foreground, the first time its fence `$2` is made. */\nconst RUN = `d=$2; max=$6\numask 002\nmkdir -p -- \"\\${d%/*}\" 2>/dev/null || exit 125\nif mkdir -- \"$d\" 2>/dev/null; then sh -c \"$1\" sandbox-run \"$2\" \"$3\" \"$4\" \"$5\" </dev/null >/dev/null 2>&1 || exit 125; fi\n${ANSWER}`;\n/** The fence directory of `id` under `callsDirectory`, when that is an absolute guest path. */\nconst fenceOf = (callsDirectory, id) => {\n    const calls = resolve(\"/\", callsDirectory);\n    return calls === undefined ? undefined : `${calls}/${id.replaceAll(/[^A-Za-z0-9._-]/g, \"_\")}`;\n};\n/** A command's result from an `ANSWER`'s output: its exit code, whether it timed out, and its kept streams. */\nconst answered = (stdout) => {\n    const max = limits.outputBytes;\n    const { body, header } = headed(stdout);\n    const [exitCode, timed, outBytes, errBytes] = header.map(Number);\n    const outKept = Math.min(outBytes, max);\n    return {\n        tool: \"run\",\n        exitCode,\n        timedOut: timed === 1,\n        stdout: text(body.subarray(0, outKept)),\n        stderr: text(body.subarray(outKept, outKept + Math.min(errBytes, max))),\n        stdoutBytes: outBytes,\n        stderrBytes: errBytes,\n        truncated: outBytes > max || errBytes > max\n    };\n};\n/**\n * Runs a command at most once under its call's fence. A cwd that isn't a\n * directory is recorded as such, so the same call answers the same refusal.\n */\nconst run = Effect_1.fnUntraced(runtime.$joinedFrame(function* run(session, call, options) {\n    const cwd = resolve(session.workdir, call.cwd ?? \".\");\n    const fence = fenceOf(options.callsDirectory, options.callId);\n    if (cwd === undefined || fence === undefined)\n        return yield* refused(\"path\");\n    const timeout = call.timeoutSeconds ?? limits.defaultTimeoutSeconds;\n    const max = limits.outputBytes;\n    const { code, stdout } = yield* gather(session, script(RUN, [RUNNER, fence, String(timeout), cwd, call.command, String(max)]), 2 * max + 128);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    return answered(stdout);\n}));\nconst READ = `p=$1; max=$2\n[ -d \"$p\" ] && exit 21\n[ -f \"$p\" ] || exit 44\nprintf '%s\\\\n' $(($(wc -c <\"$p\")))\nhead -c \"$max\" -- \"$p\"`;\nconst read = Effect_1.fnUntraced(runtime.$joinedFrame(function* read(session, call) {\n    const path = resolve(session.workdir, call.path);\n    if (path === undefined)\n        return yield* refused(\"path\");\n    const max = limits.fileBytes;\n    const { code, stdout } = yield* gather(session, script(READ, [path, String(max)]), max + 64);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    const { body, header } = headed(stdout);\n    const bytes = Number(header[0]);\n    return {\n        tool: \"read\",\n        path: relative(session.workdir, path),\n        content: text(body),\n        bytes,\n        truncated: bytes > max\n    };\n}));\nconst WRITE = `p=$1\numask 002\n[ -d \"$p\" ] && exit 21\nmkdir -p -- \"\\${p%/*}\" 2>/dev/null || exit 20\ncat >\"$p\" || exit 20`;\nconst encoder = new TextEncoder();\nconst write = Effect_1.fnUntraced(runtime.$joinedFrame(function* write(session, call) {\n    const path = resolve(session.workdir, call.path);\n    if (path === undefined || path === resolve(session.workdir, \".\"))\n        return yield* refused(\"path\");\n    const content = encoder.encode(call.content);\n    if (content.byteLength > limits.fileBytes)\n        return yield* refused(\"too_large\");\n    const { code } = yield* gather(session, script(WRITE, [path]), 0, content);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    return {\n        tool: \"write\",\n        path: relative(session.workdir, path),\n        bytes: content.byteLength\n    };\n}));\nconst LIST = `p=$1; max=$2\n[ -e \"$p\" ] || exit 44\n[ -d \"$p\" ] || exit 20\nn=0\nfor f in \"$p\"/* \"$p\"/.[!.]* \"$p\"/..?*; do\n  if [ ! -e \"$f\" ] && [ ! -L \"$f\" ]; then continue; fi\n  n=$((n + 1))\n  if [ \"$n\" -gt \"$max\" ]; then printf 'more\\\\0'; break; fi\n  if [ -L \"$f\" ]; then k=symlink; s=0\n  elif [ -d \"$f\" ]; then k=directory; s=0\n  elif [ -f \"$f\" ]; then k=file; s=$(($(wc -c <\"$f\")))\n  else k=other; s=0; fi\n  printf '%s %s %s\\\\0' \"$k\" \"$s\" \"\\${f##*/}\"\ndone`;\nconst list = Effect_1.fnUntraced(runtime.$joinedFrame(function* list(session, call) {\n    const path = resolve(session.workdir, call.path ?? \".\");\n    if (path === undefined)\n        return yield* refused(\"path\");\n    const { code, stdout } = yield* gather(session, script(LIST, [path, String(limits.listEntries)]), (limits.listEntries + 1) * (limits.pathLength + 32));\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    const records = text(stdout).split(\"\\0\").filter((record) => record !== \"\");\n    const truncated = records.at(-1) === \"more\";\n    const entries = (truncated ? records.slice(0, -1) : records).map((record) => {\n        const [kind, bytes] = record.split(\" \", 2);\n        return { name: record.slice(kind.length + bytes.length + 2), kind, bytes: Number(bytes) };\n    });\n    return { tool: \"list\", path: relative(session.workdir, path), entries, truncated };\n}));\nconst STATUS = `cd -- \"$1\" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 69\ngit -c core.quotePath=false status --porcelain=v1 --branch -z --untracked-files=all`;\n/** Git's `## <branch>...<upstream> [ahead n]` header: the branch, or `null` when detached or unborn without a name. */\nconst branchOf = (header) => {\n    const name = header.slice(3).split(\"...\")[0].split(\" \")[0];\n    return name === \"HEAD\" ? null : name;\n};\n// Use a private index so collection never stages, resets or commits the agent's checkout.\nconst BASE_STATUS = `cd -- \"$1\" 2>/dev/null || exit 69\nd=$(mktemp -d) || exit 125\ntrap 'rm -rf -- \"$d\"' EXIT HUP INT TERM\nexport GIT_INDEX_FILE=\"$d/index\"\ngit read-tree HEAD || exit 69\ngit -c core.fsmonitor=false add -A -- . || exit 125\ntree=$(git write-tree) || exit 125\ngit diff --name-status -z --no-renames --no-ext-diff \"$2\" \"$tree\" --`;\nconst status = Effect_1.fnUntraced(runtime.$joinedFrame(function* status(session, call) {\n    const { code, stdout } = yield* gather(session, script(call.base === undefined ? STATUS : BASE_STATUS, [\n        resolve(session.workdir, \".\"),\n        ...(call.base === undefined ? [] : [call.base])\n    ]), limits.diffBytes + 1);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    if (stdout.length > limits.diffBytes)\n        return yield* Effect_1.fail(new ToolUnavailable({ code: \"unknown\" }));\n    const records = text(stdout).split(\"\\0\");\n    let branch = null;\n    const entries = [];\n    if (call.base !== undefined) {\n        for (let index = 0; index < records.length - 1; index += 2) {\n            const path = records[index + 1];\n            if (resolve(session.workdir, path) === undefined)\n                return yield* refused(\"path\");\n            entries.push({ path, index: records[index], worktree: \" \" });\n        }\n        return { tool: \"status\", branch, entries };\n    }\n    for (let index = 0; index < records.length; index++) {\n        const record = records[index];\n        if (record.startsWith(\"## \")) {\n            branch = branchOf(record.startsWith(\"## No commits yet on \") ? `## ${record.slice(21)}` : record);\n        }\n        else if (record.length > 3) {\n            const [x, y] = [record[0], record[1]];\n            // A rename or copy names its old path in the next record.\n            const from = x === \"R\" || x === \"C\" ? records[++index] : undefined;\n            entries.push({ path: record.slice(3), index: x, worktree: y, ...from === undefined ? {} : { from } });\n        }\n    }\n    return { tool: \"status\", branch, entries };\n}));\nconst DIFF = `w=$1; max=$2; shift 2\ncd -- \"$w\" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 69\nout=$(mktemp) || exit 125\n{\n  git -c core.quotePath=false diff HEAD --no-color --no-ext-diff -- \"$@\"\n  git -c core.quotePath=false ls-files --others --exclude-standard -- \"$@\" | while IFS= read -r f; do\n    git diff --no-color --no-ext-diff --no-index -- /dev/null \"$f\"\n  done\n} >\"$out\" 2>/dev/null\nprintf '%s\\\\n' $(($(wc -c <\"$out\")))\nhead -c \"$max\" -- \"$out\"\nrm -f -- \"$out\"`;\nconst diff = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame({ *diff(session, call) {\n        const paths = [];\n        {\n            let pending_1 = runtime.$normal;\n            try {\n                for (const path of call.paths ?? []) {\n                    try {\n                        {\n                            const resolved = resolve(session.workdir, path);\n                            if (resolved === undefined)\n                                return yield* refused(\"path\");\n                            paths.push(resolved);\n                        }\n                    }\n                    catch (thrown_1) {\n                        pending_1 = thrown_1;\n                        break;\n                    }\n                }\n            }\n            catch (thrown_2) {\n                throw runtime.$finallyFailure(pending_1, thrown_2);\n            }\n            if (pending_1 !== runtime.$normal)\n                throw pending_1;\n        }\n        const max = limits.diffBytes;\n        const { code, stdout } = yield* gather(session, script(DIFF, [resolve(session.workdir, \".\"), String(max), ...paths]), max + 64);\n        if (code !== 0)\n            return yield* Effect_1.fail(failedWith(code));\n        const { body, header } = headed(stdout);\n        const bytes = Number(header[0]);\n        return { tool: \"diff\", diff: text(body), bytes, truncated: bytes > max };\n    } }.diff)));\n/**\n * Runs `call` on `session`'s working copy. A `run` runs at most once per\n * `options.callId`: the same call again answers the result the first attempt\n * recorded, or fails {@link ToolLost} when that attempt never finished.\n *\n * Each call is a span `sandbox.tool` with the tool, its outcome and, for a\n * command, its exit code; never a path, a command, content or output.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const execute = (session, call, options) => {\n    const effect = call.tool === \"run\"\n        ? run(session, call, options)\n        : call.tool === \"read\"\n            ? read(session, call)\n            : call.tool === \"write\"\n                ? write(session, call)\n                : call.tool === \"list\"\n                    ? list(session, call)\n                    : call.tool === \"status\"\n                        ? status(session, call)\n                        : diff(session, call);\n    return withSpan(Effect.tapError(Effect.tap(effect, (result) => Effect.annotateCurrentSpan({\n        \"smithers.sandbox.tool.outcome\": \"done\",\n        ...result.tool === \"run\" ? { \"smithers.sandbox.tool.exit_code\": result.exitCode } : {}\n    })), (error) => Effect.annotateCurrentSpan({ \"smithers.sandbox.tool.outcome\": error._tag.split(\"/\").at(-1) })), \"sandbox.tool\", { attributes: { \"smithers.sandbox.tool\": call.tool } });\n};\n/**\n * A started command's handle: the pid of the process that runs it, which\n * leads its process group, and when it started, in epoch seconds. Both are\n * 0 when an earlier start of the same key never got as far as recording\n * them, or the key was cancelled first; the command then observes `lost`.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Started = Schema.Struct({ pid: Schema.Int, startedAt: Schema.Int });\n/**\n * What a started command is doing: `running` while its process group lives\n * (the heartbeat), `finished` once it recorded its exit code and whether\n * its timeout stopped it, or `lost` when neither holds: the box restarted,\n * or something killed the process before it recorded how it ended.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Observed = Schema.Union([\n    Schema.Struct({ state: Schema.Literal(\"running\"), pid: Schema.Int }),\n    Schema.Struct({ state: Schema.Literal(\"finished\"), exitCode: Schema.Int, timedOut: Schema.Boolean }),\n    Schema.Struct({ state: Schema.Literal(\"lost\") })\n]);\n/**\n * Starts the runner `$1` with the rest of its arguments in a session of its\n * own (`setsid`), or else a process group of its own where the shell has job\n * control, the first time its fence `$2` is made, then answers its pid and\n * start once it recorded them, waiting at most five seconds by the clock.\n */\nconst START = `d=$2\numask 002\nmkdir -p -- \"\\${d%/*}\" 2>/dev/null || exit 125\nif mkdir -- \"$d\" 2>/dev/null; then\n  if command -v setsid >/dev/null 2>&1; then\n    setsid sh -c \"$1\" sandbox-command \"$2\" \"$3\" \"$4\" \"$5\" </dev/null >/dev/null 2>&1 &\n  else\n    (set -m 2>/dev/null; sh -c \"$1\" sandbox-command \"$2\" \"$3\" \"$4\" \"$5\" </dev/null >/dev/null 2>&1 &)\n  fi\nfi\nend=$(($(date +%s) + 5))\nwhile [ ! -f \"$d/pid\" ] && [ ! -e \"$d/cancelled\" ] && [ \"$(date +%s)\" -lt \"$end\" ]; do\n  sleep 0.01 2>/dev/null || sleep 1\ndone\npid=0; at=0\n[ -f \"$d/pid\" ] && read -r pid at box id <\"$d/pid\"\nprintf '%s %s\\\\n' \"$pid\" \"$at\"`;\n/**\n * Whether the command under fence `$1` runs: its runner, which waits for the\n * command and then records how it ended, lives in the box that started it.\n * With `$2` seconds to wait, it first waits that long at most for the exit,\n * looking every 50 ms, and stops waiting once the runner is gone.\n */\nconst OBSERVE = `d=$1; w=\\${2:-0}\n${IDENT}\nalive() {\n  [ -f \"$d/pid\" ] && read -r pid at box id <\"$d/pid\" && [ \"$pid\" -gt 1 ] && [ \"$(ident 1)\" = \"$box\" ] &&\n    kill -0 \"$pid\" 2>/dev/null && [ \"$(ident \"$pid\")\" = \"$id\" ]\n}\nif [ \"$w\" -gt 0 ]; then\n  end=$(($(date +%s) + w)); i=0\n  while [ ! -f \"$d/exit\" ]; do\n    i=$((i + 1))\n    if [ $((i % 20)) -eq 1 ]; then { alive && [ \"$(date +%s)\" -lt \"$end\" ]; } || break; fi\n    sleep 0.05 2>/dev/null || sleep 1\n  done\nfi\nif [ ! -f \"$d/exit\" ] && alive; then\n  printf 'running %s\\\\n' \"$pid\"\n  exit 0\nfi\nif [ -f \"$d/exit\" ]; then read -r code timed <\"$d/exit\"; printf 'finished %s %s\\\\n' \"$code\" \"$timed\"; else printf 'lost\\\\n'; fi`;\nconst COLLECT = `d=$1; max=$2\n${ANSWER}`;\n/**\n * Marks fence `$1` cancelled, so a runner that hasn't begun its command\n * never does, then stops the runner and the command, each with its process\n * group, while each is the very process the runner recorded in the box that\n * started it: TERM, up to five seconds for them to go, then KILL. A command\n * that finished, or whose pid now names another process, is left alone.\n */\nconst CANCEL = `d=$1\n${IDENT}\numask 002\nmkdir -p -- \"$d\" 2>/dev/null || exit 125\n: >\"$d/cancelled\" || exit 125\n[ -f \"$d/pid\" ] && [ ! -f \"$d/exit\" ] || exit 0\nread -r pid at box id <\"$d/pid\"\n[ \"$(ident 1)\" = \"$box\" ] || exit 0\ntargets=\n[ \"$pid\" -gt 1 ] && targets=\"$pid:$id\"\n[ -f \"$d/child\" ] && read -r child cid <\"$d/child\" && [ \"$child\" -gt 1 ] && targets=\"$targets $child:$cid\"\nlive() {\n  for t in $targets; do\n    g=\\${t%%:*}\n    [ \"$(ident \"$g\")\" = \"\\${t#*:}\" ] && { kill -0 \"-$g\" || kill -0 \"$g\"; } 2>/dev/null && printf '%s\\\\n' \"$g\"\n  done\n}\nstop() { for g in $(live); do { kill \"-$1\" \"-$g\"; kill \"-$1\" \"$g\"; } 2>/dev/null; done; }\nstop TERM\ni=0\nwhile [ -n \"$(live)\" ] && [ \"$i\" -lt 50 ]; do i=$((i + 1)); sleep 0.1 2>/dev/null || sleep 1; done\nstop KILL\nexit 0`;\n/** `effect` as span `sandbox.command`, with the operation and its outcome; never a command, a path or output. */\nconst commandSpan = (operation, effect) => withSpan(Effect.tapError(Effect.tap(effect, (value) => Effect.annotateCurrentSpan({\n    \"smithers.sandbox.command.outcome\": typeof value === \"object\" && value !== null && \"state\" in value\n        ? String(value.state)\n        : \"done\"\n})), (error) => Effect.annotateCurrentSpan({\n    \"smithers.sandbox.command.outcome\": error._tag.split(\"/\").at(-1)\n})), \"sandbox.command\", { attributes: { \"smithers.sandbox.command.op\": operation } });\n/**\n * The fence of `options.key`, named so no two keys share one: each byte outside `[A-Za-z0-9.-]` is `_` and its two hex\n * digits. A calls directory that isn't an absolute guest path is refused `path`.\n */\nconst commandFence = (options) => {\n    const name = Array.from(encoder.encode(options.key), (byte) => (/[A-Za-z0-9.-]/.test(String.fromCharCode(byte))\n        ? String.fromCharCode(byte)\n        : `_${byte.toString(16).padStart(2, \"0\")}`)).join(\"\");\n    const fence = fenceOf(options.callsDirectory, `command-${name}`);\n    return fence === undefined ? refused(\"path\") : Effect.succeed(fence);\n};\n/**\n * Starts `call`'s command in the session's working copy, detached from the\n * exec session that starts it: in a process session and group of its own\n * where the guest has `setsid`, with its streams in files, so it outlives\n * that session, the host that asked and any number of hosts after it. It\n * runs for at most its timeout, as {@link execute}'s do.\n *\n * It answers at once, with the command's {@link Started} handle. The same\n * key again answers the same handle and never starts the command twice, so a\n * caller that lost the answer asks again. Follow it with {@link observe},\n * {@link collect} and {@link cancel}.\n *\n * A cwd that leaves the workdir is refused `path` before anything runs; one\n * that isn't a directory finishes the command, which then collects as\n * `not_a_directory`.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const start = (session, call, options) => commandSpan(\"start\", Effect_1.gen(runtime.$joinedFrame(function* () {\n    const cwd = resolve(session.workdir, call.cwd ?? \".\");\n    if (cwd === undefined)\n        return yield* refused(\"path\");\n    const fence = yield* commandFence(options);\n    const timeout = call.timeoutSeconds ?? limits.defaultTimeoutSeconds;\n    const { code, stdout } = yield* gather(session, script(START, [RUNNER, fence, String(timeout), cwd, call.command]), 128);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    const [pid, startedAt] = text(stdout).trim().split(\" \").map(Number);\n    return { pid, startedAt };\n})));\n/**\n * What the command started under `options.key` is doing ({@link Observed}).\n * It reads only: asking changes nothing in the box. With `waitMs`, it first\n * waits for the command to end, answering `finished` as soon as it does\n * (within 50 ms) and what it sees once the wait is over otherwise; the wait\n * is whole seconds, `waitMs` rounded up, at most {@link limits}`.maxObserveWaitSeconds`.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const observe = (session, options) => commandSpan(\"observe\", Effect_1.gen(runtime.$joinedFrame(function* () {\n    const fence = yield* commandFence(options);\n    const wait = Math.min(limits.maxObserveWaitSeconds, Math.max(0, Math.ceil((options.waitMs ?? 0) / 1000)));\n    const { code, stdout } = yield* gather(session, script(OBSERVE, [fence, String(wait)]), 128);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    const [state, first, second] = text(stdout).trim().split(\" \");\n    return state === \"running\"\n        ? { state: \"running\", pid: Number(first) }\n        : state === \"finished\"\n            ? { state: \"finished\", exitCode: Number(first), timedOut: second === \"1\" }\n            : { state: \"lost\" };\n})));\n/**\n * The result of the command started under `options.key`, once it finished:\n * the same {@link RunResult} {@link execute} answers, as often as it is\n * asked. A command that never recorded how it ended fails {@link ToolLost};\n * one whose cwd wasn't a directory, `not_a_directory`.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const collect = (session, options) => commandSpan(\"collect\", Effect_1.gen(runtime.$joinedFrame(function* () {\n    const fence = yield* commandFence(options);\n    const max = limits.outputBytes;\n    const { code, stdout } = yield* gather(session, script(COLLECT, [fence, String(max)]), 2 * max + 128);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    return answered(stdout);\n})));\n/**\n * Stops the command started under `options.key`: its runner's and its own\n * process groups, TERM and then KILL. A key not started yet is cancelled\n * too, and a later {@link start} of it starts nothing. A command that\n * finished, or ran in a box that has since restarted, is left as it is.\n * Asking again changes nothing.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const cancel = (session, options) => commandSpan(\"cancel\", Effect_1.gen(runtime.$joinedFrame(function* () {\n    const fence = yield* commandFence(options);\n    const { code } = yield* gather(session, script(CANCEL, [fence]), 0);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n})));\n// Each step that can fail exits with its own code (120 to 124), so a failure names its step (`ToolUnavailable.exitCode`).\n// The index the changes are staged in starts as a copy of the checkout's own, whose stat data lets `git add` hash only\n// the files that changed rather than every file in the checkout (on 15,000 files, 25 ms rather than a second); a checkout\n// with no index starts from `HEAD`. Either way `add -A` makes it the working copy, so the patch is the same.\nconst CHECKPOINT = `cd -- \"$1\" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69\ndir=$(mktemp -d) || exit 120\ntrap 'rm -rf -- \"$dir\"' EXIT\nown=$(git rev-parse --git-path index) || exit 121\n{ [ -f \"$own\" ] && cp -- \"$own\" \"$dir/index\" 2>/dev/null; } || GIT_INDEX_FILE=\"$dir/index\" git read-tree HEAD || exit 121\nGIT_INDEX_FILE=\"$dir/index\" git add -A || exit 122\nGIT_INDEX_FILE=\"$dir/index\" git diff --cached --binary --no-color --no-ext-diff HEAD >\"$dir/patch\" || exit 123\n: >\"$dir/bundle\"\nif [ -n \"$(git rev-list -n 1 HEAD --not --remotes)\" ]; then\n  git bundle create \"$dir/bundle\" HEAD --not --remotes 2>/dev/null || exit 124\nfi\np=$(($(wc -c <\"$dir/patch\"))); b=$(($(wc -c <\"$dir/bundle\")))\nprintf '%s %s %s\\\\n' \"$(git rev-parse HEAD)\" \"$p\" \"$b\"\nif [ $((p + b)) -le \"$2\" ]; then cat -- \"$dir/patch\" \"$dir/bundle\"; fi`;\n/**\n * Captures the session's working copy without changing it: its `HEAD`, a\n * binary patch from it, and a bundle of the commits no remote has. A patch\n * and bundle together over `limits.checkpointBytes` are refused\n * `too_large`; a workdir with no commit, `not_a_repository`.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const checkpoint = (session) => withSpan((Effect_1.gen(runtime.$joinedFrame(function* () {\n    const max = limits.checkpointBytes;\n    const { code, stdout } = yield* gather(session, script(CHECKPOINT, [resolve(session.workdir, \".\"), String(max)]), max + 128);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n    const { body, header } = headed(stdout);\n    const patchBytes = Number(header[1]);\n    if (patchBytes + Number(header[2]) > max)\n        return yield* Effect_1.fail(new ToolRefused({ reason: \"too_large\" }));\n    return { head: header[0], patch: body.slice(0, patchBytes), bundle: body.slice(patchBytes) };\n}))), \"sandbox.checkpoint\");\nconst RESTORE = `cd -- \"$1\" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69\ndir=$(mktemp -d) || exit 125\ntrap 'rm -rf -- \"$dir\"' EXIT\ncat >\"$dir/in\" || exit 125\n# BSD head refuses -c 0.\nif [ \"$3\" -gt 0 ]; then head -c \"$3\" \"$dir/in\" >\"$dir/patch\" || exit 125; else : >\"$dir/patch\"; fi\ntail -c +$(($3 + 1)) \"$dir/in\" >\"$dir/bundle\" || exit 125\nhas() { git cat-file -e \"$1^{commit}\" 2>/dev/null; }\n# Fetches commit $1 from origin by its id. An origin that can't be reached exits 76, so the restore is tried again; one\n# that answered without the commit leaves it missing.\nfetch() {\n  out=$(git fetch -q --depth=1 origin \"$1\" 2>&1) && return 0\n  case \"$out\" in *\"unable to access\"*|*\"returned error: 5\"*|*\"RPC failed\"*|*\"early EOF\"*|*\"Could not resolve\"*|*\"timed out\"*) exit 76 ;; esac\n  return 1\n}\nif ! has \"$2\"; then\n  if [ -s \"$dir/bundle\" ]; then\n    # The bundle's base commits first: a branch that moved on may have left them out of a shallow clone.\n    for base in $(sed -n '/^$/q; s/^-\\\\([0-9a-f]\\\\{40,64\\\\}\\\\).*/\\\\1/p' \"$dir/bundle\"); do has \"$base\" || fetch \"$base\" || true; done\n    git fetch -q \"$dir/bundle\" 2>/dev/null\n  fi\n  has \"$2\" || fetch \"$2\" || true\n  has \"$2\" || exit 44\nfi\numask 002\nif [ \"$(git rev-parse HEAD)\" != \"$2\" ]; then git reset -q --hard \"$2\" || exit 125; fi\n[ \"$3\" = 0 ] && exit 0\ngit apply --binary --whitespace=nowarn \"$dir/patch\" || exit 125`;\n/**\n * Puts a {@link Checkpoint} back on the session's working copy: moves `HEAD`\n * to its commit when it is elsewhere, then applies its patch. A commit the\n * working copy lacks comes from the checkpoint's bundle, whose base commits\n * are fetched from `origin` by their ids first, else is fetched from `origin`\n * by its id; `not_found` when neither has it. An `origin` that can't be\n * reached fails `ToolUnavailable` with code `unavailable`, so the caller can\n * try again. Restore onto a clean\n * checkout: a working copy with changes may refuse the patch.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const restore = (session, saved) => withSpan((Effect_1.gen(runtime.$joinedFrame(function* () {\n    const bundle = saved.bundle ?? new Uint8Array();\n    const input = new Uint8Array(saved.patch.byteLength + bundle.byteLength);\n    input.set(saved.patch);\n    input.set(bundle, saved.patch.byteLength);\n    const { code } = yield* gather(session, script(RESTORE, [resolve(session.workdir, \".\"), saved.head, String(saved.patch.byteLength)]), 0, input);\n    if (code !== 0)\n        return yield* Effect_1.fail(failedWith(code));\n}))), \"sandbox.restore\");\n/**\n * Where {@link rebaseCall}'s script leaves the paths it found, relative to\n * the workdir, NUL-separated: the files that conflict, or the files whose\n * contents the move changes. Read it with the `read` tool and\n * {@link rebasePaths}.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const REBASE_PATHS = \".git/smithers-rebase\";\n// Fetches `$2` from origin unless commit `$3` is here (76 when origin can't be reached, 44 when it hasn't the commit),\n// stages the working copy into a scratch index as `checkpoint` does, and merges it onto `$3` with git's own merge base,\n// as a commit of that tree on `HEAD` (`merge-tree`, git 2.38 or later, changing nothing). Local commits not on `$3`\n// merge as the working copy's own changes. With `$4`, the tree the plan saw, it applies a clean merge: `HEAD` moves to\n// `$3` and the working copy becomes the merge, its changes uncommitted. Each failing step exits with its own code.\nconst REBASE = `cd -- \"$1\" 2>/dev/null && [ -d .git ] && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69\ndir=$(mktemp -d) || exit 120\ntrap 'rm -rf -- \"$dir\"' EXIT\nhas() { git cat-file -e \"$1^{commit}\" 2>/dev/null; }\ncommit() { git -c user.name=Smithers -c user.email=smithers@localhost commit-tree \"$@\" </dev/null; }\ncount() { tr -cd '\\\\000' <\"$1\" | wc -c | tr -d ' '; }\nif ! has \"$3\"; then\n  if ! out=$(git fetch -q origin \"$2\" 2>&1); then\n    case \"$out\" in *\"unable to access\"*|*\"returned error: 5\"*|*\"RPC failed\"*|*\"early EOF\"*|*\"Could not resolve\"*|*\"timed out\"*) exit 76 ;; esac\n  fi\n  has \"$3\" || exit 44\nfi\nhead=$(git rev-parse HEAD) || exit 121\nown=$(git rev-parse --git-path index) || exit 121\n{ [ -f \"$own\" ] && cp -- \"$own\" \"$dir/index\" 2>/dev/null; } || GIT_INDEX_FILE=\"$dir/index\" git read-tree HEAD || exit 121\nGIT_INDEX_FILE=\"$dir/index\" git add -A || exit 122\ntree=$(GIT_INDEX_FILE=\"$dir/index\" git write-tree) || exit 122\npaths=${REBASE_PATHS}\n: >\"$paths\" || exit 121\nif [ \"$head\" = \"$3\" ]; then printf 'current %s\\\\n' \"$tree\"; exit 0; fi\ngit merge-base \"$3\" \"$head\" >/dev/null 2>&1 || { printf 'unrelated %s\\\\n' \"$tree\"; exit 0; }\nw=$(commit \"$tree\" -p \"$head\" -m rebase) || exit 123\ngit merge-tree --write-tree --name-only --no-messages -z \"$3\" \"$w\" >\"$dir/merge\"\ncode=$?\n[ \"$code\" -le 1 ] || exit 124\nresult=$(tr '\\\\000' '\\\\n' <\"$dir/merge\" | head -n 1)\nif [ \"$code\" = 1 ]; then\n  tail -c +$((\\${#result} + 2)) \"$dir/merge\" >\"$paths\" || exit 124\n  printf 'conflict %s %s\\\\n' \"$tree\" \"$(count \"$paths\")\"\n  exit 0\nfi\ngit diff -z --name-only --no-renames \"$tree\" \"$result\" >\"$paths\" || exit 124\nn=$(count \"$paths\")\nif [ -z \"$4\" ]; then printf 'clean %s %s %s\\\\n' \"$tree\" \"$result\" \"$n\"; exit 0; fi\n[ \"$4\" = \"$tree\" ] || { printf 'moved %s\\\\n' \"$tree\"; exit 0; }\numask 002\nr=$(commit \"$result\" -p \"$3\" -m rebase) || exit 125\ngit add -A && git reset -q --hard \"$r\" && git reset -q \"$3\" || exit 125\nprintf 'applied %s %s %s\\\\n' \"$tree\" \"$result\" \"$n\"`;\n/**\n * The `run` call that moves the working copy onto commit `options.onto` of\n * `options.branch`, fetched from `origin` when the working copy lacks it:\n * every change the working copy holds, local commits included, merged onto\n * `onto` with git's own merge base, so a change both sides made alike merges\n * clean. It plans unless `options.expect` names the tree its plan answered;\n * then it applies a clean merge and leaves the working copy's own changes\n * uncommitted on top of `onto`, its commits flattened into them. A conflict\n * changes nothing. Decode its result with {@link rebased}.\n *\n * Git 2.38 or later (`merge-tree --write-tree`). It runs as long as\n * `options.timeoutSeconds`, at most `limits.maxTimeoutSeconds` (the default):\n * a remote that answers the whole history again for every fetch takes as\n * long as a clone.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const rebaseCall = (options) => ({\n    tool: \"run\",\n    command: script(REBASE, [\".\", options.branch, options.onto, options.expect ?? \"\"]),\n    timeoutSeconds: options.timeoutSeconds ?? limits.maxTimeoutSeconds\n});\n/**\n * How a {@link rebaseCall} ended, from its `run` result: a refusal for a\n * workdir that isn't a git working copy (`not_a_repository`) or a commit\n * `origin` doesn't serve (`not_found`); `ToolUnavailable` for an `origin`\n * that couldn't be reached (`unavailable`), a run its timeout stopped\n * (`timeout`), or a step that failed (`unknown`, with its exit code).\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const rebased = (result) => {\n    if (result.timedOut)\n        return Effect.fail(new ToolUnavailable({ code: \"timeout\" }));\n    if (result.exitCode !== 0)\n        return Effect.fail(failedWith(result.exitCode));\n    const [kind, tree = \"\", second = \"\", third = \"\"] = result.stdout.split(\"\\n\", 1)[0].split(\" \");\n    const count = Number(second);\n    const rebased = kind === \"current\"\n        ? { _tag: \"Current\", tree }\n        : kind === \"unrelated\"\n            ? { _tag: \"Unrelated\", tree }\n            : kind === \"conflict\"\n                ? { _tag: \"Conflicted\", tree, paths: count }\n                : kind === \"clean\"\n                    ? { _tag: \"Planned\", tree, result: second, paths: Number(third) }\n                    : kind === \"moved\"\n                        ? { _tag: \"Moved\", tree }\n                        : kind === \"applied\"\n                            ? { _tag: \"Applied\", tree, result: second, paths: Number(third) }\n                            : undefined;\n    return rebased === undefined || tree === \"\"\n        ? Effect.fail(new ToolUnavailable({ code: \"unknown\" }))\n        : Effect.succeed(rebased);\n};\n/**\n * The paths a {@link rebaseCall} left in {@link REBASE_PATHS}, read with the\n * `read` tool: each once, in git's order.\n *\n * @category operations\n * @since 1.0.0-rc.17\n */\nexport const rebasePaths = (read) => [\n    ...new Set(read.content.split(\"\\0\").filter((path) => path !== \"\"))\n];\n",
+    "map": {
+     "version": 3,
+     "file": "index.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.vibe"
+     }
+    ],
+    "code": "/**\n * A sandbox command as durable external work: `SandboxTools`' `start`,\n * `observe`, `collect` and `cancel` behind `@smthrs/flow`'s `ExternalJob`.\n *\n * `SandboxTools.execute` runs a command inside one exec session and one flow\n * step, so a host that stops while the command runs loses its answer: the\n * next attempt finds the command's fence and fails `ToolLost`. A command run\n * through {@link make} holds neither while it runs:\n *\n * - **Start once.** The job starts the command detached in its box by the\n *   job's key (`<job execution id>#g<generation>`); a start asked again, by\n *   a host that lost the answer, answers the same handle and starts nothing.\n * - **Park between probes.** Each probe reads the command's heartbeat (its\n *   process group alive) or its exit, waiting until the next probe is due\n *   for the exit, so one is seen when it happens, and the run parks between\n *   probes on a durable timer, from `probe.every` doubling to `probe.max`.\n *   No step or host waits on the command past one probe's wait.\n * - **In the step that asks.** The job's `run`, from inside a step, starts,\n *   waits on and collects a command that ends within its wait (`probe.max`\n *   unless given) in that step, so the run that asked never parks for it;\n *   a longer one goes on as the job's own execution, under the same key.\n * - **Collect once it finished.** The result is the `RunResult`\n *   `SandboxTools.execute` answers, journaled as the job's success.\n * - **Lost stops.** A command whose box restarted, or whose process died\n *   without recording how it ended, is cancelled and the job fails\n *   `ExternalJobLost` once `restarts` (zero unless set) replacements are\n *   spent. The job's deadline cancels it too, failing `ExternalJobTimedOut`.\n * - **Up to an hour.** Holding nothing while it runs, a job's command may\n *   run for up to its own limit, an hour unless declared ({@link Run}),\n *   where `SandboxTools.execute`'s stop at `SandboxTools.limits.maxTimeoutSeconds`.\n *   The job's deadline always covers a command at its limit.\n *\n * The job's payload carries a `target`, the host's own description of the\n * box, which {@link operations} hands to `reach` for every operation. A host\n * that holds the box's session reaches it with {@link onSession}; one that\n * reaches the box through another service implements {@link Commands} over\n * that service.\n *\n * @since 1.0.0-rc.17\n */\nimport { ExternalJob } from \"@smthrs/flow\";\nimport * as Duration from \"effect/Duration\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as SandboxTools from \"../SandboxTools/index.js\";\n/**\n * The command operations on `session`, each command fenced under\n * `callsDirectory` (`SandboxTools.CommandOptions`).\n *\n * @category constructors\n * @since 1.0.0-rc.17\n */\nexport const onSession = (session, callsDirectory) => ({\n    start: (call, key) => SandboxTools.start(session, call, { key, callsDirectory }),\n    observe: (key, options) => SandboxTools.observe(session, { key, callsDirectory, waitMs: options?.waitMs }),\n    collect: (key) => SandboxTools.collect(session, { key, callsDirectory }),\n    cancel: (key) => SandboxTools.cancel(session, { key, callsDirectory })\n});\n/**\n * The job's defaults: a probe a second after the command starts, doubling\n * to one every 20 seconds; commands of up to an hour; and a deadline 20\n * minutes past the longest command (`slack`). The deadline counts from\n * before the start, which may have to wake the box first, so the slack\n * leaves room for a slow wake, the command's stop, the last probe and the\n * collect.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const defaults = {\n    probe: { every: \"1 second\", max: \"20 seconds\" },\n    maxTimeoutSeconds: 3600,\n    slack: \"20 minutes\"\n};\n/** How long past its timeout a command may take to stop: its runner's TERM, then KILL five seconds later. */\nconst STOP_SECONDS = 5;\n/**\n * A `SandboxTools.Run` as a job runs it: its `timeoutSeconds` from 1 to\n * `maxTimeoutSeconds` (`defaults.maxTimeoutSeconds` unless given), where\n * `SandboxTools.Run`'s stops at `SandboxTools.limits.maxTimeoutSeconds`.\n * A call that names no timeout runs for `SandboxTools.limits.defaultTimeoutSeconds`.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Run = (maxTimeoutSeconds = defaults.maxTimeoutSeconds) => Schema.Struct({\n    ...SandboxTools.Run.fields,\n    timeoutSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: maxTimeoutSeconds })))\n});\n/**\n * Declares tag `tag`'s job: a command on the box `target` names. Its\n * payload is `{ target, call }`, `call` a {@link Run} of up to\n * `maxTimeoutSeconds`; its handle the command's `SandboxTools.Started` with\n * the `target` it was started on; and its success the command's\n * `SandboxTools.RunResult`. It fails with the tools' failures, `error` (how\n * reaching the box can fail), and `ExternalJob`'s own `ExternalJobLost` and\n * `ExternalJobTimedOut`.\n *\n * - `maxTimeoutSeconds`: the longest command, in whole seconds, at least\n *   `SandboxTools.limits.defaultTimeoutSeconds` (a call that names no\n *   timeout runs that long); `defaults.maxTimeoutSeconds` unless set.\n * - `timeout`: the job's deadline, `maxTimeoutSeconds` plus\n *   `defaults.slack` unless set. One shorter than a command at its limit,\n *   the five seconds its timeout gives it to stop and `probe.max` (the\n *   probe that sees it end) would cut that command off, and is refused.\n *   That floor leaves nothing for waking the box; the default's slack does.\n * - `probe` and `restarts`: `defaults.probe` and zero unless set.\n *\n * Throws a `RangeError` for a `maxTimeoutSeconds` or `timeout` outside\n * those bounds.\n *\n * Provide it with `job.toLayer(SandboxCommand.operations(reach))`, and list\n * `job.flows` on a host that resolves an execution's flow by its tag.\n *\n * @category constructors\n * @since 1.0.0-rc.17\n */\nexport const make = (tag, options) => {\n    const maxTimeoutSeconds = options.maxTimeoutSeconds ?? defaults.maxTimeoutSeconds;\n    if (!Number.isSafeInteger(maxTimeoutSeconds) || maxTimeoutSeconds < SandboxTools.limits.defaultTimeoutSeconds) {\n        throw new RangeError(`SandboxCommand.make: maxTimeoutSeconds must be a whole number of seconds from ${SandboxTools.limits.defaultTimeoutSeconds}`);\n    }\n    const probe = options.probe ?? defaults.probe;\n    const timeout = options.timeout ?? Duration.millis(maxTimeoutSeconds * 1000 + Duration.toMillis(defaults.slack));\n    const covered = (maxTimeoutSeconds + STOP_SECONDS) * 1000 + Duration.toMillis(probe.max);\n    if (!(Duration.toMillis(timeout) >= covered)) {\n        throw new RangeError(`SandboxCommand.make: timeout must be at least ${covered} ms, a command at its limit, its stop and the probe after it`);\n    }\n    return ExternalJob.make(tag, {\n        payload: Schema.Struct({ target: options.target, call: Run(maxTimeoutSeconds) }),\n        handle: Schema.Struct({ target: options.target, ...SandboxTools.Started.fields }),\n        success: SandboxTools.RunResult,\n        error: Schema.Union([\n            SandboxTools.ToolRefused,\n            SandboxTools.ToolLost,\n            SandboxTools.ToolUnavailable,\n            (options.error ?? Schema.Never)\n        ]),\n        probe,\n        timeout,\n        restarts: options.restarts ?? 0\n    });\n};\n/**\n * The job's operations over `reach`, which answers the {@link Commands} of\n * the box a target names. Every operation reaches the box again by the\n * target the payload or the handle carries, so it works from any host.\n *\n * - `status` maps `running` to `Running`, `finished` to `Exited` with its\n *   exit code, and `lost` to `Lost`. Its read waits for the command to end\n *   as long as the job asks (`SandboxTools.observe`'s `waitMs`), so an exit\n *   is seen when it happens.\n * - `abandon` cancels by key, which wins over a start of that key still in\n *   flight.\n *\n * @category constructors\n * @since 1.0.0-rc.17\n */\nexport const operations = (reach) => ({\n    start: ({ call, target }, key) => Effect.map(Effect.flatMap(reach(target), (box) => box.start(call, key)), (started) => ({ target, ...started })),\n    status: (handle, key, options) => Effect.map(Effect.flatMap(reach(handle.target), (box) => box.observe(key, options)), (observed) => observed.state === \"running\"\n        ? { _tag: \"Running\" }\n        : observed.state === \"finished\"\n            ? { _tag: \"Exited\", exitCode: observed.exitCode }\n            : { _tag: \"Lost\" }),\n    collect: (handle, key) => Effect.flatMap(reach(handle.target), (box) => box.collect(key)),\n    cancel: (handle, key) => Effect.flatMap(reach(handle.target), (box) => box.cancel(key)),\n    abandon: ({ target }, key) => Effect.flatMap(reach(target), (box) => box.cancel(key))\n});\n",
+    "map": {
+     "version": 3,
+     "file": "index.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAuCG;AAEH,OAAO,EAAE,WAAW,EAAE,MAAM,cAAc,CAAA;AAC1C,OAAO,KAAK,QAAQ,MAAM,iBAAiB,CAAA;AAC3C,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC,OAAO,KAAK,YAAY,MAAM,0BAA4B,CAAA;AAwB1D;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,OAAgB,EAAE,cAAsB,EAAY,EAAE,CAAC,CAAC;IAChF,KAAK,EAAE,CAAC,IAAI,EAAE,GAAG,EAAE,EAAE,CAAC,YAAY,CAAC,KAAK,CAAC,OAAO,EAAE,IAAI,EAAE,EAAE,GAAG,EAAE,cAAc,EAAE,CAAC;IAChF,OAAO,EAAE,CAAC,GAAG,EAAE,OAAO,EAAE,EAAE,CAAC,YAAY,CAAC,OAAO,CAAC,OAAO,EAAE,EAAE,GAAG,EAAE,cAAc,EAAE,MAAM,EAAE,OAAO,EAAE,MAAM,EAAE,CAAC;IAC1G,OAAO,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,YAAY,CAAC,OAAO,CAAC,OAAO,EAAE,EAAE,GAAG,EAAE,cAAc,EAAE,CAAC;IACxE,MAAM,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,YAAY,CAAC,MAAM,CAAC,OAAO,EAAE,EAAE,GAAG,EAAE,cAAc,EAAE,CAAC;CACvE,CAAC,CAAA;AAEF;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG;IACtB,KAAK,EAAE,EAAE,KAAK,EAAE,UAAU,EAAE,GAAG,EAAE,YAAY,EAAE;IAC/C,iBAAiB,EAAE,IAAI;IACvB,KAAK,EAAE,YAAY;CACX,CAAA;AAEV,6GAA6G;AAC7G,MAAM,YAAY,GAAG,CAAC,CAAA;AAEtB;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,CAAC,iBAAiB,GAAW,QAAQ,CAAC,iBAAiB,EAAE,EAAE,CAC5E,MAAM,CAAC,MAAM,CAAC;IACZ,GAAG,YAAY,CAAC,GAAG,CAAC,MAAM;IAC1B,cAAc,EAAE,MAAM,CAAC,QAAQ,CAC7B,MAAM,CAAC,GAAG,CAAC,KAAK,CAAC,MAAM,CAAC,SAAS,CAAC,EAAE,OAAO,EAAE,CAAC,EAAE,OAAO,EAAE,iBAAiB,EAAE,CAAC,CAAC,CAC/E;CACF,CAAC,CAAA;AAEJ;;;;;;;;;;;;;;;;;;;;;;;;;;;GA2BG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAIlB,GAAQ,EAAE,OAOX,EAAE,EAAE;IACH,MAAM,iBAAiB,GAAG,OAAO,CAAC,iBAAiB,IAAI,QAAQ,CAAC,iBAAiB,CAAA;IACjF,IAAI,CAAC,MAAM,CAAC,aAAa,CAAC,iBAAiB,CAAC,IAAI,iBAAiB,GAAG,YAAY,CAAC,MAAM,CAAC,qBAAqB,EAAE,CAAC;QAC9G,MAAM,IAAI,UAAU,CAClB,iFAAiF,YAAY,CAAC,MAAM,CAAC,qBAAqB,EAAE,CAC7H,CAAA;IACH,CAAC;IACD,MAAM,KAAK,GAAG,OAAO,CAAC,KAAK,IAAI,QAAQ,CAAC,KAAK,CAAA;IAC7C,MAAM,OAAO,GAAG,OAAO,CAAC,OAAO,IAAI,QAAQ,CAAC,MAAM,CAAC,iBAAiB,GAAG,IAAI,GAAG,QAAQ,CAAC,QAAQ,CAAC,QAAQ,CAAC,KAAK,CAAC,CAAC,CAAA;IAChH,MAAM,OAAO,GAAG,CAAC,iBAAiB,GAAG,YAAY,CAAC,GAAG,IAAI,GAAG,QAAQ,CAAC,QAAQ,CAAC,KAAK,CAAC,GAAG,CAAC,CAAA;IACxF,IAAI,CAAC,CAAC,QAAQ,CAAC,QAAQ,CAAC,OAAO,CAAC,IAAI,OAAO,CAAC,EAAE,CAAC;QAC7C,MAAM,IAAI,UAAU,CAClB,iDAAiD,OAAO,8DAA8D,CACvH,CAAA;IACH,CAAC;IACD,OAAO,WAAW,CAAC,IAAI,CAAC,GAAG,EAAE;QAC3B,OAAO,EAAE,MAAM,CAAC,MAAM,CAAC,EAAE,MAAM,EAAE,OAAO,CAAC,MAAM,EAAE,IAAI,EAAE,GAAG,CAAC,iBAAiB,CAAC,EAAE,CAAC;QAChF,MAAM,EAAE,MAAM,CAAC,MAAM,CAAC,EAAE,MAAM,EAAE,OAAO,CAAC,MAAM,EAAE,GAAG,YAAY,CAAC,OAAO,CAAC,MAAM,EAAE,CAAC;QACjF,OAAO,EAAE,YAAY,CAAC,SAAS;QAC/B,KAAK,EAAE,MAAM,CAAC,KAAK,CAAC;YAClB,YAAY,CAAC,WAAW;YACxB,YAAY,CAAC,QAAQ;YACrB,YAAY,CAAC,eAAe;YAC5B,CAAC,OAAO,CAAC,KAAK,IAAI,MAAM,CAAC,KAAK,CAAM;SACrC,CAAC;QACF,KAAK;QACL,OAAO;QACP,QAAQ,EAAE,OAAO,CAAC,QAAQ,IAAI,CAAC;KAChC,CAAC,CAAA;AACJ,CAAC,CAAA;AAED;;;;;;;;;;;;;;GAcG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,CACxB,KAA6C,EAO7C,EAAE,CAAC,CAAC;IACJ,KAAK,EAAE,CAAC,EAAE,IAAI,EAAE,MAAM,EAAE,EAAE,GAAG,EAAE,EAAE,CAE5B,MAAM,CAAC,GAAG,CADb,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC,MAAM,CAAC,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,GAAG,CAAC,KAAK,CAAC,IAAI,EAAE,GAAG,CAAC,CAAC,EAC3C,CAAC,OAAO,EAAE,EAAE,CAAC,CAAC,EAAE,MAAM,EAAE,GAAG,OAAO,EAAE,CAAC,CAAC;IACzD,MAAM,EAAE,CAAC,MAAM,EAAE,GAAG,EAAE,OAAO,EAAE,EAAE,CAE5B,MAAM,CAAC,GAAG,CADb,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,GAAG,CAAC,OAAO,CAAC,GAAG,EAAE,OAAO,CAAC,CAAC,EACvD,CAAC,QAAQ,EAAsB,EAAE,CAChD,QAAQ,CAAC,KAAK,KAAK,SAAS;QAC1B,CAAC,CAAC,EAAE,IAAI,EAAE,SAAS,EAAE;QACrB,CAAC,CAAC,QAAQ,CAAC,KAAK,KAAK,UAAU;YAC/B,CAAC,CAAC,EAAE,IAAI,EAAE,QAAQ,EAAE,QAAQ,EAAE,QAAQ,CAAC,QAAQ,EAAE;YACjD,CAAC,CAAC,EAAE,IAAI,EAAE,MAAM,EAAE,CAAC;IACzB,OAAO,EAAE,CAAC,MAAM,EAAE,GAAG,EAAE,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,GAAG,CAAC,OAAO,CAAC,GAAG,CAAC,CAAC;IACzF,MAAM,EAAE,CAAC,MAAM,EAAE,GAAG,EAAE,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,GAAG,CAAC,MAAM,CAAC,GAAG,CAAC,CAAC;IACvF,OAAO,EAAE,CAAC,EAAE,MAAM,EAAE,EAAE,GAAG,EAAE,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC,MAAM,CAAC,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,GAAG,CAAC,MAAM,CAAC,GAAG,CAAC,CAAC;CACtF,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/CiJob/index.vibe"
+     }
+    ],
+    "code": "/**\n * A CI job: one machine, the commit checked out, its steps run in order, and\n * an outcome.\n *\n * `ci/job` is a flow a repository's CI calls once per job. It reserves one\n * machine for its life through the host's {@link Machine}, checks out exactly\n * the commit, then runs each step as its own durable action, so a step that\n * ran is never run again on resume and a run page can show each one.\n *\n * - **An outcome, never a failure.** The job settles `passed`, `failed`,\n *   `cancelled` or `skipped`. A step that exits non-zero fails the job and\n *   skips the steps after it; a machine that never answers fails it too,\n *   with one `machine` step, and is released all the same. So `Node.all`\n *   over many jobs reports every row, as a matrix should.\n * - **Exactly the commit.** A checkout that isn't exactly `sha` fails the job\n *   before any step runs, never a pass another commit earned.\n * - **The host owns the machine.** This module names no provider: the host\n *   provides {@link Machine} (a container per job on Cloudflare, a test's own\n *   machine in a test). A job may name the machine it runs on (`machine`),\n *   from those the host declared.\n * - **A graph runs in waves.** `ci/graph` ({@link Graph}) runs many jobs on\n *   one target: a job's `needs` name jobs declared before it, every job\n *   whose needs settled starts at once, and a job whose need didn't pass is\n *   `skipped` without a machine.\n *\n * ```ts\n * import { CiJob } from \"@smthrs/sandbox\"\n *\n * const lint = CiJob.make(\"lint\", {\n *   steps: [\n *     { name: \"install\", run: \"pnpm install --frozen-lockfile\" },\n *     { name: \"lint\", run: \"pnpm lint\" }\n *   ]\n * })\n * // inside a flow's body, with the run's target:\n * // lint.call({ run, repo, sha, ref })\n * ```\n *\n * @since 1.0.0-rc.17\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport { Action, Flow, RetryPolicy } from \"@smthrs/flow\";\nimport { Node } from \"@smthrs/plan\";\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\n/**\n * Bounds on a job's declaration.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const limits = {\n    steps: 32,\n    jobs: 32,\n    commandLength: 16 * 1024,\n    defaultTimeoutSeconds: 600,\n    maxTimeoutSeconds: 600\n};\n/**\n * A job's or a step's name: a letter or digit, then up to 63 letters, digits,\n * dots, dashes or underscores.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Name = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/));\n/**\n * How a job or a step ended.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Outcome = Schema.Literals([\"passed\", \"failed\", \"cancelled\", \"skipped\"]);\n/**\n * One step: a shell command run with `sh -c` at the checkout's root, for at\n * most `timeoutSeconds` (`limits.defaultTimeoutSeconds` unless set).\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Step = Schema.Struct({\n    name: Name,\n    run: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(limits.commandLength)),\n    timeoutSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: limits.maxTimeoutSeconds })))\n});\n/**\n * A job: its name and its steps, in order; the machine it runs on, by the\n * name the deployment declared it under (the host's default when absent);\n * and the jobs that must pass before it starts, by name (see {@link Graph}).\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Job = Schema.Struct({\n    name: Name,\n    steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(limits.steps)),\n    machine: Schema.optionalKey(Name),\n    needs: Schema.optionalKey(Schema.Array(Name).check(Schema.isMaxLength(limits.jobs)))\n});\n/**\n * Why a list of jobs isn't a graph, or `undefined` when it is: every name is\n * unique, and every need names a job declared earlier in the list, so a\n * graph never has a cycle.\n *\n * @category validation\n * @since 1.0.0-rc.17\n */\nexport const graphProblem = (jobs) => {\n    const seen = new Set();\n    for (const job of jobs) {\n        if (seen.has(job.name))\n            return `job ${job.name} is declared twice`;\n        const unknown = job.needs?.find((need) => !seen.has(need));\n        if (unknown !== undefined)\n            return `job ${job.name} needs ${unknown}, which isn't declared before it`;\n        seen.add(job.name);\n    }\n    return undefined;\n};\n/**\n * A job graph: 1 to `limits.jobs` jobs, each needing only jobs declared\n * before it, so the list's order is one the graph can run in.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Jobs = Schema.Array(Job).check(Schema.isMinLength(1), Schema.isMaxLength(limits.jobs), Schema.makeFilter(graphProblem));\n/**\n * What a job runs on: the run it belongs to, the repository (`owner/name`),\n * the commit, and the ref the commit was pushed to or proposed from.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Target = Schema.Struct({\n    run: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),\n    repo: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100}$/)),\n    sha: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)),\n    ref: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))\n});\n/**\n * How one step ended: its outcome and, when it ran to an end, its exit code.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const StepResult = Schema.Struct({\n    name: Schema.String,\n    outcome: Outcome,\n    exitCode: Schema.NullOr(Schema.Int),\n    output: Schema.optionalKey(Schema.Struct({ stdout: Schema.String, stderr: Schema.String, truncated: Schema.Boolean }))\n});\n/**\n * How a job ended: its outcome, then the checkout and each step.\n *\n * @category schemas\n * @since 1.0.0-rc.17\n */\nexport const Result = Schema.Struct({ outcome: Outcome, steps: Schema.Array(StepResult) });\n/**\n * The name the checkout has among a job's steps.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const CHECKOUT = \"checkout\";\n/**\n * The machine couldn't start or answer. The action retries it under\n * {@link RETRY}; past that the job fails.\n *\n * @category errors\n * @since 1.0.0-rc.17\n */\nexport class MachineUnavailable extends Schema.TaggedError()(\"@smthrs/sandbox/CiJob/MachineUnavailable\", {}) {\n}\n/**\n * A job's machine, which the host provides. One machine per `(target.run,\n * job.name)`, of the kind `job.machine` names (the host's default when absent;\n * a host that declared no such machine answers `checkout` with `false`): `checkout` puts exactly `target.sha` in its working copy and answers\n * whether it did; `run` runs one step there at most once per `(target.run,\n * job, index)`, answering its exit code; `release` lets the machine go,\n * best effort.\n *\n * @category services\n * @since 1.0.0-rc.17\n */\nexport class Machine extends runtime.$service(\"@smthrs/sandbox/CiJob/Machine\") {\n}\n/**\n * How a step's action retries a machine that didn't answer: 1 s doubling to\n * a minute, for at most 30 minutes.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 });\n/**\n * Checks the commit out: the job's first result, `passed` with the checkout,\n * or `failed` when the machine has another commit.\n *\n * @category actions\n * @since 1.0.0-rc.17\n */\nexport const Checkout = Action.make(\"ci/job/Checkout\", {\n    payload: { target: Target, job: Job },\n    success: Result,\n    error: MachineUnavailable,\n    retryPolicy: RETRY\n});\n/**\n * Runs step `index` unless the job already failed, adding its result to\n * `sofar`.\n *\n * @category actions\n * @since 1.0.0-rc.17\n */\nexport const RunStep = Action.make(\"ci/job/Step\", {\n    payload: { target: Target, job: Job, index: Schema.Int, sofar: Result },\n    success: Result,\n    error: MachineUnavailable,\n    retryPolicy: RETRY\n});\n/**\n * Lets the job's machine go and answers the job's result.\n *\n * @category actions\n * @since 1.0.0-rc.17\n */\nexport const Release = Action.make(\"ci/job/Release\", {\n    payload: { target: Target, job: Job, result: Result },\n    success: Result\n});\n/**\n * The name a job's result gives the machine when it never answered: the job failed there, and the steps it had run\n * are lost with it.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const MACHINE = \"machine\";\n/**\n * The `ci/job` flow: checkout, each step, release. It never fails: a machine\n * that never answers settles the job `failed`.\n *\n * @category flows\n * @since 1.0.0-rc.17\n */\nexport const CiJob = Flow.make(\"ci/job\", {\n    description: \"Run one CI job on its own machine: check out the commit, run each step in order, and settle an \" +\n        \"outcome, passed, failed, cancelled or skipped.\",\n    capabilities: [\"sandbox:job\"],\n    modelInvocable: false,\n    payload: { target: Target, job: Job },\n    success: Result,\n    // Captured, so the body has a stable identity wherever the run is driven, a child run on another host included.\n    body: Node.capture({ checkout: Checkout.name, step: RunStep.name, release: Release.name, machine: MACHINE }, ({ job, target }) => job.steps.reduce((chain, _, index) => chain.pipe(Node.bindPlanned(Node.capture({ step: RunStep.name, index, target, job }, function (sofar) {\n        return RunStep.call({ target: this.target, job: this.job, index: this.index, sofar });\n    }))), Checkout.call({ target, job })).pipe(Node.bindPlanned(Node.capture({ release: Release.name, target, job }, function (result) {\n        return Release.call({ target: this.target, job: this.job, result });\n    })), \n    // A machine that never answered fails the job, and is let go all the same.\n    Node.catch({\n        onFailure: Node.capture({ release: Release.name, target, job, machine: MACHINE }, function () {\n            const result = {\n                outcome: \"failed\",\n                steps: [{ name: this.machine, outcome: \"failed\", exitCode: null }]\n            };\n            return Release.call({ target: this.target, job: this.job, result });\n        })\n    })))\n});\n// Reserve room for all 32 outcome rows inside RunInspection's 16 KiB value.\n// Bound encoded JSON bytes, including escapes, instead of raw string length.\nconst outputText = (text) => {\n    const bytes = (length) => new TextEncoder().encode(JSON.stringify(text.slice(0, length))).length;\n    let low = 0, high = text.length;\n    while (low < high) {\n        const mid = Math.ceil((low + high) / 2);\n        if (bytes(mid) <= 4096)\n            low = mid;\n        else\n            high = mid - 1;\n    }\n    return text.slice(0, low);\n};\nconst refOf = ({ machine, name }) => machine === undefined ? { name } : { name, machine };\nconst machine = Effect_1.suspend({ machine: () => Machine }.machine);\n/**\n * The implementations of `ci/job`'s actions over the host's {@link Machine}.\n *\n * @category layers\n * @since 1.0.0-rc.17\n */\nexport const layer = Layer.mergeAll(Checkout.toLayer(({ job, target }) => Effect.map(Effect.flatMap(machine, (m) => m.checkout(target, refOf(job))), (exact) => ({\n    outcome: exact ? \"passed\" : \"failed\",\n    steps: [{ name: CHECKOUT, outcome: exact ? \"passed\" : \"failed\", exitCode: null }]\n}))), RunStep.toLayer(({ index, job, sofar, target }) => {\n    const step = job.steps[index];\n    // Each action's own sealed outcome owns its output. Carry only outcome\n    // metadata forward so earlier verbose commands cannot clip later records.\n    const prior = sofar.steps.map(({ output: _, ...row }) => row);\n    if (sofar.outcome !== \"passed\") {\n        return Effect.succeed({\n            outcome: sofar.outcome,\n            steps: [...prior, { name: step.name, outcome: \"skipped\", exitCode: null }]\n        });\n    }\n    return Effect.map(Effect.flatMap(machine, (m) => m.run(target, refOf(job), index, step)), ({ exitCode, timedOut, output }) => {\n        const outcome = exitCode === 0 && !timedOut ? \"passed\" : \"failed\";\n        const stdout = output === undefined ? \"\" : outputText(output.stdout);\n        const stderr = output === undefined ? \"\" : outputText(output.stderr);\n        return {\n            outcome,\n            steps: [...prior, {\n                    name: step.name,\n                    outcome,\n                    exitCode: timedOut ? null : exitCode,\n                    ...(output === undefined\n                        ? {}\n                        : {\n                            output: {\n                                stdout,\n                                stderr,\n                                truncated: output.truncated || stdout !== output.stdout || stderr !== output.stderr\n                            }\n                        })\n                }]\n        };\n    });\n}), Release.toLayer(({ job, result, target }) => Effect.as(Effect.flatMap(machine, (m) => m.release(target, refOf(job))), result)));\n/**\n * The key job `index`'s result has in {@link Graph}'s success: its position,\n * since a job's name may hold a dot.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const key = (index) => `job${index}`;\n/**\n * What a job settles when a job it needs didn't pass: `skipped`, with no\n * machine and no step.\n *\n * @category constants\n * @since 1.0.0-rc.17\n */\nexport const SKIPPED = { outcome: \"skipped\", steps: [] };\n/**\n * Each job's wave: 0 for a job with no needs, else one past its latest need's.\n * {@link Jobs} has every need before its job, so one pass settles every wave.\n */\nconst wavesOf = (jobs) => {\n    const wave = new Map();\n    const waves = [];\n    jobs.forEach((job, index) => {\n        const at = Math.max(-1, ...(job.needs ?? []).map((need) => wave.get(need))) + 1;\n        wave.set(job.name, at);\n        (waves[at] ??= []).push(index);\n    });\n    return waves;\n};\n/**\n * The `ci/graph` flow: a whole job graph on one target, in waves. Every job of\n * a wave starts at once as a `ci/job` child; the next wave starts when this\n * one has settled. A job whose need didn't pass settles {@link SKIPPED}\n * without a machine, and so do its own dependents. It settles each job's\n * result under {@link key}, and never fails: a job's failure is its result.\n *\n * @category flows\n * @since 1.0.0-rc.17\n */\nexport const Graph = Flow.make(\"ci/graph\", {\n    description: \"Run a CI job graph on one commit in waves: every job whose needs settled starts at once on its own \" +\n        \"machine, and a job whose need didn't pass is skipped.\",\n    capabilities: [\"sandbox:job\"],\n    modelInvocable: false,\n    payload: { target: Target, jobs: Jobs },\n    success: Schema.Record(Schema.String, Result),\n    body: Node.capture({ job: CiJob.name, skipped: SKIPPED }, ({ jobs, target }) => {\n        const waves = wavesOf(jobs);\n        return waves.slice(1).reduce((settled, wave) => settled.pipe(Node.bindPlanned(Node.capture({\n            job: CiJob.name,\n            target,\n            wave: wave.map((index) => ({\n                key: key(index),\n                job: jobs[index],\n                // A job past the first wave has needs: that's what put it there.\n                needs: jobs[index].needs.map((need) => key(jobs.findIndex((job) => job.name === need)))\n            }))\n        }, function (results) {\n            const members = { prior: Node.succeed(results) };\n            for (const { job, key, needs } of this.wave) {\n                members[key] = Node.succeed(results).pipe(Node.branch({\n                    if: Node.capture({ needs }, function (done) {\n                        return this.needs.every((need) => done[need].outcome === \"passed\");\n                    }),\n                    then: Node.capture({ job: CiJob.name, target: this.target, run: job }, function () {\n                        return CiJob.child({ target: this.target, job: this.run });\n                    }),\n                    else: Node.capture({ skipped: SKIPPED }, function () {\n                        return Node.succeed(this.skipped);\n                    })\n                }));\n            }\n            return Node.all(members).pipe(Node.map(({ prior, ...wave }) => ({ ...prior, ...wave })));\n        }))), Node.all(Object.fromEntries(waves[0].map((index) => [key(index), CiJob.child({ target, job: jobs[index] })]))));\n    })\n});\n/**\n * A job a repository's flow declares: `make(name, { steps, machine?, needs? })`,\n * then `.call(target)` inside the flow's body starts it alone as a `ci/job`\n * child run; {@link Graph} runs many with their needs.\n *\n * @category constructors\n * @since 1.0.0-rc.17\n */\nexport const make = (name, options) => {\n    const job = {\n        name,\n        steps: options.steps,\n        ...(options.machine === undefined ? {} : { machine: options.machine }),\n        ...(options.needs === undefined ? {} : { needs: options.needs })\n    };\n    return {\n        job,\n        call: (target) => CiJob.child({ target, job })\n    };\n};\n",
+    "map": {
+     "version": 3,
+     "file": "index.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/CiJob/index.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {
@@ -6905,6 +7315,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.vibe"
+     }
+    ],
+    "code": "/**\n * Sweeps one owner's Microsandbox machines whose holder is gone.\n *\n * @since 0.1.0\n */\nimport { $catchExpression } from \"vibelang-runtime\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effect from \"effect/Effect\";\nimport { attemptIn } from \"../internal/attempt.js\";\nimport { removeMachine } from \"../internal/microsandboxRemove.js\";\nimport { ProviderError } from \"../RemoteChildProcessSpawner/ProviderError.js\";\nimport { holderLabel, ownerLabel, providerLabel, providerName } from \"./labels.js\";\nconst attempt = attemptIn(\"microsandbox\");\n/** How long a reaped machine's graceful stop may take before its removal is forced. */\nconst defaultStopTimeoutMs = 3_000;\n/** The string labels a machine's persisted configuration records, or `undefined` when it is unreadable. */\nconst labelsOf = (handle) => {\n    try {\n        const labels = Reflect.get(Object(JSON.parse(handle.configJson)), \"labels\");\n        return Object.fromEntries(Object.entries(Object(labels)).filter((entry) => typeof entry[1] === \"string\"));\n    }\n    catch {\n        // An unreadable configuration names no holder, and a machine nobody can\n        // name the holder of is left alone rather than guessed at.\n        return undefined;\n    }\n};\n/** The holder label a machine's persisted configuration records, if it carries one. */\nconst holderOf = (handle) => labelsOf(handle)?.[holderLabel];\nconst isNotFound = (error) => Reflect.get(Object(error.cause), \"code\") === \"sandboxNotFound\";\n/**\n * Removes this owner's machines whose holder is no longer alive.\n *\n * Microsandbox's own database is the registry: machines are listed by the\n * `smithers.provider` and `smithers.owner` labels every `MicrosandboxSandbox`\n * machine carries, page by page, and each one's `smithers.holder` label is put\n * to `isAlive`. A machine whose holder is dead is stopped and removed under a\n * bounded graceful window, with a forced removal when that fails, whatever its\n * persistence: a sticky machine outlives its holder by design, and reaping is\n * how a host decides that holder is not coming back. Machines of other owners,\n * machines without a readable holder label, and machines this package did not\n * create are never touched.\n *\n * A caller's `retain` keeps a dead holder's machine it still wants, such as a\n * sticky workspace of a run that resumes after the restart; the resumed run\n * reattaches it and relabels it to the new holder.\n *\n * Just before a removal the machine is read again, and a machine whose holder\n * label changed since the listing is skipped: acquiring an existing machine\n * relabels it to the new holder, so a machine a live holder reattached in the\n * meantime survives. A reattach that lands between that second read and the\n * removal is not caught, so a host reaps at startup, before it acquires. A\n * machine that disappears on its own in between is skipped too.\n *\n * Every candidate is attempted. When any removal fails, the effect fails with\n * `unavailable` naming those machines, after the others have been removed.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const reap = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* reap(options) {\n    const listed = [];\n    let cursor;\n    do {\n        const after = cursor;\n        const page = yield* attempt(() => options.sdk.Sandbox.listWith((list) => {\n            const scoped = list.label(providerLabel, providerName).label(ownerLabel, options.owner);\n            return after === undefined ? scoped : scoped.cursor(after);\n        }), \"unavailable\", `the microVMs of owner ${options.owner} could not be listed`);\n        listed.push(...page.sandboxes);\n        cursor = page.nextCursor;\n    } while (cursor !== undefined);\n    const reaped = [];\n    const failed = [];\n    {\n        let pending_1 = runtime.$normal;\n        try {\n            for (const handle of listed) {\n                try {\n                    {\n                        const labels = labelsOf(handle);\n                        const holder = labels?.[holderLabel];\n                        if (labels === undefined || holder === undefined || (yield* options.isAlive(holder)))\n                            continue;\n                        if (options.retain !== undefined && (yield* options.retain(labels)))\n                            continue;\n                        const outcome = yield* $catchExpression(() => (Effect_1.gen(function* () {\n                            const current = yield* attempt(() => handle.refresh(), \"unavailable\", `${handle.name} could not be read`);\n                            if (holderOf(current) !== holder)\n                                return \"skipped\";\n                            yield* attempt(() => removeMachine(current, options.stopTimeoutMs ?? defaultStopTimeoutMs), \"unavailable\", `${handle.name} could not be removed`);\n                            return \"removed\";\n                        })), (error) => Effect_1.sync(() => { return isNotFound(error) ? \"skipped\" : error; }));\n                        if (outcome === \"removed\")\n                            reaped.push({ name: handle.name, holder, status: handle.status });\n                        else if (outcome !== \"skipped\")\n                            failed.push({ name: handle.name, error: outcome });\n                    }\n                }\n                catch (thrown_1) {\n                    pending_1 = thrown_1;\n                    break;\n                }\n            }\n        }\n        catch (thrown_2) {\n            throw runtime.$finallyFailure(pending_1, thrown_2);\n        }\n        if (pending_1 !== runtime.$normal)\n            throw pending_1;\n    }\n    if (failed.length > 0) {\n        return yield* Effect_1.fail(new ProviderError({\n            code: \"unavailable\",\n            message: `microsandbox: ${failed.length} orphaned microVM(s) could not be reaped: ${failed.map(({ name }) => name).join(\", \")}`,\n            cause: failed.map(({ error }) => error)\n        }));\n    }\n    return reaped;\n})));\n",
+    "map": {
+     "version": 3,
+     "file": "reap.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.vibe"
      }
     ],
@@ -7020,6 +7450,26 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.vibe"
+     }
+    ],
+    "code": "/**\n * Provides a supervised spawner as a layer.\n *\n * @since 0.1.0\n */\nimport * as Layer from \"effect/Layer\";\nimport { ChildProcessSpawner } from \"effect/process/ChildProcessSpawner\";\nimport { make } from \"./make.js\";\n/**\n * Provides `ChildProcessSpawner` backed by a supervised remote session.\n *\n * Use it in place of `RemoteChildProcessSpawner.layer` when the provider can\n * be pinged. The two differ in one way that matters: under the plain adapter a\n * session that dies leaves its commands waiting forever, and under this one it\n * fails them so a retry policy can move the work to a fresh session.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = (provider, options) => Layer.effect(ChildProcessSpawner, make(provider, options));\n",
+    "map": {
+     "version": 3,
+     "file": "layer.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,EAAE,mBAAmB,EAAE,MAAM,oCAAoC,CAAA;AAExE,OAAO,EAAE,IAAI,EAAE,MAAM,WAAW,CAAA;AAGhC;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,QAAkB,EAAE,OAAgB,EAAoC,EAAE,CAC9F,KAAK,CAAC,MAAM,CAAC,mBAAmB,EAAE,IAAI,CAAC,QAAQ,EAAE,OAAO,CAAC,CAAC,CAAA"
     }
    }
   ]

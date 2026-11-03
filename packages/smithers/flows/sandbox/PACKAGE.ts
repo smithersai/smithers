@@ -181,7 +181,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/pidDirectory.ts",
         "src/internal/execSession.ts",
         "src/internal/microsandboxProcess.ts",
-        "src/MicrosandboxSandbox/reap.ts",
+        "src/MicrosandboxSandbox/reap.vibe",
         "src/DirectorySandbox/make.ts",
         "src/AwsSandbox/make.ts"
       ]

@@ -21,7 +21,7 @@
  * @since 0.1.0
  */
 
-export * from "./layer.ts"
+export * from "./layer.vibe"
 export * from "./make.ts"
 export * from "./Options.vibe"
 export * from "./Reporter.vibe"

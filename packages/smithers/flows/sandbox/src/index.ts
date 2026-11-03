@@ -30,13 +30,13 @@ export * as TerminalProtocol from "./TerminalProtocol/index.ts"
 export * as Sandbox from "./Sandbox/index.ts"
 
 /** Typed tools on a sandbox's working copy: run a command, read, write and list files, git status and diff. */
-export * as SandboxTools from "./SandboxTools/index.ts"
+export * as SandboxTools from "./SandboxTools/index.vibe"
 
 /** A sandbox command as durable external work: start once, park between probes, collect, cancel. */
-export * as SandboxCommand from "./SandboxCommand/index.ts"
+export * as SandboxCommand from "./SandboxCommand/index.vibe"
 
 /** A CI job: one machine, the commit checked out, its steps run in order, and an outcome. */
-export * as CiJob from "./CiJob/index.ts"
+export * as CiJob from "./CiJob/index.vibe"
 
 /** Lands a session's captured work in a host jj repository. */
 export * as SandboxMerge from "./SandboxMerge/index.ts"

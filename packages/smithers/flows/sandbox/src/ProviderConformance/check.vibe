@@ -6,11 +6,6 @@
 
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
-import * as Option from "effect/Option"
-import { ChildProcess } from "effect/process"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import * as Stream from "effect/Stream"
 import { boundedCheck } from "../internal/boundedCheck.vibe"
 import { defaultCheckTimeout, elapsed } from "../internal/deadline.ts"
 import { describeExit } from "../internal/describeExit.vibe"
@@ -33,19 +28,19 @@ import type { Violation } from "./Violation.ts"
 const inSession = <A>(
   provider: Provider,
   deadline: Duration.Input,
-  effect: Effect.Effect<A, unknown, ChildProcessSpawner>
-): Effect.Effect<Exit.Exit<A, unknown>> => boundedCheck(Effect.provide(effect, layer(provider)), deadline)
+  effect: A!unknown!ChildProcessSpawner
+): Exit<A, unknown>!! => boundedCheck(Effect.provide(effect, layer(provider)), deadline)
 
 const writesItsOutput = (
   provider: Provider,
   commands: Commands,
   deadline: Duration.Input
-): Effect.Effect<Violation | undefined> =>
+): Violation | undefined!! =>
   Effect.map(
     inSession(
       provider,
       deadline,
-      Effect.flatMap(ChildProcessSpawner, (spawner) =>
+      Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
         spawner.string(ChildProcess.make(commands.writes, { shell: commands.shell ?? false })))
     ),
     (exit) =>
@@ -60,13 +55,13 @@ const reportsANonzeroExit = (
   provider: Provider,
   commands: Commands,
   deadline: Duration.Input
-): Effect.Effect<Violation | undefined> =>
+): Violation | undefined!! =>
   Effect.map(
     inSession(
       provider,
       deadline,
       Effect.flatMap(
-        ChildProcessSpawner,
+        ChildProcessSpawner.ChildProcessSpawner,
         (spawner) => spawner.exitCode(ChildProcess.make(commands.fails, { shell: commands.shell ?? false }))
       )
     ),
@@ -81,7 +76,7 @@ const reportsANonzeroExit = (
 const answersAPing = (
   provider: Provider,
   deadline: Duration.Input
-): Effect.Effect<Violation | undefined> =>
+): Violation | undefined!! =>
   Effect.map(
     inSession(provider, deadline, makeHealth(provider).check),
     (exit) =>
@@ -96,15 +91,15 @@ const signalsARunningCommand = (
   provider: Provider,
   commands: Commands,
   deadline: Duration.Input
-): Effect.Effect<Violation | undefined> =>
+): Violation | undefined!! =>
   Effect.map(
     inSession(
       provider,
       deadline,
-      Effect.scoped(Effect.gen(function*() {
-        const spawner = yield* ChildProcessSpawner
-        const handle = yield* spawner.spawn(ChildProcess.make(commands.runs, { shell: commands.shell ?? false }))
-        yield* handle.kill()
+      Effect.scoped(effect {
+        const spawner = try ChildProcessSpawner.ChildProcessSpawner
+        const handle = try spawner.spawn(ChildProcess.make(commands.runs, { shell: commands.shell ?? false }))
+        try handle.kill()
         // A `kill` that RETURNS is not a `kill` that happened. An adapter whose
         // signal goes nowhere satisfies the type and leaves every cancelled
         // action's process running in the sandbox, which is the failure this
@@ -114,7 +109,7 @@ const signalsARunningCommand = (
         // HOW it stopped is not the subject. A provider that reports a
         // signalled process as a failed `exitCode` is as conforming as one that
         // reports a status, so the exit is captured rather than awaited.
-        const stopped = yield* Effect.raceFirst(
+        const stopped = try Effect.raceFirst(
           Effect.map(Effect.exit(handle.exitCode), Option.some),
           Effect.as(elapsed(commands.stopsWithin ?? defaultStopsWithin), Option.none())
         )
@@ -122,11 +117,11 @@ const signalsARunningCommand = (
         // The handle is the wrapper shell, and a shell that dies while its
         // child lives on satisfies everything above. The second look asks the
         // machine itself whether the command's work is still there.
-        const survivor = yield* spawner.exitCode(
+        const survivor = try spawner.exitCode(
           ChildProcess.make(commands.survivor, { shell: commands.shell ?? false })
         )
         return { stopped, survived: survivor === 0 }
-      }))
+      })
     ),
     (exit) =>
       Exit.isSuccess(exit) && Option.isSome(exit.value.stopped) && !exit.value.survived ? undefined : {
@@ -147,12 +142,12 @@ const deliversStandardInput = (
   provider: Provider,
   commands: Commands,
   deadline: Duration.Input
-): Effect.Effect<Violation | undefined> =>
+): Violation | undefined!! =>
   Effect.map(
     inSession(
       provider,
       deadline,
-      Effect.flatMap(ChildProcessSpawner, (spawner) =>
+      Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
         spawner.string(
           ChildProcess.make(commands.copiesStdin ?? defaultCopiesStdin, {
             shell: commands.shell ?? false,
@@ -215,15 +210,15 @@ export const check = (
   provider: Provider,
   commands: Commands,
   options: CheckOptions = {}
-): Effect.Effect<ReadonlyArray<Violation>> =>
-  Effect.gen(function*() {
+): ReadonlyArray<Violation>!! =>
+  effect {
     const deadline = options.checkTimeout ?? defaultCheckTimeout
     const found: Array<Violation | undefined> = [
-      yield* writesItsOutput(provider, commands, deadline),
-      yield* reportsANonzeroExit(provider, commands, deadline),
-      ...provider.stdin === true ? [yield* deliversStandardInput(provider, commands, deadline)] : [],
-      ...provider.ping === undefined ? [] : [yield* answersAPing(provider, deadline)],
-      ...provider.kill === undefined ? [] : [yield* signalsARunningCommand(provider, commands, deadline)]
+      try writesItsOutput(provider, commands, deadline),
+      try reportsANonzeroExit(provider, commands, deadline),
+      ...provider.stdin === true ? [try deliversStandardInput(provider, commands, deadline)] : [],
+      ...provider.ping === undefined ? [] : [try answersAPing(provider, deadline)],
+      ...provider.kill === undefined ? [] : [try signalsARunningCommand(provider, commands, deadline)]
     ]
     return found.filter((violation): violation is Violation => violation !== undefined)
-  })
+  }

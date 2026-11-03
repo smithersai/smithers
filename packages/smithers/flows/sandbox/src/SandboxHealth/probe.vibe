@@ -4,7 +4,6 @@
  * @since 0.1.0
  */
 
-import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import { boundedMessage } from "../internal/boundedMessage.ts"
 import type { HealthState } from "./HealthState.vibe"
@@ -43,21 +42,21 @@ const defaultDeadline: Duration.Input = "5 seconds"
 export const probe = (
   provider: PingProvider,
   options?: ProbeOptions
-): Effect.Effect<HealthState> =>
+): HealthState!! =>
   Effect.timeoutOrElse(
     Effect.matchEffect(provider.ping, {
-      onSuccess: (): Effect.Effect<HealthState> => Effect.succeed(new Healthy()),
-      onFailure: (error): Effect.Effect<HealthState> => {
+      onSuccess: (): HealthState!! => Effect.succeed(new Healthy()),
+      onFailure: (error): HealthState!! => {
         const message = boundedMessage(error.message)
-        return Effect.logDebug("sandbox ping failed", { code: error.code, message }).pipe(
-          Effect.as(
+        return Effect.logDebug("sandbox ping failed", { code: error.code, message })
+          |> Effect.as(
+            %,
             new Unhealthy({
               component: "sandbox",
               reason: "ping_failed",
               message
             })
           )
-        )
       }
     }),
     {
@@ -71,7 +70,7 @@ export const probe = (
           })
         )
     }
-  ).pipe(
-    Effect.tap((state) => Effect.annotateCurrentSpan({ outcome: state._tag === "Healthy" ? "healthy" : state.reason })),
-    Effect.withSpan("SandboxHealth.probe", {}, { captureStackTrace: false })
   )
+  |> Effect.tap(%, (state) =>
+    Effect.annotateCurrentSpan({ outcome: state._tag === "Healthy" ? "healthy" : state.reason }))
+  |> Effect.withSpan("SandboxHealth.probe", {}, { captureStackTrace: false })(%)

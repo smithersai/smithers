@@ -18,7 +18,7 @@ import { gather, type GatheredRun, providerFailure } from "../internal/localProc
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { NetworkPolicy } from "../Sandbox/NetworkPolicy.ts"
-import type { Provider } from "../Sandbox/Provider.ts"
+import type { Provider } from "../Sandbox/Provider.vibe"
 import { type ResourceLimits, validateResourceLimits } from "../Sandbox/ResourceLimits.ts"
 
 /**
