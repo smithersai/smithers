@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest"
 import { Effect, Fiber } from "effect"
 import { TestClock } from "effect/testing"
 import * as Remote from "../src/RemoteChildProcessSpawner/index.ts"
-import { make } from "../src/SandboxMerge/Repository.ts"
+import { make } from "../src/SandboxMerge/Repository.vibe"
 
 it.effect("returns shared lock contention immediately so no repository fence sleeps through retry", () =>
   Effect.gen(function*() {

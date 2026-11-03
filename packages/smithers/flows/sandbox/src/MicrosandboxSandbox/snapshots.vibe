@@ -18,7 +18,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { attemptIn } from "../internal/attempt.ts"
+import { attemptIn } from "../internal/attempt.vibe"
 import { encodeBase64 } from "../internal/base64.ts"
 import { recordedNetwork } from "../internal/microsandboxNetwork.ts"
 import { runGuest } from "../internal/microsandboxProcess.ts"

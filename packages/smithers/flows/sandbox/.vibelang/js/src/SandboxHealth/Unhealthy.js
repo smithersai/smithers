@@ -17,6 +17,6 @@ export class Unhealthy extends Schema.Class("@smthrs/sandbox/SandboxHealth/Unhea
     _tag: Schema.tag("Unhealthy"),
     component: Schema.Literal("sandbox"),
     reason: UnhealthyReason,
-    message: Schema.optional(Schema.String),
+    message: Schema.optional(Schema.String)
 }) {
 }

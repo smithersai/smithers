@@ -18,7 +18,7 @@ export class Merged extends Schema.TaggedClass()("Merged", {
     /** The commit id the change had when the outcome was read. */
     commit: Schema.String,
     /** The commit id the change was applied onto. */
-    onto: Schema.String,
+    onto: Schema.String
 }) {
 }
 /**
@@ -37,7 +37,7 @@ export class Conflicted extends Schema.TaggedClass()("Conflicted", {
     /** The commit id the change was applied onto. */
     onto: Schema.String,
     /** The repository-relative paths that hold conflicts. */
-    paths: Schema.Array(Schema.String),
+    paths: Schema.Array(Schema.String)
 }) {
 }
 /**
@@ -71,11 +71,11 @@ export class MergeError extends Schema.TaggedError()("@smthrs/sandbox/SandboxMer
         "patch_rejected",
         "conflict",
         "resolution_rejected",
-        "vcs_failed",
+        "vcs_failed"
     ]),
     message: Schema.String,
     paths: Schema.optional(Schema.Array(Schema.String)),
     /** Original host failure, including a jj error's code and nested cause. */
-    cause: Schema.optional(Schema.Unknown),
+    cause: Schema.optional(Schema.Unknown)
 }) {
 }

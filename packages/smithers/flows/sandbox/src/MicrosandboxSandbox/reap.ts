@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { attemptIn } from "../internal/attempt.ts"
+import { attemptIn } from "../internal/attempt.vibe"
 import { removeMachine } from "../internal/microsandboxRemove.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { holderLabel, ownerLabel, providerLabel, providerName } from "./labels.ts"

@@ -34,7 +34,7 @@ export const Apply = Action.make("@smthrs/sandbox/SandboxMerge/Apply", {
         onto: Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)),
         message: Schema.String,
         key: Schema.String,
-        fetch: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.Literal(false)])),
+        fetch: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.Literal(false)]))
     },
     success: Outcome,
     error: Schema.Union([MergeError, GitLockContention]),
@@ -43,8 +43,8 @@ export const Apply = Action.make("@smthrs/sandbox/SandboxMerge/Apply", {
         factor: 1,
         maxMs: 100,
         maxAttempts: 1_201,
-        nonRetryable: ["@smthrs/sandbox/SandboxMerge/MergeError"],
-    }),
+        nonRetryable: ["@smthrs/sandbox/SandboxMerge/MergeError"]
+    })
 });
 /**
  * Implements {@link Apply} with the host's filesystem, spawner and mutation fence.
@@ -59,5 +59,5 @@ export const layerApply = Apply.toLayer(({ work, ...options }) => Effect.mapErro
     // the action journals only the portable failure fields.
     : new MergeError({
         reason: error.reason,
-        message: error.message,
+        message: error.message
     })), { implementationVersion: "sandbox-merge/v1" });

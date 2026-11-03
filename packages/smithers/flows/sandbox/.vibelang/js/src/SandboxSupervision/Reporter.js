@@ -16,6 +16,6 @@ export const loggingReporter = {
         session: event.session,
         reason: event.reason,
         message: event.message,
-        probes: event.probes,
-    }),
+        probes: event.probes
+    })
 };

@@ -5,7 +5,6 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as Fiber from "effect/Fiber"
 import { elapsed } from "./deadline.ts"
 
 /**
@@ -18,13 +17,13 @@ import { elapsed } from "./deadline.ts"
  * @since 0.1.0
  */
 export const finalizeWithin = <R>(
-  cleanup: Effect.Effect<void, never, R>,
+  cleanup: void!never!R,
   resource: string
-): Effect.Effect<void, never, R> =>
-  Effect.uninterruptible(Effect.gen(function*() {
-    const running = yield* Effect.forkDetach(Effect.interruptible(cleanup))
-    yield* Effect.raceFirst(
+): void!never!R =>
+  Effect.uninterruptible(effect {
+    const running = try Effect.forkDetach(Effect.interruptible(cleanup))
+    try (Effect.raceFirst(
       Fiber.join(running),
       Effect.andThen(elapsed(5_000), Effect.logWarning("sandbox teardown timed out", { resource, timeoutMs: 5_000 }))
-    ).pipe(Effect.ensuring(Effect.forkDetach(Fiber.interrupt(running), { startImmediately: true })))
-  }))
+    ) |> Effect.ensuring(%, Effect.forkDetach(Fiber.interrupt(running), { startImmediately: true })))
+  })

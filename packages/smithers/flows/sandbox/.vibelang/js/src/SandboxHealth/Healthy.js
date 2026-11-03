@@ -12,6 +12,6 @@ import * as Schema from "effect/Schema";
  * @since 0.1.0
  */
 export class Healthy extends Schema.Class("@smthrs/sandbox/SandboxHealth/Healthy")({
-    _tag: Schema.tag("Healthy"),
+    _tag: Schema.tag("Healthy")
 }) {
 }

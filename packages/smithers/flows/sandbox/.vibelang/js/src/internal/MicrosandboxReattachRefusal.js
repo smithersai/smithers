@@ -18,7 +18,7 @@ import * as Schema from "effect/Schema";
 export const MicrosandboxReattachRefusalCode = Schema.Literals([
     "network_mismatch",
     "limits_mismatch",
-    "ownership_not_recorded",
+    "ownership_not_recorded"
 ]);
 /**
  * A machine that cannot be reattached to under this session's configuration.
@@ -28,7 +28,7 @@ export const MicrosandboxReattachRefusalCode = Schema.Literals([
  */
 export class MicrosandboxReattachRefusal extends Schema.TaggedError()("@smthrs/sandbox/MicrosandboxReattachRefusal", {
     code: MicrosandboxReattachRefusalCode,
-    message: Schema.String,
+    message: Schema.String
 }) {
     name = "MicrosandboxReattachRefusal";
 }

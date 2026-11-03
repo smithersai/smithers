@@ -43,7 +43,7 @@ const numbers = {
     SIGPOLL: 29,
     SIGPWR: 30,
     SIGSYS: 31,
-    SIGUNUSED: 31,
+    SIGUNUSED: 31
 };
 /**
  * The Linux number of a signal name, or `undefined` for a name Linux does not
