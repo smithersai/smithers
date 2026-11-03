@@ -42,7 +42,7 @@ export const forms = (value) => {
         percent,
         percent.replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase()),
         percent.replace(/%20/g, "+"),
-        JSON.stringify(value).slice(1, -1),
+        JSON.stringify(value).slice(1, -1)
     ]);
     const bytes = utf8(value);
     for (let alignment = 0; alignment < 3; alignment++) {
@@ -170,6 +170,6 @@ export const make = (targets) => {
         stream: (body) => patterns.length === 0 ? body : body.pipe(Stream.mapAccum(() => new Uint8Array(0), (held, chunk) => {
             const { done, held: next } = scan(concat([held, chunk]), false);
             return [next, emit(done)];
-        }, { onHalt: (held) => emit(scan(held, true).done) })),
+        }, { onHalt: (held) => emit(scan(held, true).done) }))
     };
 };
