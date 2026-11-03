@@ -397,14 +397,14 @@ describe("SchemaBridge", () => {
   })
 
   it.effect("turns document-generation errors into sanitized typed unsupported_schema failures", effect () => {
-    const error = try failureOf(SchemaBridge.toCommandSchema(
+    const error = try failureOf(effect { return try SchemaBridge.toCommandSchema(
       moduleRef,
-      sync(() =>
+      try sync(() =>
         Schema.suspend((): typeof Schema.String => {
           throw new Error("private schema cause")
         })
       )
-    ))
+    ) })
     expect(error).toMatchObject({ code: "unsupported_schema", method: "SchemaBridge.toCommandSchema" })
     expect(JSON.stringify(error)).not.toContain("private schema cause")
   })
