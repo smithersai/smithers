@@ -120,7 +120,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Container.vibe",
         "src/Bash.ts",
         "src/TestRun.ts",
-        "src/internal/Exec.ts",
+        "src/internal/Exec.vibe",
         "src/internal/GitWorktree.ts",
         "src/Checkpoints.ts",
         "src/NativeSearch.ts",
@@ -150,7 +150,7 @@ const securityReview = Smithers.SecurityReview({
         "Error or diagnostic text (quoted invocation, StdError message) that includes env values or transport credentials."
       ],
       paths: [
-        "src/internal/Exec.ts",
+        "src/internal/Exec.vibe",
         "src/Container.vibe",
         "src/NativeSearch.ts",
         "src/TestRun.ts",
@@ -190,7 +190,7 @@ const securityReview = Smithers.SecurityReview({
         "A regex over untrusted text (grep pattern, HTML conversion, test report parsing) with catastrophic backtracking outside LinearRegex."
       ],
       paths: [
-        "src/internal/Exec.ts",
+        "src/internal/Exec.vibe",
         "src/internal/Html.ts",
         "src/internal/TestReport.ts",
         "src/internal/LinearRegex.ts",

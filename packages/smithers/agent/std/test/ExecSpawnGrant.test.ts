@@ -22,7 +22,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
-import * as Exec from "../src/internal/Exec.ts"
+import * as Exec from "../src/internal/Exec.vibe"
 
 const spawned: Array<ChildProcess.Command> = []
 

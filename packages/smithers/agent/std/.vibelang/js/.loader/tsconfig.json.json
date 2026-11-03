@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/std"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -110,7 +110,7 @@
      "relative": "packages/smithers/agent/std/src"
     },
     null,
-    "7u-gBzE7W6f0MZ-wVLorhK0NjEEDNVGXpmZgGNY_Kus",
+    "weuSLgUexjN_gf9LtuTk3dkWlHHw1D0KfLMfpc6xKvU",
     [],
     {
      "recursive": true,
@@ -279,7 +279,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -304,7 +304,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -326,7 +326,7 @@
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "UJEoLkJ7MXGmJYIzXPkyA3-7p_k52_D8URkKB_Ofs-w"
    },
    {
     "path": {
@@ -340,56 +340,56 @@
      "relative": "packages/smithers/agent/std/package.json"
     },
     "size": 18741,
-    "hash": "_okrrZpMw_Ji3VBpNIL_klR1Z-UilKWpgxQVyo8hn-I"
+    "hash": "HbDxdtoBmw1cvKzIFoCYIyjsRRQsidsb56ak7nhL81k"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
+    "hash": "jNdvnCgiUuOZHdrFItXIA-FehSkGnK5p9AVrYdLxwuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
@@ -403,49 +403,49 @@
      "relative": "packages/smithers/agent/model/package.json"
     },
     "size": 15090,
-    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
+    "hash": "5FOkC86vo7tOtcOeOCK-OP2Phqst49qpq5bwzD1uplY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/package.json"
     },
     "size": 8141,
-    "hash": "O-3M6m6J761jj3XuevgCMWkZ0TCgCy_P5F6i9Z8fX9g"
+    "hash": "HEo0kTwc-dOtFCKf6lo2TywQyGj60SM4Mye31nbxoCI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
+    "hash": "5fpAg2n4ffGygENUuDADtM1zzf4mesCQ4apPsCZ0Xjg"
    },
    {
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
     "size": 17630,
-    "hash": "bxheo6D0sDenep1VXnaAozWM3cs6TXN3tfj6Cfc1obM"
+    "hash": "28JxlA6-41z_NLPz8O0D65i2VS1vOGUaPcOvghq6BWc"
    },
    {
     "path": {
@@ -2551,10 +2551,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/Exec.ts"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/index.d.ts"
     },
-    "size": 16171,
-    "hash": "f4l8kLjrSkep2vJx5Y0La17zHNpRDzc6JU1I-2DAeJI"
+    "size": 388,
+    "hash": "aZwVtgnZI41FKBhynqDscJq6k8LE2tlaSqwCfA-N0JM"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+    },
+    "size": 15962,
+    "hash": "8VHUxBGiQK53-rUTulTLFzmpgHiIcLsCq5YTE74dW_g"
    },
    {
     "path": {
@@ -4744,15 +4751,15 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Bash.ts"
     },
-    "size": 24314,
-    "hash": "5YYwkjyBNH9FkygQf4I0Z_mnuhxdoJh_ra75LT3FAcY"
+    "size": 24316,
+    "hash": "79rAyK3VTe7N_VcF_Mk7XXM7qphIdhk7CGmKC0ialT0"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/GitWorktree.ts"
     },
-    "size": 20364,
-    "hash": "rCuqSUsFHMRVQNSVfUxG6X7_Pj-7VG16A1LUD4uVNx4"
+    "size": 20366,
+    "hash": "BlF7y-LHecbYgvX7rufSM5BzNuQBvW2L70acfQMOVWc"
    },
    {
     "path": {
@@ -4772,8 +4779,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Checkpoints.ts"
     },
-    "size": 24228,
-    "hash": "aMl68TRx6WJuV96VmcF9Tv7FWRx32LqKP725nFfK9Pg"
+    "size": 24230,
+    "hash": "Yk18xVsRVtThEl5lyGhW1wdvwzsuimfJkknkQpUD4PM"
    },
    {
     "path": {
@@ -5087,8 +5094,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/ShellCommand.ts"
     },
-    "size": 5998,
-    "hash": "gOtKnnxnHqFmUVzvYoFaVBzrlN_tvjXt6dAVmG0aYRQ"
+    "size": 6000,
+    "hash": "5bbmyqP3RclvuVN5RfZ9v1phapRV51SIseLrb_Sfaa0"
    },
    {
     "path": {
@@ -5101,8 +5108,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/TestRun.ts"
     },
-    "size": 14466,
-    "hash": "L623aMZGJK8b-dijX96H-iblIFGOM_wUVkrOP1BKpW0"
+    "size": 14468,
+    "hash": "LMtS_WXDl_iSPVGzs3PU1_1MXETplWl-Y9zKpHdofHA"
    },
    {
     "path": {
@@ -5157,8 +5164,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/NativeSearch.ts"
     },
-    "size": 18079,
-    "hash": "HYIDGibKsRCfkS5U2uVlNZc9XQb7HxHeMVVA4QvhszA"
+    "size": 18081,
+    "hash": "efwAPRmHva26fi93ZElakgMhbVFaTRSwRhXxOqjmaSg"
    },
    {
     "path": {
@@ -5185,8 +5192,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/RemoteSearch.ts"
     },
-    "size": 9027,
-    "hash": "3ujW31lzdIhCDfJ493Cs_dy2xheTAsyjA-6PAgc5oL4"
+    "size": 9029,
+    "hash": "lD3FDr5IvgMK_pqj4O1yvfsR9RpooY3Ra3aiMyEKnwk"
    },
    {
     "path": {
@@ -6365,7 +6372,7 @@
     "relative": "packages/smithers/agent/std/src/internal/EnvelopePrecheck.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/Exec.ts"
+    "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
    },
    {
     "relative": "packages/smithers/flows/plan/src/Placement.vibe"
@@ -7265,6 +7272,76 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+    },
+    "line": 53,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "ExecError extends Schema.TaggedError; a schema error declaration, schema error ExecError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+    },
+    "line": 292,
+    "column": 45,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+    },
+    "line": 294,
+    "column": 45,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+    },
+    "line": 295,
+    "column": 34,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#CommandOptions` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+    },
+    "line": 310,
+    "column": 24,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+    },
+    "line": 311,
+    "column": 24,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+    },
+    "line": 373,
+    "column": 45,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
      "relative": "packages/smithers/agent/std/src/internal/FileMutation.vibe"
     },
     "line": 64,
@@ -7643,6 +7720,26 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;;;;;;;;;;;;;;;;;GAwBG;;;;AAEH,OAAO,KAAK,QAAQ,MAAM,eAAiB,CAAA;AAyC3C;;;;;GAKG;AACH,MAAM,CAAC,MAAM,SAAS,GAA0C,OAAO,CAAC,OAAO,CAAC,uBAAuB,CAAC,CAAA;AAExG;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,OAAkB,EAAa,EAAE,CAAC,SAAS,CAAC,EAAE,CAAC,OAAO,CAAC,CAAA;AAE5E;;;;;GAKG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,CAAC,SAAiB,EAAqB,EAAE,CAClE,IAAI,QAAQ,CAAC,QAAQ,CAAC;IACpB,IAAI,EAAE,sBAAsB;IAC5B,OAAO,EACL,uEAAuE,SAAS,oFAAoF;CACvK,CAAC,CAAA;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,GAAc,EAAE,CAAC,IAAI,CAAC,EAAE,IAAI,EAAE,CAAC,OAAO,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,CAAC,OAAO,CAAC,SAAS,CAAC,CAAC,EAAE,CAAC,CAAA;AAEjH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,SAAS,GAAqB,KAAK,CAAC,OAAO,CAAC,SAAS,EAAE,QAAQ,EAAE,CAAC,CAAA;AAE/E,+EAA+E;AAC/E,MAAM,eAAe,GAAG,0BAA0B,CAAA;AAElD,6EAA6E;AAC7E,MAAM,eAAe,GAAG,yBAAyB,CAAA;AAEjD,2FAA2F;AAC3F,MAAM,MAAM,GAAG,CAAC,KAA4B,EAAU,EAAE,CACtD;IACE,GAAG,KAAK,CAAC,GAAG,CAAC,CAAC,GAAG,EAAE,EAAE,CAAC,GAAG,GAAG,MAAM,eAAe,GAAG,GAAG,aAAa,GAAG,WAAW,eAAe,GAAG,GAAG,EAAE,CAAC;IAC1G,WAAW;CACZ,CAAC,IAAI,CAAC,IAAI,CAAC,CAAA;AAEd;;;;;;;;;;;;;;;;;;;;GAoBG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,CAAC,OAAmD,EAAa,EAAE;IAC5F,MAAM,OAAO,GAAG,OAAO,EAAE,OAAO,IAAI,QAAQ,CAAA;IAC5C,OAAO,IAAI,CAAC;QACV,IAAI,EAAE,CAAC,OAAO,EAAE,EAAE;YAChB,MAAM,GAAG,GAAG,OAAO,CAAC,GAAG,CAAA;YACvB,MAAM,OAAO,GAAG,MAAM,CAAC,OAAO,CAAC,GAAG,IAAI,EAAE,CAAC,CAAA;YACzC,MAAM,KAAK,GAAG,OAAO,CAAC,GAAG,CAAC,CAAC,CAAC,GAAG,CAAC,EAAE,EAAE,CAAC,GAAG,CAAC,CAAA;YACzC,MAAM,OAAO,GAAG,KAAK,CAAC,IAAI,CAAC,CAAC,GAAG,EAAE,EAAE,CAAC,CAAC,eAAe,CAAC,IAAI,CAAC,GAAG,CAAC,CAAC,CAAA;YAC/D,IAAI,OAAO,KAAK,SAAS,EAAE,CAAC;gBAC1B,OAAO,MAAM,CAAC,IAAI,CAChB,IAAI,QAAQ,CAAC,QAAQ,CAAC;oBACpB,IAAI,EAAE,eAAe;oBACrB,OAAO,EAAE,yCAAyC,eAAe,CAAC,MAAM,KAAK,OAAO,EAAE;iBACvF,CAAC,CACH,CAAA;YACH,CAAC;YACD,IAAI,OAAO,CAAC,SAAS,KAAK,EAAE,IAAI,OAAO,CAAC,SAAS,CAAC,UAAU,CAAC,GAAG,CAAC,EAAE,CAAC;gBAClE,OAAO,MAAM,CAAC,IAAI,CAChB,IAAI,QAAQ,CAAC,QAAQ,CAAC;oBACpB,IAAI,EAAE,eAAe;oBACrB,OAAO,EAAE,+DAA+D,OAAO,CAAC,SAAS,EAAE;oBAC3F,IAAI,EAAE,OAAO,CAAC,SAAS;iBACxB,CAAC,CACH,CAAA;YACH,CAAC;YACD,MAAM,IAAI,GAAG,KAAK,CAAC,IAAI,CAAC,OAAO,CAAC,IAAI,CAAC,CAAA;YACrC,IAAI,IAAI,CAAC,IAAI,CAAC,CAAC,GAAG,EAAE,EAAE,CAAC,OAAO,GAAG,KAAK,QAAQ,CAAC,EAAE,CAAC;gBAChD,OAAO,MAAM,CAAC,IAAI,CAChB,IAAI,QAAQ,CAAC,QAAQ,CAAC;oBACpB,IAAI,EAAE,eAAe;oBACrB,OAAO,EAAE,uDAAuD;iBACjE,CAAC,CACH,CAAA;YACH,CAAC;YACD,OAAO,MAAM,CAAC,OAAO,CAAC;gBACpB,IAAI,EAAE,OAAO;gBACb,IAAI,EAAE;oBACJ,MAAM;oBACN,GAAG,CAAC,OAAO,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,IAAI,CAAC,CAAC,CAAC,CAAC,EAAE,CAAC;oBAChC,GAAG,CAAC,OAAO,CAAC,GAAG,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,CAAC,IAAI,EAAE,OAAO,CAAC,GAAG,CAAC,CAAC;oBACzD,GAAG,KAAK,CAAC,OAAO,CAAC,CAAC,GAAG,EAAE,EAAE,CAAC,CAAC,IAAI,EAAE,GAAG,eAAe,GAAG,GAAG,EAAE,CAAC,CAAC;oBAC7D,IAAI;oBACJ,OAAO,CAAC,SAAS;oBACjB,GAAG,CAAC,KAAK,CAAC,MAAM,KAAK,CAAC,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,CAAC,IAAI,EAAE,IAAI,EAAE,MAAM,CAAC,KAAK,CAAC,EAAE,IAAI,CAAC,CAAC;oBAChE,OAAO,CAAC,IAAI;oBACZ,GAAG,IAAI;iBACR;gBACD,GAAG,CAAC,GAAG,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC;oBAC3B,GAAG,EAAE,MAAM,CAAC,WAAW,CACrB,OAAO,CAAC,GAAG,CAAC,CAAC,CAAC,GAAG,EAAE,KAAK,CAAC,EAAE,EAAE,CAAC,CAAC,GAAG,eAAe,GAAG,GAAG,EAAE,EAAE,KAAK,CAAC,CAAC,CACnE;iBACF,CAAC;aACH,CAAC,CAAA;QACJ,CAAC;KACF,CAAC,CAAA;AACJ,CAAC,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAAC,OAAmD,EAAoB,EAAE,CACpG,KAAK,CAAC,OAAO,CAAC,SAAS,EAAE,WAAW,CAAC,OAAO,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+     }
+    ],
+    "code": "/**\n * Buffered shell execution over the permission-aware process spawner.\n *\n * `@smthrs/kernel` used to expose a `Shell` service whose `exec` returned a\n * buffered `{ stdout, stderr, exitCode }`. The kernel replaced it with\n * `ChildProcessSpawner`, Effect's own process boundary, which streams and has\n * no buffered form. This module is the buffered form the shell flows still\n * want, expressed in terms of the spawner so the `proc:spawn` capability check\n * and the command-line resource stay exactly where the kernel put them.\n *\n * Commands run through the platform shell (`shell: true`), matching the old\n * service: the flows take a command *line*, not an argv.\n *\n * @since 1.0.0\n */\nimport * as ChildProcess from \"effect/process/ChildProcess\";\nimport * as Stream from \"effect/Stream\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as ChildProcessEnvironment from \"@smthrs/kernel/ChildProcessEnvironment\";\nimport * as ChildProcessSpawner from \"@smthrs/kernel/ChildProcessSpawner\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as StdError from \"../StdError.js\";\nimport { elideMiddle } from \"./Text.js\";\n/**\n * Failure codes a buffered execution can report, matching the codes the\n * removed kernel `Shell` used so handler-level mapping is unchanged.\n *\n * @category models\n * @since 1.0.0\n */\nexport const ExecErrorCode = Schema.Literals([\"timeout\", \"spawn_error\", \"arguments_too_long\", \"capture_overflow\"]);\n/**\n * A command that never produced an exit code.\n *\n * A non-zero exit is a successful {@link ExecResult}, not a failure; this\n * error is reserved for a command that could not start (`arguments_too_long`\n * when the operating system refused it for the size of its arguments) or was\n * cut off by its timeout, or whose captured output exceeded a refusing capture\n * bound.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class ExecError extends Schema.TaggedError()(\"@smthrs/std/ExecError\", {\n    code: ExecErrorCode,\n    message: Schema.String,\n    /** The limit a `timeout` ran past, in milliseconds. */\n    limitMillis: Schema.optional(Schema.Number)\n}) {\n}\nconst decoder = new TextDecoder(\"utf-8\");\nconst emptyTail = () => ({ chunks: [], bytes: 0, dropped: 0 });\n/** A UTF-8 continuation byte is `10xxxxxx`; every other byte starts a character. */\nconst isContinuation = (byte) => (byte & 0b1100_0000) === 0b1000_0000;\nconst join = (chunks, size) => {\n    const bytes = new Uint8Array(size);\n    let offset = 0;\n    for (const chunk of chunks) {\n        bytes.set(chunk, offset);\n        offset += chunk.byteLength;\n    }\n    return bytes;\n};\n/** Appends one chunk and drops from the front whatever no longer fits. */\nconst keepTail = (state, chunk, maxBytes) => {\n    if (chunk.byteLength === 0)\n        return;\n    state.chunks.push(chunk);\n    state.bytes += chunk.byteLength;\n    while (state.bytes > maxBytes && state.chunks.length > 0) {\n        const excess = state.bytes - maxBytes;\n        const first = state.chunks[0];\n        if (first.byteLength <= excess) {\n            state.chunks.shift();\n            state.bytes -= first.byteLength;\n            state.dropped += first.byteLength;\n        }\n        else {\n            state.chunks[0] = first.subarray(excess);\n            state.bytes -= excess;\n            state.dropped += excess;\n        }\n    }\n};\n/**\n * Joins the retained chunks and decodes them, skipping the partial code point a\n * dropped head can leave behind.\n *\n * A code point is at most four bytes, so at most three leading continuation\n * bytes can precede the first whole character. Skipping them is counted as\n * dropped rather than decoded to a replacement character the process never\n * printed.\n */\nconst decodeTail = (state) => {\n    const bytes = join(state.chunks, state.bytes);\n    if (state.dropped === 0)\n        return { text: decoder.decode(bytes), droppedBytes: 0 };\n    let start = 0;\n    while (start < bytes.byteLength && start < 3 && isContinuation(bytes[start]))\n        start++;\n    return { text: decoder.decode(bytes.subarray(start)), droppedBytes: state.dropped + start };\n};\n/**\n * The length of a cut head without the character the cut left unfinished.\n *\n * Its last character starts at the last byte that is not a continuation byte,\n * and that byte says how many bytes the character needs. One that needs more\n * than the head holds is dropped, for the same reason {@link decodeTail} skips\n * a partial code point.\n */\nconst wholeLength = (bytes) => {\n    for (let back = 1; back <= Math.min(3, bytes.byteLength); back++) {\n        const byte = bytes[bytes.byteLength - back];\n        if (isContinuation(byte))\n            continue;\n        const width = byte >= 0b1111_0000 ? 4 : byte >= 0b1110_0000 ? 3 : byte >= 0b1100_0000 ? 2 : 1;\n        return width > back ? bytes.byteLength - back : bytes.byteLength;\n    }\n    return bytes.byteLength;\n};\n/**\n * Decodes a stream kept by its ends. A stream that fit is decoded whole;\n * otherwise each end is cut on a character boundary and one line naming every\n * byte between them stands where the middle was.\n */\nconst decodeEnds = (state) => {\n    if (state.tail.dropped === 0) {\n        const whole = join([...state.head, ...state.tail.chunks], state.headBytes + state.tail.bytes);\n        return { text: decoder.decode(whole), droppedBytes: 0 };\n    }\n    const head = join(state.head, state.headBytes);\n    const kept = wholeLength(head);\n    const tail = decodeTail(state.tail);\n    const droppedBytes = head.byteLength - kept + tail.droppedBytes;\n    return { text: elideMiddle(decoder.decode(head.subarray(0, kept)), droppedBytes, tail.text), droppedBytes };\n};\nconst boundedTail = (stream, maxBytes, overflow) => Effect.map(Stream.runFold(stream, emptyTail, (state, chunk) => {\n    keepTail(state, chunk, maxBytes);\n    return state;\n}), (state) => overflow === \"refuse\" && state.dropped > 0\n    ? { text: \"\", droppedBytes: state.dropped }\n    : decodeTail(state));\n/**\n * Keeps the first half of the bound and the last half. The head fills first,\n * and every byte after it passes through the tail, which drops from its front:\n * what falls out of the tail is the middle.\n */\nconst boundedEnds = (stream, maxBytes) => {\n    const headBytes = Math.floor(maxBytes / 2);\n    return Effect.map(Stream.runFold(stream, () => ({ head: [], headBytes: 0, tail: emptyTail() }), (state, chunk) => {\n        const taken = Math.min(headBytes - state.headBytes, chunk.byteLength);\n        if (taken > 0) {\n            state.head.push(chunk.subarray(0, taken));\n            state.headBytes += taken;\n        }\n        keepTail(state.tail, chunk.subarray(taken), maxBytes - headBytes);\n        return state;\n    }), decodeEnds);\n};\nconst capture = (stream, maxBytes, overflow) => maxBytes === undefined\n    ? Effect.map(Stream.mkString(Stream.decodeText(stream)), (text) => ({ text, droppedBytes: 0 }))\n    : overflow === \"ends\"\n        ? boundedEnds(stream, maxBytes)\n        : boundedTail(stream, maxBytes, overflow);\n/**\n * A command whose arguments exceed the operating system's limit fails `execve`\n * with `E2BIG` before it starts: one argument over 128 KiB on Linux, all of\n * them over 1 MiB on macOS. A heredoc in a command line, or a file's text\n * passed as an argument, is one such argument. The platform error's own text\n * repeats the whole command line, so this text is written here instead, and a\n * caller may show it as it stands.\n */\nconst argumentsTooLong = (error) => error.cause?.code === \"E2BIG\"\n    ? new ExecError({\n        code: \"arguments_too_long\",\n        message: \"Command not started: its arguments exceed the operating system's size limit (E2BIG). Send long text on standard input or in a file, not in the command line or its arguments.\"\n    })\n    : undefined;\nconst unbounded = (command, options) => Effect.mapError(Effect.scoped((Effect_1.gen(runtime.$joinedFrame(function* () {\n    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;\n    const settings = {\n        ...(options.args === undefined ? { shell: true } : {}),\n        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),\n        env: yield* Effect.orDie(Effect.try({\n            try: () => ChildProcessEnvironment.make(ChildProcessSpawner.ambientEnvironment(), options.env),\n            catch: (error) => error\n        })),\n        extendEnv: false,\n        // No input is /dev/null, never an open pipe nothing writes to: a\n        // command that reads standard input sees end of file at once instead\n        // of waiting on it until its timeout.\n        stdin: options.stdin === undefined ? \"ignore\" : Stream.make(new TextEncoder().encode(options.stdin))\n    };\n    const handle = yield* (Effect.catchDefect(spawner.spawn(options.args === undefined\n        ? ChildProcess.make(command, settings)\n        : ChildProcess.make(command, [...options.args], settings))\n    // Node's `spawn` throws E2BIG instead of emitting `error`, and Effect's\n    // raw Node spawner calls it unguarded, so there it arrives as a defect.\n    , (defect) => {\n        const refused = argumentsTooLong({ cause: defect });\n        return refused === undefined ? Effect.die(defect) : Effect.fail(refused);\n    }));\n    // stdout, stderr, and the exit code have to be consumed concurrently: a\n    // command that fills a pipe blocks until the pipe is drained, so waiting\n    // for exit first would deadlock on any output larger than the buffer.\n    const [stdout, stderr, exitCode] = yield* Effect.all([\n        capture(handle.stdout, options.maxCaptureBytes, options.overflow),\n        capture(handle.stderr, options.maxCaptureBytes, options.overflow),\n        handle.exitCode\n    ], { concurrency: \"unbounded\" });\n    if (options.overflow === \"refuse\") {\n        const overflowed = [\n            stdout.droppedBytes > 0 ? \"stdout\" : undefined,\n            stderr.droppedBytes > 0 ? \"stderr\" : undefined\n        ]\n            .filter((stream) => stream !== undefined);\n        if (overflowed.length > 0) {\n            return yield* Effect_1.fail(new ExecError({\n                code: \"capture_overflow\",\n                message: `${command} ${overflowed.join(\" and \")} exceeded the ${options.maxCaptureBytes}-byte capture cap; refusing partial output`\n            }));\n        }\n    }\n    return {\n        stdout: stdout.text,\n        stderr: stderr.text,\n        exitCode,\n        stdoutDroppedBytes: stdout.droppedBytes,\n        stderrDroppedBytes: stderr.droppedBytes\n    };\n})))), (error) => error instanceof ExecError ? error : argumentsTooLong(error) ?? new ExecError({\n    code: \"spawn_error\",\n    message: `exec: ${command}: ${error.message}`\n}));\n/**\n * Runs a command line through the platform shell and buffers its output.\n *\n * Cancellation is scope closure: the spawn is scoped, so an interrupted fiber\n * — including the one a `timeoutMs` interrupts — terminates the process rather\n * than leaking it.\n *\n * @category execution\n * @since 1.0.0\n */\nexport const exec = (command, options = {}) => options.timeoutMs === undefined\n    ? unbounded(command, options)\n    : Effect.timeoutOrElse(unbounded(command, options), {\n        duration: options.timeoutMs,\n        orElse: () => Effect.fail(new ExecError({\n            code: \"timeout\",\n            message: `exec: \\`${command}\\` exceeded ${options.timeoutMs}ms`,\n            limitMillis: options.timeoutMs\n        }))\n    });\n/**\n * The model-facing failure code a command that never produced an exit code\n * carries.\n *\n * A timeout keeps its own code, because \"the command never finished\" and \"the\n * command never started\" are different things to a caller deciding whether to\n * retry. Arguments the operating system refused for their size are the\n * caller's own input, which a shell flow publishes, so they read as\n * `invalid_input`. Every other way of producing no exit code is a host failure.\n *\n * @category errors\n * @since 1.0.0\n */\nexport const toStdErrorCode = (error) => error.code === \"timeout\" ? \"timeout\" : error.code === \"arguments_too_long\" ? \"invalid_input\" : \"command_failed\";\n/**\n * The model-facing failure one execution error becomes.\n *\n * A timeout names the command, which is what the caller asked for and all a\n * timeout has to say. Arguments too long to start carry the reason and the\n * fix, and nothing of the command. Any other failure carries the message the\n * execution produced, which already names the command.\n *\n * @category errors\n * @since 1.0.0\n */\nexport const toStdError = (command, error) => new StdError.StdError({\n    code: toStdErrorCode(error),\n    message: error.code === \"timeout\"\n        ? `Command timed out: ${command}`\n        : error.code === \"arguments_too_long\"\n            ? error.message\n            : `Command failed to start: ${error.message}`,\n    ...(error.limitMillis === undefined ? {} : { limitMillis: error.limitMillis })\n});\n",
+    "map": {
+     "version": 3,
+     "file": "Exec.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/std/src/internal/Exec.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {
