@@ -33,6 +33,7 @@ for each stack, in order:
     rewritten, reshaped or gone since it was enqueued -> refused (stale), never moved
     base's change not on the tip's line    -> refused (base_not_on_tip), never moved
     a change already on the tip            -> refused (already_applied), never moved
+    an immutable commit that must move     -> refused (immutable), never moved
     conflicted after the rebase            -> rebased back onto `base`, refused (conflict)
   RunCheck(head, check)  every fast check  receipts bind the exact commit and tree
     a check delegate fails                 -> the run fails (below)
@@ -82,7 +83,7 @@ rewrite and leave a divergent change on the tip.
 stack: `admitted` with its `ValidatedChange` (the implementation and fast
 receipts, the same shape `ImplementPlan` returns), or `refused` with a
 `reason` (`empty`, `not_linear`, `stale`, `base_not_on_tip`,
-`already_applied`, `conflict`, `fast_gate`), a
+`already_applied`, `immutable`, `conflict`, `fast_gate`), a
 message, and the failing checks' findings.
 
 ## Recovery
@@ -91,6 +92,11 @@ Every write reconciles before it repeats. A replayed `ApplyStack` finds the
 stack already on its parent, a replayed restore finds it on its base, and a
 replayed `AdvanceTip` finds the target at the head. A completed run answers
 from its journal: nothing is rebased, checked or moved again.
+
+A change to this flow's schemas changes its plan, so the engine refuses to
+resume a run started before the deploy (`plan_changed`), and that run's sweep
+never runs. Drain admissions before deploying. Enqueueing a stranded stack again
+recovers it: admission finds it on its parent or rebases it.
 
 ## Host
 

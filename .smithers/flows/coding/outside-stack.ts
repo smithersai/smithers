@@ -62,6 +62,7 @@ export const RefusalReason = Schema.Literals([
   "stale",
   "base_not_on_tip",
   "already_applied",
+  "immutable",
   "conflict",
   "fast_gate"
 ])
@@ -361,6 +362,18 @@ export const make = (options: Options) =>
         }
         // A replay after a crash finds the stack already on the parent.
         if (atoms[0]!.parents.length !== 1 || atoms[0]!.parents[0] !== parent.commitId) {
+          // jj refuses to rewrite these, and that refusal must not fail the rest of the batch.
+          // `immutable()` is a redefinable alias; jj's rewrite check reads immutable_heads().
+          const frozen = lines(
+            yield* log(`(${changeRevset(changeIds)}) & ::(immutable_heads() | root())`, "change_id ++ \"\\n\"")
+          )
+          if (frozen.length > 0) {
+            return yield* refuse(
+              stack,
+              "immutable",
+              `${stack.id}: ${frozen.length} of its changes are immutable here, so it cannot move onto the tip`
+            )
+          }
           yield* rebase(changeIds[0]!, parent.commitId)
           const rebased = yield* current(changeIds)
           if (rebased === undefined) return yield* invalid(`${stack.id} could not be read after rebasing`)

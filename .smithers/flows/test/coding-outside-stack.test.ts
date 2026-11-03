@@ -742,3 +742,53 @@ test("a red stack carrying its author's own bookmark is refused and restored wit
   assert.deepEqual(parentsOf(root, "lane-b"), [tip], "b and its bookmark are back on b's base")
   assert.equal(result.tip, commitOf(root, "vibe"))
 })
+
+test("a stack that must move but is immutable is refused alone; the rest of the batch is admitted", async (t) => {
+  const { root, tip, stack } = await repository(t)
+  const first = await stack("first", [{ "first.txt": "first\n" }])
+  const frozen = await stack("frozen", [{ "frozen.txt": "frozen\n" }])
+  const last = await stack("last", [{ "last.txt": "last\n" }])
+  jj(root, "new", tip)
+  // Any immutable head does this: an untracked remote bookmark, a tag, or trunk.
+  jj(root, "config", "set", "--repo", "revset-aliases.\"immutable_heads()\"", frozen.head)
+  const calls: Array<string> = []
+  const host = hostOf(t, root, scriptedChecks(root, calls))
+
+  const result = await host.runPromise(
+    AppendOutsideStack.execute({ target: "vibe", expected: tip, stacks: [first, frozen, last], checks: [fast] }, {
+      executionId: "immutable-stack"
+    })
+  )
+
+  assert.deepEqual(result.outcomes.map(({ stack, status, refusal }) => [stack, status, refusal?.reason ?? null]), [
+    ["first", "admitted", null],
+    ["frozen", "refused", "immutable"],
+    ["last", "admitted", null]
+  ])
+  assert.deepEqual(calls, ["build:first", "build:last"])
+  // The frozen stack did not move, and the tip carries the other two in order.
+  assert.deepEqual(parentsOf(root, frozen.head), [tip])
+  assert.equal(commitOf(root, "vibe"), result.tip)
+  assert.equal(
+    field(root, `${tip}..vibe`, "change_id ++ \"\\n\"").split("\n").filter((id) => id !== "").length,
+    2
+  )
+})
+
+test("an immutable stack already on the tip needs no rewrite and is admitted", async (t) => {
+  const { root, tip, stack } = await repository(t)
+  const frozen = await stack("frozen", [{ "frozen.txt": "frozen\n" }])
+  jj(root, "new", tip)
+  jj(root, "config", "set", "--repo", "revset-aliases.\"immutable_heads()\"", frozen.head)
+  const calls: Array<string> = []
+  const host = hostOf(t, root, scriptedChecks(root, calls))
+
+  const result = await host.runPromise(
+    AppendOutsideStack.execute({ target: "vibe", expected: tip, stacks: [frozen], checks: [fast] }, {
+      executionId: "immutable-on-tip"
+    })
+  )
+
+  assert.deepEqual(result.outcomes.map(({ status }) => status), ["admitted"])
+  assert.equal(commitOf(root, "vibe"), frozen.head)
+})
