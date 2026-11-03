@@ -1103,7 +1103,7 @@ describe("POST /api/remote-runs/<runId>/stop", () => {
     })
   })
 
-  test("an agent acting for a Member stops one too; a run that ended answers settled, and its object is never asked", async () => {
+  test("an agent acting for a Member stops an unbegun run; settled history of another flow cannot claim the repository", async () => {
     const runId = `ci:${uuid()}`
     await recordRepoRun(runId)
     await withEngine(async (engine) => {
@@ -1118,11 +1118,12 @@ describe("POST /api/remote-runs/<runId>/stop", () => {
       expect(await json(await h.fetch(stopRoute(unbegun), { method: "POST" }))).toEqual([202, { outcome: "requested" }])
       await engine.run(runId)
       const response = await h.fetch(stopRoute(runId), { method: "POST" })
-      expect([response.status, await response.json()]).toEqual([200, { outcome: "settled" }])
+      // This engine ran Watched, not repo/Run: a projection and claimed object association cannot override it.
+      expect([response.status, await response.json()]).toEqual([404, { code: "not_found" }])
       expect(asked).toEqual([unbegun])
       expect(h.line("run.stop").map((line) => [line.annotations.via, line.annotations.outcome])).toEqual([
         ["agent", "requested"],
-        ["agent", "settled"],
+        ["agent", "not_found"],
       ])
     })
   })

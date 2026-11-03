@@ -342,17 +342,21 @@ export const make = <E, R, EE, ER, RS>(
           }
           // Only a repository's run itself: a job stops with its run.
           if (Option.isNone(admitted.repoRun) || admitted.repoRun.value.execution !== runId) return refused(404, "not_found")
-          // Old conflicting starts may have left a poisoned projection. It cannot authorize an object's cancellation.
-          const owned = yield* engine.repositoryRun(runId)
+          // Settled history outlives the object's intent retention. Its payload must independently prove ownership.
+          const history = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+            sql<{ readonly status: string; readonly flow: string; readonly payload: unknown }>`
+              SELECT status, state_json::jsonb ->> 'flowName' AS flow, state_json::jsonb -> 'payload' AS payload
+              FROM flows_runs WHERE run_id = ${runId}`).pipe(Effect.provide(engine.database))
+          const ended = history[0] !== undefined && settled(history[0].status)
+          // Old conflicting starts may have left a poisoned projection. Neither path trusts that projection alone.
+          const owned = ended
+            ? RepoRuns.repositoryIntent({ flow: history[0]!.flow, executionId: runId, payload: history[0]!.payload })
+            : yield* engine.repositoryRun(runId)
           if (Option.isNone(owned) || owned.value.execution !== runId || owned.value.repoId !== admitted.repoRun.value.repoId) {
             return refused(404, "not_found")
           }
           // A run that ended has nothing to stop. One its object hasn't begun is stopped before it starts.
-          const status = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
-            sql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${runId}`).pipe(
-              Effect.provide(engine.database),
-            )
-          const outcome = status[0] !== undefined && settled(status[0].status) ? "settled" as const : "requested" as const
+          const outcome = ended ? "settled" as const : "requested" as const
           return yield* write(Effect.gen(function* () {
             if (outcome === "requested") yield* engine.stop(runId)
             fields.outcome = outcome

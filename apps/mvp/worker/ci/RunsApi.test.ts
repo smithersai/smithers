@@ -745,6 +745,59 @@ describe("POST /api/repos/<owner>/<name>/runs: a run again", { timeout: 120_000 
     })
   })
 
+  test.each(["completed", "failed", "cancelled"] as const)("Stop of a %s repository run survives expired object intent", async (status) => {
+    await afterRun({ "pnpm lint": 1 }, async (h, request) => {
+      const server = await Effect.runPromise(TestDatabase.serverUrl)
+      const writer = ExecutionHost.database(server.toString(), h.engineSchema)
+      if (status !== "completed") await Effect.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`UPDATE flows_runs SET status = ${status} WHERE run_id = ${request.run}`).pipe(Effect.provide(writer)))
+      const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+      const objects: string[] = []
+      const stopped: string[] = []
+      const api = await runtime.runPromise(RemoteRuns.make(scratch.database, {
+        database: ExecutionHost.readDatabase(server.toString(), h.engineSchema), writer, schema: h.engineSchema,
+        flows: [RepoFlow.Run],
+        repositoryRun: (id) => Effect.sync(() => { objects.push(id); return Option.none() }),
+        stop: (id) => Effect.sync(() => void stopped.push(id)),
+        transcript: () => Effect.die("unused"),
+      }, h.roles))
+      const handler = HttpEffect.toWebHandler(api.fetch.pipe(Effect.provide(signedIn(maya)), Effect.provide(FetchHttpClient.layer)))
+      const response = await handler(new Request(`http://chat.test/api/remote-runs/${request.run}/stop`, { method: "POST" }))
+      expect(await answer(response), "settled owner must survive expired intent").toEqual([200, { outcome: "settled" }])
+      expect(response.headers.get("cache-control")).toBe("no-store")
+      expect(objects).toEqual([])
+      expect(stopped).toEqual([])
+    })
+  })
+
+  test.each(["repository", "execution", "flow", "payload"] as const)("Settled history with poisoned %s cannot authorize Stop", async (mismatch) => {
+    await afterRun({ "pnpm lint": 1 }, async (h, request) => {
+      const server = await Effect.runPromise(TestDatabase.serverUrl)
+      const writer = ExecutionHost.database(server.toString(), h.engineSchema)
+      await Effect.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => {
+        const path = mismatch === "repository" ? "{payload,repo}" : mismatch === "execution" ? "{payload,run}" :
+          mismatch === "flow" ? "{flowName}" : "{payload}"
+        const value = mismatch === "repository" ? "private/victim" : mismatch === "execution" ? `ci:${uuid()}` : "another/Flow"
+        return sql`UPDATE flows_runs SET state_json = jsonb_set(state_json::jsonb, ${path}::text[], to_jsonb(${value}::text))
+          WHERE run_id = ${request.run}`
+      }).pipe(Effect.provide(writer)))
+      const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+      const stopped: string[] = []
+      const api = await runtime.runPromise(RemoteRuns.make(scratch.database, {
+        database: ExecutionHost.readDatabase(server.toString(), h.engineSchema), writer, schema: h.engineSchema,
+        flows: [RepoFlow.Run],
+        // Even a retained same-repository intent cannot override mismatching settled engine history.
+        repositoryRun: () => Effect.succeed(Option.some({ execution: request.run, repoId: REPOSITORY.id })),
+        stop: (id) => Effect.sync(() => void stopped.push(id)),
+        transcript: () => Effect.die("unused"),
+      }, h.roles))
+      const handler = HttpEffect.toWebHandler(api.fetch.pipe(Effect.provide(signedIn(maya)), Effect.provide(FetchHttpClient.layer)))
+      const response = await handler(new Request(`http://chat.test/api/remote-runs/${request.run}/stop`, { method: "POST" }))
+      expect(await answer(response), `settled poisoned ${mismatch} must not authorize Stop`).toEqual([404, { code: "not_found" }])
+      expect(stopped).toEqual([])
+    })
+  })
+
   test("Retry runs the flow again at its commit; Retry failed only its jobs that didn't pass", async () => {
     await afterRun({ "pnpm lint": 1 }, async (h, request) => {
       const path = repoRunsRoute(REPOSITORY.owner, REPOSITORY.name)
