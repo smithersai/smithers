@@ -43,7 +43,11 @@
     "./Flow": "./src/Flow.ts",
     "./Graph": "./src/Graph.ts",
     "./KeyMaterial": "./src/KeyMaterial.ts",
-    "./Markdown": "./src/Markdown.ts",
+    "./Markdown": {
+      "types": "./.vibe/declarations/src/Markdown.d.vibe.ts",
+      "vibelang-source": "./src/Markdown.vibe",
+      "default": "./.vibelang/js/src/Markdown.js"
+    },
     "./Node": "./src/Node.ts",
     "./Placement": "./src/Placement.ts",
     "./index": "./src/index.ts"

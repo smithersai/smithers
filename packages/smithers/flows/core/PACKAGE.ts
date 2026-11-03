@@ -44,7 +44,7 @@ const securityReview = Smithers.SecurityReview({
         "An exception or parser message that is returned without the catch or the summarizeIssue truncation, so frontmatter source text reaches a caller log.",
         "split fence regexes that can backtrack superlinearly on a long document with no closing ---."
       ],
-      paths: ["src/internal/skillFrontmatter.vibe", "src/Markdown.ts"]
+      paths: ["src/internal/skillFrontmatter.vibe", "src/Markdown.vibe"]
     },
     {
       id: "skill-frontmatter-validation",
@@ -56,7 +56,7 @@ const securityReview = Smithers.SecurityReview({
         "A MarkdownError message that echoes the offending field value.",
         "Fields lowered from `extra` (model, placement, capabilities, effects) into the flow by lowerSkill, rather than staying in the frozen extra record."
       ],
-      paths: ["src/Markdown.ts"]
+      paths: ["src/Markdown.vibe"]
     },
     {
       id: "markdown-lowering-authority",
@@ -68,7 +68,7 @@ const securityReview = Smithers.SecurityReview({
         "Default effects in lowerMarkdown other than empty reads/writes, hermetic mode, and serialize.",
         "allowed-tools lowered into capabilities instead of the advisory `flows` collaborator list."
       ],
-      paths: ["src/Markdown.ts"]
+      paths: ["src/Markdown.vibe"]
     },
     {
       id: "flow-tier-and-capability-ceiling",

@@ -56,7 +56,7 @@ export * as KeyMaterial from "./KeyMaterial.ts"
  * @since 0.0.0
  * @slop
  */
-export * as Markdown from "./Markdown.ts"
+export * as Markdown from "./Markdown.vibe"
 
 /**
  * @category builders
