@@ -64,7 +64,8 @@ export class Watched extends Problems {
     })
     context.on("response", response => {
       const headers = response.headers()
-      const diagnostics: ResponseDiagnostics = { ray: rayOf(headers[RAY_HEADER]) }
+      // Cloudflare's own ray, for an answer that came before the app's error handling.
+      const diagnostics: ResponseDiagnostics = { ray: rayOf(headers[RAY_HEADER]) ?? rayOf(headers["cf-ray"]) }
       this.note({ kind: "response", method: response.request().method(), url: response.url(), status: response.status(), retryAfter: headers["retry-after"], diagnostics })
       if (response.status() >= 500 && new URL(response.url()).origin === this.origin && headers["content-type"]?.includes("application/json")) {
         const pending = response.json().then(body => { diagnostics.code = bodyCodeOf(body) }, () => {}).finally(() => this.pendingDiagnostics.delete(pending))
@@ -153,6 +154,8 @@ export class Watched extends Problems {
     log.push(...this.cancellationRecords)
     if (environment.length > 0) log.push(`problems the environment declares: ${environment.map((each) => each.description).join(", ")}`)
     log.push(...this.report(declared))
+    // On the run's output, passing or not: a passing test keeps no browser.log, and a test's directory goes with the next run.
+    for (const line of this.serverErrors(declared)) console.info(`server error: ${line}`)
     const undeclared = this.undeclared(declared)
     if (undeclared.length > 0 && this.cancellationRecords.length > 0) console.info(`Network cancellation witnesses:\n${this.cancellationRecords.join("\n")}`)
     return undeclared

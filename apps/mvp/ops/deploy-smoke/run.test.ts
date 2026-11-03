@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "vitest"
 import { roleAgeArgs } from "../role-age/command.ts"
-import { findProject, PROJECTS, ranForReal, run, smoke, specArgs, SPECS } from "./run.ts"
+import { findProject, PROJECTS, ranForReal, run, serverErrorsOf, smoke, specArgs, SPECS } from "./run.ts"
 
 const neon = (projects: ReadonlyArray<{ id: string; name: string }>, status = 200) =>
   (async () => new Response(JSON.stringify({ projects }), { status })) as unknown as typeof globalThis.fetch
@@ -60,6 +60,14 @@ test("the command needs production's environment, finds the project, and hands b
   })
   expect(code).toBe(0)
   expect(seen).toEqual(PROJECTS.flatMap((project) => SPECS.map((spec) => [project, spec, "https://x.test", "p1"])))
+})
+
+test("every 5xx a spec's report names reaches the smoke's own output, passing or not", async () => {
+  const log = "  ✓  7 [webkit] › e2e/x.spec.ts\nserver error: 503 GET /api/repos/a/b/role code=unavailable x-smithers-ray=0123456789abcdef-SJC ×1\nserver error: 503 GET /api/repos/a/b/role code=unavailable x-smithers-ray=0123456789abcdef-SJC ×1\nother line\n"
+  expect(serverErrorsOf(log)).toEqual(["503 GET /api/repos/a/b/role code=unavailable x-smithers-ray=0123456789abcdef-SJC ×1"])
+  const lines: Array<string> = []
+  await smoke(["a"], async () => ({ code: 0, log: "/tmp/a", seconds: 1, serverErrors: serverErrorsOf(log) }), (line) => lines.push(line), ["one"])
+  expect(lines).toEqual(["pass  one  a  1 s", "      503 GET /api/repos/a/b/role code=unavailable x-smithers-ray=0123456789abcdef-SJC ×1", "deploy smoke passed: 1 runs"])
 })
 
 test("a spec counts only if it ran for real: a skipped or missing one proves nothing", () => {

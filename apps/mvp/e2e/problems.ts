@@ -248,7 +248,7 @@ export class Problems {
     for (const { problem, count } of counted) {
       const declared = declarations.some((declaration) => declares(declaration, problem))
       const retried = problem.kind === "server" && problem.shape !== undefined && retries(problem.shape) <= SHAPE_RETRIES
-      const details = !declared && !retried && problem.kind === "server" && typeof problem.status === "number" && problem.status >= 500
+      const details = problem.kind === "server" && typeof problem.status === "number" && problem.status >= 500
         ? ` code=${bodyCodeOf({ code: problem.diagnostics?.code }) ?? "unknown"} ${RAY_HEADER}=${rayOf(problem.diagnostics?.ray) ?? "none"}`
         : ""
       const line = `${problem.line}${details}`
@@ -261,6 +261,11 @@ export class Problems {
   /** The problems the test didn't declare, as `<line> ×<count>`: a passing test has none. */
   undeclared(annotations: ReadonlyArray<Annotation>): Array<string> {
     return this.list(annotations).filter((each) => !each.declared && !each.retried).map((each) => `${each.line} ×${each.count}`)
+  }
+
+  /** Every 5xx the test's browsers saw, as `<line> ×<count>`, with its body code and ray: declared, retried or not. */
+  serverErrors(annotations: ReadonlyArray<Annotation>): Array<string> {
+    return this.list(annotations).filter((each) => /^5\d\d /.test(each.line)).map((each) => `${each.line} ×${each.count}`)
   }
 
   /** The list for a failing test's browser.log: every problem, declared or not. */

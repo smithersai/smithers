@@ -42,16 +42,17 @@ export const findProject = async (
 /** Runs each spec with `runSpec`, every one whatever the last did; one line each. Answers the exit code. */
 export const smoke = async (
   specs: ReadonlyArray<string>,
-  runSpec: (spec: string, project: string) => Promise<{ readonly code: number; readonly log: string; readonly seconds: number }>,
+  runSpec: (spec: string, project: string) => Promise<{ readonly code: number; readonly log: string; readonly seconds: number; readonly serverErrors?: ReadonlyArray<string> }>,
   out: (line: string) => void,
   projects: ReadonlyArray<string> = PROJECTS,
 ): Promise<number> => {
   let failed = 0
   for (const project of projects) {
     for (const spec of specs) {
-      const { code, log, seconds } = await runSpec(spec, project)
+      const { code, log, seconds, serverErrors = [] } = await runSpec(spec, project)
       if (code !== 0) failed++
       out(`${code === 0 ? "pass" : "FAIL"}  ${project}  ${spec}  ${seconds} s${code === 0 ? "" : `  exit ${code}, log ${log}`}`)
+      for (const line of serverErrors) out(`      ${line}`)
     }
   }
   const runs = specs.length * projects.length
@@ -71,12 +72,16 @@ export const ranForReal = (summary: string, spec: string): boolean => {
   return /^[1-9]\d*$/.test(passed!) && rest.every((count) => count === "·")
 }
 
+/** The 5xx lines a spec's output names (e2e/watch.ts), each once: its status, path, body code and ray. */
+export const serverErrorsOf = (log: string): ReadonlyArray<string> =>
+  [...new Set([...log.matchAll(/server error: (.+)$/gm)].map((match) => match[1]!))]
+
 /** What `node` runs for one spec. */
 export const specArgs = (spec: string, project: string): ReadonlyArray<string> => ["e2e/prod.mjs", spec, `--project=${project}`]
 
 /** One spec through `node e2e/prod.mjs`, its output in a file. A run that exits 0 without running for real fails. */
 const viaProd = (env: NodeJS.ProcessEnv, directory: string) => (spec: string, project: string) =>
-  new Promise<{ readonly code: number; readonly log: string; readonly seconds: number }>((resolve, reject) => {
+  new Promise<{ readonly code: number; readonly log: string; readonly seconds: number; readonly serverErrors?: ReadonlyArray<string> }>((resolve, reject) => {
     const log = join(directory, `${project}-${spec.replace(/\W+/g, "-")}.log`)
     const started = Date.now()
     const file = openSync(log, "w")
@@ -85,7 +90,8 @@ const viaProd = (env: NodeJS.ProcessEnv, directory: string) => (spec: string, pr
     child.on("close", (code) => {
       closeSync(file)
       const exited = code ?? 1
-      resolve({ code: exited === 0 && !ranForReal(readFileSync(log, "utf8"), spec) ? 1 : exited, log, seconds: Math.round((Date.now() - started) / 1000) })
+      const output = readFileSync(log, "utf8")
+      resolve({ code: exited === 0 && !ranForReal(output, spec) ? 1 : exited, log, seconds: Math.round((Date.now() - started) / 1000), serverErrors: serverErrorsOf(output) })
     })
   })
 

@@ -231,7 +231,7 @@ describe("Problems", () => {
     it("shows in a failing test's list as retried until it runs out", () => {
       expect(noted(retry()).report([])).toEqual([
         "problems (e2e/problems.ts):",
-        "  retried 503 GET /api/shapes/items?handle&live&offset retry-after ×1",
+        "  retried 503 GET /api/shapes/items?handle&live&offset retry-after code=unknown x-smithers-ray=none ×1",
       ])
       expect(noted(retry(), retry(), retry()).report([])).toEqual([
         "problems (e2e/problems.ts):",
@@ -280,14 +280,14 @@ describe("Problems", () => {
     expect(problems.undeclared(annotations)).toEqual(["500 GET /api/shapes/items?handle&offset code=unknown x-smithers-ray=none ×2"])
     expect(problems.report(annotations)).toEqual([
       "problems (e2e/problems.ts):",
-      "  declared 503 GET /api/auth/session ×1",
+      "  declared 503 GET /api/auth/session code=unknown x-smithers-ray=none ×1",
       "  UNDECLARED 500 GET /api/shapes/items?handle&offset code=unknown x-smithers-ray=none ×2",
     ])
   })
 })
 
 
-it("undeclared failures retain each body code and ray; declared matches retain their shape and counts", () => {
+it("every 5xx retains its body code and ray, one line each, declared or not", () => {
   const problems = new Problems(ORIGIN)
   for (const ray of ["0123456789abcdef-SJC", "fedcba9876543210-SJC"]) {
     problems.note({ ...response(503, app("/api/repos/acme/widgets/stack?secret=PRIVATE_QUERY"), "POST"),
@@ -298,7 +298,9 @@ it("undeclared failures retain each body code and ray; declared matches retain t
     "503 POST /api/repos/acme/widgets/stack?secret code=github_unavailable x-smithers-ray=fedcba9876543210-SJC ×1",
   ])
   expect(problems.report([serverErrorAnnotation(503, "/api/repos/*/stack")])).toEqual([
-    "problems (e2e/problems.ts):", "  declared 503 POST /api/repos/acme/widgets/stack?secret ×2",
+    "problems (e2e/problems.ts):",
+    "  declared 503 POST /api/repos/acme/widgets/stack?secret code=github_unavailable x-smithers-ray=0123456789abcdef-SJC ×1",
+    "  declared 503 POST /api/repos/acme/widgets/stack?secret code=github_unavailable x-smithers-ray=fedcba9876543210-SJC ×1",
   ])
   const log = problems.report([]).join("\n")
   for (const value of ["PRIVATE_QUERY", "PRIVATE_TOKEN", "PRIVATE_BODY"]) expect(log).not.toContain(value)
