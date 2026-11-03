@@ -34,10 +34,18 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Alerts": "./src/Alerts.ts",
+    "./Alerts": {
+      "types": "./src/Alerts.ts",
+      "vibelang-source": "./src/Alerts.ts",
+      "default": "./.vibelang/js/src/Alerts.js"
+    },
     "./Channels": {
       "types": "./.vibe/declarations/src/Channels.d.vibe.ts",
       "vibelang-source": "./src/Channels.vibe",
@@ -51,9 +59,21 @@
       "types": "./.vibe/declarations/src/Notification.d.vibe.ts",
       "default": "./src/Notification.vibe"
     },
-    "./NotificationEvent": "./src/NotificationEvent.ts",
-    "./NotificationQueue": "./src/NotificationQueue.ts",
-    "./NotificationState": "./src/NotificationState.ts",
+    "./NotificationEvent": {
+      "types": "./src/NotificationEvent.ts",
+      "vibelang-source": "./src/NotificationEvent.ts",
+      "default": "./.vibelang/js/src/NotificationEvent.js"
+    },
+    "./NotificationQueue": {
+      "types": "./src/NotificationQueue.ts",
+      "vibelang-source": "./src/NotificationQueue.ts",
+      "default": "./.vibelang/js/src/NotificationQueue.js"
+    },
+    "./NotificationState": {
+      "types": "./src/NotificationState.ts",
+      "vibelang-source": "./src/NotificationState.ts",
+      "default": "./.vibelang/js/src/NotificationState.js"
+    },
     "./Projection": {
       "types": "./.vibe/declarations/src/Projection.d.vibe.ts",
       "vibelang-source": "./src/Projection.vibe",
@@ -64,7 +84,11 @@
       "vibelang-source": "./src/SteerPayload.vibe",
       "default": "./.vibelang/js/src/SteerPayload.js"
     },
-    "./index": "./src/index.ts"
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -76,7 +100,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

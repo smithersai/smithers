@@ -34,12 +34,24 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./FlowEngine": "./src/FlowEngine/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./FlowEngine": {
+      "types": "./src/FlowEngine/index.ts",
+      "vibelang-source": "./src/FlowEngine/index.ts",
+      "default": "./.vibelang/js/src/FlowEngine/index.js"
+    },
     "./FlowEngine/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./FlowProxy": "./src/FlowProxy.ts",
+    "./FlowProxy": {
+      "types": "./src/FlowProxy.ts",
+      "vibelang-source": "./src/FlowProxy.ts",
+      "default": "./.vibelang/js/src/FlowProxy.js"
+    },
     "./Hosts": {
       "types": "./.vibe/declarations/src/Hosts.d.vibe.ts",
       "vibelang-source": "./src/Hosts.vibe",
@@ -50,8 +62,16 @@
       "vibelang-source": "./src/PlacedAction.vibe",
       "default": "./.vibelang/js/src/PlacedAction.js"
     },
-    "./FlowProxyServer": "./src/FlowProxyServer.ts",
-    "./index": "./src/index.ts"
+    "./FlowProxyServer": {
+      "types": "./src/FlowProxyServer.ts",
+      "vibelang-source": "./src/FlowProxyServer.ts",
+      "default": "./.vibelang/js/src/FlowProxyServer.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -65,7 +85,8 @@
     "README.md",
     "CHANGELOG.md",
     "VENDOR.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

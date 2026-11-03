@@ -34,7 +34,11 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./migrations/*": null,
     "./internal/*": null,
     "./*/index": null,
@@ -59,7 +63,11 @@
       "vibelang-source": "./src/RemoteCacheStore.vibe",
       "default": "./.vibelang/js/src/RemoteCacheStore.js"
     },
-    "./index": "./src/index.ts",
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./test/TestCacheStore": "./src/test/TestCacheStore.ts"
   },
   "files": [
@@ -72,7 +80,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

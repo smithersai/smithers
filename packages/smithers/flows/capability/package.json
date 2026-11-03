@@ -34,12 +34,28 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Capability": "./src/Capability.ts",
-    "./Permission": "./src/Permission.ts",
-    "./index": "./src/index.ts",
+    "./Capability": {
+      "types": "./src/Capability.ts",
+      "vibelang-source": "./src/Capability.ts",
+      "default": "./.vibelang/js/src/Capability.js"
+    },
+    "./Permission": {
+      "types": "./src/Permission.ts",
+      "vibelang-source": "./src/Permission.ts",
+      "default": "./.vibelang/js/src/Permission.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./CapabilitySet": {
       "types": "./.vibe/declarations/src/CapabilitySet.d.vibe.ts",
       "vibelang-source": "./src/CapabilitySet.vibe",
@@ -56,7 +72,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

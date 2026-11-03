@@ -34,7 +34,11 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./migrations/*": null,
     "./*/index": null,
@@ -43,16 +47,32 @@
       "vibelang-source": "./src/AttemptStore.vibe",
       "default": "./.vibelang/js/src/AttemptStore.js"
     },
-    "./Heartbeat": "./src/Heartbeat.ts",
+    "./Heartbeat": {
+      "types": "./src/Heartbeat.ts",
+      "vibelang-source": "./src/Heartbeat.ts",
+      "default": "./.vibelang/js/src/Heartbeat.js"
+    },
     "./Migrations": {
       "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
       "vibelang-source": "./src/Migrations.vibe",
       "default": "./.vibelang/js/src/Migrations.js"
     },
-    "./Ownership": "./src/Ownership.ts",
-    "./RunStore": "./src/RunStore.ts",
+    "./Ownership": {
+      "types": "./src/Ownership.ts",
+      "vibelang-source": "./src/Ownership.ts",
+      "default": "./.vibelang/js/src/Ownership.js"
+    },
+    "./RunStore": {
+      "types": "./src/RunStore.ts",
+      "vibelang-source": "./src/RunStore.ts",
+      "default": "./.vibelang/js/src/RunStore.js"
+    },
     "./RunStoreMetrics": "./src/RunStoreMetrics.vibe",
-    "./index": "./src/index.ts",
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./test/TestRunStore": "./src/test/TestRunStore.ts"
   },
   "files": [
@@ -65,7 +85,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

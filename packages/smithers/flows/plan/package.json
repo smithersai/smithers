@@ -34,9 +34,17 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./GraphBuildError": "./src/GraphBuildError.vibe",
-    "./Node": "./src/Node.ts",
+    "./Node": {
+      "types": "./src/Node.ts",
+      "vibelang-source": "./src/Node.ts",
+      "default": "./.vibelang/js/src/Node.js"
+    },
     "./Planned": {
       "types": "./.vibe/declarations/src/Planned.d.vibe.ts",
       "vibelang-source": "./src/Planned.vibe",
@@ -53,17 +61,33 @@
     "./FileSet": "./src/FileSet.vibe",
     "./KeyMaterial": "./src/KeyMaterial.vibe",
     "./Migrations": null,
-    "./Plan": "./src/Plan.ts",
+    "./Plan": {
+      "types": "./src/Plan.ts",
+      "vibelang-source": "./src/Plan.ts",
+      "default": "./.vibelang/js/src/Plan.js"
+    },
     "./Placement": "./src/Placement.vibe",
-    "./PlanDiff": "./src/PlanDiff.ts",
+    "./PlanDiff": {
+      "types": "./src/PlanDiff.ts",
+      "vibelang-source": "./src/PlanDiff.ts",
+      "default": "./.vibelang/js/src/PlanDiff.js"
+    },
     "./PlanStore": null,
     "./StepKey": {
       "types": "./.vibe/declarations/src/StepKey.d.vibe.ts",
       "vibelang-source": "./src/StepKey.vibe",
       "default": "./.vibelang/js/src/StepKey.js"
     },
-    "./Scheduling": "./src/Scheduling.ts",
-    "./index": "./src/index.ts",
+    "./Scheduling": {
+      "types": "./src/Scheduling.ts",
+      "vibelang-source": "./src/Scheduling.ts",
+      "default": "./.vibelang/js/src/Scheduling.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./test/PlanFixtures": "./src/test/PlanFixtures.ts"
   },
   "files": [
@@ -77,7 +101,8 @@
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
