@@ -13,7 +13,7 @@ import * as Model from "../src/Model.ts"
 import { ModelError } from "../src/ModelError.vibe"
 import * as ModelEvent from "../src/ModelEvent.vibe"
 import * as ModelRequest from "../src/ModelRequest.ts"
-import * as Protocol from "../src/Protocol.ts"
+import * as Protocol from "../src/Protocol.vibe"
 import * as RequestExecutor from "../src/RequestExecutor.ts"
 import * as Route from "../src/Route.ts"
 

@@ -7,7 +7,7 @@ import * as Endpoint from "../src/Endpoint.ts"
 import * as Framing from "../src/Framing.vibe"
 import * as ModelProxy from "../src/ModelProxy.ts"
 import * as ModelRequest from "../src/ModelRequest.ts"
-import * as OpenAIChatGPT from "../src/OpenAIChatGPT.ts"
+import * as OpenAIChatGPT from "../src/OpenAIChatGPT.vibe"
 import * as RequestExecutor from "../src/RequestExecutor.ts"
 import * as Route from "../src/Route.ts"
 

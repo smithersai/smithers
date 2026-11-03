@@ -24,7 +24,7 @@ import {
   type StopReason,
   type ToolDefinition
 } from "./ModelRequest.ts"
-import * as Protocol from "./Protocol.ts"
+import * as Protocol from "./Protocol.vibe"
 import * as ToolStream from "./ToolStream.vibe"
 
 const FunctionTool = Schema.Struct({

@@ -70,7 +70,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Auth.ts",
         "src/Endpoint.ts",
         "src/Route.ts",
-        "src/OpenAIChatGPT.ts",
+        "src/OpenAIChatGPT.vibe",
         "src/ModelRequest.ts",
         "src/internal/WireTrace.ts"
       ]
@@ -93,7 +93,7 @@ const securityReview = Smithers.SecurityReview({
         "src/FailureCopy.vibe",
         "src/Classifier.vibe",
         "src/*Messages.ts",
-        "src/OpenAI*.ts"
+        "src/OpenAI*.{ts,vibe}"
       ]
     },
     {
@@ -112,7 +112,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Evaluator.ts",
         "src/ToolStream.vibe",
         "src/AnthropicMessages.ts",
-        "src/OpenAI*.ts"
+        "src/OpenAI*.{ts,vibe}"
       ]
     },
     {
@@ -125,7 +125,7 @@ const securityReview = Smithers.SecurityReview({
         "A baseUrl accepted over plain http, or not validated through Endpoint.make, before a bearer or api key is signed onto it (Evaluator.layerVercelGateway included).",
         "Endpoint.joinPath letting an encoded traversal climb out of the configured base path."
       ],
-      paths: ["src/Endpoint.ts", "src/Route.ts", "src/OpenAIChatGPT.ts", "src/Evaluator.ts"]
+      paths: ["src/Endpoint.ts", "src/Route.ts", "src/OpenAIChatGPT.vibe", "src/Evaluator.ts"]
     },
     {
       id: "auth-refresh-and-affinity",
@@ -155,7 +155,7 @@ const securityReview = Smithers.SecurityReview({
         "src/ModelEvent.vibe",
         "src/DeferredTools.ts",
         "src/AnthropicMessages.ts",
-        "src/OpenAI*.ts"
+        "src/OpenAI*.{ts,vibe}"
       ]
     },
     {
