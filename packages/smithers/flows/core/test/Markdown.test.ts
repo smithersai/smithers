@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest"
 import * as Annotations from "../src/Annotations.vibe"
 import * as Effects from "../src/Effects.ts"
 
-import * as Markdown from "../src/Markdown.ts"
+import * as Markdown from "../src/Markdown.vibe"
 import * as Placement from "../src/Placement.ts"
 
 describe("Markdown", () => {
