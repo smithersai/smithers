@@ -39,88 +39,36 @@
     "./migrations/*": null,
     "./*/index": null,
     "./ArtifactGc": "./src/ArtifactGc.ts",
-    "./ArtifactSync": {
-      "types": "./.vibe/declarations/src/ArtifactSync.d.vibe.ts",
-      "vibelang-source": "./src/ArtifactSync.ts",
-      "default": "./.vibelang/js/src/ArtifactSync.js"
-    },
-    "./CacheSync": {
-      "types": "./.vibe/declarations/src/CacheSync.d.vibe.ts",
-      "vibelang-source": "./src/CacheSync.ts",
-      "default": "./.vibelang/js/src/CacheSync.js"
-    },
+    "./ArtifactSync": "./src/ArtifactSync.ts",
+    "./CacheSync": "./src/CacheSync.ts",
     "./DisasterRecovery": "./src/DisasterRecovery.ts",
     "./DurableEngineState": "./src/DurableEngineState.ts",
     "./EngineStore": "./src/EngineStore.ts",
-    "./EngineStoreMetrics": {
-      "types": "./.vibe/declarations/src/EngineStoreMetrics.d.vibe.ts",
-      "vibelang-source": "./src/EngineStoreMetrics.ts",
-      "default": "./.vibelang/js/src/EngineStoreMetrics.js"
-    },
+    "./EngineStoreMetrics": "./src/EngineStoreMetrics.ts",
     "./Errors": "./src/Errors.ts",
     "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts",
-    "./RunChangeFeed": {
-      "types": "./.vibe/declarations/src/RunChangeFeed.d.vibe.ts",
-      "vibelang-source": "./src/RunChangeFeed.ts",
-      "default": "./.vibelang/js/src/RunChangeFeed.js"
-    },
-    "./RunInspection": {
-      "types": "./.vibe/declarations/src/RunInspection.d.vibe.ts",
-      "vibelang-source": "./src/RunInspection.ts",
-      "default": "./.vibelang/js/src/RunInspection.js"
-    },
+    "./RunChangeFeed": "./src/RunChangeFeed.ts",
+    "./RunInspection": "./src/RunInspection.ts",
     "./Inconsistency": "./src/Inconsistency.ts",
     "./Migrations": "./src/Migrations.ts",
     "./OwnerIdentity": "./src/OwnerIdentity.ts",
     "./PlanScheduler": "./src/PlanScheduler.ts",
     "./PlanInputStore": "./src/PlanInputStore.ts",
     "./PlanMergeStore": "./src/PlanMergeStore.ts",
-    "./Reconciliation": {
-      "types": "./.vibe/declarations/src/Reconciliation.d.vibe.ts",
-      "vibelang-source": "./src/Reconciliation.ts",
-      "default": "./.vibelang/js/src/Reconciliation.js"
-    },
-    "./ReplayOnly": {
-      "types": "./.vibe/declarations/src/ReplayOnly.d.vibe.ts",
-      "vibelang-source": "./src/ReplayOnly.ts",
-      "default": "./.vibelang/js/src/ReplayOnly.js"
-    },
+    "./Reconciliation": "./src/Reconciliation.ts",
+    "./ReplayOnly": "./src/ReplayOnly.ts",
     "./Retention": "./src/Retention.ts",
     "./RunCatalogRead": "./src/RunCatalogRead.ts",
-    "./RunState": {
-      "types": "./.vibe/declarations/src/RunState.d.vibe.ts",
-      "vibelang-source": "./src/RunState.ts",
-      "default": "./.vibelang/js/src/RunState.js"
-    },
+    "./RunState": "./src/RunState.ts",
     "./Selection": "./src/Selection.ts",
-    "./SelectionStore": {
-      "types": "./.vibe/declarations/src/SelectionStore.d.vibe.ts",
-      "vibelang-source": "./src/SelectionStore.ts",
-      "default": "./.vibelang/js/src/SelectionStore.js"
-    },
+    "./SelectionStore": "./src/SelectionStore.ts",
     "./StepBoundary": "./src/StepBoundary.ts",
-    "./StepLogs": {
-      "types": "./.vibe/declarations/src/StepLogs.d.vibe.ts",
-      "vibelang-source": "./src/StepLogs.ts",
-      "default": "./.vibelang/js/src/StepLogs.js"
-    },
+    "./StepLogs": "./src/StepLogs.ts",
     "./DeferredClockFold": "./src/DeferredClockFold.ts",
-    "./StepCacheFold": {
-      "types": "./.vibe/declarations/src/StepCacheFold.d.vibe.ts",
-      "vibelang-source": "./src/StepCacheFold.ts",
-      "default": "./.vibelang/js/src/StepCacheFold.js"
-    },
+    "./StepCacheFold": "./src/StepCacheFold.ts",
     "./StepSandbox": "./src/StepSandbox.ts",
-    "./WakeBus": {
-      "types": "./.vibe/declarations/src/WakeBus.d.vibe.ts",
-      "vibelang-source": "./src/WakeBus.ts",
-      "default": "./.vibelang/js/src/WakeBus.js"
-    },
-    "./WorkspaceSandbox": {
-      "types": "./.vibe/declarations/src/WorkspaceSandbox.d.vibe.ts",
-      "vibelang-source": "./src/WorkspaceSandbox.ts",
-      "default": "./.vibelang/js/src/WorkspaceSandbox.js"
-    },
+    "./WakeBus": "./src/WakeBus.ts",
+    "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
     "./index": "./src/index.ts",
     "./test/TestStores": "./src/test/TestStores.ts",
     "./EventTypes": "./src/EventTypes.ts"
@@ -135,8 +83,7 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/",
-    ".vibelang/js"
+    "docs/"
   ],
   "publishConfig": {
     "access": "public",
