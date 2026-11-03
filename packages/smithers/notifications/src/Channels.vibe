@@ -33,11 +33,6 @@
  * @since 1.0.0
  */
 
-import { Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
-import * as HttpClient from "effect/http/HttpClient"
-import * as HttpClientRequest from "effect/http/HttpClientRequest"
-
 /**
  * The channels a message can go out on.
  *
@@ -270,7 +265,7 @@ export interface ChannelsService {
    * `rejected`, and a channel with no provider `unconfigured`, before any
    * request.
    */
-  readonly send: (destination: Destination, message: Message) => Effect.Effect<Receipt, DeliveryError>
+  readonly send: (destination: Destination, message: Message) => Receipt!DeliveryError
 }
 
 /**
@@ -303,7 +298,7 @@ export const defaultTelegramUrl = "https://api.telegram.org"
  * @category constants
  * @since 1.0.0
  */
-export const defaultTimeout: Duration.Duration = Duration.seconds(10)
+export const defaultTimeout: Duration = Duration.seconds(10)
 
 /**
  * The email provider: a Resend API key, the sender (`Name <address>` or an
@@ -314,7 +309,7 @@ export const defaultTimeout: Duration.Duration = Duration.seconds(10)
  * @since 1.0.0
  */
 export interface EmailProvider {
-  readonly apiKey: Redacted.Redacted<string>
+  readonly apiKey: Redacted<string>
   readonly from: string
   readonly url?: string | undefined
 }
@@ -327,7 +322,7 @@ export interface EmailProvider {
  * @since 1.0.0
  */
 export interface TelegramProvider {
-  readonly token: Redacted.Redacted<string>
+  readonly token: Redacted<string>
   readonly url?: string | undefined
 }
 
@@ -340,7 +335,7 @@ export interface TelegramProvider {
 export interface Options {
   readonly email?: EmailProvider | undefined
   readonly telegram?: TelegramProvider | undefined
-  readonly timeout?: Duration.Duration | undefined
+  readonly timeout?: Duration | undefined
 }
 
 /** An origin a provider is reached at: absolute `http:` or `https:`, without a trailing slash. */
@@ -360,7 +355,7 @@ const originOf = (raw: string, channel: Channel): string => {
 
 /** One provider's request for a message to `D`, and how to read its answer. */
 interface Provider<D extends Destination = Destination> {
-  readonly request: (destination: D, message: Message) => HttpClientRequest.HttpClientRequest
+  readonly request: (destination: D, message: Message) => HttpClientRequest
   readonly providerId: (body: unknown) => string | null
   readonly reason: (body: unknown) => string | undefined
   readonly retryAfterSeconds: (body: unknown) => unknown
@@ -439,7 +434,7 @@ const classify = (
   body: unknown,
   retryAfter: string | undefined,
   provider: Provider<never>
-): Effect.Effect<Receipt, DeliveryError> => {
+): Receipt!DeliveryError => {
   if (status >= 200 && status < 300) {
     const providerId = provider.providerId(body)
     return providerId === null
@@ -466,7 +461,7 @@ const classify = (
  * Runs a request with the Fetch transport's redirect following off, keeping every other default the host set: a 3xx
  * reaches {@link classify}, which refuses it, instead of a re-send of the credential to the origin it names.
  */
-const withoutRedirects = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+const withoutRedirects = <A, E, R>(effect: A!E!R): A!E!R =>
   Effect.flatMap(
     Effect.serviceOption(FetchHttpClient.RequestInit),
     (init) =>
@@ -498,18 +493,18 @@ const decodeMessage = Schema.decodeUnknownOption(Message)
  * @category layers
  * @since 1.0.0
  */
-export const layer = (options: Options): Layer.Layer<Channels> =>
+export const layer = (options: Options): Layer<Channels> =>
   Layer.effect(
     Channels,
-    Effect.gen(function*() {
-      const providers = yield* Effect.try({
+    effect {
+      const providers = try (Effect.try({
         try: () => ({
           email: options.email === undefined ? undefined : resend(options.email),
           telegram: options.telegram === undefined ? undefined : telegram(options.telegram)
         }),
         catch: (error) => error
-      }).pipe(Effect.orDie)
-      const client = HttpClient.withScope(yield* HttpClient.HttpClient)
+      }) |> Effect.orDie(%))
+      const client = HttpClient.withScope(try HttpClient.HttpClient)
       const timeout = options.timeout ?? defaultTimeout
       const available = Channel.literals.filter((channel) => providers[channel] !== undefined)
 
@@ -525,31 +520,27 @@ export const layer = (options: Options): Layer.Layer<Channels> =>
           : { provider: providers.telegram, request: providers.telegram.request(destination, message) }
       }
 
-      const execute = (channel: Channel, provider: Provider<never>, request: HttpClientRequest.HttpClientRequest) =>
-        client.execute(request).pipe(
-          Effect.mapError(() => new DeliveryFailed({ channel, code: "unreachable" })),
-          Effect.flatMap((response) =>
-            response.json.pipe(
-              Effect.orElseSucceed((): unknown => undefined),
-              Effect.flatMap((body) => {
-                const retryAfter = response.headers["retry-after"]
-                return Effect.annotateCurrentSpan({ "http.response.status_code": response.status }).pipe(
-                  Effect.andThen(classify(channel, response.status, body, retryAfter, provider))
-                )
-              })
-            )
-          ),
-          Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
-          Effect.provideService(HttpClient.TracerPropagationEnabled, false),
-          withoutRedirects,
-          Effect.timeoutOrElse({
-            duration: timeout,
-            orElse: () => Effect.fail(new DeliveryFailed({ channel, code: "timeout" }))
-          }),
-          Effect.scoped
-        )
+      const execute = (channel: Channel, provider: Provider<never>, request: HttpClientRequest) =>
+        client.execute(request)
+        |> Effect.mapError(%, () => new DeliveryFailed({ channel, code: "unreachable" }))
+        |> Effect.flatMap(%, (response) =>
+          response.json
+          |> Effect.orElseSucceed(%, (): unknown => undefined)
+          |> Effect.flatMap(%, (body) => {
+            const retryAfter = response.headers["retry-after"]
+            return Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+              |> Effect.andThen(%, classify(channel, response.status, body, retryAfter, provider))
+          }))
+        |> Effect.provideService(%, HttpClient.TracerDisabledWhen, () => true)
+        |> Effect.provideService(%, HttpClient.TracerPropagationEnabled, false)
+        |> withoutRedirects(%)
+        |> Effect.timeoutOrElse(%, {
+          duration: timeout,
+          orElse: () => Effect.fail(new DeliveryFailed({ channel, code: "timeout" }))
+        })
+        |> Effect.scoped(%)
 
-      const send = (destination: Destination, message: Message): Effect.Effect<Receipt, DeliveryError> =>
+      const send = (destination: Destination, message: Message): Receipt!DeliveryError =>
         Effect.suspend(() => {
           const channel = destination._tag
           const decoded = Option.all([decodeDestination(destination), decodeMessage(message)])
@@ -559,20 +550,18 @@ export const layer = (options: Options): Layer.Layer<Channels> =>
           const built = requestFor(...decoded.value)
           if (built === undefined) return Effect.fail(new DeliveryRefused({ channel, code: "unconfigured" }))
           return execute(channel, built.provider, built.request)
-        }).pipe(
-          Effect.tap(() => Effect.annotateCurrentSpan({ "smithers.channel.outcome": "sent" })),
-          Effect.tapError((error) =>
-            Effect.annotateCurrentSpan({
-              "smithers.channel.outcome": error._tag === "@smthrs/notifications/DeliveryFailed" ? "failed" : "refused",
-              "smithers.channel.code": error.code
-            })
-          ),
-          Effect.withSpan("notifications.channel.send", {
-            kind: "client",
-            attributes: { "smithers.channel": destination._tag }
-          })
-        )
+        })
+        |> Effect.tap(%, () => Effect.annotateCurrentSpan({ "smithers.channel.outcome": "sent" }))
+        |> Effect.tapError(%, (error) =>
+          Effect.annotateCurrentSpan({
+            "smithers.channel.outcome": error._tag === "@smthrs/notifications/DeliveryFailed" ? "failed" : "refused",
+            "smithers.channel.code": error.code
+          }))
+        |> Effect.withSpan(%, "notifications.channel.send", {
+          kind: "client",
+          attributes: { "smithers.channel": destination._tag }
+        })
 
       return Channels.of({ available, send })
-    })
+    }
   ).pipe(Layer.provide(FetchHttpClient.layer))
