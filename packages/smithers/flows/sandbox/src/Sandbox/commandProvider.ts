@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import type { Provider as RemoteProvider } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Provider } from "./Provider.ts"
+import type { Provider } from "./Provider.vibe"
 import type { Session } from "./Session.vibe"
 
 /**

@@ -17,7 +17,7 @@ import type { Provider as RemoteProvider } from "../RemoteChildProcessSpawner/Pr
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import * as SandboxHealth from "../SandboxHealth/index.ts"
 import { fileSystem } from "./fileSystem.ts"
-import type { Provider } from "./Provider.ts"
+import type { Provider } from "./Provider.vibe"
 import type { Session } from "./Session.vibe"
 
 /**

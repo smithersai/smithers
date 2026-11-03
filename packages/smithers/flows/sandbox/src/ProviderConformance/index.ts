@@ -11,6 +11,6 @@
  * @since 0.1.0
  */
 
-export * from "./check.ts"
+export * from "./check.vibe"
 export * from "./Commands.vibe"
 export * from "./Violation.ts"

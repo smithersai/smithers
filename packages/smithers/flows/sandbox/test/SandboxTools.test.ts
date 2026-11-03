@@ -18,7 +18,7 @@ import { afterAll } from "vitest"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
-import * as SandboxTools from "../src/SandboxTools/index.ts"
+import * as SandboxTools from "../src/SandboxTools/index.vibe"
 import { platform } from "./helpers/containedPlatform.ts"
 
 // The tools run real shell scripts and real git in a real scratch directory (DirectorySandbox), as they run in a

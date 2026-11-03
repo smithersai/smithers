@@ -6,7 +6,7 @@
 
 import { makeNoop } from "./makeNoop.vibe"
 import type { PingProvider } from "./PingProvider.vibe"
-import { probe } from "./probe.ts"
+import { probe } from "./probe.vibe"
 import type { ProbeOptions } from "./ProbeOptions.vibe"
 import { SandboxHealth } from "./SandboxHealth.vibe"
 import type { Service } from "./Service.vibe"

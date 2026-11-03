@@ -14,6 +14,6 @@
 export * from "./GarbageCollector.vibe"
 export * from "./labels.ts"
 export * from "./make.ts"
-export * from "./reap.ts"
+export * from "./reap.vibe"
 export * from "./Sdk.ts"
 export * from "./snapshots.vibe"

@@ -265,26 +265,21 @@ export class MachineUnavailable extends Schema.TaggedError<MachineUnavailable>()
  * @category services
  * @since 1.0.0-rc.17
  */
-export class Machine extends Context.Service<
-  Machine,
-  {
-    readonly checkout: (target: Target, job: JobRef) => Effect.Effect<boolean, MachineUnavailable>
-    readonly run: (
-      target: Target,
-      job: JobRef,
-      index: number,
-      step: Step
-    ) => Effect.Effect<
-      {
-        readonly exitCode: number
-        readonly timedOut: boolean
-        readonly output?: { readonly stdout: string; readonly stderr: string; readonly truncated: boolean }
-      },
-      MachineUnavailable
-    >
-    readonly release: (target: Target, job: JobRef) => Effect.Effect<void>
-  }
->()("@smthrs/sandbox/CiJob/Machine") {}
+export service Machine {
+  static readonly key = "@smthrs/sandbox/CiJob/Machine"
+  checkout: (target: Target, job: JobRef) => boolean!MachineUnavailable
+  run: (
+    target: Target,
+    job: JobRef,
+    index: number,
+    step: Step
+  ) => {
+      readonly exitCode: number
+      readonly timedOut: boolean
+      readonly output?: { readonly stdout: string; readonly stderr: string; readonly truncated: boolean }
+    }!MachineUnavailable
+  release: (target: Target, job: JobRef) => void!!
+}
 
 /**
  * How a step's action retries a machine that didn't answer: 1 s doubling to
@@ -411,9 +406,9 @@ const outputText = (text: string) => {
 
 const refOf = ({ machine, name }: Job): JobRef => machine === undefined ? { name } : { name, machine }
 
-const machine = Effect.gen(function*() {
-  return yield* Machine
-})
+const machine = effect {
+  return try Machine
+}
 
 /**
  * The implementations of `ci/job`'s actions over the host's {@link Machine}.
@@ -423,12 +418,11 @@ const machine = Effect.gen(function*() {
  */
 export const layer = Layer.mergeAll(
   Checkout.toLayer(({ job, target }) =>
-    Effect.flatMap(machine, (m) => m.checkout(target, refOf(job))).pipe(
-      Effect.map((exact): Result => ({
-        outcome: exact ? "passed" : "failed",
-        steps: [{ name: CHECKOUT, outcome: exact ? "passed" : "failed", exitCode: null }]
-      }))
-    )
+    Effect.flatMap(machine, (m) => m.checkout(target, refOf(job)))
+    |> Effect.map(%, (exact): Result => ({
+      outcome: exact ? "passed" : "failed",
+      steps: [{ name: CHECKOUT, outcome: exact ? "passed" : "failed", exitCode: null }]
+    }))
   ),
   RunStep.toLayer(({ index, job, sofar, target }) => {
     const step = job.steps[index]!
@@ -441,8 +435,8 @@ export const layer = Layer.mergeAll(
         steps: [...prior, { name: step.name, outcome: "skipped", exitCode: null }]
       })
     }
-    return Effect.flatMap(machine, (m) => m.run(target, refOf(job), index, step)).pipe(
-      Effect.map(({ exitCode, timedOut, output }): Result => {
+    return Effect.flatMap(machine, (m) => m.run(target, refOf(job), index, step))
+      |> Effect.map(%, ({ exitCode, timedOut, output }): Result => {
         const outcome = exitCode === 0 && !timedOut ? "passed" : "failed"
         const stdout = output === undefined ? "" : outputText(output.stdout)
         const stderr = output === undefined ? "" : outputText(output.stderr)
@@ -464,10 +458,9 @@ export const layer = Layer.mergeAll(
           }]
         }
       })
-    )
   }),
   Release.toLayer(({ job, result, target }) =>
-    Effect.flatMap(machine, (m) => m.release(target, refOf(job))).pipe(Effect.as(result))
+    Effect.flatMap(machine, (m) => m.release(target, refOf(job))) |> Effect.as(%, result)
   )
 )
 

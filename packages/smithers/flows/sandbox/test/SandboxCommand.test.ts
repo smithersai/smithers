@@ -24,8 +24,8 @@ import { afterAll } from "vitest"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
-import * as SandboxCommand from "../src/SandboxCommand/index.ts"
-import * as SandboxTools from "../src/SandboxTools/index.ts"
+import * as SandboxCommand from "../src/SandboxCommand/index.vibe"
+import * as SandboxTools from "../src/SandboxTools/index.vibe"
 import { platform } from "./helpers/containedPlatform.ts"
 
 // A command started detached in a real scratch directory (DirectorySandbox), as it starts in a container: its runner is

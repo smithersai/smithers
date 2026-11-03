@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { type Host, hostContext, type LayerHostOptions } from "./layerHost.ts"
-import type { Provider } from "./Provider.ts"
+import type { Provider } from "./Provider.vibe"
 import { capture, type CaptureError, type CheckoutOptions, resolveBase, Work } from "./Work.ts"
 
 /**
@@ -68,13 +68,13 @@ export const Sandboxed = <S extends Schema.Top>(result: S) => Schema.Struct({ re
 export const run = <A, E, R>(
   provider: Provider,
   options: RunOptions,
-  body: Effect.Effect<A, E, R>
-): Effect.Effect<Sandboxed<A>, E | ProviderError | CaptureError, Exclude<R, Host>> =>
-  Effect.scoped(Effect.gen(function*() {
-    const session = yield* provider.acquire(options.session)
-    const base = yield* resolveBase(session, { checkout: options.checkout, revision: options.base })
-    const context = yield* hostContext(session, options)
-    const result = yield* Effect.provide(body, context)
-    const work = yield* capture(session, { checkout: options.checkout, base })
+  body: A!E!R
+): Sandboxed<A>!E | ProviderError | CaptureError!Exclude<R, Host> =>
+  Effect.scoped(effect {
+    const session = try provider.acquire(options.session)
+    const base = try resolveBase(session, { checkout: options.checkout, revision: options.base })
+    const context = try hostContext(session, options)
+    const result = try Effect.provide(body, context)
+    const work = try capture(session, { checkout: options.checkout, base })
     return { result, work }
-  }))
+  })

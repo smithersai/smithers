@@ -33,13 +33,13 @@ export interface ReapOptions {
    * Whether the process a machine's `smithers.holder` label names is still
    * running. A machine whose holder answers `false` is removed.
    */
-  readonly isAlive: (holder: string) => Effect.Effect<boolean>
+  readonly isAlive: (holder: string) => boolean!!
   /**
    * Whether a machine whose holder is dead is still wanted, from the labels
    * its configuration records: a sticky machine a durable run will reattach
    * when it resumes. A retained machine is left alone. Default: none is.
    */
-  readonly retain?: ((labels: Readonly<Record<string, string>>) => Effect.Effect<boolean>) | undefined
+  readonly retain?: ((labels: Readonly<Record<string, string>>) => boolean!!) | undefined
   /** How long each removed machine's graceful stop may take before its removal is forced. Default 3000. */
   readonly stopTimeoutMs?: number | undefined
 }
@@ -108,55 +108,52 @@ const isNotFound = (error: ProviderError): boolean => Reflect.get(Object(error.c
  * @category constructors
  * @since 0.1.0
  */
-export const reap = (options: ReapOptions): Effect.Effect<ReadonlyArray<Reaped>, ProviderError> =>
-  Effect.gen(function*() {
-    const listed: Array<Handle> = []
-    let cursor: string | undefined
-    do {
-      const after = cursor
-      const page = yield* attempt(
-        () =>
-          options.sdk.Sandbox.listWith((list) => {
-            const scoped = list.label(providerLabel, providerName).label(ownerLabel, options.owner)
-            return after === undefined ? scoped : scoped.cursor(after)
-          }),
-        "unavailable",
-        `the microVMs of owner ${options.owner} could not be listed`
-      )
-      listed.push(...page.sandboxes)
-      cursor = page.nextCursor
-    } while (cursor !== undefined)
+export const reap = effect (options: ReapOptions): ReadonlyArray<Reaped>!ProviderError => {
+  const listed: Array<Handle> = []
+  let cursor: string | undefined
+  do {
+    const after = cursor
+    const page = try attempt(
+      () =>
+        options.sdk.Sandbox.listWith((list) => {
+          const scoped = list.label(providerLabel, providerName).label(ownerLabel, options.owner)
+          return after === undefined ? scoped : scoped.cursor(after)
+        }),
+      "unavailable",
+      `the microVMs of owner ${options.owner} could not be listed`
+    )
+    listed.push(...page.sandboxes)
+    cursor = page.nextCursor
+  } while (cursor !== undefined)
 
-    const reaped: Array<Reaped> = []
-    const failed: Array<{ readonly name: string; readonly error: ProviderError }> = []
-    for (const handle of listed) {
-      const labels = labelsOf(handle)
-      const holder = labels?.[holderLabel]
-      if (labels === undefined || holder === undefined || (yield* options.isAlive(holder))) continue
-      if (options.retain !== undefined && (yield* options.retain(labels))) continue
-      const outcome = yield* Effect.gen(function*() {
-        const current = yield* attempt(() => handle.refresh(), "unavailable", `${handle.name} could not be read`)
-        if (holderOf(current) !== holder) return "skipped" as const
-        yield* attempt(
-          () => removeMachine(current, options.stopTimeoutMs ?? defaultStopTimeoutMs),
-          "unavailable",
-          `${handle.name} could not be removed`
-        )
-        return "removed" as const
-      }).pipe(Effect.catch((error) => Effect.succeed(isNotFound(error) ? "skipped" as const : error)))
-      if (outcome === "removed") reaped.push({ name: handle.name, holder, status: handle.status })
-      else if (outcome !== "skipped") failed.push({ name: handle.name, error: outcome })
-    }
-    if (failed.length > 0) {
-      return yield* Effect.fail(
-        new ProviderError({
-          code: "unavailable",
-          message: `microsandbox: ${failed.length} orphaned microVM(s) could not be reaped: ${
-            failed.map(({ name }) => name).join(", ")
-          }`,
-          cause: failed.map(({ error }) => error)
-        })
+  const reaped: Array<Reaped> = []
+  const failed: Array<{ readonly name: string; readonly error: ProviderError }> = []
+  for (const handle of listed) {
+    const labels = labelsOf(handle)
+    const holder = labels?.[holderLabel]
+    if (labels === undefined || holder === undefined || (try options.isAlive(holder))) continue
+    if (options.retain !== undefined && (try options.retain(labels))) continue
+    const outcome = (effect {
+      const current = try attempt(() => handle.refresh(), "unavailable", `${handle.name} could not be read`)
+      if (holderOf(current) !== holder) return "skipped" as const
+      try attempt(
+        () => removeMachine(current, options.stopTimeoutMs ?? defaultStopTimeoutMs),
+        "unavailable",
+        `${handle.name} could not be removed`
       )
-    }
-    return reaped
-  })
+      return "removed" as const
+    }) catch (error) => (isNotFound(error) ? "skipped" as const : error)
+    if (outcome === "removed") reaped.push({ name: handle.name, holder, status: handle.status })
+    else if (outcome !== "skipped") failed.push({ name: handle.name, error: outcome })
+  }
+  if (failed.length > 0) {
+    throw new ProviderError({
+      code: "unavailable",
+      message: `microsandbox: ${failed.length} orphaned microVM(s) could not be reaped: ${
+        failed.map(({ name }) => name).join(", ")
+      }`,
+      cause: failed.map(({ error }) => error)
+    })
+  }
+  return reaped
+}

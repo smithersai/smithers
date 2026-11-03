@@ -21,7 +21,7 @@ import { gather, type GatheredRun } from "../internal/localProcess.vibe"
 import { pidDirectory } from "../internal/pidDirectory.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Provider } from "../Sandbox/Provider.ts"
+import type { Provider } from "../Sandbox/Provider.vibe"
 
 /**
  * How the provider reaches its machine.

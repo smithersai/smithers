@@ -39,17 +39,17 @@ import type { Session } from "./Session.vibe"
  * @since 0.1.0
  */
 export interface Provider {
-  readonly acquire: (session: string) => Effect.Effect<Session, ProviderError, Scope>
+  readonly acquire: (session: string) => Session!ProviderError!Scope
   /** Scope closure leaves the machine and detached jobs running. */
   readonly retained?: true | undefined
   /** Provider-owned writable job metadata root, outside its checkout. */
   readonly jobDirectory?: string | undefined
   /** Connect only to this existing machine. Never provision or revive it. */
   readonly attach?:
-    | ((session: Pick<Session, "id" | "remoteId">) => Effect.Effect<Session, ProviderError, Scope>)
+    | ((session: Pick<Session, "id" | "remoteId">) => Session!ProviderError!Scope)
     | undefined
   /** Explicit, idempotent teardown of a retained machine. */
-  readonly destroy?: ((session: Pick<Session, "id" | "remoteId">) => Effect.Effect<void, ProviderError>) | undefined
+  readonly destroy?: ((session: Pick<Session, "id" | "remoteId">) => void!ProviderError) | undefined
 }
 
 /**
