@@ -73,18 +73,19 @@ export type StartupContext<H> = ConfigContext<H> | ContextOf<HookAt<H, "configRe
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const runConfig = effect <H = FlowsHooks>(
+export const runConfig = <H = FlowsHooks>(
   plugins: Plugins.Service<H>,
   config: FlowsConfig
-): ResolvedConfig!PluginError!ConfigContext<H> => {
-  const initial = try Config.snapshot(config)
-  const merged = try (plugins.waterfall as unknown as (
-    hook: string,
-    initial: FlowsConfig,
-    merge: (previous: FlowsConfig, patch: unknown) => FlowsConfig
-  ) => FlowsConfig!PluginError!ConfigContext<H>)("config", initial, Config.merge)
-  return try Config.resolve(merged)
-}
+): Effect.Effect<ResolvedConfig, PluginError, ConfigContext<H>> =>
+  Effect.gen(function*() {
+    const initial = yield* Config.snapshot(config)
+    const merged = yield* (plugins.waterfall as unknown as (
+      hook: string,
+      initial: FlowsConfig,
+      merge: (previous: FlowsConfig, patch: unknown) => FlowsConfig
+    ) => Effect.Effect<FlowsConfig, PluginError, ConfigContext<H>>)("config", initial, Config.merge)
+    return yield* Config.resolve(merged)
+  })
 
 /**
  * Resolves plugins, executes the config pipeline, and merges plugin layers.
@@ -99,20 +100,20 @@ export const make = <H = FlowsHooks>(
   input: PluginInput<NoInfer<H>>,
   config: FlowsConfig = {},
   options: Omit<Resolve.Options<NoInfer<H>>, "config"> = {}
-): Kernel<H>!PluginError!StartupContext<H> =>
-  effect {
-    const initial = try Config.snapshot(config)
-    const resolved = try Resolve.resolve<H>(input, options, initial)
+): Effect.Effect<Kernel<H>, PluginError, StartupContext<H>> =>
+  Effect.gen(function*() {
+    const initial = yield* Config.snapshot(config)
+    const resolved = yield* Resolve.resolve<H>(input, options, initial)
     const dispatcher = Plugins.make<H>(resolved)
-    const frozen = try runConfig(dispatcher, initial)
-    const observerErrors = try (dispatcher.parallel as unknown as (
+    const frozen = yield* runConfig(dispatcher, initial)
+    const observerErrors = yield* (dispatcher.parallel as unknown as (
       hook: string,
       value: ResolvedConfig
-    ) => ReadonlyArray<PluginError>!never!StartupContext<H>)("configResolved", frozen)
+    ) => Effect.Effect<ReadonlyArray<PluginError>, never, StartupContext<H>>)("configResolved", frozen)
     return Object.freeze({
       plugins: dispatcher,
       config: frozen,
       layer: Resolve.layer(resolved),
       observerErrors
     })
-  }
+  })
