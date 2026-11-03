@@ -95,7 +95,7 @@ const securityReview = Smithers.SecurityReview({
         "CloudflareRuntime.layer's canExecute admitting a run other than its own executionId, or a sweep other than { host: executionId }.",
         "An OwnerIdentity that can mint one incarnation number for two runtimes, such as one read from process.pid."
       ],
-      paths: ["src/CloudflareHost.vibe", "src/CloudflareRuntime.ts"]
+      paths: ["src/CloudflareHost.vibe", "src/CloudflareRuntime.vibe"]
     },
     {
       id: "alarm-never-drops-an-execution",

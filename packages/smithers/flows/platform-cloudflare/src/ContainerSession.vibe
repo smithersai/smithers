@@ -59,7 +59,7 @@ export interface Process<E = never, R = never> {
   readonly stdin: Sink.Sink<unknown, Uint8Array, unknown, E, R> | undefined
   readonly stdout: Stream.Stream<Uint8Array, E, R> | undefined
   readonly stderr: Stream.Stream<Uint8Array, E, R> | undefined
-  readonly exitCode: Effect.Effect<number, E, R>
+  readonly exitCode: number!E!R
 }
 
 /**
@@ -71,7 +71,7 @@ export interface Process<E = never, R = never> {
  * @since 1.0.0-rc.17
  */
 export interface Container<E = never, R = never> {
-  exec(cmd: Array<string>, options: ExecOptions): Effect.Effect<Process<E, R>, E, R | Scope.Scope>
+  exec(cmd: Array<string>, options: ExecOptions): Process<E, R>!E!R | Scope.Scope
 }
 
 /**
@@ -104,9 +104,8 @@ const unavailable = (operation: string) => (cause: unknown) =>
  * `cloudflare.container_session`, with the failure's tag and never its text.
  */
 const logged = (operation: string) => (cause: unknown) =>
-  Effect.logWarning("cloudflare.container_session").pipe(
-    Effect.annotateLogs({ operation, outcome: "failed", "error.type": RetryPolicy.errorTag(cause) ?? "unknown" })
-  )
+  Effect.logWarning("cloudflare.container_session")
+  |> Effect.annotateLogs({ operation, outcome: "failed", "error.type": RetryPolicy.errorTag(cause) ?? "unknown" })(%)
 
 const quote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
@@ -119,15 +118,16 @@ const uidGid = /^\d{1,10}:\d{1,10}$/
  * @category constructors
  * @since 1.0.0-rc.17
  */
-export const make = <E, R>(container: Container<E, R>, options: Options): Effect.Effect<Sandbox.Session, never, R> =>
+export const make = <E, R>(container: Container<E, R>, options: Options): Sandbox.Session!never!R =>
   Effect.map(Effect.context<R>(), (context) => {
     const workdir = options.workdir
     const spawn: Sandbox.Session["spawn"] = (command, spawnOptions) =>
-      Effect.gen(function*() {
+      (effect {
         if (options.user !== undefined && !uidGid.test(options.user)) {
-          return yield* Effect.fail(
-            new ProviderError({ code: "spawn_error", message: "container session: the user is not a numeric uid:gid" })
-          )
+          throw new ProviderError({
+            code: "spawn_error",
+            message: "container session: the user is not a numeric uid:gid"
+          })
         }
         const env: Record<string, string> = { ...options.env }
         for (const [name, value] of Object.entries(spawnOptions.env ?? {})) {
@@ -139,37 +139,37 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
           ? spawnOptions.cwd
           : `${workdir}/${spawnOptions.cwd}`
         const stdin = spawnOptions.stdin
-        const process = yield* container.exec(["sh", "-c", command], {
+        const process = try (container.exec(["sh", "-c", command], {
           ...options.user === undefined ? {} : { user: options.user },
           cwd,
           env,
           ...stdin === undefined ? {} : { stdin: "pipe" as const },
           stdout: "pipe",
           stderr: "pipe"
-        }).pipe(Effect.tapError(logged("exec")), Effect.mapError(unavailable("exec")))
+        }) |> Effect.tapError(%, logged("exec")) |> Effect.mapError(%, unavailable("exec")))
         const { stdout, stderr } = process
         if (stdout === undefined || stderr === undefined || (stdin !== undefined && process.stdin === undefined)) {
-          return yield* Effect.fail(unavailable("exec")("a stream the command needs is missing"))
+          throw unavailable("exec")("a stream the command needs is missing")
         }
         if (stdin !== undefined) {
           // Fed beside the reads, so a command that writes before it has read all its input can't stall.
-          yield* Stream.run(Stream.make(stdin), process.stdin!).pipe(Effect.ignore, Effect.forkScoped)
+          try (Stream.run(Stream.make(stdin), process.stdin!) |> Effect.ignore(%) |> Effect.forkScoped(%))
         }
         return {
           stdout: stdout.pipe(Stream.tapError(logged("stdout")), Stream.mapError(unavailable("stdout")))
             .pipe(Stream.provideContext(context)),
           stderr: stderr.pipe(Stream.tapError(logged("stderr")), Stream.mapError(unavailable("stderr")))
             .pipe(Stream.provideContext(context)),
-          exitCode: process.exitCode.pipe(Effect.tapError(logged("exit")), Effect.mapError(unavailable("exit")))
-            .pipe(Effect.provideContext(context))
+          exitCode: process.exitCode |> Effect.tapError(%, logged("exit")) |>
+            Effect.mapError(%, unavailable("exit")) |> Effect.provideContext(%, context)
         }
-      }).pipe(Effect.provideContext(context))
+      }) |> Effect.provideContext(%, context)
 
     /** Runs `command` to completion: its exit code and standard output. */
     const run = (command: string, stdin?: Uint8Array) =>
-      Effect.scoped(Effect.gen(function*() {
-        const process = yield* spawn(command, stdin === undefined ? {} : { stdin })
-        const [stdout, , code] = yield* Effect.all([
+      Effect.scoped(effect {
+        const process = try spawn(command, stdin === undefined ? {} : { stdin })
+        const [stdout, , code] = try Effect.all([
           Stream.runCollect(process.stdout),
           Stream.runDrain(process.stderr),
           process.exitCode
@@ -181,7 +181,7 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
           offset += chunk.byteLength
         }
         return { bytes, code }
-      }))
+      })
 
     const session: Sandbox.Session = {
       id: options.id,

@@ -40,7 +40,7 @@ export * as CloudflareHost from "./CloudflareHost.vibe"
  *
  * @since 1.0.0
  */
-export * as CloudflareRuntime from "./CloudflareRuntime.ts"
+export * as CloudflareRuntime from "./CloudflareRuntime.vibe"
 
 /**
  * The per-execution Durable Object, as functions.
@@ -69,7 +69,7 @@ export * as ContainerTerminal from "./ContainerTerminal.ts"
  *
  * @since 1.0.0-rc.17
  */
-export * as ContainerSession from "./ContainerSession.ts"
+export * as ContainerSession from "./ContainerSession.vibe"
 
 /**
  * The container Durable Object's wake: start, inactivity timeout and outbound
@@ -77,4 +77,4 @@ export * as ContainerSession from "./ContainerSession.ts"
  *
  * @since 1.0.0-rc.17
  */
-export * as SandboxObject from "./SandboxObject.ts"
+export * as SandboxObject from "./SandboxObject.vibe"
