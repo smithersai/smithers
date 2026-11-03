@@ -8,8 +8,8 @@
 
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Layer from "effect/Layer"
-import * as CacheStore from "../CacheStore.ts"
-import * as Migrations from "../Migrations.ts"
+import * as CacheStore from "../CacheStore.vibe"
+import * as Migrations from "../Migrations.vibe"
 
 /**
  * Provides the production SQLite step cache over an in-memory database.

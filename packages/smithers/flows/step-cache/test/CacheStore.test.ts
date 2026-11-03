@@ -12,9 +12,9 @@ import type * as Statement from "effect/sql/Statement"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { CacheStore } from "../src/CacheStore.ts"
-import * as CacheStoreLive from "../src/CacheStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import { CacheStore } from "../src/CacheStore.vibe"
+import * as CacheStoreLive from "../src/CacheStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => effect
 

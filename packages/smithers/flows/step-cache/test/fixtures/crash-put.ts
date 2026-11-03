@@ -15,8 +15,8 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { writeSync } from "node:fs"
-import * as CacheStoreLive from "../../src/CacheStore.ts"
-import * as Migrations from "../../src/Migrations.ts"
+import * as CacheStoreLive from "../../src/CacheStore.vibe"
+import * as Migrations from "../../src/Migrations.vibe"
 
 const [filename, mode] = process.argv.slice(2)
 if (filename === undefined || (mode !== "commit" && mode !== "crash")) {

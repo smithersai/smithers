@@ -17,9 +17,9 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0-rc.1
  */
-export const createdAtIndex: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE INDEX IF NOT EXISTS flows_step_cache_created_at_ms ON flows_step_cache (created_at_ms)`
-  yield* sql`CREATE INDEX IF NOT EXISTS flows_step_cache_recorded_created_at_ms
+export const createdAtIndex: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE INDEX IF NOT EXISTS flows_step_cache_created_at_ms ON flows_step_cache (created_at_ms)`
+  try sql`CREATE INDEX IF NOT EXISTS flows_step_cache_recorded_created_at_ms
     ON flows_step_cache_recorded (created_at_ms)`
-})
+}

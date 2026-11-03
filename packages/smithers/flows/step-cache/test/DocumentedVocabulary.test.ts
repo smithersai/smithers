@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { readFileSync } from "node:fs"
-import * as CacheStore from "../src/CacheStore.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
 
 const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 

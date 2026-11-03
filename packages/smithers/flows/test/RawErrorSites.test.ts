@@ -69,7 +69,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
     1,
     "replacement-network refusal immediately wrapped by attempt into a typed ProviderError"
   ],
-  ["step-cache/src/RemoteCacheStore.ts", 1, "unreachable namespace escape (KeyDigest excludes separators); a defect"],
+  ["step-cache/src/RemoteCacheStore.vibe", 1, "unreachable namespace escape (KeyDigest excludes separators); a defect"],
   ["sync/src/test/TestSocket.ts", 1, testSupport]
 ]
 

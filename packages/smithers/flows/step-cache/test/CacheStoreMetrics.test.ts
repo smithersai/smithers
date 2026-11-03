@@ -9,11 +9,11 @@ import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import type * as SqlClient from "effect/sql/SqlClient"
-import { CacheStore } from "../src/CacheStore.ts"
-import * as CacheStoreLive from "../src/CacheStore.ts"
+import { CacheStore } from "../src/CacheStore.vibe"
+import * as CacheStoreLive from "../src/CacheStore.vibe"
 import * as CacheStoreMetrics from "../src/CacheStoreMetrics.vibe"
-import * as CombinedCacheStore from "../src/CombinedCacheStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as CombinedCacheStore from "../src/CombinedCacheStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 const migrated = <A, E>(
   effect: Effect.Effect<A, E, DurableWriter.DurableWriter | SqlClient.SqlClient | CacheStore>

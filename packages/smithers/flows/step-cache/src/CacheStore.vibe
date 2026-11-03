@@ -23,8 +23,8 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import type * as Option from "effect/Option"
 import type * as SqlClient from "effect/sql/SqlClient"
-import type { CacheEntry, RecordedBy } from "./internal/CacheEntry.ts"
-import { type CacheStoreError, error } from "./internal/CacheStoreError.ts"
+import type { CacheEntry, RecordedBy } from "./internal/CacheEntry.vibe"
+import { type CacheStoreError, error } from "./internal/CacheStoreError.vibe"
 import * as SqlCacheStore from "./internal/SqlCacheStore.ts"
 
 export {
@@ -39,7 +39,7 @@ export {
   validateFence,
   validateKey,
   validateRecordedBy
-} from "./internal/CacheAdmission.ts"
+} from "./internal/CacheAdmission.vibe"
 export {
   CacheEntry,
   KeyDigest,
@@ -47,8 +47,8 @@ export {
   maximumRecordedRunIdLength,
   RecordedBy,
   RecordedRunId
-} from "./internal/CacheEntry.ts"
-export { CacheStoreError, CacheStoreErrorCode } from "./internal/CacheStoreError.ts"
+} from "./internal/CacheEntry.vibe"
+export { CacheStoreError, CacheStoreErrorCode } from "./internal/CacheStoreError.vibe"
 export { make, rebuildHeads, type RecordedRef } from "./internal/SqlCacheStore.ts"
 
 /**
@@ -115,7 +115,7 @@ export interface SweepOptions {
    */
   readonly canReclaimRecorded?: (
     reference: Pick<CacheEntry, "keyDigest" | "recordedRunId" | "recordedEventSeq">
-  ) => Effect.Effect<boolean, CacheStoreError>
+  ) => boolean!CacheStoreError
 }
 
 /**
@@ -146,8 +146,8 @@ export interface Service {
   readonly get: (
     keyDigest: string,
     options?: GetOptions
-  ) => Effect.Effect<Option.Option<CacheEntry>, CacheStoreError>
-  readonly put: (entry: CacheEntry) => Effect.Effect<PutResult, CacheStoreError>
+  ) => Option.Option<CacheEntry>!CacheStoreError
+  readonly put: (entry: CacheEntry) => PutResult!CacheStoreError
   /**
    * Removes the row for `keyDigest`, returning whether a row was deleted.
    * With `ifRecordedBy` the delete is a single fenced compare-and-swap, so a
@@ -157,7 +157,7 @@ export interface Service {
   readonly evict: (
     keyDigest: string,
     options?: EvictOptions
-  ) => Effect.Effect<boolean, CacheStoreError>
+  ) => boolean!CacheStoreError
   /**
    * Removes every head row recorded more than `olderThanMs` before the
    * current clock reading, returning how many were deleted.
@@ -174,7 +174,7 @@ export interface Service {
    * that run-scoped delete; a host composing a shared tier must schedule a
    * reference-aware sweep to bound unreferenced imported evidence.
    */
-  readonly sweepExpired: (olderThanMs: number, options?: SweepOptions) => Effect.Effect<number, CacheStoreError>
+  readonly sweepExpired: (olderThanMs: number, options?: SweepOptions) => number!CacheStoreError
 }
 
 /**

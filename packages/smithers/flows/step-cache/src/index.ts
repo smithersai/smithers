@@ -23,7 +23,7 @@
  * @category services
  * @since 0.1.0
  */
-export * as CacheStore from "./CacheStore.ts"
+export * as CacheStore from "./CacheStore.vibe"
 
 /**
  * @category metrics
@@ -35,16 +35,16 @@ export * as CacheStoreMetrics from "./CacheStoreMetrics.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as CombinedCacheStore from "./CombinedCacheStore.ts"
+export * as CombinedCacheStore from "./CombinedCacheStore.vibe"
 
 /**
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as RemoteCacheStore from "./RemoteCacheStore.ts"
+export * as RemoteCacheStore from "./RemoteCacheStore.vibe"

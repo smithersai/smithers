@@ -13,9 +13,8 @@
 import * as BoundedJson from "@smthrs/canonical/BoundedJson"
 import { Canonical } from "@smthrs/canonical/Canonical"
 import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
-import { CacheEntry, KeyDigest, RecordedBy } from "./CacheEntry.ts"
-import { type CacheStoreError, error } from "./CacheStoreError.ts"
+import { CacheEntry, KeyDigest, RecordedBy } from "./CacheEntry.vibe"
+import { type CacheStoreError, error } from "./CacheStoreError.vibe"
 
 /**
  * Maximum encoded bytes admitted for one `result` or `meta` JSON tree.
@@ -92,14 +91,13 @@ const encodeBounded = (
   value: unknown,
   field: string,
   limits: CacheJsonLimits
-): Effect.Effect<string, CacheStoreError> =>
+): string!CacheStoreError =>
   Effect.suspend(() => {
     const admitted = BoundedJson.admit(value, limits)
     return admitted.ok
-      ? Schema.decodeUnknownEffect(Canonical)(admitted.value).pipe(
+      ? (Schema.decodeUnknownEffect(Canonical)(admitted.value)
         /* v8 ignore next -- bounded inert JSON is exactly Canonical's accepted domain */
-        Effect.mapError(() => error("invalid_cache", `${field} must have a bounded canonical JSON form`))
-      )
+        |> Effect.mapError(%, () => error("invalid_cache", `${field} must have a bounded canonical JSON form`)))
       : Effect.fail(error("invalid_cache", `${field} ${admitted.complaint}`))
   })
 
@@ -121,7 +119,7 @@ const encodeBounded = (
  * @category serialization
  * @since 1.0.0-rc.0
  */
-export const encodeCanonical = (value: unknown, field: string): Effect.Effect<string, CacheStoreError> =>
+export const encodeCanonical = (value: unknown, field: string): string!CacheStoreError =>
   encodeBounded(value, field, jsonLimits)
 
 /**
@@ -137,7 +135,7 @@ export const encodeCanonical = (value: unknown, field: string): Effect.Effect<st
  * @category serialization
  * @since 1.0.0-rc.0
  */
-export const encodeEntryCanonical = (entry: CacheEntry): Effect.Effect<string, CacheStoreError> =>
+export const encodeEntryCanonical = (entry: CacheEntry): string!CacheStoreError =>
   encodeBounded(entry, "cache entry", entryJsonLimits)
 
 /**
@@ -146,11 +144,10 @@ export const encodeEntryCanonical = (entry: CacheEntry): Effect.Effect<string, C
  * @category validation
  * @since 1.0.0-rc.0
  */
-export const validateKey = (keyDigest: string): Effect.Effect<void, CacheStoreError> =>
-  Schema.decodeUnknownEffect(KeyDigest)(keyDigest).pipe(
-    Effect.asVoid,
-    Effect.mapError((cause) => error("invalid_cache", "keyDigest violates the cache-key contract", cause))
-  )
+export const validateKey = (keyDigest: string): void!CacheStoreError =>
+  Schema.decodeUnknownEffect(KeyDigest)(keyDigest)
+  |> Effect.asVoid(%)
+  |> Effect.mapError(%, (cause) => error("invalid_cache", "keyDigest violates the cache-key contract", cause))
 
 /**
  * Validates a provenance selector before a store performs I/O and returns the
@@ -163,12 +160,11 @@ export const validateKey = (keyDigest: string): Effect.Effect<void, CacheStoreEr
 export const validateRecordedBy = (
   recordedBy: RecordedBy | undefined,
   field = "recordedBy"
-): Effect.Effect<RecordedBy | undefined, CacheStoreError> =>
+): RecordedBy | undefined!CacheStoreError =>
   recordedBy === undefined
     ? Effect.succeed(undefined)
-    : Schema.decodeUnknownEffect(RecordedBy)(recordedBy).pipe(
-      Effect.mapError((cause) => error("invalid_cache", `${field} violates the provenance contract`, cause))
-    )
+    : (Schema.decodeUnknownEffect(RecordedBy)(recordedBy)
+      |> Effect.mapError(%, (cause) => error("invalid_cache", `${field} violates the provenance contract`, cause)))
 
 /**
  * Refuses a malformed eviction fence before any statement or request is
@@ -183,7 +179,7 @@ export const validateRecordedBy = (
  */
 export const validateFence = (
   fence: RecordedBy | undefined
-): Effect.Effect<RecordedBy | undefined, CacheStoreError> => validateRecordedBy(fence, "eviction fence")
+): RecordedBy | undefined!CacheStoreError => validateRecordedBy(fence, "eviction fence")
 
 /**
  * Refuses an age bound no row could satisfy before any statement is issued.
@@ -198,7 +194,7 @@ export const validateFence = (
 export const validateAge = (
   field: string,
   value: number | undefined
-): Effect.Effect<number | undefined, CacheStoreError> =>
+): number | undefined!CacheStoreError =>
   value === undefined || (Number.isSafeInteger(value) && value >= 0)
     ? Effect.succeed(value)
     : Effect.fail(error("invalid_cache", `${field} must be a non-negative safe integer`))
@@ -212,7 +208,7 @@ export const validateAge = (
  * @category validation
  * @since 1.0.0-rc.0
  */
-export const snapshotEntry = (input: CacheEntry): Effect.Effect<CacheEntry, CacheStoreError> =>
+export const snapshotEntry = (input: CacheEntry): CacheEntry!CacheStoreError =>
   Effect.suspend(() => {
     try {
       if (typeof input !== "object" || input === null) throw new TypeError("entry")
@@ -246,10 +242,9 @@ export const snapshotEntry = (input: CacheEntry): Effect.Effect<CacheEntry, Cach
         recordedRunId: values.recordedRunId,
         recordedEventSeq: values.recordedEventSeq
       })
-      return Schema.decodeUnknownEffect(CacheEntry)(snapshot).pipe(
-        Effect.map((entry) => Object.freeze(entry)),
-        Effect.mapError(() => error("invalid_cache", "cache entry violates the persistence contract"))
-      )
+      return Schema.decodeUnknownEffect(CacheEntry)(snapshot)
+        |> Effect.map(%, (entry) => Object.freeze(entry))
+        |> Effect.mapError(%, () => error("invalid_cache", "cache entry violates the persistence contract"))
     } catch {
       return Effect.fail(error("invalid_cache", "cache entry cannot be inspected as inert data"))
     }

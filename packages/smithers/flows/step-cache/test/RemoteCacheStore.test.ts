@@ -18,9 +18,9 @@ import { TestClock } from "effect/testing"
 import * as Tracer from "effect/Tracer"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import * as CacheStore from "../src/CacheStore.ts"
-import * as CacheAdmission from "../src/internal/CacheAdmission.ts"
-import * as RemoteCacheStore from "../src/RemoteCacheStore.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
+import * as CacheAdmission from "../src/internal/CacheAdmission.vibe"
+import * as RemoteCacheStore from "../src/RemoteCacheStore.vibe"
 
 const entry: CacheStore.CacheEntry = {
   keyDigest: "key-digest",

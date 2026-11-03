@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option } from "effect"
-import { CacheStore } from "../src/CacheStore.ts"
+import { CacheStore } from "../src/CacheStore.vibe"
 import * as TestCacheStore from "../src/test/TestCacheStore.ts"
 
 describe("TestCacheStore", () => {

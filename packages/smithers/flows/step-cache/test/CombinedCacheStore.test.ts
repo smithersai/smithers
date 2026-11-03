@@ -16,11 +16,11 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
-import * as CacheStore from "../src/CacheStore.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
 import * as CacheStoreMetrics from "../src/CacheStoreMetrics.vibe"
-import * as CombinedCacheStore from "../src/CombinedCacheStore.ts"
-import * as Migrations from "../src/Migrations.ts"
-import * as RemoteCacheStore from "../src/RemoteCacheStore.ts"
+import * as CombinedCacheStore from "../src/CombinedCacheStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
+import * as RemoteCacheStore from "../src/RemoteCacheStore.vibe"
 
 const count = (metric: Metric.Metric<number, Metric.CounterState<number>>) =>
   Effect.map(Metric.value(metric), (state) => state.count)
