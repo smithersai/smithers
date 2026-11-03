@@ -14,3 +14,11 @@
 .stack-not-sent { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
 .stack-not-sent-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
 .stack-not-sent-label { margin-right: auto; overflow-wrap: anywhere; }
+
+/* Needs an issue (decision 0153): open TODOs with no issue, each with Attach to issue. */
+.stack-needs-issue { display: flex; flex-direction: column; gap: 0.5rem; }
+.stack-needs-issue-title { margin: 0; font-size: 0.875rem; font-weight: 600; }
+.stack-needs-issue-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+.stack-needs-issue-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+.stack-needs-issue-label { margin-right: auto; overflow-wrap: anywhere; }
+.stack-needs-issue-select { width: auto; max-width: 100%; }

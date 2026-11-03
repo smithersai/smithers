@@ -1,4 +1,5 @@
 import { expect, type Page, type TestInfo } from "@playwright/test"
+import { chooseIssue } from "./todoDraft"
 import { strictTest as test } from "./watch"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { requires, scriptedAgent } from "./target"
@@ -62,6 +63,7 @@ test("factory: a TODO runs to a mergeable pull request", {
     const draft = page.getByRole("form", { name: "TODO draft" })
     await expect(draft).toBeVisible({ timeout: 120_000 })
     await draft.getByLabel("Title").fill(title)
+    await chooseIssue(draft)
     await draft.getByRole("button", { name: "Commit" }).click()
     await expect(page).toHaveURL(new RegExp(`/${repo}/stack$`), { timeout: 30_000 })
     await expect(row(page, word)).toContainText(/T\d+/, { timeout: 60_000 })

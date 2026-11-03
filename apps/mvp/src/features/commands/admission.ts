@@ -13,7 +13,7 @@ import { STEER_ID_NAMESPACE } from "../runs/contract"
 import { RunSteers } from "../runs/steers"
 
 const issueWrites = new Set<FlowName>(["issue/create", "issue/comment", "issue/triage", "issue/commitment", "triage/run", "triage/enable", "triage/pause"])
-const todoWrites = new Set<FlowName>(["todo/commit", "todo/drop", "todo/Retry"])
+const todoWrites = new Set<FlowName>(["todo/commit", "todo/drop", "todo/Retry", "todo/attach"])
 export const hasOutboxAdmission = (name: FlowName): boolean => issueWrites.has(name) || todoWrites.has(name) || name === "run/steer"
 export const admissionNamespace = (name: FlowName) => issueWrites.has(name) ? WRITE_ID_NAMESPACE : todoWrites.has(name) ? OP_ID_NAMESPACE : STEER_ID_NAMESPACE
 /** Operations whose admission is this device's engine recording their run (decision 0124): their input is staged too. */
@@ -68,7 +68,7 @@ export const admitCommand = (name: FlowName, payload: Readonly<Record<string, un
     }
     if (todoWrites.has(name)) {
       const op = yield* Schema.decodeUnknownEffect(QueuedOp)({ ...value, id,
-        op: name === "todo/commit" ? "commit" : name === "todo/drop" ? "drop" : "retry",
+        op: name === "todo/commit" ? "commit" : name === "todo/drop" ? "drop" : name === "todo/attach" ? "attach" : "retry",
         title: typeof value.title === "string" ? value.title.trim() : "", prompt: value.prompt ?? "", acceptance: value.acceptance ?? [], number: value.number ?? 0,
       }).pipe(Effect.orDie)
       const store = yield* TodosStore

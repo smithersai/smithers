@@ -29,6 +29,8 @@ export type ChangeRequest =
     readonly issue?: number
   }
   | { readonly opId: string; readonly op: "drop" | "retry"; readonly number: number }
+  /** Decision 0153: a TODO with no issue, or a deleted one, under issue `issue`. */
+  | { readonly opId: string; readonly op: "attach"; readonly number: number; readonly issue: number }
 
 const decodeTaken = Schema.decodeUnknownEffect(Taken)
 const decodeRefusal = Schema.decodeUnknownOption(Refusal)

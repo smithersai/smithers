@@ -74,6 +74,7 @@ import * as SignIn from "./SignIn.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { BranchRoles } from "./branch/Access.ts"
 import * as StackApi from "./stack/Api.ts"
+import * as IssueRead from "./stack/IssueRead.ts"
 import * as Stack from "./stack/Stack.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as Todo from "./flows/Todo.ts"
@@ -293,7 +294,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
-    const stack = yield* StackApi.make(database, roles)
+    const refreshIssue = Option.isSome(app) ? yield* IssueRead.make(app.value) : undefined
+    const stack = yield* StackApi.make(database, roles, refreshIssue === undefined ? {} : { refreshIssue })
     // The fleet's shapes: a repository's agent runs and runner machines (docs/features/fleet.md#the-shapes).
     const fleet = yield* FleetApi.make(roles)
     // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and a repository's

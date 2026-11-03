@@ -380,7 +380,7 @@ test("TODO requested v1 rows survive the retry-capable schema migration", async 
   expect(await opened(path, TodoRequestedStore)).toEqual([row])
 })
 
-test("a queued TODO v1 write upgrades to v2 without losing its requested operation", () => {
+test("a queued TODO v1 write upgrades to the latest version without losing its requested operation", () => {
   const source = JSON.parse(Object.values(currentDeployed.outbox)[0]!)
   source.mutationFnName = "todo-op"
   source.metadata.versions = { "todo-sending": 1 }
@@ -390,6 +390,6 @@ test("a queued TODO v1 write upgrades to v2 without losing its requested operati
   expect(result._tag).toBe("Upgraded")
   if (result._tag !== "Upgraded") throw new Error(JSON.stringify(result))
   const write = JSON.parse(result.value)
-  expect(write.mutations[0].modified).toEqual({ ...source.mutations[0].modified, v: 2 })
-  expect(write.metadata.versions).toEqual({ "todo-sending": 2 })
+  expect(write.mutations[0].modified).toEqual({ ...source.mutations[0].modified, v: 3 })
+  expect(write.metadata.versions).toEqual({ "todo-sending": 3 })
 })

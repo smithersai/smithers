@@ -42,8 +42,8 @@ export class StackWrites extends Context.Service<
         schema: RequestedRow,
         getKey: (row) => row.id,
         // Version 3 adds repository installation refusals after retry (version 2); version 4 when the route answered
-        // (decision 0124).
-        schemaVersion: 4,
+        // (decision 0124); version 5 an `attach` and its refusals (decision 0153).
+        schemaVersion: 5,
       })
       const context = yield* Effect.context<StackClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(requested, params).pipe(Effect.provideContext(context))
@@ -94,6 +94,8 @@ export const requestOf = (row: Sending): ChangeRequest =>
       acceptance: row.acceptance,
       ...(row.issue === undefined ? {} : { issue: row.issue }),
     }
+    : row.op === "attach"
+    ? { opId: row.id, op: "attach", number: row.number, issue: row.issue ?? 0 }
     : { opId: row.id, op: row.op, number: row.number }
 
 /**

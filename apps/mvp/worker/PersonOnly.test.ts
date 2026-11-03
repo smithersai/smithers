@@ -140,6 +140,7 @@ const flows: Routed = {
   "pull/review": reviewAsk(),
   "todo/commit": stackChange({ op: "commit", title: "Fix the crash", prompt: "Fix it" }),
   "todo/drop": stackChange({ op: "drop", number: 1 }),
+  "todo/attach": stackChange({ op: "attach", number: 1, issue: 12 }),
   "alert/channel": chat((h) => h.fetch("/api/alert-channels", json({ channel: "email", destinations: [] }))),
   "sandbox/limits": chat((h) => h.fetch("/api/sandbox-limits", json({ awake: 20, perPerson: 2, monthlyAlertUsd: 100 }))),
   "domain/add": domain(domainsRoute(REPO.owner, REPO.name), json({ hostname: "docs.example.com" })),

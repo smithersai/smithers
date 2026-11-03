@@ -154,3 +154,39 @@ export const TodoRequestedV3 = Schema.Struct({
   reason: Schema.NullOr(Schema.Literals(["invalid", "authentication", "forbidden", "not_found", "conflict", "stack_full", "merged", "not_retryable", "too_large", "app_not_installed"])),
   taken: Schema.NullOr(Schema.Number),
 })
+
+/** The TODO ops and Not sent reasons before `attach` and its codes (decision 0153, 2026-11-02). */
+const TODO_OPS_6AF5494F = ["commit", "drop", "retry"] as const
+const TODO_NOT_SENT_6AF5494F = [
+  "invalid", "authentication", "forbidden", "not_found", "conflict", "stack_full", "merged", "not_retryable", "too_large",
+  "app_not_installed",
+] as const
+const TodoQueuedV2 = {
+  id: Schema.String,
+  repo: Schema.String,
+  op: Schema.Literals(TODO_OPS_6AF5494F),
+  title: Schema.String,
+  prompt: Schema.String,
+  acceptance: Schema.Array(Schema.String),
+  number: Schema.Number,
+  issue: Schema.optionalKey(Schema.Number),
+}
+
+/** `todo-sending`, version 2: a queued change, before `attach` (main `6af5494f85b6`). */
+export const TodoSendingV2 = Schema.Struct({
+  ...TodoQueuedV2,
+  repoId: Schema.String,
+  queuedAt: Schema.Number,
+  v: Schema.Literal(2),
+})
+
+/** `todo-requested`, version 4: a change the route took or refused, before `attach` and its codes. */
+export const TodoRequestedV4 = Schema.Struct({
+  ...TodoQueuedV2,
+  repoId: Schema.String,
+  queuedAt: Schema.Number,
+  status: Schema.Literals(["requested", "not_sent"]),
+  reason: Schema.NullOr(Schema.Literals(TODO_NOT_SENT_6AF5494F)),
+  taken: Schema.NullOr(Schema.Number),
+  answeredAt: Schema.optional(Schema.Number),
+})

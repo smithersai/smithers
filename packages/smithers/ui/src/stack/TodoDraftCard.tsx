@@ -42,6 +42,14 @@ export type TodoDraftCardProps = Omit<ComponentProps<"form">, "children" | "onSu
   refused?: string;
   /** The longest title, in characters. Default 120. */
   maxTitleLength?: number;
+  /**
+   * The issues the TODO may hang under. Given, the card shows an Issue picker and Commit waits until one is chosen: a
+   * TODO hangs under exactly one issue.
+   */
+  issues?: ReadonlyArray<{ readonly number: number; readonly title: string }>;
+  /** The chosen issue's number. */
+  issue?: number;
+  onIssueChange?: (issue: number) => void;
 };
 
 /**
@@ -50,7 +58,8 @@ export type TodoDraftCardProps = Omit<ComponentProps<"form">, "children" | "onSu
  * `Only you`. Commit (the button, Enter in the title, ⌘Enter or Ctrl+Enter in
  * the prompt) always prevents the browser's submission and calls `onCommit`
  * only while no commit is on its way, the trimmed title and prompt are
- * non-empty, and the title fits `maxTitleLength`.
+ * non-empty, the title fits `maxTitleLength`, and, given `issues`, an issue
+ * is chosen.
  */
 export function TodoDraftCard({
   repo,
@@ -65,13 +74,18 @@ export function TodoDraftCard({
   committing = false,
   refused,
   maxTitleLength = 120,
+  issues,
+  issue,
+  onIssueChange,
   className,
   ...props
 }: TodoDraftCardProps) {
   useInjectUiCss();
   const titleId = useId();
   const promptId = useId();
-  const canCommit = !committing && title.trim() !== "" && prompt.trim() !== "" && title.length <= maxTitleLength;
+  const issueId = useId();
+  const canCommit = !committing && title.trim() !== "" && prompt.trim() !== "" && title.length <= maxTitleLength &&
+    (issues === undefined || issue !== undefined);
   const commit = () => {
     if (canCommit) onCommit();
   };
@@ -112,6 +126,28 @@ export function TodoDraftCard({
           }}
         />
       </Field>
+      {issues === undefined ? null : (
+        <Field>
+          <Label htmlFor={issueId}>Issue</Label>
+          <select
+            id={issueId}
+            className="sui-input sui-todo-draft-issue"
+            value={issue === undefined ? "" : String(issue)}
+            onChange={(event) => {
+              const chosen = Number(event.currentTarget.value);
+              if (Number.isInteger(chosen) && chosen > 0) onIssueChange?.(chosen);
+            }}
+          >
+            <option value="">Choose an issue</option>
+            {issue !== undefined && !issues.some((each) => each.number === issue)
+              ? <option value={String(issue)}>{`#${issue}`}</option>
+              : null}
+            {issues.map((each) => (
+              <option key={each.number} value={String(each.number)}>{`#${each.number} ${each.title}`}</option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field>
         <Label htmlFor={promptId}>Prompt</Label>
         <Textarea

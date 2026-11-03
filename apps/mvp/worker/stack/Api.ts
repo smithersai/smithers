@@ -96,6 +96,8 @@ const Body = Schema.Union([
     after: Schema.optional(Schema.NullOr(TodoNumber)),
   }),
   Schema.Struct({ opId: Uuid, op: Schema.Literals(["drop", "retry"]), number: TodoNumber }),
+  // Decision 0153: a person sets the issue of a TODO whose issue is none or deleted.
+  Schema.Struct({ opId: Uuid, op: Schema.Literal("attach"), number: TodoNumber, issue: IssueNumber }),
   Schema.Struct({
     opId: Uuid,
     op: Schema.Literal("configure"),
@@ -156,6 +158,9 @@ const shapeRefusal = (refused: RepoRoles.RoleRefused) =>
     ? new ShapeProxy.Refused({ status: 503, retryAfter: refused.retryAfterSeconds })
     : new ShapeProxy.Refused({ status: 403 })
 
+/** How old an issue's row may be before an attach reads it from GitHub again. */
+export const ISSUE_FRESH_MINUTES = 5
+
 const noStore = { "cache-control": "no-store" }
 const refusal = (status: number, code: StackRefusal, retryAfterSeconds?: number) =>
   HttpServerResponse.jsonUnsafe({ code }, {
@@ -168,7 +173,14 @@ const refusal = (status: number, code: StackRefusal, retryAfterSeconds?: number)
  * request's scope. They read who is asking from `Sessions`, and their role on the repository from `roles`; a host that
  * runs TODOs provides `Stack.TodoRuns`.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, roles: RepoRoles.RepoRoles<R>) =>
+export const make = <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  roles: RepoRoles.RepoRoles<R>,
+  options: {
+    /** Reads one issue from GitHub into the projection. None on a deployment with no App: the projection decides. */
+    readonly refreshIssue?: (repository: ReturnType<typeof repositoryNamed>, number: number) => Effect.Effect<void, unknown, SqlClient.SqlClient>
+  } = {},
+) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
 
@@ -292,7 +304,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
           fields.opId = admitted.opId.toLowerCase()
           // Committing, dropping and a stack's settings are the person's presses: anyone acting for them is refused, and
           // counted as such (decision 0017 slice 0, decision 0135).
-          const act = admitted.op === "commit" ? "todo/commit" : admitted.op === "configure" ? "stack/configure" : "todo/drop"
+          // Attaching a TODO to its issue is a Member's press, never the agent's (decision 0153).
+          const act = admitted.op === "commit"
+            ? "todo/commit"
+            : admitted.op === "attach"
+            ? "todo/attach"
+            : admitted.op === "configure"
+            ? "stack/configure"
+            : "todo/drop"
           if (admitted.op !== "retry" && (yield* refusesPersonOnly(who, act))) return refused("forbidden")
           // The role is the person's on this repository, never another's (decision 0079).
           const resolved = yield* roles.resolve(who, repositoryNamed(`${target.owner}/${target.name}`)).pipe(Effect.result)
@@ -312,6 +331,25 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
           if (!allows(scopedActor)) return refused("forbidden")
           if (!canAsk(who)) return refused("forbidden")
           const held = resolved.success.held
+          // An attach checks its issue live (decision 0153): a new op whose row is missing or older than
+          // `ISSUE_FRESH_MINUTES` reads GitHub first, so the writer decides on what GitHub says now. A replay reads nothing.
+          if (admitted.op === "attach" && options.refreshIssue !== undefined) {
+            const stale = yield* Effect.gen(function* () {
+              const sql = yield* SqlClient.SqlClient
+              const [row] = yield* sql<{ readonly stale: boolean }>`
+                SELECT NOT EXISTS (SELECT 1 FROM stack_ops WHERE id = ${admitted.opId.toLowerCase()}::uuid)
+                  AND NOT EXISTS (SELECT 1 FROM items WHERE repo_id = ${repoId(target.owner, target.name)}
+                    AND number = ${admitted.issue} AND fetched_at > now() - make_interval(mins => ${ISSUE_FRESH_MINUTES})) AS stale`
+              return row!.stale
+            }).pipe(Effect.provide(database))
+            if (stale) {
+              const read = yield* options.refreshIssue(repositoryNamed(`${target.owner}/${target.name}`), admitted.issue).pipe(
+                Effect.provide(database),
+                Effect.result,
+              )
+              if (read._tag === "Failure") return refused("github_unavailable")
+            }
+          }
           let stoppedAttemptId: string | undefined
           if (admitted.op === "retry" && Option.isSome(runs) && runs.value.isStopped !== undefined) {
             const candidate = yield* Stack.retryCandidate(repoId(target.owner, target.name), admitted.number).pipe(Effect.provide(database))
@@ -335,6 +373,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
                 }
                 : admitted.op === "configure"
                 ? { kind: "configure", lanes: admitted.lanes, maxOpen: admitted.maxOpen, base: admitted.base }
+                : admitted.op === "attach"
+                ? { kind: "attach", number: admitted.number, issue: admitted.issue }
                 : { kind: admitted.op, number: admitted.number },
             },
             { runs: Option.isSome(runs), ...(Option.isSome(held) ? { holds: RepoRoles.holds(held.value) } : {}), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },

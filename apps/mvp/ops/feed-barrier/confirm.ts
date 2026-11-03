@@ -144,10 +144,18 @@ export const secretsOf = (env: NodeJS.ProcessEnv, url?: Redacted.Redacted<string
 }
 
 /**
- * The command: confirms the barrier and prints its row as one JSON line on `out`; on any failure, one line on `err`
+ * An ops command against production's database: `act` runs with its parsed options and a way to read the deployed
+ * release, and what it returns prints as one JSON line on `out`; on any failure, one line on `err` beginning `failure`
  * with every secret it knows scrubbed, and 1. Never a stack, a connection string or a key.
  */
-export const run = async (
+export const opsCommand = <A>(
+  failure: string,
+  act: (
+    options: { readonly by: string; readonly release: string | undefined; readonly id: string | undefined },
+    release: () => Promise<string>,
+  ) => Promise<Effect.Effect<A, unknown, SqlClient.SqlClient>>,
+) =>
+async (
   argv: ReadonlyArray<string>,
   env: NodeJS.ProcessEnv,
   io: { readonly out: (line: string) => void; readonly err: (line: string) => void },
@@ -175,27 +183,38 @@ export const run = async (
         if (env.NEON_ORG_ID === undefined || env.NEON_ORG_ID === "") throw new Error("NEON_ORG_ID is not set: run under mvp-prod-env")
         return neonUri({ key: env.NEON_API_KEY, orgId: env.NEON_ORG_ID, project: values.project, stage: values.stage! }, fetch)
       })()
-    const release = values.release ?? await deployedBuild(env.APP_DOMAIN, fetch)
-    const barrier = { id: idOf(release, values.id), release, by: values.by }
-    const row = await Effect.runPromise(Effect.scoped(confirm(barrier).pipe(Effect.provide(Database.layer(Effect.succeed(url))))))
+    const work = await act({ by: values.by, release: values.release, id: values.id }, () => deployedBuild(env.APP_DOMAIN, fetch))
+    const row = await Effect.runPromise(Effect.scoped(work.pipe(Effect.provide(Database.layer(Effect.succeed(url))))))
     io.out(JSON.stringify(row))
     return 0
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    io.err(scrub(`feed barrier not confirmed: ${message.split("\n")[0]}`, secretsOf(env, url)))
+    io.err(scrub(`${failure}: ${message.split("\n")[0]}`, secretsOf(env, url)))
     return 1
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  // Anything that escapes `run` still prints one scrubbed line and nothing else: never a stack, a key or a password.
+/** Runs `command` as the process's own, when `url` is the file node was started with. */
+export const asMain = (url: string, failure: string, command: ReturnType<typeof opsCommand>) => {
+  if (url !== `file://${process.argv[1]}`) return
+  // Anything that escapes the command still prints one scrubbed line and nothing else: never a stack, a key or a password.
   const fail = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`${scrub(`feed barrier not confirmed: ${message.split("\n")[0]}`, secretsOf(process.env))}\n`)
+    process.stderr.write(`${scrub(`${failure}: ${message.split("\n")[0]}`, secretsOf(process.env))}\n`)
     process.exit(1)
   }
   process.on("uncaughtException", fail)
   process.on("unhandledRejection", fail)
-  run(process.argv.slice(2), process.env, { out: (line) => console.log(line), err: (line) => console.error(line) })
+  command(process.argv.slice(2), process.env, { out: (line) => console.log(line), err: (line) => console.error(line) })
     .then((code) => process.exit(code), fail)
 }
+
+const FAILURE = "feed barrier not confirmed"
+
+/** The command: confirms the barrier and prints its row. */
+export const run = opsCommand(FAILURE, async (options, deployed) => {
+  const release = options.release ?? await deployed()
+  return confirm({ id: idOf(release, options.id), release, by: options.by })
+})
+
+asMain(import.meta.url, FAILURE, run)

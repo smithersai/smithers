@@ -56,7 +56,7 @@ export const newDraft = (owner: string, name: string) =>
   }).pipe(Effect.orDie)
 
 /** Changes draft `id`'s text; a draft the device no longer has stays gone. */
-const changeDraft = (id: string, change: Partial<Pick<Draft, "title" | "prompt">>) =>
+const changeDraft = (id: string, change: Partial<Pick<Draft, "title" | "prompt" | "issue">>) =>
   Effect.gen(function* () {
     const { drafts } = yield* TodosStore
     if (Option.isNone(yield* drafts.get(id))) return
@@ -64,6 +64,8 @@ const changeDraft = (id: string, change: Partial<Pick<Draft, "title" | "prompt">
   }).pipe(Effect.orDie)
 
 export const setTitle = (id: string, title: string) => changeDraft(id, { title })
+/** The issue draft `id` hangs under (decision 0153): Commit waits until one is chosen. */
+export const setIssue = (id: string, issue: number) => changeDraft(id, { issue })
 export const setPrompt = (id: string, prompt: string) => changeDraft(id, { prompt })
 
 /** Marks draft `id`'s Commit on its way from this tab, or no longer. */
@@ -149,20 +151,26 @@ export const fromIssue = (owner: string, name: string, number: number) =>
     return stackPath(owner, name)
   })
 
-/** Drop on TODO `number` of `owner/name` (`todo/drop`): the press returns at once, and the TODO shows Requested. */
-const admitChange = (op: "drop" | "retry", owner: string, name: string, number: number) =>
+/** The flow each change to a numbered TODO runs. */
+const flowOfChange = { drop: "todo/drop", retry: "todo/Retry", attach: "todo/attach" } as const
+
+/**
+ * Drop, Retry or Attach on TODO `number` of `owner/name` (`todo/drop`, `todo/Retry`, `todo/attach` with its `issue`):
+ * the press returns at once, and the TODO shows Requested.
+ */
+const admitChange = (op: "drop" | "retry" | "attach", owner: string, name: string, number: number, issue?: number) =>
   Effect.gen(function* () {
     const store = yield* TodosStore
     const flows = yield* FlowDispatch
-    const payload = { repo: `${owner}/${name}`, number }
-    const refused = Option.getOrThrow(yield* store.view.get(VIEW)).admissionFailures?.find(row => row.repo === payload.repo && row.op === op && row.number === number)
+    const payload = { repo: `${owner}/${name}`, number, ...(issue === undefined ? {} : { issue }) }
+    const refused = Option.getOrThrow(yield* store.view.get(VIEW)).admissionFailures?.find(row => row.repo === payload.repo && row.op === op && row.number === number && row.issue === issue)
     if (refused !== undefined) return yield* retryChange(refused.id)
-    const admission = yield* beginAdmission(op === "drop" ? "todo/drop" : "todo/Retry", payload)
+    const admission = yield* beginAdmission(flowOfChange[op], payload)
     if (Option.isNone(admission)) {
       const row: Requested = { ...payload, id: crypto.randomUUID(), repoId: repoId(owner, name), op, title: "", prompt: "", acceptance: [], queuedAt: yield* Clock.currentTimeMillis, status: "not_sent", reason: null, taken: null }
       yield* store.view.update(VIEW, view => { view.admissionFailures = [...view.admissionFailures ?? [], { ...row, acceptance: [...row.acceptance] }] }).pipe(Effect.orDie)
       // Refusal is visible synchronously. Persist its same-identity recovery row once when that store is usable.
-      yield* whileAdmitting(row.id, admissionReceipt(keep(store.requested, { ...row, v: 2 }, "not_sent", null, null), row.id, op === "drop" ? "todo/drop" : "todo/Retry", "refusal").pipe(
+      yield* whileAdmitting(row.id, admissionReceipt(keep(store.requested, { ...row, v: 3 }, "not_sent", null, null), row.id, flowOfChange[op], "refusal").pipe(
         Effect.andThen(clearFailure(row.id)), Effect.ignore,
       )).pipe(Effect.forkIn(store.scope, { startImmediately: true }))
       return
@@ -173,12 +181,16 @@ const admitChange = (op: "drop" | "retry", owner: string, name: string, number: 
     const row: QueuedOp = { ...payload, id, op, title: "", prompt: "", acceptance: [] }
     const { kept } = yield* store.queue(row)
     yield* finishAdmission(admission.value, kept)
-    if (kept) yield* flows.dispatch(op === "drop" ? "todo/drop" : "todo/Retry", payload, { door: "button", executionId }).pipe(
+    if (kept) yield* flows.dispatch(flowOfChange[op], payload, { door: "button", executionId }).pipe(
       Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }),
     )
   })
 
 export const drop = (owner: string, name: string, number: number) => admitChange("drop", owner, name, number)
+
+/** Attach to issue on TODO `number`, whose issue is none or deleted (decision 0153): a person's press. */
+export const attach = (owner: string, name: string, number: number, issue: number) =>
+  admitChange("attach", owner, name, number, issue)
 
 const recoveryRow = (id: string) => Effect.gen(function* () {
   const store = yield* TodosStore

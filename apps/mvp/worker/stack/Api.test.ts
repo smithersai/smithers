@@ -27,6 +27,7 @@ import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { eventually, testFile, uuid } from "../test/harness.ts"
 import * as Api from "./Api.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
+import * as IssueRead from "./IssueRead.ts"
 import { rolesThatRead } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
@@ -708,5 +709,115 @@ describe("independent lanes (decision 0135)", () => {
       .toEqual([null, null, ids[0]!.id, ids[2]!.id])
     expect(await json(await post(h, commitBody({ after: 99 })))).toEqual([409, { code: "after_not_open" }])
     expect(await json(await post(h, commitBody({ after: 0 })))).toEqual([400, { code: "invalid" }])
+  })
+})
+
+// Decision 0153, step 6a: `attach` is a person's press, a Member's, like a commit.
+describe("attach", () => {
+  const issue = (number: number) =>
+    sql(`INSERT INTO items (id, repo_id, number, kind, github_id, title, state, created_at, updated_at, source_updated_at, fetched_at)
+      VALUES ('github/octo/hello#${number}', 'github/octo/hello', ${number}, 'issue', ${number}, 'Issue', 'open', now(), now(), now(), now())
+      ON CONFLICT (id) DO UPDATE SET deleted_at = NULL, fetched_at = now()`)
+  const attachBody = (fields: Record<string, unknown> = {}) => ({ opId: uuid(), op: "attach", number: 1, issue: 12, ...fields })
+
+  test("a Member attaches 202; the same op answers 200; a live issue already set is 409 attached; a deleted one 404", async () => {
+    await issue(12)
+    const h = await stackHarness(runtime, { actor: member })
+    await post(h, commitBody())
+    const body = attachBody()
+    expect(await json(await post(h, body))).toEqual([202, { txid: expect.any(Number), opId: body.opId, outcome: "issue_set", number: 1 }])
+    expect(await json(await post(h, body))).toEqual([200, { txid: null, opId: body.opId, outcome: "issue_set", number: 1 }])
+    expect(await json(await post(h, attachBody()))).toEqual([409, { code: "attached" }])
+    await sql(`UPDATE items SET deleted_at = now() WHERE id = 'github/octo/hello#12'`)
+    await post(h, commitBody())
+    expect(await json(await post(h, attachBody({ number: 2 })))).toEqual([404, { code: "issue_not_found" }])
+    expect(h.count(Api.requests, { op: "attach", outcome: "issue_set" })).toBe(1)
+  })
+
+  test("the member's agent, a Guest and a body without an issue are refused, and nothing changes", async () => {
+    await issue(12)
+    const h = await stackHarness(runtime, { actor: member })
+    await post(h, commitBody())
+    for (const [actor, code, status] of [[agentForMember, "forbidden", 403], [guest, "forbidden", 403]] as const) {
+      const other = await stackHarness(runtime, { actor })
+      expect(await json(await post(other, attachBody()))).toEqual([status, { code }])
+    }
+    expect(await json(await post(h, { opId: uuid(), op: "attach", number: 1 }))).toEqual([400, { code: "invalid" }])
+    expect(await sql(`SELECT issue_number AS issue FROM todos`)).toEqual([{ issue: null }])
+  })
+
+  // Decision 0153: replay first, then the issue is checked live. A row older than 5 minutes, or none, is read from GitHub
+  // first, so a deletion a missed webhook hid is seen; the writer then decides on what GitHub said.
+  describe("the issue's freshness", () => {
+    const refreshing = (effect: (number: number) => Effect.Effect<void, unknown>) => {
+      const calls: Array<number> = []
+      return { calls, refreshIssue: (_: { readonly id: string }, number: number) => Effect.suspend(() => { calls.push(number); return effect(number) }) }
+    }
+
+    test("a fresh row isn't read again; a row older than 5 minutes and a missing one are, before the writer decides", async () => {
+      await issue(12)
+      const fresh = refreshing(() => Effect.void)
+      const h = await stackHarness(runtime, { actor: member, refreshIssue: fresh.refreshIssue })
+      await post(h, commitBody())
+      expect((await post(h, attachBody())).status).toBe(202)
+      expect(fresh.calls).toEqual([])
+      await post(h, commitBody())
+      await sql(`UPDATE items SET fetched_at = now() - interval '6 minutes' WHERE id = 'github/octo/hello#12'`)
+      expect((await post(h, attachBody({ number: 2 }))).status).toBe(202)
+      expect(fresh.calls).toEqual([12])
+      await post(h, commitBody())
+      expect(await json(await post(h, attachBody({ number: 3, issue: 77 })))).toEqual([404, { code: "issue_not_found" }])
+      expect(fresh.calls).toEqual([12, 77])
+    })
+
+    test("GitHub not answering is 503, and the op is sent again", async () => {
+      await issue(12)
+      await sql(`UPDATE items SET fetched_at = now() - interval '6 minutes' WHERE id = 'github/octo/hello#12'`)
+      const down = refreshing(() => Effect.fail("github down"))
+      const h = await stackHarness(runtime, { actor: member, refreshIssue: down.refreshIssue })
+      await post(h, commitBody())
+      const body = attachBody()
+      expect(await json(await post(h, body))).toEqual([503, { code: "github_unavailable" }])
+      expect(await sql(`SELECT issue_number AS issue FROM todos`)).toEqual([{ issue: null }])
+      const up = refreshing(() => Effect.void)
+      const h2 = await stackHarness(runtime, { actor: member, refreshIssue: up.refreshIssue })
+      expect((await post(h2, body)).status).toBe(202)
+    })
+
+    // The real read (IssueRead) and its projection, from a row still live and stale, with GitHub saying gone: the refresh
+    // itself writes the tombstone the writer then refuses on.
+    test("GitHub saying the issue is gone tombstones the stale live row, and that refuses the attach; a replay reads nothing", async () => {
+      const github = scriptedGitHub("octo", "hello")
+      const opened = github.open("Gone by now", "Body")
+      opened.gone = true
+      await issue(opened.number)
+      const row = `github/octo/hello#${opened.number}`
+      await sql(`UPDATE items SET fetched_at = now() - interval '6 minutes' WHERE id = '${row}'`)
+      const read = await Effect.runPromise(IssueRead.make(app({ privateKey: await appKey() }), Option.some(github.http)))
+      const h = await stackHarness(runtime, { actor: member, refreshIssue: read })
+      await post(h, commitBody())
+      const live = () => sql(`SELECT deleted_at IS NULL AS live FROM items WHERE id = '${row}'`)
+      expect(await live()).toEqual([{ live: true }])
+      const body = attachBody({ issue: opened.number })
+      expect(await json(await post(h, body))).toEqual([404, { code: "issue_not_found" }])
+      expect(await live()).toEqual([{ live: false }])
+      expect(await sql(`SELECT issue_number AS issue FROM todos`)).toEqual([{ issue: null }])
+      const reads = github.seen("GET", new RegExp(`/issues/${opened.number}$`)).length
+      expect(reads).toBe(1)
+      expect(await json(await post(h, body))).toEqual([404, { code: "issue_not_found" }])
+      expect(github.seen("GET", new RegExp(`/issues/${opened.number}$`)).length).toBe(reads)
+    })
+
+    test("GitHub still having the issue keeps it live, and the attach goes through", async () => {
+      const github = scriptedGitHub("octo", "hello")
+      const opened = github.open("Still here", "Body")
+      await issue(opened.number)
+      await sql(`UPDATE items SET fetched_at = now() - interval '6 minutes' WHERE id = 'github/octo/hello#${opened.number}'`)
+      const read = await Effect.runPromise(IssueRead.make(app({ privateKey: await appKey() }), Option.some(github.http)))
+      const h = await stackHarness(runtime, { actor: member, refreshIssue: read })
+      await post(h, commitBody())
+      expect((await post(h, attachBody({ issue: opened.number }))).status).toBe(202)
+      expect(await sql(`SELECT issue_number AS issue FROM todos`)).toEqual([{ issue: opened.number }])
+    })
   })
 })

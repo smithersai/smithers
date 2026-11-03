@@ -63,6 +63,8 @@ export interface IssuesQueries {
   readonly opened: Store["openedState"]["tanstack"]
   /** Repository `id`'s issues and pull requests, newest first, once something opened them; none before. */
   readonly newestFirstOf: (id: string) => RepoIssues["newestFirst"]["tanstack"]
+  /** Its issues and pull requests as synced, deleted ones included, once something opened them; none before. */
+  readonly summariesOf: (id: string) => RepoIssues["itemRows"]["tanstack"]
   /** Its sync rows whose walk completed. */
   readonly walkedOf: (id: string) => RepoIssues["walked"]["tanstack"]
   /** Whether this person may read its issues, as its items shape answered. */
@@ -131,6 +133,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           get triagePending() { return store.routed().triagePending.tanstack },
           opened: store.openedState.tanstack,
           newestFirstOf: (id) => (store.opened(id) ?? store.empty).newestFirst.tanstack,
+          summariesOf: (id) => (store.opened(id) ?? store.empty).itemRows.tanstack,
           walkedOf: (id) => (store.opened(id) ?? store.empty).walked.tanstack,
           accessOf: (id) => (store.opened(id) ?? store.empty).accessState.tanstack,
           unsyncedOf: (id) => (store.opened(id) ?? store.empty).unsynced.tanstack,

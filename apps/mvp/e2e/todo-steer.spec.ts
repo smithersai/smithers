@@ -1,4 +1,5 @@
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
+import { chooseIssue } from "./todoDraft"
 import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { me, requires } from "./target"
@@ -52,6 +53,7 @@ test("todo-steer: message a TODO's working agent from its run, and its pull requ
     const draft = page.getByRole("form", { name: "TODO draft" }).first()
     await draft.getByLabel("Title").fill(title)
     await draft.getByLabel("Prompt").fill(`Append one line that says ${word} to the end of README.md.`)
+    await chooseIssue(draft)
     await draft.getByRole("button", { name: "Commit" }).click()
     await expect(row).toContainText(/T\d+/, { timeout: 60_000 })
   })

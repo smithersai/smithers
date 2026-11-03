@@ -53,7 +53,7 @@ Every role here is the person's on the repository the route names ([decision 007
 | `GET /api/shapes/todo-requests?repo=<owner>/<name>` | their `todo_requests`, `TODO_REQUEST_COLUMNS`; never cached |
 | `GET /api/shapes/todo-leaves?repo=<owner>/<name>` | the repository's `todo_leaves`, `TODO_LEAF_COLUMNS` (`src/features/todos/leaves.ts`): served by `worker/github/Api.ts` and authorized as the issue shapes are, so a Guest, or anyone on a public repository, reads it ([leaves](#leaves)) |
 
-The stack route's body is `{ opId, op: "commit", title, prompt, acceptance?, issue?, after? }`, `{ opId, op: "drop" | "retry", number }` or an Admin's `{ opId, op: "configure", lanes, maxOpen, base }`: a UUID op id (a commit's is its TODO's id), a title of 1 to 120 characters not blank, a prompt not blank of at most 16,384 bytes, at most 20 criteria of 1 to 300 characters, the number of the issue it was made from, the number of the open TODO it stacks on (`null` for none; absent takes the repository's base, [lanes](#lanes)), a number of 1 to 2,147,483,647, lanes of 1 to 64, an open limit of 1 to 500, and a base of `stacked` or `independent`. A `configure` answers `202 { txid, opId, outcome: "configured" }`. Its refusals are `{ code }`, `Cache-Control: no-store`:
+The stack route's body is `{ opId, op: "commit", title, prompt, acceptance?, issue?, after? }`, `{ opId, op: "drop" | "retry", number }`, a person's `{ opId, op: "attach", number, issue }` (decision 0153) or an Admin's `{ opId, op: "configure", lanes, maxOpen, base }`: a UUID op id (a commit's is its TODO's id), a title of 1 to 120 characters not blank, a prompt not blank of at most 16,384 bytes, at most 20 criteria of 1 to 300 characters, the number of the issue it was made from, the number of the open TODO it stacks on (`null` for none; absent takes the repository's base, [lanes](#lanes)), a number of 1 to 2,147,483,647, lanes of 1 to 64, an open limit of 1 to 500, and a base of `stacked` or `independent`. A `configure` answers `202 { txid, opId, outcome: "configured" }`. Its refusals are `{ code }`, `Cache-Control: no-store`:
 
 | Status | `code` | When |
 |---|---|---|
@@ -66,6 +66,9 @@ The stack route's body is `{ opId, op: "commit", title, prompt, acceptance?, iss
 | 409 | `stack_full` | `max_open` TODOs are open |
 | 409 | `merged` | a drop of a merged TODO |
 | 409 | `after_not_open` | a commit after a TODO that isn't open |
+| 404 | `issue_not_found` | an attach to an issue that isn't a live issue of the repository: missing, a pull request, or deleted (refused explicitly, never taken for absent) |
+| 409 | `attached` | an attach to a TODO whose issue is set and live (or not yet synced) |
+| 400 | `issue_required` | a commit without an issue, once rollout step 6b-1 enforces it; a device shows it Not sent as "Choose an issue" |
 | 413 | `too_large` | a body over `MAX_STACK_BODY_BYTES` |
 | 429 | `rate_limited` | GitHub rate limited the role's read; `Retry-After` is its wait, and the device sends again |
 | 503 | `not_configured` | another repository, on a deployment without the App |
@@ -84,6 +87,7 @@ A shape request whose `repo` names no repository reads no repository's rows; on 
 | `todo/commit` | `{ repo, title, prompt, acceptance?, issue? }` | Commit on a draft card | never |
 | `todo/drop` | `{ repo, number }` | Drop on a row or the TODO's card; `/todo.drop owner/repo <n>` (Member) | never |
 | `todo/Retry` | `{ repo, number }` | Retry on a failed TODO or its run | yes, with the same ownership and role checks |
+| `todo/attach` | `{ repo, number, issue }` | Attach to issue in the stack's Needs an issue group (decision 0153) | never |
 
 Drafts and changes are steps (`src/features/todos/steps.ts`) that ask, over the engine's todos channel, the tab that started the request (`TabTodos`, `src/flows/askingTab.ts`) to keep the draft or queue the change. `todo/inspect` is a durable read step through ChatApi, scoped to the run's credential and the repository's Member policy ([decision 0093](../decisions/0093-agent-reads-shared-todo-status.md)). It returns no title, prompt or person fields. Only an authorized missing TODO returns `todo_not_found`; repository access failures remain errors. The status read has one 10-second deadline and does not retry inside the step, so an unavailable answer can return promptly without claiming the TODO is absent. The device's `run/list` cannot establish a Cloud TODO's status. `todo/issue` fails `issue_not_found` when the device doesn't have the issue. The draft's and the change's ids are UUIDv5s of the execution id, so a step run again names the same draft or change, and the tab keeps it once. A draft without a title takes the prompt's first line.
 
@@ -134,6 +138,8 @@ A TODO is a leaf under its issue (decision [0153](../decisions/0153-issues-are-a
 - **One writer.** A deferred trigger on `todos` (`todo_leaves_project`, migration `0100_todo_leaves`) writes each leaf at the commit of a transaction that set the TODO's state, issue, pull request or revision, and removes it when the TODO was deleted or its issue cleared by then. The trigger exists because the deploy migrates before it replaces the Worker and a rollback brings older Workers back: code in the Worker would leave leaves missing or stale behind any Worker without it. A leaf changes only when its issue, state, pull request or validation did. It takes only that leaf's row lock, under the TODO's row lock its transaction already holds, so it can't queue one TODO behind another.
 - **Validation.** `no_criteria` when the TODO's current revision has no acceptance criteria, else `pending`. `passed`, `failed` and `stale` come with proof (rollout step 6b): until then no leaf says a TODO passed.
 - **The backfill.** The migration wrote every TODO that had an issue as `none`: it was never proven.
+- **Attach** (`todo/attach`, migration `0099_todo_attach`, whose `stack_ops` checks `ops/stack-ops/validate.ts` validates once it has deployed) is a person's press: Member, never the agent. The writer replays the op id's receipt first, then checks the issue is a live issue of the repository, then that the TODO's issue is none or deleted, then sets `issue_number`; the work links follow in the same transaction and the leaf at its commit, and the stack's order, lanes and attempts don't move. It answers `issue_set`. The device keeps it Requested until the TODO shows the issue.
+- **Devices from before.** `todo-sending` is version 3 and `todo-requested` version 5: an `attach` and the codes `issue_not_found`, `issue_required` and `attached`. Every older row is a newer row unchanged, so a commit an older build queued is sent as it was.
 
 ## The run
 

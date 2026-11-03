@@ -264,6 +264,7 @@ describe("names and placement", () => {
       "todo/commit",
       "todo/Retry",
       "todo/drop",
+      "todo/attach",
       "watch/set",
       "notification/ack",
       "alert/channel",

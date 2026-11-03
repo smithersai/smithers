@@ -28,6 +28,8 @@ import {
   accessFor,
   deliveredOf,
   draftsOfAnswer,
+  issueChoices,
+  needsAnIssue,
   draftsOfRepo,
   isDroppable,
   isoOf,
@@ -82,7 +84,7 @@ const sending = (fields: Partial<Sending> & Pick<Sending, "id" | "op">): Sending
   number: 0,
   repoId: REPO,
   queuedAt: 1,
-  v: 2,
+  v: 3,
   ...fields,
 })
 
@@ -687,5 +689,49 @@ describe("independent lanes (decision 0135)", () => {
     expect(statusOf(4, "queued", "runner")).toEqual({ kind: "queued", label: "Queued" })
     const todos = [todo({ id: "a", number: 1, state: "working", waiting: "runner" })]
     expect(stackItemsOf(stackRows(REPO, todos, [], []), todos, "octo", "hello")[0]?.status?.label).toBe("Waiting for a runner")
+  })
+})
+
+// Decision 0153: a TODO is a leaf under exactly one issue. The draft card picks its issue, an open TODO with no issue,
+// or a deleted one, is listed to be attached, and an attach is delivered once its TODO shows the issue.
+describe("issues for TODOs", () => {
+  const summary = (number: number, fields: { kind?: "issue" | "pull"; state?: "open" | "closed"; deleted?: boolean; repoId?: string } = {}) => ({
+    repoId: fields.repoId ?? REPO, number, kind: fields.kind ?? "issue", title: `Issue ${number}`,
+    state: fields.state ?? "open", deletedAt: fields.deleted === true ? "2026-11-02" : null,
+  })
+
+  test("issueChoices: the repository's open, live issues, newest first; never a pull request or another repository's", () => {
+    expect(issueChoices(REPO, [
+      summary(3), summary(9), summary(5, { kind: "pull" }), summary(7, { state: "closed" }), summary(8, { deleted: true }),
+      summary(11, { repoId: "github/octo/other" }),
+    ])).toEqual([{ number: 9, title: "Issue 9" }, { number: 3, title: "Issue 3" }])
+  })
+
+  test("needsAnIssue: open TODOs whose issue is none or deleted, in stack order; settled ones stay out", () => {
+    const todos = [
+      todo({ id: "a", number: 1, position: 2 }),
+      todo({ id: "b", number: 2, position: 1, issueNumber: 8 }),
+      todo({ id: "c", number: 3, position: 3, issueNumber: 3 }),
+      todo({ id: "d", number: 4, position: null, state: "merged" }),
+      todo({ id: "e", number: 5, position: null, state: "dropped" }),
+      todo({ id: "f", number: 6, position: 4, issueNumber: 40 }),
+    ]
+    // Issue 40 isn't on the device: it isn't known to be deleted, so its TODO stays where it is.
+    expect(needsAnIssue(REPO, todos, [summary(3), summary(8, { deleted: true })]).map((row) => row.number)).toEqual([2, 1])
+  })
+
+  test("an attach is delivered once its TODO shows the issue it asked for, and its Not sent row names both", () => {
+    const attach = requested({ id: "x", op: "attach", number: 1, issue: 12 })
+    expect(deliveredOf(REPO, [todo({ id: "a", number: 1 })], [attach])).toEqual([])
+    expect(deliveredOf(REPO, [todo({ id: "a", number: 1, issueNumber: 12 })], [attach])).toEqual(["x"])
+    expect(notSentRows(REPO, [{ ...attach, status: "not_sent", reason: "attached" }]))
+      .toEqual([{ id: "x", op: "attach", label: "Attach T1 to #12", reason: "Already has an issue" }])
+  })
+
+  test("the stack's new refusals stay Not sent with their own words", () => {
+    expect([reasonOf(404, "issue_not_found"), reasonOf(400, "issue_required"), reasonOf(409, "attached")])
+      .toEqual(["issue_not_found", "issue_required", "attached"])
+    expect([notSentOf("issue_not_found"), notSentOf("issue_required"), notSentOf("attached")])
+      .toEqual(["issue_not_found", "issue_required", "attached"])
   })
 })

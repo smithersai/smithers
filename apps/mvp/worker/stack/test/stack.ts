@@ -12,7 +12,7 @@ import type { testFile } from "../../test/harness.ts"
 import { signedIn } from "../../test/harness.ts"
 import * as Api from "../Api.ts"
 import * as Stack from "../Stack.ts"
-import { repositoryOf } from "../../github/Config.ts"
+import { type Repository, repositoryOf } from "../../github/Config.ts"
 import * as RepoRoles from "../../github/RepoRoles.ts"
 
 type Runtime = ReturnType<typeof testFile>
@@ -74,6 +74,8 @@ export interface StackOptions {
   readonly faultyRoles?: RepoRoles.RepoRoles<never>
   /** The real `RepoRoles`, changed: a test that interleaves something between a role's read and its change. */
   readonly wrapRoles?: (roles: RepoRoles.RepoRoles<never>) => RepoRoles.RepoRoles<never>
+  /** Reads an issue from GitHub for `attach`'s live check: none unless set, as on a deployment with no App. */
+  readonly refreshIssue?: (repository: Repository, number: number) => Effect.Effect<void, unknown, SqlClient.SqlClient>
   /** A faulty database service for the status read's unavailable and privacy path. */
   readonly faultyDatabase?: Layer.Layer<SqlClient.SqlClient, unknown>
 }
@@ -115,7 +117,7 @@ export const stackHarness = async (runtime: Runtime, options: StackOptions = {})
   const roles = options.faultyRoles ?? await runtime.runPromise(
     observed(RepoRoles.make(scratch.database, { repository: OWN_REPOSITORY, app: Option.none(), ...options.roles })),
   )
-  const api = await runtime.runPromise(observed(Api.make(options.faultyDatabase ?? scratch.database, options.wrapRoles === undefined ? roles : options.wrapRoles(roles))))
+  const api = await runtime.runPromise(observed(Api.make(options.faultyDatabase ?? scratch.database, options.wrapRoles === undefined ? roles : options.wrapRoles(roles), options.refreshIssue === undefined ? {} : { refreshIssue: options.refreshIssue })))
   const routes = options.runs === undefined ? api.fetch : api.fetch.pipe(Effect.provide(options.runs.layer))
   const handler = HttpEffect.toWebHandler(
     observed(

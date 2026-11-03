@@ -276,3 +276,42 @@ describe("TodoDraftCard: Commit", () => {
     }
   });
 });
+
+// Decision 0153: a TODO hangs under exactly one issue. A host that passes `issues` shows an Issue picker, and Commit
+// waits until an issue is chosen.
+describe("TodoDraftCard: the issue it hangs under", () => {
+  const issueSelect = () => form().querySelector<HTMLSelectElement>("select")!;
+  const issues = [{ number: 12, title: "Browser build fails" }, { number: 14, title: "Docs drift" }];
+
+  test("a labelled Issue picker lists the issues; Commit is disabled until one is chosen, and choosing reports it", async () => {
+    const calls: Array<string> = [];
+    await render(<TodoDraftCard {...props({ issues, onIssueChange: (n) => calls.push(`issue:${n}`) }, calls)} />);
+    expect(labelFor(issueSelect())).toBe("Issue");
+    expect([...issueSelect().options].map((option) => [option.value, option.textContent]))
+      .toEqual([["", "Choose an issue"], ["12", "#12 Browser build fails"], ["14", "#14 Docs drift"]]);
+    expect(commitButton().disabled).toBe(true);
+    expect(await submit(form())).toBe(false);
+    expect(calls).toEqual([]);
+    await act(async () => {
+      issueSelect().value = "14";
+      issueSelect().dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(calls).toEqual(["issue:14"]);
+    await rerender(<TodoDraftCard {...props({ issues, issue: 14, onIssueChange: () => {} }, calls)} />);
+    expect([issueSelect().value, commitButton().disabled]).toEqual(["14", false]);
+  });
+
+  test("an issue the list doesn't hold still shows as chosen; without `issues` there is no picker", async () => {
+    await render(<TodoDraftCard {...props({ issues, issue: 99, onIssueChange: () => {} })} />);
+    expect([issueSelect().value, issueSelect().selectedOptions[0]!.textContent]).toEqual(["99", "#99"]);
+    await rerender(<TodoDraftCard {...props()} />);
+    expect(form().querySelector("select")).toBeNull();
+    expect(commitButton().disabled).toBe(false);
+  });
+
+  test("the picker sits between the title and the prompt in reading order", async () => {
+    await render(<TodoDraftCard {...props({ issues, issue: 12, onIssueChange: () => {} })} />);
+    const controls = [...form().querySelectorAll<HTMLElement>("input, select, textarea, button")];
+    expect(controls).toEqual([titleField(), issueSelect(), promptField(), commitButton(), discardButton()]);
+  });
+});

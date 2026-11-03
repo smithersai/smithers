@@ -51,6 +51,8 @@ export interface Change {
       readonly after?: number | null
     }
     | { readonly kind: "drop" | "retry"; readonly number: number }
+    /** A person sets the issue of TODO `number` whose issue is none or deleted (decision 0153): never the stack's order. */
+    | { readonly kind: "attach"; readonly number: number; readonly issue: number }
     /** An Admin's settings: how many TODOs work at once, how many may be open, and where a new one starts. */
     | { readonly kind: "configure"; readonly lanes: number; readonly maxOpen: number; readonly base: StackBase }
   readonly retryAny?: boolean
@@ -223,6 +225,7 @@ export const apply = <E = never, R = never>(
           : ({ kind: "conflict" } satisfies Applied)
       }
       if (options.holds !== undefined && !(yield* options.holds)) return { kind: "stale" } satisfies Applied
+      if (change.op.kind === "attach") return yield* attachIssue(sql, change, change.op, hash)
       const named = change.op.kind === "drop" || change.op.kind === "retry" ? change.op.number : 0
       if (change.op.kind === "retry" && !change.retryAny) {
         const [owner] = yield* sql<{ readonly createdBy: string }>`
@@ -395,9 +398,51 @@ export const apply = <E = never, R = never>(
 /** The outcomes a stack refuses a change with: what the route answers instead of the change. */
 export const isRefusal = (
   outcome: StackOutcome,
-): outcome is "stack_full" | "merged" | "not_found" | "not_retryable" | "after_not_open" =>
+): outcome is "stack_full" | "merged" | "not_found" | "not_retryable" | "after_not_open" | "issue_not_found" | "attached" =>
   outcome === "stack_full" || outcome === "merged" || outcome === "not_found" || outcome === "not_retryable" ||
-  outcome === "after_not_open"
+  outcome === "after_not_open" || outcome === "issue_not_found" || outcome === "attached"
+
+/**
+ * `attach` (decision 0153), inside the writer's transaction after the op id's receipt found none: the issue must be a
+ * live issue of the TODO's repository in the projection (a deleted row is refused `issue_not_found`, never taken for
+ * absent), then the TODO must have no issue or a deleted one (else `attached`). It sets `issue_number` only; the stack's
+ * order, lanes and attempts don't move. The work links follow in this transaction (`linkWork`), and the leaf at its commit (migration 0097's trigger).
+ */
+const attachIssue = (
+  sql: SqlClient.SqlClient,
+  change: Change,
+  op: { readonly number: number; readonly issue: number },
+  hash: string,
+) =>
+  Effect.gen(function* () {
+    const [issue] = yield* sql<{ readonly live: boolean }>`
+      SELECT deleted_at IS NULL AS live FROM items
+      WHERE repo_id = ${change.repoId} AND number = ${op.issue} AND kind = 'issue'`
+    const [todo] = yield* sql<{ readonly id: string; readonly current: number | null; readonly currentLive: boolean | null }>`
+      SELECT t.id, t.issue_number AS current, (i.deleted_at IS NULL) AS "currentLive"
+      FROM todos t LEFT JOIN items i ON i.repo_id = t.repo_id AND i.number = t.issue_number AND i.kind = 'issue'
+      WHERE t.repo_id = ${change.repoId} AND t.number = ${op.number}`
+    // A TODO's issue is taken as set while its row is live, or not yet synced: only a deleted row frees it.
+    const outcome: StackOutcome = todo === undefined
+      ? "not_found"
+      : issue === undefined || !issue.live
+      ? "issue_not_found"
+      : todo.current !== null && todo.currentLive !== false
+      ? "attached"
+      : "issue_set"
+    if (outcome === "issue_set") {
+      yield* sql`UPDATE todos SET issue_number = ${op.issue}, updated_at = now() WHERE id = ${todo!.id}::uuid`
+    }
+    const receipt: Receipt = { outcome, ...(todo === undefined ? {} : { number: op.number }), starts: [] }
+    const [stack] = yield* sql<{ readonly version: string; readonly txid: string }>`
+      UPDATE stacks SET version = version + 1, updated_at = now() WHERE repo_id = ${change.repoId}
+      RETURNING version::text AS version, pg_current_xact_id()::xid::text AS txid`
+    yield* sql`
+      INSERT INTO stack_ops (id, repo_id, actor_id, via, op, payload_hash, outcome, result)
+      VALUES (${change.opId}::uuid, ${change.repoId}, ${change.actor.id}, ${change.via}, ${change.op.kind}, ${hash},
+        ${receipt.outcome}, ${JSON.stringify(receipt)}::jsonb)`
+    return { kind: "applied", txid: Number(stack!.txid), version: Number(stack!.version), receipt, moved: [], lanes: undefined } as const
+  })
 
 /**
  * Links the work on each TODO this transaction changed to the issue it was made from (decision 0147, the server posting

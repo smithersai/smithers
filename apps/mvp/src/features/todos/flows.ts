@@ -57,6 +57,9 @@ export const commitPayload = {
 /** What `todo/drop` takes. */
 export const dropPayload = { repo: RepoName, number: TodoNumber }
 
+/** What `todo/attach` takes: the TODO, and the issue of its repository it hangs under (decision 0153). */
+export const attachPayload = { repo: RepoName, number: TodoNumber, issue: IssueNumber }
+
 /** What `todo/draft` answers: the draft's id, and where its card shows. */
 export const Drafted = Schema.Struct({ draftId: Schema.String, status: Schema.Literal("drafted"), path: Schema.String })
 export type Drafted = typeof Drafted.Type
@@ -196,6 +199,28 @@ export const TodoDrop = Flow.make("todo/drop", {
   success: ChangeRequested,
   error: TodoStepRefused,
   body: Node.capture({ action: QueueDrop.name }, (payload) => QueueDrop.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** The step: put the attach in the asking tab's outbox. */
+export const QueueAttach = Action.make("todo/attach/queue", {
+  payload: attachPayload,
+  success: ChangeRequested,
+  error: TodoStepRefused,
+  retryPolicy: ASK_RETRY,
+})
+
+/**
+ * `todo/attach { repo, number, issue }`: a person hangs TODO `Tn`, whose issue is none or deleted, under an issue
+ * (decision 0153). Never the agent's.
+ */
+export const TodoAttach = Flow.make("todo/attach", {
+  description: "Attach a TODO with no issue, or a deleted one, to an issue of its repository. Answers { opId, status: " +
+    "\"requested\" }.",
+  modelInvocable: false,
+  payload: attachPayload,
+  success: ChangeRequested,
+  error: TodoStepRefused,
+  body: Node.capture({ action: QueueAttach.name }, (payload) => QueueAttach.call(payload)),
 }).annotate(Flow.Placement, Placement.client())
 
 /** Restart a failed TODO in place, keeping its immutable attempts. */

@@ -23,6 +23,8 @@ import {
   KeepIssueDraft,
   QueueCommit,
   QueueDrop,
+  QueueAttach,
+  TodoAttach,
   QueueRetry,
   ReadTodoStatus,
   TodoRetry,
@@ -170,6 +172,7 @@ type Fields =
     readonly issue?: number | undefined
   }
   | { readonly op: "drop" | "retry"; readonly repo: string; readonly number: number }
+  | { readonly op: "attach"; readonly repo: string; readonly number: number; readonly issue: number }
 
 /**
  * What the commit, drop and retry queue steps do: derive the change's op id from the run, ask the tab that started it
@@ -194,6 +197,8 @@ export const queueChange = (fields: Fields) =>
         number: 0,
         ...(fields.issue === undefined ? {} : { issue: fields.issue }),
       }
+      : fields.op === "attach"
+      ? { id: opId, repo: fields.repo, op: "attach", title: "", prompt: "", acceptance: [], number: fields.number, issue: fields.issue }
       : { id: opId, repo: fields.repo, op: fields.op, title: "", prompt: "", acceptance: [], number: fields.number }
     const { door, outcome } = via === "agent" && fields.op !== "retry"
       ? { door: "agent" as const, outcome: "agent" as const }
@@ -225,6 +230,7 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(TodoCommit, QueueCommit.toLayer((payload) => queueChange({ op: "commit", ...payload }))),
   Interpreter.layerWithImplementations(TodoRetry, QueueRetry.toLayer((payload) => queueChange({ op: "retry", ...payload }))),
   Interpreter.layerWithImplementations(TodoDrop, QueueDrop.toLayer((payload) => queueChange({ op: "drop", ...payload }))),
+  Interpreter.layerWithImplementations(TodoAttach, QueueAttach.toLayer((payload) => queueChange({ op: "attach", ...payload }))),
 )
 
 /** An agent status read uses the shared stack, never absence from this device's run list. */

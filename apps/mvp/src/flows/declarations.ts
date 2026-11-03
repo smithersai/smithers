@@ -47,7 +47,7 @@ import { FeedAnswer } from "../features/feeds/flows"
 import { PullReview } from "../features/pulls/flows"
 import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
-import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
+import { TodoAttach, TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
@@ -136,6 +136,7 @@ export const declarations = {
   "todo/commit": TodoCommit,
   "todo/Retry": TodoRetry,
   "todo/drop": TodoDrop,
+  "todo/attach": TodoAttach,
   "watch/set": WatchSet,
   "notification/ack": Ack,
   "alert/channel": AlertChannelSet,

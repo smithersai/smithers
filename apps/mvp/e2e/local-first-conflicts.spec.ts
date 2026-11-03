@@ -1,4 +1,5 @@
 import type { APIRequestContext } from "@playwright/test"
+import { chooseIssue } from "./todoDraft"
 import { COULDNT_ANSWER, expect, expectSameThread, NOT_SENT, pairs, serverRows, type Tab, test } from "./devices"
 import { faults, faultyApp } from "./faults"
 import { step } from "./fixtures"
@@ -132,6 +133,7 @@ test.describe("Local-first conflicts", () => {
       const draft = ann.page.getByRole("form", { name: "TODO draft" }).first()
       await draft.getByLabel("Title").fill(title)
       await draft.getByLabel("Prompt").fill("Dropped on two devices at once.")
+      await chooseIssue(draft)
       await draft.getByRole("button", { name: "Commit" }).click()
       await expect(todoRow(ann, word)).toContainText(/T\d+/, { timeout: 60_000 })
       await expect(todoRow(ann, word)).not.toHaveAttribute("data-pending", /.+/, { timeout: 60_000 })

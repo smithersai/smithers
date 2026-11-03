@@ -30,7 +30,7 @@ import { BugReport } from "../features/bugs/schema"
 import { RepoRunRow, SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
 import { Preference } from "../features/theme/schema"
-import { IssueRequestedV2, TodoSendingV1, TodoRequestedV2, TodoRequestedV3 } from "./history"
+import { IssueRequestedV2, TodoSendingV1, TodoSendingV2, TodoRequestedV2, TodoRequestedV3, TodoRequestedV4 } from "./history"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
 import { CuratedRowV1, HomeRowV2 } from "./home-history"
@@ -155,12 +155,15 @@ export const FlowCodeStore = Migrations.local({ id: "flow-code", versions: [Flow
  */
 export const TodoRequestedStore = Migrations.local({
   id: "todo-requested",
-  versions: [TodoRequestedV1, TodoRequestedV2, TodoRequestedV3, TodoRequested],
-  // Version 4 adds when the route answered (`answeredAt`, decision 0124); a row kept before has none.
+  versions: [TodoRequestedV1, TodoRequestedV2, TodoRequestedV3, TodoRequestedV4, TodoRequested],
+  // Version 4 adds when the route answered (`answeredAt`, decision 0124); a row kept before has none. Version 5: a
+  // change may be an `attach`, and the stack may refuse `issue_not_found`, `issue_required` or `attached` (decision
+  // 0153); every version 4 row is a version 5 row.
   migrations: [
     Migrations.step(TodoRequestedV1, TodoRequestedV2, (row) => row),
     Migrations.step(TodoRequestedV2, TodoRequestedV3, (row) => row),
-    Migrations.step(TodoRequestedV3, TodoRequested, (row) => row),
+    Migrations.step(TodoRequestedV3, TodoRequestedV4, (row) => row),
+    Migrations.step(TodoRequestedV4, TodoRequested, (row) => row),
   ],
   getKey: (row) => row.id,
 })
@@ -256,7 +259,15 @@ export const IssueSendingPayload = Migrations.payload({
 export const TextSendingPayload = Migrations.payload({ key: "text-sending", versions: [TextSending] })
 
 /** Changes to a stack (src/features/todos/writes.ts, mutation `todo-op`). */
-export const TodoSendingPayload = Migrations.payload({ key: "todo-sending", versions: [TodoSendingV1, TodoSending], migrations: [Migrations.step(TodoSendingV1, TodoSending, (row) => ({ ...row, v: 2 as const }))] })
+export const TodoSendingPayload = Migrations.payload({
+  key: "todo-sending",
+  versions: [TodoSendingV1, TodoSendingV2, TodoSending],
+  // Version 3: a change may be an `attach` (decision 0153); every version 2 change is a version 3 change.
+  migrations: [
+    Migrations.step(TodoSendingV1, TodoSendingV2, (row) => ({ ...row, v: 2 as const })),
+    Migrations.step(TodoSendingV2, TodoSending, (row) => ({ ...row, v: 3 as const })),
+  ],
+})
 
 /** Steers of a TODO's agent (src/features/runs/writes.ts, mutation `run-steer`). */
 export const SteerSendingPayload = Migrations.payload({ key: "steer-sending", versions: [SteerSending] })

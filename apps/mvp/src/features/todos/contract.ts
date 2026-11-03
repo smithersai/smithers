@@ -124,9 +124,10 @@ export type TodoNote = (typeof TODO_NOTES)[number]
 
 /**
  * The changes a person makes to a stack in slice 1 (decision 0016 §1): `commit` appends a TODO, `drop` takes one out.
- * Retry resets a failed TODO in place. Slice 2 also adds `move` and `amend`.
+ * Retry resets a failed TODO in place. `attach` sets the issue of a TODO whose issue is none, or a deleted one (decision
+ * 0153). Slice 2 also adds `move` and `amend`.
  */
-export const STACK_OPS = ["commit", "drop", "retry"] as const
+export const STACK_OPS = ["commit", "drop", "retry", "attach"] as const
 
 /** An Admin's change to a stack's settings (`lanes`, `max_open`, `base`), through the same route and writer. */
 export const CONFIGURE_OP = "configure"
@@ -198,6 +199,11 @@ export const STACK_REFUSALS = [
   "rate_limited",
   "github_unavailable",
   "not_configured",
+  // Decision 0153: the issue a commit or an attach names isn't a live issue of the repository; a commit without an
+  // issue (refused from rollout step 6b-1); an attach to a TODO whose issue is set and live.
+  "issue_not_found",
+  "issue_required",
+  "attached",
 ] as const
 export type StackRefusal = (typeof STACK_REFUSALS)[number]
 
@@ -220,6 +226,9 @@ export const REFUSAL_STATUS: Readonly<Record<StackRefusal, number>> = {
   rate_limited: 429,
   github_unavailable: 503,
   not_configured: 503,
+  issue_not_found: 404,
+  issue_required: 400,
+  attached: 409,
 }
 
 /** What a stack's writer settles a change as: done (`committed`, `dropped`), or refused for the stack's state. */
@@ -233,6 +242,10 @@ export const STACK_OUTCOMES = [
   "not_found",
   "not_retryable",
   "after_not_open",
+  // Decision 0153: an attach set the TODO's issue, or the writer refused it for the issue or the TODO.
+  "issue_set",
+  "issue_not_found",
+  "attached",
 ] as const
 export type StackOutcome = (typeof STACK_OUTCOMES)[number]
 
@@ -251,6 +264,9 @@ export const NOT_SENT_REASONS = [
   "not_retryable",
   "too_large",
   "app_not_installed",
+  "issue_not_found",
+  "issue_required",
+  "attached",
 ] as const satisfies ReadonlyArray<Exclude<StackRefusal, "unavailable" | "rate_limited" | "github_unavailable" | "not_configured">>
 export type NotSentReason = (typeof NOT_SENT_REASONS)[number]
 
@@ -270,6 +286,9 @@ export const NOT_SENT_COPY: Readonly<Record<NotSentReason, string>> = {
   not_retryable: "Can’t retry",
   too_large: "Too long",
   app_not_installed: "App not installed",
+  issue_not_found: "Issue not found",
+  issue_required: "Choose an issue",
+  attached: "Already has an issue",
 }
 
 /**

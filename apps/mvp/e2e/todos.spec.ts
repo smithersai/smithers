@@ -1,4 +1,5 @@
 import { expect, type Tab, test } from "./devices"
+import { chooseIssue } from "./todoDraft"
 import { serverState } from "./stackWrites"
 import { requires, scratchRepository, scriptedAgent, stackRepository } from "./target"
 
@@ -48,6 +49,7 @@ test("todo-commit-drop: Ann asks Smithers for a TODO, edits the draft and commit
   // She edits its title and commits it: the stack opens, and the TODO shows T– Requested, then numbered and Queued.
   const title = `README line ${word}`
   await draft.getByLabel("Title").fill(title)
+  await chooseIssue(draft)
   await draft.getByRole("button", { name: "Commit" }).click()
   await expect(ann.page).toHaveURL(new RegExp(`/${REPO}/stack$`), { timeout: 30_000 })
   await expect(row(ann, word), "Ann: numbered and Queued").toHaveAttribute("data-status", "queued", { timeout: 60_000 })
@@ -107,6 +109,10 @@ test("todo-new-keyboard: New TODO on the stack page, typed and committed with th
   const draft = ann.page.getByRole("form", { name: "TODO draft" }).first()
   await draft.getByLabel("Title").focus()
   await ann.page.keyboard.type(`Keyboard ${word}`)
+  // Tab reaches the Issue picker (decision 0153: Commit waits for the issue the TODO hangs under), then the prompt.
+  await ann.page.keyboard.press("Tab")
+  await expect(draft.getByLabel("Issue")).toBeFocused()
+  await chooseIssue(draft)
   await ann.page.keyboard.press("Tab")
   await ann.page.keyboard.type("Typed without a mouse.")
   await ann.page.keyboard.press("ControlOrMeta+Enter")

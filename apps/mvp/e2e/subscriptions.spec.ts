@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test"
+import { chooseIssue } from "./todoDraft"
 import { CLAUDE_TOKEN_PREFIX } from "../src/features/personal-model/contract"
 import { connectionRows, openAdd, restorePersonalModel } from "./personal-model"
 import { test } from "./devices"
@@ -61,6 +62,7 @@ const runTodo = async (page: Page, word: string, agentLabel: string) => {
     await draft.getByLabel("Prompt").fill(
       `Append exactly one line to the end of NOTES.md, creating the file if it is missing: ${line}\nChange no other file.`,
     )
+    await chooseIssue(draft)
     await draft.getByRole("button", { name: "Commit" }).click()
     await expect(row).toContainText(/T\d+/, { timeout: 60_000 })
   })

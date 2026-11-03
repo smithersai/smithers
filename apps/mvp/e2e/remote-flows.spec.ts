@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto"
+import { chooseIssue } from "./todoDraft"
 import { expect, test } from "./devices"
 import { field, type LogRecord, LogTail } from "./logs"
 import { me, requires } from "./target"
@@ -187,6 +188,7 @@ test("todo run: a TODO committed on the stack runs on Cloudflare to an open pull
   const draft = a.page.getByRole("form", { name: "TODO draft" }).first()
   await draft.getByLabel("Title").fill(title)
   await draft.getByLabel("Prompt").fill(`Append one line that says ${word} to the end of README.md. Change nothing else.`)
+  await chooseIssue(draft)
   await draft.getByRole("button", { name: "Commit" }).click()
   await expect(row).toContainText(/T\d+/, { timeout: 60_000 })
   const number = (await row.textContent())!.match(/T(\d+)/)![1]!

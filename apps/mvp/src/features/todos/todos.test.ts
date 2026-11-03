@@ -1,4 +1,6 @@
 import { reloadAfter } from "../../test/reloadTiming"
+import { deviceFrom, type Fixture, prepare } from "../../test/deviceFixture"
+import { deviceRegistry } from "../../device/registry"
 import { RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
 import { role as readRepositoryRole } from "../repo/actions"
@@ -742,7 +744,7 @@ describe("the device", () => {
       number: 0,
       repoId: REPO_ID,
       queuedAt: 1,
-      v: 2,
+      v: 3,
     }
     await tab.runtime.runPromise(keep(tab.store.requested, row, "requested", null, 4))
     await tab.runtime.runPromise(keep(tab.store.requested, row, "not_sent", "stack_full", null))
@@ -949,3 +951,103 @@ for (const delay of [0, 100, 300] as const) {
     await until(() => expect(restored.store.sending.tanstack.toArray.map((row) => row.id).sort()).toEqual(rows.map((row) => row.id).sort()))
   }, WITHIN)
 }
+
+// Decision 0153, step 6a. A TODO hangs under exactly one issue: a person attaches one whose issue is none or deleted,
+// and a device that the build before 6a left (main 6af5494f85b6: `todo-sending` v2, `todo-requested` v4) opens on this
+// build with its queued commit sent once and its kept rows intact.
+describe("issues for TODOs (decision 0153)", () => {
+  const issueRow = (api: TestChatApi["Service"], number: number) =>
+    sql(api, `INSERT INTO items (id, repo_id, number, kind, github_id, title, state, created_at, updated_at,
+      source_updated_at, fetched_at)
+      VALUES ('${REPO_ID}#${number}', '${REPO_ID}', ${number}, 'issue', ${number}, 'Issue ${number}', 'open', now(), now(),
+        now(), now()) ON CONFLICT (id) DO NOTHING`)
+
+  test("Attach to issue on a TODO with none: Requested, then the issue on every device; the agent's call reaches no tab", async () => {
+    const tab = await open()
+    await issueRow(tab.api, 5)
+    await tab.actions.open(OWNER, NAME)
+    await committed(tab, "No issue yet", 1)
+    const other = await another(tab.api)
+    await other.actions.open(OWNER, NAME)
+    await tab.actions.attach(OWNER, NAME, 1, 5)
+    await until(() => expect(tab.stack().todos.find((todo) => todo.number === 1)?.issueNumber).toBe(5))
+    await until(() => expect(other.stack().todos.find((todo) => todo.number === 1)?.issueNumber).toBe(5))
+    // Delivered: the device keeps nothing of it once the TODO shows the issue.
+    await until(() => expect(tab.store.requested.tanstack.toArray.filter((row) => row.op === "attach")).toEqual([]))
+    expect(await sql(tab.api, `SELECT number, issue_number AS issue, validation FROM todo_leaves`))
+      .toEqual([{ number: 1, issue: 5, validation: "no_criteria" }])
+    // Attaching again, now that its issue is live, stays Not sent with its reason.
+    await issueRow(tab.api, 6)
+    await tab.actions.attach(OWNER, NAME, 1, 6)
+    await until(() => expect(tab.notSent()).toEqual([expect.objectContaining({ op: "attach", label: "Attach T1 to #6", reason: "Already has an issue" })]))
+    // The agent's door can't attach: the flow is a person's press.
+    const dispatched = await tab.runtime.runPromise(Effect.flatMap(FlowDispatch, (flows) =>
+      Effect.exit(flows.dispatch("todo/attach", { repo: `${OWNER}/${NAME}`, number: 1, issue: 6 }, { door: "agent" }))))
+    expect(Exit.isFailure(dispatched)).toBe(true)
+    expect(await sql(tab.api, `SELECT issue_number AS issue FROM todos`)).toEqual([{ issue: 5 }])
+  }, WITHIN)
+
+  test("a device the build before 6a left opens with its queued commit sent once, its Not sent change and its draft kept", async () => {
+    const OP = "6a6a6a6a-0000-4000-8000-000000000001"
+    const TX = "6a6a6a6a-0000-4000-8000-0000000000aa"
+    const queued = {
+      id: OP, repo: `${OWNER}/${NAME}`, op: "commit", title: "Queued before 6a", prompt: "Sent after the deploy.",
+      acceptance: [], number: 0, issue: 7, repoId: REPO_ID, queuedAt: 1793600000000, v: 2,
+    }
+    const mutation = {
+      globalKey: `KEY::["todo-sending","string","${OP}"]`, type: "insert", modified: queued, original: {}, changes: queued,
+      collectionId: "todo-sending",
+    }
+    const fixture: Fixture = {
+      build: "6af5494f85b6",
+      collections: {
+        "todo-requested": {
+          kind: "local", version: 4, key: "id",
+          rows: [{
+            id: "6a6a6a6a-0000-4000-8000-000000000002", repo: `${OWNER}/${NAME}`, op: "drop", title: "", prompt: "",
+            acceptance: [], number: 9, repoId: REPO_ID, queuedAt: 1793500000000, status: "not_sent", reason: "merged",
+            taken: null, answeredAt: 1793500001000,
+          }],
+        },
+        "todo-drafts": {
+          kind: "local", version: 1, key: "id",
+          rows: [{
+            id: "6a6a6a6a-0000-4000-8000-000000000003", repo: `${OWNER}/${NAME}`, repoId: REPO_ID, title: "Kept draft",
+            prompt: "Drafted before 6a, with no issue.", acceptance: [], answerId: null, createdAt: 1793500000000,
+          }],
+        },
+      },
+      outbox: {
+        [`tx:${TX}`]: JSON.stringify({
+          id: TX, mutationFnName: "todo-op", mutations: [mutation], keys: [mutation.globalKey], idempotencyKey: OP,
+          createdAt: "2026-11-02T20:00:00.000Z", retryCount: 0, nextAttemptAt: 1793600000000,
+          metadata: { queuedAt: 1793600000000, versions: { "todo-sending": 2 } }, version: 1, valueEncoding: 3,
+        }),
+      },
+    }
+    const api = await (async () => {
+      const server = openTestApp({}, { actor: maya })
+      runtimes.push(server)
+      return server.runPromise(Effect.service(TestChatApi))
+    })()
+    const { outbox, path } = await deviceFrom(fixture)
+    const report = await prepare(path, deviceRegistry)
+    expect(report.collections.filter(({ collection }) => collection.startsWith("todo-")).map(({ collection, outcome, from, to, kept }) =>
+      `${collection} ${outcome} ${from}→${to} kept ${kept}`).sort()).toEqual([
+        "todo-drafts current 1→1 kept 0",
+        "todo-requested migrated 4→5 kept 0",
+      ])
+    const host = nodeDevice({ agent: api, file: path, outboxEntries: outbox })
+    const runtime: App = openTab(api, { host })
+    runtimes.push(runtime)
+    const tab = await tabOf(runtime)
+    await tab.actions.open(OWNER, NAME)
+    // The commit the old build queued reaches the stack once, under its op id, with its issue.
+    await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ number: 1, title: "Queued before 6a" })))
+    expect(await sql(api, `SELECT id, issue_number AS issue FROM todos`)).toEqual([{ id: OP, issue: 7 }])
+    // The refused drop it kept is still Not sent with its reason, and its draft is still a draft.
+    expect(tab.notSent()).toEqual([expect.objectContaining({ op: "drop", label: "Drop T9", reason: "Merged" })])
+    expect(tab.drafts().map((draft) => draft.title)).toEqual(["Kept draft"])
+    expect([...outbox.keys()].filter((key) => key.startsWith("parked:"))).toEqual([])
+  }, WITHIN)
+})

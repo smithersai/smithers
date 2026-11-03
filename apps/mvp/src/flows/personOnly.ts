@@ -51,6 +51,7 @@ export const PERSON_ONLY_FLOWS = {
   "pull/review": { route: "POST /api/repos/<owner>/<name>/pulls/<number>/review" },
   "todo/commit": { route: "POST /api/repos/<owner>/<name>/stack" },
   "todo/drop": { route: "POST /api/repos/<owner>/<name>/stack" },
+  "todo/attach": { route: "POST /api/repos/<owner>/<name>/stack" },
   "notification/ack": { route: "POST /api/notifications/ack" },
   "domain/add": { route: "POST /api/repos/<owner>/<name>/domains" },
   "domain/remove": { route: "DELETE /api/repos/<owner>/<name>/domains/<hostname>" },

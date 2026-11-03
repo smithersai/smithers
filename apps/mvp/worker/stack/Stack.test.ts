@@ -1171,3 +1171,81 @@ describe("the readable leaf projection (todo_leaves)", () => {
     expect(await sql(`SELECT updated_at::text AS at FROM todo_leaves`)).toEqual([before])
   })
 })
+
+// Decision 0153, step 6a: `attach` sets the issue of a TODO whose issue is null or names a deleted issue. Its order is
+// fixed: the op id's receipt replays first, then the issue is checked live in the projection (an issue of the same
+// repository, not deleted), then the TODO's eligibility. The leaf and the work links follow in the same transaction.
+describe("attach", () => {
+  const issueRow = (number: number, fields: { kind?: string; deleted?: boolean } = {}) =>
+    sql(`INSERT INTO items (id, repo_id, number, kind, github_id, title, state, created_at, updated_at, source_updated_at,
+        fetched_at, deleted_at)
+      VALUES ('${REPO}#${number}', '${REPO}', ${number}, '${fields.kind ?? "issue"}', ${number}, 'Issue ${number}', 'open',
+        now(), now(), now(), now(), ${fields.deleted === true ? "now()" : "NULL"})`)
+  const attach = (number: number, issue: number, opId = uuid()): Stack.Change => ({
+    opId, repoId: REPO, actor: maya, via: "person", op: { kind: "attach", number, issue },
+  })
+  const issueOf = async (number: number) =>
+    (await sql<{ issue: number | null }>(`SELECT issue_number AS issue FROM todos WHERE repo_id = '${REPO}' AND number = ${number}`))[0]!.issue
+  const leafOf = (number: number) =>
+    sql(`SELECT issue_number AS issue, state, validation FROM todo_leaves WHERE repo_id = '${REPO}' AND number = ${number}`)
+  beforeEach(() => sql(`DELETE FROM items WHERE repo_id = '${REPO}'`).then(() => sql(`TRUNCATE work_links`)))
+
+  test("a TODO with no issue takes a live issue: its leaf and its work link follow in the same change", async () => {
+    await issueRow(12)
+    await applyOn(commit())
+    const op = attach(1, 12)
+    expect(await applyOn(op)).toMatchObject({ kind: "applied", receipt: { outcome: "issue_set", number: 1, starts: [] } })
+    expect(await issueOf(1)).toBe(12)
+    expect(await leafOf(1)).toEqual([{ issue: 12, state: "queued", validation: "no_criteria" }])
+    expect(await sql(`SELECT number, ref FROM work_links WHERE repo_id = '${REPO}'`)).toEqual([{ number: 12, ref: "TODO #1" }])
+    expect(await sql(`SELECT op, outcome FROM stack_ops WHERE id = '${op.opId}'`)).toEqual([{ op: "attach", outcome: "issue_set" }])
+  })
+
+  test("the op id's receipt replays before anything is checked again, even after the issue was deleted", async () => {
+    await issueRow(12)
+    await applyOn(commit())
+    const op = attach(1, 12)
+    await applyOn(op)
+    await sql(`UPDATE items SET deleted_at = now() WHERE repo_id = '${REPO}' AND number = 12`)
+    expect(await applyOn(op)).toMatchObject({ kind: "repeated", receipt: { outcome: "issue_set", number: 1 } })
+    // Another payload under the same op id is a conflict, as for every op.
+    expect(await applyOn({ ...op, op: { kind: "attach", number: 1, issue: 13 } })).toEqual({ kind: "conflict" })
+  })
+
+  test("a deleted issue, a missing one, a pull request and another repository's issue are refused issue_not_found", async () => {
+    await issueRow(12, { deleted: true })
+    await issueRow(14, { kind: "pull" })
+    await sql(`INSERT INTO items (id, repo_id, number, kind, github_id, title, state, created_at, updated_at, source_updated_at, fetched_at)
+      VALUES ('github/octo/other#15', 'github/octo/other', 15, 'issue', 9915, 'Elsewhere', 'open', now(), now(), now(), now())`)
+    await applyOn(commit())
+    for (const issue of [12, 13, 14, 15]) {
+      expect([issue, await applyOn(attach(1, issue))]).toMatchObject([issue, { kind: "applied", receipt: { outcome: "issue_not_found" } }])
+    }
+    expect(await issueOf(1)).toBe(null)
+    expect(await sql(`SELECT count(*)::int AS n FROM todo_leaves`)).toEqual([{ n: 0 }])
+    await sql(`DELETE FROM items WHERE repo_id = 'github/octo/other'`)
+  })
+
+  test("a TODO whose issue is live is refused attached; one whose issue was deleted takes another", async () => {
+    await issueRow(12)
+    await issueRow(13)
+    await applyOn(commit({ op: { kind: "commit", title: "T", prompt: "P", acceptance: [], issue: 12 } }))
+    expect(await applyOn(attach(1, 13))).toMatchObject({ kind: "applied", receipt: { outcome: "attached" } })
+    expect(await issueOf(1)).toBe(12)
+    await sql(`UPDATE items SET deleted_at = now() WHERE repo_id = '${REPO}' AND number = 12`)
+    expect(await applyOn(attach(1, 13))).toMatchObject({ kind: "applied", receipt: { outcome: "issue_set", number: 1 } })
+    expect(await issueOf(1)).toBe(13)
+    expect(await leafOf(1)).toEqual([{ issue: 13, state: "queued", validation: "no_criteria" }])
+  })
+
+  test("a TODO the stack never had is not_found; the stack's order and lanes don't move", async () => {
+    await issueRow(12)
+    await applyOn(commit())
+    const before = await loaded()
+    expect(await applyOn(attach(9, 12))).toMatchObject({ kind: "applied", receipt: { outcome: "not_found" } })
+    await applyOn(attach(1, 12))
+    const after = await loaded()
+    expect(after.todos.map(({ state, position, attempt }) => [state, position, attempt]))
+      .toEqual(before.todos.map(({ state, position, attempt }) => [state, position, attempt]))
+  })
+})

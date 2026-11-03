@@ -1,4 +1,5 @@
 import { allServerRows, expect, type Row, test } from "./devices"
+import { chooseIssue } from "./todoDraft"
 import { home, requires, stackRepository } from "./target"
 
 // Real model, real services, and the same UI on local and deployed builds. No scripted agent or dev identities.
@@ -61,6 +62,7 @@ test("todo status: the agent reports the scratch TODO's shared dropped state", {
   const draft = page.getByRole("form", { name: "TODO draft" }).first()
   await draft.getByLabel("Title").fill(title)
   await draft.getByLabel("Prompt").fill("Describe the README. Do not change any files.")
+  await chooseIssue(draft)
   await draft.getByRole("button", { name: "Commit" }).click()
   const row = stack.locator("[data-slot=issues-row]", { hasText: title })
   await expect(row).toContainText(/T\d+/, { timeout: 60_000 })

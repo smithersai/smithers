@@ -47,7 +47,7 @@ import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { PullReview } from "../features/pulls/flows"
 import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
-import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
+import { TodoAttach, TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
@@ -381,6 +381,11 @@ export const registry = {
     flow: TodoDrop,
     userOnlyReason: "Dropping a TODO is a person's press; the agent never drops one.",
     slash: { command: "todo.drop", description: "Drop a TODO", minimum: "member" },
+  },
+  // Decision 0153: a TODO with no issue, or a deleted one, hangs under an issue by a person's press.
+  "todo/attach": {
+    flow: TodoAttach,
+    userOnlyReason: "Attaching a TODO to an issue is a person's press; the agent drafts TODOs under issues instead.",
   },
   // Notifications (decision 0009): a tab showing a conversation follows its branch and repository, and the agent can
   // too; Read, Dismiss and Hide are the person's acts on their own feed.

@@ -6,6 +6,7 @@ import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { DraftCard } from "../../features/todos/components/DraftCard"
+import { NeedsAnIssue } from "../../features/todos/components/NeedsAnIssue"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import {
   NEW_TODO,
@@ -105,6 +106,7 @@ export function StackScreen() {
           onNavigate={(_, href) => void navigate({ href })}
           actions={may ? <Button variant="solid" onClick={() => actions.newDraft(owner, repo)}>{NEW_TODO}</Button> : undefined}
         />
+        {may ? <NeedsAnIssue owner={owner} name={repo} repoId={repoId} todos={todos} /> : null}
         <NotSentChanges repoId={repoId} />
       </PageBody>
     </main>

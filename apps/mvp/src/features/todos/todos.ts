@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setPrompt, setTitle, warm } from "./actions"
+import { attach, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setIssue, setPrompt, setTitle, warm } from "./actions"
 import { type RepoStack, TodosStore } from "./store"
 
 // TODOs as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
@@ -40,11 +40,15 @@ export interface TodosActions {
   readonly newDraft: (owner: string, name: string) => string
   readonly setTitle: (draftId: string, title: string) => void
   readonly setPrompt: (draftId: string, prompt: string) => void
+  /** The issue a draft hangs under (decision 0153). */
+  readonly setIssue: (draftId: string, issue: number) => void
   /** Commit on a draft: the stack's page to show, or nothing when it didn't run. */
   readonly commit: (draftId: string) => Promise<string | undefined>
   readonly discardDraft: (draftId: string) => void
   readonly retry: (owner: string, name: string, number: number) => Promise<void>
   readonly drop: (owner: string, name: string, number: number) => Promise<void>
+  /** Attach to issue on a TODO whose issue is none or deleted (decision 0153). */
+  readonly attach: (owner: string, name: string, number: number, issue: number) => Promise<void>
   /** Make TODO on an issue: drafts a TODO from it; answers the stack's page, where the draft shows. */
   readonly fromIssue: (owner: string, name: string, number: number) => string
   /** Edit on a commit that wasn't sent: the stack's page, where its draft is. */
@@ -84,10 +88,12 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           newDraft: (owner, name) => run(newDraft(owner, name)),
           setTitle: (draftId, title) => run(setTitle(draftId, title)),
           setPrompt: (draftId, prompt) => run(setPrompt(draftId, prompt)),
+          setIssue: (draftId, issue) => run(setIssue(draftId, issue)),
           commit: (draftId) => runAsync(commit(draftId)),
           discardDraft: (draftId) => run(discardDraft(draftId)),
           retry: (owner, name, number) => runAsync(retry(owner, name, number)),
           drop: (owner, name, number) => runAsync(drop(owner, name, number)),
+          attach: (owner, name, number, issue) => runAsync(attach(owner, name, number, issue)),
           fromIssue: (owner, name, number) => run(fromIssue(owner, name, number)),
           edit: (opId) => run(edit(opId)),
           discard: (opId) => run(discard(opId)),

@@ -94,8 +94,8 @@ export const stackRows = (
 /** A change this device made that the route refused, with Edit (a commit's) and Discard. */
 export interface NotSentRow {
   readonly id: string
-  readonly op: "commit" | "drop" | "retry"
-  /** What it was: a commit's title, or `Drop T4`. */
+  readonly op: "commit" | "drop" | "retry" | "attach"
+  /** What it was: a commit's title, `Drop T4`, or `Attach T4 to #12`. */
   readonly label: string
   readonly reason: string
 }
@@ -108,7 +108,11 @@ export const notSentRows = (repoId: string, requested: ReadonlyArray<Requested>,
     .map((row) => ({
       id: row.id,
       op: row.op,
-      label: row.op === "commit" ? row.title : `${row.op === "retry" ? "Retry" : "Drop"} T${row.number}`,
+      label: row.op === "commit"
+        ? row.title
+        : row.op === "attach"
+        ? `Attach T${row.number} to #${row.issue ?? "–"}`
+        : `${row.op === "retry" ? "Retry" : "Drop"} T${row.number}`,
       reason: NOT_SENT_COPY[row.reason as NotSentReason] ?? "Not sent",
     }))
 
@@ -124,8 +128,16 @@ export const deliveredOf = (
   const repository = todos.filter((todo) => todo.repoId === repoId)
   const ids = new Set(repository.map((todo) => todo.id))
   const dropped = new Set(repository.filter((todo) => todo.state === "dropped").map((todo) => todo.number))
+  // An attach is delivered once its TODO shows the issue it asked for (decision 0153).
+  const issueOf = new Map(repository.map((todo) => [todo.number, todo.issueNumber]))
   return requested
-    .filter((row) => row.repoId === repoId && (row.op === "commit" ? ids.has(row.id) : row.op === "retry" ? row.status === "requested" : dropped.has(row.number)))
+    .filter((row) => row.repoId === repoId && (row.op === "commit"
+      ? ids.has(row.id)
+      : row.op === "retry"
+      ? row.status === "requested"
+      : row.op === "attach"
+      ? row.status === "requested" && row.issue !== undefined && issueOf.get(row.number) === row.issue
+      : dropped.has(row.number)))
     .map((row) => row.id)
 }
 
@@ -505,4 +517,36 @@ export const mayRetry = (
   const role = answer?.role ?? null
   return todo.state === "failed" && session.status === "signed_in" &&
     (role === "maintainer" || role === "admin" || (role === "member" && session.login === todo.createdLogin))
+}
+
+/** What the TODO views read of an issue: the facts of a summary row (decision 0153). */
+export interface IssueFacts {
+  readonly repoId: string
+  readonly number: number
+  readonly kind: string
+  readonly title: string
+  readonly state: string
+  readonly deletedAt: string | null
+}
+
+/**
+ * The issues a TODO of repository `repoId` may hang under (decision 0153): its open issues that GitHub still has,
+ * never a pull request, newest first. The draft card's Issue picker and Attach to issue list them.
+ */
+export const issueChoices = (repoId: string, issues: ReadonlyArray<IssueFacts>): ReadonlyArray<{ readonly number: number; readonly title: string }> =>
+  issues
+    .filter((issue) => issue.repoId === repoId && issue.kind === "issue" && issue.state === "open" && issue.deletedAt === null)
+    .sort((a, b) => b.number - a.number)
+    .map(({ number, title }) => ({ number, title }))
+
+/**
+ * Needs an issue (decision 0153): repository `repoId`'s open TODOs with no issue, or an issue this device knows was
+ * deleted, in stack order. Each offers Attach to issue. A TODO whose issue this device hasn't synced stays out: only a
+ * deleted row frees it, as the stack's writer decides.
+ */
+export const needsAnIssue = (repoId: string, todos: ReadonlyArray<Todo>, issues: ReadonlyArray<IssueFacts>): ReadonlyArray<Todo> => {
+  const deleted = new Set(issues.filter((issue) => issue.repoId === repoId && issue.kind === "issue" && issue.deletedAt !== null).map((issue) => issue.number))
+  return todos
+    .filter((todo) => todo.repoId === repoId && todo.position !== null && (todo.issueNumber === null || deleted.has(todo.issueNumber)))
+    .sort((a, b) => a.position! - b.position!)
 }

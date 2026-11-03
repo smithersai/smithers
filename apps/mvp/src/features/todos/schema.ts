@@ -120,7 +120,8 @@ export const Sending = Schema.Struct({
   ...QueuedOp.fields,
   repoId: Schema.String,
   queuedAt: Schema.Number,
-  v: Schema.Literal(2),
+  /** 3: an op may be `attach` (decision 0153). */
+  v: Schema.Literal(3),
 })
 export type Sending = typeof Sending.Type
 

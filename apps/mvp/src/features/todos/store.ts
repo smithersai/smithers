@@ -218,7 +218,7 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
       if (Option.isSome(yield* sending.get(op.id))) return { kept: yield* sendingAdmitted(chat.outbox, TODO_OP, op.id) }
       if (Option.isSome(held) && (held.value.status === "requested" || held.value.reason !== null)) return { kept: true }
       const [owner, name] = op.repo.split("/") as [string, string]
-      const row: Sending = { ...op, repoId: repoId(owner, name), queuedAt: yield* Clock.currentTimeMillis, v: 2 }
+      const row: Sending = { ...op, repoId: repoId(owner, name), queuedAt: yield* Clock.currentTimeMillis, v: 3 }
       const recovery = yield* Effect.result(admissionReceipt(keep(requested, row, "not_sent", null, null), op.id, flow, "recovery"))
       if (recovery._tag === "Failure") {
         yield* recordAdmission(op, "storage_failed")
