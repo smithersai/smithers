@@ -287,7 +287,7 @@ Leave `SESSION_SECRET` unset: Alchemy generates it once (`infra/SignIn.ts`) and 
    curl -s https://<site>/llms.txt | head -1                                       # "# Smithers"
    ```
 
-   Then sign in at `<site>/app` as a Member of `GITHUB_REPOSITORY` and ask: the browser's agent answers.
+   Then sign in at `<site>/app` as a Member of `GITHUB_REPOSITORY` and ask: the browser's agent answers. On production, run [the deploy smoke](#the-deploy-smoke).
 
 5. Watch ChatApi in the Cloudflare dashboard: Workers Logs (`message = chat.answer.write` for answers the browsers' agents settle, `model.proxy.serve` for their model calls) and Traces. [observability.md](observability.md) lists every record, and says how to also [send them to your own collector](observability.md#sending-to-your-own-collector).
 6. A live tail (`POST /accounts/<account>/workers/scripts/<script>/tails`, protocol `trace-v1`) goes silent at the next deploy without closing: start a new tail after every deploy, and for a long watch replace it every few minutes. A branch's machine logs `sandbox.wake` with the step that failed, `sandbox.checkout` with its `failure` (`forge`, `branch` or `clone`) and `sandbox.forge` for each request its box sent the forge.
@@ -307,6 +307,21 @@ After the deploy, each device's engine leader runs `device/prepare` once: Worker
 ### Deployed
 
 The production app is https://smithers.sh. Our hosted deployment's settings and deploy log are private: they belong in a private `smithers-infra` repository (Will, 2026-10-20 18:08: "we should have the deployment info private in smithers-infra repo"; [rulings §18](rulings.md#18-open-questions-no-ruling-yet)), and this repository keeps only the generic stack.
+
+### The deploy smoke
+
+Run it after every production deploy:
+
+```sh
+cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/deploy-smoke/run.ts
+```
+
+It runs a short list of specs (`SPECS`, `ops/deploy-smoke/run.ts`) one after another, in Chromium and in WebKit, through `node e2e/prod.mjs`, each under `run.lock`, prints one pass or fail line per spec with its log's path, and exits non-zero on any failure, having run them all. It finds production's Neon project itself: the one in `NEON_ORG_ID` that Alchemy named for the stage. Each spec on it proves a failure that reached production once:
+
+- `e2e/cold-path.spec.ts`: a person back after their role row expired, aged deterministically by `ops/role-age/expire.ts` (one row's `checked_at`, its role untouched): the first paint's read answers in time, `/role` and `/refs` never answer 503, and the next visit paints.
+- `e2e/first-paint.spec.ts`: search and New issue take a real click while a page still syncs, and nothing covers them.
+
+Add a spec here only for a failure that shipped, and keep the list to a few minutes.
 
 ### Against a deployment
 

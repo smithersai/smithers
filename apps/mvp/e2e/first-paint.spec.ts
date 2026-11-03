@@ -3,11 +3,16 @@
 // on the page beside them. A click Playwright can't land, because something covers the control, fails the test.
 import { expect, test } from "./fixtures"
 import { requires } from "./target"
+import { expectServerError } from "./watch"
 
 requires("trackingRepository")
 
 const repo = process.env.E2E_TRACKING_REPOSITORY ?? ""
 const painted = "smithers.first_paint.painted"
+
+// The About read of a private repository answers 404 for anyone: it reads what GitHub says publicly. WebKit reports a
+// worker's failed request on the page's console, and the engine worker makes this one; Chromium doesn't.
+expectServerError(404, `/api/repos/${repo}/about`)
 
 test("a list still syncing: the painted rows sit under search and New issue, which both work", async ({ page }) => {
   // The page's own rows never arrive during this test.
