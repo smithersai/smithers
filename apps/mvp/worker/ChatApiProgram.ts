@@ -64,6 +64,7 @@ import * as RunnerAdmin from "./runners/Admin.ts"
 import * as RunnerAudit from "./runners/Audit.ts"
 import * as RunnersApi from "./runners/Api.ts"
 import * as RedactFeed from "./flows/RedactFeed.ts"
+import * as FirstPaint from "./github/FirstPaint.ts"
 import * as RequestBackground from "./RequestBackground.ts"
 import * as FleetApi from "./runners/FleetApi.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
@@ -474,7 +475,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           )
         }
         if (GitHubApi.handles(path)) {
-          return yield* github.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(signedIn))
+          return yield* github.fetch.pipe(
+            Effect.provideService(FirstPaint.Behind, yield* RequestBackground.firstPaintBehind),
+            Effect.provideService(Flows.FlowStarter, starter),
+            Effect.provide(signedIn),
+          )
         }
         // Before the repository routes too: a change is `/api/repos/<owner>/<name>/stack`. With the GitHub App and
         // `TODO_RUNS` on, this host runs TODOs: each attempt the writer starts runs `todo` on its own Durable Object

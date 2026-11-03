@@ -1,9 +1,9 @@
 // The first paint's pure parts (worker/github/FirstPaint.ts): which paths and queries it answers, and that a late, failed
 // or dying read is the same empty 204 as a refusal. The access matrix and the reads are worker/github/Readers.test.ts's.
-import { Effect } from "effect"
+import { Deferred, Effect } from "effect"
 import { HttpServerResponse } from "effect/http"
-import { describe, expect, test } from "vitest"
-import { FIRST_PAINT_HEADERS, guarded, parseFirstPaintPath, parseForm } from "./FirstPaint.ts"
+import { describe, expect, test, vi } from "vitest"
+import { Behind, FIRST_PAINT_HEADERS, guarded, parseFirstPaintPath, parseForm } from "./FirstPaint.ts"
 
 const code = (error: unknown) => (error instanceof Error ? error.name : "unknown")
 
@@ -42,8 +42,74 @@ describe("the first paint's route", () => {
 describe("a read that can't paint in time answers like a refusal", () => {
   const run = (answer: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>) => {
     const fields: Record<string, string | number> = {}
-    return Effect.runPromise(guarded(answer, fields, code, 20)).then((response) => ({ status: response.status, headers: response.headers, fields }))
+    return Effect.runPromise(guarded(() => answer, fields, code, 20)).then((response) => ({ status: response.status, headers: response.headers, fields }))
   }
+
+  test("a stalled read is never interrupted: the answer comes at the deadline, and the read finishes behind it", async () => {
+    let finished = false
+    let interrupted = false
+    const release = Effect.runSync(Deferred.make<void>())
+    const stalled = Deferred.await(release).pipe(
+      Effect.andThen(Effect.sync(() => { finished = true })),
+      Effect.as(HttpServerResponse.text("late")),
+      Effect.onInterrupt(() => Effect.sync(() => { interrupted = true })),
+    )
+    const behind: Array<Effect.Effect<void>> = []
+    const fields: Record<string, string | number> = {}
+    const started = performance.now()
+    const answered = await Effect.runPromise(guarded(() => stalled, fields, code, 20).pipe(
+      Effect.provideService(Behind, Behind.of({ run: (work) => Effect.sync(() => void behind.push(work)) })),
+    ))
+    expect(performance.now() - started).toBeLessThan(250)
+    expect([answered.status, fields, finished, interrupted, behind.length]).toEqual([204, { outcome: "deadline" }, false, false, 1])
+    const running = Effect.runPromise(behind[0]!)
+    Effect.runSync(Deferred.succeed(release, undefined))
+    await running
+    expect([finished, interrupted]).toEqual([true, false])
+  })
+
+  test("what runs behind has its own bound: past it the read is interrupted, and a read that fails goes nowhere", async () => {
+    let interrupted = false
+    const never = Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(() => { interrupted = true })))
+    const behind: Array<Effect.Effect<void>> = []
+    const keeper = Behind.of({ run: (work) => Effect.sync(() => void behind.push(work)) })
+    await Effect.runPromise(guarded(() => never, {}, code, 10, "20 millis").pipe(Effect.provideService(Behind, keeper)))
+    await Effect.runPromise(behind[0]!)
+    await vi.waitFor(() => expect(interrupted).toBe(true))
+    const failing = Effect.sleep("30 millis").pipe(Effect.andThen(Effect.fail(new TypeError("late"))))
+    await Effect.runPromise(guarded(() => failing, {}, code, 10).pipe(Effect.provideService(Behind, keeper)))
+    await Effect.runPromise(behind[1]!)
+  })
+
+  test("with nothing to run behind, a late read is interrupted, its cleanup never holding the answer", async () => {
+    let cleaned = false
+    const slowCleanup = Effect.never.pipe(Effect.onInterrupt(() => Effect.sleep("300 millis").pipe(Effect.andThen(Effect.sync(() => { cleaned = true })))))
+    const started = performance.now()
+    const answered = await run(slowCleanup)
+    expect(answered.fields).toEqual({ outcome: "deadline" })
+    expect(performance.now() - started).toBeLessThan(250)
+    await vi.waitFor(() => expect(cleaned).toBe(true))
+  })
+
+  test("what a late read writes is its own: it never rewrites what the request counted, in any order", async () => {
+    const release = Effect.runSync(Deferred.make<void>())
+    const fields: Record<string, string | number> = { form: "issue" }
+    const behind: Array<Effect.Effect<void>> = []
+    const read = (own: Record<string, string | number>) => Deferred.await(release).pipe(
+      Effect.andThen(Effect.sync(() => { own.outcome = "painted" })),
+      Effect.as(HttpServerResponse.text("late")),
+    )
+    await Effect.runPromise(guarded(read, fields, code, 10).pipe(
+      Effect.provideService(Behind, Behind.of({ run: (work) => Effect.sync(() => void behind.push(work)) })),
+    ))
+    Effect.runSync(Deferred.succeed(release, undefined))
+    await Effect.runPromise(behind[0]!)
+    expect(fields).toEqual({ form: "issue", outcome: "deadline" })
+    // In time, what the read wrote is what is counted.
+    const inTime: Record<string, string | number> = {}
+    await Effect.runPromise(guarded((own) => Effect.sync(() => { own.outcome = "painted"; return HttpServerResponse.text("ok") }), inTime, code, 100))
+    expect(inTime).toEqual({ outcome: "painted" })
+  })
 
   test("an answer in time is the answer", async () => {
     const answered = await run(Effect.succeed(HttpServerResponse.text("ok")))

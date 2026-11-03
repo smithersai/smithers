@@ -587,7 +587,7 @@ describe("the shell", () => {
     const waited = startShell(slow.host)!
     slow.lock.grant()
     await slow.settle()
-    slow.advance(2_500)
+    slow.advance(3_500)
     await slow.settle()
     expect(waited.outcome()).toBe("none")
   })

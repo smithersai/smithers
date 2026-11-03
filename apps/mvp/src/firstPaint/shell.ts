@@ -41,8 +41,8 @@ const ACTIONABLE = "#root main, #root button, #root input, #root a"
 /** The longest a paint stays without a hand-over, from when it painted. */
 export const HAND_OVER_WITHIN_MS = 30_000
 
-/** The longest the shell waits for the answer: a late title is worse than none. */
-export const ANSWER_WITHIN_MS = 2_500
+/** The longest the shell waits for the answer: past the route's own 2.5 s deadline, with a moment for the network. */
+export const ANSWER_WITHIN_MS = 3_500
 
 /** What the shell paints: an issue's heading, or an unfiltered issues list's first page. */
 export type Route =

@@ -27,6 +27,7 @@ import * as Actor from "../Actor.ts"
 import * as RunCredentials from "../RunCredentials.ts"
 import { signedIn as signedInAs, testFile } from "../test/harness.ts"
 import { cookie, signInHarness } from "../test/signIn.ts"
+import { Behind, FIRST_PAINT_DEADLINE_MS } from "./FirstPaint.ts"
 import * as Metrics from "./Metrics.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import { reset, sql } from "./test/fixtures.ts"
@@ -508,6 +509,40 @@ describe("the first paint answers the matrix as the cookie's person, one empty 2
     })
     const painted = await (await h.fetch(`${firstPaintRoute(OWN.owner, OWN.name)}?issue=7`)).json() as { expiresAt: number; serverNow: number }
     expect([painted.expiresAt, painted.serverNow]).toEqual([expiry.at, expiry.now])
+  }, 60_000)
+
+  test("past its deadline it answers the empty 204 and leaves its role read to run behind the response", async () => {
+    const cell: Cell = { name: "own private", repo: OWN, visibility: "private", viewer: { ...person, role: "member" }, shapes: "200", list: "200" }
+    await seed(cell)
+    let reads = 0
+    let finished = 0
+    const roles: RepoRoles.RepoRoles<never> = {
+      repository: OWN,
+      resolve: (actor, target) => Effect.gen(function* () {
+        reads++
+        // The first read overruns the deadline; it is never interrupted, and finishes behind the response.
+        if (reads === 1) yield* Effect.sleep(`${FIRST_PAINT_DEADLINE_MS + 500} millis`)
+        finished++
+        return { role: "member" as const, held: Option.some({ repoId: target.id, personId: actor.subject.id, role: "member" as const }) }
+      }),
+    }
+    const behind: Array<Effect.Effect<void>> = []
+    const keeper = Layer.succeed(Behind, Behind.of({ run: (work) => Effect.sync(() => void behind.push(work)) }))
+    const github = scriptedGitHub(OWN.owner, OWN.name)
+    github.private = true
+    const h = await githubHarness(runtime, { own: OWN, github, allowed: ACTED_ON, roles, sessions: Layer.merge(signedInAs(member()), keeper) as never })
+    const started = performance.now()
+    const late = await h.fetch(`${firstPaintRoute(OWN.owner, OWN.name)}?issue=7`)
+    expect(performance.now() - started).toBeLessThan(FIRST_PAINT_DEADLINE_MS + 400)
+    expect([late.status, await late.text()]).toEqual([204, ""])
+    expect(h.count(Metrics.firstPaints, { form: "issue", outcome: "deadline" })).toBe(1)
+    expect([reads, finished, behind.length]).toEqual([1, 0, 1])
+    await Effect.runPromise(behind[0]!)
+    // The same read finished: nothing asked twice.
+    expect([reads, finished]).toEqual([1, 1])
+    // A paint in time leaves nothing behind.
+    expect((await h.fetch(`${firstPaintRoute(OWN.owner, OWN.name)}?issue=7`)).status).toBe(200)
+    expect(behind).toHaveLength(1)
   }, 60_000)
 
   test("a missing issue, an unknown form and a second parameter are the same empty 204", async () => {

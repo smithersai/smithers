@@ -928,17 +928,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const startedAt = yield* Clock.currentTimeMillis
-        const fields: Record<string, string | number> = { form: "invalid" }
-        const response = yield* Effect.gen(function* () {
+        const form = FirstPaint.parseForm(new URL(request.url, "http://localhost").searchParams)
+        const target = repositoryOf(`${named.owner}/${named.name}`)
+        const fields: Record<string, string | number> = { form: form?.kind ?? "invalid", repoId: target.id }
+        const response = yield* FirstPaint.guarded((fields) => Effect.gen(function* () {
           // Any other method is one more outcome that doesn't paint: the same empty 204.
           if (request.method !== "GET") {
             fields.outcome = "method"
             return FirstPaint.nothing()
           }
-          const form = FirstPaint.parseForm(new URL(request.url, "http://localhost").searchParams)
-          if (form !== undefined) fields.form = form.kind
-          const target = repositoryOf(`${named.owner}/${named.name}`)
-          fields.repoId = target.id
           const { proof } = yield* access.repositoryReadable(target, "cookie", { validate: Effect.succeed(form !== undefined) })
           if (proof._tag === "Refused") {
             fields.outcome = `refused_${proof.status}`
@@ -960,7 +958,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               : { expiresAt: person.expiry.at, serverNow: person.expiry.now }),
             ...found,
           })
-        }).pipe((answer) => FirstPaint.guarded(answer, fields, codeOf))
+        }), fields, codeOf)
         const outcome = String(fields.outcome)
         yield* Metric.update(Metric.withAttributes(Metrics.firstPaints, { form: String(fields.form), outcome }), 1)
         yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.first_paint.outcome": outcome })

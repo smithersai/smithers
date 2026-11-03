@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Option } from "effect"
+import { Cause, Context, Duration, Effect, Exit, Fiber, Option } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { FIRST_PAINT_SEGMENT, type FirstPaint, type FirstPaintIssue, ISSUE_PAGE_DEFAULT } from "../../src/features/issues/contract.ts"
@@ -18,8 +18,23 @@ export const FIRST_PAINT_HEADERS = {
   "x-robots-tag": "noindex",
 } as const
 
-/** How long the route reads before it answers `204`: a late title is worse than none, as the app may already show it. */
-export const FIRST_PAINT_DEADLINE_MS = 1_500
+/**
+ * How long the route reads before it answers `204`. A person back after five minutes has a stale role, which only
+ * GitHub can renew (a stale role never decides): about 1.5 s, so this leaves that read room. A title at 2.5 s still
+ * beats the app's own, which comes later.
+ */
+export const FIRST_PAINT_DEADLINE_MS = 2_500
+
+/** How long the role read a late first paint leaves behind may run, past the response. */
+export const BEHIND_WITHIN = Duration.seconds(15)
+
+/**
+ * Work a request leaves to run after its response (worker/RequestBackground.ts). A first paint past its deadline leaves
+ * its role read here, so the person's next read finds it fresh. Absent, as in a test that gives none, nothing runs.
+ */
+export class Behind extends Context.Service<Behind, { readonly run: (work: Effect.Effect<void>) => Effect.Effect<void> }>()(
+  "@smthrs/mvp/github/first-paint/Behind",
+) {}
 
 /** What a first paint asks for: one issue, or the list's first page. */
 export type Form = { readonly kind: "issue"; readonly number: number } | { readonly kind: "list" }
@@ -88,20 +103,45 @@ export const painted = (body: FirstPaint) => HttpServerResponse.jsonUnsafe(body,
 
 /**
  * `answer` within `deadlineMs`: past it, or failing or dying, the empty `204`, with `fields.outcome` saying which
- * (`deadline` or `error`, and the failure's `errorCode` by `codeOf`).
+ * (`deadline` or `error`, and the failure's `errorCode` by `codeOf`). The deadline never interrupts the read, so no
+ * cleanup of its (a role claim given back, a transaction that must first begin) holds the answer: the read keeps running
+ * on its own fiber behind the response (`Behind`), at most `behindMs`, and what it renews, such as the person's role,
+ * is there for their next read. Its answer goes nowhere. With no `Behind`, it is interrupted, on a fiber of its own.
  */
 export const guarded = <E, R>(
-  answer: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+  answer: (fields: Record<string, string | number>) => Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
   fields: Record<string, string | number>,
   codeOf: (error: unknown) => string,
   deadlineMs: number = FIRST_PAINT_DEADLINE_MS,
+  behindMs: Duration.Input = BEHIND_WITHIN,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
-  answer.pipe(
-    Effect.timeoutOption(Duration.millis(deadlineMs)),
-    Effect.map(Option.getOrElse(() => {
-      fields.outcome = "deadline"
-      return nothing()
-    })),
+  Effect.gen(function* () {
+    // The read writes its own fields, which only an answer in time hands back: a late read rewrites nothing counted.
+    const own = { ...fields }
+    const read = yield* Effect.forkDetach(answer(own))
+    const answered = yield* Fiber.join(read).pipe(Effect.timeoutOption(Duration.millis(deadlineMs)))
+    if (Option.isSome(answered)) {
+      Object.assign(fields, own)
+      return answered.value
+    }
+    fields.outcome = "deadline"
+    const stop = Effect.asVoid(Effect.forkDetach(Fiber.interrupt(read)))
+    const behind = yield* Effect.serviceOption(Behind)
+    yield* Option.isNone(behind) ? stop : behind.value.run(
+      Fiber.await(read).pipe(
+        Effect.timeoutOption(behindMs),
+        Effect.flatMap(Option.match({
+          onNone: () => stop,
+          // Behind the response nothing else says a read failed.
+          onSome: Exit.match({
+            onFailure: (cause) => Effect.logWarning("github.first_paint.behind").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
+            onSuccess: () => Effect.void,
+          }),
+        })),
+      ),
+    )
+    return nothing()
+  }).pipe(
     Effect.catchCause((cause) =>
       Effect.sync(() => {
         fields.outcome = "error"
