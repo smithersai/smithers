@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/platform-cloudflare"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -138,7 +138,7 @@
      "relative": "packages/smithers/flows/platform-cloudflare/src"
     },
     null,
-    "PNvcm7tjkizCqKoUCDGgH4lSLUIcZvBM-0hdoBBmtnI",
+    "TeNfJPij36d36wKUbOgGL75MPZtEJQtXrySz3dW0_00",
     [],
     {
      "recursive": true,
@@ -307,7 +307,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -332,7 +332,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -361,126 +361,126 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
+    "hash": "_hUBmLEtDPyXj65GEqr0h8vedJ-YXIH_c5Gu9lRiYIo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "UJEoLkJ7MXGmJYIzXPkyA3-7p_k52_D8URkKB_Ofs-w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
     "size": 15515,
-    "hash": "iuKcgJBSKOec57LsRqZbOWZhZYYEd7wnDnyJoeyyY_o"
+    "hash": "9SIwk83tKINlZBCcjjG4ZZb0JuPSHoq7DhmSf46kVYI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/package.json"
     },
     "size": 6772,
-    "hash": "PDbmtBwaifMg8xo8e8sshgT4DxBUNraaYy17hCyYn9c"
+    "hash": "Iz9hfR_2ty9UgmetwJT-434q0RYeMpr69_0-FBld8sw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/package.json"
     },
     "size": 7088,
-    "hash": "L5fpKGg2FbL-bbpRq_YlefD5Em-og1_ImjXbGxSFdaY"
+    "hash": "q13S71scplguP_e1froPFQGBe8qAr-NpCrZZAuJJyag"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/package.json"
     },
     "size": 9895,
-    "hash": "LH9WSZ_WGwMEPr0AjiUM6bzlOGw2B20C2fHGXref5dE"
+    "hash": "9GcZk3xYoB_dCBPYDNKfrJJk4OfIyFlLDn5mGcGWfok"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/package.json"
     },
     "size": 6254,
-    "hash": "Hea3nMWuvm2_696OsMTMRp-MQ5YyzcV4ceoKKmvwaA4"
+    "hash": "9hRV6N_JW35Lw3SvPT7NdkOD2ZSzUnHKf1zoVZqe5zM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan-store/package.json"
     },
     "size": 4083,
-    "hash": "vMzRtDOlvzaKisBXUcSGorgpaWYyfeclQeZYPiZhWF8"
+    "hash": "qup3qRzCCEZgffmEMg2FYTj_EhS1IIT9wKwwYzlYASg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/platform-cloudflare/package.json"
     },
     "size": 3716,
-    "hash": "2-6cxdfd-jW8v341msi00NDU1XSq1mFhHuGG42TQ1c8"
+    "hash": "1UKwUTyzIzzqmRy-sk7gE_Pqr82BtcTYMfD9stjmAsU"
    },
    {
     "path": {
@@ -543,14 +543,14 @@
      "relative": "packages/smithers/flows/sandbox/package.json"
     },
     "size": 16607,
-    "hash": "P7jKyE4biR9cisWhmRF3xXU4alY2DC6K3YP6dyC_ciE"
+    "hash": "9LoyhUUmvfmWaxhaqt5FAZ_GboxeVRT-W_ekEjQL2PE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sync/package.json"
     },
     "size": 14547,
-    "hash": "EJwDNO1jWe3hLJu0xRe-3gvPE5MkEsC96QTVPaO3ySE"
+    "hash": "z2frjymwcCJC6y0uPiQDWTPzyCbkGdUzk6FLGgf2JTI"
    },
    {
     "path": {
@@ -571,14 +571,14 @@
      "relative": "packages/smithers/flows/time-travel/package.json"
     },
     "size": 8808,
-    "hash": "eCE_sx9zHiULn8bPh5Mmj9liMTMda7XZ0ahClo6YyOo"
+    "hash": "6mjN6XWIo9JHr3IBHWgVH_AejjrU54jF7xjg0LEFMZg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/package.json"
     },
     "size": 5182,
-    "hash": "ODMCrNpjv86vbpRVk6BHpw05F-eAhFwWr_6Gy5f_fK8"
+    "hash": "ftHDK2IEPWHSsXbCqfzvEi354WCfjdZ25aim0n-ycyc"
    },
    {
     "path": {
@@ -3391,17 +3391,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/run-store/src/internal/Companion.ts"
+     "relative": "packages/smithers/flows/run-store/src/internal/Companion.vibe"
     },
-    "size": 1996,
-    "hash": "bnv3ytm7gYx9pgq9HLRopPrYRPKctQSL5q31pqiFupM"
+    "size": 1974,
+    "hash": "qXl-DYPIh9jULJFArmD-svNO-2sKLKDUEfoOcn-RPUc"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.ts"
+     "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.vibe"
     },
-    "size": 2864,
-    "hash": "QtqvPCvQkkYx4GN2l5g-yt3DY4DvI0ZAUpOZ0pK0n4I"
+    "size": 2699,
+    "hash": "SOkLWtRPWG2unW6tY38LF_G-uYMBGh9vSsfKDZYxpVc"
    },
    {
     "path": {
@@ -3414,8 +3414,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStore.ts"
     },
-    "size": 87788,
-    "hash": "ZndaMo3_26LRSNeqG1bgkUWvcrOvYY-yyaP0uQk4OHM"
+    "size": 87792,
+    "hash": "4Jf-pv2BQYcoTjCPvuIkLTrOzg1EUkJ2Aa0SQK7rt2A"
    },
    {
     "path": {
@@ -3477,8 +3477,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/AttemptStore.vibe"
     },
-    "size": 46646,
-    "hash": "YjJQZu3R0KAJxBJ1j5-6strYJhdQx49HIRvAsw_tOyo"
+    "size": 46648,
+    "hash": "eYzGwuN1gjOv2XVuvo5Jy_AbPU3wyAYa3bAjpmF-SKY"
    },
    {
     "path": {
@@ -8438,17 +8438,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Routing.ts"
+     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Routing.vibe"
     },
-    "size": 5600,
-    "hash": "gJzl8gBmPXU31b--ARv6n4MWQx6a1ODGgR2-o0mtQE0"
+    "size": 5421,
+    "hash": "ktLk8b47N9_NSkv06BvvcM96iNbJQZgyi_F6YzsH9cQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/platform-cloudflare/src/ExecutionObject.ts"
     },
-    "size": 43895,
-    "hash": "NXVBE9B1KFL4Q_ZZsXk0pFt5hGm6auJhRUAUfCCryso"
+    "size": 43897,
+    "hash": "nqaUFfxgysn9MdIEsqFwEpq9YW7dhdEhtljzXZuNdJc"
    },
    {
     "path": {
@@ -9780,10 +9780,10 @@
     "relative": "packages/smithers/flows/run-store/src/internal/Boundary.ts"
    },
    {
-    "relative": "packages/smithers/flows/run-store/src/internal/Companion.ts"
+    "relative": "packages/smithers/flows/run-store/src/internal/Companion.vibe"
    },
    {
-    "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.ts"
+    "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.vibe"
    },
    {
     "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
@@ -11202,7 +11202,7 @@
     "relative": "packages/smithers/flows/platform-cloudflare/src/internal/FailureDetail.vibe"
    },
    {
-    "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Routing.ts"
+    "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Routing.vibe"
    },
    {
     "relative": "packages/smithers/flows/platform-cloudflare/src/ExecutionObject.ts"
@@ -11505,6 +11505,26 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Routing.vibe"
+     }
+    ],
+    "code": "/**\n * Which other executions a drive left for their own Durable Objects.\n *\n * A Durable Object drives one execution, and its runtime refuses every other\n * one. A drive can still create executions and make them due: a `.child()`\n * call admits a child, a `.to()` handoff admits the next round, and a\n * settlement makes the parents waiting on it due, or asks a linked child to\n * cancel, and a cancellation admits the run its flow declared for it\n * (`Flow.OnCancel`). The store records each of those, and `EngineStore.drive` records a\n * settled run's parent wakes again whenever it finds one missing, so the\n * object reads them back from the store after every drive, not from what the\n * drive happened to report before an isolate died.\n *\n * @since 1.0.0\n */\nimport * as Clock from \"effect/Clock\";\nimport * as Option from \"effect/Option\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport { DurableEngineState, EngineStore, RunState } from \"@smthrs/engine-store\";\nimport { RunStore } from \"@smthrs/run-store\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nconst decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(RunState.RunState));\n/**\n * Reads what driving `executionId` left for other objects.\n *\n * 1. The round it handed off to, if any, and the current round of each child\n *    lineage linked to it: to this round alone while the lineage runs, and to\n *    every round of it once its last round settled, since that settlement\n *    ends the linked children of every round. One with work due is started\n *    when it is still `pending`, since no object has its intent yet, and woken\n *    otherwise, as a child asked to cancel is.\n * 2. When it was cancelled, the cancellation run its flow declared, which its\n *    cancelled state names: started on its own object, since nothing else\n *    holds its intent.\n * 3. Its parents, when it settled and is the last round of its lineage: every\n *    parent the engine wakes for a settlement (the one its state names and\n *    the edges of every round), when that parent has work due. An earlier\n *    round's settlement wakes no parent; the lineage has not settled.\n *\n * \"Due\" is `EngineStore.nextWake` at or before now, so a parent that has\n * already consumed this settlement, a settled child and an unknown id are\n * left alone. Every read is one read transaction: one snapshot, and the\n * round trips of one transaction rather than one per read.\n *\n * @category operations\n * @since 1.0.0\n */\nexport const routes = (executionId) => Effect.flatMap(DurableEngineState.DurableEngineState, (engineState) => engineState.readTransaction(read(executionId)));\n/**\n * {@link routes}' reads, which it runs as one read transaction: one snapshot of what the drive left, and one\n * transaction's round trips for all of them rather than a transaction for each.\n */\nconst read = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* read(executionId) {\n    const runs = yield* RunStore.RunStore;\n    const engineState = yield* DurableEngineState.DurableEngineState;\n    // Read the clock after `nextWake` does: it answers \"now\" with its own read.\n    const due = Effect_1.fnUntraced(function* due(id) {\n        const wake = yield* EngineStore.nextWake(id);\n        const nowMs = Math.floor(yield* Clock.currentTimeMillis);\n        return Option.exists(wake, (at) => at <= nowMs);\n    });\n    const lineage = yield* runs.lineage(executionId);\n    const index = lineage.findIndex((round) => round.runId === executionId);\n    const self = lineage[index];\n    const successor = lineage[index + 1];\n    const settled = successor === undefined &&\n        (yield* Effect.orDie(Effect.try({ try: () => RunStore.isTerminalRunStatus(self.status), catch: (error) => error })));\n    const linked = new Set();\n    {\n        let pending_1 = runtime.$normal;\n        try {\n            for (const round of settled ? lineage : [self]) {\n                try {\n                    {\n                        {\n                            let pending_2 = runtime.$normal;\n                            try {\n                                for (const edge of yield* engineState.runChildren(round.runId)) {\n                                    try {\n                                        linked.add(edge.childId);\n                                    }\n                                    catch (thrown_1) {\n                                        pending_2 = thrown_1;\n                                        break;\n                                    }\n                                }\n                            }\n                            catch (thrown_2) {\n                                throw runtime.$finallyFailure(pending_2, thrown_2);\n                            }\n                            if (pending_2 !== runtime.$normal)\n                                throw pending_2;\n                        }\n                    }\n                }\n                catch (thrown_3) {\n                    pending_1 = thrown_3;\n                    break;\n                }\n            }\n        }\n        catch (thrown_4) {\n            throw runtime.$finallyFailure(pending_1, thrown_4);\n        }\n        if (pending_1 !== runtime.$normal)\n            throw pending_1;\n    }\n    const next = successor === undefined ? [] : [successor];\n    yield* runtime.$forOf((function* (iterable_1) {\n        for (const value_1 of iterable_1)\n            yield value_1;\n    })(linked), Effect_1.fnUntraced(function* read$for(child) {\n        next.push(yield* runs.latestRound(child));\n    }));\n    const state = settled ? yield* decodeState(self.stateJson) : undefined;\n    const cancellation = state?.cancellation?.run;\n    if (cancellation !== undefined)\n        next.push(yield* runs.latestRound(cancellation));\n    const start = [];\n    const wake = [];\n    {\n        let pending_3 = runtime.$normal;\n        try {\n            for (const row of next) {\n                try {\n                    {\n                        if (!(yield* due(row.runId)))\n                            continue;\n                        if (row.status !== \"pending\") {\n                            wake.push(row.runId);\n                            continue;\n                        }\n                        const admitted = yield* decodeState(row.stateJson);\n                        start.push({ flow: admitted.flowName, executionId: row.runId, payload: admitted.payload });\n                    }\n                }\n                catch (thrown_5) {\n                    pending_3 = thrown_5;\n                    break;\n                }\n            }\n        }\n        catch (thrown_6) {\n            throw runtime.$finallyFailure(pending_3, thrown_6);\n        }\n        if (pending_3 !== runtime.$normal)\n            throw pending_3;\n    }\n    if (state !== undefined) {\n        const parents = new Set(state.parentExecutionId === undefined ? [] : [state.parentExecutionId]);\n        {\n            let pending_4 = runtime.$normal;\n            try {\n                for (const round of lineage) {\n                    try {\n                        {\n                            {\n                                let pending_5 = runtime.$normal;\n                                try {\n                                    for (const edge of yield* engineState.runParents(round.runId)) {\n                                        try {\n                                            parents.add(edge.parentId);\n                                        }\n                                        catch (thrown_7) {\n                                            pending_5 = thrown_7;\n                                            break;\n                                        }\n                                    }\n                                }\n                                catch (thrown_8) {\n                                    throw runtime.$finallyFailure(pending_5, thrown_8);\n                                }\n                                if (pending_5 !== runtime.$normal)\n                                    throw pending_5;\n                            }\n                        }\n                    }\n                    catch (thrown_9) {\n                        pending_4 = thrown_9;\n                        break;\n                    }\n                }\n            }\n            catch (thrown_10) {\n                throw runtime.$finallyFailure(pending_4, thrown_10);\n            }\n            if (pending_4 !== runtime.$normal)\n                throw pending_4;\n        }\n        yield* runtime.$forOf((function* (iterable_2) {\n            for (const value_2 of iterable_2)\n                yield value_2;\n        })(parents), Effect_1.fnUntraced(function* read$for(parent) {\n            if (yield* due(parent))\n                wake.push(parent);\n        }));\n    }\n    return { start, wake };\n})));\n",
+    "map": {
+     "version": 3,
+     "file": "Routing.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/platform-cloudflare/src/internal/Routing.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {

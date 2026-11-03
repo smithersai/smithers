@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
         "Routing taken from the drive's report instead of read from the store, so an alarm that dies between its drive and its routing never starts a child or wakes a parent.",
         "A parked execution's alarm deleted or armed later without reading EngineStore.nextWake again afterwards, which loses a wake another object delivered while the alarm ran."
       ],
-      paths: ["src/ExecutionObject.ts", "src/internal/Routing.ts"]
+      paths: ["src/ExecutionObject.ts", "src/internal/Routing.vibe"]
     },
     {
       id: "no-content-in-telemetry",
