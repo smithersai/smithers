@@ -2,7 +2,7 @@ import { expect, type Page, type TestInfo } from "@playwright/test"
 import { type AlertProviders, startAlertProviders } from "../worker/test/alertProviders.ts"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { cleanUp, startRunner } from "./runner"
-import { dropWord, stackChange } from "./stackWrites"
+import { cleanScratch, dropWord, stackChange } from "./stackWrites"
 import { baseURL, partly, requires, stallMinutes, writeHeaders } from "./target"
 import { strictTest as test } from "./watch"
 
@@ -11,7 +11,7 @@ import { strictTest as test } from "./watch"
 // commit TODOs. Everything is real: the app, its routes and flows, Postgres, Electric, the runner, its checkouts and the
 // agent processes. The test agent stands in for a model only.
 //
-// 1. "lists every run": 53 runs, one stalled, one busy and 51 that end at once; the fleet lists every one, the oldest
+// 1. "lists every run": 51 runs, one stalled, one busy and 49 that end at once; the fleet lists every one, the oldest
 //    (outside the newest 50) included, live on a desktop and on a 390 px phone.
 // 2. "stall": a silent agent reads Stalled and a CPU-bound quiet build does not. It waits out the server's own
 //    AGENT_STALL_MINUTES (`fleetStall`): 1 where a stack is started so, a deployment's 10 with E2E_LONG=1.
@@ -53,12 +53,15 @@ const write = async (page: Page, path: string, method: "PUT" | "DELETE" | "POST"
 const runner = async (page: Page, capacity: number) => {
   const word = `f${Date.now().toString(36)}`
   await page.goto(`/${repo}/stack`)
+  // A killed worker never reached finally: retire its runners, drop its TODOs and restore one safe stacked lane
+  // before a new coding agent can claim those TODOs or independent lanes can dispatch them again.
+  await cleanScratch(page, repo)
   const started = await startRunner(page, repo, word, capacity, { heartbeatSeconds: 5 })
-  // Every TODO starts at once: independent lanes (decision 0135).
+  // Independent lanes (decision 0135), bounded by what this runner can execute.
   const api = { request: started.api }
   const configure = (lanes: number, maxOpen: number, base: "independent" | "stacked") =>
     stackChange(api, repo, { op: "configure", lanes, maxOpen, base })
-  expect(await configure(64, 500, "independent")).toMatchObject({ status: 202 })
+  expect(await configure(capacity, 200, "independent")).toMatchObject({ status: 202 })
   const numbers: Array<number> = []
   return {
     ...started,
@@ -83,24 +86,24 @@ const runner = async (page: Page, capacity: number) => {
 const fleet = (page: Page) => page.getByRole("table", { name: "Agent runs" })
 const row = (page: Page, title: string) => fleet(page).getByRole("row").filter({ hasText: title })
 
-test("fleet: lists every run: the oldest of 53, live on a desktop and a phone", {
+test("fleet: lists every run: the oldest of 51, live on a desktop and a phone", {
   annotation: { type: "summary", description: "Every agent run of the repository shows in the fleet, past the newest 50." },
 }, async ({ page }) => {
   test.setTimeout(30 * 60_000)
   const running = await runner(page, 4)
   try {
-    await step("People commit 53 TODOs: one silent, one busy, 51 that end at once", async () => {
+    await step("People commit 51 TODOs: one silent, one busy, 49 that end at once", async () => {
       await running.commit(`Oldest ${running.word}`, "refuse")
       await running.commit(`Silent ${running.word}`, "run `sleep 900`")
-      // Busy outlasts the 30-minute budget: listing 53 runs has taken 12 to 23 minutes, and the phone step reads it working.
+      // Busy outlasts the 30-minute budget; the phone step still reads it working.
       await running.commit(`Busy ${running.word}`, "run `busy 2400`")
-      for (let index = 0; index < 50; index++) await running.commit(`Quick ${index} ${running.word}`, "refuse")
+      for (let index = 0; index < 48; index++) await running.commit(`Quick ${index} ${running.word}`, "refuse")
     })
     await step("The fleet lists every run, live", async () => {
       await page.goto(`/${repo}/-/fleet`)
       await expect(row(page, `Silent ${running.word}`)).toHaveAttribute("data-state", /working|stalled/, { timeout: 5 * 60_000 })
       await expect(row(page, `Oldest ${running.word}`)).toHaveAttribute("data-state", "failed", { timeout: 15 * 60_000 })
-      await expect(fleet(page).getByRole("row").filter({ hasText: running.word })).toHaveCount(53, { timeout: 15 * 60_000 })
+      await expect(fleet(page).getByRole("row").filter({ hasText: running.word })).toHaveCount(51, { timeout: 15 * 60_000 })
       await expect(page.getByRole("table", { name: "Machines" }).getByRole("row").filter({ hasText: running.name }))
         .toHaveAttribute("data-state", "online")
     })

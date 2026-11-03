@@ -191,11 +191,16 @@ admits.
 - `plugins/fleet/src/model.test.ts`, `tab.test.ts`; `src/plugins/facts.test.ts` (the manifest loads).
 - `packages/smithers/test/Runner.test.ts`: each heartbeat carries the hook's account, the tree's CPU time and usage;
   each claim the machine.
-- `e2e/fleet.spec.ts`: on a build with the GitHub App (`agentRunner`), a deployment included: 53 runs, the oldest
+- `e2e/fleet.spec.ts`: on a build with the GitHub App (`agentRunner`), a deployment included: 51 runs (the minimum
+  beyond the newest 50), the oldest
   listed, on a desktop and a phone; a silent agent Stalled and a busy one Working, waiting out the server's own window
   (`fleetStall`: `AGENT_STALL_MINUTES=1` on a stack, a deployment's 10 minutes with `E2E_LONG=1`); the runner killed
   and one Runner offline alert in the bell within 90 s, and with a Telegram stand-in (`fleetTelegram`) one message. A
   deployment's real Telegram can't be read back, so the summary lists that part as left out.
+  Setup resets the scratch repository before starting a runner: leftover e2e runner registrations and open TODOs
+  are removed and the stack returns to one stacked lane with `maxOpen=200`. Independent lanes then match that test's
+  runner capacity (at most four), with `maxOpen=200`; final cleanup restores the same safe baseline. The safety
+  contract is guarded by `e2e/fleet-safety.test.ts`, alongside the scratch-reset tests in `e2e/stackWrites.test.ts`.
 
 ## Not yet
 
