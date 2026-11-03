@@ -72,7 +72,7 @@
 
 import { ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
 import { Context, Effect, type Exit, Layer, Schema } from "effect"
-import * as Container from "./Container.ts"
+import * as Container from "./Container.vibe"
 import * as Exec from "./internal/Exec.ts"
 import { GitWorktree, type Repository } from "./internal/GitWorktree.ts"
 import { withoutTrailingSlash } from "./internal/Paths.ts"

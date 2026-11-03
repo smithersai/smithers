@@ -9,7 +9,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as FetchModule from "../src/Fetch.ts"
+import * as FetchModule from "../src/Fetch.vibe"
 import { MAX_OUTPUT_BYTES } from "../src/internal/Text.ts"
 
 const Fetch = {

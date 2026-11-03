@@ -66,7 +66,7 @@ export * as RemoteSearch from "./RemoteSearch.ts"
 export * as Bash from "./Bash.ts"
 
 /** @category services @since 1.0.0 */
-export * as Container from "./Container.ts"
+export * as Container from "./Container.vibe"
 
 /**
  * @category measurement
@@ -117,19 +117,19 @@ export * as UpdatePlan from "./UpdatePlan.ts"
  * @category flows
  * @since 1.0.0
  */
-export * as Fetch from "./Fetch.ts"
+export * as Fetch from "./Fetch.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as HttpPost from "./HttpPost.ts"
+export * as HttpPost from "./HttpPost.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Explore from "./Explore.ts"
+export * as Explore from "./Explore.vibe"
 
 /** @category flows @since 1.0.0 */
 export * as WebFetch from "./WebFetch.ts"

@@ -20,7 +20,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Bash from "../src/Bash.ts"
 import * as Checkpoints from "../src/Checkpoints.ts"
-import * as Container from "../src/Container.ts"
+import * as Container from "../src/Container.vibe"
 
 const git = (root: string, args: ReadonlyArray<string>): string =>
   execFileSync("git", ["-C", root, ...args], { encoding: "utf8" })

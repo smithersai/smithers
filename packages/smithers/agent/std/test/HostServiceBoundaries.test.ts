@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Container from "../src/Container.ts"
+import * as Container from "../src/Container.vibe"
 import * as Search from "../src/Search.vibe"
 
 describe("public host service plans and unavailable routes", () => {

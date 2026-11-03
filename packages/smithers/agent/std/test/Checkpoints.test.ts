@@ -14,7 +14,7 @@ import * as Redacted from "effect/Redacted"
 import { readFileSync } from "node:fs"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Checkpoints from "../src/Checkpoints.ts"
-import * as Container from "../src/Container.ts"
+import * as Container from "../src/Container.vibe"
 import { GitWorktree } from "../src/internal/GitWorktree.ts"
 import * as Relocate from "../src/Relocate.vibe"
 

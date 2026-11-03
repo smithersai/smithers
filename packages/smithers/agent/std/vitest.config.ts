@@ -60,7 +60,7 @@ export default defineConfig({
         "src/internal/Text.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/TreeFingerprint.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/Preserve.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/Container.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/Container.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         // T-TRM-05 edits Bash.ts: its terminal handler shares this per-file gate.
         "src/Bash.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Glob.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },

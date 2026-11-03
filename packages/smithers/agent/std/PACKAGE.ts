@@ -117,7 +117,7 @@ const securityReview = Smithers.SecurityReview({
         "Exec.exec called without args so the command string is parsed by the platform shell for a value the caller did not intend as shell."
       ],
       paths: [
-        "src/Container.ts",
+        "src/Container.vibe",
         "src/Bash.ts",
         "src/TestRun.ts",
         "src/internal/Exec.ts",
@@ -151,7 +151,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/Exec.ts",
-        "src/Container.ts",
+        "src/Container.vibe",
         "src/NativeSearch.ts",
         "src/TestRun.ts",
         "src/Bash.ts"
@@ -167,7 +167,7 @@ const securityReview = Smithers.SecurityReview({
         "parseHttpUrl admitting a loopback, link-local, or metadata address, or a URL whose host differs after WHATWG normalization.",
         "Caller-supplied Authorization or Cookie headers forwarded to a cross-origin redirect target."
       ],
-      paths: ["src/Fetch.ts", "src/HttpPost.ts", "src/WebFetch.ts", "src/internal/Http.ts", "src/internal/Url.ts"]
+      paths: ["src/Fetch.vibe", "src/HttpPost.vibe", "src/WebFetch.ts", "src/internal/Http.ts", "src/internal/Url.ts"]
     },
     {
       id: "exa-credential-handling",
@@ -220,7 +220,7 @@ const securityReview = Smithers.SecurityReview({
         "Bash.sealed or TestRun admitting a call whose container is undefined, empty, or a different name.",
         "Relocate rewriting a containerised cwd to a host path, or a host path to a container path outside the materialized checkout."
       ],
-      paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.vibe", "src/Container.ts"]
+      paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.vibe", "src/Container.vibe"]
     }
   ]
 })
