@@ -1,6 +1,6 @@
 import { Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 import * as Disclosure from "../src/Disclosure.ts"
 
 describe("SandboxSelection resource limits", () => {

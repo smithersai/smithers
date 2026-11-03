@@ -1,7 +1,7 @@
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Effect, FileSystem, Layer, Path, PlatformError, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import { DiscoveryWarning, type Source } from "../src/Descriptor.ts"
+import { DiscoveryWarning, type Source } from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Registry from "../src/Registry.ts"
 

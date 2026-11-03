@@ -16,7 +16,7 @@ import {
   SchemaRefMarkdownOutput,
   type Source,
   SourceScan
-} from "../src/Descriptor.ts"
+} from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Registry from "../src/Registry.ts"
 import type { DiscoveryError, RegistryError } from "../src/RegistryError.vibe"

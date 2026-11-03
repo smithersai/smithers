@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { Provenance } from "../src/Descriptor.ts"
+import { Provenance } from "../src/Descriptor.vibe"
 import * as MarkdownFlow from "../src/MarkdownFlow.vibe"
 
 const parse = (declaration: string) =>

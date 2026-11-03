@@ -7,7 +7,7 @@
 
 import * as Markdown from "@smthrs/core/Markdown"
 import * as Option from "effect/Option"
-import type { DiscoveryWarning } from "../Descriptor.ts"
+import type { DiscoveryWarning } from "../Descriptor.vibe"
 
 /**
  * Derives an owned flow name from directory segments relative to its source root.

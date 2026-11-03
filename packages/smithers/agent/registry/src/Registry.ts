@@ -20,12 +20,12 @@ import {
   projectFlowsDirectory,
   retiredProjectFlowsDirectory,
   type Source
-} from "./Descriptor.ts"
+} from "./Descriptor.vibe"
 import { Discovery, layer as discoveryLayer } from "./Discovery.ts"
 import type * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
 import { readVerifiedBody } from "./internal/Body.ts"
 import * as MarkdownFlow from "./MarkdownFlow.vibe"
-import * as Pack from "./Pack.ts"
+import * as Pack from "./Pack.vibe"
 import type { DiscoveryError, RegistryError } from "./RegistryError.vibe"
 import { registryError } from "./RegistryError.vibe"
 

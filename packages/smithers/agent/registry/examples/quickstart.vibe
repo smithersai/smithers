@@ -6,9 +6,6 @@
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import * as Effect from "effect/Effect"
-import * as FileSystem from "effect/FileSystem"
-import * as Layer from "effect/Layer"
 import * as Disclosure from "../src/Disclosure.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Registry from "../src/Registry.ts"
@@ -41,27 +38,28 @@ export const quickstart = (): Promise<{
   readonly xml: string
   readonly prompt: string
 }> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const root = yield* fs.makeTempDirectoryScoped({ prefix: "registry-quickstart-" })
-    yield* fs.makeDirectory(`${root}/.smithers/flows/review`, { recursive: true })
-    yield* fs.makeDirectory(`${root}/.smithers/flows/draft`, { recursive: true })
-    yield* fs.writeFileString(`${root}/.smithers/flows/review/flow.mdx`, review)
-    yield* fs.writeFileString(`${root}/.smithers/flows/draft/flow.mdx`, draft)
+  effect {
+    const fs = try FileSystem.FileSystem
+    const root = try fs.makeTempDirectoryScoped({ prefix: "registry-quickstart-" })
+    try fs.makeDirectory(`${root}/.smithers/flows/review`, { recursive: true })
+    try fs.makeDirectory(`${root}/.smithers/flows/draft`, { recursive: true })
+    try fs.writeFileString(`${root}/.smithers/flows/review/flow.mdx`, review)
+    try fs.writeFileString(`${root}/.smithers/flows/draft/flow.mdx`, draft)
 
     // One source: the project's own flows, named by their path below the root.
     const registry = Registry.layer({
       sources: [{ source: "project", root: `${root}/.smithers/flows`, naming: "path" }]
     }).pipe(Layer.provide([discovery, platform]))
 
-    return yield* Effect.gen(function*() {
-      const catalog = yield* Registry.Registry
+    return try ((effect {
+      const catalog = try Registry.Registry
       // `list`, `visible` and `warnings` answer from one snapshot and touch no files.
-      const entries = yield* catalog.list()
-      const warnings = yield* catalog.warnings()
+      const entries = try catalog.list()
+      const warnings = try catalog.warnings()
       // `runPrompt` rereads the body, checks it against the digest discovery
       // recorded, and renders it the way an agent host does.
-      const prompt = yield* catalog.runPrompt("review", { args: "the staged diff" })
+      const prompt = try catalog.runPrompt("review", { args: "the staged diff" })
+      const entries2 = try catalog.visible()
       return {
         root,
         catalog: entries.map((entry) => ({
@@ -70,8 +68,8 @@ export const quickstart = (): Promise<{
           invocable: entry.modelInvocable
         })),
         warnings: warnings.map(({ code, path }) => ({ code, path })),
-        xml: Disclosure.toXml(yield* catalog.visible()),
+        xml: try Effect.orDie(Effect.try({ try: () => Disclosure.toXml(entries2), catch: (error) => error })),
         prompt
       }
-    }).pipe(Effect.provide(registry))
-  }).pipe(Effect.scoped, Effect.provide(platform), Effect.runPromise)
+    }) |> Effect.provide(%, registry))
+  } |> Effect.scoped(%) |> Effect.provide(%, platform) |> Effect.runPromise(%)

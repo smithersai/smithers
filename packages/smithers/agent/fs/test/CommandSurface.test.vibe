@@ -96,7 +96,7 @@ describe("Command surface", () => {
 
   it.effect("loads paths containing URL structural characters", effect () => {
     const routeModule = new URL("../src/Route.vibe", import.meta.url).href
-    const descriptorModule = new URL("../../registry/src/Descriptor.ts", import.meta.url).href
+    const descriptorModule = new URL("../../registry/src/Descriptor.vibe", import.meta.url).href
     const script = `
       import { Effect, Option } from "effect"
       import * as Descriptor from ${JSON.stringify(descriptorModule)}

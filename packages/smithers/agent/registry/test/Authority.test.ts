@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 import * as Authority from "../src/internal/Authority.ts"
 import { inferEffectTier, maxTier } from "../src/internal/Authority.ts"
 import * as ModuleMetadata from "../src/internal/ModuleMetadata.vibe"

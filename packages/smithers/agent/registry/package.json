@@ -34,25 +34,65 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Descriptor": "./src/Descriptor.ts",
-    "./Disclosure": "./src/Disclosure.ts",
-    "./Discovery": "./src/Discovery.ts",
-    "./Executable": "./src/Executable.ts",
+    "./Descriptor": {
+      "types": "./.vibe/declarations/src/Descriptor.d.vibe.ts",
+      "vibelang-source": "./src/Descriptor.vibe",
+      "default": "./.vibelang/js/src/Descriptor.js"
+    },
+    "./Disclosure": {
+      "types": "./src/Disclosure.ts",
+      "vibelang-source": "./src/Disclosure.ts",
+      "default": "./.vibelang/js/src/Disclosure.js"
+    },
+    "./Discovery": {
+      "types": "./src/Discovery.ts",
+      "vibelang-source": "./src/Discovery.ts",
+      "default": "./.vibelang/js/src/Discovery.js"
+    },
+    "./Executable": {
+      "types": "./src/Executable.ts",
+      "vibelang-source": "./src/Executable.ts",
+      "default": "./.vibelang/js/src/Executable.js"
+    },
     "./MarkdownFlow": "./src/MarkdownFlow.vibe",
     "./ModuleFlow": "./src/ModuleFlow.vibe",
-    "./Pack": "./src/Pack.ts",
-    "./Registry": "./src/Registry.ts",
+    "./Pack": {
+      "types": "./.vibe/declarations/src/Pack.d.vibe.ts",
+      "vibelang-source": "./src/Pack.vibe",
+      "default": "./.vibelang/js/src/Pack.js"
+    },
+    "./Registry": {
+      "types": "./src/Registry.ts",
+      "vibelang-source": "./src/Registry.ts",
+      "default": "./.vibelang/js/src/Registry.js"
+    },
     "./RegistryError": "./src/RegistryError.vibe",
-    "./index": "./src/index.ts",
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./Prompt": {
       "types": "./.vibe/declarations/src/Prompt.d.vibe.ts",
       "default": "./src/Prompt.vibe"
     },
-    "./Prompt/jsx-runtime": "./src/Prompt/jsx-runtime.ts",
-    "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts"
+    "./Prompt/jsx-runtime": {
+      "types": "./src/Prompt/jsx-runtime.ts",
+      "vibelang-source": "./src/Prompt/jsx-runtime.ts",
+      "default": "./.vibelang/js/src/Prompt/jsx-runtime.js"
+    },
+    "./ExecutionSnapshot": {
+      "types": "./src/ExecutionSnapshot.ts",
+      "vibelang-source": "./src/ExecutionSnapshot.ts",
+      "default": "./.vibelang/js/src/ExecutionSnapshot.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -64,7 +104,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

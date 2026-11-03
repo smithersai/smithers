@@ -9,7 +9,7 @@
 import { splitFrontmatter as split } from "@smthrs/core/Markdown"
 import type * as Schema from "effect/Schema"
 import * as Yaml from "yaml"
-import type { DiscoveryWarning } from "../Descriptor.ts"
+import type { DiscoveryWarning } from "../Descriptor.vibe"
 
 const openingFence = /^(?:\uFEFF)?---(?:\r?\n|$)/
 const maximumParseIssues = 3
