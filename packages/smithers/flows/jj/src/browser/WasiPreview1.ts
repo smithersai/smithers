@@ -70,7 +70,7 @@
  */
 
 import * as Schema from "effect/Schema"
-import { JjInternalFault } from "../internal/JjInternalFault.vibe"
+import { JjInternalFault } from "../internal/JjInternalFault.ts"
 import type { SyncDirentLike, SyncFsLike, SyncStatsLike } from "./WasiFs.ts"
 
 /**
