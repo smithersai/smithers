@@ -1,7 +1,7 @@
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Evaluator from "../src/Evaluator.ts"
-import * as Model from "../src/Model.ts"
+import * as Model from "../src/Model.vibe"
 import { ModelError } from "../src/ModelError.vibe"
 import type { ModelEvent } from "../src/ModelEvent.vibe"
 import type { ModelRequest } from "../src/ModelRequest.ts"

@@ -10,7 +10,7 @@
 import type * as FlowEngineLike from "../../../../packages/smithers/agent/src/FlowEngineLike.ts";
 import * as Seat from "../../../../packages/smithers/agent/src/Seat.ts";
 import * as SeatResolver from "../../../../packages/smithers/agent/src/SeatResolver.ts";
-import * as Model from "../../../../packages/smithers/agent/model/src/Model.ts";
+import * as Model from "../../../../packages/smithers/agent/model/src/Model.vibe";
 import * as ModelError from "../../../../packages/smithers/agent/model/src/ModelError.vibe";
 import * as ModelEvent from "../../../../packages/smithers/agent/model/src/ModelEvent.vibe";
 import type * as Route from "../../../../packages/smithers/agent/model/src/Route.ts";

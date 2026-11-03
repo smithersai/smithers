@@ -80,8 +80,8 @@
     "./Framing": "./src/Framing.vibe",
     "./FailureCopy": "./src/FailureCopy.vibe",
     "./Model": {
-      "types": "./src/Model.ts",
-      "vibelang-source": "./src/Model.ts",
+      "types": "./.vibe/declarations/src/Model.d.vibe.ts",
+      "vibelang-source": "./src/Model.vibe",
       "default": "./.vibelang/js/src/Model.js"
     },
     "./ModelCatalog": {
