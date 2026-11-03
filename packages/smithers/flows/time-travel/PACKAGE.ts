@@ -45,7 +45,7 @@ const securityReview = Smithers.SecurityReview({
         "A `Dialect.jsonText` JSON path or a `json_extract` path built from a runtime value instead of a fixed string.",
         "A DELETE or UPDATE on flows_journal_events, flows_attempts, flows_time_travel_* without a `run_id =` or `child_run_id =` bound predicate."
       ],
-      paths: ["src/SqlTimeTravelStore.ts", "src/migrations/**", "src/Migrations.ts"]
+      paths: ["src/SqlTimeTravelStore.ts", "src/migrations/**", "src/Migrations.vibe"]
     },
     {
       id: "truncate-owner-fence",
@@ -117,7 +117,7 @@ const securityReview = Smithers.SecurityReview({
         "The directory passed to `jj.workspaceAdd` built from anything other than `options.workspaceRoot` and the sanitized name.",
         "A jj change id or operation id read from the journal or audit detail passed to `jj.restore`/`jj.opRestore` without shape validation that rules out a leading `-`."
       ],
-      paths: ["src/internal/Fork.ts", "src/internal/Compensation.ts", "src/internal/Recovery.ts", "src/TimeTravel.ts"]
+      paths: ["src/internal/Fork.vibe", "src/internal/Compensation.ts", "src/internal/Recovery.ts", "src/TimeTravel.ts"]
     },
     {
       id: "lineage-edge-provenance",
@@ -147,10 +147,10 @@ const securityReview = Smithers.SecurityReview({
         "A caller-supplied `maxHistoryEntries` or frame `seq` accepted without the positive-integer decode in `Position`/`Frame`."
       ],
       paths: [
-        "src/internal/Replay.ts",
+        "src/internal/Replay.vibe",
         "src/internal/JournalPages.vibe",
         "src/internal/HistoryLimit.vibe",
-        "src/internal/SnapshotProjector.ts",
+        "src/internal/SnapshotProjector.vibe",
         "src/internal/Rewind.ts",
         "src/Frame.vibe",
         "src/TimeTravel.ts"

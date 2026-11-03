@@ -9,7 +9,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
 import * as Recovery from "../src/internal/Recovery.ts"
 import type { AuditDetail } from "../src/internal/Rewind.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 

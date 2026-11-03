@@ -12,7 +12,7 @@ import { execFileSync, spawn } from "node:child_process"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as Fork from "../src/internal/Fork.ts"
+import * as Fork from "../src/internal/Fork.vibe"
 import { TimeTravel } from "../src/TimeTravel.ts"
 import { awaitCheckpoint, jjInstalled, killHard, runReal, runState, withRealFixture } from "./RealTimeTravelHarness.ts"
 

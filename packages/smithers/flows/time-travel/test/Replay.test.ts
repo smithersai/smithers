@@ -8,7 +8,7 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
-import * as Replay from "../src/internal/Replay.ts"
+import * as Replay from "../src/internal/Replay.vibe"
 import { journalOf } from "./MemoryHarness.ts"
 
 const entry = (seq: number, payload: string, cacheKey?: string): Entry => ({

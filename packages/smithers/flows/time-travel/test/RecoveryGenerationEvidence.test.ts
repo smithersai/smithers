@@ -12,7 +12,7 @@ import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts
 import * as Recovery from "../src/internal/Recovery.ts"
 import * as Rewind from "../src/internal/Rewind.ts"
 import * as Memory from "../src/MemoryTimeTravelStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { error } from "../src/TimeTravelError.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"

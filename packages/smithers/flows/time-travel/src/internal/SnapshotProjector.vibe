@@ -23,7 +23,6 @@ import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import type * as Projection from "@smthrs/journal/Projection"
 import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
 import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 import { type Snapshot, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as HistoryLimit from "./HistoryLimit.vibe"
@@ -110,70 +109,69 @@ const PlanPayload = Schema.Struct({
  * @since 0.1.0
  * @category constructors
  */
-export const step = (
+export const step = effect (
   state: State,
   entry: JournalEvent.Entry
-): Effect.Effect<{ readonly state: State; readonly anchor: Snapshot | undefined }, TimeTravelError> =>
-  Effect.gen(function*() {
-    const isPlan = entry.eventType === EventTypes.planRecorded ||
-      entry.eventType === EventTypes.subgraphAppended
-    if (!isPlan && entry.eventType !== EventTypes.snapshotIdentified) return { state, anchor: undefined }
-    // Both facts are keyed by the lineage the record carries, so a record
-    // that carries none is corrupt evidence for either: the engine stamps
-    // the lineage on every record it writes.
-    const kind = isPlan ? "plan" : "snapshot"
-    const { lineageId } = yield* Schema.decodeUnknownEffect(LineageMetadata)(entry.meta).pipe(
-      Effect.mapError((cause) => error("invalid", `${kind} event ${entry.eventId} has corrupt lineage metadata`, cause))
-    )
-    const lineage = state.lineages[lineageId] ?? emptyLineage
-    if (isPlan) {
-      const plan = yield* Schema.decodeUnknownEffect(PlanPayload)(entry.payload).pipe(
-        Effect.mapError((cause) => error("invalid", `plan event ${entry.eventId} is corrupt`, cause))
-      )
-      return {
-        state: {
-          ...state,
-          lineages: {
-            ...state.lineages,
-            [lineageId]: plan.digest === undefined ? lineage : { ...lineage, planDigest: plan.digest }
-          }
-        },
-        anchor: undefined
-      }
+): { readonly state: State; readonly anchor: Snapshot | undefined }!TimeTravelError => {
+  const isPlan = entry.eventType === EventTypes.planRecorded ||
+    entry.eventType === EventTypes.subgraphAppended
+  if (!isPlan && entry.eventType !== EventTypes.snapshotIdentified) return { state, anchor: undefined }
+  // Both facts are keyed by the lineage the record carries, so a record
+  // that carries none is corrupt evidence for either: the engine stamps
+  // the lineage on every record it writes.
+  const kind = isPlan ? "plan" : "snapshot"
+  const { lineageId } = Schema.decodeUnknownEffect(LineageMetadata)(entry.meta) catch effect (cause) => {
+    throw error("invalid", `${kind} event ${entry.eventId} has corrupt lineage metadata`, cause)
+  }
+  const lineage = state.lineages[lineageId] ?? emptyLineage
+  if (isPlan) {
+    const plan = Schema.decodeUnknownEffect(PlanPayload)(entry.payload) catch effect (cause) => {
+      throw error("invalid", `plan event ${entry.eventId} is corrupt`, cause)
     }
-    const payload = yield* Schema.decodeUnknownEffect(SnapshotPayload)(entry.payload).pipe(
-      Effect.mapError((cause) => error("invalid", `snapshot event ${entry.eventId} is corrupt`, cause))
-    )
-    // `carried` asserts "the same pointer as this lineage's previous anchor",
-    // the cheap half of the per-frame obligation. Resolving it here, from the
-    // lineage's own state, is what turns one journal row into a real tier-2
-    // address rather than another lineage's.
-    const changeId = payload.snapshotId ?? lineage.changeId
-    if (changeId === undefined) return { state, anchor: undefined }
-    // The operation travels with the pointer it recorded: a new snapshot
-    // replaces both, and a carried record inherits both.
-    const operationId = payload.snapshotId === undefined ? lineage.operationId : payload.operationId
     return {
       state: {
+        ...state,
         lineages: {
           ...state.lineages,
-          [lineageId]: {
-            changeId,
-            ...(operationId === undefined ? {} : { operationId }),
-            planDigest: lineage.planDigest
-          }
-        },
-        anchors: state.anchors + 1
+          [lineageId]: plan.digest === undefined ? lineage : { ...lineage, planDigest: plan.digest }
+        }
       },
-      anchor: {
-        runId: entry.runId,
-        frame: { lineageId, seq: entry.seq },
-        changeId,
-        ...(operationId === undefined ? {} : { operationId }),
-        ...(lineage.planDigest === undefined ? {} : { planDigest: lineage.planDigest })
-      }
+      anchor: undefined
     }
-  })
+  }
+  const payload = Schema.decodeUnknownEffect(SnapshotPayload)(entry.payload) catch effect (cause) => {
+    throw error("invalid", `snapshot event ${entry.eventId} is corrupt`, cause)
+  }
+  // `carried` asserts "the same pointer as this lineage's previous anchor",
+  // the cheap half of the per-frame obligation. Resolving it here, from the
+  // lineage's own state, is what turns one journal row into a real tier-2
+  // address rather than another lineage's.
+  const changeId = payload.snapshotId ?? lineage.changeId
+  if (changeId === undefined) return { state, anchor: undefined }
+  // The operation travels with the pointer it recorded: a new snapshot
+  // replaces both, and a carried record inherits both.
+  const operationId = payload.snapshotId === undefined ? lineage.operationId : payload.operationId
+  return {
+    state: {
+      lineages: {
+        ...state.lineages,
+        [lineageId]: {
+          changeId,
+          ...(operationId === undefined ? {} : { operationId }),
+          planDigest: lineage.planDigest
+        }
+      },
+      anchors: state.anchors + 1
+    },
+    anchor: {
+      runId: entry.runId,
+      frame: { lineageId, seq: entry.seq },
+      changeId,
+      ...(operationId === undefined ? {} : { operationId }),
+      ...(lineage.planDigest === undefined ? {} : { planDigest: lineage.planDigest })
+    }
+  }
+}
 
 /**
  * The fold, as a reproducible journal projection.
@@ -187,11 +185,9 @@ export const projection = (
   name: "flows/time-travel/snapshots",
   initial,
   reduce: (state, entry) =>
-    step(state, entry).pipe(
-      Effect.flatMap(({ anchor, state: next }) =>
-        anchor === undefined ? Effect.succeed(next) : store.recordSnapshot(anchor).pipe(Effect.as(next))
-      )
-    )
+    step(state, entry)
+    |> Effect.flatMap(%, ({ anchor, state: next }) =>
+      anchor === undefined ? Effect.succeed(next) : (store.recordSnapshot(anchor) |> Effect.as(%, next)))
 })
 
 /**
@@ -227,50 +223,48 @@ const planEventTypes = [EventTypes.planRecorded, EventTypes.subgraphAppended] as
  * in no anchor, so the plan records at or below the mark are folded on top:
  * the journal serves them filtered by event type, a handful of rows.
  */
-const resume = (
+const resume = effect (
   journal: Journal.Service,
   runId: string,
   latest: ReadonlyArray<Snapshot>,
   pageSize: number
-): Effect.Effect<{ readonly state: State; readonly highWater: number | undefined }, TimeTravelError> =>
-  Effect.gen(function*() {
-    let highWater: number | undefined
-    const lineages: Record<string, LineageState> = {}
-    for (const anchor of latest) {
-      if (anchor.runId !== runId) continue
-      if (highWater === undefined || anchor.frame.seq > highWater) highWater = anchor.frame.seq
-      lineages[anchor.frame.lineageId] = {
-        changeId: anchor.changeId,
-        ...(anchor.operationId === undefined ? {} : { operationId: anchor.operationId }),
-        planDigest: anchor.planDigest
-      }
+): { readonly state: State; readonly highWater: number | undefined }!TimeTravelError => {
+  let highWater: number | undefined
+  const lineages: Record<string, LineageState> = {}
+  for (const anchor of latest) {
+    if (anchor.runId !== runId) continue
+    if (highWater === undefined || anchor.frame.seq > highWater) highWater = anchor.frame.seq
+    lineages[anchor.frame.lineageId] = {
+      changeId: anchor.changeId,
+      ...(anchor.operationId === undefined ? {} : { operationId: anchor.operationId }),
+      planDigest: anchor.planDigest
     }
-    let state: State = { lineages, anchors: 0 }
-    if (highWater === undefined) return { state, highWater }
-    const mark = highWater
-    yield* JournalPages.forEachPage(
-      journal,
-      {
-        runId,
-        pageSize,
-        eventTypes: planEventTypes,
-        label: "snapshot",
-        readFailure: `could not read ${runId} for anchoring`
-      },
-      (entries) =>
-        Effect.gen(function*() {
-          for (const entry of entries) {
-            if (entry.seq > mark) return JournalPages.Stop
-            // A journal double may ignore the filter; the fold ignores the rest.
-            if (!planEventTypes.includes(entry.eventType as (typeof planEventTypes)[number])) continue
-            state = (yield* step(state, entry)).state
-          }
-          const tail = entries.at(-1)?.seq
-          if (tail !== undefined && tail >= mark) return JournalPages.Stop
-        })
-    )
-    return { state, highWater }
-  })
+  }
+  let state: State = { lineages, anchors: 0 }
+  if (highWater === undefined) return { state, highWater }
+  const mark = highWater
+  try JournalPages.forEachPage(
+    journal,
+    {
+      runId,
+      pageSize,
+      eventTypes: planEventTypes,
+      label: "snapshot",
+      readFailure: `could not read ${runId} for anchoring`
+    },
+    effect (entries) => {
+      for (const entry of entries) {
+        if (entry.seq > mark) return JournalPages.Stop
+        // A journal double may ignore the filter; the fold ignores the rest.
+        if (!planEventTypes.includes(entry.eventType as (typeof planEventTypes)[number])) continue
+        state = (try step(state, entry)).state
+      }
+      const tail = entries.at(-1)?.seq
+      if (tail !== undefined && tail >= mark) return JournalPages.Stop
+    }
+  )
+  return { state, highWater }
+}
 
 /**
  * Folds one run's committed journal into its frame anchors, resuming from the
@@ -296,19 +290,19 @@ const resume = (
 export const project = (
   runId: string,
   options: ProjectOptions = {}
-): Effect.Effect<State, TimeTravelError, Journal.Journal | TimeTravelStore> =>
-  Effect.gen(function*() {
-    const journal = yield* Journal.Journal
-    const store = yield* TimeTravelStore
+): State!TimeTravelError!Journal.Journal | TimeTravelStore =>
+  effect {
+    const journal = try Journal.Journal
+    const store = try TimeTravelStore
     const pageSize = options.pageSize ?? 200
-    const latest = yield* store.latestSnapshots(runId)
-    const resumed = yield* resume(journal, runId, latest, pageSize)
+    const latest = try store.latestSnapshots(runId)
+    const resumed = try resume(journal, runId, latest, pageSize)
     let state = resumed.state
     if (options.upTo !== undefined && resumed.highWater !== undefined && resumed.highWater >= options.upTo) {
       return state
     }
     let read = 0
-    yield* JournalPages.forEachPage(
+    try JournalPages.forEachPage(
       journal,
       {
         runId,
@@ -317,26 +311,25 @@ export const project = (
         label: "snapshot",
         readFailure: `could not read ${runId} for anchoring`
       },
-      (entries) =>
-        Effect.gen(function*() {
-          const anchors: Array<Snapshot> = []
-          let reachedBound = false
-          for (const entry of entries) {
-            if (options.upTo !== undefined && entry.seq > options.upTo) {
-              reachedBound = true
-              break
-            }
-            read += 1
-            if (options.maxEntries !== undefined && read > options.maxEntries) {
-              return yield* Effect.fail(HistoryLimit.exceeded("anchor refresh", runId, options.maxEntries))
-            }
-            const next = yield* step(state, entry)
-            state = next.state
-            if (next.anchor !== undefined) anchors.push(next.anchor)
+      effect (entries) => {
+        const anchors: Array<Snapshot> = []
+        let reachedBound = false
+        for (const entry of entries) {
+          if (options.upTo !== undefined && entry.seq > options.upTo) {
+            reachedBound = true
+            break
           }
-          if (anchors.length > 0) yield* store.recordSnapshots(anchors)
-          if (reachedBound) return JournalPages.Stop
-        })
+          read += 1
+          if (options.maxEntries !== undefined && read > options.maxEntries) {
+            throw HistoryLimit.exceeded("anchor refresh", runId, options.maxEntries)
+          }
+          const next = try step(state, entry)
+          state = next.state
+          if (next.anchor !== undefined) anchors.push(next.anchor)
+        }
+        if (anchors.length > 0) try store.recordSnapshots(anchors)
+        if (reachedBound) return JournalPages.Stop
+      }
     )
     return state
-  })
+  }
