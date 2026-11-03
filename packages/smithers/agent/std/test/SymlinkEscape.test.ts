@@ -20,7 +20,7 @@ import { join } from "node:path"
 import { expect, it } from "vitest"
 import * as ApplyPatch from "../src/ApplyPatch.ts"
 import * as Edit from "../src/Edit.ts"
-import type * as StdError from "../src/StdError.ts"
+import type * as StdError from "../src/StdError.vibe"
 import * as Write from "../src/Write.ts"
 
 const guarded = (workspace: string) =>

@@ -77,8 +77,8 @@ import * as Exec from "./internal/Exec.ts"
 import { GitWorktree, type Repository } from "./internal/GitWorktree.ts"
 import { withoutTrailingSlash } from "./internal/Paths.ts"
 import * as Prune from "./internal/Prune.ts"
-import * as StdError from "./StdError.ts"
-import * as TestRunner from "./TestRunner.ts"
+import * as StdError from "./StdError.vibe"
+import * as TestRunner from "./TestRunner.vibe"
 
 /**
  * The id naming the tree a run opened on.

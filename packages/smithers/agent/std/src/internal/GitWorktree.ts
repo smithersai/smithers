@@ -43,7 +43,7 @@
 
 import { ambientEnvironment, type ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect } from "effect"
-import * as StdError from "../StdError.ts"
+import * as StdError from "../StdError.vibe"
 import * as Exec from "./Exec.ts"
 
 const failed = (message: string, code: StdError.Code = "command_failed") => new StdError.StdError({ code, message })

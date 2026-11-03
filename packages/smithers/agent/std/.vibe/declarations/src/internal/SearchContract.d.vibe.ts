@@ -9,45 +9,36 @@
  *
  * @since 1.0.0
  */
-
-import type * as PlatformError from "effect/PlatformError"
-import * as StdError from "../StdError.ts"
-
+import type * as PlatformError from "effect/PlatformError";
+import * as StdError from "../StdError.vibe";
 /**
  * Constructs the common unsupported-pattern failure.
  *
  * @private
  * @since 1.0.0
  */
-export const invalidPattern = (pattern: string, detail: string): StdError.StdError =>
-  new StdError.StdError({ code: "invalid_pattern", message: `${rejectionPrefix}"${pattern}": ${detail}` })
-
+export declare const invalidPattern: (pattern: string, detail: string) => StdError.StdError;
 /**
  * How every rejection {@link invalidPattern} writes begins.
  *
  * @private
  * @since 1.0.0
  */
-export const rejectionPrefix = "Unsupported ripgrep pattern "
-
+export declare const rejectionPrefix = "Unsupported ripgrep pattern ";
 /**
  * Constructs the common invalid-options failure.
  *
  * @private
  * @since 1.0.0
  */
-export const invalidInput = (detail: string): StdError.StdError =>
-  new StdError.StdError({ code: "invalid_input", message: `Invalid ripgrep options: ${detail}` })
-
+export declare const invalidInput: (detail: string) => StdError.StdError;
 /**
  * Constructs the common missing-root failure.
  *
  * @private
  * @since 1.0.0
  */
-export const notFound = (path: string): StdError.StdError =>
-  new StdError.StdError({ code: "not_found", message: `Path not found: ${path}`, path })
-
+export declare const notFound: (path: string) => StdError.StdError;
 /**
  * Maps a failure to inspect the search root onto the contract's failures.
  *
@@ -61,17 +52,11 @@ export const notFound = (path: string): StdError.StdError =>
  * @private
  * @since 1.0.0
  */
-export const rootFailure = (path: string, error: PlatformError.PlatformError): StdError.StdError =>
-  error.reason._tag === "NotFound"
-    ? notFound(path)
-    : error.reason._tag === "PermissionDenied"
-    ? new StdError.StdError({ code: "permission_denied", message: `Cannot search ${path}: ${error.message}`, path })
-    : new StdError.StdError({ code: "command_failed", message: `Cannot search ${path}: ${error.message}`, path })
-
+export declare const rootFailure: (path: string, error: PlatformError.PlatformError) => StdError.StdError;
 /**
  * Escapes literal text for JavaScript regular expressions.
  *
  * @private
  * @since 1.0.0
  */
-export const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+export declare const escapeRegex: (value: string) => string;

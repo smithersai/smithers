@@ -9,9 +9,8 @@
  * @since 1.0.0
  */
 
-import { Context, Effect, Layer, Schema } from "effect"
 import { capability, envelope } from "./internal/Declaration.ts"
-import * as StdError from "./StdError.ts"
+import * as StdError from "./StdError.vibe"
 
 /**
  * The registry name of the `websearch` flow.
@@ -114,7 +113,7 @@ export const flow = { name, description, input: Input, output: Output, capabilit
  * @since 1.0.0
  */
 export interface WebSearch {
-  readonly search: (input: typeof Input.Type) => Effect.Effect<typeof Output.Type, StdError.StdError>
+  readonly search: (input: typeof Input.Type) => typeof Output.Type!StdError.StdError
 }
 /**
  * The {@link WebSearch} service tag.
@@ -150,16 +149,24 @@ export const makeNoop = (): WebSearch =>
  * @category layers
  * @since 1.0.0
  */
-export const layerNoop: Layer.Layer<WebSearch> = Layer.succeed(WebSearch, makeNoop())
+export const layerNoop: Layer<WebSearch> = Layer.succeed(WebSearch, makeNoop())
 /**
  * Runs the `websearch` flow: searches the web through the configured provider.
  *
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("WebSearch.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, WebSearch> {
-  const provider = yield* WebSearch
-  return yield* provider.search(input)
-})
+export const run = effect (
+  input: {
+    readonly query: string
+    readonly numResults?: number | undefined
+    readonly freshness?: "day" | "month" | "week" | "year" | undefined
+  }
+): typeof Output.Type!StdError.StdError!WebSearch =>
+  try withSpan(
+    effect {
+      const provider = try WebSearch
+      return try provider.search(input)
+    },
+    "WebSearch.run"
+  )

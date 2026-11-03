@@ -64,7 +64,7 @@ export const makeNoop = () => make({
     diagnostics: unsupported,
     sync: unsupported,
     close: unsupported,
-    refresh: unsupported(),
+    refresh: unsupported()
 });
 /**
  * Provides {@link makeNoop}.

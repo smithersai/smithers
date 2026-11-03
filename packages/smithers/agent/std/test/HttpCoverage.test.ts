@@ -2,7 +2,7 @@ import { Effect, Fiber, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Http from "../src/internal/Http.ts"
-import * as StdError from "../src/StdError.ts"
+import * as StdError from "../src/StdError.vibe"
 
 describe("bounded HTTP helpers", () => {
   it("preserves standard failures and describes opaque transport failures", () => {

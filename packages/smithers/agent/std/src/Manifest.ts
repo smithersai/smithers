@@ -17,9 +17,9 @@ import * as Lsp from "./Lsp.ts"
 import * as Read from "./Read.ts"
 import * as ShellCommand from "./ShellCommand.ts"
 import * as TestRun from "./TestRun.ts"
-import * as UpdatePlan from "./UpdatePlan.ts"
+import * as UpdatePlan from "./UpdatePlan.vibe"
 import * as WebFetch from "./WebFetch.ts"
-import * as WebSearch from "./WebSearch.ts"
+import * as WebSearch from "./WebSearch.vibe"
 import * as Write from "./Write.ts"
 
 /**

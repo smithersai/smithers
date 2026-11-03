@@ -38,8 +38,8 @@ import * as Prune from "./internal/Prune.ts"
 import * as TestReport from "./internal/TestReport.ts"
 import { MAX_SHELL_OUTPUT_BYTES, truncateBytes } from "./internal/Text.ts"
 import * as Probe from "./Probe.ts"
-import * as StdError from "./StdError.ts"
-import * as TestRunner from "./TestRunner.ts"
+import * as StdError from "./StdError.vibe"
+import * as TestRunner from "./TestRunner.vibe"
 
 /**
  * Registry name for the test flow.

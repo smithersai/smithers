@@ -12,8 +12,8 @@ import * as Grep from "../src/Grep.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
 import * as PortableSearch from "../src/PortableSearch.ts"
 import * as Search from "../src/Search.vibe"
-import * as SearchConformance from "../src/SearchConformance.ts"
-import * as StdError from "../src/StdError.ts"
+import * as SearchConformance from "../src/SearchConformance.vibe"
+import * as StdError from "../src/StdError.vibe"
 
 const root = mkdtempSync(join(tmpdir(), "flows-search-conformance-"))
 const linkedRoot = join(root, "linked-root")

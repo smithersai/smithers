@@ -9,9 +9,9 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
-import * as FsFailure from "./internal/FsFailure.ts"
+import * as FsFailure from "./internal/FsFailure.vibe"
 import { DEFAULT_READ_LIMIT, MAX_ENTRIES, notice } from "./internal/Text.ts"
-import * as StdError from "./StdError.ts"
+import * as StdError from "./StdError.vibe"
 
 /**
  * The registry name of the `ls` flow.

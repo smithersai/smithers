@@ -3,7 +3,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { Cause, Effect, Exit, FileSystem, Option, Path } from "effect"
 import * as ApplyPatch from "../../src/ApplyPatch.ts"
 import * as Edit from "../../src/Edit.ts"
-import type { StdError } from "../../src/StdError.ts"
+import type { StdError } from "../../src/StdError.vibe"
 
 const [path, kind, pause] = process.argv.slice(2)
 const result = await Effect.runPromiseExit(

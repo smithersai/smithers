@@ -73,7 +73,7 @@ const types = {
     f: "File",
     F: "File",
     o: "Unknown",
-    L: undefined,
+    L: undefined
 };
 const info = (type, size) => ({
     type,
@@ -89,7 +89,7 @@ const info = (type, size) => ({
     gid: Option.none(),
     rdev: Option.none(),
     blksize: Option.none(),
-    blocks: Option.none(),
+    blocks: Option.none()
 });
 /**
  * The tree as a read-only `FileSystem`, resolving paths with `path`. A file
@@ -129,6 +129,6 @@ export const fileSystem = (tree, path) => {
         }),
         readFile,
         readFileString: (value) => Effect.map(readFile(value), (bytes) => new TextDecoder().decode(bytes)),
-        stream: (value) => Stream.fromEffect(readFile(value)),
+        stream: (value) => Stream.fromEffect(readFile(value))
     });
 };

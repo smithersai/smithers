@@ -3,10 +3,10 @@ import { Cause, Effect, Exit, FileSystem, Option, Path, PlatformError } from "ef
 import { describe, expect, it } from "vitest"
 import * as ApplyPatch from "../src/ApplyPatch.ts"
 import * as Edit from "../src/Edit.ts"
-import { rootFailure } from "../src/internal/SearchContract.ts"
+import { rootFailure } from "../src/internal/SearchContract.vibe"
 import * as Ls from "../src/Ls.ts"
 import * as Read from "../src/Read.ts"
-import type * as StdError from "../src/StdError.ts"
+import type * as StdError from "../src/StdError.vibe"
 import * as Write from "../src/Write.ts"
 import { fileInfo, layer } from "./TestLayers.ts"
 

@@ -11,7 +11,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { envelope } from "./internal/Declaration.ts"
-import * as StdError from "./StdError.ts"
+import * as StdError from "./StdError.vibe"
 
 /**
  * Registry name for the update_plan flow. Matches the Codex CLI tool name.
@@ -155,17 +155,22 @@ export const flow = { name, description, input: Input, output: Output, capabilit
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("UpdatePlan.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError> {
-  const running = inProgressCount(input.plan)
-  if (running > 1) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "invalid_input",
-        message: `At most one step can be in_progress at a time; the plan named ${running}`
-      })
-    )
+export const run = effect (
+  input: {
+    readonly explanation?: string | undefined
+    readonly plan: readonly { readonly step: string; readonly status: "completed" | "in_progress" | "pending" }[]
   }
-  return { output: "Plan updated" }
-})
+): typeof Output.Type!StdError.StdError =>
+  try withSpan(
+    effect {
+      const running = inProgressCount(input.plan)
+      if (running > 1) {
+        throw new StdError.StdError({
+          code: "invalid_input",
+          message: `At most one step can be in_progress at a time; the plan named ${running}`
+        })
+      }
+      return { output: "Plan updated" }
+    },
+    "UpdatePlan.run"
+  )

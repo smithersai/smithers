@@ -24,13 +24,13 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
-import * as Diagnostics from "./internal/Diagnostics.ts"
-import * as FileMutation from "./internal/FileMutation.ts"
-import * as FsFailure from "./internal/FsFailure.ts"
+import * as Diagnostics from "./internal/Diagnostics.vibe"
+import * as FileMutation from "./internal/FileMutation.vibe"
+import * as FsFailure from "./internal/FsFailure.vibe"
 import * as Match from "./internal/Match.ts"
 import * as Preserve from "./internal/Preserve.ts"
 import { sourceLines } from "./internal/Text.ts"
-import * as StdError from "./StdError.ts"
+import * as StdError from "./StdError.vibe"
 
 /**
  * Registry name for the edit flow.

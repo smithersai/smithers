@@ -9,12 +9,12 @@ import { type Context, Effect, Layer, Stream } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Grouping from "./internal/Grouping.ts"
 import * as LinearRegex from "./internal/LinearRegex.ts"
-import { escapeRegex } from "./internal/SearchContract.ts"
+import { escapeRegex } from "./internal/SearchContract.vibe"
 import { notice, truncateBytes } from "./internal/Text.ts"
-import * as Walk from "./internal/Walk.ts"
+import * as Walk from "./internal/Walk.vibe"
 import * as Search from "./Search.vibe"
-import * as Contract from "./SearchContract.ts"
-import * as StdError from "./StdError.ts"
+import * as Contract from "./SearchContract.vibe"
+import * as StdError from "./StdError.vibe"
 
 /**
  * Narrows a walk to the files a search reports.

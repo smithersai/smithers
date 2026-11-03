@@ -29,7 +29,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Path from "effect/Path"
 import type * as Search from "./Search.vibe"
-import type * as StdError from "./StdError.ts"
+import type * as StdError from "./StdError.vibe"
 
 /**
  * One file the generated tree contains.
@@ -215,31 +215,28 @@ export const plan = (options: {
  * @category generators
  * @since 1.0.0
  */
-export const materialize = (
+export const materialize = effect (
   target: Plan
-): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fileSystem = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    yield* Effect.forEach(target.files, (entry) => {
-      const absolute = path.join(target.root, ...entry.path.split("/"))
-      return fileSystem.makeDirectory(path.dirname(absolute), { recursive: true }).pipe(
-        Effect.andThen(fileSystem.writeFileString(absolute, entry.content)),
-        Effect.orDie
-      )
-    }, { discard: true })
-  })
+): void!never!FileSystem.FileSystem | Path.Path => {
+  const fileSystem = try FileSystem.FileSystem
+  const path = try Path.Path
+  try Effect.forEach(target.files, (entry) => {
+    const absolute = path.join(target.root, ...entry.path.split("/"))
+    return fileSystem.makeDirectory(path.dirname(absolute), { recursive: true })
+      |> Effect.andThen(%, fileSystem.writeFileString(absolute, entry.content))
+      |> Effect.orDie(%)
+  }, { discard: true })
+}
 
 /** A typed answer rendered so two of them can be compared as text. */
 const rendered = <A>(
-  effect: Effect.Effect<A, StdError.StdError>
-): Effect.Effect<string> =>
-  effect.pipe(
-    Effect.match({
-      onSuccess: (value) => JSON.stringify(value),
-      onFailure: (error) => JSON.stringify({ failure: error.code })
-    })
-  )
+  effect: A!StdError.StdError
+): string!! =>
+  effect
+  |> Effect.match(%, {
+    onSuccess: (value) => JSON.stringify(value),
+    onFailure: (error) => JSON.stringify({ failure: error.code })
+  })
 
 /**
  * Runs every call in a plan through two implementations and reports the
@@ -252,25 +249,24 @@ const rendered = <A>(
  * @category conformance
  * @since 1.0.0
  */
-export const compare = (options: {
+export const compare = effect (options: {
   readonly plan: Plan
   readonly subject: Search.Search
   readonly reference: Search.Search
-}): Effect.Effect<ReadonlyArray<Divergence>> =>
-  Effect.gen(function*() {
-    const divergences: Array<Divergence> = []
-    for (const input of options.plan.grep) {
-      const subject = yield* rendered(options.subject.grep(input))
-      const reference = yield* rendered(options.reference.grep(input))
-      if (subject !== reference) divergences.push({ call: "grep", input, subject, reference })
-    }
-    for (const input of options.plan.glob) {
-      const subject = yield* rendered(options.subject.glob(input))
-      const reference = yield* rendered(options.reference.glob(input))
-      if (subject !== reference) divergences.push({ call: "glob", input, subject, reference })
-    }
-    return divergences
-  })
+}): ReadonlyArray<Divergence>!! => {
+  const divergences: Array<Divergence> = []
+  for (const input of options.plan.grep) {
+    const subject = try rendered(options.subject.grep(input))
+    const reference = try rendered(options.reference.grep(input))
+    if (subject !== reference) divergences.push({ call: "grep", input, subject, reference })
+  }
+  for (const input of options.plan.glob) {
+    const subject = try rendered(options.subject.glob(input))
+    const reference = try rendered(options.reference.glob(input))
+    if (subject !== reference) divergences.push({ call: "glob", input, subject, reference })
+  }
+  return divergences
+}
 
 /**
  * Renders divergences as the report a failing conformance run should print.

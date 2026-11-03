@@ -27,7 +27,7 @@ import * as ProcessConfinement from "../../../flows/platform-node/src/ProcessCon
 import * as ProcessSandbox from "../../../flows/platform-node/src/ProcessSandbox.ts"
 import * as Bash from "../src/Bash.ts"
 import * as ShellCommand from "../src/ShellCommand.ts"
-import type * as StdError from "../src/StdError.ts"
+import type * as StdError from "../src/StdError.vibe"
 
 const scratch = process.env.SMITHERS_CONFINEMENT_TEST_SCRATCH ?? join(process.cwd(), ".cache", "process-confinement")
 const directories = new Set<string>()

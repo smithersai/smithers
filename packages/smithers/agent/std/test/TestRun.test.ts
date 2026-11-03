@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest"
 import * as Container from "../src/Container.vibe"
 import { MAX_SHELL_OUTPUT_BYTES } from "../src/internal/Text.ts"
 import * as TestRun from "../src/TestRun.ts"
-import * as TestRunner from "../src/TestRunner.ts"
+import * as TestRunner from "../src/TestRunner.vibe"
 
 // Effect 4.1 types a command's arguments and environment values as Word, text or
 // Redacted text; the fakes read what the process would receive.

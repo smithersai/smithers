@@ -17,7 +17,7 @@
  */
 
 import type * as Path from "@smthrs/kernel/Path"
-import * as StdError from "../StdError.ts"
+import * as StdError from "../StdError.vibe"
 import { withinEnvelope } from "./Paths.ts"
 
 /**
