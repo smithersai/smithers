@@ -41,6 +41,8 @@ test("typing a search takes the painted rows away: they were never its answer", 
 
 test("an issue still syncing: its painted title sits in the page, whose links work", async ({ page, request }) => {
   await page.route("**/api/shapes/item-summaries*", () => undefined)
+  // Nor does the issue's own shape: its answer settles the page, which ends the paint as handed over before the click.
+  await page.route("**/api/shapes/items?*", () => undefined)
   const [issue] = (await (await request.get(`/api/repos/${repo}/issues?state=all&limit=1`)).json()) as Array<{ number: number }>
   await page.goto(`/${repo}/issues/${issue!.number}`)
   await expect(page.locator("#first-paint[data-placed] h1")).toContainText(`#${issue!.number}`, { timeout: 30_000 })
