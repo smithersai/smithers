@@ -7,8 +7,7 @@
  *
  * Pure: no store, no DOM, no Effect runtime.
  */
-import { Schema } from "effect"
-import type { FormHints } from "../flow-form"
+import type { FormHints } from "../flow-form.vibe"
 
 /**
  * The input schemas an operation may declare: anything that decodes from
@@ -29,14 +28,36 @@ export interface OperationMetadata<Capability extends string = string, Host exte
   readonly agent?: "run" | "confirm" | "never"
   readonly visibility?: "core" | "advanced" | "in-card" | "hidden"
   readonly actors?: ReadonlyArray<"person" | "app_agent" | "external_agent">
-  readonly credentialScope?: "read:user" | "write:user" | "read:repository" | "write:repository" | "read:workspace" | "write:workspace"
+  readonly credentialScope?:
+    | "read:user"
+    | "write:user"
+    | "read:repository"
+    | "write:repository"
+    | "read:workspace"
+    | "write:workspace"
   readonly minimumRole?: "member" | "maintainer" | "owner"
   readonly slash?: string | null
   readonly cli?: ReadonlyArray<string> | null
   readonly journey?: ReadonlyArray<string>
   readonly group?: string
   readonly client?: { readonly kind: "issue-draft"; readonly http: { readonly method: "POST"; readonly path: string } }
-  readonly http?: { readonly method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"; readonly path: string; readonly body?: Readonly<Record<string, string>>; readonly defaults?: Readonly<Record<string, unknown>>; readonly query?: Readonly<Record<string, string>>; readonly objects?: Readonly<Record<string, { readonly when: string; readonly body: Readonly<Record<string, string>>; readonly defaults?: Readonly<Record<string, unknown>> }>> } | null
+  readonly http?: {
+    readonly method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
+    readonly path: string
+    readonly body?: Readonly<Record<string, string>>
+    readonly defaults?: Readonly<Record<string, unknown>>
+    readonly query?: Readonly<Record<string, string>>
+    readonly objects?: Readonly<
+      Record<
+        string,
+        {
+          readonly when: string
+          readonly body: Readonly<Record<string, string>>
+          readonly defaults?: Readonly<Record<string, unknown>>
+        }
+      >
+    >
+  } | null
   /** Not listed in the slash menu (id-scoped button actions); still invocable. */
   readonly hidden?: boolean
   /** Teach a hidden control to the model without adding it to the human menu. */
@@ -115,7 +136,7 @@ export interface OperationMetadata<Capability extends string = string, Host exte
 export interface Operation<
   I extends OperationPayload = OperationPayload,
   Capability extends string = string,
-  Host extends string = string
+  Host extends string = string,
 > extends OperationMetadata<Capability, Host> {
   readonly name: string
   readonly input: I
@@ -134,13 +155,22 @@ export interface Operation<
 export const operation = <const O extends Operation>(declared: O) => {
   const agent = declared.agent ?? (declared.confirm === undefined ? "run" : "confirm")
   const defaults = {
-    slash: null, cli: null, http: null, journey: [] as ReadonlyArray<string>, group: "",
+    slash: null,
+    cli: null,
+    http: null,
+    journey: [] as ReadonlyArray<string>,
+    group: "",
     visibility: declared.hidden === true && declared.discloseToAgent !== true ? "hidden" as const : "in-card" as const,
     actors: agent === "never" ? ["person"] as const : ["person", "app_agent"] as const,
     minimumRole: "member" as const,
-    credentialScope: "write:repository" as const
+    credentialScope: "write:repository" as const,
   }
-  return { ...defaults, ...declared, agent, ...(agent === "never" && declared.agentReason === undefined ? { agentReason: "Only a person can do this" } : {}) } as Omit<typeof defaults, keyof O> & O & { readonly agent: "run" | "confirm" | "never" }
+  return {
+    ...defaults,
+    ...declared,
+    agent,
+    ...(agent === "never" && declared.agentReason === undefined ? { agentReason: "Only a person can do this" } : {}),
+  } as Omit<typeof defaults, keyof O> & O & { readonly agent: "run" | "confirm" | "never" }
 }
 
 /** The input of an operation that takes nothing. */
@@ -163,6 +193,6 @@ export const debugApiOperation = operation({
     operationId: Schema.optional(Schema.String),
     intent: Schema.optional(Schema.Literals(["open", "send", "confirm"])),
     values: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-    confirmation: Schema.optional(Schema.String)
-  })
+    confirmation: Schema.optional(Schema.String),
+  }),
 })

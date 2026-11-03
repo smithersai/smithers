@@ -3,7 +3,7 @@ import { Schema } from "effect";
  * They expose no additional slash, CLI or model door. Concrete control bodies
  * must resolve their operation before authorization; there is no control grant.
  */
-import { type OperationPayload } from "../../../../src/app-operations/index.ts";
+import { type OperationPayload } from "./index.vibe";
 export declare const httpProjections: readonly [Omit<{
     slash: null;
     cli: null;

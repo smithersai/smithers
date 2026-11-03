@@ -169,15 +169,15 @@
       "default": "./src/flow-arguments.ts"
     },
     "./app-operations": {
-      "types": "./src/app-operations/index.ts",
+      "types": "./.vibe/declarations/src/app-operations/index.d.vibe.ts",
       "import": {
-        "types": "./src/app-operations/index.ts",
-        "vibelang-source": "./src/app-operations/index.ts",
+        "types": "./.vibe/declarations/src/app-operations/index.d.vibe.ts",
+        "vibelang-source": "./src/app-operations/index.vibe",
         "default": "./.vibelang/js/src/app-operations/index.js"
       },
       "default": {
-        "types": "./src/app-operations/index.ts",
-        "vibelang-source": "./src/app-operations/index.ts",
+        "types": "./.vibe/declarations/src/app-operations/index.d.vibe.ts",
+        "vibelang-source": "./src/app-operations/index.vibe",
         "default": "./.vibelang/js/src/app-operations/index.js"
       }
     },
