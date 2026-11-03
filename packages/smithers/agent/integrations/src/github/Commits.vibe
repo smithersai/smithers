@@ -48,7 +48,7 @@ export const GitCommit = Schema.Struct({
   sha: Schema.String,
   message: Schema.String,
   tree: Schema.Struct({ sha: Schema.String }),
-  parents: Schema.Array(Schema.Struct({ sha: Schema.String })),
+  parents: Schema.Array(Schema.Struct({ sha: Schema.String }))
 })
 
 /**
@@ -72,7 +72,7 @@ export const ChangedFile = Schema.Struct({
   additions: Schema.Number,
   deletions: Schema.Number,
   patch: Schema.optionalKey(Schema.String),
-  previous_filename: Schema.optionalKey(Schema.String),
+  previous_filename: Schema.optionalKey(Schema.String)
 })
 
 /**
@@ -132,12 +132,12 @@ const CompareCommitAnswer = Schema.Struct({
   commit: Schema.Struct({
     message: Schema.String,
     author: Schema.NullOr(Schema.Struct({ date: Schema.optionalKey(Schema.String) })).pipe(
-      Schema.withDecodingDefault(Effect.succeed(null)),
-    ),
+      Schema.withDecodingDefault(Effect.succeed(null))
+    )
   }),
   author: Schema.NullOr(Schema.Struct({ login: Schema.String })).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
+    Schema.withDecodingDefault(Effect.succeed(null))
+  )
 })
 
 const CompareAnswer = Schema.Struct({
@@ -145,7 +145,7 @@ const CompareAnswer = Schema.Struct({
   behind_by: Schema.Number,
   total_commits: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   commits: Schema.Array(CompareCommitAnswer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  files: Schema.Array(ChangedFile).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  files: Schema.Array(ChangedFile).pipe(Schema.withDecodingDefault(Effect.succeed([])))
 })
 
 // A message's first line: everything before its first line break.
@@ -155,13 +155,13 @@ const GraphQLAnswer = Schema.Struct({
   data: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
-        createCommitOnBranch: Schema.NullOr(Schema.Struct({ commit: Schema.Struct({ oid: Schema.String }) })),
-      }),
-    ),
+        createCommitOnBranch: Schema.NullOr(Schema.Struct({ commit: Schema.Struct({ oid: Schema.String }) }))
+      })
+    )
   ),
   errors: Schema.optionalKey(
-    Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) })),
-  ),
+    Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) }))
+  )
 })
 
 const SHA = /^[0-9a-f]{40}$/
@@ -189,7 +189,7 @@ const isBase64 = (value: unknown): value is string =>
 
 const spanAttributes = (owner: string, repo: string): Record<string, unknown> => ({
   "github.owner": owner,
-  "github.repo": repo,
+  "github.repo": repo
 })
 
 // A GraphQL error's type or message saying the branch moved since the
@@ -223,7 +223,7 @@ export const createOnBranch = (
     readonly body?: string | undefined
     readonly additions: ReadonlyArray<FileAddition>
     readonly deletions: ReadonlyArray<string>
-  },
+  }
 ): string!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -253,10 +253,10 @@ export const createOnBranch = (
           message: { headline: input.headline, ...(input.body === undefined ? {} : { body: input.body }) },
           fileChanges: {
             additions: input.additions.map((file) => ({ path: file.path, contents: file.contents })),
-            deletions: input.deletions.map((path) => ({ path })),
-          },
-        },
-      },
+            deletions: input.deletions.map((path) => ({ path }))
+          }
+        }
+      }
     }, { schema: GraphQLAnswer })
     const commit = answer.data?.createCommitOnBranch?.commit
     if (answer.errors !== undefined && answer.errors.length > 0 || commit === undefined) {
@@ -266,7 +266,7 @@ export const createOnBranch = (
         stale
           ? "GitHub refused the commit: the branch moved since the expected head."
           : "GitHub refused the commit.",
-        { status: stale ? 409 : 422, stale, graphql: true, retryable: false, outcomeUnknown: false },
+        { status: stale ? 409 : 422, stale, graphql: true, retryable: false, outcomeUnknown: false }
       )
     }
     return commit.oid
@@ -302,7 +302,7 @@ const MergeIntoAnswer = Schema.NullOr(Schema.Struct({ sha: Schema.String }))
 export const mergeInto = (
   owner: string,
   repo: string,
-  input: { readonly base: string; readonly head: string; readonly commitMessage?: string | undefined },
+  input: { readonly base: string; readonly head: string; readonly commitMessage?: string | undefined }
 ): MergedInto!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -312,7 +312,7 @@ export const mergeInto = (
     const answer = try client.request("POST", `/repos/${repository}/merges`, {
       base,
       head,
-      ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage }),
+      ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage })
     }, { schema: MergeIntoAnswer, retryUnsafeWrites: true })
     return answer === null ? { kind: "upToDate" } as const : { kind: "merged", sha: answer.sha } as const
   }) |> Effect.withSpan(%, "GitHub.Commits.mergeInto", { attributes: spanAttributes(owner, repo) })
@@ -327,7 +327,7 @@ export const mergeInto = (
 export const getCommit = (
   owner: string,
   repo: string,
-  sha: string,
+  sha: string
 ): GitCommit!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -352,7 +352,7 @@ export const compare = (
   owner: string,
   repo: string,
   base: string,
-  head: string,
+  head: string
 ): Comparison!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -360,13 +360,13 @@ export const compare = (
     const from = try requireSha("base", base)
     const to = try requireSha("head", head)
     const answer = try client.request("GET", `/repos/${repository}/compare/${from}...${to}`, undefined, {
-      schema: CompareAnswer,
+      schema: CompareAnswer
     })
     const commits = answer.commits.map((commit): ComparedCommit => ({
       sha: commit.sha,
       headline: headlineOf(commit.commit.message),
       authorLogin: commit.author?.login ?? null,
-      authoredAt: commit.commit.author?.date ?? null,
+      authoredAt: commit.commit.author?.date ?? null
     }))
     return {
       aheadBy: answer.ahead_by,
@@ -374,6 +374,6 @@ export const compare = (
       files: answer.files,
       truncated: answer.files.length >= MAX_COMPARE_FILES,
       commits,
-      commitsTruncated: answer.total_commits > commits.length,
+      commitsTruncated: answer.total_commits > commits.length
     }
   }) |> Effect.withSpan(%, "GitHub.Commits.compare", { attributes: spanAttributes(owner, repo) })

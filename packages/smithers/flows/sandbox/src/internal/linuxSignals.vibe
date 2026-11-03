@@ -45,7 +45,7 @@ const numbers: Partial<Record<Signal, number>> = {
   SIGPOLL: 29,
   SIGPWR: 30,
   SIGSYS: 31,
-  SIGUNUSED: 31,
+  SIGUNUSED: 31
 }
 
 /**

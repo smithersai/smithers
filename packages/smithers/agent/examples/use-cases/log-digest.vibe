@@ -25,7 +25,7 @@ export const CollectedLogs = Schema.Struct({
   lineCount: Schema.Number,
   errorLines: Schema.Array(Schema.String),
   warningLines: Schema.Array(Schema.String),
-  rawTail: Schema.String.annotate({ description: "Last ~100 lines of combined logs" }),
+  rawTail: Schema.String.annotate({ description: "Last ~100 lines of combined logs" })
 })
 
 /** The digest the flow settles with. */
@@ -33,11 +33,11 @@ export const Digest = Schema.Struct({
   rootCauseHypotheses: Schema.Array(Schema.Struct({
     hypothesis: Schema.String,
     confidence: Schema.Literals(["high", "medium", "low"]),
-    evidence: Schema.Array(Schema.String),
+    evidence: Schema.Array(Schema.String)
   })),
   likelyOwner: Schema.Struct({ team: Schema.String, reasoning: Schema.String }),
   nextCommands: Schema.Array(Schema.Struct({ command: Schema.String, purpose: Schema.String })),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Gathers the logs and pulls out the lines that matter. */
@@ -45,7 +45,7 @@ export const Collect = AgentAction.make("examples/LogDigest/Collect", {
   payload: {
     logPaths: Schema.Array(Schema.String),
     commands: Schema.Array(Schema.String),
-    tailLines: Schema.Number,
+    tailLines: Schema.Number
   },
   output: CollectedLogs,
   seat,
@@ -53,12 +53,12 @@ export const Collect = AgentAction.make("examples/LogDigest/Collect", {
     `You are a log collector. Gather logs from the specified paths or by
 running the provided commands. Extract error and warning lines, and capture the tail
 of the output. Be thorough — check for stack traces, assertion failures, timeout
-messages, and exit codes.`,
+messages, and exit codes.`
   ],
   prompt: ({ commands, logPaths, tailLines }) =>
     `Collect these logs.\n\nLog paths: ${JSON.stringify(logPaths)}\nCommands: ${
       JSON.stringify(commands)
-    }\nTail lines: ${tailLines}`,
+    }\nTail lines: ${tailLines}`
 })
 
 /** Turns the collection into hypotheses, an owner and next commands. */
@@ -70,12 +70,12 @@ export const Summarize = AgentAction.make("examples/LogDigest/Summarize", {
     `You are a root-cause analyst. Given collected log data, produce
 ranked hypotheses about what went wrong, identify the most likely owning team,
 and suggest concrete next commands a developer should run to confirm or fix the issue.
-Focus on actionable output — skip noise.`,
+Focus on actionable output — skip noise.`
   ],
   prompt: ({ errorLines, lineCount, rawTail, source, warningLines }) =>
     `Digest these logs.\n\nSource: ${source}\nLine count: ${lineCount}\nError lines: ${
       JSON.stringify(errorLines)
-    }\nWarning lines: ${JSON.stringify(warningLines)}\nRaw tail:\n${rawTail}`,
+    }\nWarning lines: ${JSON.stringify(warningLines)}\nRaw tail:\n${rawTail}`
 })
 
 /** The flow: collect, then summarize. */
@@ -83,7 +83,7 @@ export const LogDigest = Flow.make("examples/LogDigest", {
   payload: {
     logPaths: Schema.optional(Schema.Array(Schema.String)),
     commands: Schema.optional(Schema.Array(Schema.String)),
-    tailLines: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+    tailLines: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0)))
   },
   success: Digest,
   error: AgentAction.AgentFailure,
@@ -96,9 +96,9 @@ export const LogDigest = Flow.make("examples/LogDigest", {
           lineCount: logs.lineCount,
           errorLines: logs.errorLines,
           warningLines: logs.warningLines,
-          rawTail: logs.rawTail,
-        }),
-    ),
+          rawTail: logs.rawTail
+        })
+    )
 })
 
 /** Every step the flow calls. */

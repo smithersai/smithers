@@ -18,12 +18,14 @@ schema Issue { number: number; title: string }
 export const listOpenIssueTitles = effect (
   client: GitHub.GitHubClient.GitHubClient,
   owner: string,
-  repo: string,
+  repo: string
 ) => {
   const repository = try GitHub.Repository.requireRepositoryPath(owner, repo)
   const page = try client.paginate(`/repos/${repository}/issues?state=open`, { maxPages: 5 })
-  const issues = Schema.decodeUnknownEffect(Schema.Array(Issue))(page.items) catch effect (cause) => { throw new Core.IntegrationError.IntegrationError("decode-failed", "GitHub returned an item that is not an issue.", {
-          retryable: false,
-        }, { cause }) }
+  const issues = Schema.decodeUnknownEffect(Schema.Array(Issue))(page.items) catch effect (cause) => {
+    throw new Core.IntegrationError.IntegrationError("decode-failed", "GitHub returned an item that is not an issue.", {
+      retryable: false
+    }, { cause })
+  }
   return { titles: issues.map((issue) => issue.title), truncated: page.truncated }
 }

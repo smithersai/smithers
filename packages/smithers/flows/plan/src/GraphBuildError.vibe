@@ -94,7 +94,7 @@ export const GraphBuildErrorCode = Schema.Literals([
   "dependency_cycle",
   "plan_too_large",
   "payload_too_large",
-  "invalid_node",
+  "invalid_node"
 ])
 
 /**
@@ -127,7 +127,7 @@ export class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smt
   code: GraphBuildErrorCode,
   node: Schema.String,
   path: Schema.Array(Schema.String),
-  message: Schema.String,
+  message: Schema.String
 }) {}
 
 /**

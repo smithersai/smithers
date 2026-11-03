@@ -14,7 +14,7 @@ const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 // A host normally runs the flow durably. This boundary answers directly so the
 // example shows only routing, decoding, and encoding.
 const invoker = FlowInvoker.make({
-  invoke: effect ({ input }) => ({ accepted: true, number: (input as { number: number }).number }),
+  invoke: effect ({ input }) => ({ accepted: true, number: (input as { number: number }).number })
 })
 
 /** Lists the agent commands under `root` and executes `commandString`. */

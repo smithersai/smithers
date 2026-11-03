@@ -60,13 +60,13 @@ export const accepted = (value: unknown): boolean =>
 export const safeIntegerPriorityRefusal = (
   pattern: string,
   member: string,
-  value: unknown,
+  value: unknown
 ): PatternError | undefined =>
   typeof value === "number" && Number.isSafeInteger(value)
     ? undefined
     : new PatternError({
       code: "invalid_decorator",
-      message: `${pattern} priority for member "${member}" must be a safe integer, received ${value}`,
+      message: `${pattern} priority for member "${member}" must be a safe integer, received ${value}`
     })
 
 /**
@@ -84,7 +84,7 @@ export const safeIntegerPriorityRefusal = (
 export const concurrencyRefusal = (pattern: string, concurrency: number): PatternError | undefined =>
   Number.isSafeInteger(concurrency) && concurrency >= 1 ? undefined : new PatternError({
     code: "invalid_decorator",
-    message: `${pattern} concurrency must be a positive safe integer, received ${concurrency}`,
+    message: `${pattern} concurrency must be a positive safe integer, received ${concurrency}`
   })
 
 /**
@@ -95,7 +95,7 @@ export const concurrencyRefusal = (pattern: string, concurrency: number): Patter
  */
 export const nonEmptyMembersRefusal = (
   pattern: string,
-  names: ReadonlyArray<string>,
+  names: ReadonlyArray<string>
 ): PatternError | undefined =>
   names.length === 0
     ? new PatternError({ code: "invalid_decorator", message: `${pattern} requires at least one member` })
@@ -130,12 +130,12 @@ export const sequencedBoundRefusal = (
   pattern: string,
   option: string,
   value: number,
-  callsPerUnit: number,
+  callsPerUnit: number
 ): PatternError | undefined => {
   const limit = Math.floor((Graph.maximumGraphDepth - 1) / callsPerUnit) - 1
   return value <= limit ? undefined : new PatternError({
     code: "invalid_decorator",
-    message: `${pattern} ${option} must be at most ${limit} to stay inside the plan depth limit, received ${value}`,
+    message: `${pattern} ${option} must be at most ${limit} to stay inside the plan depth limit, received ${value}`
   })
 }
 
@@ -143,7 +143,7 @@ const normalized = (values: Iterable<string>): ReadonlyArray<string> => [...new 
 
 const intersectPaths = (
   template: ReadonlyArray<string>,
-  supplied: ReadonlyArray<string>,
+  supplied: ReadonlyArray<string>
 ): ReadonlyArray<string> => {
   const intersection: Array<string> = []
   for (const expected of template) {
@@ -161,7 +161,7 @@ const intersectPaths = (
 const tierRank = {
   sealed: 0,
   compensable: 1,
-  irreversible: 2,
+  irreversible: 2
 } as const
 
 const tierOf = (declaration: Effects.Declaration): keyof typeof tierRank => declaration.tier ?? "sealed"
@@ -172,7 +172,7 @@ const tierOf = (declaration: Effects.Declaration): keyof typeof tierRank => decl
  */
 export const intersectEffects = (
   template: Effects.Declaration | undefined,
-  supplied: Effects.Declaration | undefined,
+  supplied: Effects.Declaration | undefined
 ): EffectIntersection => {
   if (supplied === undefined) {
     return { declaration: undefined, reads: [], writes: [], mode: false, tier: false }
@@ -183,7 +183,7 @@ export const intersectEffects = (
       reads: supplied.reads,
       writes: supplied.writes,
       mode: supplied.mode === "expected",
-      tier: tierOf(supplied) !== "sealed",
+      tier: tierOf(supplied) !== "sealed"
     }
   }
   if (Effects.narrow(template, supplied).ok) {
@@ -199,14 +199,14 @@ export const intersectEffects = (
     writes,
     mode: template.mode === "hermetic" || supplied.mode === "hermetic" ? "hermetic" : "expected",
     onConflict: template.onConflict,
-    tier: narrowedTier,
+    tier: narrowedTier
   })
   return {
     declaration,
     reads: supplied.reads.filter((path) => !reads.includes(path)),
     writes: supplied.writes.filter((path) => !writes.includes(path)),
     mode: supplied.mode !== declaration.mode,
-    tier: suppliedTier !== narrowedTier,
+    tier: suppliedTier !== narrowedTier
   }
 }
 
@@ -216,7 +216,7 @@ export const intersectEffects = (
  */
 export const intersectCapabilities = (
   template: ReadonlyArray<string>,
-  supplied: ReadonlyArray<string>,
+  supplied: ReadonlyArray<string>
 ): ReadonlyArray<string> => normalized(supplied.filter((capability) => template.includes(capability)))
 
 const schemaDocument = (schema: Schema.Top): unknown | undefined => {
@@ -283,7 +283,7 @@ const incompatible = (
   side: SchemaSide,
   expected: Schema.Top,
   actual: Schema.Top,
-  path?: string,
+  path?: string
 ): SchemaCompatibilityIssue => {
   const expectedTag = expected.ast._tag
   const actualTag = actual.ast._tag
@@ -292,14 +292,14 @@ const incompatible = (
     side,
     expectedTag,
     actualTag,
-    path: expectedTag === actualTag ? path : undefined,
+    path: expectedTag === actualTag ? path : undefined
   }
 }
 
 const compareSchemas = (
   side: SchemaSide,
   expected: Schema.Top,
-  actual: Schema.Top,
+  actual: Schema.Top
 ): SchemaCompatibilityIssue | undefined => {
   if (expected === actual) return undefined
   const expectedDocument = schemaDocument(expected)
@@ -328,7 +328,7 @@ const compareSchemas = (
 export const declaredSchemasCompatible = (
   input: Schema.Top,
   output: Schema.Top,
-  declared: { readonly input: Schema.Top; readonly output: Schema.Top },
+  declared: { readonly input: Schema.Top; readonly output: Schema.Top }
 ): SchemaCompatibilityIssue | undefined => {
   if (!isNever(input) && !isTop(declared.input)) {
     const inputIssue = isTop(input)
@@ -379,5 +379,5 @@ export const label = (kind: string, fields: Readonly<Record<string, unknown>>, o
       .map(([key, value]) => `${key}=${labelValue(value)}`)
       .join(", ")
   })`,
-  description: options.description,
+  description: options.description
 })

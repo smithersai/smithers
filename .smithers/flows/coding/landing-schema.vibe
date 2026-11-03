@@ -15,8 +15,8 @@ export const AppendPreparation = Schema.Struct({
   status: Schema.Literal("prepared"),
   changes: Schema.Array(Schema.Struct({ change_id: ChangeId, commit_id: CommitId })).check(
     Schema.isMinLength(1),
-    Schema.isMaxLength(1024),
-  ),
+    Schema.isMaxLength(1024)
+  )
 })
 export type AppendPreparation = typeof AppendPreparation.Type
 export schema LandingIdentity { requestId: SourcePublication.fields.requestId; number: PositiveId }
@@ -24,14 +24,14 @@ export const AppendRequest = Schema.Struct({
   commit_id: CommitId,
   expected_commit_id: CommitId,
   source_base_commit_id: CommitId,
-  description: Schema.NonEmptyString.check(Schema.isMaxLength(32_768)),
+  description: Schema.NonEmptyString.check(Schema.isMaxLength(32_768))
 })
 export type AppendRequest = typeof AppendRequest.Type
 export const QueuedAppend = Schema.Struct({
   ...LandingIdentity.fields,
   taskId: PositiveId,
   preparation: AppendPreparation,
-  request: AppendRequest,
+  request: AppendRequest
 })
 export type QueuedAppend = typeof QueuedAppend.Type
 // The durable append request pins the exact ordered commits (40-hex commit ids),
@@ -46,15 +46,15 @@ const NativeAppendRequest = Schema.Struct({
   append: Schema.Struct({
     source_commit_id: CommitId,
     source_base_commit_id: CommitId,
-    description: AppendRequest.fields.description,
-  }),
+    description: AppendRequest.fields.description
+  })
 })
 export const AppendObservation = Schema.Union([
   Schema.Struct({
     status: Schema.Literals(["pending", "running", "failed"]),
     task_id: PositiveId,
     request: NativeAppendRequest,
-    result: Schema.optionalKey(Schema.Never),
+    result: Schema.optionalKey(Schema.Never)
   }),
   Schema.Struct({
     status: Schema.Literal("landed"),
@@ -63,9 +63,9 @@ export const AppendObservation = Schema.Union([
     result: Schema.Struct({
       landed_count: PositiveId,
       target_bookmark: Schema.Literal("main"),
-      target_commit_id: CommitId,
-    }),
-  }),
+      target_commit_id: CommitId
+    })
+  })
 ])
 export type AppendObservation = typeof AppendObservation.Type
 /** What the repository's declared GitHub policy does with a Change. */
@@ -82,7 +82,7 @@ export const GitHubPull = Schema.Struct({
   head_ref: Schema.String.check(Schema.isMaxLength(255)),
   head_sha: CommitId,
   base_ref: Schema.Literal("main"),
-  created: Schema.Boolean,
+  created: Schema.Boolean
 })
 export type GitHubPull = typeof GitHubPull.Type
 /** The repository's mythical stack as `coding/vibe` needs it: only whether it is active. */
@@ -94,7 +94,7 @@ export const LaneSubmission = Schema.Struct({
   source: CommitId,
   requestRunId: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
   summary: Schema.NonEmptyString.check(Schema.isMaxLength(16_384)),
-  plan: Schema.optionalKey(Plan),
+  plan: Schema.optionalKey(Plan)
 })
 export type LaneSubmission = typeof LaneSubmission.Type
 /** The stack service's receipt: the item that now carries this candidate. */
@@ -126,7 +126,7 @@ export const LandingCandidate = Schema.Struct({
   main: LandingRevision,
   /** The candidate's commit message: the cleanup summary. */
   summary: Schema.NonEmptyString.check(Schema.isMaxLength(16_384)),
-  candidate: LandingRevision,
+  candidate: LandingRevision
 })
 export type LandingCandidate = typeof LandingCandidate.Type
 /** GitHub's pull request for a candidate, keyed by its `smithers/landing-<request>` head branch. */
@@ -137,19 +137,19 @@ export const LocalPull = Schema.Struct({
   headRef: Schema.String.check(Schema.isMaxLength(255)),
   headSha: CommitId,
   baseRef: Schema.String.check(Schema.isMaxLength(255)),
-  mergeCommitId: Schema.NullOr(CommitId),
+  mergeCommitId: Schema.NullOr(CommitId)
 })
 export type LocalPull = typeof LocalPull.Type
 /** One observation of a pull request's required checks (`gh pr checks --required`). */
 export const PullChecks = Schema.Struct({
   status: Schema.Literals(["passed", "failed", "pending"]),
-  checks: Schema.Array(Schema.Struct({ name: Schema.String, bucket: Schema.String })).check(Schema.isMaxLength(256)),
+  checks: Schema.Array(Schema.Struct({ name: Schema.String, bucket: Schema.String })).check(Schema.isMaxLength(256))
 })
 export type PullChecks = typeof PullChecks.Type
 /** GitHub merged the candidate, or keeps the pull request open and says why. */
 export const MergeOutcome = Schema.Union([
   Schema.Struct({ status: Schema.Literal("merged"), mainCommitId: CommitId }),
-  Schema.Struct({ status: Schema.Literal("open"), reason: Schema.String.check(Schema.isMaxLength(2048)) }),
+  Schema.Struct({ status: Schema.Literal("open"), reason: Schema.String.check(Schema.isMaxLength(2048)) })
 ])
 export type MergeOutcome = typeof MergeOutcome.Type
 /**

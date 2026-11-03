@@ -13,7 +13,11 @@ describe("malformed command text", () => {
       path: "$[0]"
     })
     for (const text of ["plain\0x", "plain\ud800", "plain\udc00"]) {
-      expect(try failureOf(effect { return try CommandTree.resolve(try CommandTree.make([]), [text]) })).toMatchObject({
+      expect(
+        try failureOf(effect {
+          return try CommandTree.resolve(try CommandTree.make([]), [text])
+        })
+      ).toMatchObject({
         code: "parse_failed",
         method: "CommandTree.resolve"
       })

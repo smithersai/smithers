@@ -28,7 +28,7 @@ export const exactGrant = (request: Capability.Capability): Option<Capability.Ca
 export const subtreeGrant = (directory: string): Option<Capability.CapabilityPattern> =>
   Option.map(
     exactGrant(Capability.make("fs:write", directory)),
-    (exact) => new Capability.CapabilityPattern({ action: exact.action, resource: `${exact.resource}/**` }),
+    (exact) => new Capability.CapabilityPattern({ action: exact.action, resource: `${exact.resource}/**` })
   )
 
 /**

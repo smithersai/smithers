@@ -128,7 +128,7 @@ export const maximumCodeLength = 4096
 export const htmlPattern = /<\/?[A-Za-z!?]/
 
 const noHtml = Schema.makeFilter<string>(
-  (text) => htmlPattern.test(text) ? "must not contain HTML; blocks are declared values, never markup" : true,
+  (text) => htmlPattern.test(text) ? "must not contain HTML; blocks are declared values, never markup" : true
 )
 
 /**
@@ -140,7 +140,7 @@ const noHtml = Schema.makeFilter<string>(
 export const Title = Schema.NonEmptyString.check(
   Schema.isMaxLength(maximumTitleLength),
   Schema.isPattern(/^[^\r\n]*$/),
-  noHtml,
+  noHtml
 )
 
 /**
@@ -159,7 +159,7 @@ export const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTextL
  */
 export const Url = Schema.NonEmptyString.check(
   Schema.isMaxLength(maximumUrlLength),
-  Schema.isPattern(/^https?:\/\/[^\s<>"']+$/i),
+  Schema.isPattern(/^https?:\/\/[^\s<>"']+$/i)
 )
 
 /**
@@ -172,7 +172,7 @@ export const Url = Schema.NonEmptyString.check(
  */
 export const DocsUrl = Schema.NonEmptyString.check(
   Schema.isMaxLength(maximumUrlLength),
-  Schema.isPattern(/^https:\/\/[^\s<>"'@]+$/i),
+  Schema.isPattern(/^https:\/\/[^\s<>"'@]+$/i)
 )
 
 /**
@@ -189,7 +189,7 @@ export const RepositoryPath = Schema.NonEmptyString.check(
       || /[%:?#]/.test(value) || [...value].some((character) => character.charCodeAt(0) < 0x20)
       ? "must be a relative in-repository path"
       : true
-  ),
+  )
 )
 
 /**
@@ -201,7 +201,7 @@ export const RepositoryPath = Schema.NonEmptyString.check(
  */
 export const FlowName = Schema.NonEmptyString.check(
   Schema.isMaxLength(maximumTitleLength),
-  Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/),
+  Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/)
 )
 
 /**
@@ -214,7 +214,7 @@ export const FlowName = Schema.NonEmptyString.check(
 export const Line = Schema.NonEmptyString.check(
   Schema.isMaxLength(maximumLineLength),
   Schema.isPattern(/^[^\r\n]*$/),
-  noHtml,
+  noHtml
 )
 
 /**
@@ -239,7 +239,7 @@ export const Code = Schema.NonEmptyString.check(
   Schema.isMaxLength(maximumCodeLength),
   // NUL is exactly what the pattern refuses; the app's stored homes hash this very pattern (apps/mvp/src/device).
   // eslint-disable-next-line no-control-regex
-  Schema.isPattern(/^[^\u0000]*$/),
+  Schema.isPattern(/^[^\u0000]*$/)
 )
 
 /**
@@ -268,7 +268,7 @@ export const IsoDate = Schema.String.check(
     return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
       ? true
       : "must be a date that exists"
-  }),
+  })
 )
 
 /**
@@ -337,7 +337,7 @@ export type Contributors = typeof Contributors.Type
 export const TextBlock = Schema.Struct({
   type: Schema.Literal("text"),
   title: Schema.optional(Title),
-  text: Prose,
+  text: Prose
 })
 
 /**
@@ -349,7 +349,7 @@ export const TextBlock = Schema.Struct({
 export const LinksBlock = Schema.Struct({
   type: Schema.Literal("links"),
   title: Schema.optional(Title),
-  links: Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumEntries)),
+  links: Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumEntries))
 })
 
 /**
@@ -361,7 +361,7 @@ export const LinksBlock = Schema.Struct({
  */
 export const FlowsBlock = Schema.Struct({
   type: Schema.Literal("flows"),
-  title: Schema.optional(Title),
+  title: Schema.optional(Title)
 })
 
 /**
@@ -375,7 +375,7 @@ export const PromptBlock = Schema.Struct({
   type: Schema.Literal("prompt"),
   flow: Schema.optional(FlowName),
   title: Schema.optional(Title),
-  placeholder: Schema.optional(Title),
+  placeholder: Schema.optional(Title)
 })
 
 /**
@@ -397,7 +397,7 @@ export const AppBlock = Schema.Struct({
   type: Schema.Literal("app"),
   flow: FlowName,
   title: Title,
-  picture: AppPicture,
+  picture: AppPicture
 })
 
 /**
@@ -409,7 +409,7 @@ export const AppBlock = Schema.Struct({
 export const MarkdownBlock = Schema.Struct({
   type: Schema.Literal("markdown"),
   path: RepositoryPath,
-  title: Schema.optional(Title),
+  title: Schema.optional(Title)
 })
 
 /**
@@ -421,7 +421,7 @@ export const MarkdownBlock = Schema.Struct({
  */
 export const StackBlock = Schema.Struct({
   type: Schema.Literal("stack"),
-  title: Schema.optional(Title),
+  title: Schema.optional(Title)
 })
 
 /**
@@ -432,7 +432,7 @@ export const StackBlock = Schema.Struct({
  */
 export const ViewBlock = Schema.Struct({
   type: Schema.Literal("view"),
-  flow: FlowName,
+  flow: FlowName
 })
 
 /**
@@ -450,7 +450,7 @@ export const HeroBlock = Schema.Struct({
   text: Schema.optional(Line),
   install: Schema.optional(Command),
   actions: Schema.optional(Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumActions))),
-  announcement: Schema.optional(Link),
+  announcement: Schema.optional(Link)
 })
 
 /**
@@ -465,7 +465,7 @@ export const CodeBlock = Schema.Struct({
   title: Schema.optional(Title),
   file: Schema.optional(Title),
   language: Schema.optional(Language),
-  code: Code,
+  code: Code
 })
 
 /**
@@ -479,7 +479,7 @@ export const Card = Schema.Struct({
   title: Title,
   text: Schema.optional(Line),
   label: Schema.optional(Title),
-  url: Schema.optional(Url),
+  url: Schema.optional(Url)
 })
 
 /**
@@ -492,7 +492,7 @@ export const CardsBlock = Schema.Struct({
   type: Schema.Literal("cards"),
   title: Schema.optional(Title),
   cards: Schema.NonEmptyArray(Card).check(Schema.isMaxLength(maximumEntries)),
-  more: Schema.optional(Link),
+  more: Schema.optional(Link)
 })
 
 /**
@@ -513,7 +513,7 @@ export const Stat = Schema.Struct({ value: Title, label: Title })
 export const StatsBlock = Schema.Struct({
   type: Schema.Literal("stats"),
   title: Schema.optional(Title),
-  stats: Schema.NonEmptyArray(Stat).check(Schema.isMaxLength(maximumStats)),
+  stats: Schema.NonEmptyArray(Stat).check(Schema.isMaxLength(maximumStats))
 })
 
 /**
@@ -527,7 +527,7 @@ export const Release = Schema.Struct({
   name: Title,
   url: Url,
   date: IsoDate,
-  summary: Schema.optional(Line),
+  summary: Schema.optional(Line)
 })
 
 /**
@@ -541,7 +541,7 @@ export const ReleasesBlock = Schema.Struct({
   type: Schema.Literal("releases"),
   title: Schema.optional(Title),
   releases: Schema.NonEmptyArray(Release).check(Schema.isMaxLength(maximumEntries)),
-  more: Schema.optional(Link),
+  more: Schema.optional(Link)
 })
 
 /**
@@ -554,7 +554,7 @@ export const ReleasesBlock = Schema.Struct({
  */
 export const IssuesBlock = Schema.Struct({
   type: Schema.Literal("issues"),
-  title: Schema.optional(Title),
+  title: Schema.optional(Title)
 })
 
 /**
@@ -578,7 +578,7 @@ export const ActionBlock = Schema.Struct({
   type: Schema.Literal("action"),
   flow: FlowName,
   title: Title,
-  key: Schema.optional(Key),
+  key: Schema.optional(Key)
 })
 
 /**
@@ -590,7 +590,7 @@ export const ActionBlock = Schema.Struct({
  */
 export const RunsBlock = Schema.Struct({
   type: Schema.Literal("runs"),
-  title: Schema.optional(Title),
+  title: Schema.optional(Title)
 })
 
 /**
@@ -615,7 +615,7 @@ export const Block = Schema.Union([
   ReleasesBlock,
   IssuesBlock,
   RunsBlock,
-  ActionBlock,
+  ActionBlock
 ])
 
 /**
@@ -648,7 +648,7 @@ export const kinds: ReadonlyArray<Block["type"]> = [
   "releases",
   "issues",
   "runs",
-  "action",
+  "action"
 ]
 
 /**
@@ -670,7 +670,7 @@ export const liveKinds: ReadonlyArray<Block["type"]> = ["flows", "stack", "issue
  */
 export const SectionHeading = Schema.Struct({
   title: Schema.optional(Title),
-  audience: Schema.optional(Audience),
+  audience: Schema.optional(Audience)
 })
 
 /**

@@ -35,7 +35,7 @@ import * as Effects from "./Effects.vibe"
 export const InputRef = Schema.Union([
   Schema.TaggedStruct("Literal", { value: Schema.Unknown }),
   Schema.TaggedStruct("Ref", { from: Schema.NonEmptyString, path: Schema.Array(Schema.String) }),
-  Schema.TaggedStruct("Pending", { from: Schema.NonEmptyString }),
+  Schema.TaggedStruct("Pending", { from: Schema.NonEmptyString })
 ])
 
 /**
@@ -79,7 +79,7 @@ export const KeyMaterial = Schema.Struct({
   layers: Schema.Array(Schema.String),
   capabilities: Schema.Array(Schema.String),
   effects: Schema.optional(Schema.Unknown),
-  placement: Schema.optional(Schema.Unknown),
+  placement: Schema.optional(Schema.Unknown)
 })
 
 /**

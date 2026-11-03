@@ -58,7 +58,7 @@ const discoveryFailure = (cause: unknown): FsError => match (cause) {
   when DiscoveryError and { code: "root_missing" }: failure("root_missing", "The flow root does not exist");
   when DiscoveryError and { code: "invalid_root" }: failure(
     "invalid_root",
-    "The flow root is not a readable directory",
+    "The flow root is not a readable directory"
   );
   when DiscoveryError and { code: "read_failed" }: failure("read_failed", "The flow root could not be read");
   default: failure("discovery_failed", "Flow discovery failed");
@@ -81,7 +81,7 @@ const warningSnapshot = (warning: Descriptor.DiscoveryWarning): Warning =>
     code: warning.code,
     path: warning.path,
     message: warning.message,
-    name: warning.name,
+    name: warning.name
   })
 
 /**
@@ -107,7 +107,8 @@ export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, Fil
   // Discovery confines entries, not companions: a UI module is recorded only
   // when its real path stays inside the root's real path.
   const withinRoot = effect (location: string): Effect<boolean, FsError, infer R> => {
-    const [realRoot, real] = all([fileSystem.realPath(root), fileSystem.realPath(location)]) catch effect () => throw readFailure()
+    const [realRoot, real] = all([fileSystem.realPath(root), fileSystem.realPath(location)]) catch effect () =>
+      throw readFailure()
     return real.startsWith(path.join(realRoot, path.sep))
   }
 
@@ -126,7 +127,7 @@ export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, Fil
         code: "duplicate_route",
         method: "FileRouter.scan",
         description: "Distinct source paths collapse to one command name",
-        path: name,
+        path: name
       })
     }
     const directory = path.dirname(sourcePath)
@@ -146,7 +147,7 @@ export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, Fil
       effects: descriptor.effects,
       modelInvocable: descriptor.modelInvocable,
       placement: descriptor.placement,
-      ui: hasUi ? Option.some(uiPath) : Option.none(),
+      ui: hasUi ? Option.some(uiPath) : Option.none()
     })
     routes.set(name, route)
   }
@@ -154,6 +155,6 @@ export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, Fil
   const ordered = Array.from(routes.keys()).sort().map((name) => routes.get(name)!)
   return Object.freeze({
     routes: Object.freeze(ordered),
-    warnings: Object.freeze(result.warnings.map(warningSnapshot)),
+    warnings: Object.freeze(result.warnings.map(warningSnapshot))
   })
 }

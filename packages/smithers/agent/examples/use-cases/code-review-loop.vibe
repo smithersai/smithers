@@ -26,19 +26,19 @@ export const maxIterations = 3
 export const Review = Schema.Struct({
   approved: Schema.Boolean,
   feedback: Schema.String,
-  issues: Schema.optional(Schema.Array(Schema.String)),
+  issues: Schema.optional(Schema.Array(Schema.String))
 })
 
 /** The fixes the fixer describes. It changes no files. */
 export const Fix = Schema.Struct({
   filesChanged: Schema.Array(Schema.String),
-  changesSummary: Schema.String,
+  changesSummary: Schema.String
 })
 
 /** What the flow settles with. */
 export const Output = Schema.Struct({
   finalSummary: Schema.String,
-  totalIterations: Schema.Number,
+  totalIterations: Schema.Number
 })
 
 /** One review of the directory. */
@@ -46,21 +46,21 @@ export const ReviewCode = AgentAction.make("examples/CodeReviewLoop/Review", {
   payload: {
     directory: Schema.String,
     focus: Schema.String,
-    previousIssues: Schema.optional(Schema.Array(Schema.String)),
+    previousIssues: Schema.optional(Schema.Array(Schema.String))
   },
   output: Review,
   seat,
   system: [
     `You are a senior code reviewer. Review the codebase thoroughly.
 If everything looks good, set approved to true and say "LGTM" in feedback.
-If there are issues, set approved to false and list specific issues to fix.`,
+If there are issues, set approved to false and list specific issues to fix.`
   ],
   prompt: ({ directory, focus, previousIssues = [] }) =>
     `Review the codebase in directory: ${directory}\nFocus area: ${focus}\n\n${
       previousIssues.length > 0
         ? `Previous issues that were supposedly fixed:\n${previousIssues.join("\n")}`
         : "This is the initial review."
-    }\n\nUse the tools to explore the code. Look for:\n- Code quality issues\n- Potential bugs\n- Missing error handling\n- Type safety problems\n- Any issues related to: ${focus}`,
+    }\n\nUse the tools to explore the code. Look for:\n- Code quality issues\n- Potential bugs\n- Missing error handling\n- Type safety problems\n- Any issues related to: ${focus}`
 })
 
 /** Describes the fixes a rejected review asks for. */
@@ -68,18 +68,18 @@ export const FixCode = AgentAction.make("examples/CodeReviewLoop/Fix", {
   payload: {
     directory: Schema.String,
     feedback: Schema.String,
-    issues: Schema.optional(Schema.Array(Schema.String)),
+    issues: Schema.optional(Schema.Array(Schema.String))
   },
   output: Fix,
   seat,
   system: [
     `You are a senior software engineer. Analyze the issues and describe what fixes would be needed.
-Do NOT actually make changes - just describe what you WOULD fix.`,
+Do NOT actually make changes - just describe what you WOULD fix.`
   ],
   prompt: ({ directory, feedback, issues = [] }) =>
     `Fix the issues found in the code review:\n\nFeedback: ${feedback}\n\nIssues to fix:\n${
       issues.length > 0 ? issues.join("\n") : "No specific issues listed"
-    }\n\nDirectory: ${directory}`,
+    }\n\nDirectory: ${directory}`
 })
 
 type Requirements = Action.Requirement<"examples/CodeReviewLoop/Review" | "examples/CodeReviewLoop/Fix">
@@ -96,7 +96,7 @@ const round = (
   directory: string,
   focus: string,
   iteration: number,
-  previousIssues: Planned.Planned<ReadonlyArray<string> | undefined> | undefined,
+  previousIssues: Planned.Planned<ReadonlyArray<string> | undefined> | undefined
 ): Node.Node<typeof Output.Type, AgentAction.AgentFailure, Requirements> =>
   Node.branch(ReviewCode.call({ directory, focus, previousIssues }), {
     if: (review) => review.approved,
@@ -106,8 +106,8 @@ const round = (
         FixCode.call({ directory, feedback: review.feedback, issues: review.issues }),
         iteration >= maxIterations
           ? Node.succeed({ finalSummary: `Review completed after ${iteration} iterations`, totalIterations: iteration })
-          : round(directory, focus, iteration + 1, review.issues),
-      ),
+          : round(directory, focus, iteration + 1, review.issues)
+      )
   })
 
 /** The bounded review loop. */
@@ -115,7 +115,7 @@ export const CodeReviewLoop = Flow.make("examples/CodeReviewLoop", {
   payload: { directory: Schema.String, focus: Schema.String },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ directory, focus }) => round(directory, focus, 1, undefined),
+  body: ({ directory, focus }) => round(directory, focus, 1, undefined)
 })
 
 /** Every step the flow calls. */

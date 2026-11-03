@@ -25,5 +25,5 @@ export const validateDigest = effect (digest: string): Digest!ArtifactStoreError
     ? digest as Digest
     : throw new ArtifactStoreError({
       code: "invalid_digest",
-      message: "artifact digest must be exactly 64 lowercase hexadecimal characters",
+      message: "artifact digest must be exactly 64 lowercase hexadecimal characters"
     })

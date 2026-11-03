@@ -76,13 +76,12 @@ export const retry: {
       // propagation never rewinds a scope): an enclosing dispatch of a
       // scope this block consumed must take the next pinned position, not
       // re-consume this block's ordinals.
-      |> Effect.onExit(%, effect () =>
-        {
-          if (enclosing === undefined) return
-          for (const [scope, cursor] of slot.cursors) {
-            const current = enclosing.cursors.get(scope) ?? 0
-            if (cursor > current) enclosing.cursors.set(scope, cursor)
-          }
-        }))
+      |> Effect.onExit(%, effect () => {
+        if (enclosing === undefined) return
+        for (const [scope, cursor] of slot.cursors) {
+          const current = enclosing.cursors.get(scope) ?? 0
+          if (cursor > current) enclosing.cursors.set(scope, cursor)
+        }
+      }))
   }
 )

@@ -30,7 +30,7 @@ export const MeetingEvent = Schema.Struct({
   scheduledAt: Schema.String,
   calendarSource: Schema.Literals(["google", "outlook", "calendly", "hubspot", "other"]),
   description: Schema.optional(Schema.String),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** What the meeting is for, and how much it matters. */
@@ -43,12 +43,12 @@ export const Classification = Schema.Struct({
     "support-escalation",
     "internal-sync",
     "partnership",
-    "other",
+    "other"
   ]),
   priority: Schema.Literals(["low", "medium", "high", "critical"]),
   accountTier: Schema.optional(Schema.Literals(["free", "starter", "growth", "enterprise"])),
   flags: Schema.Array(Schema.String),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** The account's CRM record. */
@@ -61,7 +61,7 @@ export const CrmContext = Schema.Struct({
   openTickets: Schema.Number,
   lastTouchDate: Schema.optional(Schema.String),
   notes: Schema.Array(Schema.String),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Who is coming, and their role in the deal. */
@@ -71,16 +71,16 @@ export const AttendeeContext = Schema.Struct({
     title: Schema.String,
     role: Schema.Literals(["champion", "decision-maker", "influencer", "end-user", "unknown"]),
     linkedinUrl: Schema.optional(Schema.String),
-    recentActivity: Schema.optional(Schema.String),
+    recentActivity: Schema.optional(Schema.String)
   })),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Past meetings and what is still open from them. */
 export const HistoryContext = Schema.Struct({
   previousMeetings: Schema.Array(Schema.Struct({ date: Schema.String, topic: Schema.String, outcome: Schema.String })),
   openActionItems: Schema.Array(Schema.String),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** The prep brief the flow settles with. */
@@ -95,7 +95,7 @@ export const Brief = Schema.Struct({
   risksAndFlags: Schema.Array(Schema.String),
   suggestedAgenda: Schema.Array(Schema.String),
   openItems: Schema.Array(Schema.String),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Reads the meeting's intent, priority and flags. */
@@ -105,7 +105,7 @@ export const Classify = AgentAction.make("examples/MeetingBriefer/Classify", {
     description: Schema.String,
     organizer: Schema.String,
     attendees: Schema.Array(Schema.String),
-    calendarSource: Schema.String,
+    calendarSource: Schema.String
   },
   output: Classification,
   seat,
@@ -113,9 +113,9 @@ export const Classify = AgentAction.make("examples/MeetingBriefer/Classify", {
     `You are a meeting intent classifier. Given a calendar event with its title,
 description, attendees, and source, determine the meeting intent, priority level, account tier,
 and any flags (e.g. at-risk renewal, executive attendee, competitor mentioned). Be precise
-and use all available signals.`,
+and use all available signals.`
   ],
-  prompt: (input) => `Classify this meeting.\n\nInput: ${JSON.stringify(input)}`,
+  prompt: (input) => `Classify this meeting.\n\nInput: ${JSON.stringify(input)}`
 })
 
 /** Pulls the account's CRM record. */
@@ -126,9 +126,9 @@ export const GatherCrm = AgentAction.make("examples/MeetingBriefer/CrmContext", 
   system: [
     `You are a CRM context gatherer. Given an account name and attendees,
 pull the relevant account record, opportunity stage, ARR, owner, open support tickets,
-last touch date, and recent CRM notes. Summarize the account health concisely.`,
+last touch date, and recent CRM notes. Summarize the account health concisely.`
   ],
-  prompt: (input) => `Gather the CRM context for this meeting.\n\nInput: ${JSON.stringify(input)}`,
+  prompt: (input) => `Gather the CRM context for this meeting.\n\nInput: ${JSON.stringify(input)}`
 })
 
 /** Researches each attendee. */
@@ -139,9 +139,9 @@ export const GatherAttendees = AgentAction.make("examples/MeetingBriefer/Attende
   system: [
     `You are an attendee research specialist. Given a list of meeting attendees,
 look up each person's title, role in the buying process, LinkedIn profile, and any recent
-activity or engagement signals. Classify each attendee's influence level.`,
+activity or engagement signals. Classify each attendee's influence level.`
   ],
-  prompt: (input) => `Research the attendees of this meeting.\n\nInput: ${JSON.stringify(input)}`,
+  prompt: (input) => `Research the attendees of this meeting.\n\nInput: ${JSON.stringify(input)}`
 })
 
 /** Finds past meetings and their open action items. */
@@ -151,9 +151,9 @@ export const GatherHistory = AgentAction.make("examples/MeetingBriefer/HistoryCo
   seat,
   system: [
     `You are a meeting history researcher. Given a meeting title, its attendees, and the account,
-find previous meetings with their topics and outcomes, and the action items still open.`,
+find previous meetings with their topics and outcomes, and the action items still open.`
   ],
-  prompt: (input) => `Gather the history behind this meeting.\n\nInput: ${JSON.stringify(input)}`,
+  prompt: (input) => `Gather the history behind this meeting.\n\nInput: ${JSON.stringify(input)}`
 })
 
 /** Writes the brief from the classification and the gathered context. */
@@ -168,7 +168,7 @@ export const WriteBrief = AgentAction.make("examples/MeetingBriefer/Brief", {
     crmContext: CrmContext,
     attendeeProfiles: AttendeeContext.fields.profiles,
     previousMeetings: HistoryContext.fields.previousMeetings,
-    openActionItems: Schema.Array(Schema.String),
+    openActionItems: Schema.Array(Schema.String)
   },
   output: Brief,
   seat,
@@ -176,9 +176,9 @@ export const WriteBrief = AgentAction.make("examples/MeetingBriefer/Brief", {
     `You are an executive briefing writer. Given meeting classification, CRM context,
 attendee profiles, and meeting history, synthesize a concise, actionable prep brief. Include
 a headline, talking points, risks/flags, a suggested agenda, and open items. The brief should
-be scannable in under 2 minutes.`,
+be scannable in under 2 minutes.`
   ],
-  prompt: (input) => `Write the prep brief for this meeting.\n\nInput: ${JSON.stringify(input)}`,
+  prompt: (input) => `Write the prep brief for this meeting.\n\nInput: ${JSON.stringify(input)}`
 })
 
 /**
@@ -199,7 +199,7 @@ export const MeetingBriefer = Flow.make("examples/MeetingBriefer", {
         description: event.description ?? "",
         organizer: event.organizer,
         attendees: event.attendees,
-        calendarSource: event.calendarSource,
+        calendarSource: event.calendarSource
       }),
       (classification: Planned.Planned<typeof Classification.Type>) =>
         Node.andThen(
@@ -209,14 +209,14 @@ export const MeetingBriefer = Flow.make("examples/MeetingBriefer", {
               crm: GatherCrm.call({
                 accountName: event.title,
                 attendees: event.attendees,
-                intent: classification.intent,
+                intent: classification.intent
               }),
               attendees: GatherAttendees.call({ attendees: event.attendees, organizer: event.organizer }),
               history: GatherHistory.call({
                 meetingTitle: event.title,
                 attendees: event.attendees,
-                accountName: event.title,
-              }),
+                accountName: event.title
+              })
             }),
             (context) =>
               WriteBrief.call({
@@ -229,11 +229,11 @@ export const MeetingBriefer = Flow.make("examples/MeetingBriefer", {
                 crmContext: context.crm,
                 attendeeProfiles: context.attendees.profiles,
                 previousMeetings: context.history.previousMeetings,
-                openActionItems: context.history.openActionItems,
-              }),
-          ),
-        ),
-    ),
+                openActionItems: context.history.openActionItems
+              })
+          )
+        )
+    )
 })
 
 /** Every step the flow calls. */
@@ -242,5 +242,5 @@ export const layer = Layer.mergeAll(
   GatherCrm.layer,
   GatherAttendees.layer,
   GatherHistory.layer,
-  WriteBrief.layer,
+  WriteBrief.layer
 )
