@@ -18,7 +18,7 @@ import { GatewayError } from "../src/GatewayError.ts"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.ts"
 import * as Projections from "../src/Projections.ts"
-import * as RunTrace from "../src/RunTrace.ts"
+import * as RunTrace from "../src/RunTrace.vibe"
 
 const die = () => Effect.die("the suite does not use this operation")
 

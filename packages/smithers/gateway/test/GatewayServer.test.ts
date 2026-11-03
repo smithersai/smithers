@@ -47,7 +47,7 @@ import { GatewayRpcs } from "../src/GatewayRpcs.ts"
 import * as GatewayServer from "../src/GatewayServer.ts"
 import * as NodeGateway from "../src/node/NodeGateway.ts"
 import { make as makeProjections, maxProjectionBytes, Projections } from "../src/Projections.ts"
-import { traceFromJournal } from "../src/RunTrace.ts"
+import { traceFromJournal } from "../src/RunTrace.vibe"
 import { defaultCadenceStack, emit, stack } from "./GatewayStack.ts"
 
 const health: GatewayServer.Health = {

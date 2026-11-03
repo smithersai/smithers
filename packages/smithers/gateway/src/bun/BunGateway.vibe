@@ -3,14 +3,13 @@
  */
 
 import * as BunHttpServer from "@effect/platform-bun/BunHttpServer"
-import { Cause, Effect, Layer } from "effect"
 import type { HttpServer } from "effect/http/HttpServer"
 import type { ServeError } from "effect/http/HttpServerError"
 import { GatewayError } from "../GatewayError.ts"
 import type * as GatewayServer from "../GatewayServer.ts"
-import * as NativeGateway from "../internal/NativeGateway.ts"
+import * as NativeGateway from "../internal/NativeGateway.vibe"
 
-export { bearerPrincipal, scopedPrincipal } from "../internal/NativeGateway.ts"
+export { bearerPrincipal, scopedPrincipal } from "../internal/NativeGateway.vibe"
 
 /** TCP bind and existing gateway policy options supported by the Bun host.
  * @since 1.0.0
@@ -26,7 +25,7 @@ const native = NativeGateway.makeLayer((options) =>
     // Shared listenOptions has already supplied and admitted the bind host.
     hostname: options.host!,
     port: options.port ?? 7331
-  }).pipe(Layer.catchCause((cause): Layer.Layer<HttpServer, ServeError | GatewayError> => {
+  }).pipe(Layer.catchCause((cause): Layer<HttpServer, ServeError | GatewayError> => {
     const failure = Cause.squash(cause)
     const code = typeof failure === "object" && failure !== null && "code" in failure ? failure.code : undefined
     if (Cause.hasInterruptsOnly(cause) || !["EADDRINUSE", "EACCES", "EADDRNOTAVAIL"].includes(String(code))) {

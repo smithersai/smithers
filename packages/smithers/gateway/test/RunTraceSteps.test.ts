@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { type JournalRecord, phaseExtent, traceFromJournal } from "../src/RunTrace.js"
+import { type JournalRecord, phaseExtent, traceFromJournal } from "../src/RunTrace.vibe"
 const run = { runId: "run", flowId: "module", status: "running" }
 const left = {
   executionId: "execution",

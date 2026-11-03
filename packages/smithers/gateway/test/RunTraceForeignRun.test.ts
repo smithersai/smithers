@@ -4,7 +4,7 @@
  * settle the parent's trace or pin its milestone.
  */
 import { describe, expect, it } from "vitest"
-import { type JournalRecord, traceFold, traceFoldModel, traceFromJournal } from "../src/RunTrace.js"
+import { type JournalRecord, traceFold, traceFoldModel, traceFromJournal } from "../src/RunTrace.vibe"
 
 const run = { runId: "parent", flowId: "agent" }
 

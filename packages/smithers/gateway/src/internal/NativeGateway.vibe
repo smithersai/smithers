@@ -20,10 +20,8 @@
 
 import { ControlRpcs, ControlServer, ScopedToken } from "@smthrs/control"
 import { Effect, Layer } from "effect"
-import { HttpRouter } from "effect/http"
 import type { HttpServer } from "effect/http/HttpServer"
 import type { ServeError } from "effect/http/HttpServerError"
-import { RpcSerialization } from "effect/rpc"
 import type { ListenOptions } from "node:net"
 import { GatewayError, settingRefusal } from "../GatewayError.ts"
 import * as GatewayServer from "../GatewayServer.ts"
@@ -126,7 +124,7 @@ export const bindRefusal = (options: ServerOptions): GatewayError | undefined =>
  * @since 1.0.0
  * @category constructors
  */
-export const listenOptions = (options: ServerOptions): Effect.Effect<ListenOptions, GatewayError> =>
+export const listenOptions = (options: ServerOptions): ListenOptions!GatewayError =>
   Effect.suspend(() => {
     const refusal = bindRefusal(options)
     if (refusal !== undefined) return Effect.fail(refusal)
@@ -172,12 +170,12 @@ export const layerAuth = (options: ServerOptions): Layer.Layer<ControlRpcs.Contr
         return ControlRpcs.bearerAuthenticator({
           token,
           principal: { id: "local", kind: "operator" }
-        }).authenticate(headers).pipe(
-          Effect.catchTag(
+        }).authenticate(headers)
+          |> Effect.catchTag(
+            %,
             "/control/Unauthorized",
             () => Effect.succeed({ id: "loopback", kind: "anonymous", stampedAt: 0 })
           )
-        )
       }
     }, gatewayRunVisibility)
     : ControlRpcs.layerAuth(credentialAuthenticator(options.credential), gatewayRunVisibility)
@@ -275,9 +273,8 @@ export const ingressOptions = (options: ServerOptions): GatewayServer.IngressOpt
     allowedHosts,
     ...(maxRequestBodyBytes === undefined ? {} : { maxRequestBodyBytes }),
     authorize: (headers, path) =>
-      (scopedTokenPaths.includes(path) ? scoped : bearer).authenticate(headers).pipe(
-        Effect.match({ onFailure: () => false, onSuccess: () => true })
-      )
+      (scopedTokenPaths.includes(path) ? scoped : bearer).authenticate(headers)
+      |> Effect.match(%, { onFailure: () => false, onSuccess: () => true })
   }
 }
 
@@ -305,7 +302,7 @@ const mapServeError = <A, R>(
           host: bind.host,
           port: bind.port,
           cause: failure
-        }).pipe(Effect.andThen(Effect.fail(bindFailure(failure))))
+        }) |> Effect.andThen(%, Effect.fail(bindFailure(failure)))
       )
     )
   )

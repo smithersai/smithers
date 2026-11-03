@@ -24,7 +24,7 @@ import {
   type SpanStatus,
   type TraceModel,
   type TraceSpan
-} from "./RunTrace.ts"
+} from "./RunTrace.vibe"
 
 /**
  * One node of the tree: a trace span with its measured timing.

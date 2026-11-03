@@ -4,7 +4,7 @@
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { createServer } from "node:http"
-import * as NativeGateway from "../internal/NativeGateway.ts"
+import * as NativeGateway from "../internal/NativeGateway.vibe"
 
 export {
   bearerPrincipal,
@@ -16,7 +16,7 @@ export {
   listenOptions,
   scopedPrincipal,
   scopedTokenPaths
-} from "../internal/NativeGateway.ts"
+} from "../internal/NativeGateway.vibe"
 /** Node socket and shared gateway policy options.
  * @since 1.0.0
  * @category models

@@ -19,7 +19,7 @@ import * as WorkspaceShare from "@smthrs/sync/WorkspaceShare"
 import { Context, Effect, Layer, Logger } from "effect"
 import { HttpServer } from "effect/http"
 import assert from "node:assert/strict"
-import * as BunGateway from "../../src/bun/BunGateway.ts"
+import * as BunGateway from "../../src/bun/BunGateway.vibe"
 import * as Projections from "../../src/Projections.ts"
 
 const health = { workspaceHash: "bun-workspace", gatewayId: "bun-gateway", protocolVersion: "1", version: "1.0.0-rc.0" }
