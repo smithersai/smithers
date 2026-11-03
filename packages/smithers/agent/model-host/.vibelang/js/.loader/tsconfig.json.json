@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/model-host"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -103,7 +103,7 @@
      "relative": "packages/smithers/agent/model-host/src"
     },
     null,
-    "Zr3X4fOPkI9nQpyc5jXn6o0BceDNFYCwwc3pRQ0TZQk",
+    "yhSubqzNfhaBiU1qHaI20KPO6pZ097gpVQYXzfPeOow",
     [],
     {
      "recursive": true,
@@ -272,7 +272,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -297,7 +297,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -326,91 +326,91 @@
      "relative": "packages/smithers/agent/model-host/package.json"
     },
     "size": 2361,
-    "hash": "OvR-Rf-A6ALoGkTrQvEDGp71C1A9kCv6kH3vtonLBqU"
+    "hash": "Y8gl9VwrQ6RFwmG3B0SKdxI0EyDgRyDIGoFUhsrBCDM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "UJEoLkJ7MXGmJYIzXPkyA3-7p_k52_D8URkKB_Ofs-w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
     "size": 15090,
-    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
+    "hash": "5FOkC86vo7tOtcOeOCK-OP2Phqst49qpq5bwzD1uplY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
+    "hash": "jNdvnCgiUuOZHdrFItXIA-FehSkGnK5p9AVrYdLxwuo"
    },
    {
     "path": {
@@ -452,7 +452,7 @@
      "relative": "packages/rpc/package.json"
     },
     "size": 1555,
-    "hash": "leYSKOyEwqyG1qHCdhRAu2Pls2sllO48SmKw0SleMIU"
+    "hash": "fKwr2ubrwmHP_P_TqAti-XeT6bjD0V6-QUbAyc5uJ1Q"
    },
    {
     "path": {
@@ -466,21 +466,21 @@
      "relative": "packages/smithers/agent/memory/package.json"
     },
     "size": 12559,
-    "hash": "P3NQBbM0fEq2bZfmVrvEHhct2TFz7xf-jerU0iLAIbA"
+    "hash": "zzGSd5Bv674CFPuEVyPEHapfnuCEGmA_G_ONvmy1AbQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
     "size": 15173,
-    "hash": "ON8bl4VMHttJ_CfelahnwFE0Dp-2kNwkvlLdLCseONw"
+    "hash": "W4ZYTA6WZd7ZNkzvvcEyD5K4g8N7aNTt9n8GgfEDmlc"
    },
    {
     "path": {
      "relative": "packages/smithers/package.json"
     },
     "size": 28481,
-    "hash": "2m5XakGOX1YvGQcXS3YxPxvtXqLuf86dk9i1XGh0q9c"
+    "hash": "PldK8cvxIZdQO17ltoaWQ1SGFE_RpcNUWObKKK5xowM"
    },
    {
     "path": {
@@ -7038,24 +7038,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/model-host/src/FastModelFallback.ts"
+     "relative": "packages/smithers/agent/model-host/src/FastModelFallback.vibe"
     },
-    "size": 3027,
-    "hash": "_rIHOW3NC80Xss1ljtT4ZksDIgDmsg_FsaqKgUYPr9s"
+    "size": 2955,
+    "hash": "9U7e0wLq_MPFo7eCGbII4oYbU9LYLygCR9RclDN65-0"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/model-host/src/internal/BoundedJson.ts"
+     "relative": "packages/smithers/agent/model-host/src/internal/BoundedJson.vibe"
     },
-    "size": 2039,
-    "hash": "RA7naLQf0sVy15Y2MSYDIgM6URf2u7DcTNI7ZRNWpOc"
+    "size": 1964,
+    "hash": "WX-3rKspsvdPoZ23J3SGiw53UiXV5ZoKcHkyZ3338wc"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model-host/src/HostServer.ts"
     },
-    "size": 24090,
-    "hash": "5woRBw4pFxzvjSjbheGZgI9eZMEJSUNa7F7zGTMPthw"
+    "size": 24092,
+    "hash": "gxzj9iJoCV-mTz5O4qQGTB_zxoSTcInNiyNqnAwXYKY"
    },
    {
     "path": {
@@ -7068,8 +7068,8 @@
     "path": {
      "relative": "packages/smithers/agent/model-host/src/EnvironmentResolver.ts"
     },
-    "size": 9259,
-    "hash": "jTfFFOwCxC9OOJMHUsvB8I1r9UndMfILjIDL8thXypI"
+    "size": 9261,
+    "hash": "MSQvIDX2EYwOL0UwUH4PsjPnv-b75ytspdF8tkpIrS8"
    },
    {
     "path": {
@@ -9285,10 +9285,10 @@
     "relative": "packages/smithers/agent/model-host/src/DurableChatProducer.ts"
    },
    {
-    "relative": "packages/smithers/agent/model-host/src/FastModelFallback.ts"
+    "relative": "packages/smithers/agent/model-host/src/FastModelFallback.vibe"
    },
    {
-    "relative": "packages/smithers/agent/model-host/src/internal/BoundedJson.ts"
+    "relative": "packages/smithers/agent/model-host/src/internal/BoundedJson.vibe"
    },
    {
     "relative": "packages/smithers/agent/model-host/src/HostServer.ts"
@@ -9382,6 +9382,16 @@
     "category": "warning",
     "code": "EK38107",
     "text": "schemaClassObjectLiteral: This object literal is checked as an instance of Schema class 'GenerationParams' but has no class prototype. instanceof checks, methods, and Schema encoding can fail. Use 'GenerationParams.make(...)' or 'new GenerationParams(...)' instead. effect(schemaClassObjectLiteral)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/model-host/src/internal/BoundedJson.vibe"
+    },
+    "line": 20,
+    "column": 32,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpIncomingMessage#HttpIncomingMessage` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    }
   ],
   "outputs": [
@@ -9463,6 +9473,46 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;;GASG;;AAIH;;;;;GAKG;AACH,MAAM,OAAO,aAAgB,SAAA,AAAhB,WAAa,CAAb,eAAa,CAAkB;CAAE;AAE9C;;;;;GAKG;AACH,MAAM,OAAO,mBACX,SAAA,AADW,WAAmB,CAAnB,qBAAmB,CASE;CACjC;AAED;;;;;GAKG;AACH,MAAM,OAAO,oBACX,SAAA,AADW,WAAoB,CAApB,sBAAoB,CAEjB;CACf;AAED;;;;;GAKG;AACH,MAAM,OAAO,aACX,SAAA,AADW,WAAa,CAAb,eAAa,CAEV;CACf;AAED;;;;;GAKG;AACH,MAAM,OAAO,eAAkB,SAAA,AAAlB,WAAe,CAAf,iBAAe,CAAkB;CAAE;AAUhD;;;;;GAKG;AACH,MAAM,OAAO,cAAiB,SAAA,AAAjB,WAAc,CAAd,gBAAc,CAAqB;CAAE"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/model-host/src/FastModelFallback.vibe"
+     }
+    ],
+    "code": "/**\n * Host-selected fast-model fallbacks over the canonical model stream.\n *\n * @since 1.0.0\n */\nimport { withSpan } from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { ModelError, ModelRequest } from \"@smthrs/model\";\nimport { Effect, Metric, Stream } from \"effect\";\nconst notificationTimeouts = Metric.counter(\"smithers_model_host_fallback_notification_timeouts\");\n/**\n * Builds one model that streams from the first host-owned source and falls back\n * to the next only when a source fails as unavailable (authentication, rate limit,\n * quota, transport, call timeout or provider fault) before emitting any output.\n * A failure after output became visible, or on the last source, is returned as is.\n * `onFallback` runs with the index of the source about to be tried and is\n * interrupted after one second so a notification cannot block inference. With no\n * sources the stream fails with `no_route`.\n *\n * @since 1.0.0\n * @category constructors\n */\nexport const fastModelFallback = (sources, onFallback) => ({\n    stream: (request) => Stream.suspend(() => {\n        if (sources.length === 0) {\n            return Stream.fail(new ModelError.ModelError({ code: \"no_route\", message: \"Fast model unavailable\" }));\n        }\n        const attempt = (index) => {\n            const source = sources[index];\n            let emitted = false;\n            const { maxTokens: _maxTokens, ...unlimited } = request.params;\n            return source.model.stream(new ModelRequest.ModelRequest({\n                ...request,\n                modelId: source.modelId,\n                params: source.outputTokenLimitSupported === false ? unlimited : request.params\n            })).pipe(Stream.tap(Effect_1.fnUntraced(function* () {\n                emitted = true;\n            })), Stream.catch((error) => {\n                const unavailable = error._tag === \"flows/model/ModelError\" &&\n                    [\"authentication\", \"rate_limited\", \"quota_exceeded\", \"transport\", \"call_timeout\", \"provider_internal\"]\n                        .includes(error.code);\n                return !emitted && unavailable && index + 1 < sources.length\n                    ? Stream.unwrap(Effect.as(withSpan(Effect.timeoutOrElse((onFallback?.(index + 1) ?? Effect.void), {\n                        duration: 1000,\n                        orElse: () => Effect.andThen(Metric.update(notificationTimeouts, 1), Effect.logWarning(\"Model fallback notification timed out\"))\n                    }), \"model_host.fallback_notification\"), attempt(index + 1)))\n                    : Stream.fail(error);\n            }));\n        };\n        return attempt(0);\n    })\n});\n",
+    "map": {
+     "version": 3,
+     "file": "FastModelFallback.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/model-host/src/FastModelFallback.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;;AAEH,OAAO,EAAc,UAAU,EAAmB,YAAY,EAAE,MAAM,eAAe,CAAA;AACrF,OAAO,EAAE,MAAM,EAAE,MAAM,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAE/C,MAAM,oBAAoB,GAAG,MAAM,CAAC,OAAO,CAAC,oDAAoD,CAAC,CAAA;AAEjG;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,iBAAiB,GAAG,CAC/B,OAEC,EACD,UAAsC,EACzB,EAAE,CAAC,CAAC;IACjB,MAAM,EAAE,CAAC,OAAO,EAAE,EAAE,CAClB,MAAM,CAAC,OAAO,CAAC,GAAG,EAAE;QAClB,IAAI,OAAO,CAAC,MAAM,KAAK,CAAC,EAAE,CAAC;YACzB,OAAO,MAAM,CAAC,IAAI,CAAC,IAAI,UAAU,CAAC,UAAU,CAAC,EAAE,IAAI,EAAE,UAAU,EAAE,OAAO,EAAE,wBAAwB,EAAE,CAAC,CAAC,CAAA;QACxG,CAAC;QACD,MAAM,OAAO,GAAG,CACd,KAAa,EAC6C,EAAE;YAC5D,MAAM,MAAM,GAAG,OAAO,CAAC,KAAK,CAAE,CAAA;YAC9B,IAAI,OAAO,GAAG,KAAK,CAAA;YACnB,MAAM,EAAE,SAAS,EAAE,UAAU,EAAE,GAAG,SAAS,EAAE,GAAG,OAAO,CAAC,MAAM,CAAA;YAC9D,OAAO,MAAM,CAAC,KAAK,CAAC,MAAM,CACxB,IAAI,YAAY,CAAC,YAAY,CAAC;gBAC5B,GAAG,OAAO;gBACV,OAAO,EAAE,MAAM,CAAC,OAAO;gBACvB,MAAM,EAAE,MAAM,CAAC,yBAAyB,KAAK,KAAK,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAC,OAAO,CAAC,MAAM;aAChF,CAAC,CACH,CAAC,IAAI,CACJ,MAAM,CAAC,GAAG,CAAC;gBACT,OAAO,GAAG,IAAI,CAAA;YAChB,CAAC,CAAA,CAAC,EACF,MAAM,CAAC,KAAK,CAAC,CAAC,KAAK,EAAE,EAAE;gBACrB,MAAM,WAAW,GAAG,KAAK,CAAC,IAAI,KAAK,wBAAwB;oBACzD,CAAC,gBAAgB,EAAE,cAAc,EAAE,gBAAgB,EAAE,WAAW,EAAE,cAAc,EAAE,mBAAmB,CAAC;yBACnG,QAAQ,CAAC,KAAK,CAAC,IAAI,CAAC,CAAA;gBACzB,OAAO,CAAC,OAAO,IAAI,WAAW,IAAI,KAAK,GAAG,CAAC,GAAG,OAAO,CAAC,MAAM;oBAC1D,CAAC,CAAC,MAAM,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,CAUlB,QAAQ,CARR,MAAM,CAAC,aAAa,CADzB,CAAC,UAAU,EAAE,CAAC,KAAK,GAAG,CAAC,CAAC,IAAI,MAAM,CAAC,IAAI,CAAC,EACX;wBACzB,QAAQ,EAAE,IAAI;wBACd,MAAM,EAAE,GAAG,EAAE,CACX,MAAM,CAAC,OAAO,CACZ,MAAM,CAAC,MAAM,CAAC,oBAAoB,EAAE,CAAC,CAAC,EACtC,MAAM,CAAC,UAAU,CAAC,uCAAuC,CAAC,CAC3D;qBACJ,CAAC,EACa,kCAAkC,CAAC,EACpD,OAAO,CAAC,KAAK,GAAG,CAAC,CAAC,CACnB,CAAC;oBACF,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,KAAK,CAAC,CAAA;YACxB,CAAC,CAAC,CACH,CAAA;QACH,CAAC,CAAA;QACD,OAAO,OAAO,CAAC,CAAC,CAAC,CAAA;IACnB,CAAC,CAAC;CACL,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/model-host/src/internal/BoundedJson.vibe"
+     }
+    ],
+    "code": "/** Bounded JSON transport shared by the host's routes.\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Stream from \"effect/Stream\";\nimport * as Effect_1 from \"effect/Effect\";\nconst MAX_BODY_BYTES = 2 * 1024 * 1024;\n/**\n * Reads at most MAX_BODY_BYTES of the body as JSON. The byte count is taken\n * while streaming, so a chunked body with no content-length stops being read\n * at the limit instead of being buffered whole. Anything else — a declared\n * length past the limit, an empty or unreadable body, invalid UTF-8 or JSON —\n * is `undefined`, never a failure.\n *\n * @private\n * @since 1.0.0\n */\nexport const boundedJson = (message) => {\n    const length = Number(message.headers[\"content-length\"] ?? \"0\");\n    if (!Number.isFinite(length) || length < 0 || length > MAX_BODY_BYTES)\n        return Effect.succeed(undefined);\n    const chunks = [];\n    let size = 0;\n    return Effect.catchDefect(Effect.catch(Effect.flatMap(Stream.runForEachWhile(message.stream, Effect_1.fnUntraced(function* (chunk) {\n        size += chunk.byteLength;\n        if (size > MAX_BODY_BYTES)\n            return false;\n        chunks.push(chunk);\n        return true;\n    })), () => {\n        if (size === 0 || size > MAX_BODY_BYTES)\n            return Effect.succeed(undefined);\n        const bytes = new Uint8Array(size);\n        let offset = 0;\n        for (const chunk of chunks) {\n            bytes.set(chunk, offset);\n            offset += chunk.byteLength;\n        }\n        return Effect.try(() => JSON.parse(new TextDecoder(\"utf-8\", { fatal: true, ignoreBOM: false }).decode(bytes)));\n    })\n    // Bytes that are not UTF-8 JSON, or a body the platform cannot read (a\n    // used body is a defect there), are no request. Interruption is neither a\n    // failure nor a defect, so a caller who went away while the body was read\n    // stays interrupted and is never answered as a bad request.\n    , () => Effect.succeed(undefined)), () => Effect.succeed(undefined));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "BoundedJson.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/model-host/src/internal/BoundedJson.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;GAEG;;;;AAIH,MAAM,cAAc,GAAG,CAAC,GAAG,IAAI,GAAG,IAAI,CAAA;AAEtC;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,CACzB,OAAmD,EAC5B,EAAE;IACzB,MAAM,MAAM,GAAG,MAAM,CAAC,OAAO,CAAC,OAAO,CAAC,gBAAgB,CAAC,IAAI,GAAG,CAAC,CAAA;IAC/D,IAAI,CAAC,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,IAAI,MAAM,GAAG,CAAC,IAAI,MAAM,GAAG,cAAc;QAAE,OAAO,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,CAAA;IACvG,MAAM,MAAM,GAAsB,EAAE,CAAA;IACpC,IAAI,IAAI,GAAG,CAAC,CAAA;IACZ,OAwBK,MAAM,CAAC,WAAW,CADlB,MAAM,CAAC,KAAK,CAhBZ,MAAM,CAAC,OAAO,CANd,MAAM,CAAC,eAAe,CADpB,OAAO,CAAC,MAAM,EACU,+BAAQ,KAAK;QACxC,IAAI,IAAI,KAAK,CAAC,UAAU,CAAA;QACxB,IAAI,IAAI,GAAG,cAAc;YAAE,OAAO,KAAK,CAAA;QACvC,MAAM,CAAC,IAAI,CAAC,KAAK,CAAC,CAAA;QAClB,OAAO,IAAI,CAAA;IACb,CAAC,CAAA,CAAC,EACmB,GAAG,EAAE;QACxB,IAAI,IAAI,KAAK,CAAC,IAAI,IAAI,GAAG,cAAc;YAAE,OAAO,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,CAAA;QACzE,MAAM,KAAK,GAAG,IAAI,UAAU,CAAC,IAAI,CAAC,CAAA;QAClC,IAAI,MAAM,GAAG,CAAC,CAAA;QACd,KAAK,MAAM,KAAK,IAAI,MAAM,EAAE,CAAC;YAC3B,KAAK,CAAC,GAAG,CAAC,KAAK,EAAE,MAAM,CAAC,CAAA;YACxB,MAAM,IAAI,KAAK,CAAC,UAAU,CAAA;QAC5B,CAAC;QACD,OAAO,MAAM,CAAC,GAAG,CAAC,GAAG,EAAE,CACrB,IAAI,CAAC,KAAK,CAAC,IAAI,WAAW,CAAC,OAAO,EAAE,EAAE,KAAK,EAAE,IAAI,EAAE,SAAS,EAAE,KAAK,EAAE,CAAC,CAAC,MAAM,CAAC,KAAK,CAAC,CAAY,CACjG,CAAA;IACH,CAAC,CAAC;IACF,uEAAuE;IACvE,0EAA0E;IAC1E,0EAA0E;IAC1E,4DAA4D;MACzC,GAAG,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,CAAC,EAC1B,GAAG,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,CAAC,CAAA;AAC7D,CAAC,CAAA"
     }
    },
    {

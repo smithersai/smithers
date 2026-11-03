@@ -2,7 +2,7 @@ import { ModelError, ModelRequest } from "@smthrs/model"
 import { Deferred, Effect, Fiber, Metric, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
-import { fastModelFallback } from "../src/FastModelFallback.ts"
+import { fastModelFallback } from "../src/FastModelFallback.vibe"
 
 const request = new ModelRequest.ModelRequest({ modelId: "gateway", system: [], messages: [], tools: [], params: {} })
 const answer = { type: "text-delta", id: "text", text: "answer" } as const
