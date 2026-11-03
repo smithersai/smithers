@@ -47,12 +47,12 @@ import * as Observed from "./internal/Observed.vibe"
  * @since 1.0.0-rc.17
  */
 export interface Machine<F, E = never, R = never> {
-  readonly running: Effect.Effect<boolean, E, R>
-  start(options: { readonly enableInternet: false; readonly instance?: Instance }): Effect.Effect<void, E, R>
-  setInactivityTimeout(durationMs: number): Effect.Effect<void, E, R>
-  interceptOutboundHttp(addr: string, binding: F): Effect.Effect<void, E, R>
-  interceptAllOutboundHttp(binding: F): Effect.Effect<void, E, R>
-  interceptOutboundHttps(addr: string, binding: F): Effect.Effect<void, E, R>
+  readonly running: boolean!E!R
+  start(options: { readonly enableInternet: false; readonly instance?: Instance }): void!E!R
+  setInactivityTimeout(durationMs: number): void!E!R
+  interceptOutboundHttp(addr: string, binding: F): void!E!R
+  interceptAllOutboundHttp(binding: F): void!E!R
+  interceptOutboundHttps(addr: string, binding: F): void!E!R
 }
 
 /**
@@ -204,33 +204,34 @@ export const rearms = Metric.counter("smithers_cloudflare_sandbox_rearms", {
 export const wake = <F, E, R>(
   machine: Machine<F, E, R>,
   options: WakeOptions<F>
-): Effect.Effect<WakeOutcome, E | StartTimedOut, R> =>
-  Effect.gen(function*() {
-    const running = yield* machine.running
+): WakeOutcome!E | StartTimedOut!R =>
+  effect {
+    const running = try machine.running
     if (!running) {
-      const start = machine.start(
-        options.instance === undefined
-          ? { enableInternet: false }
-          : { enableInternet: false, instance: options.instance }
-      )
+      const start = effect {
+        return try machine.start(
+          options.instance === undefined
+            ? { enableInternet: false }
+            : { enableInternet: false, instance: options.instance }
+        )
+      }
       const timeoutMs = options.startTimeoutMs
-      yield* timeoutMs === undefined ? start : start.pipe(
-        Effect.timeoutOrElse({
+      try (timeoutMs === undefined ? start : (start
+        |> Effect.timeoutOrElse(%, {
           duration: timeoutMs,
           orElse: () => Effect.andThen(Metric.update(startTimeouts, 1), Effect.fail(new StartTimedOut({ timeoutMs })))
-        })
-      )
+        })))
     }
-    yield* machine.setInactivityTimeout(options.inactivityTimeoutMs ?? defaultInactivityTimeoutMs)
+    try machine.setInactivityTimeout(options.inactivityTimeoutMs ?? defaultInactivityTimeoutMs)
     for (const intercept of options.intercepts) {
-      yield* machine.interceptOutboundHttp(intercept.host, intercept.fetcher)
+      try machine.interceptOutboundHttp(intercept.host, intercept.fetcher)
     }
     if (options.egress !== undefined) {
-      yield* machine.interceptAllOutboundHttp(options.egress)
-      yield* machine.interceptOutboundHttps("*", options.egress)
+      try machine.interceptAllOutboundHttp(options.egress)
+      try machine.interceptOutboundHttps("*", options.egress)
     }
     return running ? "running" as const : "started" as const
-  }).pipe((effect) =>
+  } |> ((effect) =>
     Observed.observed(effect, {
       span: "sandbox.wake",
       attributes: {
@@ -240,8 +241,7 @@ export const wake = <F, E, R>(
       attribute: "smithers.sandbox.wake",
       counter: wakes,
       log: "cloudflare.sandbox.wake"
-    })
-  )
+    }))(%)
 
 /**
  * Re-arms the inactivity timeout of a container that runs, to
@@ -256,20 +256,19 @@ export const wake = <F, E, R>(
 export const rearm = <F, E, R>(
   machine: Pick<Machine<F, E, R>, "running" | "setInactivityTimeout">,
   inactivityTimeoutMs: number = defaultInactivityTimeoutMs
-): Effect.Effect<"rearmed" | "stopped", E, R> =>
-  Effect.gen(function*() {
-    if (!(yield* machine.running)) return "stopped" as const
-    yield* machine.setInactivityTimeout(inactivityTimeoutMs)
+): "rearmed" | "stopped"!E!R =>
+  effect {
+    if (!(try machine.running)) return "stopped" as const
+    try machine.setInactivityTimeout(inactivityTimeoutMs)
     return "rearmed" as const
-  }).pipe((effect) =>
+  } |> ((effect) =>
     Observed.observed(effect, {
       span: "sandbox.rearm",
       attributes: { "smithers.sandbox.inactivity_timeout_ms": inactivityTimeoutMs },
       attribute: "smithers.sandbox.rearm",
       counter: rearms,
       log: "cloudflare.sandbox.rearm"
-    })
-  )
+    }))(%)
 
 /**
  * Options for {@link run}: the `uid:gid` the command runs as (the image's
@@ -300,7 +299,7 @@ export const run = <E, R>(
   container: ContainerTerminal.Container<E, R>,
   argv: Array<string>,
   options: RunOptions = {}
-): Effect.Effect<number, E, R> =>
+): number!E!R =>
   Effect.scoped(
     Effect.flatMap(
       container.exec(argv, {
