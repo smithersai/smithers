@@ -16,6 +16,7 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 import * as Tokens from "../github/Tokens.ts"
 import * as RepoRuns from "../RepoRuns.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
+import { latestRole } from "../SessionStore.ts"
 import { mayRead } from "../stack/Access.ts"
 import * as Realm from "./Realm.ts"
 import * as RepoFlow from "./RepoFlow.ts"
@@ -143,8 +144,8 @@ const noStore = { "cache-control": "no-store" }
  */
 const admission = <R>(roles: RepoRoles.RepoRoles<R>, actor: Actor, repository: Repository) =>
   roles.resolve(actor, repository).pipe(
-    Effect.map((resolved): "member" | RunsRefusal =>
-      mayRead(Option.some({ ...actor, role: resolved.role })) ? "member" : "forbidden"
+    Effect.map((resolved): RepoRoles.Resolved | RunsRefusal =>
+      mayRead(Option.some({ ...actor, role: resolved.role })) ? resolved : "forbidden"
     ),
     Effect.catch((error) =>
       Effect.succeed<RunsRefusal>(
@@ -152,6 +153,51 @@ const admission = <R>(roles: RepoRoles.RepoRoles<R>, actor: Actor, repository: R
       )
     ),
   )
+
+/** Authority changed while reading the body or GitHub: roll back the ownership row before answering. */
+class AdmissionRefused extends Schema.TaggedError<AdmissionRefused>()("@smthrs/mvp/ci/RunAdmissionRefused", {
+  code: Schema.Literals(["authentication", "forbidden"]),
+}) {}
+
+/** Inside the run-admission transaction: lock the authority's rows, then judge them by Postgres' current clock. */
+const stillAdmitted = (actor: Actor, resolved: RepoRoles.Resolved) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    if (actor.session !== undefined) {
+      // Role observations serialize on the person; sign-out and alias revocation serialize on their session rows.
+      const [person] = yield* sql`SELECT 1 FROM people WHERE id::text = ${actor.subject.id} FOR SHARE`
+      if (person === undefined) return "authentication" as const
+      const [session] = yield* sql`
+        SELECT 1 FROM sessions WHERE id::text = ${actor.session} AND person_id::text = ${actor.subject.id} FOR SHARE`
+      if (session === undefined) return "authentication" as const
+      if (actor.alias !== undefined) {
+        const [alias] = yield* sql`
+          SELECT 1 FROM host_sessions WHERE id::text = ${actor.alias} AND parent_id::text = ${actor.session} FOR SHARE`
+        if (alias === undefined) return "authentication" as const
+      }
+    }
+    // Preserve the precise role receipt that admitted the request. This locks it and checks its freshness after waiting.
+    if (Option.isSome(resolved.held) && !(yield* RepoRoles.holds(resolved.held.value))) return "forbidden" as const
+    let role = resolved.role
+    if (actor.session !== undefined) {
+      // All authority locks are now held. A locking SELECT could have waited past the session's expiry.
+      const [session] = yield* sql<{ readonly live: boolean }>`
+        SELECT revoked_at IS NULL AND expires_at > clock_timestamp() AS live FROM sessions WHERE id::text = ${actor.session}`
+      if (session?.live !== true) return "authentication" as const
+      if (actor.alias !== undefined) {
+        const [alias] = yield* sql<{ readonly live: boolean }>`
+          SELECT revoked_at IS NULL AS live FROM host_sessions WHERE id::text = ${actor.alias}`
+        if (alias?.live !== true) return "authentication" as const
+      }
+      // On the deployment's repository the newest session role receipt decides, including an ended session's demotion.
+      if (Option.isNone(resolved.held)) {
+        const [current] = yield* sql<{ readonly role: Actor["role"] }>`
+          SELECT ${latestRole(sql, sql`${actor.subject.id}::uuid`)} AS role`
+        role = current?.role ?? null
+      }
+    }
+    return mayRead(Option.some({ ...actor, role })) ? undefined : "forbidden" as const
+  })
 
 const statusOf: Readonly<Record<RunsRefusal, number>> = {
   invalid: 400,
@@ -238,7 +284,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
      * came before, `conflict` when its id holds another run. A request sent again replays the run as first recorded,
      * at its commit, never the branch's head now.
      */
-    const startRun = (repository: Repository, request: RepoFlow.RunRequest, launchedBy: string) =>
+    const startRun = (repository: Repository, request: RepoFlow.RunRequest, actor: Actor, authority: RepoRoles.Resolved) =>
       Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
         const fresh = yield* RepoRuns.record({
           execution: request.run,
@@ -247,8 +293,11 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           sha: request.sha,
           ref: request.ref,
           event: request.event,
-          launchedBy,
+          launchedBy: actor.subject.id,
         })
+        // The ownership insert acquired the run's lock. Refusal must fail the transaction, leaving no row behind.
+        const refusal = yield* stillAdmitted(actor, authority)
+        if (refusal !== undefined) return yield* Effect.fail(new AdmissionRefused({ code: refusal }))
         // Not new: its row is there, with the commit it recorded.
         const sha = fresh
           ? request.sha
@@ -257,9 +306,10 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           Effect.as(fresh ? "started" as const : "existing" as const),
         )
       }))).pipe(
-        Effect.provide(database),
-        // A conflicting intent must roll the ownership row back before the refusal becomes a success value.
+        // A conflicting intent or stale authority must roll ownership back before the refusal becomes a success value.
         Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.succeed("conflict" as const)),
+        Effect.catchTag("@smthrs/mvp/ci/RunAdmissionRefused", (refusal) => Effect.succeed(refusal.code)),
+        Effect.provide(database),
       )
 
     /** A run Retry starts again: the run's own request, or why not. */
@@ -320,7 +370,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         // A Member or above on the repository, in person or through an agent acting for them: running a flow neither
         // approves nor merges.
         const admitted = yield* admission(options.roles, actor.value.value, repository).pipe(Effect.provide(database))
-        if (admitted !== "member") return refused(admitted)
+        if (typeof admitted === "string") return refused(admitted)
         const github = on(options.app.value, repository)
 
         if (route.kind === "flows") {
@@ -343,7 +393,6 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         const text = yield* readBounded(request, MAX_INPUT_BYTES * 2).pipe(Effect.option)
         const body = Option.flatMap(text, decodeBody)
         if (Option.isNone(body)) return refused("invalid")
-        const person = actor.value.value.subject.id
         if ("retryOf" in body.value) {
           const { id, retryOf, failed } = body.value
           fields.kind = failed ? "retry_failed" : "retry"
@@ -352,8 +401,8 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           const run = manualExecutionId(found.request.flow, id)
           const { only, ...again } = found.request
           const next: RepoFlow.RunRequest = { ...again, run, ...(failed && only !== undefined ? { only } : {}) }
-          const started = yield* startRun(repository, next, person)
-          if (started === "conflict") return refused("conflict")
+          const started = yield* startRun(repository, next, actor.value.value, admitted)
+          if (started !== "started" && started !== "existing") return refused(started)
           fields.outcome = started
           fields.runId = run
           return answered({ runId: run }, started === "started" ? 202 : 200)
@@ -380,8 +429,8 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           // A Member started it from the repository itself: its jobs may have the repository's secrets.
           secrets: true,
           input: withDefaults(found.inputs, input),
-        }, person)
-        if (started === "conflict") return refused("conflict")
+        }, actor.value.value, admitted)
+        if (started !== "started" && started !== "existing") return refused(started)
         fields.outcome = started
         fields.runId = run
         return answered({ runId: run }, started === "started" ? 202 : 200)

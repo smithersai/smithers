@@ -7,7 +7,7 @@ import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
 import { QuickJSVariant } from "@smthrs/harness"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { FlowRuntime } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Metric, Option } from "effect"
+import { Context, Effect, Exit, Layer, Metric, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
@@ -23,6 +23,9 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 import { REPOSITORY, reset, services as githubServices } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
+import { configured, cookie, SECRET, signInHarness } from "../test/signIn.ts"
+import * as SessionKeys from "../SessionKeys.ts"
+import * as SessionStore from "../SessionStore.ts"
 import * as RepoRuns from "../RepoRuns.ts"
 import * as RemoteRuns from "../RemoteRuns.ts"
 import { SandboxCall } from "../flows/SandboxCall.ts"
@@ -118,6 +121,8 @@ const routes = async (
     readonly actor?: Actor.Actor | null
     /** Sessions that can't be read. */
     readonly sessionsDown?: boolean
+    readonly sessions?: Layer.Layer<Actor.Sessions>
+    readonly roleRepository?: string
     readonly repoFlows?: boolean
     readonly app?: boolean
     readonly repositories?: ReadonlyArray<string>
@@ -138,7 +143,7 @@ const routes = async (
     : Option.some(app({ privateKey: await appKey(), ...(options.unreachable === true || options.contentsDown === true ? { apiBaseUrl: "http://127.0.0.1:1" } : {}) }))
   const http = options.unreachable === true ? {} : { http: github.http }
   const roles = await runtime.runPromise(RepoRoles.make(scratch.database, {
-    repository: repositoryOf("acme/home"),
+    repository: repositoryOf(options.roleRepository ?? "acme/home"),
     app: configured,
     ...http,
     // Each case's refusal is GitHub's own, on a fresh route: RepoRoles.test.ts tests the cooldown after a failure.
@@ -182,11 +187,11 @@ const routes = async (
   const handler = HttpEffect.toWebHandler(
     api.fetch.pipe(
       Effect.provide(
-        options.sessionsDown === true
+        options.sessions ?? (options.sessionsDown === true
           ? Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }))
           : options.actor === null
           ? Actor.signedOut
-          : signedIn(options.actor ?? maya),
+          : signedIn(options.actor ?? maya)),
       ),
       Effect.provideService(FlowStarter, starter),
       Effect.provide(FetchHttpClient.layer),
@@ -325,6 +330,103 @@ describe("GET /api/repos/<owner>/<name>/flows/<flow>?ref=", () => {
 })
 
 describe("POST /api/repos/<owner>/<name>/runs", () => {
+  test.each([
+    { stage: "body", authority: "session" },
+    { stage: "body", authority: "role" },
+    { stage: "github", authority: "session" },
+    { stage: "github", authority: "role" },
+    { stage: "body", authority: "expired" },
+    { stage: "body", authority: "missing-session" },
+    { stage: "body", authority: "missing-role" },
+    { stage: "body", authority: "stale-role" },
+    { stage: "body", authority: "home-role" },
+    { stage: "body", authority: "alias" },
+    { stage: "body", authority: "missing-alias" },
+    { stage: "body", authority: "unchanged" },
+    { stage: "github", authority: "unchanged" },
+  ] as const)("a delayed $stage cannot start after $authority revocation", async ({ stage, authority }) => {
+    // Both requests enter with real sign-in and the repository's real role receipt.
+    const auth = await signInHarness(runtime, {
+      config: { ...configured, APP_DOMAIN: "smithers.test", APP_ALIASES: "chat.test=/acme/widgets" },
+    })
+    auth.github.person = { id: accountIdOf("maya"), login: "maya" }
+    const signed = await auth.signInAs()
+    expect(signed.response.status).toBe(303)
+    let cookies = signed.cookies
+    if (authority === "alias" || authority === "missing-alias") {
+      const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
+      const token = await Effect.runPromise(keys.token)
+      const [session] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ id: string }>`SELECT id::text FROM sessions WHERE person_id = ${MAYA}`))
+      expect(await runtime.runPromise(SessionStore.createHostSession({
+        id: uuid(), parentId: session!.id, host: "chat.test", tokenDigest: SessionKeys.digest(token),
+      }))).toBe(true)
+      cookies = { smithers_session: await Effect.runPromise(keys.sign("session", token)) }
+    }
+    const { github } = repository()
+    const h = await routes(github, {
+      sessions: auth.sessions, ...(authority === "home-role" ? { roleRepository: "acme/widgets" } : {}),
+    })
+    let entered!: () => void
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => { entered = resolve })
+    const proceed = new Promise<void>((resolve) => { release = resolve })
+    const body = JSON.stringify({ id: uuid(), flow: "release", ref: "main", input: { channel: "next" } })
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        entered()
+        await proceed
+        controller.enqueue(new TextEncoder().encode(body))
+        controller.close()
+      },
+    }, { highWaterMark: 0 })
+    if (stage === "github") github.faults.push({
+      match: (method, path) => method === "GET" && path.includes("/contents/.smithers/flows/release/flow.ts"),
+      hold: () => { entered(); return proceed },
+    })
+    const pending = h.fetch(repoRunsRoute(REPOSITORY.owner, REPOSITORY.name), {
+      method: "POST", headers: { cookie: cookie(cookies), "x-smithers-device-person": MAYA },
+      body: stage === "body" ? stream : body,
+      ...(stage === "body" ? { duplex: "half" } : {}),
+    } as RequestInit)
+    await Promise.race([waiting, pending.then((response) => { throw new Error(`request ended before ${stage} gate: ${response.status}`) })])
+    try {
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => {
+        switch (authority) {
+          case "session": return sql`UPDATE sessions SET revoked_at = clock_timestamp(), revoked_reason = 'sign_out' WHERE person_id = ${MAYA}`
+          case "role": return sql`UPDATE github_repo_roles SET role = 'guest' WHERE repo_id = ${REPOSITORY.id} AND person_id = ${MAYA}`
+          case "expired": return sql`UPDATE sessions SET expires_at = clock_timestamp() - interval '1 second' WHERE person_id = ${MAYA}`
+          case "missing-session": return sql`DELETE FROM sessions WHERE person_id = ${MAYA}`
+          case "missing-role": return sql`DELETE FROM github_repo_roles WHERE repo_id = ${REPOSITORY.id} AND person_id = ${MAYA}`
+          case "stale-role": return sql`UPDATE github_repo_roles SET checked_at = clock_timestamp() - interval '1 hour' WHERE repo_id = ${REPOSITORY.id} AND person_id = ${MAYA}`
+          case "home-role": return sql`
+            INSERT INTO sessions (id, token_digest, person_id, role, role_generation, role_checked_at, expires_at, revoked_at)
+            VALUES (${uuid()}, ${uuid()}, ${MAYA}, 'guest', nextval('role_observations'), clock_timestamp(),
+              clock_timestamp() + interval '1 hour', clock_timestamp())`
+          case "alias": return sql`UPDATE host_sessions SET revoked_at = clock_timestamp() WHERE host = 'chat.test'`
+          case "missing-alias": return sql`DELETE FROM host_sessions WHERE host = 'chat.test'`
+          case "unchanged": return Effect.succeed([])
+        }
+      }))
+    } finally {
+      release()
+    }
+    const response = await answer(await pending)
+    if (authority === "unchanged") {
+      expect(response[0]).toBe(202)
+      expect(h.starts).toHaveLength(1)
+      expect(h.starts[0]!.payload).toMatchObject({ secrets: true })
+      expect(await rows()).toHaveLength(1)
+    } else {
+      const session = ["session", "expired", "missing-session", "alias", "missing-alias"].includes(authority)
+      expect(response, `delayed run must revalidate ${authority}`).toEqual(
+        session ? [401, { code: "authentication" }] : [403, { code: "forbidden" }],
+      )
+      expect(h.starts).toEqual([])
+      expect(await rows()).toEqual([])
+    }
+  })
+
   test("a conflicting sandbox-call intent cannot claim or cancel another person's execution", async () => {
     const { github } = repository()
     github.push("main", {
