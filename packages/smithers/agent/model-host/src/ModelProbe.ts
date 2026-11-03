@@ -17,9 +17,9 @@ import type { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import { Classifier, Evaluator, ModelRequest } from "@smthrs/model"
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Effect, Exit, Redacted, Schema, Stream } from "effect"
-import { toEvaluatorLayer, toModel, type ToModelOptions } from "./ConfiguredModelRoute.ts"
-import { localModelCatalog, modelFailureOf, planOnLocal } from "./LocalModel.ts"
-import type { LocalPlanned, ModelCredentials } from "./LocalModel.ts"
+import { toEvaluatorLayer, toModel, type ToModelOptions } from "./ConfiguredModelRoute.vibe"
+import { localModelCatalog, modelFailureOf, planOnLocal } from "./LocalModel.vibe"
+import type { LocalPlanned, ModelCredentials } from "./LocalModel.vibe"
 import { providerTransport } from "./ProviderTransport.ts"
 
 /**

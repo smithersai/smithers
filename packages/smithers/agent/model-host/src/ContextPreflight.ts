@@ -9,7 +9,7 @@ import { type Model, ModelError, ModelRequest } from "@smthrs/model"
 import { ContextPreflight, type NativeAgent } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { z } from "zod"
-import { type ModelTurnOptions, StreamingCredentialCutter } from "./ModelTurnHost.ts"
+import { type ModelTurnOptions, StreamingCredentialCutter } from "./ModelTurnHost.vibe"
 
 const Choices = z.array(z.object({ index: z.number().int().nonnegative(), reason: z.string().min(1) }).strict())
 const invalid = () =>

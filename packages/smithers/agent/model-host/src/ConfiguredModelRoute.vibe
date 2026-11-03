@@ -136,7 +136,7 @@ export interface ToModelOptions {
 export interface HostModelRoute {
   readonly prepare: (
     request: ModelRequest.ModelRequest
-  ) => Effect.Effect<Route.PreparedRequest, ModelError.ModelError>
+  ) => Route.PreparedRequest!ModelError.ModelError
 }
 
 /**
@@ -164,23 +164,23 @@ export const toModel = (
   plan: ConfiguredModel.ModelPlan,
   apiKey: Redacted.Redacted<string>,
   options: ToModelOptions = {}
-): Effect.Effect<PlannedModel, ModelError.ModelError> =>
+): PlannedModel!ModelError.ModelError =>
   Effect.flatten(
     Effect.fromResult(withRoute(plan, apiKey, (route) =>
       Effect.map(Route.toModel(route), (model): PlannedModel => ({
         model,
         route: { prepare: (request) => Route.prepare(route, request) }
       }))))
-  ).pipe(
-    Effect.provide(
-      Layer.effect(
-        RequestExecutor.RequestExecutor,
-        Effect.flatMap(
-          KernelHttpClient.HttpClient,
-          (http) => RequestExecutor.makeWith(RequestExecutor.fixed(http), options.execution)
-        )
-      ).pipe(Layer.provide(providerTransport(options.fetch, options.onRedirect)))
-    )
+  )
+  |> Effect.provide(
+    %,
+    Layer.effect(
+      RequestExecutor.RequestExecutor,
+      Effect.flatMap(
+        KernelHttpClient.HttpClient,
+        (http) => RequestExecutor.makeWith(RequestExecutor.fixed(http), options.execution)
+      )
+    ).pipe(Layer.provide(providerTransport(options.fetch, options.onRedirect)))
   )
 
 /**

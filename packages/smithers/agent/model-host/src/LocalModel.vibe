@@ -14,7 +14,7 @@
 
 import { Evaluator, ModelError } from "@smthrs/model"
 import { AgentRoles, ConfiguredModel } from "@smthrs/rpc"
-import { type Effect, Redacted } from "effect"
+import { type Effect } from "effect"
 
 /**
  * Model values stay behind this host-only interface. Listing and planning
@@ -24,9 +24,9 @@ import { type Effect, Redacted } from "effect"
  * @since 1.0.0-rc.0
  */
 export interface ModelCredentials {
-  readonly refresh: () => Effect.Effect<void, unknown>
+  readonly refresh: () => void!unknown
   readonly list: () => ReadonlyArray<ConfiguredModel.ModelCredentialListing>
-  readonly read: (name: string) => Redacted.Redacted<string> | undefined
+  readonly read: (name: string) => Redacted<string> | undefined
 }
 
 /**
@@ -38,7 +38,7 @@ export interface ModelCredentials {
 export const localModelCredential = (
   env: ConfiguredModel.ModelCredentialEnv,
   name: string
-): Redacted.Redacted<string> | undefined => {
+): Redacted<string> | undefined => {
   const value = env[ConfiguredModel.modelCredentialEnvName(name)]?.trim()
   return value === undefined || value === "" ? undefined : Redacted.make(value)
 }
@@ -50,7 +50,7 @@ export const localModelCredential = (
  * @since 1.0.0-rc.0
  */
 export type LocalPlanned =
-  | { readonly ok: true; readonly plan: ConfiguredModel.ModelPlan; readonly apiKey: Redacted.Redacted<string> }
+  | { readonly ok: true; readonly plan: ConfiguredModel.ModelPlan; readonly apiKey: Redacted<string> }
   | { readonly ok: false; readonly failure: ConfiguredModel.ModelTestFailure }
 
 /**

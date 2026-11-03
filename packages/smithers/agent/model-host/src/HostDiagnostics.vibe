@@ -12,8 +12,6 @@
  * @since 1.0.0-rc.0
  */
 
-import { Clock, Duration, Effect, Scope } from "effect"
-
 /**
  * The marker every record carries, so an operator can select them out of a
  * guest's log without parsing the rest of it.
@@ -65,7 +63,7 @@ export interface HostDiagnostics {
   readonly begin: (
     event: string,
     fields?: HostDiagnosticFields
-  ) => Effect.Effect<(outcome?: HostDiagnosticFields) => void>
+  ) => ((outcome?: HostDiagnosticFields) => void)!!
 }
 
 /**
@@ -84,7 +82,7 @@ export interface HostDiagnosticOptions {
    */
   readonly write?: ((line: string) => void) | undefined
   /** Host Effect clock and lifetime. Required when a sink is supplied. */
-  readonly runtime?: { readonly clock: Clock.Clock; readonly scope: Scope.Scope }
+  readonly runtime?: { readonly clock: Clock; readonly scope: Scope }
   /** Monotonic milliseconds. */
   readonly clock?: () => number
   /** How often an unfinished operation repeats. */
@@ -292,7 +290,7 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
   return {
     record: (event, phase, fields = {}) => emit(event, phase, fields),
     begin: (event, fields = {}) =>
-      Effect.gen(function*() {
+      effect {
         const openedAt = clock()
         event = EVENTS.has(event) ? event : "diagnostics"
         const count = (counts.get(event) ?? 0) + 1
@@ -302,10 +300,12 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
         // pending, slow or failed operation is reported.
         const detailed = count <= detailLimit
         if (detailed) emit(event, "begin", fields)
-        const fiber = yield* Effect.forkIn(
+        const fiber = try Effect.forkIn(
           Effect.forever(Effect.andThen(
             runtime.clock.sleep(Duration.millis(pendingMillis)),
-            Effect.sync(() => emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) }))
+            effect {
+              return emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) })
+            }
           )),
           runtime.scope
         )
@@ -323,7 +323,7 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
             outcome.failed === true
           ) emit(event, "end", { ...fields, ...outcome, elapsedMillis: elapsed })
         }
-      })
+      }
   }
 }
 
@@ -336,8 +336,8 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
  */
 export const makeHostDiagnostics = (
   options: Omit<HostDiagnosticOptions, "runtime"> = {}
-): Effect.Effect<HostDiagnostics, never, Scope.Scope> =>
-  Effect.gen(function*() {
+): HostDiagnostics!never!Scope =>
+  effect {
     if (options.write === undefined) return inert
-    return createHostDiagnostics({ ...options, runtime: { clock: yield* Clock.Clock, scope: yield* Scope.Scope } })
-  })
+    return createHostDiagnostics({ ...options, runtime: { clock: try Clock.Clock, scope: try Scope.Scope } })
+  }

@@ -99,7 +99,7 @@ const securityReview = Smithers.SecurityReview({
         "A fetch used for a provider call that does not set redirect: 'manual', letting a 3xx carry the key header to another origin.",
         "A Route or Endpoint built from a baseUrl or path that did not come from the validated ModelPlan."
       ],
-      paths: ["src/EnvironmentResolver.ts", "src/LocalModel.ts", "src/ConfiguredModelRoute.ts", "src/ModelProbe.ts"]
+      paths: ["src/EnvironmentResolver.ts", "src/LocalModel.vibe", "src/ConfiguredModelRoute.vibe", "src/ModelProbe.ts"]
     },
     {
       id: "credential-output-redaction",
@@ -112,11 +112,11 @@ const securityReview = Smithers.SecurityReview({
         "A log annotation, ModelHostError message or HTTP error body that includes a cause, provider message or URL."
       ],
       paths: [
-        "src/ModelTurnHost.ts",
+        "src/ModelTurnHost.vibe",
         "src/ModelProbe.ts",
-        "src/LocalModel.ts",
+        "src/LocalModel.vibe",
         "src/HostServer.ts",
-        "src/ModelHostError.ts"
+        "src/ModelHostError.vibe"
       ]
     },
     {
@@ -129,7 +129,7 @@ const securityReview = Smithers.SecurityReview({
         "A decision or generation call in ModelProbe that runs outside providerTransport, or returns success after it refused a redirect.",
         "Caller-composed ModelCallInput (prompt, system, questions, maxTokens) reaching the provider without the rpc schema's size and count bounds."
       ],
-      paths: ["src/ModelProbe.ts", "src/LocalModel.ts", "src/ConfiguredModelRoute.ts"]
+      paths: ["src/ModelProbe.ts", "src/LocalModel.vibe", "src/ConfiguredModelRoute.vibe"]
     },
     {
       id: "journal-receipt-fencing",
@@ -152,7 +152,7 @@ const securityReview = Smithers.SecurityReview({
         "appendWireMessage mapping an unknown role or item type to a system or tool message.",
         "Frame buffering nothing bounds in bytes or in time. The stream path's accumulator is bounded by MAX_STREAM_BYTES. `runModelTurn`'s drain buffer is deliberately unbounded in capacity — a finite one suspends the provider and re-creates the journal stall (#3812) — so what bounds its growth is the journal callback deadline in DurableChatProducer: a consumer that cannot finish ends the turn in seconds. Either bound removed is the finding."
       ],
-      paths: ["src/HostServer.ts", "src/ModelTurnHost.ts", "src/DurableChatProducer.ts"]
+      paths: ["src/HostServer.ts", "src/ModelTurnHost.vibe", "src/DurableChatProducer.ts"]
     }
   ]
 })

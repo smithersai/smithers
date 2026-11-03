@@ -10,7 +10,7 @@ import { runContextPreflight } from "../src/ContextPreflight.ts"
 import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
 import { createModelTurnHandler, MODEL_HOST_STREAM_PATH } from "../src/HostServer.ts"
-import { runModelTurn } from "../src/ModelTurnHost.ts"
+import { runModelTurn } from "../src/ModelTurnHost.vibe"
 
 const cursor = { version: 1 as const, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
 const grant = {

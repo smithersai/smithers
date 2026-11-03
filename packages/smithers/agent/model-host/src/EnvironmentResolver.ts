@@ -7,11 +7,11 @@
 import type { Model } from "@smthrs/model"
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Effect, Redacted } from "effect"
-import { toModel } from "./ConfiguredModelRoute.ts"
+import { toModel } from "./ConfiguredModelRoute.vibe"
 import { fastModelFallback } from "./FastModelFallback.ts"
 import type { ModelTurnResolver } from "./HostServer.ts"
 import { readContextStream } from "./internal/ContextStream.ts"
-import { ResolveFailed } from "./ModelHostError.ts"
+import { ResolveFailed } from "./ModelHostError.vibe"
 import { refusingRedirects } from "./ProviderTransport.ts"
 
 /**

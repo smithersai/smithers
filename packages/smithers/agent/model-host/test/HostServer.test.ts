@@ -13,7 +13,7 @@ import {
   type ModelTurnResolver,
   turnFailures
 } from "../src/HostServer.ts"
-import { ResolveFailed } from "../src/ModelHostError.ts"
+import { ResolveFailed } from "../src/ModelHostError.vibe"
 
 /** The handler as a host serves it: a Fetch handler that interrupts the turn when its caller goes away. */
 const serve = (options: ModelTurnHandlerOptions) => HttpEffect.toWebHandler(createModelTurnHandler(options))

@@ -41,9 +41,9 @@ import {
 import { Effect } from "effect"
 import { z } from "zod"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
-import type { HostDiagnostics } from "./HostDiagnostics.ts"
-import { runModelTurn } from "./ModelTurnHost.ts"
-import type { FrameWriter, HeldToolCall, ModelTurnOptions } from "./ModelTurnHost.ts"
+import type { HostDiagnostics } from "./HostDiagnostics.vibe"
+import { runModelTurn } from "./ModelTurnHost.vibe"
+import type { FrameWriter, HeldToolCall, ModelTurnOptions } from "./ModelTurnHost.vibe"
 
 /**
  * The producer callback a host tool reads the turn's source through.

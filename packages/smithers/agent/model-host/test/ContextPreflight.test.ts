@@ -3,7 +3,7 @@ import { ContextPreflight } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { expect, test } from "vitest"
 import { runContextPreflight } from "../src/ContextPreflight.ts"
-import { providerRequest } from "../src/ModelTurnHost.ts"
+import { providerRequest } from "../src/ModelTurnHost.vibe"
 
 const input: ContextPreflight.ContextPreflightInput = {
   prompt: "where do we retry webhooks?",
