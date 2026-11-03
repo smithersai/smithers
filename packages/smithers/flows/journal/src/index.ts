@@ -35,7 +35,7 @@ export * as EngineEvent from "./EngineEvent.ts"
  * @category events
  * @since 1.0.0
  */
-export * as ExecutionFact from "./ExecutionFact.ts"
+export * as ExecutionFact from "./ExecutionFact.vibe"
 
 /**
  * @category events
@@ -94,7 +94,7 @@ export * as RedactedLogger from "./RedactedLogger.ts"
  * @category redaction
  * @since 1.0.0
  */
-export * as TelemetryLog from "./TelemetryLog.ts"
+export * as TelemetryLog from "./TelemetryLog.vibe"
 
 /**
  * @category projections

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Facts from "../src/ExecutionFact.ts"
+import * as Facts from "../src/ExecutionFact.vibe"
 
 const row = (executionId = "root", change: Partial<Facts.Observation> = {}): Facts.Observation => ({
   executionId: executionId as never,

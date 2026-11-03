@@ -20,14 +20,8 @@
  * @since 1.0.0
  */
 
-import type * as Cause from "effect/Cause"
-import * as Context from "effect/Context"
 import type * as Logger from "effect/Logger"
-import * as Option from "effect/Option"
-import * as Redacted from "effect/Redacted"
-import * as References from "effect/References"
 import * as Schema from "effect/Schema"
-import * as Tracer from "effect/Tracer"
 import * as Redaction from "./Redaction.ts"
 
 /**
@@ -443,7 +437,7 @@ const snapshotValue = (
   }
 }
 
-const snapshotCause = (cause: Cause.Cause<unknown>, budget: SnapshotBudget): LogCause => ({
+const snapshotCause = (cause: Cause<unknown>, budget: SnapshotBudget): LogCause => ({
   version: 1,
   reasons: cause.reasons.slice(0, maximumSnapshotMembers).map((reason): CauseReason => {
     switch (reason._tag) {
