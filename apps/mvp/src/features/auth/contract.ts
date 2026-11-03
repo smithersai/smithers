@@ -106,6 +106,7 @@ export const composerAccess = (
     readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"
     readonly role: Role | null
     readonly restored: boolean
+    readonly roleConfirmed?: boolean | undefined
     readonly hostedModel?: boolean | undefined
   },
   confirmed: { readonly role: Role | null } | undefined,
@@ -113,7 +114,7 @@ export const composerAccess = (
   member?: boolean,
 ): ComposerAccess => {
   if (session.status === "signed_in") {
-    if (!(member ?? mayAsk(session.role))) return "members_only"
+    if (!(member ?? mayAsk(session.role))) return session.roleConfirmed === false ? "wait" : "members_only"
     if (session.hostedModel === false && own !== "saved") return own === "none" ? "add_model" : "wait"
     return "ask"
   }
@@ -138,6 +139,8 @@ export type SessionState =
   | {
     readonly signedIn: true
     readonly personId?: string
+    /** False while the last observed role awaits a durable confirmation; identity remains signed in. */
+    readonly roleConfirmed?: boolean
     readonly login: string
     readonly role: Role | null
     readonly hostedModel?: boolean
@@ -148,12 +151,12 @@ export type SessionState =
     readonly serverNow?: number
   }
 
-/** How a tab's session check ended: ChatApi said signed in or signed out, or couldn't say (`unreachable`). */
-export const CHECK_OUTCOMES = ["signed_in", "signed_out", "unreachable"] as const
+/** How a tab's session check ended: ChatApi said signed in or signed out, or couldn't confirm authority (`unconfirmed`) or reach ChatApi (`unreachable`). */
+export const CHECK_OUTCOMES = ["signed_in", "signed_out", "unreachable", "unconfirmed"] as const
 export type CheckOutcome = (typeof CHECK_OUTCOMES)[number]
 
 /**
- * How `auth/refresh` ended: the tab's check answered (every outcome but `unreachable`, which the engine tries again), or
+ * How `auth/refresh` ended: the tab's check answered (`unreachable` and `unconfirmed` keep retrying), or
  * no tab answered because the one that asked is gone (`gone`).
  */
 export const REFRESH_OUTCOMES = ["signed_in", "signed_out", "gone"] as const

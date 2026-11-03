@@ -78,7 +78,7 @@ for (const [name, paths, released] of [
     await vi.waitFor(() => expect(state()).toBe(actor === null ? "sign_in" : "forbidden"), { timeout: 30_000 })
     await runtime.runPromise(Effect.sleep("100 millis"))
     expect(requests.filter((path) => paths.some((name) => path === `/api/shapes/${name}`))).toEqual([])
-    await Effect.runPromise(api.github.run(GitHubStore.recordRepository(id, { githubId: 1, private: false })))
+    await Effect.runPromise(api.github.run(Effect.flatMap(GitHubStore.repositoryObservation, (at) => GitHubStore.recordRepository(id, { githubId: 1, private: false }, at))))
     await runtime.runPromise(readRole(owner, repository))
     await vi.waitFor(() => expect(released.every((name) => requests.includes(`/api/shapes/${name}`))).toBe(true), { timeout: 15_000 })
   }, 90_000)

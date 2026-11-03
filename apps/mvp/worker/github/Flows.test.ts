@@ -5,8 +5,9 @@
 import { Journal } from "@smthrs/flows"
 import { GitHub } from "@smthrs/integrations"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Cause, Effect, Exit, Layer, Logger, Metric, Option, Redacted } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Logger, Metric, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
+import { HttpClient } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { reconcileExecutionId, SYNC_STALE_MS, writeExecutionId } from "../../src/features/issues/contract.ts"
@@ -15,6 +16,8 @@ import { testFile } from "../test/harness.ts"
 import * as Apply from "./Apply.ts"
 import * as Metrics from "./Metrics.ts"
 import * as Reconcile from "./Reconcile.ts"
+import * as RepoRoles from "./RepoRoles.ts"
+import { repositoryOf } from "./Config.ts"
 import * as Store from "./Store.ts"
 import { admit, comments, database, items, keys, REPOSITORY, reset, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { BOT_LOGIN, scriptedApp, scriptedGitHub, appKey } from "./test/scriptedGitHub.ts"
@@ -766,6 +769,34 @@ describe("github/Reconcile", () => {
     github.private = false
     await reconcile(value)
     expect(await sql(runtime, `SELECT private FROM github_repositories`)).toEqual([{ private: false }])
+  })
+
+  test("an older public reconciliation cannot replace a newer private visibility receipt", async () => {
+    const github = scriptedGitHub()
+    github.private = false
+    const person = await maya(github)
+    const { services: value } = await services(runtime, github)
+    const observer = await Effect.runPromise(RepoRoles.make(value.database, {
+      repository: repositoryOf("acme/home"), app: Option.none(), http: github.http,
+    }))
+    const actor = { subject: { kind: "person" as const, id: person.personId }, role: "member" as const, login: "maya" }
+    const entered = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    const http = HttpClient.make((request) => github.http.execute(request).pipe(Effect.tap(() =>
+      new URL(request.url).pathname === `/repos/${REPO}`
+        ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))) : Effect.void)))
+    const pending = Effect.runPromise(Reconcile.walk({ ...value, http })({ repo: REPO, requestedAtMs: Date.now() }))
+    await Effect.runPromise(Deferred.await(entered))
+    // A real later visibility read sees private. Removing the installation must not restore deployment-role access.
+    github.private = true
+    expect(await Effect.runPromise(RepoRoles.workUninstalled(observer, actor, REPOSITORY))).toBeNull()
+    await Effect.runPromise(Store.forgetInstallation(REPOSITORY.id).pipe(Effect.provide(value.database)))
+    const winner = await sql(runtime, `SELECT visibility_verified_at::text AS at FROM github_repositories WHERE repo_id = '${REPOSITORY.id}'`)
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+    expect(await pending).toMatchObject({ outcome: "complete" })
+    expect(await sql(runtime, `SELECT private, visibility_verified_at::text AS at FROM github_repositories WHERE repo_id = '${REPOSITORY.id}'`))
+      .toEqual(winner.map((row) => ({ ...row, private: true })))
+    expect(await Effect.runPromise(RepoRoles.workUninstalled(observer, actor, REPOSITORY))).toBeNull()
   })
 
   test("a walk past its page budget stops partial, never complete, and the next resumes from its cursor", async () => {

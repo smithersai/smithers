@@ -72,16 +72,17 @@ export const load = Effect.gen(function* () {
         status: "signed_in",
         login: state.login,
         role: state.role,
+        roleConfirmed: state.roleConfirmed,
         available: true,
         hostedModel: state.hostedModel ?? true,
         install: state.install,
       }
-      : { status: "signed_out", login: null, role: null, available: state.available, hostedModel: state.hostedModel, install: undefined },
+      : { status: "signed_out", login: null, role: null, roleConfirmed: undefined, available: state.available, hostedModel: state.hostedModel, install: undefined },
   )
   yield* (yield* AuthStore).sessionConfirmed
   if (state.signedIn) yield* confirm({ login: state.login, role: state.role, ...(state.personId === undefined ? {} : { personId: state.personId }) })
   yield* Effect.logInfo("session loaded").pipe(Effect.annotateLogs({ signedIn: state.signedIn }))
-  return (state.signedIn ? "signed_in" : "signed_out") as CheckOutcome
+  return (state.signedIn ? state.roleConfirmed === false ? "unconfirmed" : "signed_in" : "signed_out") as CheckOutcome
 }).pipe(Effect.annotateLogs({ feature: "auth" }))
 
 /** What started a session check: the app opening, the browser coming back online, or `auth/refresh` asking again. */

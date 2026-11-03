@@ -99,3 +99,16 @@ test("names each agent and overflow the runner cutover marked, which doesn't run
   })
   expect(answer.text).not.toContain("sealed-secret")
 })
+
+
+test("a stale Admin session cannot read the deployment-wide audit", async () => {
+  await sql`INSERT INTO people (id, github_id, github_login) VALUES (${ADMIN_ID}::uuid, 1, 'audit-person')`
+  const session = crypto.randomUUID()
+  await sql`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+    VALUES (${session}, ${session}, ${ADMIN_ID}::uuid, 'admin', now(), now() - interval '61 minutes', now() + interval '1 day')`
+  expect((await audit({ ...admin, session })).status).toBe(503)
+  await sql`UPDATE sessions SET role_verified_at = now() WHERE id = ${session}`
+  expect((await audit({ ...admin, session })).status).toBe(200)
+  await sql`UPDATE sessions SET role_verified_at = NULL WHERE id = ${session}`
+  expect((await audit({ ...admin, session })).status).toBe(503)
+})

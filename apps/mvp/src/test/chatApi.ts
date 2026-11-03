@@ -95,6 +95,8 @@ import * as SecretsApi from "../../worker/secrets/Api.ts"
 import { SecretKeys } from "../../worker/secrets/Keys.ts"
 import * as SecretFlows from "../../worker/secrets/SecretFlows.ts"
 import * as SignIn from "../../worker/SignIn.ts"
+import * as SessionKeys from "../../worker/SessionKeys.ts"
+import * as SessionStore from "../../worker/SessionStore.ts"
 import * as StackApi from "../../worker/stack/Api.ts"
 import * as Stack from "../../worker/stack/Stack.ts"
 import {
@@ -129,6 +131,7 @@ import {
   WRITES_TABLE
 } from "../features/issues/contract"
 import type { PullsClient } from "../features/pulls/api"
+import type { RepoClient } from "../features/repo/api"
 import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE } from "../features/pulls/contract"
 import { todoExecutionId } from "../features/pulls/contract"
 import type { SecretsClient } from "../features/secrets/api"
@@ -199,6 +202,8 @@ export const TEST_REPOSITORY = "octo/hello"
  */
 export interface ChatApiOptions {
   readonly actor?: Actor.Actor | null
+  /** Real confirmed sessions for these UUID people, persisted before any device can read protected routes. */
+  readonly confirmedSessions?: ReadonlyArray<Actor.Actor>
   /** The curated homes ChatApi answers (worker/home/Curated.ts): the real ones unless set. */
   readonly homes?: ReadonlyArray<CuratedFile>
   /**
@@ -431,6 +436,24 @@ export class TestChatApi extends Context.Service<
         const { name: schema, database } = yield* TestDatabase.Scratch
         const actor = options.actor === undefined ? member : options.actor
         const people = options.people ?? {}
+        const confirmed = options.confirmedSessions ?? []
+        if (confirmed.length > 0) {
+          const keys = yield* SessionKeys.make(TEST_SECRETS_KEY)
+          for (const [index, person] of confirmed.entries()) {
+            if (person.session === undefined) continue
+            const personId = yield* SessionStore.upsertPerson({
+              id: person.subject.id, githubId: index + 1, login: person.login ?? person.subject.id,
+            })
+            yield* SessionStore.createSession({
+              id: person.session, tokenDigest: digestSync(person.session), personId, role: person.role,
+              roleGeneration: yield* SessionStore.roleObservation,
+              access: yield* keys.seal(Redacted.make("test-person-access"), {
+                id: person.session, name: "github_access", version: 1,
+              }),
+              accessExpiresAt: null, refresh: null, refreshDigest: null, maxAgeSeconds: 3600,
+            })
+          }
+        }
         // A request carrying a run credential is that run's, as sign-in reads it (worker/RunCredentials.ts); any other
         // is its device's person.
         const credentials = credentialsFor(actor === null ? [] : [actor, ...Object.values(people)])
@@ -1540,13 +1563,14 @@ export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">
   readonly reopenRoute?: () => void
   /**
    * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient`,
-   * `PullsClient`, `SecretsClient`, `PersonalModelClient` or a ShapeSource reference (test.faults-by-injection).
+   * `PullsClient`, `RepoClient`, `SecretsClient`, `PersonalModelClient` or a ShapeSource reference (test.faults-by-injection).
    */
   readonly replace?:
     | Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
     | Layer.Layer<SecretsClient, never, HttpClient.HttpClient>
     | Layer.Layer<PersonalModelClient, never, HttpClient.HttpClient>
     | Layer.Layer<PullsClient, never, HttpClient.HttpClient>
+    | Layer.Layer<RepoClient, never, HttpClient.HttpClient>
     | Layer.Layer<StackClient, never, HttpClient.HttpClient>
     | Layer.Layer<TextsClient, never, HttpClient.HttpClient>
     | Layer.Layer<never, never, HttpClient.HttpClient>

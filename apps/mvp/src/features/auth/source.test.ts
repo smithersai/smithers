@@ -44,7 +44,7 @@ test("signed out on a public repository's pull requests: no personal, admin or p
   const { runtime, requests, asked } = recorded(null)
   const pulls = await runtime.runPromise(Effect.service(Pulls))
   const api = await runtime.runPromise(Effect.service(TestChatApi))
-  await Effect.runPromise(api.github.run(GitHubStore.recordRepository(repoId(owner, name), { githubId: 1, private: false })))
+  await Effect.runPromise(api.github.run(Effect.flatMap(GitHubStore.repositoryObservation, (at) => GitHubStore.recordRepository(repoId(owner, name), { githubId: 1, private: false }, at))))
   await runtime.runPromise(readRole(owner, name))
   pulls.actions.open(owner, name)
   await (await runtime.runPromise(Effect.service(Runs))).actions.openRepoRuns(owner, name)

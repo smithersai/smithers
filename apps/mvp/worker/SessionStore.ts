@@ -1,6 +1,6 @@
-import { Effect, Option, Schema } from "effect"
+import { Config, Effect, Option, Schema } from "effect"
 import { SqlClient, type Statement } from "effect/sql"
-import type { Role } from "../src/features/auth/contract.ts"
+import { SessionsUnavailable, type Actor, type Role } from "./Actor.ts"
 
 // Sign-in's rows in Postgres (docs/features/sign-in.md#postgres): people, sign-ins in progress and sessions. Postgres'
 // clock decides every expiry. Each function is one statement, or one transaction, against the `SqlClient` in context.
@@ -14,6 +14,17 @@ const sealedOrNull = (value: unknown) => (value === null ? null : decodeSealed(v
 const json = (value: Sealed | null) => (value === null ? null : JSON.stringify(value))
 const millis = (value: string | null) => (value === null ? null : Number(value))
 
+/** The default maximum age of a confirmed deployment-repository role. Failed checks never extend it. */
+export const ROLE_RECHECK_MINUTES = 60
+export const roleFreshMs = Config.schema(Schema.Int.check(Schema.isGreaterThan(0)), "ROLE_RECHECK_MINUTES").pipe(
+  Config.withDefault(ROLE_RECHECK_MINUTES),
+  Config.map((minutes) => minutes * 60_000),
+)
+
+/** A confirmation is usable only within its freshness window, on the database's clock. */
+export const roleFresh = (verifiedAt: number | null, now: number, freshMs: number): boolean =>
+  verifiedAt !== null && verifiedAt <= now && now - verifiedAt < freshMs
+
 /** The person's newest authority receipt, including a verified demotion from a session later signed out. */
 /**
  * The role GitHub last confirmed for `person`, across all their sessions, live or ended: the newest observation
@@ -21,6 +32,12 @@ const millis = (value: string | null) => (value === null ? null : Number(value))
  */
 export const latestRole = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
   SELECT authority.role FROM sessions authority WHERE authority.person_id = ${person}
+  ORDER BY authority.role_generation DESC, authority.role_checked_at DESC, authority.created_at DESC, authority.id DESC LIMIT 1
+)`
+
+/** The verification time of the same receipt latestRole selects, never another generation's later timestamp. */
+export const latestRoleVerifiedAt = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
+  SELECT authority.role_verified_at FROM sessions authority WHERE authority.person_id = ${person}
   ORDER BY authority.role_generation DESC, authority.role_checked_at DESC, authority.created_at DESC, authority.id DESC LIMIT 1
 )`
 
@@ -35,7 +52,6 @@ export const roleObservation = Effect.flatMap(SqlClient.SqlClient, sql => Effect
 /** Serialize verified receipts and failed-refresh copies for the same person, across all their sessions. */
 const lockRole = (sql: SqlClient.SqlClient, sessionId: string) => sql`
   SELECT id FROM people WHERE id = (SELECT person_id FROM sessions WHERE id = ${sessionId}) FOR UPDATE`
-
 
 /**
  * Why a session ended early: the person signed out, GitHub refused its tokens, or its sealed tokens no longer open
@@ -114,7 +130,8 @@ export const createSession = (session: {
         ${session.accessExpiresAt === null ? null : new Date(session.accessExpiresAt).toISOString()}::timestamptz,
         ${json(session.refresh)}::jsonb, ${session.refreshDigest},
         now() + make_interval(secs => ${session.maxAgeSeconds}))`
-      const [row] = yield* sql<{ role: Role | null }>`SELECT ${latestRole(sql, sql`${session.personId}::uuid`)} AS role`
+      const [row] = yield* sql<{ role: Role | null }>`
+        SELECT ${latestRole(sql, sql`${session.personId}::uuid`)} AS role`
       return row!.role
     }))
   })
@@ -159,7 +176,7 @@ const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
     >`
       SELECT s.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
-        (extract(epoch FROM s.role_verified_at) * 1000)::bigint::text AS "roleVerifiedAt",
+        (extract(epoch FROM ${latestRoleVerifiedAt(sql, sql`s.person_id`)}) * 1000)::bigint::text AS "roleVerifiedAt",
         (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
         (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
       FROM sessions s JOIN people p ON p.id = s.person_id
@@ -200,8 +217,7 @@ export const authority = (id: string, alias: string | null) =>
       readonly serverNow: string
     }>`
       SELECT s.person_id AS "personId", ${latestRole(sql, sql`s.person_id`)} AS role,
-        (SELECT (extract(epoch FROM max(v.role_verified_at)) * 1000)::bigint::text FROM sessions v
-          WHERE v.person_id = s.person_id) AS "roleVerifiedAt",
+        (extract(epoch FROM ${latestRoleVerifiedAt(sql, sql`s.person_id`)}) * 1000)::bigint::text AS "roleVerifiedAt",
         (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
         (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
       FROM sessions s
@@ -216,6 +232,24 @@ export const authority = (id: string, alias: string | null) =>
       serverNow: Number(found.serverNow),
     }))
   })
+
+/**
+ * The deployment role a request may authorize with. Real sessions must still live, belong to the actor, and carry a
+ * fresh confirmation of their effective receipt. An actor without a session is explicit local development.
+ */
+export const freshRole = (actor: Actor, freshMs?: number) => Effect.gen(function* () {
+  if (actor.session === undefined) return actor.role
+  const window = freshMs ?? (yield* roleFreshMs)
+  const found = yield* authority(actor.session, actor.alias ?? null)
+  if (Option.isNone(found) || found.value.personId !== actor.subject.id) return null
+  const fresh = roleFresh(found.value.roleVerifiedAt, found.value.serverNow, window)
+  yield* Effect.annotateCurrentSpan({ "auth.role.fresh": fresh })
+  if (!fresh) {
+    yield* Effect.logWarning("auth.role_stale")
+    return yield* new SessionsUnavailable()
+  }
+  return found.value.role
+}).pipe(Effect.withSpan("auth.role"))
 
 /** The live session whose token has `tokenDigest`: not signed out, not revoked and not past its end. */
 export const findLive = (tokenDigest: string) => findLiveBy((sql) => sql`s.token_digest = ${tokenDigest}`)
@@ -262,7 +296,7 @@ export const findHostLive = (tokenDigest: string, host: string) =>
     >`
       SELECT h.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
-        (extract(epoch FROM s.role_verified_at) * 1000)::bigint::text AS "roleVerifiedAt", s.id AS home,
+        (extract(epoch FROM ${latestRoleVerifiedAt(sql, sql`s.person_id`)}) * 1000)::bigint::text AS "roleVerifiedAt", s.id AS home,
         (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
         (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
       FROM host_sessions h JOIN sessions s ON s.id = h.parent_id JOIN people p ON p.id = s.person_id
@@ -473,7 +507,8 @@ export const setRole = (id: string, role: Role | null, generation: string) =>
       yield* sql`UPDATE sessions SET role = ${role}, role_generation = ${generation}::bigint, role_checked_at = clock_timestamp(),
         role_verified_at = clock_timestamp()
         WHERE id = ${id} AND role_generation <= ${generation}::bigint`
-      const [row] = yield* sql<{ role: Role | null }>`SELECT ${latestRole(sql, sql`(SELECT person_id FROM sessions WHERE id = ${id})`)} AS role`
+      const [row] = yield* sql<{ role: Role | null }>`
+        SELECT ${latestRole(sql, sql`(SELECT person_id FROM sessions WHERE id = ${id})`)} AS role`
       return row!.role
     }))
   })
@@ -488,7 +523,8 @@ export const keepRole = (id: string) =>
     yield* sql.withTransaction(Effect.gen(function* () {
       yield* lockRole(sql, id)
       yield* sql`UPDATE sessions s SET role = ${latestRole(sql, sql`s.person_id`)},
-        role_generation = ${latestGeneration(sql, sql`s.person_id`)}, role_checked_at = clock_timestamp()
+        role_generation = ${latestGeneration(sql, sql`s.person_id`)},
+        role_verified_at = ${latestRoleVerifiedAt(sql, sql`s.person_id`)}, role_checked_at = clock_timestamp()
         WHERE id = ${id} AND revoked_at IS NULL`
     }))
   })

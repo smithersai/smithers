@@ -50,14 +50,14 @@ import type { CuratedFile } from "../home/Curated.ts"
  * file once with `pnpm db:up` in its message, emptied before each test, and dropped after the last.
  */
 /**
- * `BranchRoles` as a deployment without the GitHub App gives them (decision 0079): the real `RepoRoles` over
+ * `BranchRoles` as a deployment without the GitHub App gives them (decision 0079): the real `RepoRoles` in explicit local development over
  * `database`, with `repository` the deployment's own, so the session's role holds on every repository. A test of roles
  * on a repository the App is installed on builds its own over the scripted GitHub.
  */
 export const branchRoles = (database: Layer.Layer<SqlClient.SqlClient, unknown>, repository = "smithersai/smithers") =>
   Layer.unwrap(
     Effect.map(
-      RepoRoles.make(database, { repository: repositoryOf(repository), app: Option.none() }),
+      RepoRoles.make(database, { repository: repositoryOf(repository), app: Option.none(), local: true }),
       (roles) => BranchRoles.layer(roles),
     ),
   )

@@ -134,7 +134,7 @@ export const make = <E, R>(options: Options<E, R>) => {
     Effect.gen(function* () {
       if (source === "cookie" && (yield* Sessions).resolveCookie === undefined) return refusedAt(target, "viewer", "unavailable", 503)
       const actor = yield* actorOf(source).pipe(Effect.option)
-      if (Option.isNone(actor)) return refusedAt(target, "viewer", "unavailable", 503)
+      if (Option.isNone(actor)) return refusedAt(target, "viewer", "unavailable", 503, { retryAfterSeconds: 5 })
       const viewer: Viewer = Option.isSome(actor.value) ? { kind: "person", actor: actor.value.value } : { kind: "anonymous" }
       if (Option.isSome(actor.value)) {
         const resolved = yield* roles.resolve(actor.value.value, target).pipe(Effect.result)

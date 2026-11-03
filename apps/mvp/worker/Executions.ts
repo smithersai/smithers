@@ -69,6 +69,8 @@ export interface FlowExecutionShape {
   readonly wake: () => Effect.Effect<boolean, never, RuntimeContext>
   readonly cancel: () => Effect.Effect<void, import("@smthrs/flow").FlowRuntime.CancelRequestFailed, RuntimeContext>
   readonly alarm: () => Effect.Effect<void, never, RuntimeContext>
+  /** Drive an admitted execution immediately through the same durable host as its alarm. */
+  readonly advance: () => Effect.Effect<void, never, RuntimeContext>
 }
 
 /** The `FlowExecution` Durable Object namespace. A caller reaches one execution with `getByName(executionId)`. */
@@ -454,6 +456,7 @@ const object = <E, R>(
           cancel: () => host.cancel().pipe(Effect.provide(logs)),
           // A failure still throws, so Cloudflare retries the alarm, and is recorded by its flags and category first
           // (worker/DurableObjectFailure.ts): an instance Cloudflare replaced mid-alarm fails its I/O.
+          advance: () => host.alarm().pipe(Effect.asVoid, recorded("FlowExecution", "advance"), Effect.provide(logs)),
           alarm: () => host.alarm().pipe(Effect.asVoid, recorded("FlowExecution", "alarm"), Effect.provide(logs)),
         }
       })

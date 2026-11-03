@@ -3,6 +3,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { refusesPersonOnly, Sessions } from "../Actor.ts"
 import { codeOf } from "../ErrorCode.ts"
+import * as SessionStore from "../SessionStore.ts"
 
 // The runner audit (decision 0148, docs/features/agent-runners.md#audit): `GET /api/runners/audit`, for an Admin of
 // the deployment's own repository (the session's role) acting in person. It lists every live runner on every
@@ -47,15 +48,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
     const fields: Record<string, string | number> = {}
     const refuse = (status: number, code: string) => {
       fields.code = code
-      return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+      return HttpServerResponse.jsonUnsafe({ code }, { status, headers: status === 503 ? { ...noStore, "retry-after": "5" } : noStore })
     }
     const response = yield* Effect.gen(function* () {
       if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
       const actor = yield* (yield* Sessions).resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
       if (yield* refusesPersonOnly(actor.value, "runner")) return refuse(403, "forbidden")
-      // The session's role is the role on the deployment's own repository (decision 0079).
-      if (actor.value.role !== "admin") return refuse(403, "forbidden")
+      // The deployment-wide audit requires current, confirmed authority even if the actor was resolved earlier.
+      const role = yield* SessionStore.freshRole(actor.value).pipe(Effect.provide(database))
+      if (role !== "admin") return refuse(403, "forbidden")
       const rows = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{
         readonly repoId: string
         readonly name: string

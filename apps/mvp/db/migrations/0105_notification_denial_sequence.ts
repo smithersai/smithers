@@ -1,0 +1,9 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// A denial survives a later restoration: already admitted feed responses must still be refused.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`ALTER TABLE notification_repository_access
+    ADD COLUMN denial_sequence bigint NOT NULL DEFAULT 0 CHECK (denial_sequence >= 0)`
+})

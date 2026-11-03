@@ -370,11 +370,17 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
 
     /**
      * Starts `auth/RecheckRole` on its own Durable Object, one execution per session and the check it replaces, so one
-     * check of a session runs at a time; session resolution bounds the start acknowledgment.
+     * check of a session runs at a time. Session resolution bounds the start acknowledgment; an expired request can
+     * advance the same execution and fresh receipts never wait for completion.
      */
     const roleChecks = Effect.gen(function* () {
       const runtime = yield* RuntimeContext
       return SignIn.RoleChecks.of({
+        wait: (sessionId, generation) => executions.getByName(recheckExecutionId(sessionId, generation)).advance().pipe(
+          Effect.provideService(RuntimeContext, runtime),
+          Effect.catchCause((cause) => Effect.logWarning("auth.role_check").pipe(
+            Effect.annotateLogs({ sessionId, outcome: "wait_failed", errorCode: codeOf(Cause.squash(cause)) }))),
+        ),
         start: (sessionId, generation) => {
           const executionId = recheckExecutionId(sessionId, generation)
           return ExecutionHost.intent(RecheckRole, { executionId, payload: { sessionId } }).pipe(

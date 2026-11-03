@@ -259,7 +259,7 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
       annotations: { outcome: "curated", audience: "contributor", sections: 2, hidden: 1, source: "role", status: 200 },
     })
     // The route's span, and the role's read inside it.
-    expect(r.spans.map((span) => span.name)).toEqual(["home.curated", "github.repo_role"])
+    expect(r.spans.map((span) => span.name)).toEqual(["home.curated", "github.repo_role", "auth.role"])
     expect(Object.fromEntries(r.spans[0]!.attributes)).toMatchObject({
       "smithers.home.outcome": "curated",
       "smithers.home.audience": "contributor",
@@ -405,7 +405,7 @@ describe("GET /api/repos/<owner>/<name>/role (decision 0079)", () => {
       annotations: { outcome: "answered", role: "maintainer", own: true, source: "role", status: 200 },
     })
     expect(r.roleCount({ outcome: "answered", role: "maintainer" })).toBe(1)
-    expect(r.spans.map((span) => span.name)).toEqual(["repo.role", "github.repo_role"])
+    expect(r.spans.map((span) => span.name)).toEqual(["repo.role", "github.repo_role", "auth.role"])
   })
 
   test("on another repository the App is installed on, GitHub's permission there; never the deployment's role", async () => {
@@ -445,6 +445,9 @@ describe("GET /api/repos/<owner>/<name>/role (decision 0079)", () => {
     })
     expect(notInstalled.roleCount({ outcome: "answered", role: "no_role" })).toBe(1)
     github.installed = true
+    // Installation restoration cannot invalidate an unexpired absence receipt.
+    expect(await roleOf(await notInstalled.get(ROLE_WIDGETS))).toEqual([200, { role: null, workspaceRole: "admin", own: false }])
+    await sql(runtime, `UPDATE repo_about SET app_absent_until = now() - interval '1 second'`)
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "12" } })
     const limited = await (await route({ sessions: signedIn(person("admin")), github })).get(ROLE_WIDGETS)
     expect([limited.status, limited.headers.get("retry-after"), await limited.json()]).toEqual([429, "12", { code: "rate_limited" }])

@@ -1,0 +1,8 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// Installation bookkeeping cannot renew visibility. Existing flags have no authoritative date and stay unknown.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`ALTER TABLE github_repositories ADD COLUMN visibility_verified_at timestamptz`
+})

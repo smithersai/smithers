@@ -33,7 +33,7 @@ export const reset = (runtime: Runtime) =>
     Effect.flatMap(
       SqlClient.SqlClient,
       (sql) =>
-        sql`TRUNCATE github_projection_fences, items, comments, github_writes, github_sync, github_deliveries, github_repositories, sessions,
+        sql`TRUNCATE repo_about, github_projection_fences, items, comments, github_writes, github_sync, github_deliveries, github_repositories, sessions,
           sign_in_attempts, people, triage_settings, triage_decisions, model_usage, model_budget_days, model_roles,
           github_repo_roles, work_links, runners, machine_tokens, machine_writes, machine_dispatch CASCADE`,
     ),

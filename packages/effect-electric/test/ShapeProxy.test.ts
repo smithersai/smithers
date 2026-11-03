@@ -624,6 +624,68 @@ describe.skipIf(!electricUp)("through Electric", () => {
       expect(h.count(ShapeProxy.defaultMetric, { status: "200", live: "false" })).toBe(1)
     })
 
+    test.each([false, true])("denied values preserve their original cursor when replay=%s", async (replay) => {
+      let decisions = 0
+      const h = harness({ shape: { table }, rowAccess: {
+        keyColumns: ["id"], allows: () => false,
+        retryIfDenied: () => { decisions++; return replay },
+      } })
+      const response = await h.request("?offset=-1")
+      expect(response.status).toBe(replay ? 503 : 200)
+      expect(decisions).toBe(4)
+      if (replay) {
+        expect(response.headers.get("electric-offset")).toBeNull()
+        expect(response.headers.get("electric-handle")).toBeNull()
+        expect(await response.text()).toBe("")
+        expect(h.line()?.annotations).toMatchObject({ upstream: "access", outcome: "superseded" })
+      } else {
+        expect(response.headers.get("electric-offset")).not.toBeNull()
+        expect((await response.json() as Array<{ value?: unknown }>).filter(row => row.value)).toEqual([])
+      }
+    })
+
+    test("row access takes one buffered snapshot before evaluating emitted values", async () => {
+      let snapshots = 0
+      let ready = false
+      const h = harness({ shape: { table }, rowAccess: {
+        keyColumns: ["id"],
+        validate: Effect.sync(() => { snapshots++; ready = true; return true }),
+        allows: () => ready,
+      } })
+      const response = await h.request("?offset=-1")
+      expect(response.status).toBe(200)
+      expect((await response.json() as Array<{ value?: unknown }>).filter(message => message.value)).toHaveLength(4)
+      expect(snapshots).toBe(1)
+    })
+
+    test.each(["changed", "unavailable", "stable"] as const)("row access %s is checked before publishing an Electric cursor", async (outcome) => {
+      let stable = outcome === "stable"
+      const h = harness({ shape: { table }, cache: "public", rowAccess: {
+        keyColumns: ["id"], allows: () => true,
+        validate: Effect.suspend(() => stable ? Effect.succeed(true) : outcome === "unavailable"
+          ? Effect.fail(new ShapeProxy.Refused({ status: 503 })) : Effect.succeed(false))
+      } })
+      const response = await h.request("?offset=-1")
+      expect(response.status).toBe(stable ? 200 : 503)
+      if (!stable) {
+        for (const header of ["electric-handle", "electric-offset", "electric-cursor", "etag"]) {
+          expect(response.headers.get(header)).toBeNull()
+        }
+        expect(response.headers.get("retry-after")).toBe("1")
+        expect(response.headers.get("cache-control")).toBe("private, no-store")
+        expect(await response.text()).toBe("")
+        expect(h.line()?.annotations).toMatchObject({ status: 503, upstream: "access", bytes: 0,
+          outcome: outcome === "changed" ? "superseded" : "failed" })
+        stable = true
+        const replay = await h.request("?offset=-1")
+        expect(replay.status).toBe(200)
+        expect((await replay.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(4)
+      } else {
+        expect(response.headers.get("electric-offset")).not.toBeNull()
+        expect((await response.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(4)
+      }
+    })
+
     test("a public shape, opted in, keeps Electric's own caching", async () => {
       const h = harness({ shape: { table }, cache: "public" })
       const response = await h.request("?offset=-1")

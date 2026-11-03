@@ -1,4 +1,5 @@
 import { role as readRepositoryRole } from "../repo/actions"
+import { RepoClient, RepoRefused } from "../repo/api"
 import { router } from "../../router"
 // Pull requests on the tab (decision 0012 §6, docs/features/pulls.md#the-browser), driven as React drives them: the
 // pulls layer's plain actions and its live queries, with no React. Each device runs the browser's own layer (`appLayer`)
@@ -8,9 +9,9 @@ import { router } from "../../router"
 // route reads the scripted GitHub as the App. Unhappy paths give the tab a faulty `PullsClient`, the real one behind
 // switches (test.faults-by-injection).
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Persistence } from "@smthrs/effect-tanstack-db"
+import { LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import { GitHub } from "@smthrs/integrations"
-import { Context, Deferred, Effect, Exit, Layer, type ManagedRuntime, Metric } from "effect"
+import { Context, Deferred, Effect, Exit, Layer, type ManagedRuntime, Metric, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -53,7 +54,7 @@ const SHA_HEAD = "a".repeat(40)
 const SHA_OLD = "c".repeat(40)
 
 const person = (role: "maintainer" | "member"): Actor => ({
-  subject: { kind: "person", id: `person-${role}` },
+  subject: { kind: "person", id: crypto.randomUUID() },
   role,
   login: role,
   session: crypto.randomUUID(),
@@ -94,7 +95,7 @@ const started = <F extends { readonly queries: object }>(facade: F): F => ({ ...
 
 /** The app on a fresh ChatApi as `actor` (Sam, a Maintainer, unless set), with the pulls queries started as React does. */
 const open = async (options: TabOptions = {}, actor: Actor | null = sam) => {
-  const runtime: App = openTestApp(options, { actor })
+  const runtime: App = openTestApp(options, { actor, confirmedSessions: actor === null ? [] : [actor] })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   const pulls = started(await runtime.runPromise(Effect.service(Pulls)))
@@ -253,7 +254,7 @@ describe("the list and a pull request's page", () => {
           ? Effect.succeed(new Response(null, { status: fault }))
           : ShapeSource.fetchSource.request(url, init),
       })
-      const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam })
+      const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam, confirmedSessions: [sam] })
       runtimes.push(runtime)
       const api = await runtime.runPromise(Effect.service(TestChatApi))
       const pulls = started(await runtime.runPromise(Effect.service(Pulls)))
@@ -292,12 +293,16 @@ describe("the list and a pull request's page", () => {
       }
       return ShapeSource.fetchSource.request(url, init)
     } })
-    const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam })
+    const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam, confirmedSessions: [sam] })
     runtimes.push(runtime)
     const pulls = started(await runtime.runPromise(Effect.service(Pulls)))
     const issues = started(await runtime.runPromise(Effect.service(Issues)))
     await pulls.actions.open(OWNER, NAME, 404)
-    await until(() => expect(pulls.queries.view.toArray[0]).toMatchObject({ pullStatus: "unavailable", installed: false }), 5_000)
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const view = yield* LiveQuery.make((q) => q.from({ view: pulls.queries.view }).findOne())
+      yield* view.rows.pipe(Stream.filter((rows) => rows[0]?.pullStatus === "unavailable"), Stream.runHead)
+    })))
+    expect(pulls.queries.view.toArray[0]).toMatchObject({ pullStatus: "unavailable", installed: false })
     await until(() => expect(issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
     const access = pullAccessOf(issues.queries.access.toArray[0], pulls.queries.view.toArray[0])
     expect(pageOf(pulls.queries.pull.toArray[0], issues.queries.synced.toArray[0],
@@ -332,7 +337,7 @@ describe("the list and a pull request's page", () => {
     const source = await open({}, null)
     expect(source.queries.list.toArray).toEqual([])
     await Effect.runPromise(source.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
-      yield* Store.recordRepository(REPO_ID, { githubId: 1, private: false })
+      yield* Store.recordRepository(REPO_ID, { githubId: 1, private: false }, yield* Store.repositoryObservation)
       // Production-size counts, with a multi-chunk items snapshot. The pull
       // metadata and sync receipt can finish before the shared items shape.
       yield* sql`INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at, source_updated_at, fetched_at)
@@ -368,7 +373,10 @@ describe("the list and a pull request's page", () => {
     const pulls = started(await fresh.runPromise(Effect.service(Pulls)))
     await fresh.runPromise(readRepositoryRole(OWNER, NAME))
     await pulls.actions.open(OWNER, NAME)
-    await until(() => expect(pulls.queries.list.toArray.map((row) => row.number)).toEqual([3845, 3844, 3843, 3842, 3841]))
+    await until(() => {
+      expect(pulls.queries.list.toArray.map((row) => row.number)).toEqual([3845, 3844, 3843, 3842, 3841])
+      expect(pulls.queries.list.isReady()).toBe(true)
+    })
     expect(itemChunks).toBeGreaterThan(1)
     expect(itemsComplete).toBe(true)
     expect(rows).toBe(3845)
@@ -699,16 +707,16 @@ test("a repository whose pull requests failed to open opens again once persisten
 }, WITHIN)
 
 test("another repository's pull requests answering never move the routed page's access", async () => {
-  // Another repository's pulls shape refuses; the routed one's answers.
-  const source = ShapeSource.ShapeSource.of({
-    request: (url, init) => {
-      const asked = new URL(url)
-      return asked.pathname === PULLS_SHAPE_ROUTE && asked.searchParams.get("repo") === "someone/else"
-        ? Effect.succeed(new Response(null, { status: 403 }))
-        : ShapeSource.fetchSource.request(url, init)
-    },
-  })
-  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam })
+  // Authority decides forbidden (decision 0110); transport refusals only change availability. The old shape fault
+  // never ran for this uninstalled repository: authority correctly stopped it as elsewhere before any request.
+  let refusals = 0
+  const client = Layer.effect(RepoClient, Effect.map(RepoClient, (real) => RepoClient.of({
+    ...real,
+    role: (owner, name) => owner === "someone" && name === "else"
+      ? Effect.suspend(() => { refusals++; return Effect.fail(new RepoRefused({ status: 403 })) })
+      : real.role(owner, name),
+  }))).pipe(Layer.provide(RepoClient.layer({ origin: CHATAPI_ORIGIN, within: "15 seconds" })))
+  const runtime = openTestApp({ replace: client }, { actor: sam, confirmedSessions: [sam] })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
@@ -724,6 +732,7 @@ test("another repository's pull requests answering never move the routed page's 
     yield* Effect.promise(() =>
       until(async () => expect(await Effect.runPromise(other.status)).toMatchObject({ pullStatus: "forbidden" }))
     )
+    expect(refusals).toBe(1)
     expect(pullStatus()).toBe("allowed")
   })))
 }, WITHIN)

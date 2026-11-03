@@ -16,7 +16,7 @@ import * as RepoRoles from "./RepoRoles.ts"
 import * as Store from "./Store.ts"
 import { reset, sql } from "./test/fixtures.ts"
 import { app } from "./test/harness.ts"
-import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
+import { accountIdOf, appKey, INSTALLATION_ID, type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
 const runtime = testFile("github_repo_roles")
 
@@ -155,7 +155,7 @@ describe("resolve", () => {
   })
 
   test("any recorded denial deletes the repository from the person's feed: a first read, and the same denial again", async () => {
-    await sql(runtime, `TRUNCATE notifications`)
+    await sql(runtime, `TRUNCATE notifications, notification_repository_access`)
     const notice = (subject: string, repo: string = OTHER.id) =>
       sql(runtime, `INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href)
         VALUES ('${MAYA}', '${subject}', 'main', 'update', '${repo}', 'private', '/x')`)
@@ -167,15 +167,24 @@ describe("resolve", () => {
     // No row before: the first read says no role.
     expect((await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, null, new Date().toISOString()))).role).toBeNull()
     expect(await subjects()).toEqual(["main:elsewhere"])
+    const fence = () => sql(runtime, `SELECT readable, denial_sequence::text AS sequence FROM notification_repository_access
+      WHERE recipient = '${MAYA}' AND repo_id = '${OTHER.id}'`)
+    expect(await fence()).toEqual([{ readable: false, sequence: "1" }])
     // A row written meanwhile, then the same kind of denial read again.
     await notice("main:second")
     expect((await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "guest", new Date(Date.now() + 1000).toISOString()))).role)
       .toBe("guest")
     expect(await subjects()).toEqual(["main:elsewhere"])
+    expect(await fence()).toEqual([{ readable: false, sequence: "2" }])
+    // An obsolete allow cannot erase the denial; an unchanged denial without a delete keeps the cursor fence.
+    await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", new Date(Date.now() - 1000).toISOString()))
+    expect(await fence()).toEqual([{ readable: false, sequence: "2" }])
+    await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, null, new Date(Date.now() + 2000).toISOString()))
+    expect(await fence()).toEqual([{ readable: false, sequence: "2" }])
   })
 
   test("a lowered role that is still a Member's deletes the repository's fleet alerts only; a raise deletes nothing", async () => {
-    await sql(runtime, `TRUNCATE notifications, github_repo_roles`)
+    await sql(runtime, `TRUNCATE notifications, notification_repository_access, github_repo_roles`)
     await sql(runtime, `INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href) VALUES
       ('${MAYA}', 'fleet:a', 'fleet', 'update', '${OTHER.id}', 'Agent run cost · acme/widgets', '/x'),
       ('${MAYA}', 'main:x', 'main', 'update', '${OTHER.id}', 'acme/widgets', '/x')`)
@@ -183,8 +192,17 @@ describe("resolve", () => {
     await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "admin", at(0)))
     await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "maintainer", at(1)))
     expect(await sql(runtime, `SELECT subject FROM notifications WHERE recipient = '${MAYA}' ORDER BY subject`)).toEqual([{ subject: "main:x" }])
+    const fence = () => sql(runtime, `SELECT readable, denial_sequence::text AS sequence FROM notification_repository_access
+      WHERE recipient = '${MAYA}' AND repo_id = '${OTHER.id}'`)
+    expect(await fence()).toEqual([{ readable: true, sequence: "1" }])
     await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "admin", at(2)))
+    expect(await fence()).toEqual([{ readable: true, sequence: "1" }])
     expect(await sql(runtime, `SELECT subject FROM notifications WHERE recipient = '${MAYA}' ORDER BY subject`)).toEqual([{ subject: "main:x" }])
+    // No fleet notice remains: a demotion with no projection change or deletion needs no cursor fence.
+    await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "member", at(3)))
+    expect(await fence()).toEqual([{ readable: true, sequence: "1" }])
+    await runtime.runPromise(RepoRoles.remember(OTHER.id, MAYA, "guest", at(1)))
+    expect(await fence()).toEqual([{ readable: true, sequence: "1" }])
   })
 
   test("refusals: no App, left out, the App not installed, a rate limit with its wait, GitHub down, Postgres down", async () => {
@@ -203,6 +221,8 @@ describe("resolve", () => {
     github.installed = false
     expect(refusal(await resolve(await uncooled()))).toEqual({ code: "app_not_installed" })
     github.installed = true
+    // A new installation receipt supersedes the cached absence, as the installation event does.
+    await runtime.runPromise(Store.rememberInstallation(OTHER.id, INSTALLATION_ID))
 
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "30" } })
     expect(refusal(await resolve(await uncooled()))).toEqual({ code: "rate_limited", retryAfterSeconds: 30 })
@@ -316,9 +336,47 @@ describe("resolve", () => {
   })
 })
 
+test.each(["member", "admin"] as const)("a stale deployment %s receipt never authorizes its repository", async (role) => {
+  const github = scriptedGitHub("acme", "widgets")
+  const session = crypto.randomUUID()
+  await sql(runtime, `INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+    VALUES ('${session}', '${session}', '${MAYA}', '${role}', now(), now() - interval '61 minutes', now() + interval '1 day')`)
+  const made = await roles(github)
+  const actor = { ...maya, session, role }
+  expect(refusal(await resolve(made, actor, OWN))?.code).toBe("unavailable")
+  await sql(runtime, `UPDATE sessions SET role_verified_at = now() WHERE id = '${session}'`)
+  expect(roleOf(await resolve(made, actor, OWN))).toBe(role)
+  for (const timestamp of ["NULL", "now() - interval '60 minutes'", "now() + interval '1 minute'"]) {
+    await sql(runtime, `UPDATE sessions SET role_verified_at = ${timestamp} WHERE id = '${session}'`)
+    expect(refusal(await resolve(made, actor, OWN))?.code).toBe("unavailable")
+  }
+  await sql(runtime, `UPDATE sessions SET role_verified_at = now(), revoked_at = now() WHERE id = '${session}'`)
+  expect(roleOf(await resolve(made, actor, OWN))).toBeNull()
+})
+
 describe("workRole: the role a person works with on Smithers' own copy of a repository", () => {
   const work = (made: RepoRoles.RepoRoles, actor: Actor = maya, repository: Repository = OTHER) =>
     Effect.runPromise(Effect.result(RepoRoles.workRole(made, actor, repository)))
+
+  test("old public visibility after privacy and installation loss is unavailable, never access", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.installed = false
+    github.private = true
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, private, installation_id, checked_at)
+      VALUES ('${OTHER.id}', false, NULL, now() - interval '1 day')`)
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('${OTHER.id}', '${MAYA}', NULL)`)
+    github.faults.push({ match: () => true, status: 502 })
+    const made = await roles(github)
+    expect(await Effect.runPromise(Effect.result(RepoRoles.workUninstalled(made, maya, OTHER))))
+      .toMatchObject({ _tag: "Failure", failure: { code: "unavailable" } })
+  })
+
+  test("lost installation cannot substitute a deployment role on a private repository", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, private, installation_id, visibility_verified_at) VALUES ('${OTHER.id}', true, NULL, now())`)
+    github.installed = false
+    expect(await work(await roles(github))).toMatchObject({ _tag: "Success", success: null })
+  })
 
   test("GitHub's role where the deployment may act; the session's where it can't; GitHub down is the refusal", async () => {
     const github = scriptedGitHub("acme", "widgets")
@@ -327,13 +385,18 @@ describe("workRole: the role a person works with on Smithers' own copy of a repo
     const withApp = await roles(github)
     expect(await work(withApp)).toMatchObject({ _tag: "Success", success: "guest" })
     expect(await work(withApp, { ...maya, role: "member" }, OWN)).toMatchObject({ _tag: "Success", success: "member" })
-    // No App, or the App not installed: nothing done there reaches GitHub, so the session's role decides.
+    // Only a recorded public copy may use the deployment's role after an installation disappears.
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, private, visibility_verified_at) VALUES ('${OTHER.id}', false, now())
+      ON CONFLICT (repo_id) DO UPDATE SET private = false, visibility_verified_at = now()`)
     expect(await work(await roles(github, { app: Option.none() }))).toMatchObject({ _tag: "Success", success: "admin" })
     await sql(runtime, `TRUNCATE github_repo_roles`)
     github.installed = false
     expect(await work(await roles(github))).toMatchObject({ _tag: "Success", success: "admin" })
     github.installed = true
+    // The unexpired absence receipt still applies until installation discovery may run again.
+    expect(await work(await roles(github))).toMatchObject({ _tag: "Success", success: "admin" })
     await sql(runtime, `TRUNCATE github_repo_roles, github_repositories`)
+    await sql(runtime, `UPDATE repo_about SET app_absent_until = now() - interval '1 second'`)
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
     const down = await work(await roles(github))
     expect(down._tag === "Failure" && down.failure.code).toBe("github_unavailable")
@@ -657,7 +720,7 @@ describe("reading an expired row holds no transaction across GitHub", () => {
   const expire = () => sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
     VALUES ('${OTHER.id}', '${MAYA}', 'member', now() - interval '${RepoRoles.FRESH_SECONDS + 1} seconds')`)
 
-  test("an installation the App lost is forgotten though the read failed, so the next finds the new one", async () => {
+  test("a lost installation is forgotten and its replacement is discovered after the absence receipt expires", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "write")
     const made = await roles(github)
@@ -665,6 +728,8 @@ describe("reading an expired row holds no transaction across GitHub", () => {
     await sql(runtime, `INSERT INTO github_repositories (repo_id, installation_id) VALUES ('${OTHER.id}', 999)`)
     expect(refusal(await resolve(made))?.code).toBe("app_not_installed")
     expect(await sql(runtime, `SELECT installation_id FROM github_repositories`)).toEqual([{ installation_id: null }])
+    expect(refusal(await resolve(made))?.code).toBe("app_not_installed")
+    await sql(runtime, `UPDATE repo_about SET app_absent_until = now() - interval '1 second'`)
     expect(roleOf(await resolve(made))).toBe("member")
   })
 
@@ -1022,3 +1087,91 @@ describe("a role look is one statement, bounded by Postgres", () => {
     expect(row?.role).toBe("member")
   })
 })
+
+
+test("uninstalled discovery is cached with a bound and rechecked when its absence receipt expires", async () => {
+  const github = scriptedGitHub("acme", "widgets")
+  github.installed = false
+  const made = await roles(github)
+  expect(refusal(await resolve(made))?.code).toBe("app_not_installed")
+  expect(refusal(await resolve(made))?.code).toBe("app_not_installed")
+  expect(github.seen("GET", /\/installation$/)).toHaveLength(1)
+  await sql(runtime, `UPDATE repo_about SET app_absent_until = now() - interval '1 second' WHERE repo_id = '${OTHER.id}'`)
+  github.installed = true
+  github.roles.set("maya", "write")
+  expect(roleOf(await resolve(made))).toBe("member")
+  expect(github.seen("GET", /\/installation$/)).toHaveLength(2)
+})
+
+test("uninstalled visibility preserves GitHub's rate-limit retry receipt", async () => {
+  const github = scriptedGitHub("acme", "widgets")
+  github.faults.push({ match: () => true, status: 429, headers: { "retry-after": "7" } })
+  const made = await roles(github)
+  const result = await Effect.runPromise(Effect.result(RepoRoles.workUninstalled(made, maya, OTHER)))
+  expect(result).toMatchObject({ _tag: "Failure", failure: { code: "rate_limited", retryAfterSeconds: 7 } })
+})
+
+
+test("a visibility observation superseded by a newer commit uses the winning private receipt", async () => {
+  const github = scriptedGitHub("acme", "widgets")
+  github.private = false
+  // Another metadata writer commits while this older public observation is in flight.
+  github.faults.push({ match: (_, path) => path === "/repos/acme/widgets", hold: async () => {
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, private, visibility_verified_at)
+      VALUES ('${OTHER.id}', true, clock_timestamp())
+      ON CONFLICT (repo_id) DO UPDATE SET private = true, visibility_verified_at = clock_timestamp()`)
+  } })
+  const made = await roles(github)
+  const result = await Effect.runPromise(Effect.result(RepoRoles.workUninstalled(made, maya, OTHER).pipe(
+    // Put the older observation strictly before the winning database receipt on either host's clock.
+    Effect.updateService(Clock.Clock, (clock): Clock.Clock => ({
+      monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+      monotonicTimeNanos: clock.monotonicTimeNanos,
+      sleep: (duration) => clock.sleep(duration),
+      currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() - 5_000,
+      currentTimeMillis: Effect.map(clock.currentTimeMillis, (now) => now - 5_000),
+      currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe() - 5_000_000_000n,
+      currentTimeNanos: Effect.map(clock.currentTimeNanos, (now) => now - 5_000_000_000n),
+    })),
+  )))
+  expect(result).toMatchObject({ _tag: "Success", success: null })
+  expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(1)
+})
+
+test("visibility misses share one repository claim across resolver instances and people", async () => {
+  const github = scriptedGitHub("acme", "widgets")
+  const resolvers = await Promise.all([roles(github), roles(github)])
+  const readers = [maya, { ...maya, subject: { kind: "person" as const, id: "another-reader" } }]
+  const results = await Promise.all(Array.from({ length: 8 }, (_, index) =>
+    Effect.runPromise(Effect.result(RepoRoles.workUninstalled(resolvers[index % 2]!, readers[index % 2]!, OTHER)))))
+  expect(results.every((result) => result._tag === "Success" && result.success === "admin")).toBe(true)
+  expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(1)
+})
+
+test.each([[502, "unavailable", 10, false], [429, "rate_limited", 7, false], [429, "rate_limited", 120, false], [429, "rate_limited", 120, true]] as const)(
+  "visibility %s shares %s cooldown of %s seconds (HTTP date: %s) without extending freshness", async (status, code, wait, dated) => {
+    const github = scriptedGitHub("acme", "widgets")
+    for (let n = 0; n < 12; n++) github.faults.push({ match: (_, path) => path === "/repos/acme/widgets", status,
+      ...(status === 429 ? { headers: dated
+        ? { "retry-after": "Tue, 03 Nov 2026 00:02:00 GMT", date: "Tue, 03 Nov 2026 00:00:00 GMT" }
+        : { "retry-after": String(wait) } } : {}),
+    })
+    const resolvers = await Promise.all([roles(github), roles(github)])
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, private, visibility_verified_at)
+      VALUES ('${OTHER.id}', false, now() - interval '2 minutes')`)
+    const read = (index: number) => Effect.runPromise(Effect.result(RepoRoles.workUninstalled(resolvers[index % 2]!, maya, OTHER)))
+    const failed = await Promise.all(Array.from({ length: 6 }, (_, index) => read(index)))
+    expect(failed.every((result) => result._tag === "Failure" && result.failure.code === code)).toBe(true)
+    expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(1)
+    github.faults.length = 0
+    const cooled = await read(1)
+    expect(cooled).toMatchObject({ _tag: "Failure", failure: { code } })
+    if (cooled._tag === "Failure") expect(cooled.failure.retryAfterSeconds).toBeGreaterThanOrEqual(wait - 2)
+    expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(1)
+    const [row] = await sql(runtime, `SELECT visibility_verified_at < now() - interval '60 seconds' AS stale FROM github_repositories WHERE repo_id = '${OTHER.id}'`)
+    expect(row).toMatchObject({ stale: true })
+    await sql(runtime, `UPDATE github_repositories SET visibility_read_until = now() - interval '1 second' WHERE repo_id = '${OTHER.id}'`)
+    expect(await read(0)).toMatchObject({ _tag: "Success", success: "admin" })
+    expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(2)
+  },
+)

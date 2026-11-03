@@ -3,7 +3,7 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Action, type FlowRuntime } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { TabChannel } from "@smthrs/platform-browser"
-import { type Context, Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric, Redacted, Ref, Scope } from "effect"
+import { type Context, Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric, Redacted, Ref, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
@@ -158,7 +158,11 @@ const openTab = async (client: Layer.Layer<AuthClient>, device: NodeDevice = nod
     /** Whether this tab's `auth/refresh` is running. */
     refreshing: () => runtime.runSync(Effect.flatMap(Effect.service(AuthStore), (store) => Ref.get(store.refreshing))),
     /** Waits until the session row says `status`. */
-    settled: (status: string) => vi.waitFor(() => expect(queries.session.toArray[0]!.status).toBe(status), { interval: 10 }),
+    settled: (status: string) => runtime.runPromise(Effect.flatMap(AuthStore, (store) => store.sessionState.rows.pipe(
+      Stream.filter((rows) => rows[0]?.status === status),
+      Stream.runHead,
+      Effect.asVoid,
+    ))),
   }
 }
 
@@ -366,6 +370,46 @@ const restored = (tab: Awaited<ReturnType<typeof openTab>>) =>
   vi.waitFor(() => expect(tab.session().restored).toBe(true), { interval: 10 })
 
 describe("the composer", () => {
+  test("unconfirmed membership remains pending instead of claiming Members only", () => {
+    const pending = { status: "signed_in", role: null, restored: true, roleConfirmed: false } as Parameters<typeof composerAccess>[0]
+    expect(composerAccess(pending, undefined)).toBe("wait")
+    expect(composerAccess({ ...pending, role: "guest" }, undefined)).toBe("wait")
+    expect(composerAccess({ ...pending, role: "member" }, undefined)).toBe("ask")
+  })
+
+  test.each([null, "guest"] as const)("unconfirmed %s membership recovers automatically without reload or connectivity events", async (role) => {
+    const h = await signInHarness(server)
+    const b = browser(h)
+    await b.signIn()
+    let pending = true
+    const client = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      session: Effect.map(real.session, (state) => state.signedIn && pending
+        ? { ...state, role, roleConfirmed: false }
+        : state),
+    }))).pipe(Layer.provide(realClient(b)))
+    const tab = await openTab(client)
+    await tab.settled("signed_in")
+    expect(tab.access()).toBe("wait")
+    expect(tab.session()).toMatchObject({ role, roleConfirmed: false })
+    // Multiple unconfirmed replies must keep the same durable refresh alive.
+    await vi.waitFor(() => expect(tab.count(sessionRefreshes, { via: "retry" })).toBeGreaterThanOrEqual(2), { timeout: 20_000 })
+    expect(tab.session()).toMatchObject({ role, roleConfirmed: false })
+    // Leave the tab connected; authority confirmation alone must settle the durable refresh.
+    pending = false
+    // A session row updates before the durable engine commits its result. Neither the retry schedule nor that
+    // commit promises the old 5 s / implicit 1 s deadlines. Wait for the actual completion receipt and flag together.
+    await vi.waitFor(() => {
+      expect(tab.session().role).toBe("member")
+      expect(tab.logs.filter((line) => line.message === "flow.dispatch" && line.annotations.flow === "auth/refresh"))
+        .toEqual([expect.objectContaining({ annotations: expect.objectContaining({ outcome: "done" }) })])
+      expect(tab.refreshing()).toBe(false)
+    }, { timeout: 20_000 })
+    expect(tab.count(sessionRefreshes, { via: "retry" })).toBeGreaterThan(0)
+    expect(tab.access()).toBe("ask")
+    expect(tab.session().roleConfirmed).not.toBe(false)
+  }, 50_000)
+
   test("ChatApi decides once it answers; until then, or offline, the session the device last confirmed does", () => {
     const at = (status: "loading" | "signed_in" | "signed_out" | "unreachable", role: string | null, restored = true) =>
       ({ status, role, restored }) as Parameters<typeof composerAccess>[0]

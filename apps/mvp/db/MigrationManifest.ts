@@ -99,6 +99,10 @@ import m0098 from "./migrations/0098_about_claim_generation.ts"
 import m0099 from "./migrations/0099_todo_attach.ts"
 import m0100 from "./migrations/0100_todo_leaves.ts"
 import m0101 from "./migrations/0101_machine_tokens.ts"
+import m0102 from "./migrations/0102_repository_visibility_receipt.ts"
+import m0103 from "./migrations/0103_notification_access_projection.ts"
+import m0104 from "./migrations/0104_visibility_read_claims.ts"
+import m0105 from "./migrations/0105_notification_denial_sequence.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -202,4 +206,8 @@ export const migrations = {
   "0099_todo_attach": m0099,
   "0100_todo_leaves": m0100,
   "0101_machine_tokens": m0101,
+  "0102_repository_visibility_receipt": m0102,
+  "0103_notification_access_projection": m0103,
+  "0104_visibility_read_claims": m0104,
+  "0105_notification_denial_sequence": m0105,
 }

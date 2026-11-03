@@ -96,7 +96,7 @@ const MATRIX: ReadonlyArray<Cell> = [
   { name: "own public, signed out", repo: OWN, visibility: "public", viewer: { kind: "signed_out" }, shapes: "200", list: "200" },
   { name: "own public, no role", repo: OWN, visibility: "public", viewer: { ...person, role: null }, shapes: "200", list: "200" },
   { name: "own private, roles unavailable", repo: OWN, visibility: "private", viewer: { kind: "person_roles_down" }, shapes: "503 unavailable retry-after=7", list: "503 unavailable retry-after=7" },
-  { name: "own private, sessions down", repo: OWN, visibility: "private", viewer: { kind: "sessions_down" }, shapes: "503 unavailable", list: "503 unavailable" },
+  { name: "own private, sessions down", repo: OWN, visibility: "private", viewer: { kind: "sessions_down" }, shapes: "503 unavailable retry-after=5", list: "503 unavailable retry-after=5" },
   { name: "own private, the App absent is never asked of its own", repo: OWN, visibility: "private", appAbsent: true, viewer: { ...person, role: "member" }, shapes: "200", list: "200" },
   // A registered runner's token: the list route's one exception; the shapes read only who the session says.
   { name: "own private, runner token, signed out", repo: OWN, visibility: "private", viewer: { kind: "signed_out" }, runnerOn: OWN, shapes: "401 authentication", list: "200" },
@@ -105,7 +105,7 @@ const MATRIX: ReadonlyArray<Cell> = [
   { name: "own private, runner token, no role", repo: OWN, visibility: "private", viewer: { ...person, role: null }, runnerOn: OWN, shapes: "401 authentication", list: "200" },
   { name: "own private, runner token, member", repo: OWN, visibility: "private", viewer: { ...person, role: "member" }, runnerOn: OWN, shapes: "401 authentication", list: "200" },
   { name: "own private, another repository's runner token", repo: OWN, visibility: "private", viewer: { kind: "signed_out" }, runnerOn: OTHER, shapes: "401 authentication", list: "401 authentication" },
-  { name: "own private, runner token, sessions down", repo: OWN, visibility: "private", viewer: { kind: "sessions_down" }, runnerOn: OWN, shapes: "503 unavailable", list: "200" },
+  { name: "own private, runner token, sessions down", repo: OWN, visibility: "private", viewer: { kind: "sessions_down" }, runnerOn: OWN, shapes: "503 unavailable retry-after=5", list: "200" },
   // Another repository the deployment acts on.
   { name: "other private, member", repo: OTHER, visibility: "private", viewer: { ...person, role: "member" }, shapes: "200", list: "200" },
   { name: "other private, guest", repo: OTHER, visibility: "private", viewer: { ...person, role: "guest" }, shapes: "200", list: "200" },

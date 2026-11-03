@@ -18,7 +18,7 @@ browser                         ChatApi (worker/SignIn.ts)                     G
                                         people row (GitHub id), sessions row (sealed tokens, role)
   ◀── 303 to /app + session cookie
 every request ── cookie ──▶ Sessions.resolve: signature, then the live session row ─▶ Actor or nobody
-  role over an hour old ──▶ RoleChecks.start(session, role_checked_at) ──▶ auth/RecheckRole on its Durable Object (no wait)
+  role nearing its deadline ──▶ RoleChecks.start(session, role_checked_at) ──▶ auth/RecheckRole on its Durable Object (no wait)
 POST /api/auth/sign-out ──▶ FlowStarter.start(auth/RevokeGitHubToken { session }) on its Durable Object
                               ─ not recorded ──▶ 503, the session and cookie as they were
                             ──▶ end the row (sealed tokens kept), expire the cookie
@@ -156,7 +156,7 @@ The session's role is the person's permission on `GITHUB_REPOSITORY`, the deploy
 | triage, read | Guest |
 | none (a repository they can't see) | no role |
 
-The role is read at sign-in, and again once it is an hour old (`ROLE_RECHECK_MINUTES`; mvp.md M-05). The request that finds it stale starts `auth/RecheckRole { sessionId }` on the remote flow host ([remote-flows.md](remote-flows.md)) and doesn't wait for it. All the person's live sessions use their newest role receipt, including a demotion another session learned before signing out. A database sequence orders observations before GitHub is read; a delayed older response cannot overwrite a newer demotion. The check's completion timestamp only schedules its next check. A person with no live session has no deployment exemption.
+The role is read at sign-in, and again five minutes before its hour-long receipt expires (`ROLE_RECHECK_MINUTES`; half the configured window if shorter). The request that finds it due starts `auth/RecheckRole { sessionId }` on the remote flow host ([remote-flows.md](remote-flows.md)) and uses the still-fresh receipt without waiting. If an idle session returns after expiry, cookie and bearer requests advance that same durable execution for up to ten seconds, then reread the live session. Healthy recovery serves the triggering request; failed or unfinished recovery leaves protected access retryable. An alias is checked again too, so ending it during recovery still signs that host out. All the person's live sessions use their newest role receipt, including a demotion another session learned before signing out. A database sequence orders observations before GitHub is read; a delayed older response cannot overwrite a newer demotion. The check's completion timestamp only schedules its next check. A person with no live session has no deployment exemption.
 
 **One check of a session at a time.** The execution is named after the session and the check it replaces, the session's `role_checked_at` (`auth-recheck-<session>-<epoch ms>`). Every request that finds the same stale role, in this hour or a later one, starts the same execution, and the flow engine runs it once. Only a finished check moves `role_checked_at`, so the next check can't start until this one is over, and only one check ever redeems a session's refresh token.
 
@@ -284,6 +284,8 @@ Local development has more people than its developer, by the dev person cookie, 
 
 **The composer is for Members and above of the conversation's repository** (decision 0007 §2, `repo:ask`; ruling AUTH-8). On `/app`, the deployment's own repository's home conversation, `composerAccess` shows the composer when ChatApi says the person is Admin, Maintainer or Member, and "Members can ask Smithers." for a signed-in Guest or a person with no role, whom the [first run](first-run.md) sends to a repository of their own instead. On a branch's page the branch's access decides (`member`): writing the branch means a Member or above on its repository. While ChatApi hasn't answered, or can't be reached, the session it last confirmed on this device decides, so a Member who reloads offline still asks; with none, nothing shows while it hasn't answered, and the sign-in prompt shows once it can't be reached. The prompt shows only when ChatApi says signed out, or the device never had a session.
 
+When ChatApi says `roleConfirmed: false`, the tab retains that flag: a null or Guest role keeps the composer pending instead of claiming membership was denied; an observed Member or above may still ask, subject to server authorization. A later confirmed session clears the pending flag.
+
 **Signed out, nothing leaves the browser.** `ComposerGate` replaces the composer, so a signed-out person has nowhere to type an ask, and the model endpoint refuses a signed-out call with `401` either way. A question already in the outbox that ChatApi refuses with `401` (signed out since) or `403` (not a Member on the conversation's repository) stays on the device as Not sent (`refused`), with Edit and Discard, and is never sent again.
 
 `appLayer` (`src/boot.ts`) builds `Auth` over `AuthStore`, the device's `Persistence` and `DeviceWipe.layer(host.wipe)`, with `AuthClient` among the browser's services (`realServices`); `boot` renders it, and main.tsx gives it to React through `AuthProvider`. The app's header shows `Account`, and `ComposerGate` wraps the composer (`src/screens/app/AppShell.tsx`). On `/app`, until the person has had a conversation, the [first run](first-run.md)'s steps stand in the gate's place before Ask, and its Sign in step is the page's one sign-in action.
@@ -376,3 +378,9 @@ by status alone. Neither records content or credentials. Bodyless writes are alr
 A session read waits at most one second for the role-check start acknowledgment. A timeout cancels that wait, records `auth.role_check` with `start_timeout` and counts it, then returns the live session. A later request can start the same idempotent execution.
 
 `POST /api/auth/handoff` is bounded to 4 KiB during body admission, matching the handler, including requests with a query string. Oversize declared or streamed bodies return 413 before authority resolution.
+
+Active cookie and bearer sessions admit the existing durable role recheck five minutes before the 60-minute authority deadline (half the window when configured shorter). Admission and expiry use the database clock. A failed read never renews the receipt; past its deadline protected reads remain retryable.
+
+A signed-in answer with `roleConfirmed:false` keeps identity visible and starts or continues the existing durable `auth/refresh` flow. The transient check outcome is `unconfirmed`; the displayed session stays signed in. Both startup/connectivity checks and an explicit reload admit recovery. Repeated unconfirmed answers retry under the existing durable policy until authority is confirmed or the tab is gone, without another reload or online event.
+
+The execution host serializes immediate renewal drives and scheduled alarms within an object incarnation. A concurrent caller waits for the active drive and reuses its durable result; it never takes over its healthy permission request or rotating-token redemption. The host regression holds each network step open while a second drive races it.

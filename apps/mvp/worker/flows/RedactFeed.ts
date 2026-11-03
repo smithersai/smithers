@@ -263,7 +263,7 @@ export const recordHandoff = (intent: { readonly flow: string; readonly executio
 /**
  * A host's router `start` that, once a round's own execution has its intent, records the handoff on the barrier
  * (`recordHandoff`) over `database`: what the remote host's router runs (worker/Executions.ts). A failed record is
- * logged; the start stands.
+ * logged and propagated: durable routing repeats the idempotent start and receipt before the predecessor settles.
  */
 export const recordingHandoffs = <
   I extends { readonly flow: string; readonly executionId: string; readonly payload: unknown },
@@ -280,7 +280,7 @@ export const recordingHandoffs = <
     Effect.tap(() =>
       recordHandoff(intent).pipe(
         Effect.provide(database),
-        Effect.catchCause((cause) =>
+        Effect.tapCause((cause) =>
           Effect.logWarning("feed.redact").pipe(
             Effect.annotateLogs({ outcome: "handoff_unrecorded", errorCode: codeOf(Cause.squash(cause)) }),
           )

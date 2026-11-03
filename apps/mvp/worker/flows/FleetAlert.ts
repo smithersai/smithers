@@ -7,6 +7,8 @@ import { codeOf } from "../ErrorCode.ts"
 import * as FeedLocks from "../FeedLocks.ts"
 import * as Flows from "../Flows.ts"
 import * as Fleet from "../runners/Fleet.ts"
+import { AUDIENCE } from "../runners/FleetAudience.ts"
+export { AUDIENCE } from "../runners/FleetAudience.ts"
 import * as AlertDelivery from "./AlertDelivery.ts"
 
 // The fleet's alerts (decision 0143, docs/features/fleet.md#alerts): durable flows, no sweeps (ruling DUR-2).
@@ -108,16 +110,6 @@ export const FleetAlert = Flow.make("ops/FleetAlert", {
       })),
     )),
 })
-
-/** The least role on the repository that hears each kind, beside a run's committer. */
-export const AUDIENCE: Readonly<Record<Fleet.Kind, { readonly role: "maintainer" | "admin"; readonly committer: boolean }>> =
-  {
-    failed: { role: "maintainer", committer: true },
-    stalled: { role: "maintainer", committer: true },
-    waiting: { role: "maintainer", committer: false },
-    cost: { role: "admin", committer: true },
-    offline: { role: "admin", committer: false },
-  }
 
 /** The longest title a bell row and a message's subject carry. */
 const MAX_TITLE = 200

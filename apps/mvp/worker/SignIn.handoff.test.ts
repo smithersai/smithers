@@ -12,6 +12,8 @@ import type { SessionState } from "../src/features/auth/contract.ts"
 import * as SessionStore from "./SessionStore.ts"
 import * as Actor from "./Actor.ts"
 import * as Flows from "./Flows.ts"
+import * as RecheckRole from "./flows/RecheckRole.ts"
+import type { RoleChecks } from "./SignIn.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import { ARRIVE_HEADERS, CONFIRM_HEADERS, HANDOFF_CODE_TTL_SECONDS, SIGN_IN_TTL_SECONDS } from "./SignIn.ts"
 import { testFile } from "./test/harness.ts"
@@ -46,11 +48,13 @@ const harness = async (
   config: Record<string, string> = withHome,
   database?: Layer.Layer<SqlClient.SqlClient, unknown>,
   starter?: Flows.FlowStarter["Service"],
+  roleChecks?: RoleChecks["Service"],
 ) => {
   const h = await signInHarness(runtime, {
     config,
     ...(database === undefined ? {} : { database }),
     ...(starter === undefined ? {} : { starter }),
+    ...(roleChecks === undefined ? {} : { roleChecks }),
   })
 
   /** Presses "Sign in with GitHub" on `origin`'s page: the redirect and the nonce cookie. */
@@ -214,19 +218,26 @@ describe("signing in at an alias", () => {
     const alias = { smithers_session: setCookies(arrived)["smithers_session"]!.value }
     const parentEnd = async () => Number((await sql((client) =>
       client<{ readonly expiresAt: string }>`SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt" FROM sessions`))[0]!.expiresAt)
-    const before = Date.now()
+    const databaseNow = async () => Number((await sql((client) =>
+      client<{ readonly now: string }>`SELECT (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS now`))[0]!.now)
+    const before = await databaseNow()
     const answer = await h.sessionAt(ALIAS, alias) as SessionState & { readonly expiresAt?: number; readonly serverNow?: number }
     expect(answer).toMatchObject({ signedIn: true, login: "octocat", expiresAt: await parentEnd() })
     expect(answer.serverNow).toBeGreaterThanOrEqual(before)
+    expect(answer.serverNow).toBeLessThanOrEqual(await databaseNow())
     // The database's clock, not the Worker's: an alias answer an hour "later" on the Worker still says the database's now.
     h.advance(60 * 60 * 1000)
+    const beforeSkewed = await databaseNow()
     const skewed = await h.sessionAt(ALIAS, alias) as { readonly expiresAt?: number; readonly serverNow?: number }
-    expect(skewed.serverNow).toBeLessThan(Date.now() + 60 * 1000)
+    expect(skewed.serverNow).toBeGreaterThanOrEqual(beforeSkewed)
+    expect(skewed.serverNow).toBeLessThanOrEqual(await databaseNow())
     expect(skewed.expiresAt).toBe(answer.expiresAt)
     // And a Worker clock an hour behind: the same database now, the same end.
     h.advance(-2 * 60 * 60 * 1000)
+    const beforeBehind = await databaseNow()
     const behind = await h.sessionAt(ALIAS, alias) as { readonly expiresAt?: number; readonly serverNow?: number }
-    expect(behind.serverNow).toBeGreaterThan(Date.now() - 60 * 1000)
+    expect(behind.serverNow).toBeGreaterThanOrEqual(beforeBehind)
+    expect(behind.serverNow).toBeLessThanOrEqual(await databaseNow())
     expect(behind.expiresAt).toBe(answer.expiresAt)
     h.advance(60 * 60 * 1000)
     // The answer names no session: neither the parent's id nor the alias's own appears anywhere in it.
@@ -681,6 +692,8 @@ describe("alias sessions", () => {
     const h = await harness()
     const { cookies } = await h.signInAt()
     const [home] = await sql((client) => client<{ id: string }>`SELECT id::text AS id FROM sessions`)
+    // Admission uses the receipt's database clock, independent of the Worker's wall clock.
+    await sql((client) => client`UPDATE sessions SET role_checked_at = role_checked_at - interval '61 minutes'`)
     h.advance(61 * 60 * 1000)
     await h.sessionAt(ALIAS, cookies)
     expect(h.roleChecks.map((check) => check.sessionId)).toEqual([home!.id])
@@ -788,3 +801,21 @@ const signedSession = async () => {
   const keys = await runtime.runPromise(SessionKeys.make(Redacted.make(SECRET)))
   return runtime.runPromise(keys.sign("session", "no-such-session"))
 }
+
+
+test("an alias ended while its home completes a healthy role recheck stays signed out", async () => {
+  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  let steps: ReturnType<typeof RecheckRole.steps<unknown, never>>
+  const h = await harness(withHome, undefined, undefined, {
+    start: () => Effect.void,
+    wait: (sessionId) => Effect.andThen(
+      Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE host_sessions SET revoked_at = clock_timestamp()`).pipe(Effect.provide(scratch.database)),
+      Effect.asVoid(steps.check(sessionId, { kind: "none" })),
+    ),
+  })
+  steps = RecheckRole.steps(scratch.database, Option.getOrThrow(h.signIn.configured))
+  const signed = await h.signInAt()
+  await sql((client) => client`UPDATE sessions SET role_checked_at = now() - interval '61 minutes', role_verified_at = now() - interval '61 minutes'`)
+  expect(await h.actorAt(ALIAS, signed.cookies)).toEqual(Option.none())
+  expect(await h.sessionAt(HOME, signed.home)).toMatchObject({ signedIn: true, role: "member" })
+})

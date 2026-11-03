@@ -49,7 +49,10 @@ export const DEFAULT_REPOSITORY = "smithersai/smithers"
 export const SESSION_MAX_AGE_DAYS = 30
 
 /** How old a session's role may get before it is checked with GitHub again, when `ROLE_RECHECK_MINUTES` is unset. */
-export const ROLE_RECHECK_MINUTES = 60
+export const ROLE_RECHECK_MINUTES = SessionStore.ROLE_RECHECK_MINUTES
+
+/** Renew five minutes before expiry (half the window for shorter configured receipts). */
+export const ROLE_RECHECK_MARGIN_MS = 5 * 60_000
 
 /** How often a session whose role GitHub hasn't confirmed lately starts another check, at most. */
 export const UNCONFIRMED_RECHECK_MS = 60_000
@@ -77,11 +80,18 @@ export const requests = Metric.counter("smithers_auth_requests", {
  */
 export class RoleChecks extends Context.Service<
   RoleChecks,
-  { readonly start: (sessionId: string, generation: number) => Effect.Effect<void> }
+  {
+    readonly start: (sessionId: string, generation: number) => Effect.Effect<void>
+    /** Advance the already-admitted durable check when an idle session first returns past expiry. */
+    readonly wait?: (sessionId: string, generation: number) => Effect.Effect<void, unknown>
+    readonly waitWithin?: Duration.Input
+  }
 >()("@smthrs/mvp/auth/RoleChecks") {}
 
 /** A signed-in person as sign-in knows them: who is acting, and their GitHub login. */
 export interface Signed {
+  /** Identity retains the last observed role while protected reads await confirmation. */
+  readonly roleConfirmed?: boolean
   readonly actor: Actor.Actor
   readonly login: string
   /**
@@ -367,6 +377,51 @@ export const make = <E, R>(
         ).pipe(Effect.annotateLogs(fields)),
       )
 
+    /** Both cookie and bearer traffic admit the same generation of the durable role recheck. */
+    const admitRoleCheck = (live: SessionStore.Live) => Effect.gen(function* () {
+      if (Option.isNone(setup)) return false
+      // Both age and expiry use the database clock that read the receipt. Worker skew cannot delay renewal.
+      const checkedAgo = live.serverNow - live.roleCheckedAt
+      const window = setup.value.recheckAfterMs
+      const renewAfter = window - Math.min(ROLE_RECHECK_MARGIN_MS, window / 2)
+      const due = live.roleVerifiedAt === null || live.serverNow - live.roleVerifiedAt >= renewAfter
+      if (checkedAgo >= renewAfter || (due && checkedAgo >= Math.min(UNCONFIRMED_RECHECK_MS, renewAfter))) {
+        yield* (yield* RoleChecks).start(live.home ?? live.id, live.roleCheckedAt).pipe(
+          Effect.timeoutOrElse({ duration: ROLE_CHECK_START_DEADLINE, orElse: () =>
+            Effect.logWarning("auth.role_check").pipe(
+              Effect.annotateLogs({ sessionId: live.home ?? live.id, outcome: "not_started", errorCode: "start_timeout" }),
+              Effect.andThen(Metric.update(Metric.withAttributes(requests, { route: "role_check", outcome: "not_started", reason: "start_timeout" }), 1)),
+            ),
+          }),
+        )
+        return true
+      }
+      return false
+    })
+
+    /** Past expiry, give the durable check a bounded chance and read the resulting receipt, never the old snapshot. */
+    const renewRole = (live: SessionStore.Live, lookup?: Effect.Effect<Option.Option<SessionStore.Live>, Actor.SessionsUnavailable, R>) => Effect.gen(function* () {
+      const admitted = yield* admitRoleCheck(live)
+      if (!admitted || Option.isNone(setup) || SessionStore.roleFresh(live.roleVerifiedAt, live.serverNow, setup.value.recheckAfterMs)) {
+        return Option.some(live)
+      }
+      const checks = yield* RoleChecks
+      if (checks.wait !== undefined) {
+        yield* checks.wait(live.home ?? live.id, live.roleCheckedAt).pipe(
+          Effect.catch((error) => Effect.logWarning("auth.role_check").pipe(
+            Effect.annotateLogs({ outcome: "wait_failed", errorCode: codeOf(error) }))),
+          Effect.timeoutOrElse({ duration: checks.waitWithin ?? "10 seconds", orElse: () =>
+            Effect.logWarning("auth.role_check").pipe(Effect.annotateLogs({ outcome: "wait_expired" })) }),
+        )
+      }
+      const next = yield* (lookup ?? SessionStore.findLiveById(live.home ?? live.id).pipe(
+        Effect.provide(database), Effect.mapError(() => new Actor.SessionsUnavailable())))
+      return Option.map(next, (updated): SessionStore.Live => ({ ...live,
+        role: updated.role, roleCheckedAt: updated.roleCheckedAt, roleVerifiedAt: updated.roleVerifiedAt,
+        serverNow: updated.serverNow, expiresAt: updated.expiresAt,
+      }))
+    })
+
     /** The signed-in person behind a request, if any. Starts a role check when their role is stale. */
     const current = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
@@ -388,7 +443,7 @@ export const make = <E, R>(
       const digest = SessionKeys.digest(token.value)
       // Away from home, an alias session first; a session signed in at this host itself, as before 0130, still reads.
       const away = Option.isSome(handoff) && url.hostname !== handoff.value.host
-      const live = yield* (away
+      const lookup = (away
         ? Effect.flatMap(
           SessionStore.findHostLive(digest, url.hostname),
           (found) => Option.isSome(found) ? Effect.succeed(found) : SessionStore.findLive(digest),
@@ -400,23 +455,12 @@ export const make = <E, R>(
         ),
         Effect.mapError(() => new Actor.SessionsUnavailable()),
       )
+      const found = yield* lookup
+      if (Option.isNone(found)) return Option.none()
+      // Read the presented alias again too: ending it while its home refreshes must still sign this host out.
+      const live = yield* renewRole(found.value, lookup)
       if (Option.isNone(live)) return Option.none()
-      const now = yield* Clock.currentTimeMillis
-      // A role GitHub hasn't confirmed within the hour (never, for a session from before `role_verified_at`, or only
-      // failed checks since) is checked again too, at most once a minute: a socket's lease trusts only a confirmed role.
-      const checkedAgo = now - live.value.roleCheckedAt
-      const unconfirmed = live.value.roleVerifiedAt === null || now - live.value.roleVerifiedAt >= recheckAfterMs
-      if (checkedAgo >= recheckAfterMs || (unconfirmed && checkedAgo >= UNCONFIRMED_RECHECK_MS)) {
-        // An alias session's role is its home session's, so the check is the home session's.
-        yield* (yield* RoleChecks).start(live.value.home ?? live.value.id, live.value.roleCheckedAt).pipe(
-          Effect.timeoutOrElse({ duration: ROLE_CHECK_START_DEADLINE, orElse: () =>
-            Effect.logWarning("auth.role_check").pipe(
-              Effect.annotateLogs({ sessionId: live.value.home ?? live.value.id, outcome: "not_started", errorCode: "start_timeout" }),
-              Effect.andThen(Metric.update(Metric.withAttributes(requests, { route: "role_check", outcome: "not_started", reason: "start_timeout" }), 1)),
-            ),
-          }),
-        )
-      }
+      const unconfirmed = !SessionStore.roleFresh(live.value.roleVerifiedAt, live.value.serverNow, recheckAfterMs)
       // An alias session acts as its home session, which holds the person's GitHub tokens and role (decision 0130).
       return Option.some<Signed>({
         actor: {
@@ -427,6 +471,7 @@ export const make = <E, R>(
           // worker/runners/Fence.ts check both).
           ...(live.value.home === undefined ? {} : { alias: live.value.id }),
         },
+        roleConfirmed: !unconfirmed,
         login: live.value.login,
         expiresAt: live.value.expiresAt,
         serverNow: live.value.serverNow,
@@ -942,6 +987,7 @@ export const make = <E, R>(
           personId: signed.value.actor.subject.id,
           login: signed.value.login,
           role: signed.value.actor.role,
+          ...(signed.value.roleConfirmed === false ? { roleConfirmed: false } : {}),
           hostedModel: hostedModel && Actor.canAsk(signed.value.actor),
           ...(install === undefined ? {} : { install }),
           // Until when the session is live, and the database's now read beside it, so a tab counts down on one clock
@@ -997,7 +1043,7 @@ export const make = <E, R>(
     const local = [options.fallback, ...Object.values(options.teammates ?? {})]
 
     /** A credential's person as their session stands now: none once it ended, and with the role it has now. */
-    const personOf = (claims: RunCredentials.Claims): Effect.Effect<Option.Option<Actor.Actor>, Actor.SessionsUnavailable, R> =>
+    const personOf = (claims: RunCredentials.Claims): Effect.Effect<Option.Option<Actor.Actor>, Actor.SessionsUnavailable, R | RoleChecks> =>
       Option.isNone(setup)
         ? Effect.succeed(
           Option.fromNullishOr(
@@ -1011,12 +1057,16 @@ export const make = <E, R>(
         : SessionStore.findLiveById(claims.sid).pipe(
           Effect.provide(database),
           Effect.map(Option.filter((live) => live.personId === claims.sub)),
-          Effect.map(Option.map((live): Actor.Actor => ({
-            subject: { kind: "person", id: live.personId },
-            role: live.role,
-            session: live.id,
-            login: live.login,
-          }))),
+          Effect.flatMap((found) => Option.isNone(found) ? Effect.succeedNone : Effect.gen(function* () {
+            const renewed = yield* renewRole(found.value)
+            if (Option.isNone(renewed)) return Option.none()
+            const live = renewed.value
+            if (!SessionStore.roleFresh(live.roleVerifiedAt, live.serverNow, setup.value.recheckAfterMs)) {
+              return yield* new Actor.SessionsUnavailable()
+            }
+            return Option.some<Actor.Actor>({ subject: { kind: "person", id: live.personId },
+              role: live.role, session: live.id, login: live.login })
+          })),
           Effect.tapError((error) =>
             Effect.logError("auth.session").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
           ),
@@ -1037,13 +1087,16 @@ export const make = <E, R>(
           Context.add(
             Actor.Sessions,
             (() => {
-              const person = current.pipe(
+              const authorized = current.pipe(Effect.flatMap((signed) =>
+                Option.isSome(signed) && signed.value.roleConfirmed === false
+                  ? Effect.fail(new Actor.SessionsUnavailable()) : Effect.succeed(signed)))
+              const person = authorized.pipe(
                 Effect.map(Option.map((signed) => ({ ...signed.actor, login: signed.login }))),
                 Effect.provide(context),
               )
               // The cookie's person also carries when its session ends and the database's clock as it read that, for a
               // read that answers with its deadline.
-              const cookiePerson = current.pipe(
+              const cookiePerson = authorized.pipe(
                 Effect.map(Option.map((signed): Actor.Actor => ({
                   ...signed.actor,
                   login: signed.login,

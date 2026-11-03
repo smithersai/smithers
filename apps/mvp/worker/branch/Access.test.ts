@@ -252,11 +252,30 @@ describe("roles per repository (decision 0079)", () => {
     expect(await run(branchAccessIn(maya("admin"), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
   })
 
+  test("lost installation never restores private ownership or surviving shares", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.private = true
+    await installed()
+    await sql(runtime, `UPDATE github_repositories SET private = true WHERE repo_id = '${WIDGETS}'`)
+    const branch = await tracked(runtime, WIDGETS, "confidential")
+    await sql(runtime, `UPDATE branches SET created_by = '${MAYA}' WHERE id = '${branch.branchId}'`)
+    await shared(runtime, branch.branchId, MAYA, "edit", "maya")
+    await shared(runtime, branch.branchId, "repository", "edit")
+    const roles = await withApp(github)
+    expect(await run(branchAccessIn(maya("member"), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
+    await sql(runtime, `UPDATE github_repositories SET installation_id = NULL WHERE repo_id = '${WIDGETS}'`)
+    github.installed = false
+    expect(await run(branchAccessIn(maya("member"), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
+    await sql(runtime, `UPDATE branches SET created_by = NULL WHERE id = '${branch.branchId}'`)
+    expect(await run(branchAccessIn(maya("member"), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
+  })
+
   test("a repository Smithers hasn't recorded the App on keeps the session's role, asking GitHub nothing", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "read")
     const branch = await tracked(runtime, WIDGETS, "main")
     await shared(runtime, branch.branchId, "repository", "edit")
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, private, visibility_verified_at) VALUES ('${WIDGETS}', false, now())`)
     const roles = await withApp(github)
     expect(await run(branchAccessIn(maya("member"), branch.branchId), roles)).toMatchObject({ access: "edit", role: "member" })
     expect(await run(isMemberOn(maya("member"), WIDGETS), roles)).toBe(true)

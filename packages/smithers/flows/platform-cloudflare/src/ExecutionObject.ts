@@ -925,7 +925,8 @@ const settleOrDrive = <E, R, RS, RE, RR>(
  * finish the engine's cancellation on its next alarm. No action is started by
  * the cancellation handler and no application retry loop is needed.
  * `driveBudgetMs` bounds each drive; `afterAlarm` runs after every outcome,
- * once the active cancellation handler has been cleared.
+ * once the active cancellation handler has been cleared. Concurrent alarm/RPC drives
+ * serialize for this incarnation; a waiting caller never builds a competing runtime owner.
  *
  * @category constructors
  * @since 1.0.0
@@ -941,6 +942,7 @@ export const make = <E, R, RS, RE = never, RR = never, RA = never>(storage: Stor
   readonly canStart?: ((intent: Intent) => Effect.Effect<boolean, never, R>) | undefined
 }) => {
   const gate = Semaphore.makeUnsafe(1)
+  const drives = Semaphore.makeUnsafe(1)
   let active: Effect.Effect<void, FlowRuntime.CancelRequestFailed> | undefined
   return {
     start: (value: Intent) => gate.withPermit(start(storage, value, Effect.void)),
@@ -970,22 +972,24 @@ export const make = <E, R, RS, RE = never, RR = never, RA = never>(storage: Stor
         Effect.flatMap((exit) => exit)
       ),
     alarm: () =>
-      Effect.flatMap(Effect.context<R>(), (context) =>
-        alarm(storage, options).pipe(
-          Effect.provideService(AdmissionControl, {
-            gate,
-            activate: (cancel) => {
-              active = cancel
-            },
-            allowed: (value) =>
-              options.canStart === undefined ?
-                Effect.succeed(true) :
-                options.canStart(value).pipe(Effect.provide(context))
-          }),
-          Effect.ensuring(Effect.sync(() => {
-            active = undefined
-          }))
-        )).pipe(Effect.tap(() => options.afterAlarm ?? Effect.void))
+      drives.withPermit(
+        Effect.flatMap(Effect.context<R>(), (context) =>
+          alarm(storage, options).pipe(
+            Effect.provideService(AdmissionControl, {
+              gate,
+              activate: (cancel) => {
+                active = cancel
+              },
+              allowed: (value) =>
+                options.canStart === undefined ?
+                  Effect.succeed(true) :
+                  options.canStart(value).pipe(Effect.provide(context))
+            }),
+            Effect.ensuring(Effect.sync(() => {
+              active = undefined
+            }))
+          )).pipe(Effect.tap(() => options.afterAlarm ?? Effect.void))
+      )
   }
 }
 

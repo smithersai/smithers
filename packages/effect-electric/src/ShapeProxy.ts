@@ -170,6 +170,19 @@ export class Refused extends Data.TaggedError("Refused")<{
 export interface Options<R = never> extends Connection {
   readonly shape: Shape | Effect.Effect<Shape, Refused, R>
   /**
+   * Guard cached JSON log values against current authorization. Pair with a stable database projection so changes
+   * withheld during uncertainty are emitted again on recovery. Deletes carry only the named primary keys.
+   * SSE is refused with this guard; finite long polls retain their handle, offset and control messages.
+   */
+  readonly rowAccess?: {
+    readonly keyColumns: ReadonlyArray<string>
+    readonly allows: (value: Readonly<Record<string, unknown>>) => boolean
+    /** A denied value with no guaranteed replay transition requires retrying the original cursor. */
+    readonly retryIfDenied?: (value: Readonly<Record<string, unknown>>) => boolean
+    /** Once the poll is buffered, prepare one current snapshot before allows runs. False/failure retries without a cursor. */
+    readonly validate?: Effect.Effect<boolean, Refused, R> | undefined
+  } | undefined
+  /**
    * Whether a browser or CDN may keep the shape's responses; `"no-store"`
    * unless the host opts a public shape in.
    *
@@ -182,7 +195,7 @@ export interface Options<R = never> extends Connection {
 
 // How a request ended: its response sent in full; `aborted` by the browser, before Electric answered (status 499) or
 // mid-body; or `failed` reading Electric's body.
-type Outcome = "complete" | "aborted" | "failed"
+type Outcome = "complete" | "aborted" | "failed" | "superseded"
 
 // The Electric client's protocol parameters: the only browser parameters the proxy forwards. Every other one is
 // dropped, a subset request's `subset__*` included.
@@ -395,6 +408,11 @@ export const make = <R = never>(
       return HttpServerResponse.empty({ status: 405, headers: { allow: "GET", ...ownHeaders } })
     }
 
+    if (options.rowAccess !== undefined && ["live_sse", "experimental_live_sse"].some((key) => incoming.get(key) === "true")) {
+      yield* ended(503, "access")
+      return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, "retry-after": "5" } })
+    }
+
     const decided = yield* Effect.result(Effect.isEffect(options.shape) ? options.shape : Effect.succeed(options.shape))
       .pipe(
         Effect.catchDefect(() => Effect.succeed(undefined)),
@@ -495,6 +513,49 @@ export const make = <R = never>(
         upstream: "electric"
       })
       return HttpServerResponse.empty({ status, headers: responseHeaders })
+    }
+    if (status === 200 && options.rowAccess !== undefined) {
+      const guard = options.rowAccess
+      const messages = yield* response.value.json.pipe(Effect.option)
+      if (Option.isNone(messages) || !Array.isArray(messages.value) || guard.keyColumns.length === 0) {
+        yield* ended(502, "electric", "failed")
+        return HttpServerResponse.empty({ status: 502, headers: ownHeaders })
+      }
+      // The host takes its current authority snapshot only after buffering, before any payload is authorized.
+      // A cursor fence failure must withhold the entire cursor so a projection change cannot skip its deletes.
+      const valid = yield* Effect.result(guard.validate ?? Effect.succeed(true))
+      if (Result.isFailure(valid) || !valid.success) {
+        yield* ended(503, "access", Result.isFailure(valid) ? "failed" : "superseded")
+        return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
+      }
+      let requiresReplay = false
+      const filtered = yield* Effect.try(() => (messages.value as Array<unknown>).flatMap((message: unknown) => {
+        if (typeof message !== "object" || message === null) throw new Error("invalid shape message")
+        const row = message as { readonly value?: Record<string, unknown>; readonly headers?: Record<string, unknown> }
+        if (row.value === undefined) return [message]
+        if (typeof row.value !== "object" || row.value === null || !guard.keyColumns.every((key) => Object.hasOwn(row.value!, key))) {
+          throw new Error("shape keys missing")
+        }
+        if (row.headers?.["operation"] === "delete") return [{ ...row,
+          value: Object.fromEntries(guard.keyColumns.map((key) => [key, row.value![key]])),
+        }]
+        if (guard.allows(row.value)) return [message]
+        if (guard.retryIfDenied?.(row.value) === true) requiresReplay = true
+        return []
+      })).pipe(Effect.option)
+      if (Option.isNone(filtered)) {
+        yield* ended(502, "electric", "failed")
+        return HttpServerResponse.empty({ status: 502, headers: ownHeaders })
+      }
+      if (requiresReplay) {
+        yield* ended(503, "access", "superseded")
+        return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
+      }
+      const body = JSON.stringify(filtered.value)
+      const guarded = HttpServerResponse.text(body, { status, headers: { ...responseHeaders, "content-type": "application/json" } })
+      yield* record({ status, correlationId, upstream: "electric", live, phase, startedAt,
+        bytes: "contentLength" in guarded.body ? guarded.body.contentLength ?? 0 : 0, outcome: "complete" })
+      return guarded
     }
     // The body streams after this handler and its span end, outside its services, so the record runs with them.
     const context = yield* Effect.context<never>()

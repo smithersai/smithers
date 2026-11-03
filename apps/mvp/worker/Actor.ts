@@ -12,6 +12,9 @@ export { PERSON_ONLY_FLOWS, type PersonOnlyEnforcement, type PersonOnlyFlow, ref
 
 export type { Role }
 
+/** A role's authority, from no role (0) through Admin (4). */
+export const rankOf = (role: Role | null): number => role === null ? 0 : ["guest", "member", "maintainer", "admin"].indexOf(role) + 1
+
 /**
  * Who acts for a person (decision 0017 slice 0): an agent's run, a flow's own run, a frame's dispatch (`app`) or a
  * container's (`sandbox`).

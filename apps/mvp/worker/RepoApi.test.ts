@@ -26,7 +26,7 @@ import { accountIdOf, APP_ID, appKey, scriptedGitHub as scriptedApp } from "./gi
 import { app } from "./github/test/harness.ts"
 import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
-import { BranchRoles } from "./branch/Access.ts"
+import { branchAccess, BranchRoles } from "./branch/Access.ts"
 import { scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
 import { notificationRow, repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
 
@@ -46,6 +46,26 @@ const sql = (statement: string) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe(statement))))
 
 describe("POST /api/repos", () => {
+  test("a never-installed public repository opens About, clones and grants branch access without a seeded visibility row", async () => {
+    const github = scriptedGitHub()
+    github.publish("octocat", "Spoon-Knife")
+    const actor: Actor.Actor = { subject: { kind: "person", id: "public-reader" }, role: "member" }
+    const h = await repoHarness(runtime, { github, actor, localCopies: false })
+    h.scripted.publish("octocat", "Spoon-Knife")
+    const id = "github/octocat/spoon-knife"
+    expect(await sql(`SELECT repo_id FROM github_repositories WHERE repo_id = '${id}'`)).toEqual([])
+    expect((await h.fetch(aboutRoute("octocat", "Spoon-Knife"))).status).toBe(200)
+    expect((await h.clone("octocat", "Spoon-Knife")).status).toBe(202)
+    await h.settled()
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const roles = await runtime.runPromise(RepoRoles.make(scratch.database, { repository: repositoryOf("acme/home"), app: Option.none() }))
+    const branch = crypto.randomUUID()
+    await sql(`INSERT INTO branches (id, repo_id, name, created_by) VALUES ('${branch}', '${id}', 'public-copy', 'public-reader')`)
+    await sql(`INSERT INTO conversations (id, repo_id, branch_id) VALUES (gen_random_uuid(), '${id}', '${branch}')`)
+    const access = await runtime.runPromise(branchAccess(Option.some(actor), branch).pipe(Effect.provide(BranchRoles.layer(roles))))
+    expect(access?.access).toBe("owner")
+  })
+
   test("clones a public repository: 202 with the txid, cloning at once, then ready with its head", async () => {
     const h = await repoHarness(runtime)
     h.scripted.publish("octocat", "Spoon-Knife")
@@ -1193,9 +1213,28 @@ describe("GET /api/shapes/repositories", () => {
     const response = await h.fetch("/api/shapes/repositories?offset=-1&table=messages&where=true")
     expect(response.status).toBe(200)
     // The stage and the reclaim mark sync with the row; who asked for the clone is in a table of its own, never synced.
-    const rows = (await response.clone().json() as ReadonlyArray<{ readonly value?: Record<string, unknown> }>)
-      .flatMap((message) => (message.value === undefined ? [] : [message.value]))
-    expect(rows).toEqual([expect.objectContaining({ id: "github/a/b", stage: "requested", reclaimable: "false" })])
+    // A retained shape contains its snapshot plus changes, including fixture deletes. Consume Electric's log
+    // until this insert arrives, as a client does, rather than treating every historical value as a current row.
+    const current = new Map<string, Record<string, unknown>>()
+    let page = response.clone()
+    for (;;) {
+      const messages = await page.json() as ReadonlyArray<{
+        readonly value?: Record<string, unknown>; readonly headers?: { readonly operation?: string }
+      }>
+      for (const message of messages) {
+        if (typeof message.value?.id !== "string") continue
+        if (message.headers?.operation === "delete") current.delete(message.value.id)
+        else current.set(message.value.id, message.value)
+      }
+      if (current.has("github/a/b")) break
+      const cursor = new URLSearchParams({ offset: page.headers.get("electric-offset")!, handle: page.headers.get("electric-handle")!, live: "true" })
+      page = await h.fetch(`/api/shapes/repositories?${cursor}`)
+      expect(page.status).toBe(200)
+    }
+    const rows = [...current.values()]
+    expect(rows).toEqual([expect.objectContaining({ id: "github/a/b", stage: "requested" })])
+    // Snapshot text uses false; PostgreSQL logical-replication text uses f. Both mean the same false flag.
+    expect(rows[0]!.reclaimable).toMatch(/^(false|f)$/)
     expect(Object.keys(rows[0]!).some((column) => column.includes("request") && column !== "requested_at")).toBe(false)
     expect(response.headers.get("electric-handle")).toEqual(expect.any(String))
     // No browser or CDN keeps it: Electric's `public, max-age=604800` is replaced.

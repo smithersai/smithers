@@ -36,6 +36,9 @@ export default defineConfig({
       "ops/**/*.test.{ts,vibe}"
     ],
     environment: "node",
+    // Each file owns a four-connection SQL pool and may open flow/handler pools too. Bound file concurrency
+    // below the owned fixture's 100-connection capacity, with CPU room for Electric in a shared mini farm slot.
+    maxWorkers: 3,
     // A finite budget that survives coverage-instrumented load, so a genuine hang still fails the run.
     testTimeout: 30_000,
     hookTimeout: 30_000,

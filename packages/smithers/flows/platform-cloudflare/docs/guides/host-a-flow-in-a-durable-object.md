@@ -150,3 +150,5 @@ also carries `error.type` and `smithers.execution.attempt`, and a failure that r
 kind and code, and for a lost or refused connection the driver's text for it. None of them carries the payload or a flow's failure message; only a failed schema migration adds its
 statement and the database's message. [Troubleshooting](../troubleshooting.md) maps each `error.type` to its
 cause.
+
+Keep one `ExecutionObject.make` instance per object incarnation. Its alarm handler serializes concurrent drives, including RPC calls that drive an admitted execution immediately. Waiting callers reuse the recorded result after the active drive completes. Cancellation uses its own admission gate and can still interrupt the active drive.

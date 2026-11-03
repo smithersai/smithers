@@ -484,15 +484,7 @@ export const forgetInstallation = (repoId: string) =>
     yield* sql`UPDATE github_repositories SET installation_id = NULL, checked_at = now() WHERE repo_id = ${repoId}`
   })
 
-/** Records what GitHub said of `repoId`: its numeric id and whether it is private. */
-export const recordRepository = (repoId: string, repository: { readonly githubId: number; readonly private: boolean }) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    yield* sql`
-      INSERT INTO github_repositories (repo_id, github_id, private) VALUES (${repoId}, ${repository.githubId},
-        ${repository.private})
-      ON CONFLICT (repo_id) DO UPDATE SET github_id = EXCLUDED.github_id, private = EXCLUDED.private, checked_at = now()`
-  })
+export { recordRepository, repositoryObservation } from "./VisibilityReceipt.ts"
 
 /** Whether GitHub said `repoId` is public: `None` until a step has read it. */
 export const isPublic = (repoId: string) =>

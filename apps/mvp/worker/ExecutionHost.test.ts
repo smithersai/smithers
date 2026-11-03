@@ -6,7 +6,7 @@ import * as Pg from "@effect/sql-pg"
 import { Action, Flow, Interpreter, WaitFor } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Context, Duration, Effect, Layer, Logger, Metric, Redacted, Schema } from "effect"
+import { Context, Deferred, Duration, Effect, Fiber, Layer, Logger, Metric, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
@@ -677,6 +677,61 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect(router.routed).toEqual([expect.stringMatching(/^start /)])
     expect(router.routed[0]).not.toBe(`start ${executionId}`)
   }, 60_000)
+
+  test.each(["permission", "refresh"] as const)("concurrent renewal drives share a healthy %s request", async (heldStep) => {
+    const signIn = await signInHarness(app)
+    const { cookies } = await signIn.signInAs()
+    const { sessionId, database } = await app.runPromise(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const [row] = yield* sql<{ readonly id: string }>`SELECT id FROM sessions ORDER BY role_generation DESC LIMIT 1`
+      if (heldStep === "refresh") yield* sql`UPDATE sessions SET github_access_expires_at = now() WHERE id = ${row!.id}`
+      return { sessionId: row!.id, database: (yield* TestDatabase.Scratch).database }
+    }))
+    try {
+      const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
+      const entered = Deferred.makeUnsafe<void>()
+      const release = Deferred.makeUnsafe<void>()
+      let calls = 0
+      const hold = Effect.gen(function* () {
+        calls++
+        yield* Deferred.succeed(entered, undefined)
+        yield* Deferred.await(release)
+      })
+      const github = signIn.github.service
+      const flows = ExecutionHost.remoteWithSignIn({ database, expiry: Expire.DEFAULT_EXPIRY }, {
+        keys, repository: "smithersai/smithers", github: {
+          ...github,
+          permission: (...args) => heldStep === "permission" ? hold.pipe(Effect.andThen(github.permission(...args))) : github.permission(...args),
+          refresh: (...args) => heldStep === "refresh" ? hold.pipe(Effect.andThen(github.refresh(...args))) : github.refresh(...args),
+        },
+      })
+      signIn.github.permission = "admin"
+      await withSchema(({ name, sql, url }) => Effect.gen(function* () {
+        const object = memory()
+        const executionId = `auth-race-${sessionId}`
+        const host = ExecutionHost.make(object.storage, {
+          hostId: `object-${executionId}`, database: ExecutionHost.database(url, name), flows, router: recording().router,
+        })
+        yield* host.start(yield* ExecutionHost.intent(RecheckRole.RecheckRole, { executionId, payload: { sessionId } }))
+        const alarm = yield* host.alarm().pipe(Effect.forkChild)
+        yield* Deferred.await(entered)
+        // advance() and the scheduled alarm call this same host.alarm(). Keep the first network request open.
+        const advance = yield* host.alarm().pipe(Effect.forkChild)
+        yield* Effect.sleep(Duration.millis(750))
+        const whileHeld = calls
+        yield* Deferred.succeed(release, undefined)
+        const outcomes = yield* Effect.all([Fiber.join(alarm), Fiber.join(advance)])
+        expect(whileHeld).toBe(1)
+        expect(outcomes.map((outcome) => outcome._tag)).toEqual(["Settled", "Settled"])
+        expect(yield* status(sql, name, executionId)).toBe("completed")
+      }))
+      expect(calls).toBe(1)
+      expect(await signIn.session(cookies)).toMatchObject({ signedIn: true, role: "admin" })
+      expect(signIn.github.calls.filter((step) => step === "refresh")).toHaveLength(heldStep === "refresh" ? 1 : 0)
+    } finally {
+      await app.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DELETE FROM sessions WHERE id = ${sessionId}`))
+    }
+  })
 
   test("with sign-in configured, the deployed flows run auth/RecheckRole and auth/RevokeGitHubToken over the app's tables", async () => {
     const signIn = await signInHarness(app)

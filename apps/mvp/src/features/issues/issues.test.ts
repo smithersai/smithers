@@ -24,6 +24,7 @@ import { Context, Effect, Exit, Fiber, Layer, type ManagedRuntime, Metric, Strea
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
+import * as Conversations from "../../../worker/branch/Conversations.ts"
 import * as Store from "../../../worker/github/Store.ts"
 import * as TriageStore from "../../../worker/github/TriageStore.ts"
 import { CHATAPI_ORIGIN, failingWorker, nodeDevice, openFaultyApp, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
@@ -86,7 +87,7 @@ const REPO_ID = repoId(OWNER, NAME)
 
 /** A signed-in Member with a session: a person's own write runs with that session's GitHub token. */
 const maya: Actor = {
-  subject: { kind: "person", id: "person-maya" },
+  subject: { kind: "person", id: "b521fd9f-9700-4091-9777-30b4fdc382e4" },
   role: "member",
   login: "maya",
   session: "6f1d7c1e-0b7a-4f1c-9d55-2a1c0b8e3f10",
@@ -164,7 +165,7 @@ const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
     WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | Auth | AuthStore | RepoStore | RepoClient | TestChatApi,
     unknown
-  > = openTestApp(options, { actor })
+  > = openTestApp(options, { actor, confirmedSessions: actor === null ? [] : [actor] })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   if (options.sessionLifecycle !== false) await confirmedSession(runtime, actor === null ? "signed_out" : "signed_in")
@@ -813,7 +814,7 @@ describe("who reads a repository's issues", () => {
     expect(pageOf(undefined, undefined, false, false, access(outsider))).toBe("missing")
 
     // GitHub says it is public: a visitor's next page reads it.
-    await Effect.runPromise(visitor.api.github.run(Store.recordRepository(REPO_ID, { githubId: 1, private: false })))
+    await Effect.runPromise(visitor.api.github.run(Effect.flatMap(Store.repositoryObservation, (at) => Store.recordRepository(REPO_ID, { githubId: 1, private: false }, at))))
     await server(visitor.api).seed(4, "Public issue")
     const later = await another(visitor.api)
     await later.runtime.runPromise(readRepositoryRole(OWNER, NAME))
@@ -829,7 +830,7 @@ describe("who reads a repository's issues", () => {
 describe("a refusal evicts what the device holds", () => {
   test("a visitor's cached public issue: once GitHub says the repository is private, the reload asks to sign in and the device forgets it", async () => {
     const visitor = await open({}, null)
-    await Effect.runPromise(visitor.api.github.run(Store.recordRepository(REPO_ID, { githubId: 1, private: false })))
+    await Effect.runPromise(visitor.api.github.run(Effect.flatMap(Store.repositoryObservation, (at) => Store.recordRepository(REPO_ID, { githubId: 1, private: false }, at))))
     await server(visitor.api).seed(4, "Public issue")
     await Effect.runPromise(visitor.api.github.run(Store.upsertComment(REPO_ID, 4, comment(41, "A public comment", "ben"), Date.now())))
     // The visitor reads it on this device, which keeps it.
@@ -847,7 +848,7 @@ describe("a refusal evicts what the device holds", () => {
 
     // GitHub says the repository is private now. The reload restores the cached issue, ChatApi answers that a visitor
     // may not read it, and the device forgets what it kept: the page asks to sign in, with nothing behind it.
-    await Effect.runPromise(visitor.api.github.run(Store.recordRepository(REPO_ID, { githubId: 1, private: true })))
+    await Effect.runPromise(visitor.api.github.run(Effect.flatMap(Store.repositoryObservation, (at) => Store.recordRepository(REPO_ID, { githubId: 1, private: true }, at))))
     const again = openTab(visitor.api, { host })
     runtimes.push(again)
     await confirmedSession(again, "signed_out")
@@ -1046,6 +1047,10 @@ describe("sending", () => {
 describe("doors", () => {
   test("the agent's call opens the issue as the App, for the person; its door is the agent's", async () => {
     const tab = await open()
+    // The default home conversation is a public copy without an installation: its access needs a visibility receipt.
+    await Effect.runPromise(tab.api.github.run(Effect.gen(function* () {
+      yield* Store.recordRepository(yield* Conversations.homeRepository, { private: false }, yield* Store.repositoryObservation)
+    })))
     await tab.actions.open(OWNER, NAME)
     const chat = await tab.runtime.runPromise(Effect.service(Chat))
     const asked = (await chat.actions.ask("Open an issue about the crash"))
@@ -1196,7 +1201,7 @@ describe("triage", () => {
   }, WITHIN)
 
   test("triage/pause through the public durable flow queues one write and replays its receipt", async () => {
-    const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
+    const sam: Actor = { ...maya, subject: { kind: "person", id: "0cf4754e-34ec-45c3-8a4f-997b9c90935f" }, role: "maintainer", login: "sam" }
     // A cold tab makes the authority boundary deterministic, rather than racing the automatic startup read.
     const tab = await open({ sessionLifecycle: false }, sam)
     const auth = await tab.runtime.runPromise(Effect.service(Auth))
@@ -1234,7 +1239,7 @@ describe("triage", () => {
   })
 
   test("a Maintainer's Enable and Pause go to the outbox; a Member's are refused and stay Not sent", async () => {
-    const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
+    const sam: Actor = { ...maya, subject: { kind: "person", id: "0cf4754e-34ec-45c3-8a4f-997b9c90935f" }, role: "maintainer", login: "sam" }
     const tab = await open({}, sam)
     await tab.actions.open(OWNER, NAME)
     tab.actions.enableTriage(OWNER, NAME)
@@ -1279,7 +1284,7 @@ describe("triage", () => {
   }, WITHIN)
 
   test("/triage.enable owner/repo <tokens> sets the flow's daily budget", async () => {
-    const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
+    const sam: Actor = { ...maya, subject: { kind: "person", id: "0cf4754e-34ec-45c3-8a4f-997b9c90935f" }, role: "maintainer", login: "sam" }
     const tab = await open({}, sam)
     await tab.actions.open(OWNER, NAME)
     await signIn(tab.runtime, sam)
@@ -1337,7 +1342,7 @@ test("a cold repository list syncs summary facts only; detail opens persisted bo
   const requested: string[] = []
   const source = { ...ShapeSource.fetchSource, request: (url: string, init: Parameters<ShapeSource.Source["request"]>[1]) =>
     Effect.suspend(() => { requested.push(new URL(url).pathname); return ShapeSource.fetchSource.request(url, init) }) }
-  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: maya })
+  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: maya, confirmedSessions: [maya] })
   runtimes.push(runtime)
   const tab = await tabOf(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
@@ -1370,7 +1375,7 @@ test("a failed body shape cannot mark the healthy list unavailable after navigat
       ? Effect.succeed(new Response(null, { status: 503 }))
       : ShapeSource.fetchSource.request(url, init),
   })
-  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: maya })
+  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: maya, confirmedSessions: [maya] })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   const tab = await tabOf(runtime)
@@ -1431,7 +1436,7 @@ test("a failed local Create receipt cannot change a later page", async () => {
 }, WITHIN)
 
 test("an old comment admission cannot clear or fail a later page's draft", async () => {
-  const runtime = openFaultyApp({}, undefined, { actor: maya })
+  const runtime = openFaultyApp({}, undefined, { actor: maya, confirmedSessions: [maya] })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   expect(await (await api.fetch(`${api.origin}/api/auth/session`)).json()).toMatchObject({

@@ -47,6 +47,7 @@ import { fixture, type GitHubRepository, type Scripted, scripted as makeScripted
 import { GITHUB_API, type ScriptedGitHub, scriptedGitHub } from "./githubRest.ts"
 import { build, type Engine } from "./flowHost.ts"
 import { signedIn, type testFile } from "./harness.ts"
+import { shapeRequest } from "./shapeRequest.ts"
 import { outsideWeb, type Page } from "./pages.ts"
 
 type Runtime = ReturnType<typeof testFile>
@@ -55,8 +56,7 @@ type Runtime = ReturnType<typeof testFile>
 export const member: Actor.Actor = { subject: { kind: "person", id: "octocat" }, role: "member" }
 
 /**
- * Electric's shape of `table` in this file's schema: open (created if need be) at its latest offset. A truncate reaches
- * it as `409 must-refetch` once Electric has replicated it, which `truncated` waits for.
+ * Electric's shape of `table` in this file's schema, at its latest offset before deleting old fixture rows.
  */
 const openShape = (table: string) =>
   Effect.gen(function* () {
@@ -64,7 +64,7 @@ const openShape = (table: string) =>
     const shape = `${yield* TestDatabase.electricUrl}/v1/shape?table=${name}.${table}`
     let at = "offset=-1"
     for (;;) {
-      const response = yield* Effect.promise((signal) => fetch(`${shape}&${at}`, { signal }))
+      const response = yield* shapeRequest(`${shape}&${at}`, "open")
       if (!response.ok) return yield* Effect.die(new Error(`Electric answered ${response.status} for ${table}`))
       const body = (yield* Effect.promise(() => response.json())) as ReadonlyArray<{ readonly headers?: { readonly control?: string } }>
       at = `offset=${response.headers.get("electric-offset")}&handle=${response.headers.get("electric-handle")}`
@@ -72,36 +72,44 @@ const openShape = (table: string) =>
     }
   })
 
-/** Waits until Electric has replicated a truncate of the shape `openShape` opened: it answers 409 must-refetch. */
-const truncated = ({ shape, at }: { readonly shape: string; readonly at: string }) =>
+/** Wait for each old row's real replication receipt, retaining the shape and its publication membership. */
+const deleted = ({ shape, at }: { readonly shape: string; readonly at: string }, ids: ReadonlyArray<string>) =>
   Effect.gen(function* () {
+    const pending = new Set(ids)
     let next = at
-    for (;;) {
-      const response = yield* Effect.promise((signal) => fetch(`${shape}&${next}&live=true`, { signal }))
-      yield* Effect.promise(() => response.text())
-      if (response.status === 409) return
-      if (!response.ok) return yield* Effect.die(new Error(`Electric answered ${response.status} after a truncate`))
+    while (pending.size > 0) {
+      const response = yield* shapeRequest(`${shape}&${next}&live=true`, "delete")
+      if (!response.ok) return yield* Effect.die(new Error(`Electric answered ${response.status} after deleting repository fixtures`))
+      const body = (yield* Effect.promise(() => response.json())) as ReadonlyArray<{
+        readonly headers?: { readonly operation?: string }; readonly value?: { readonly id?: string }
+      }>
+      for (const row of body) {
+        if (row.headers?.operation === "delete" && row.value?.id !== undefined) pending.delete(row.value.id)
+      }
       next = `offset=${response.headers.get("electric-offset")}&handle=${response.headers.get("electric-handle")}`
     }
   })
 
 /**
- * Empties the repository tables and the clones' feed rows, and resumes imports, for a test that starts from nothing.
- * It returns once Electric has replicated the truncate: until then Electric still serves the shapes it had, so a tab
- * the next test opens would start from the last test's rows.
+ * Remove the file's old rows, then wait for their deletes in Electric. TRUNCATE invalidated every shape, forcing
+ * a new snapshot and publication reconfiguration before every test on the shared Electric. It also held exclusive
+ * table locks while scanning the shared foreign-key catalog. DELETE needs neither; empty fixtures need no snapshot.
  */
 export const resetRepos = (runtime: Runtime) =>
   runtime.runPromise(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
-      const shapes = yield* Effect.forEach([REPOSITORIES_TABLE], openShape)
-      yield* sql`TRUNCATE repositories, code_storage_usage`
-      yield* sql`TRUNCATE clone_requests`
-      yield* sql`DELETE FROM notifications WHERE kind = 'clone'`
-      yield* sql`UPDATE repo_imports SET paused = false`
-      yield* Effect.forEach(shapes, truncated, { discard: true })
+      const rows = yield* sql<{ readonly id: string }>`SELECT id FROM repositories`
+      const shape = rows.length === 0 ? undefined : yield* openShape(REPOSITORIES_TABLE)
+      yield* sql.withTransaction(Effect.gen(function* () {
+        yield* sql`DELETE FROM repositories`
+        yield* sql`DELETE FROM code_storage_usage`
+        yield* sql`DELETE FROM clone_requests`
+        yield* sql`DELETE FROM notifications WHERE kind = 'clone'`
+        yield* sql`UPDATE repo_imports SET paused = false`
+      }))
+      if (shape !== undefined) yield* deleted(shape, rows.map(row => row.id))
     }).pipe(
-      // Inside the hook's 30 s, so a stalled Electric fails the hook with this, and its requests are cancelled.
       Effect.timeout("20 seconds"),
       Effect.orDie,
     ),
@@ -124,6 +132,9 @@ const objectStorage = (): ExecutionHost.Storage => {
 export interface RepoHarnessOptions {
   /** A controlled application clock for deadline tests; all dependencies remain real. */
   readonly clock?: Clock.Clock
+  /** Fixed local developers use the real local copy policy; false exercises production visibility checks. */
+  readonly localCopies?: boolean
+
   /** Who is signed in on every request: `member` unless set; `null` is signed out. */
   readonly actor?: Actor.Actor | null
   /** Sessions in place of `actor`, such as ones that can't be read. */
@@ -289,10 +300,13 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     repository: repositoryOf(options.roles ?? "smithersai/smithers"),
     app: Option.none(),
   })))
+  const copyRoles = options.localCopies === false ? roles : await runtime.runPromise(observed(RepoRoles.make(database, {
+    repository: repositoryOf(options.roles ?? "smithersai/smithers"), app: Option.none(), local: true,
+  })))
   const handler = HttpEffect.toWebHandler(
     observed(
       repo.fetch.pipe(
-        Effect.provide(options.branchRoles ?? BranchRoles.layer(roles)),
+        Effect.provide(options.branchRoles ?? BranchRoles.layer(copyRoles)),
         Effect.provide(
           options.sessions ?? (options.actor === null ? Actor.signedOut : signedIn(options.actor ?? member)),
         ),

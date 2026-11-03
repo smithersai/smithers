@@ -1,7 +1,7 @@
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Effect, Metric, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { isRateLimited } from "./Calls.ts"
+import { classify, isRateLimited } from "./Calls.ts"
 import type { Repository } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
 import type { ReadToken } from "./ReadToken.ts"
@@ -14,12 +14,20 @@ export const remainingBucket = (raw: string | undefined): string => {
 }
 
 /** Each invocation owns its client and I/O, including the response diagnostics. */
-export const read = (target: Repository, apiBaseUrl: string, readToken: ReadToken, http: HttpClient.HttpClient) =>
+export const readDetailed = (target: Repository, apiBaseUrl: string, readToken: ReadToken, http: HttpClient.HttpClient) =>
   Effect.gen(function* () {
     let statusClass = "none"
     let remaining = "unknown"
     let headerLimited = false
+    let headerRetrySeconds: number | undefined
+    const clock = yield* Clock.Clock
     const observed = HttpClient.make((request) => http.execute(request).pipe(Effect.tap((response) => Effect.sync(() => {
+      const rawRetry = response.headers["retry-after"]
+      const relative = rawRetry === undefined ? NaN : Number(rawRetry)
+      const serverNow = Date.parse(response.headers["date"] ?? "")
+      const retry = Number.isFinite(relative) ? relative :
+        (Date.parse(rawRetry ?? "") - (Number.isFinite(serverNow) ? serverNow : clock.currentTimeMillisUnsafe())) / 1000
+      if (Number.isFinite(retry) && retry > 0) headerRetrySeconds = Math.ceil(retry)
       statusClass = `${Math.floor(response.status / 100)}xx`
       remaining = remainingBucket(response.headers["x-ratelimit-remaining"])
       headerLimited = (response.status === 403 || response.status === 429) &&
@@ -40,8 +48,15 @@ export const read = (target: Repository, apiBaseUrl: string, readToken: ReadToke
       remaining, errorCode: failed ? result.failure.reason : "none" }
     yield* Metric.update(Metric.withAttributes(Metrics.visibilityReads, attributes), 1)
     yield* Effect.logInfo("github.visibility").pipe(Effect.annotateLogs({ repoId: target.id, ...attributes }))
-    return visible
+    const failure = failed ? classify(result.failure) : undefined
+    const retryAfterSeconds = headerRetrySeconds ?? (failure?.kind === "retry" && failure.retryAfterMillis !== undefined
+      ? Math.max(1, Math.ceil(failure.retryAfterMillis / 1000)) : undefined)
+    return { visible, rateLimited: headerLimited || (failed && isRateLimited(result.failure)), retryAfterSeconds }
   }).pipe(Effect.withSpan("github.visibility"))
+
+/** Metadata visibility for readers that need no refusal details. */
+export const read = (target: Repository, apiBaseUrl: string, readToken: ReadToken, http: HttpClient.HttpClient) =>
+  Effect.map(readDetailed(target, apiBaseUrl, readToken, http), (answer) => answer.visible)
 
 /** A current metadata answer is less than 60 seconds old. Only completed values cross requests. */
 export const TTL_MS = 60_000

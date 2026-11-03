@@ -644,3 +644,5 @@ a later successful probe does not resolve an earlier truncation.
 The real sandbox Docker suites share `worker/test/sandboxImage.globalSetup.ts`: when selected, they pack this checkout’s CLI with `infra/sandbox/pack-cli.mjs` and build the deployment Dockerfile once before test workers start. A targeted run without these suites does no image work.
 
 Production Neon certificate-chain verification is owner-run; the owned TLS fixture does not establish that chain.
+
+`pnpm test` owns an isolated Postgres and Electric through `db/test-stack.sh`, as the chat fixture fix does. Use `MVP_TEST_STACK=external pnpm test` only with caller-owned isolated endpoints. Direct `pnpm exec vitest` bypasses this isolation. Repository fixture cleanup deletes rows and waits for their Electric delete records; it never truncates a live shape or retries a snapshot refusal.

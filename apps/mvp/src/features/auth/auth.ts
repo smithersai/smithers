@@ -1,5 +1,6 @@
 import { Context, Deferred, Effect, Layer, Queue, Stream } from "effect"
 import { runners } from "../../boundary"
+import { FlowDispatch } from "../../flows/dispatch"
 import { check, load, pressSignIn, refresh, restore, signOut } from "./actions"
 import type { AuthClient } from "./api"
 import type { DeviceWipe } from "./device"
@@ -40,8 +41,10 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
     Auth,
     Effect.gen(function* () {
       const store = yield* AuthStore
-      const { runSync: run } = runners(yield* Effect.context<AuthStore | AuthClient | DeviceWipe>(), "auth")
-      const reload = Effect.asVoid(Effect.forkIn(load, store.scope, { startImmediately: true }))
+      const { runSync: run } = runners(yield* Effect.context<AuthStore | AuthClient | DeviceWipe | FlowDispatch>(), "auth")
+      const reload = Effect.asVoid(Effect.forkIn(load.pipe(
+        Effect.tap((outcome) => outcome === "unreachable" || outcome === "unconfirmed" ? refresh : Effect.void),
+      ), store.scope, { startImmediately: true }))
       yield* Effect.forkIn(restore, store.scope, { startImmediately: true })
       return Auth.of({
         queries: { session: store.sessionState.tanstack, confirmed: store.confirmedState.tanstack },
@@ -76,7 +79,7 @@ export const bindSessionConnectivity = (target: EventTarget) => Effect.gen(funct
     yield* Deferred.succeed(listening, undefined)
   }))
   yield* source.pipe(Stream.runForEach((via) => check(via).pipe(
-    Effect.flatMap((outcome) => outcome === "unreachable" ? refresh : Effect.void),
+    Effect.flatMap((outcome) => outcome === "unreachable" || outcome === "unconfirmed" ? refresh : Effect.void),
   )), Effect.ensuring(Effect.logInfo("auth.session_subscription").pipe(Effect.annotateLogs({ stage: "stopped" }))), Effect.forkScoped({ startImmediately: true }))
   yield* Deferred.await(listening)
   yield* Effect.logInfo("auth.session_subscription").pipe(Effect.annotateLogs({ stage: "listening" }))

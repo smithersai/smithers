@@ -45,10 +45,10 @@ export const checkSession = Effect.gen(function* () {
   const outcome = Option.match(reply, { onNone: () => "gone" as const, onSome: (answered) => answered.output.outcome })
   yield* Effect.annotateCurrentSpan({ "smithers.auth.outcome": outcome })
   const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-  yield* Effect.logWithLevel(outcome === "unreachable" ? "Warn" : "Info")("auth.refresh.check").pipe(
+  yield* Effect.logWithLevel(outcome === "unreachable" || outcome === "unconfirmed" ? "Warn" : "Info")("auth.refresh.check").pipe(
     Effect.annotateLogs({ outcome, executionId, durationMs, feature: "auth" }),
   )
-  if (outcome === "unreachable") return yield* new SessionUnreachable()
+  if (outcome === "unreachable" || outcome === "unconfirmed") return yield* new SessionUnreachable()
   return { outcome }
 }).pipe(Effect.withSpan("auth.refresh.check"))
 

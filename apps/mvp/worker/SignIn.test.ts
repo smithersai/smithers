@@ -13,6 +13,20 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type SessionState } from "../src/features/auth/contract.ts"
 import * as Flows from "./Flows.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
+import * as RecheckRole from "./flows/RecheckRole.ts"
+import * as ShapeAccess from "./ShapeAccess.ts"
+import * as HomeApi from "./home/Api.ts"
+import { repoHarness, resetRepos } from "./test/repos.ts"
+import { refsRoute } from "../src/features/repo/contract.ts"
+import { githubHarness } from "./github/test/harness.ts"
+import { scriptedGitHub as scriptedRepository } from "./github/test/scriptedGitHub.ts"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Sessions as ActorSessions } from "./Actor.ts"
+import * as SessionStore from "./SessionStore.ts"
+import * as RepoRoles from "./github/RepoRoles.ts"
+import { branchAccess, BranchRoles } from "./branch/Access.ts"
+import * as Audit from "./runners/Audit.ts"
+import { HttpEffect } from "effect/http"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SignIn from "./SignIn.ts"
 import { devRoles, localDeveloper, newcomer, STRANGERS_REPOSITORY } from "./DevChatApi.ts"
@@ -276,14 +290,15 @@ describe("the callback", () => {
     const h = await signInHarness(runtime)
     const { cookies } = await h.signInAs()
     const [row] = await query((sql) =>
-      sql<{ readonly expiresAt: string }>`SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt" FROM sessions`)
-    const databaseNow = async () => Number((await query((sql) => sql<{ now: string }>`SELECT (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS now`))[0]!.now)
-    const before = await databaseNow()
+      sql<{ readonly expiresAt: string; readonly serverNow: string }>`SELECT
+        (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow" FROM sessions`)
     const answer = await h.session(cookies) as SessionState & { readonly expiresAt?: number; readonly serverNow?: number }
-    const after = await databaseNow()
+    const [after] = await query((sql) => sql<{ readonly serverNow: string }>`SELECT
+      (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"`)
     expect(answer).toMatchObject({ signedIn: true, expiresAt: Number(row!.expiresAt) })
-    expect(answer.serverNow).toBeGreaterThanOrEqual(before)
-    expect(answer.serverNow).toBeLessThanOrEqual(after)
+    expect(answer.serverNow).toBeGreaterThanOrEqual(Number(row!.serverNow))
+    expect(answer.serverNow).toBeLessThanOrEqual(Number(after!.serverNow))
     expect(answer.expiresAt! - answer.serverNow!).toBeGreaterThan(0)
     // The session's end moves when the server's row does.
     await query((sql) => sql`UPDATE sessions SET expires_at = expires_at - interval '1 day'`)
@@ -617,6 +632,95 @@ describe("roles", () => {
       await Effect.runPromise(Deferred.succeed(release, undefined))
       await pending
     }
+  })
+
+  test.each(["write", "admin"] as const)("expired %s preserves identity and retries protected reads during a real failed recheck", async (permission) => {
+    const pending: Array<string> = []
+    const h = await signInHarness(runtime, { roleChecks: { start: (id) => Effect.sync(() => void pending.push(id)) } })
+    h.github.permission = permission
+    const { cookies } = await h.signInAs()
+    const [session] = await sessionRows()
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const roles = await runtime.runPromise(RepoRoles.make(scratch.database, {
+      repository: repositoryOf("smithersai/smithers"), app: Option.none(),
+    }))
+    const repositoryGitHub = scriptedRepository("smithersai", "smithers")
+    repositoryGitHub.private = true
+    const repositoryApi = await githubHarness(runtime, { own: roles.repository, github: repositoryGitHub, roles, sessions: h.sessions })
+    const paint = () => repositoryApi.fetch("/api/repos/smithersai/smithers/first-paint?list=all", { headers: { cookie: cookie(cookies) } })
+    const handler = HttpEffect.toWebHandler(Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      if (request.url.endsWith("/role")) return yield* HomeApi.make({ roles }).fetch
+      if (request.url.endsWith("/shape")) return yield* ShapeAccess.actor.pipe(Effect.as(HttpServerResponse.text("shape")),
+        Effect.catch(() => Effect.succeed(HttpServerResponse.empty({ status: 503, headers: { "retry-after": "5" } }))))
+      return yield* Audit.make(scratch.database).fetch
+    }).pipe(Effect.provide(h.sessions)))
+    const request = (path: string) => handler(new Request(`http://smithers.test${path}`, { headers: { cookie: cookie(cookies) } }))
+    await resetRepos(runtime)
+    const mirror = await repoHarness(runtime)
+    mirror.github.publish("octocat", "Spoon-Knife")
+    await mirror.seed("octocat", "Spoon-Knife")
+    const refsApi = await repoHarness(runtime, { sessions: h.sessions, scripted: mirror.scripted, keepAbout: true })
+    const readRefs = () => refsApi.fetch(refsRoute("octocat", "Spoon-Knife"), { headers: { cookie: cookie(cookies) } })
+    const healthyRefs = await Promise.all(Array.from({ length: 20 }, readRefs))
+    expect(healthyRefs.filter((r) => r.status === 503)).toHaveLength(0)
+    expect(healthyRefs.every((r) => r.status === 200)).toBe(true)
+    const healthy = await Promise.all(Array.from({ length: 20 }, () => request("/api/repos/smithersai/smithers/role")))
+    expect(healthy.filter((r) => r.status === 503)).toHaveLength(0)
+    expect(healthy.every((r) => r.status === 200)).toBe(true)
+    expect((await paint()).status).toBe(200)
+    // An active session renews five minutes before expiry, while both protected routes still work.
+    await query((sql) => sql`UPDATE sessions SET role_verified_at = now() - interval '55 minutes', role_checked_at = now() - interval '55 minutes'`)
+    expect((await request("/api/repos/smithersai/smithers/role")).status).toBe(200)
+    expect((await readRefs()).status).toBe(200)
+    expect(pending).toContain(session!.id)
+    const earlySteps = RecheckRole.steps(scratch.database, Option.getOrThrow(h.signIn.configured))
+    await Effect.runPromise(earlySteps.check(session!.id, { kind: "none" }))
+    // Five minutes later crosses the old receipt's hour boundary, not the renewed receipt's.
+    await query((sql) => sql`UPDATE sessions SET role_verified_at = role_verified_at - interval '5 minutes', role_checked_at = role_checked_at - interval '5 minutes'`)
+    const acrossHour = await Promise.all(Array.from({ length: 20 }, async () => [
+      (await request("/api/repos/smithersai/smithers/role")).status, (await readRefs()).status,
+    ]))
+    expect(acrossHour.flat().filter((status) => status === 503)).toHaveLength(0)
+    expect(acrossHour.flat().every((status) => status === 200)).toBe(true)
+    await query((sql) => sql`UPDATE sessions SET role_verified_at = now() - interval '61 minutes', role_checked_at = now() - interval '61 minutes'`)
+    h.github.faults.permission = "unavailable"
+    const identity = await h.session(cookies)
+    expect(identity).toMatchObject({ signedIn: true, role: permission === "write" ? "member" : "admin", roleConfirmed: false })
+    expect(pending).toContain(session!.id)
+    const setup = Option.getOrThrow(h.signIn.configured)
+    const steps = RecheckRole.steps(scratch.database, setup)
+    expect((await Effect.runPromise(Effect.result(steps.check(session!.id, { kind: "none" }))))._tag).toBe("Failure")
+    await Effect.runPromise(steps.keep(session!.id))
+    for (const path of ["/api/repos/smithersai/smithers/role", Audit.ROUTE, "/shape"]) {
+      const refused = await request(path)
+      expect([refused.status, refused.headers.get("retry-after")], path).toEqual([503, "5"])
+    }
+    expect((await paint()).status).toBe(204)
+    expect(await h.session(cookies)).toMatchObject({ signedIn: true, role: permission === "write" ? "member" : "admin" })
+    delete h.github.faults.permission
+    await Effect.runPromise(steps.check(session!.id, { kind: "none" }))
+    expect((await request("/api/repos/smithersai/smithers/role")).status).toBe(200)
+    console.info("authority-path-cost", { permission, healthyRequests: healthy.length, healthy503: 0, healthyRefs: healthyRefs.length, healthyRefs503: 0, firstPaint: 200,
+      expiredProtected503: 3, expiredFirstPaint: 204, recoveredRole: 200, roleChecks: pending.length })
+  })
+
+  test("a failed recheck copies the effective role's confirmation without renewing it", async () => {
+    const h = await signInHarness(runtime)
+    h.github.permission = "admin"
+    await h.signInAs()
+    h.github.permission = "write"
+    await h.signInAs()
+    const [first, second] = await sessionRows()
+    await query((sql) => sql`UPDATE sessions SET role_verified_at = now() - interval '61 minutes' WHERE id = ${second!.id}`)
+    const [before] = await query((sql) => sql<{ verified: string }>`SELECT role_verified_at::text AS verified FROM sessions WHERE id = ${second!.id}`)
+    await runtime.runPromise(SessionStore.keepRole(first!.id))
+    const [after] = await query((sql) => sql<{ verified: string; role: string }>`SELECT role_verified_at::text AS verified, role FROM sessions WHERE id = ${first!.id}`)
+    expect(after).toEqual({ verified: before!.verified, role: "member" })
+    const authority = Option.getOrThrow(await runtime.runPromise(SessionStore.authority(first!.id, null)))
+    expect(authority.role).toBe("member")
+    expect(authority.serverNow - authority.roleVerifiedAt!).toBeGreaterThan(60 * 60_000)
+    expect((await runtime.runPromise(Effect.result(SessionStore.freshRole({ subject: { kind: "person", id: first!.personId }, role: "admin", session: first!.id }))))._tag).toBe("Failure")
   })
 
   test("a role over an hour old starts a role check named after the check it replaces; a fresh one doesn't", async () => {

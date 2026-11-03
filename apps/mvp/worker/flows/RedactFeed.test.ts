@@ -425,3 +425,63 @@ test("through ExecutionHost: a pass stalled after handing off to its next round'
   expect(await query(`SELECT completed_at IS NOT NULL AS done FROM feed_barriers WHERE id = 'b20'`)).toEqual([{ done: true }])
   expect(await shown()).toEqual(EXPECTED)
 }, 120_000)
+
+
+test("a failed successor receipt keeps the predecessor retryable before it settles", async () => {
+  await barrier("handoff-fault")
+  const db = await database()
+  const url = (await runtime.runPromise(TestDatabase.serverUrl)).toString()
+  const engineSchema = TestSchemas.schemaName("flows")
+  onTestFinished(() => query(`DROP SCHEMA IF EXISTS "${engineSchema}" CASCADE`).then(() => undefined))
+  await query(`CREATE FUNCTION refuse_handoff() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'handoff receipt unavailable'; END $$`)
+  await query(`CREATE TRIGGER refuse_handoff BEFORE UPDATE OF current_execution ON feed_barriers
+    FOR EACH ROW EXECUTE FUNCTION refuse_handoff()`)
+  onTestFinished(async () => {
+    await query(`DROP TRIGGER IF EXISTS refuse_handoff ON feed_barriers`)
+    await query(`DROP FUNCTION IF EXISTS refuse_handoff()`)
+  })
+  type ObjectHost = ReturnType<typeof ExecutionHost.make<never, never, never, unknown, never, unknown, never>>
+  const objects = new Map<string, ObjectHost>()
+  const settled: Array<string> = []
+  const starts: Array<string> = []
+  const objectFor = (id: string): ObjectHost => {
+    const existing = objects.get(id)
+    if (existing) return existing
+    const values = new Map<string, unknown>()
+    const host = ExecutionHost.make({
+      get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),
+      put: (key, value) => Effect.sync(() => void values.set(key, structuredClone(value))),
+      delete: (key) => Effect.sync(() => values.delete(key)),
+      setAlarm: () => Effect.void,
+      deleteAlarm: () => Effect.void,
+    }, {
+      hostId: `handoff-${id}`, database: ExecutionHost.database(url, engineSchema),
+      flows: { flows: [RedactFeed.RedactFeed], registration: RedactFeed.registration(db, 2) },
+      router: {
+        start: RedactFeed.recordingHandoffs((intent) => objectFor(intent.executionId).start(intent).pipe(
+          Effect.tap(() => Effect.sync(() => void starts.push(intent.executionId)))), db),
+        wake: (executionId) => Effect.asVoid(objectFor(executionId).wake()),
+      },
+      settled: (executionId) => Effect.sync(() => void settled.push(executionId)),
+    })
+    objects.set(id, host)
+    return host
+  }
+  const first = RedactFeed.executionIdOf("handoff-fault")
+  const predecessor = objectFor(first)
+  await Effect.runPromise(ExecutionHost.intent(RedactFeed.RedactFeed, {
+    executionId: first, payload: RedactFeed.startOf("handoff-fault"),
+  }).pipe(Effect.flatMap(predecessor.start)))
+  expect(await Effect.runPromise(predecessor.alarm())).toMatchObject({ _tag: "Retrying" })
+  expect(settled).toEqual([])
+  expect(starts).toHaveLength(1)
+  const successor = starts[0]!
+  expect(await query(`SELECT current_execution FROM feed_barriers WHERE id = 'handoff-fault'`)).toEqual([{ current_execution: null }])
+  // Repair the dependency, then fire the durable alarm directly; no wall-clock wait.
+  await query(`DROP TRIGGER refuse_handoff ON feed_barriers`)
+  expect(await Effect.runPromise(predecessor.alarm())).toMatchObject({ _tag: "Settled" })
+  expect(starts).toEqual([successor, successor])
+  expect(await query(`SELECT current_execution FROM feed_barriers WHERE id = 'handoff-fault'`)).toEqual([{ current_execution: successor }])
+  expect(settled).toEqual([first])
+})

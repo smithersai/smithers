@@ -485,7 +485,7 @@ describe("GET /api/shapes/notifications", () => {
     expect(synced.every((row) => row.recipient === "person-ben")).toBe(true)
     expect(Object.fromEntries(upstream[0]!.searchParams)).toMatchObject({
       table: "notifications",
-      where: "recipient = $1",
+      where: "recipient = $1 AND feed_readable = true",
       "params[1]": "person-ben",
       columns: Notifications.SYNCED_NOTIFICATION_COLUMNS.join(","),
     })
@@ -499,10 +499,10 @@ describe("GET /api/shapes/notifications", () => {
     const theirs = await proxy(guest)
     expect((await theirs.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
     expect(theirs.upstream[0]!.searchParams.get("params[1]")).toBe(guest.subject.id)
-    expect(theirs.upstream[0]!.searchParams.get("where")).toBe("recipient = $1 AND mine = true")
+    expect(theirs.upstream[0]!.searchParams.get("where")).toBe("recipient = $1 AND mine = true AND feed_readable = true")
     const member = await proxy(ann)
     expect((await member.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
-    expect(member.upstream[0]!.searchParams.get("where")).toBe("recipient = $1")
+    expect(member.upstream[0]!.searchParams.get("where")).toBe("recipient = $1 AND feed_readable = true")
   })
 
   test("a former Member's rows of others' runs stay theirs in Postgres but no longer sync; their own do", async () => {
@@ -578,6 +578,17 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
     await watch(await person(CAT, [{ role: "member" }]), "muted")
   }
   const mainRows = () => rows(`main:${REPOSITORY.id}`)
+
+  test("recorded denial prevents repository events recreating a deployment Member's notice", async () => {
+    const denied = "00000000-0000-4000-8000-000000000de2"
+    await watch(await person(denied, [{ role: "member" }]), "all")
+    await runtime.runPromise(RepoRoles.remember(REPOSITORY.id, denied, null, new Date().toISOString()))
+    expect(await runtime.runPromise(Notifications.recordRepoEvent({
+      kind: "main", repoId: REPOSITORY.id, ref: SHA("a"), title: "private repository", actor: null,
+      occurredAt: new Date(), href: "/acme/private",
+    }))).toBe(0)
+    expect(await rows(`main:${REPOSITORY.id}`)).toEqual([])
+  })
 
   test("local development watchers without sessions hear events only while their fixed role may read", async () => {
     for (const id of ["local-member", "local-guest", "local-roleless", "unknown"]) await watch(id, "all")
@@ -872,6 +883,16 @@ describe("a run on a repository's branch quotes its question only to its launche
     await Promise.all([blocker, forward, backward])
     expect((await rows(Notifications.runSubject(first.runId))).map((row) => row.state)).toEqual(["done", "done"])
     expect((await rows(Notifications.runSubject(second.runId))).map((row) => row.state)).toEqual(["done", "done"])
+  })
+
+  test("recorded denial prevents later branch reports recreating a watcher's private notice", async () => {
+    const { runId } = await run("person-allowed", "person-denied-watcher")
+    await deny("person-denied-watcher")
+    expect(await rowOf(Notifications.runSubject(runId), "person-denied-watcher")).toBeUndefined()
+    await sql(`UPDATE runs SET status = 'done', waiting = NULL WHERE id = $1`, runId)
+    await foldAll([runId])
+    expect(await rowOf(Notifications.runSubject(runId), "person-denied-watcher")).toBeUndefined()
+    expect(await rowOf(Notifications.runSubject(runId), "person-allowed")).toMatchObject({ state: "done" })
   })
 
   test("a launcher whose first role read never heard from GitHub still hears of their run", async () => {

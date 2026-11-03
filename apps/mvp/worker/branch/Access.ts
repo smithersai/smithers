@@ -19,8 +19,8 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 //
 // The role every check decides with is the person's on the branch's own repository (decision 0079), from
 // `BranchRoles`: on a repository the App is installed on (as Smithers recorded it), the role `RepoRoles` gives there,
-// so a Member of the deployment's repository is only a Guest on another where GitHub says read; on any other, nothing
-// done in the branch reaches GitHub, and the session's role on the deployment's repository decides, as before 0079.
+// so a Member of the deployment's repository is only a Guest on another where GitHub says read. Without an
+// installation, only a recorded public repository admits the deployment's role; private or unknown visibility denies.
 //
 // Seams for the features beside this one (no tables of their own):
 // - Notifications (worker/Notifications.ts) route a run on a branch to the people watching it: a watcher whose
@@ -97,12 +97,18 @@ export const underPolicy = (policy: Policy, principal: string, role: Role | null
 export class BranchRoles extends Context.Service<
   BranchRoles,
   {
+    /** The resolver's configured grant route, including allowlist/App public fallback. */
+    readonly grantBasis?: (repoId: string, installed: boolean) => RepoRoles.WorkBasis
+    /** Its actual permission freshness window. */
+    readonly grantFreshSeconds?: number
     readonly roleOn: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused>
     /**
      * The role on a repository Smithers recorded no App installation on, asking no one (`RepoRoles.uninstalledRole`).
      * Absent, the session's.
      */
     readonly uninstalled?: (actor: Actor, repoId: string) => Role | null
+    /** Fail-closed access to a copy without the App, checked against its recorded visibility. */
+    readonly workUninstalled?: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused>
     /**
      * The role GitHub gives `actor` on `repoId` (`RepoRoles.resolve`), with no fallback: none where the deployment can't
      * act on it (`RepoRoles.CANT_ACT`), and the row it came from (`held`), which the write that grants a machine access
@@ -117,9 +123,15 @@ export class BranchRoles extends Context.Service<
       BranchRoles,
       Effect.map(Effect.context<R>(), (context) =>
         BranchRoles.of({
+          grantBasis: (repoId, installed) => roles.workBasis?.(repositoryOf(repoId.replace(/^github\//, "")), installed)
+            ?? (installed ? repoId === roles.repository.id ? "deployment" : "repository" : "public"),
+          grantFreshSeconds: roles.freshSeconds ?? RepoRoles.FRESH_SECONDS,
           roleOn: (actor, repoId) =>
             RepoRoles.workRole(roles, actor, repositoryOf(repoId.replace(/^github\//, ""))).pipe(Effect.provideContext(context)),
           uninstalled: (actor, repoId) => RepoRoles.uninstalledRole(roles, actor, repositoryOf(repoId.replace(/^github\//, ""))),
+          workUninstalled: (actor, repoId) => RepoRoles.workUninstalled(roles, actor, repositoryOf(repoId.replace(/^github\//, ""))).pipe(
+            Effect.provideContext(context),
+          ),
           repoRoleOn: (actor, repoId) =>
             roles.resolve(actor, repositoryOf(repoId.replace(/^github\//, ""))).pipe(
               Effect.catch((refused) => RepoRoles.CANT_ACT.has(refused.code) ? Effect.succeed(NO_ROLE) : Effect.fail(refused)),
@@ -131,8 +143,7 @@ export class BranchRoles extends Context.Service<
 
 /**
  * The role `actor` works with on repository `repoId` (`installed`: whether Smithers recorded the App's installation on
- * it): `BranchRoles`' where the App is installed, else the session's (or local development's own), asking GitHub
- * nothing.
+ * it): `BranchRoles`' where the App is installed; otherwise its fail-closed public-copy check, asking GitHub nothing.
  */
 export const roleOn = (
   actor: Actor,
@@ -142,6 +153,7 @@ export const roleOn = (
   Effect.gen(function* () {
     const roles = yield* BranchRoles
     if (installed) return yield* roles.roleOn(actor, repoId)
+    if (roles.workUninstalled !== undefined) return yield* roles.workUninstalled(actor, repoId)
     return roles.uninstalled === undefined ? actor.role : roles.uninstalled(actor, repoId)
   })
 

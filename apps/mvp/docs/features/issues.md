@@ -409,3 +409,9 @@ transaction locks and checks the current role against Maintainer/Admin permissio
 so a promotion still permits the operation. A failed role read leaves the write pending
 for the existing durable retry policy, including GitHub's retry delay; an actual loss
 of permission refuses it. Session and alias liveness are still checked at commit.
+
+Concurrent uninstalled-visibility observations use the database clock. If an older update loses, a separate statement reads the winning receipt; only a receipt within the existing 60-second bound decides public/private access.
+
+Visibility misses share the role reader's bounded coordination primitive, with a repository-wide SQL lease (migration 0103) rather than a person-scoped one. Successful readers share a fresh 60-second receipt. Failure converts the claim to a cooldown without renewing visibility; rate limits retain the full Retry-After in seconds or HTTP-date form. Other repositories remain independent. Cancellation leaves a bounded lease; no transaction is held during GitHub I/O.
+
+Reconciliation captures Postgres observation time before requesting repository metadata. Its visibility receipt and RepoRoles' visibility reads use the same conditional upsert: only an observation newer than the stored receipt can replace it. A delayed public response cannot supersede a private receipt or renew its age after installation removal. This adds one timestamp query per reconciliation walk.

@@ -126,13 +126,14 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
     const walked = yield* Effect.gen(function* () {
       const client = yield* GitHub.GitHubClient.GitHubClient
       // Whether the repository is public decides who may read its rows without signing in (worker/github/Api.ts).
+      const observedAt = yield* Store.repositoryObservation
       const facts = yield* client.request(
         "GET",
         `/repos/${GitHub.Repository.repositoryPath(repository.owner, repository.name)}`,
         undefined,
         { schema: RepositoryFacts },
       )
-      yield* Store.recordRepository(repository.id, { githubId: facts.id, private: facts.private })
+      yield* Store.recordRepository(repository.id, { githubId: facts.id, private: facts.private }, observedAt)
       const adapter = GitHub.Sync.make({
         connectionId: repository.id,
         owner: repository.owner,
