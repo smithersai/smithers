@@ -122,6 +122,7 @@ Make TODO drafts a TODO from an issue, linked to it (Will, 2026-10-20). Everythi
 
 - The step asks the tab that started it to keep the draft. A title or prompt the call left out is the issue's title, or its body (its title when the body is blank), cut to a TODO's limits (`draftFromIssue`); the agent may pass better ones. The press opens the stack, where the draft shows with its issue `#12`.
 - The person commits it like any TODO. The commit carries `issue`, and the writer stores it in `todos.issue_number` (migration `0027_todo_issue`), set once.
+- The issue is the TODO's parent: a TODO is a leaf under exactly one issue (decision [0153](../decisions/0153-issues-are-a-tree-todos-are-its-leaves.md)). Being built: a person's `attach` sets the issue of a TODO whose issue is null or deleted, a commit without an issue is refused once clients support the picker, and Smithers-generated pull request text says `Part of #n`, never `Fixes #n`.
 - The TODO shows its issue, on its row and its page. The issue shows its TODOs, newest first, on its row and in its page's side column, and offers Make TODO while it is open, however many of its TODOs are open, so one issue becomes a stack of TODOs (`todosByIssue`, `mayMakeTodo`; Will, 2026-10-21). The issue routes open the repository's stack for this.
 - Its pull request's body ends "Fixes #n" from `issue_number`, so GitHub closes the issue when a person merges it ([the run](#the-run)).
 

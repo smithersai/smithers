@@ -31,6 +31,8 @@ The product rules are mvp.md §3, §4, §6.6, §6.10, Appendices A and B, M-05, 
 
 **Out of this decision:** Make TODO and the `todo` label (J2), scratch branches and Add to stack (J7), learning, and a repository's own `todo` flow until 0014's code flows run. Steer, answer, stop, resume, retry and pre-approval are later slices (§8).
 
+**Amended 2026-11-02 by [0153](0153-issues-are-a-tree-todos-are-its-leaves.md):** the `todo` label (J2) is retired, never built. A TODO is a leaf under exactly one issue.
+
 ## Why
 
 - **M-22 splits ownership this way:** "GitHub keeps `main`, issues, PRs, reviews and checks; Smithers keeps TODOs, stack order, live branches, runs". A `mythical` ref on the customer's GitHub would be a second name for the last item's head that nothing reads, and Will ruled the `mythical` history comes later, not now (TODO-2, 14:21 on 2026-10-20).
@@ -303,6 +305,7 @@ issue ─▶ (a bug: minimal repro required) ─▶ triage: accepted for discuss
 **Seams with the issue side** (a separate builder owns the repro requirement, "accepted for discussion", the commitment and the POC):
 
 1. **A TODO's issue is `todos.issue_number`** (migration 0027), set once when a person makes the TODO with `todo/issue` and never changed. The TODO side reads nothing else of the issue: not its triage, its commitment or its POC. It writes one thing back: `Fixes #n` in the PR's body, so GitHub closes the issue when the PR merges. Whether an issue may become a TODO (accepted, committed) is `todo/issue`'s check, on the issue side.
+   **Amended 2026-11-02 by [0153](0153-issues-are-a-tree-todos-are-its-leaves.md):** `todos.issue_number` is the TODO's parent issue, and every new TODO has one. It is set at commit, or by a person's `attach` when it is null or names a tombstoned issue, and otherwise never changes. Smithers-generated pull request text says `Part of #n`, never `Fixes #n`, so merging a TODO doesn't close its issue through Smithers' own text.
 2. **A POC hands over by name only.** A POC is its own branch, `smithers/poc-<n>`, made and run by the issue side, and it never merges. `todo/issue` may put the POC branch's name in the TODO's prompt; the TODO's run still starts from `main`, and its agent may read the POC branch from the forge as reference. A POC branch is never a TODO's base.
 
 ## Rulings on the two questions

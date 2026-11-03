@@ -1,0 +1,72 @@
+# 0153 · Issues are a tree on GitHub sub-issues, and TODOs are its leaves
+
+2026-11-02 · Accepted; nothing built yet. Rollout steps 3a (this record and the amended contracts), 4a, 6a, 3, 4, 5, 6b-1, 6b-2 and 7 build in the order the rollout table below gives. Amends [0016](0016-todos-and-the-stack.md) (seam 1 of its 2026-10-20 addendum, and the `todo` label J2) and the contract of migration `0027_todo_issue`, whose comment says the issue is set once and never changes: a published migration is immutable, so this record is that amendment. Will, 2026-11-02 ~23:15Z: "Issues should exist in a tree like structure"; ~23:20Z: "Make sure we treat issues seperate from todos as well. Todos are like the leafs of a tree and represent actual work getting done and validated". The design was merged from independent Claude Opus and Codex Sol designs and reviewed over six rounds by Codex Astra; this record keeps its rules, its corrected contracts and the rulings.
+
+## Rule
+
+1. **GitHub's sub-issues are the issue tree.** Smithers mirrors each issue's parent and never keeps a Smithers-only parent. GitHub allows one parent per issue, at most 100 children per parent, at most 8 levels, and cross-repository children under the same owner.
+2. **An issue is a goal, sub-goal or problem, and never work.** It holds child issues and TODOs. Its progress rolls up from them.
+3. **A TODO is a leaf under exactly one issue: `todos.issue_number`, in the TODO's own repository.** It is set at commit, or by `attach` when it is null or names a tombstoned issue (rule 5). It never moves between two live issues in v1.
+4. **Agents file problems as issues under a goal and work as TODOs under an issue, never a bare TODO.** A person commits a TODO; the agent drafts it (0016 decision 3, unchanged).
+5. **`attach` is a person's press.** The stack op `{ opId, op: "attach", number, issue }` needs Member (`repo:todo-commit`) and is refused to anyone acting for a person. It applies in this order: replay the op id's receipt if one exists; validate the issue live (a `kind = 'issue'` row of the same repository); refuse a deleted issue row explicitly (`issue_not_found`), never treating it as absent; then refuse a TODO whose issue is set and live (`409 attached`); then set `issue_number`, with `linkWork` and the leaf projection in the same transaction.
+6. **Committing without an issue is refused only after clients support it.** Step 6a ships the issue picker, the `issue_required`, `issue_not_found` and `attached` codes and the persisted client schemas that carry them. Step 6b refuses a commit without an issue (`400 issue_required`) no sooner than 7 days after 6a is deployed **and** after a test runs an actual pre-6a client and its queued outbox against the 6b server: the old client shows Not sent with Edit and Discard, and Edit restores the draft. Seven days alone is not the receipt. Receipt replay always runs before the new validation.
+7. **`todo_leaves` is the readable leaf projection.** One row per TODO with an issue: `todo_id`, `repo_id`, `number`, `issue_number`, `state`, `validation`, `pr_number`, `updated_at`. The stack writer is its one writer. Its shape is authorized like the repository's item shapes and carries exactly those columns: **no title, prompt, acceptance criteria, SHA or person**. Members join titles from `todos`, whose Member-only shapes stay as they are. The backfill writes `validation = 'none'` for every existing TODO: never proven.
+8. **Reader parity means the same authorized inputs.** Two readers who may read the same repositories compute the same roll-up. A reader with less access sees a roll-up over less, labelled "of visible work". GitHub's own child counts never leave the server, and nothing shows that a hidden child exists.
+9. **A relation leaves the server only when the reader may read both ends.** Relations live in their own server-only tables (`issue_relations`, with GitHub's child counts and the relation's read fence beside it), never on `items`, so a relation change never updates an item row. A tree's scope is the connected components of the authorized relation graph that contain an issue of the repository: the readable set is computed from the deployment and the reader first, then one traversal follows only edges whose two ends are readable, with no hop limit. Past 20 readable repositories the scope is truncated and every roll-up says Partial. Every per-person route answers `private, no-store`.
+10. **Authorization runs inside every mutation attempt.** Discovering the current parent, the actor's fresh permission on every repository the mutation touches and the POST or DELETE run in the same retried action, checked right before each new mutation. Look-first adoption comes before the `expectedParent` comparison, so a link whose receipt was lost recovers instead of refusing. `expectedParent` is a preflight check, not an atomic fence: GitHub's `replace_parent` takes no expected old parent. An agent's multi-repository installation token names only repositories in that installation's selection, and never falls back to an unrestricted token.
+11. **Smithers' floor for linking is Member.** GitHub lets Triage add sub-issues, but Smithers maps triage and read to the same Guest role (`worker/GitHubAuth.ts`), so a Guest floor would admit Read users.
+12. **Validation is fenced per TODO, revision, attempt and head SHA.** A proof for another head, revision or attempt is stale and ignored. Acceptance runs keep that identity through their run ids, completion queries and status reporting: no script check's report may settle or fail an acceptance run. Each attempt publishes to its own commit-status context, and one current-result context per TODO is written only by a publisher that holds a transaction's row lock and reads the authoritative state first: the app reaches Postgres through Hyperdrive, which pools by transaction, so no session advisory lock holds. **Proven** is merged with validation passed; an absent receipt is never a pass. The database proof is the authority, and the current-result context is an advisory mirror of it (limit 5), so no branch protection depends on it being exact.
+13. **Smithers-generated closing text says `Part of #n`, never `Fixes #n`.** The App edits open TODO pull requests, with a repository-scoped installation token. The guarantee covers only the text Smithers generates: a prompt copied into the body, a person's edit, a commit message or a manual link can still close an issue, and Smithers does not claim otherwise. The publish version stays `todo/publish/v2` (ruling GH-11's precedent: a bump stops every run in flight), so no run is retired. A publish that adopts an existing pull request rewrites a generated `Fixes` suffix before recording its receipt, and a sweep inventories open TODO pull requests and rewrites the rest. Two formats are matched separately, both anchored at the end of the body: the legacy one exactly as today's code writes it (`Fixes #n`, the attribution, the write marker), which is rewritten when the App authored the pull request, and the new one (`Part of #n`, the attribution, a `smithers:todo` marker, the write marker), which needs nothing. A `Fixes #n` anywhere else is never touched, and a body that changed between two reads is reported, not edited.
+14. **The `todo` label (0016 J2) is retired.** It was deferred to slice 5 and never built. If label intake comes later, a label makes a draft under the labelled issue, a repeated delivery reuses the draft, and the label grants no commit.
+15. **Stack order and tree ancestry are separate.**
+
+## Accepted limits
+
+GitHub gives no precondition for these, so Smithers states them instead of claiming a fence.
+
+1. **Concurrent moves.** GitHub's add-sub-issue call has no expected-parent condition. If someone else moves a child between Smithers' read of its current parent and Smithers' `replace_parent`, that intervening move is overwritten undetected. `expectedParent` catches only moves that happened before the read, and authorization covers the repositories Smithers observed. The window is one action attempt: the read, the role checks, the token and the mutation. A settle that finds a final parent other than the target records `moved_after`.
+2. **Timing.** Smithers mirrors GitHub's `updated_at`, GitHub's own public value. A hidden relation event can make Smithers re-read a readable issue sooner than its next walk; a reader learns only that GitHub changed a field GitHub already shows them. Re-reads that change no GitHub-visible field send no shape message. Readiness never waits on work whose size depends on hidden data. Shared-infrastructure side channels are out of scope.
+3. **Pull request edits.** GitHub's pull request update takes no precondition. A person's edit landing after Smithers' second read and before its PATCH is overwritten.
+4. **Old pull request text.** Rule 13's guarantee starts with the new publisher. A pull request with the old suffix merged before the publisher or the sweep converted it closes its issue, because GitHub acts at merge time. The sweep's receipt covers only the pull requests its inventory observed, so it can't prove that code finishing a request during a deploy wrote none afterwards beyond what its +24-hour run observes.
+5. **A late status write.** The row lock orders Smithers' sends, not GitHub's receipt. A request that timed out can still reach GitHub after a newer one and leave the older state on the current-result context, until the next state change republishes it, and a republish repairs it only when its write lands last. GitHub's status API has no generation precondition. Per-attempt contexts are never wrong for their own attempt.
+
+## The rulings (effectscript-11, 2026-11-02)
+
+| Q | Ruling |
+|---|---|
+| Q1 Lanes committing TODOs | v1 ships without it, so the tree files today. External TODOs for lane work come right after, as v1.1: TODOs are the leaves and represent actual work, and lane work is exactly that. |
+| Q2 A childless issue with work links | Counts as one transitional work unit until v1.1 makes lane work real TODO leaves, then the rule is deleted. It is labelled "transitional" wherever it shows, is never Proven, and is merged only when every `pr` link that isn't closed is merged and at least one link is merged. |
+| Q3 Tree view core or plugin | Core in v1. |
+| Q4 Who files the tree | **Superseded by Will, 2026-11-03**: "This is supposed to be an app. Why can't we use the installed app for Smithers for stuff like this? It's bad ux to need to add contributors and not very secure". The ruling that granted a bot user Maintain is withdrawn. Agents authenticate to smithers.sh with a scoped, expiring machine token, never a person's session, and it can't make decision 0016's person-only acts. smithers.sh writes to GitHub with the App's installation token, so the tree's issues post as the App's bot. |
+
+## Rollout
+
+Each step lands on `main` test-first. **[Astra]** marks steps that touch access and are reviewed before landing.
+
+| Step | Ships |
+|---|---|
+| 3a | this decision, 0016's and 0027's amended contracts, and the feature docs |
+| 4a | `todo_leaves`, its readable shape and the backfill **[Astra]** |
+| 6a | client support: the picker, the refusal codes and their persisted schemas, `attach` **[Astra]** |
+| 3 | the read side: relation columns, decoding, neighbour refresh, the repair walk, the manifest and the edge shape **[Astra]** |
+| 4 | the read-only tree view, the per-person layout setting with permanent replay receipts **[Astra]** |
+| 5 | writes: create with a parent, reparent, per-attempt authorization **[Astra]** |
+| 6b-1 | enforcement (rule 6) |
+| 6b-2 | proof, acceptance publishing and `Part of` (rules 12 and 13) **[Astra]** |
+| 7 | v1.1: external TODOs for lane work **[Astra]**, then Q2's rule is deleted |
+
+## Facts
+
+| Fact | Source |
+|---|---|
+| At most 100 sub-issues per parent and 8 levels; Triage or above may add | https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues |
+| The sub-issue must have the parent's owner; one parent; `replace_parent` moves and takes no expected old parent | https://docs.github.com/en/rest/issues/sub-issues |
+| Under API version `2022-11-28`, getting an issue returns `parent_issue_url` and `sub_issues_summary`; the list omits `parent_issue_url` when it is null | live `gh api`, 2026-11-02; https://docs.github.com/en/rest/issues/issues#get-an-issue |
+| `sub_issues` webhook actions and their optional sides | https://docs.github.com/en/webhooks/webhook-events-and-payloads#sub_issues |
+| Installation tokens may be limited to repositories in the installation's selection | https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app |
+| GitHub evaluates the latest commit status per context | https://docs.github.com/en/rest/commits/statuses#get-the-combined-status-for-a-specific-reference |
+| Closing keywords in a body or a commit message close the issue on merge | https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue |
+
+## Rejected
+
+Smithers-only parent fields (GitHub can express the tree); relation fields or GitHub's child counts in the general item shapes (they reflect the App's visibility, not the reader's); server-computed roll-ups (same leak); a separate durable authorization step before a mutation (a finished step replays its outcome and never re-checks); bumping the publish version to retire old publishers (it stops every run in flight); pruning layout receipts (the outbox has no expiry, so a delayed resend would apply again); a hop-limited scope traversal (it splits trees whose leaves are 14 edges apart); a Guest or Triage floor for linking (rule 11); TODOs as labelled issues (an issue would become work); an issue per orphan TODO (it invents public problems); moving a TODO between two live issues in v1 (not asked; `attach` covers null and tombstoned issues); a conditional `Fixes #n` (racy, and wrong for pull requests already open); work links as the readable leaf data (they carry no revision or SHA and are empty for TODOs older than migration 0088); a client-clock last-write-wins for the layout setting (a skewed clock pins it).

@@ -4,6 +4,8 @@ A person lists, reads, opens and comments on the issues of the repository this d
 
 Each issue also shows the work on it, from links its lanes, queue and reviewers post ([work links](work-links.md)).
 
+Being built: issues form a tree on GitHub's sub-issues, with TODOs as its leaves, and a List/Tree toggle (decision [0153](../decisions/0153-issues-are-a-tree-todos-are-its-leaves.md)). A relation reaches a reader only when they may read both ends, and GitHub's child counts never leave the server.
+
 ## How it works
 
 ```
