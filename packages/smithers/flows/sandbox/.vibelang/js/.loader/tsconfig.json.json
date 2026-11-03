@@ -75,7 +75,7 @@
      "relative": "packages/smithers/flows/sandbox/src"
     },
     null,
-    "I1bG0yo1om75t2zVnZ5ktHlE3dssKntdTwWwFXdJwO0",
+    "TAPPJaUm5u5k6SuzRXc2TdgppcFr5UiPWlHm1omlCls",
     [],
     {
      "recursive": true,
@@ -2201,10 +2201,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.vibe"
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.ts"
     },
-    "size": 5324,
-    "hash": "lCSfio3UrxetUEKmnC5x8rgrBo-D8awyvhVQFGIAavE"
+    "size": 5528,
+    "hash": "beCRCp7jcZEb36QFWV7rtXvR-8B-7jFBP3TWZVlav3g"
    },
    {
     "path": {
@@ -2252,8 +2252,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/index.ts"
     },
-    "size": 2242,
-    "hash": "AZ0pt8KqQq-yi3N43UtXPLdmNAxutT-jrpjdWBvmmTA"
+    "size": 2240,
+    "hash": "GyHQP1itUkaNLMzSIukCmXjZ6qM6JBXrm5nYNq9XlCI"
    },
    {
     "path": {
@@ -5342,7 +5342,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSessionProvider.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.vibe"
+    "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.ts"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/base64.ts"
@@ -6520,26 +6520,6 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,EAAE,QAAQ,EAAE,MAAM,eAAiB,CAAA;AAC1C,OAAO,EAAE,aAAa,EAAE,MAAM,oBAAsB,CAAA;AAGpD;;;;;GAKG;AACH,MAAM,CAAC,MAAM,SAAS,GAAyB,KAAK,CAAC,IAAI,CAAC,aAAa,EAAE,QAAQ,CAAC,CAAA"
-    }
-   },
-   {
-    "paths": [
-     {
-      "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.vibe"
-     }
-    ],
-    "code": "/**\n * Constructs deterministic sandbox providers for tests.\n *\n * @since 0.1.0\n */\nimport * as Stream from \"effect/Stream\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effect from \"effect/Effect\";\nimport { ProviderError } from \"../RemoteChildProcessSpawner/ProviderError.js\";\nconst encoder = new TextEncoder();\nconst scriptedOutput = (text) => text === undefined || text === \"\" ? Stream.empty : Stream.fromArray([encoder.encode(text)]);\n/**\n * Constructs a deterministic scripted session provider.\n *\n * @category testing\n * @since 0.1.0\n */\nconst makeTestSession = (options = {}) => {\n    const state = {\n        acquired: [],\n        commands: [],\n        inputs: [],\n        files: new Map(Object.entries(options.files ?? {}).map(([path, content]) => [\n            path,\n            typeof content === \"string\" ? encoder.encode(content) : content.slice(),\n        ])),\n        released: 0,\n        forked: [],\n        children: new Map(),\n    };\n    const resolve = (command) => options.scripts?.[command] ?? options.script?.(command)\n        ?? { stderr: `command not found: ${command}\\n`, exitCode: 127 };\n    const credentials = new Set(options.credentials ?? []);\n    const open = (id, remoteId, files) => ({\n        id,\n        remoteId,\n        workdir: options.workdir ?? \"/sandbox\",\n        spawn: Effect_1.fnUntraced(function* spawn(command, spawnOptions) {\n            state.commands.push(command);\n            state.inputs.push(spawnOptions.stdin);\n            const script = resolve(command);\n            if (script.failure !== undefined)\n                return yield* Effect_1.fail(script.failure);\n            const process = {\n                stdout: scriptedOutput(script.stdout),\n                stderr: scriptedOutput(script.stderr),\n                exitCode: Effect.succeed(script.exitCode ?? 0),\n            };\n            return process;\n        }),\n        readFile: (path) => Effect.suspend(Effect_1.fnUntraced(function* () {\n            const content = files.get(path);\n            return content === undefined\n                ? yield* (() => Effect_1.suspend(() => Effect_1.fail(new ProviderError({ code: \"not_found\", message: `the sandbox holds nothing at ${path}` }))))() : content.slice();\n        })),\n        writeFile: Effect_1.fnUntraced(function* writeFile(path, content) {\n            files.set(path, content.slice());\n        }),\n        ...options.ping === undefined ? {} : { ping: options.ping },\n        fork: (key) => options.forkFailure === undefined\n            ? runtime.acquireRelease(Effect_1.gen(function* () {\n                const tree = new Map(Array.from(files, ([path, content]) => [path, content.slice()])\n                    .filter(([path]) => !credentials.has(path)));\n                state.forked.push(key);\n                state.children.set(key, tree);\n                return open(key, `${remoteId}/${key}`, tree);\n            }), Effect_1.fnUntraced(function* () {\n                state.children.delete(key);\n                state.released += 1;\n            }))\n            : (() => { throw options.forkFailure; })(),\n    });\n    const session = open(options.session ?? \"test-session\", options.remoteId ?? \"test-remote\", state.files);\n    return {\n        state,\n        acquire: (key) => options.acquireFailure === undefined\n            ? runtime.acquireRelease(Effect_1.gen(function* () {\n                state.acquired.push(key);\n                return session;\n            }), Effect_1.fnUntraced(function* () {\n                state.released += 1;\n            }))\n            : (() => { throw options.acquireFailure; })(),\n    };\n};\n/**\n * Deterministic scripted sandbox constructor for projection and consumer\n * tests: an in-memory guest tree, command lines answered from a script table\n * or resolver, observable acquire and release counts, and forks that copy the\n * tree without the paths named as credentials.\n *\n * @category testing\n * @since 0.1.0\n */\nexport const TestSession = {\n    make: makeTestSession,\n};\n",
-    "map": {
-     "version": 3,
-     "file": "TestSession.js",
-     "sourceRoot": "",
-     "sources": [
-      {
-       "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.vibe"
-      }
-     ],
-     "names": [],
-     "mappings": "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"
     }
    },
    {

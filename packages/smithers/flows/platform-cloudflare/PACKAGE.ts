@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "A ChildProcessSpawner or Jj operation that succeeds.",
         "The FetchHttpClient RequestInit set to anything other than redirect: \"manual\"."
       ],
-      paths: ["src/CloudflareHost.vibe", "src/internal/Refusals.vibe"]
+      paths: ["src/CloudflareHost.vibe", "src/internal/Refusals.ts"]
     }
   ]
 })
