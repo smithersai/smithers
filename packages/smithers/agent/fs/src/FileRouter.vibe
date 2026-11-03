@@ -41,7 +41,7 @@ export interface ScanResult {
   warnings: ReadonlyArray<Warning>
 }
 
-const toSegments = (path: Path, root: string, sourcePath: string): ReadonlyArray<string> => {
+const toSegments = (path: Path.Path, root: string, sourcePath: string): ReadonlyArray<string> => {
   const relative = path.relative(root, path.dirname(sourcePath))
   return relative.split(path.sep).filter((segment) => segment !== "" && segment !== ".")
 }
@@ -66,7 +66,7 @@ const discoveryFailure = (cause: unknown): FsError => match (cause) {
 
 const readFailure = (): FsError => failure("read_failed", "A route companion could not be inspected")
 
-effect function snapshotRoot(config: ScanConfig, path: Path): Effect<string, FsError, infer R> {
+effect function snapshotRoot(config: ScanConfig, path: Path.Path): Effect<string, FsError, infer R> {
   const admitted = Boundary.inspectRecord(config, ["root"])
   const root = admitted.ok ? admitted.value.root : undefined
   if (
@@ -94,7 +94,7 @@ const warningSnapshot = (warning: Descriptor.DiscoveryWarning): Warning =>
  * @category constructors
  * @since 0.1.0
  */
-export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, FileSystem.FileSystem | Path> {
+export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, FileSystem.FileSystem | Path.Path> {
   const fileSystem = try FileSystem.FileSystem
   const path = try Path.Path
   const root = try snapshotRoot(config, path)
