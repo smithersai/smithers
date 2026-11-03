@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.vibe"
+import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.ts"
 import { failureOf } from "./helpers.vibe"
 
 // An adapter's subclass, tagged with its own name (D278).
