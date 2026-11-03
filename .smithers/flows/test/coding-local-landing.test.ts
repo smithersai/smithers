@@ -483,6 +483,93 @@ test("green prefix: main fast-forwards to the newest passed commit with nothing 
   assert.equal(commitOf(root, "main"), c3.commitId)
 })
 
+/**
+ * main with `length` commits above it on bookmark `vibe`, written in one `git fast-import`, and a native read
+ * answered from one listing: `merge` makes that commit, counted from the tip, a merge.
+ */
+const longStack = async (t: Cleanup, length: number, merge?: number) => {
+  const root = await mkdtemp(join(tmpdir(), "coding-green-prefix-long-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  jj(root, "git", "init")
+  await writeFile(join(root, "a.txt"), "a\n")
+  jj(root, "commit", "-m", "base")
+  jj(root, "bookmark", "create", "main", "-r", "@-")
+  const main = commitOf(root, "main")
+  const commit = (mark: number, from: string, extra = "") =>
+    `commit refs/heads/vibe\nmark :${mark}\ncommitter T <t@example.test> ${1_000 + mark} +0000\ndata 2\nc\n` +
+    `from ${from}\n${extra}M 100644 inline c.txt\ndata ${String(mark).length}\n${mark}\n`
+  const side = `commit refs/heads/side\nmark :${length + 1}\ncommitter T <t@example.test> 999 +0000\ndata 2\ns\n` +
+    `from ${main}\nM 100644 inline s.txt\ndata 1\ns\n`
+  const body = Array.from(
+    { length },
+    (_, index) =>
+      commit(
+        index + 1,
+        index === 0 ? main : `:${index}`,
+        merge !== undefined && index + 1 === length - merge ? `merge :${length + 1}\n` : ""
+      )
+  ).join("")
+  execFileSync("git", ["fast-import", "--quiet"], {
+    cwd: root,
+    env: environment,
+    input: (merge === undefined ? "" : side) + body
+  })
+  jj(root, "git", "import")
+  const listed = jj(root, "log", "--no-graph", "--reversed", "-r", "main..vibe", "-T", "change_id ++ \" \" ++ commit_id ++ \"\\n\"")
+    .split("\n").map((line) => line.split(" ") as [string, string])
+  const trees = new Map(
+    git(root, "log", "--format=%H %T", "vibe").split("\n").map((line) => line.split(" ") as [string, string])
+  )
+  const revisions = listed.map(([changeId, commitId]) => ({
+    kind: "resolved" as const,
+    changeId,
+    commitId,
+    treeId: trees.get(commitId)!,
+    operationId: "0".repeat(128),
+    parentCommitIds: []
+  }))
+  const native = Layer.succeed(NativeCoding, {
+    sourcePublication: "local-only",
+    read: (changeIds = []) =>
+      Effect.succeed({
+        status: "read" as const,
+        operationId: "0".repeat(128),
+        head: revisions[0]!,
+        revisions: changeIds.map((id) => revisions.find((revision) => revision.changeId === id)!)
+      }),
+    apply: () => Effect.die("a lander never applies native operations"),
+    publishOriginalSource: () => Effect.die("a local lander never retains a source with the backend")
+  })
+  const lander = await Effect.runPromise(
+    Effect.flatMap(FileSystem.FileSystem, (fs) =>
+      make({ kind: "fast-forward", repositoryPath: root, fs, environment })).pipe(
+        Effect.provide(Layer.mergeAll(NodeServices.layer, native))
+      )
+  )
+  return { root, main, revisions, lander }
+}
+
+test("green prefix: a stack longer than one process answer still advances main", async (t) => {
+  // 1,200 rows are about 138 KiB of listing; a process answers 128 KiB.
+  const { root, main, revisions, lander } = await longStack(t, 1_200)
+  const passed = revisions[1_150] as unknown as Revision, failed = revisions[1_190] as unknown as Revision
+  const receipts = [verdictOf(passed, "passed"), verdictOf(failed, "failed")]
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts })), {
+    status: "advanced",
+    from: main,
+    to: passed.commitId,
+    above: 49
+  })
+  assert.equal(commitOf(root, "main"), passed.commitId)
+})
+
+test("green prefix: a merge where a page of a long stack ends is not one line", async (t) => {
+  const { lander } = await longStack(t, 1_200, 999)
+  const error = await failure(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: [] }))
+  assert.equal(error.code, "invalid_receipt")
+  assert.match(error.message, /not one line/)
+})
+
 test("green prefix: a failed commit below holds main under it, never moving backwards", async (t) => {
   const { root, main, stack } = await stackRepository(t)
   const lander = await landerOf(root, "fast-forward")

@@ -47,6 +47,8 @@ const bounded = (text: string, limit = 2_048) => {
   return trimmed.length > limit ? `${trimmed.slice(0, limit - 1)}…` : trimmed
 }
 const jjMinutes = 2, gitMinutes = 5, ghMinutes = 2
+/** Stack rows one `jj log` answers within the process output limit. */
+const stackPage = 1_000
 /** `gh pr view --json`; only the fields a receipt needs. */
 const PullView = Schema.Struct({
   number: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -283,20 +285,32 @@ export const make = (options: Options) =>
             message: `The stack tip ${tip} does not descend from ${target} ${main}; ${target} only fast-forwards`
           })
         }
-        const listed = yield* jj([
-          "log",
-          "--no-graph",
-          "--reversed",
-          "-r",
-          `${main}..${tip}`,
-          "-T",
-          "commit_id ++ \" \" ++ change_id ++ \" \" ++ parents.map(|p| p.commit_id()).join(\",\") ++ \"\\n\""
-        ])
-        if (listed.stdout.truncated) return yield* invalid("The stack listing was truncated")
-        const rows = lines(listed.stdout.text).map((line) => {
-          const [commitId = "", changeId = "", parents = ""] = line.split(" ")
-          return { commitId, changeId, parents: parents.split(",").filter((id) => id !== "") }
-        })
+        // A process answers at most 128 KiB, so a long stack is read newest first, a page at a time.
+        const newestFirst: Array<{ commitId: string; changeId: string; parents: Array<string> }> = []
+        for (let cursor = tip; cursor !== main;) {
+          const listed = yield* jj([
+            "log",
+            "--no-graph",
+            "--limit",
+            String(stackPage),
+            "-r",
+            `${main}..${cursor}`,
+            "-T",
+            "commit_id ++ \" \" ++ change_id ++ \" \" ++ parents.map(|p| p.commit_id()).join(\",\") ++ \"\\n\""
+          ])
+          if (listed.stdout.truncated) return yield* invalid("The stack listing was truncated")
+          const page = lines(listed.stdout.text).map((line) => {
+            const [commitId = "", changeId = "", parents = ""] = line.split(" ")
+            return { commitId, changeId, parents: parents.split(",").filter((id) => id !== "") }
+          })
+          newestFirst.push(...page)
+          const parent = page.at(-1)?.parents
+          if (parent?.length !== 1) {
+            return yield* invalid(`The stack from ${target} to ${tip} is not one line of commits`)
+          }
+          cursor = parent[0]!
+        }
+        const rows = newestFirst.reverse()
         // The mythical history is one line: each commit's sole parent is the one below it.
         const linear = rows.every((row, index) =>
           commit.test(row.commitId) && change.test(row.changeId) && row.parents.length === 1 &&
