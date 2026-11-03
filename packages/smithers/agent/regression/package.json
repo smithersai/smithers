@@ -14,7 +14,7 @@
     "test:character": "bun test character"
   },
   "dependencies": {
-    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node": "4.1.1",
     "@smthrs/agent": "workspace:*",
     "@smthrs/core": "workspace:*",
     "@smthrs/engine": "workspace:*",
@@ -25,9 +25,9 @@
     "@smthrs/plan": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/scorers": "workspace:*",
-    "effect": "4.1.0",
+    "effect": "4.1.1",
     "yaml": "2.9.0",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-0316568e1eb7.tgz"
   },
   "devDependencies": {
     "@smthrs/crypto": "workspace:*",
@@ -35,6 +35,6 @@
     "@types/node": "26.4.1",
     "bun-types": "^1.4.0",
     "typescript": "5.9.3",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz"
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-1339d0a354a3.tgz"
   }
 }

@@ -48,16 +48,16 @@ verifyDepsBeforeRun: false
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
   "@types/bun": "1.4.4"
-  "effect": "4.1.0"
-  "@effect/opentelemetry": "4.1.0"
-  "@effect/platform-bun": "4.1.0"
-  "@effect/platform-node": "4.1.0"
-  "@effect/platform-node-shared": "4.1.0"
-  "@effect/sql-d1": "4.1.0"
-  "@effect/sql-sqlite-bun": "4.1.0"
-  "@effect/sql-sqlite-do": "4.1.0"
-  "@effect/sql-sqlite-node": "4.1.0"
-  "@effect/vitest": "4.1.0"
+  "effect": "4.1.1"
+  "@effect/opentelemetry": "4.1.1"
+  "@effect/platform-bun": "4.1.1"
+  "@effect/platform-node": "4.1.1"
+  "@effect/platform-node-shared": "4.1.1"
+  "@effect/sql-d1": "4.1.1"
+  "@effect/sql-sqlite-bun": "4.1.1"
+  "@effect/sql-sqlite-do": "4.1.1"
+  "@effect/sql-sqlite-node": "4.1.1"
+  "@effect/vitest": "4.1.1"
 
 # @vitest/coverage-v8 5.0.0 remaps native-loader hits against code Vite did not run.
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
@@ -68,11 +68,11 @@ patchedDependencies:
   # patch hands hasChanged the Worker's own build options. Delete it with the release that fixes this upstream;
   # apps/mvp/infra/WorkerBundles.test.ts's expected failure says when.
   '@alchemy.run/cloudflare@2.0.0-beta.84': patches/@alchemy.run__cloudflare@2.0.0-beta.84.patch
-  # @effect/platform-node-shared 4.1.0: NodeChildProcessSpawner builds the child environment on `{}`, so an env key
+  # @effect/platform-node-shared 4.1.1: NodeChildProcessSpawner builds the child environment on `{}`, so an env key
   # `__proto__` sets the object's prototype and the child never sees the variable (4.0.x passed env through). The
   # patch builds it with Object.create(null). Effect main (4.1.1) still has the bug; delete the patch with the Effect
   # release that fixes it. flows/kernel's ChildProcessSpawner integration tests cover both env paths.
-  '@effect/platform-node-shared@4.1.0': patches/@effect__platform-node-shared@4.1.0.patch
+  '@effect/platform-node-shared@4.1.1': patches/@effect__platform-node-shared@4.1.1.patch
   # @opentelemetry/otlp-transformer 0.222.0: the JSON encoder (toAnyValue) writes every integer as intValue, so
   # Number.MAX_VALUE leaves NodeOtel as `intValue: 1.7976931348623157e+308`, outside OTLP's int64. The SDK's own
   # protobuf serializer and Effect's OtlpResource send it as doubleValue. The patch applies the same int64 range check.

@@ -15,20 +15,20 @@
     "check": "vibelang --noEmit"
   },
   "dependencies": {
-    "@effect/sql-pg": "4.1.0",
+    "@effect/sql-pg": "4.1.1",
     "@smthrs/targets": "workspace:*",
-    "effect": "4.1.0",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
+    "effect": "4.1.1",
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-0316568e1eb7.tgz"
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz",
-    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-94168276647a.tgz",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-1339d0a354a3.tgz",
+    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-621d46edc61e.tgz",
     "vitest": "5.0.0",
     "@smthrs/plan": "workspace:*",
     "@vitest/coverage-v8": "5.0.0",
     "fast-check": "4.9.0",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz",
-    "vibelang-unplugin": "file:../../.vibelang-toolchain/vibelang-unplugin-0.0.11-4bdd892db92b.tgz"
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-0316568e1eb7.tgz",
+    "vibelang-unplugin": "file:../../.vibelang-toolchain/vibelang-unplugin-0.0.11-43f50ca2b19c.tgz"
   }
 }

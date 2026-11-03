@@ -18,8 +18,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@effect/platform-node": "4.1.0",
-    "@effect/platform-node-shared": "4.1.0",
+    "@effect/platform-node": "4.1.1",
+    "@effect/platform-node-shared": "4.1.1",
     "@smthrs/agent": "workspace:*",
     "@smthrs/capability": "workspace:*",
     "@smthrs/control": "workspace:*",
@@ -49,10 +49,10 @@
     "@smthrs/ui": "workspace:*",
     "@types/bun": "1.4.4",
     "@types/react": "^19.2.18",
-    "effect": "4.1.0",
+    "effect": "4.1.1",
     "typescript": "~5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz",
-    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-94168276647a.tgz",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-1339d0a354a3.tgz",
+    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-621d46edc61e.tgz",
     "wrangler": "4.151.2"
   },
   "dependencies": {
@@ -62,6 +62,6 @@
     "astro": "^7.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-0316568e1eb7.tgz"
   }
 }

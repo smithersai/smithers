@@ -15,14 +15,14 @@
     "@smthrs/scorers": "workspace:*",
     "@smthrs/core": "workspace:*",
     "@smthrs/model": "workspace:*",
-    "effect": "4.1.0",
+    "effect": "4.1.1",
     "@smthrs/cli": "workspace:*",
     "@smthrs/engine": "workspace:*",
     "@smthrs/flow": "workspace:*",
     "@smthrs/flows": "workspace:*",
     "@smthrs/registry": "workspace:*",
-    "@effect/platform-node": "4.1.0",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
+    "@effect/platform-node": "4.1.1",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-0316568e1eb7.tgz"
   },
   "devDependencies": {
     "@smthrs/crypto": "workspace:*",
@@ -30,6 +30,6 @@
     "@types/node": "26.4.1",
     "bun-types": "^1.4.0",
     "typescript": "5.9.3",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz"
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-1339d0a354a3.tgz"
   }
 }
