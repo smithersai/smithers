@@ -34,34 +34,110 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./AnthropicMessages": "./src/AnthropicMessages.ts",
-    "./Auth": "./src/Auth.ts",
-    "./CanonicalJson": "./src/CanonicalJson.ts",
+    "./AnthropicMessages": {
+      "types": "./src/AnthropicMessages.ts",
+      "vibelang-source": "./src/AnthropicMessages.ts",
+      "default": "./.vibelang/js/src/AnthropicMessages.js"
+    },
+    "./Auth": {
+      "types": "./src/Auth.ts",
+      "vibelang-source": "./src/Auth.ts",
+      "default": "./.vibelang/js/src/Auth.js"
+    },
+    "./CanonicalJson": {
+      "types": "./src/CanonicalJson.ts",
+      "vibelang-source": "./src/CanonicalJson.ts",
+      "default": "./.vibelang/js/src/CanonicalJson.js"
+    },
     "./Classifier": "./src/Classifier.vibe",
-    "./DeferredTools": "./src/DeferredTools.ts",
-    "./Endpoint": "./src/Endpoint.ts",
-    "./Evaluator": "./src/Evaluator.ts",
-    "./EvaluatorBackup": "./src/EvaluatorBackup.ts",
+    "./DeferredTools": {
+      "types": "./src/DeferredTools.ts",
+      "vibelang-source": "./src/DeferredTools.ts",
+      "default": "./.vibelang/js/src/DeferredTools.js"
+    },
+    "./Endpoint": {
+      "types": "./src/Endpoint.ts",
+      "vibelang-source": "./src/Endpoint.ts",
+      "default": "./.vibelang/js/src/Endpoint.js"
+    },
+    "./Evaluator": {
+      "types": "./src/Evaluator.ts",
+      "vibelang-source": "./src/Evaluator.ts",
+      "default": "./.vibelang/js/src/Evaluator.js"
+    },
+    "./EvaluatorBackup": {
+      "types": "./src/EvaluatorBackup.ts",
+      "vibelang-source": "./src/EvaluatorBackup.ts",
+      "default": "./.vibelang/js/src/EvaluatorBackup.js"
+    },
     "./Framing": "./src/Framing.vibe",
     "./FailureCopy": "./src/FailureCopy.vibe",
-    "./Model": "./src/Model.ts",
-    "./ModelCatalog": "./src/ModelCatalog.ts",
+    "./Model": {
+      "types": "./src/Model.ts",
+      "vibelang-source": "./src/Model.ts",
+      "default": "./.vibelang/js/src/Model.js"
+    },
+    "./ModelCatalog": {
+      "types": "./src/ModelCatalog.ts",
+      "vibelang-source": "./src/ModelCatalog.ts",
+      "default": "./.vibelang/js/src/ModelCatalog.js"
+    },
     "./ModelError": "./src/ModelError.vibe",
     "./ModelEvent": "./src/ModelEvent.vibe",
-    "./ModelRequest": "./src/ModelRequest.ts",
-    "./OpenAIChatCompletions": "./src/OpenAIChatCompletions.ts",
-    "./OpenAIChatGPT": "./src/OpenAIChatGPT.ts",
-    "./OpenAIResponses": "./src/OpenAIResponses.ts",
+    "./ModelRequest": {
+      "types": "./src/ModelRequest.ts",
+      "vibelang-source": "./src/ModelRequest.ts",
+      "default": "./.vibelang/js/src/ModelRequest.js"
+    },
+    "./OpenAIChatCompletions": {
+      "types": "./src/OpenAIChatCompletions.ts",
+      "vibelang-source": "./src/OpenAIChatCompletions.ts",
+      "default": "./.vibelang/js/src/OpenAIChatCompletions.js"
+    },
+    "./OpenAIChatGPT": {
+      "types": "./.vibe/declarations/src/OpenAIChatGPT.d.vibe.ts",
+      "vibelang-source": "./src/OpenAIChatGPT.vibe",
+      "default": "./.vibelang/js/src/OpenAIChatGPT.js"
+    },
+    "./OpenAIResponses": {
+      "types": "./src/OpenAIResponses.ts",
+      "vibelang-source": "./src/OpenAIResponses.ts",
+      "default": "./.vibelang/js/src/OpenAIResponses.js"
+    },
     "./Pricing": "./src/Pricing.vibe",
-    "./Protocol": "./src/Protocol.ts",
-    "./RequestExecutor": "./src/RequestExecutor.ts",
-    "./Route": "./src/Route.ts",
+    "./Protocol": {
+      "types": "./.vibe/declarations/src/Protocol.d.vibe.ts",
+      "vibelang-source": "./src/Protocol.vibe",
+      "default": "./.vibelang/js/src/Protocol.js"
+    },
+    "./RequestExecutor": {
+      "types": "./src/RequestExecutor.ts",
+      "vibelang-source": "./src/RequestExecutor.ts",
+      "default": "./.vibelang/js/src/RequestExecutor.js"
+    },
+    "./Route": {
+      "types": "./src/Route.ts",
+      "vibelang-source": "./src/Route.ts",
+      "default": "./.vibelang/js/src/Route.js"
+    },
     "./ToolStream": "./src/ToolStream.vibe",
-    "./index": "./src/index.ts",
-    "./WireTrace": "./src/WireTrace.ts"
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./WireTrace": {
+      "types": "./src/WireTrace.ts",
+      "vibelang-source": "./src/WireTrace.ts",
+      "default": "./.vibelang/js/src/WireTrace.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -73,7 +149,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

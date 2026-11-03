@@ -24,7 +24,7 @@ import { type ModelEvent, type Settle, settledMessage, type Timing, type Usage }
 import { type JsonObject, type ModelRequest, ModelRequest as ModelRequestSchema } from "./ModelRequest.ts"
 import * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
 import * as OpenAIResponses from "./OpenAIResponses.ts"
-import type * as Protocol from "./Protocol.ts"
+import type * as Protocol from "./Protocol.vibe"
 import * as RequestExecutor from "./RequestExecutor.ts"
 import * as TraceSink from "./WireTrace.ts"
 

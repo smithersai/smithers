@@ -107,7 +107,7 @@ export * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
  * @since 0.1.0
  * @slop
  */
-export * as OpenAIChatGPT from "./OpenAIChatGPT.ts"
+export * as OpenAIChatGPT from "./OpenAIChatGPT.vibe"
 
 /**
  * @since 0.1.0
@@ -129,7 +129,7 @@ export * as Pricing from "./Pricing.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as Protocol from "./Protocol.ts"
+export * as Protocol from "./Protocol.vibe"
 
 /**
  * @since 0.1.0

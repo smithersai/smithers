@@ -31,7 +31,7 @@ import { WireTrace } from "../src/index.ts"
 import { ModelError } from "../src/ModelError.vibe"
 import type * as ModelEvent from "../src/ModelEvent.vibe"
 import * as ModelRequest from "../src/ModelRequest.ts"
-import * as OpenAIChatGPT from "../src/OpenAIChatGPT.ts"
+import * as OpenAIChatGPT from "../src/OpenAIChatGPT.vibe"
 import * as RequestExecutor from "../src/RequestExecutor.ts"
 import * as Route from "../src/Route.ts"
 

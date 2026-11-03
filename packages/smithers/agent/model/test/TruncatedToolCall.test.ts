@@ -13,7 +13,7 @@ import type { ModelEvent } from "../src/ModelEvent.vibe"
 import { GenerationParams, Message, ModelRequest } from "../src/ModelRequest.ts"
 import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.ts"
 import * as OpenAIResponses from "../src/OpenAIResponses.ts"
-import type * as Protocol from "../src/Protocol.ts"
+import type * as Protocol from "../src/Protocol.vibe"
 
 const partial = "{\"cmd\":\"rm -"
 

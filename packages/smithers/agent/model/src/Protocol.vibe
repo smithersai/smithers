@@ -7,7 +7,7 @@
  * @since 0.1.0
  */
 
-import { type Effect, Schema } from "effect"
+import { type Effect } from "effect"
 import type { ModelError } from "./ModelError.vibe"
 import type { ModelEvent } from "./ModelEvent.vibe"
 import type { ModelRequest } from "./ModelRequest.ts"
@@ -58,7 +58,7 @@ export interface ProtocolBody<Body> {
   readonly from: (
     request: ModelRequest,
     options: { readonly native: boolean }
-  ) => Effect.Effect<Body, ModelError>
+  ) => Body!ModelError
 }
 
 /**
@@ -74,7 +74,7 @@ export interface ProtocolStream<Frame, Event, State> {
   readonly step: (
     state: State,
     event: Event
-  ) => Effect.Effect<readonly [State, ReadonlyArray<ModelEvent>], ModelError>
+  ) => readonly [State, ReadonlyArray<ModelEvent>]!ModelError
   readonly onHalt?: ((state: State) => ReadonlyArray<ModelEvent>) | undefined
   readonly terminal?: ((event: Event) => boolean) | undefined
 }

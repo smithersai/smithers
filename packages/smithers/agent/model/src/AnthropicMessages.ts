@@ -19,7 +19,7 @@ import {
   type StopReason,
   type ToolDefinition
 } from "./ModelRequest.ts"
-import { jsonEvent, make as makeProtocol, type Protocol } from "./Protocol.ts"
+import { jsonEvent, make as makeProtocol, type Protocol } from "./Protocol.vibe"
 import * as ToolStream from "./ToolStream.vibe"
 
 const ID = "anthropic-messages"
