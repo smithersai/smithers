@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option } from "effect"
-import type { RecordedCall } from "../src/Fixture.ts"
+import type { RecordedCall } from "../src/Fixture.vibe"
 import * as FixtureStore from "../src/FixtureStore.ts"
 
 describe("FixtureStore cyclic snapshots", () => {

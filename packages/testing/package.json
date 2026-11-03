@@ -34,7 +34,11 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./Vitest": {
       "types": "./.vibe/declarations/src/Vitest.d.vibe.ts",
       "import": "./src/Vitest.vibe"
@@ -43,35 +47,135 @@
     "./*/index": null,
     "./CachedModel": "./src/CachedModel.vibe",
     "./Conformance": "./src/Conformance.vibe",
-    "./Divergence": "./src/Divergence.ts",
+    "./Divergence": {
+      "types": "./.vibe/declarations/src/Divergence.d.vibe.ts",
+      "vibelang-source": "./src/Divergence.vibe",
+      "default": "./.vibelang/js/src/Divergence.js"
+    },
     "./EngineSubject": "./src/EngineSubject.vibe",
     "./Faults": "./src/Faults.ts",
-    "./Fixture": "./src/Fixture.ts",
-    "./FixtureStore": "./src/FixtureStore.ts",
-    "./FlowEngineLike": "./src/FlowEngineLike.ts",
-    "./HostSuite": "./src/HostSuite.ts",
+    "./Fixture": {
+      "types": "./.vibe/declarations/src/Fixture.d.vibe.ts",
+      "vibelang-source": "./src/Fixture.vibe",
+      "default": "./.vibelang/js/src/Fixture.js"
+    },
+    "./FixtureStore": {
+      "types": "./src/FixtureStore.ts",
+      "vibelang-source": "./src/FixtureStore.ts",
+      "default": "./.vibelang/js/src/FixtureStore.js"
+    },
+    "./FlowEngineLike": {
+      "types": "./src/FlowEngineLike.ts",
+      "vibelang-source": "./src/FlowEngineLike.ts",
+      "default": "./.vibelang/js/src/FlowEngineLike.js"
+    },
+    "./HostSuite": {
+      "types": "./src/HostSuite.ts",
+      "vibelang-source": "./src/HostSuite.ts",
+      "default": "./.vibelang/js/src/HostSuite.js"
+    },
     "./JournalAssertions": "./src/JournalAssertions.vibe",
-    "./MemoryEngine": "./src/MemoryEngine.ts",
-    "./ModelLike": "./src/ModelLike.ts",
-    "./ModelServer": "./src/ModelServer.ts",
-    "./ModelServerCli": "./src/ModelServerCli.ts",
-    "./Plan": "./src/Plan.ts",
-    "./PlanAssertions": "./src/PlanAssertions.ts",
-    "./PlanLike": "./src/PlanLike.ts",
-    "./RecordedModel": "./src/RecordedModel.ts",
-    "./RecordingModel": "./src/RecordingModel.ts",
-    "./RestartableEngine": "./src/RestartableEngine.ts",
-    "./ScoreGate": "./src/ScoreGate.ts",
-    "./TestHost": "./src/TestHost.ts",
-    "./TestLayers": "./src/TestLayers.ts",
-    "./TestingError": "./src/TestingError.ts",
-    "./index": "./src/index.ts",
-    "./pins/Identity": "./src/pins/Identity.ts",
-    "./pins/Interrupt": "./src/pins/Interrupt.ts",
-    "./pins/Race": "./src/pins/Race.ts",
-    "./pins/Replay": "./src/pins/Replay.ts",
+    "./MemoryEngine": {
+      "types": "./src/MemoryEngine.ts",
+      "vibelang-source": "./src/MemoryEngine.ts",
+      "default": "./.vibelang/js/src/MemoryEngine.js"
+    },
+    "./ModelLike": {
+      "types": "./.vibe/declarations/src/ModelLike.d.vibe.ts",
+      "vibelang-source": "./src/ModelLike.vibe",
+      "default": "./.vibelang/js/src/ModelLike.js"
+    },
+    "./ModelServer": {
+      "types": "./src/ModelServer.ts",
+      "vibelang-source": "./src/ModelServer.ts",
+      "default": "./.vibelang/js/src/ModelServer.js"
+    },
+    "./ModelServerCli": {
+      "types": "./src/ModelServerCli.ts",
+      "vibelang-source": "./src/ModelServerCli.ts",
+      "default": "./.vibelang/js/src/ModelServerCli.js"
+    },
+    "./Plan": {
+      "types": "./.vibe/declarations/src/Plan.d.vibe.ts",
+      "vibelang-source": "./src/Plan.vibe",
+      "default": "./.vibelang/js/src/Plan.js"
+    },
+    "./PlanAssertions": {
+      "types": "./.vibe/declarations/src/PlanAssertions.d.vibe.ts",
+      "vibelang-source": "./src/PlanAssertions.vibe",
+      "default": "./.vibelang/js/src/PlanAssertions.js"
+    },
+    "./PlanLike": {
+      "types": "./src/PlanLike.ts",
+      "vibelang-source": "./src/PlanLike.ts",
+      "default": "./.vibelang/js/src/PlanLike.js"
+    },
+    "./RecordedModel": {
+      "types": "./.vibe/declarations/src/RecordedModel.d.vibe.ts",
+      "vibelang-source": "./src/RecordedModel.vibe",
+      "default": "./.vibelang/js/src/RecordedModel.js"
+    },
+    "./RecordingModel": {
+      "types": "./src/RecordingModel.ts",
+      "vibelang-source": "./src/RecordingModel.ts",
+      "default": "./.vibelang/js/src/RecordingModel.js"
+    },
+    "./RestartableEngine": {
+      "types": "./.vibe/declarations/src/RestartableEngine.d.vibe.ts",
+      "vibelang-source": "./src/RestartableEngine.vibe",
+      "default": "./.vibelang/js/src/RestartableEngine.js"
+    },
+    "./ScoreGate": {
+      "types": "./src/ScoreGate.ts",
+      "vibelang-source": "./src/ScoreGate.ts",
+      "default": "./.vibelang/js/src/ScoreGate.js"
+    },
+    "./TestHost": {
+      "types": "./src/TestHost.ts",
+      "vibelang-source": "./src/TestHost.ts",
+      "default": "./.vibelang/js/src/TestHost.js"
+    },
+    "./TestLayers": {
+      "types": "./.vibe/declarations/src/TestLayers.d.vibe.ts",
+      "vibelang-source": "./src/TestLayers.vibe",
+      "default": "./.vibelang/js/src/TestLayers.js"
+    },
+    "./TestingError": {
+      "types": "./src/TestingError.ts",
+      "vibelang-source": "./src/TestingError.ts",
+      "default": "./.vibelang/js/src/TestingError.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./pins/Identity": {
+      "types": "./src/pins/Identity.ts",
+      "vibelang-source": "./src/pins/Identity.ts",
+      "default": "./.vibelang/js/src/pins/Identity.js"
+    },
+    "./pins/Interrupt": {
+      "types": "./.vibe/declarations/src/pins/Interrupt.d.vibe.ts",
+      "vibelang-source": "./src/pins/Interrupt.vibe",
+      "default": "./.vibelang/js/src/pins/Interrupt.js"
+    },
+    "./pins/Race": {
+      "types": "./src/pins/Race.ts",
+      "vibelang-source": "./src/pins/Race.ts",
+      "default": "./.vibelang/js/src/pins/Race.js"
+    },
+    "./pins/Replay": {
+      "types": "./src/pins/Replay.ts",
+      "vibelang-source": "./src/pins/Replay.ts",
+      "default": "./.vibelang/js/src/pins/Replay.js"
+    },
     "./ProcessTable": "./src/ProcessTable.ts",
-    "./TurnLog": "./src/TurnLog.ts"
+    "./TurnLog": {
+      "types": "./src/TurnLog.ts",
+      "vibelang-source": "./src/TurnLog.ts",
+      "default": "./.vibelang/js/src/TurnLog.js"
+    }
   },
   "bin": {
     "smthrs-model-server": "./bin/smthrs-model-server.mjs"
@@ -87,7 +191,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

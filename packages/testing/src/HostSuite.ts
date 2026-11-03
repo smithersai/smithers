@@ -19,7 +19,7 @@ import type * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import { CapabilityContractError } from "./TestingError.ts"
-import { poisonedClockAndRandom } from "./TestLayers.ts"
+import { poisonedClockAndRandom } from "./TestLayers.vibe"
 
 /**
  * A declared Host capability expectation.

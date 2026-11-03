@@ -8,8 +8,8 @@ import * as StepKey from "@smthrs/plan/StepKey"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import * as Plan from "../src/Plan.ts"
-import { expectKeyGoldens } from "../src/PlanAssertions.ts"
+import * as Plan from "../src/Plan.vibe"
+import { expectKeyGoldens } from "../src/PlanAssertions.vibe"
 import goldens from "./fixtures/key-goldens.json" with { type: "json" }
 
 // Checked-in golden digests for canonical key serialization: the same logical

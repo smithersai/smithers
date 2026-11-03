@@ -16,7 +16,7 @@ import * as EffectVitest from "@effect/vitest"
 import * as Layer from "effect/Layer"
 import type * as Scope from "effect/Scope"
 import { assert, describe, expect, it as vitestIt, type TestOptions } from "vitest"
-import { type Body, runEffectTest } from "./internal/TestEffectRunner.ts"
+import { type Body, runEffectTest } from "./internal/TestEffectRunner.vibe"
 
 /** @since 0.0.0 @category testing */
 export { assert, describe, expect }

@@ -12,9 +12,9 @@ import { defaultRules } from "@smthrs/journal/Redaction"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import { Effect, Exit, type Layer, Stream } from "effect"
-import { type RecordedCall, recordedRequest } from "./Fixture.ts"
+import { type RecordedCall, recordedRequest } from "./Fixture.vibe"
 import { snapshot } from "./internal/Structural.ts"
-import type { ModelErrorLike, ModelEventLike } from "./ModelLike.ts"
+import type { ModelErrorLike, ModelEventLike } from "./ModelLike.vibe"
 
 /**
  * Where a recorder sends each completed call.

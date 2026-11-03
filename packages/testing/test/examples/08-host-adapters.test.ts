@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { main } from "../../examples/08-host-adapters.ts"
+import { main } from "../../examples/08-host-adapters.vibe"
 
 it.effect("runs one host program on the test and Node adapters", () =>
   Effect.gen(function*() {

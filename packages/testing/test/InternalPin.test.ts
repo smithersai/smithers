@@ -6,7 +6,7 @@
  * than hanging the suite.
  */
 import { Effect } from "effect"
-import * as Pin from "../src/internal/Pin.ts"
+import * as Pin from "../src/internal/Pin.vibe"
 import { describe, expect, it } from "../src/Vitest.vibe"
 
 describe("internal pin assertions", () => {

@@ -9,8 +9,8 @@ import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import type { JournalEntryLike } from "../../src/EngineSubject.vibe"
 import { expectJournal } from "../../src/JournalAssertions.vibe"
-import * as Plan from "../../src/Plan.ts"
-import { expectPlan } from "../../src/PlanAssertions.ts"
+import * as Plan from "../../src/Plan.vibe"
+import { expectPlan } from "../../src/PlanAssertions.vibe"
 
 interface StoredStepEvent {
   readonly stepKey: string

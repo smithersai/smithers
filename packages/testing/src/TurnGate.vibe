@@ -1,0 +1,105 @@
+/**
+ * Hold a model turn until the test releases it.
+ *
+ * An ordering or timing test needs a run to stop at one exact model turn: a
+ * TODO held in Working while another one lands, a pause requested while a plan
+ * is in flight. A replayed model answers at once, so the test needs a gate in
+ * front of it. `TurnGate.model` wraps any `/model/Model`; a turn whose request
+ * names a key waits until `release(key)`, and every other turn passes through.
+ *
+ * A release is sticky. Every turn held on the key is answered, and every later
+ * turn on the same key passes at once, so a test never races the run to the
+ * gate.
+ *
+ * @since 1.0.0
+ */
+
+import * as Model from "@smthrs/model/Model"
+import type { ModelRequest } from "@smthrs/model/ModelRequest"
+import { Deferred, Effect, Ref, Stream } from "effect"
+
+/**
+ * The hold-and-release controller a test drives.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface TurnGate {
+  /** Waits until `key` is released; returns at once when it already was. */
+  readonly hold: (key: string) => void!!
+  /** Answers every turn held on `key`, and every later one at once. */
+  readonly release: (key: string) => void!!
+  /** The keys turns wait on now, one entry per waiting turn, in arrival order. */
+  readonly held: () => ReadonlyArray<string>!!
+}
+
+interface State {
+  readonly released: ReadonlySet<string>
+  readonly waiting: ReadonlyArray<{ readonly key: string; readonly signal: Deferred.Deferred<void> }>
+}
+
+/**
+ * Builds a gate with nothing held and nothing released.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = effect (): TurnGate!! => {
+  const state = try Ref.make<State>({ released: new Set(), waiting: [] })
+  const hold = effect (key: string): void!! => {
+    const signal = try Deferred.make<void>()
+    const waits = try Ref.modify(state, (current): readonly [boolean, State] =>
+      current.released.has(key)
+        ? [false, current]
+        : [true, { ...current, waiting: [...current.waiting, { key, signal }] }])
+    if (!waits) return
+    try (Deferred.await(signal)
+      |> Effect.onInterrupt(%, () =>
+        Ref.update(state, (current) => ({
+          ...current,
+          waiting: current.waiting.filter((entry) => entry.signal !== signal)
+        }))))
+  }
+  const release = (key: string): void!! =>
+    Ref.modify(state, (current): readonly [State["waiting"], State] => [
+      current.waiting.filter((entry) => entry.key === key),
+      {
+        released: new Set([...current.released, key]),
+        waiting: current.waiting.filter((entry) => entry.key !== key)
+      }
+    ])
+    |> Effect.flatMap(%, (answered) => Effect.forEach(answered, (entry) => Deferred.succeed(entry.signal, undefined)))
+    |> Effect.asVoid(%)
+  const held = () => Ref.get(state) |> Effect.map(%, (current) => current.waiting.map((entry) => entry.key))
+  return { hold, release, held }
+}
+
+/**
+ * What {@link model} is built from.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ModelOptions {
+  readonly gate: TurnGate
+  /** The key a turn waits on, or `undefined` for a turn that is never held. */
+  readonly key: (request: ModelRequest) => string | undefined
+}
+
+/**
+ * Wraps a model so a turn whose request names a key waits on the gate before
+ * the wrapped model is called.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const model = (inner: Model.Model, options: ModelOptions): Model.Model =>
+  Model.make({
+    ...(inner.providerName === undefined ? {} : { providerName: inner.providerName }),
+    stream: (request) => {
+      const key = options.key(request)
+      return key === undefined
+        ? inner.stream(request)
+        : Stream.unwrap(options.gate.hold(key) |> Effect.as(%, inner.stream(request)))
+    }
+  })

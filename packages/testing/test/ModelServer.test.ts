@@ -14,9 +14,9 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
 import { Deferred, Effect, Fiber, Layer, Redacted, Result, Stream } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
-import { canonicalRequestDigest } from "../src/Fixture.ts"
+import { canonicalRequestDigest } from "../src/Fixture.vibe"
 import * as ModelServer from "../src/ModelServer.ts"
-import * as TurnGate from "../src/TurnGate.ts"
+import * as TurnGate from "../src/TurnGate.vibe"
 import * as TurnLog from "../src/TurnLog.ts"
 
 const http = FetchHttpClient.layer

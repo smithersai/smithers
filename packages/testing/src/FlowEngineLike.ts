@@ -44,7 +44,7 @@ import {
   type JournalEntryLike,
   type StepSpec
 } from "./EngineSubject.vibe"
-import { conflict, type ExecutionConflict } from "./internal/Execution.ts"
+import { conflict, type ExecutionConflict } from "./internal/Execution.vibe"
 import type { EngineSubjectError } from "./TestingError.ts"
 import { EngineUnavailableError } from "./TestingError.ts"
 

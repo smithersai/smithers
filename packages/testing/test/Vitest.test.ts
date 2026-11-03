@@ -5,9 +5,9 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import * as TestClock from "effect/testing/TestClock"
 import * as EngineSubject from "../src/EngineSubject.vibe"
-import { runEffectTest } from "../src/internal/TestEffectRunner.ts"
+import { runEffectTest } from "../src/internal/TestEffectRunner.vibe"
 import * as TestHost from "../src/TestHost.ts"
-import * as TestLayers from "../src/TestLayers.ts"
+import * as TestLayers from "../src/TestLayers.vibe"
 import { describe, expect, it, testEffect } from "../src/Vitest.vibe"
 
 const Counter = Context.Service<{ readonly ref: Ref.Ref<number> }>("flows/testing/Vitest.test/Counter")
