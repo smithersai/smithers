@@ -248,9 +248,10 @@ describe("effect-boundary records", () => {
   })
 })
 
-it.effect("warns when unknown boundary persistence fails and preserves the provider failure", () =>
+// These stores perform real SQL I/O. No simulated clock is advanced here.
+it.live("warns when unknown boundary persistence fails and preserves the provider failure", () =>
   Effect.gen(function*() {
-    const logs: Array<{ level: string; message: unknown; annotations: unknown }> = []
+    const logs: Array<{ level: string; message: unknown; cause: string; annotations: unknown }> = []
     const primary = new Journal.JournalError({ code: "unknown", message: "provider refused" })
     const result = yield* dispatch({
       runId: "boundary-warning",
@@ -261,7 +262,8 @@ it.effect("warns when unknown boundary persistence fails and preserves the provi
     }).pipe(Effect.provide(Logger.layer([Logger.make((options) => {
       logs.push({
         level: options.logLevel,
-        message: Cause.pretty(options.cause),
+        message: options.message,
+        cause: Cause.pretty(options.cause),
         annotations: options.fiber.getRef(References.CurrentLogAnnotations)
       })
     })])))
@@ -271,8 +273,9 @@ it.effect("warns when unknown boundary persistence fails and preserves the provi
     expect(logs).toEqual([
       expect.objectContaining({
         level: "Warn",
+        message: ["engine-store: failed to persist unknown effect boundary"],
         annotations: expect.objectContaining({ runId: "boundary-warning", step: "boundary-warning-key" })
       })
     ])
-    expect(String(logs[0]?.message)).toContain("unknown boundary unavailable")
+    expect(logs[0]?.cause).toContain("unknown boundary unavailable")
   }))

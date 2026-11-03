@@ -1,0 +1,36 @@
+Postgres storage-matrix leg, 1 CPU / 8 finite CPU burners.
+Original assertion, logger enhanced to retain message separately from cause.
+
+ FAIL  test/EffectBoundaryRecords.test.ts > warns when unknown boundary persistence fails and preserves the provider failure
+AssertionError: expected [ { level: 'Warn', …(3) }, …(1) ] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
++     "annotations": {},
++     "cause": "",
++     "level": "Warn",
++     "message": [
++       "A test is using time, but is not advancing the test clock, which may result in the test hanging. Use TestClock.adjust to manually advance the time.",
++     ],
++   },
++   {
+      "annotations": {
++       "attempt": 1,
+        "runId": "boundary-warning",
+        "step": "boundary-warning-key",
++       "stepKey": "boundary-warning-key",
++       "tier": "irreversible",
+      },
++     "cause": "@smthrs/journal/JournalError: unknown boundary unavailable
++     at <checkout>/packages/smithers/flows/engine-store/test/EffectBoundaryRecords.test.ts:60:24
++     at ActionPersistence.execute (<checkout>/packages/smithers/flows/flow/src/internal/SpanFailure.ts:152:30)",
+      "level": "Warn",
++     "message": [
++       "engine-store: failed to persist unknown effect boundary",
++     ],
+    },
+  ]
+
