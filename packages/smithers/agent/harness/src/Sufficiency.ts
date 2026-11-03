@@ -44,7 +44,7 @@
 
 import { Effect, Schema } from "effect"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
-import * as NarrowedCheck from "./NarrowedCheck.vibe"
+import * as NarrowedCheck from "./NarrowedCheck.ts"
 
 /**
  * How many distinct failing checks one run carries forward.
