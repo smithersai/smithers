@@ -148,7 +148,7 @@ const securityReview = Smithers.SecurityReview({
         "Effect.annotateCurrentSpan, log, or metric attributes that include state_json, checkpoint, outcome, or metadata values rather than ids.",
         "Error messages or RunStoreError causes that embed the rejected JSON payload text."
       ],
-      paths: ["src/RunStore.ts", "src/AttemptStore.vibe", "src/RunStoreMetrics.vibe", "src/internal/SpanOutcome.ts"]
+      paths: ["src/RunStore.ts", "src/AttemptStore.vibe", "src/RunStoreMetrics.vibe", "src/internal/SpanOutcome.vibe"]
     }
   ]
 })

@@ -55,8 +55,8 @@ import type * as SqlError from "effect/sql/SqlError"
 import type { Fragment } from "effect/sql/Statement"
 import { heartbeatSkewAllowance, heartbeatStaleAfter } from "./Heartbeat.ts"
 import * as Boundary from "./internal/Boundary.ts"
-import * as Companion from "./internal/Companion.ts"
-import { observeExit, observeOutcome } from "./internal/SpanOutcome.ts"
+import * as Companion from "./internal/Companion.vibe"
+import { observeExit, observeOutcome } from "./internal/SpanOutcome.vibe"
 import * as RunStoreMetrics from "./RunStoreMetrics.vibe"
 
 /** JSON text carrying an arbitrary decoded value. */
