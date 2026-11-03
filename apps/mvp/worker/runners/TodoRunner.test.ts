@@ -409,6 +409,9 @@ const alive = (pid: number) => {
 describe("half load and overflow (decision 0144)", { timeout: 240_000 }, () => {
   test("a job the attached runner holds back from is claimed by an overflow runner once it waited, and settles Done", async () => {
     const ctx = await setup()
+    // The App's installation recorded, as registration needs: a runner not current writes no machine facts (decision 0148).
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, installation_id) VALUES ('${REPOSITORY.id}', ${INSTALLATION_ID})
+      ON CONFLICT (repo_id) DO UPDATE SET installation_id = ${INSTALLATION_ID}`)
     // The attached runner: held by its own admission rule, as a host over half load or under its disk floor is.
     const attached = JSON.parse(readFileSync(ctx.config, "utf8")) as Record<string, unknown>
     writeFileSync(ctx.config, JSON.stringify({ ...attached, admission: { loadPerCpu: 1000, diskFloorGb: 100_000 } }))

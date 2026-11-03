@@ -285,17 +285,20 @@ export const make = <E, R>(
    * forgotten installation that committed while this waited is seen (Postgres checks a locked row again), and one that
    * comes after waits until the operation commits. Must run inside a transaction, before the operation's own locks.
    */
-  const lockCurrent = (runner: Runner) => Effect.map(standing(runner), (held) => held === "current")
+  const lockCurrent = (runner: Runner, lock: "share" | "write" = "share") =>
+    Effect.map(standing(runner, lock), (held) => held === "current")
 
   /** `lockCurrent`, saying what failed: the runner itself (rotated, retired, cleared) or its repository's installation. */
-  const standing = (runner: Runner) =>
+  const standing = (runner: Runner, lock: "share" | "write" = "share") =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
       Effect.gen(function* () {
+        // A transaction that goes on to update the row takes the write lock now: two that upgraded a shared one would
+        // each wait on the other.
         const [held] = yield* sql`
           SELECT 1 FROM runners
           WHERE id = ${runner.id}::uuid AND token_sha256 = ${runner.tokenSha256} AND removed_at IS NULL
             AND repo_authorized_at IS NOT NULL
-          FOR SHARE`
+          ${sql.literal(lock === "write" ? "FOR NO KEY UPDATE" : "FOR SHARE")}`
         if (held === undefined) return "runner" as const
         const [installed] = yield* sql`
           SELECT 1 FROM github_repositories WHERE repo_id = ${runner.repoId} AND installation_id IS NOT NULL FOR SHARE`
@@ -415,19 +418,25 @@ export const make = <E, R>(
           return answer(fields, reclaimed ? "reclaimed" : "claimed", { job })
         })
       const machine = wants.value.machine
-      if (machine !== undefined) {
-        // Rounded, so a claim that changes nothing a person reads doesn't rewrite the synced row.
-        const load1 = machine.load1 === undefined ? null : Math.round(machine.load1 * 10) / 10
-        const disk = machine.diskFreeGb === undefined ? null : Math.round(machine.diskFreeGb)
-        yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
-          sql`
+      // A runner no longer current, its repository's installation forgotten included, hears why rather than an empty
+      // answer, and records nothing: the check and its machine facts are one transaction, holding it current.
+      const current = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql.withTransaction(Effect.gen(function* () {
+          if (!(yield* lockCurrent(runner, machine === undefined ? "share" : "write"))) return false
+          if (machine === undefined) return true
+          // Rounded, so a claim that changes nothing a person reads doesn't rewrite the synced row.
+          const load1 = machine.load1 === undefined ? null : Math.round(machine.load1 * 10) / 10
+          const disk = machine.diskFreeGb === undefined ? null : Math.round(machine.diskFreeGb)
+          yield* sql`
             UPDATE runners SET version = ${machine.version ?? null}, load1 = ${load1}, disk_free_gb = ${disk},
               held = ${machine.held ?? null}
             WHERE id = ${runner.id}::uuid
               AND (version, load1, disk_free_gb, held) IS DISTINCT FROM
                 (${machine.version ?? null}::text, ${load1}::float8, ${disk}::float8, ${machine.held ?? null}::text)`
-        ).pipe(Effect.provide(database))
-      }
+          return true
+        }))
+      ).pipe(Effect.provide(database))
+      if (!current) return refuse(fields, 403, "not_authorized")
       const held = yield* reclaim(runner, wants.value.running).pipe(Effect.provide(database))
       if (held !== undefined) return yield* job(held, true)
       const deadline = (yield* Clock.currentTimeMillis) + wants.value.waitSeconds * 1000
@@ -438,6 +447,11 @@ export const make = <E, R>(
         if (left <= 0) break
         yield* Effect.sleep(Math.min(pollMillis, left))
       }
+      // Its authorization may have ended while it waited: a claim that found nothing says so, never an empty answer.
+      const still = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(lockCurrent(runner))).pipe(
+        Effect.provide(database),
+      )
+      if (!still) return refuse(fields, 403, "not_authorized")
       return answer(fields, "empty", { job: null })
     })
 

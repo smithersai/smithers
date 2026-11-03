@@ -125,7 +125,8 @@ describe("the job store and the runner routes", () => {
     const db = await database()
     const failure = new SqlError({ reason: new ConnectionError({ cause: "injected outage", message: "unavailable", operation: "execute" }) })
     let opened = 0
-    const flaky = Layer.fresh(Layer.unwrap(Effect.sync(() => ++opened === 4 ? Layer.effect(SqlClient.SqlClient, Effect.fail(failure)) : db)))
+    // Opens: the runner's token, its standing, its reclaim, its claim, then the fleet's projection, which fails.
+    const flaky = Layer.fresh(Layer.unwrap(Effect.sync(() => ++opened === 5 ? Layer.effect(SqlClient.SqlClient, Effect.fail(failure)) : db)))
     const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
     const handler = HttpEffect.toWebHandler(RunnersApi.make(flaky, { runOf: TodoSession.runOf }).fetch.pipe(
       Effect.provide(RunContentTest.transcripts().layer),
@@ -1522,14 +1523,50 @@ describe("the repository's runners and agents", () => {
     }
   })
 
-  test("a runner on a repository with no recorded installation claims none of its jobs", async () => {
+  // Fable's review of the fences (P3-7): such a runner was answered `{ job: null }`, so it never logged why it got no
+  // work, and its machine facts were written outside the fence.
+  test("a runner on a repository with no recorded installation hears not_authorized, and writes no machine facts", async () => {
     const token = await register("nyc-01")
     await sql`DELETE FROM github_repositories`
     await Effect.runPromise((await jobs()).start(taskOf(), "todo:uninstalled#g1"))
     const { claim } = await routes()
-    expect((await claim(token)).body).toEqual({ job: null })
+    expect(await claim(token, { machine: { version: "9.9.9" } })).toEqual({ status: 403, body: { code: "not_authorized" } })
+    expect(await sql`SELECT version FROM runners WHERE name = 'nyc-01'`).toEqual([{ version: null }])
     await recordInstallation()
     expect((await claim(token)).body.job?.key).toBe("todo:uninstalled#g1")
+  })
+
+  // Astra's review of the route-on stack: two claims with new machine facts each took the runner's row FOR SHARE, then
+  // each waited on the other to UPDATE it, and Postgres aborted one. A third connection lines them up.
+  test("two claims with new machine facts at once both answer: neither upgrades a shared lock", async () => {
+    const token = await register("nyc-facts")
+    const { claim } = await routes()
+    await sql`UPDATE runners SET seen_at = now() WHERE name = 'nyc-facts'`
+    let release = () => {}
+    const released = new Promise<void>((done) => (release = done))
+    let locked = () => {}
+    const locking = new Promise<void>((done) => (locked = done))
+    const holder = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        yield* client`SELECT 1 FROM runners WHERE name = 'nyc-facts' FOR UPDATE`
+        yield* Effect.sync(locked)
+        yield* Effect.promise(() => released)
+      }))))
+    await locking
+    const answers = [claim(token, { machine: { version: "1.0.0" } }), claim(token, { machine: { version: "2.0.0" } })]
+    await new Promise((done) => setTimeout(done, 500))
+    release()
+    await holder
+    expect((await Promise.all(answers)).map((answer) => answer.status)).toEqual([200, 200])
+  })
+
+  test("a runner whose authorization ends while its claim waits hears not_authorized, not an empty answer", async () => {
+    const token = await register("nyc-waits")
+    const { claim } = await routes()
+    const waiting = claim(token, { waitSeconds: 2 })
+    await new Promise((done) => setTimeout(done, 300))
+    await sql`DELETE FROM github_repositories`
+    expect(await waiting).toEqual({ status: 403, body: { code: "not_authorized" } })
   })
 
   // Astra's review of 5fc33348: a claim with `running: []` handed back a held job by its runner id alone, though a new
@@ -1542,7 +1579,7 @@ describe("the repository's runners and agents", () => {
     expect((await claim(token)).body.job?.reclaimed).toBe(true)
     // The installation forgotten.
     await sql`UPDATE github_repositories SET installation_id = NULL`
-    expect((await claim(token)).body).toEqual({ job: null })
+    expect(await claim(token)).toEqual({ status: 403, body: { code: "not_authorized" } })
     await recordInstallation()
     expect((await claim(token)).body.job?.reclaimed).toBe(true)
     // The token rotated after the request authenticated, before it reclaimed: a transaction holds the runner's row with
@@ -1563,7 +1600,7 @@ describe("the repository's runners and agents", () => {
     await new Promise((done) => setTimeout(done, 500))
     commit()
     await locker
-    expect((await reclaiming).body).toEqual({ job: null })
+    expect(await reclaiming).toEqual({ status: 403, body: { code: "not_authorized" } })
     expect((await claim(token)).status).toBe(401)
   })
 })
