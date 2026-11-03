@@ -1,0 +1,216 @@
+{
+  "context": "codeplanesmithers/smithers-e2e-scratch",
+  "rendered": "2026-11-03T17:36:07.016Z",
+  "fixtures": [
+    {
+      "text": "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~",
+      "escaped": "\\!\\\"\\#⁠⁠\\$\\%\\&\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:⁠\\;\\<\\=\\>\\?\\@⁠\\[\\\\\\]\\^\\_\\`\\{\\|\\}\\~",
+      "html": "<p dir=\"auto\">!\"#⁠⁠$%&amp;'()*+,-./:⁠;&lt;=&gt;?@⁠[\\]^_`{|}~</p>"
+    },
+    {
+      "text": "**smm**_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "escaped": "\\*\\*smm\\*\\*\\_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "html": "<p dir=\"auto\">**smm**_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</p>"
+    },
+    {
+      "text": "smm_**aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa**",
+      "escaped": "smm\\_\\*\\*aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\*\\*",
+      "html": "<p dir=\"auto\">smm_**aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa**</p>"
+    },
+    {
+      "text": "sm**m**_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "escaped": "sm\\*\\*m\\*\\*\\_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "html": "<p dir=\"auto\">sm**m**_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</p>"
+    },
+    {
+      "text": "smm_`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`",
+      "escaped": "smm\\_\\`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\`",
+      "html": "<p dir=\"auto\">smm_`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`</p>"
+    },
+    {
+      "text": "smm\\_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "escaped": "smm\\\\\\_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "html": "<p dir=\"auto\">smm\\_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</p>"
+    },
+    {
+      "text": "[sm](https://example.com)m_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "escaped": "\\[sm\\]\\(https\\:⁠\\/\\/example\\.com\\)m\\_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "html": "<p dir=\"auto\">[sm](https:⁠//example.com)m_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</p>"
+    },
+    {
+      "text": "smm<!--x-->_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "escaped": "smm\\<\\!\\-\\-x\\-\\-\\>\\_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "html": "<p dir=\"auto\">smm&lt;!--x--&gt;_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</p>"
+    },
+    {
+      "text": "smm<a title=\">\">_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</a>",
+      "escaped": "smm\\<a title\\=\\\"\\>\\\"\\>\\_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\<\\/a\\>",
+      "html": "<p dir=\"auto\">smm&lt;a title=\"&gt;\"&gt;_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&lt;/a&gt;</p>"
+    },
+    {
+      "text": "<div>smm&lowbar;aaaa</div>",
+      "escaped": "\\<div\\>smm\\&lowbar\\;aaaa\\<\\/div\\>",
+      "html": "<p dir=\"auto\">&lt;div&gt;smm&amp;lowbar;aaaa&lt;/div&gt;</p>"
+    },
+    {
+      "text": "<b>bold</b> <img src=x>",
+      "escaped": "\\<b\\>bold\\<\\/b\\> \\<img src\\=x\\>",
+      "html": "<p dir=\"auto\">&lt;b&gt;bold&lt;/b&gt; &lt;img src=x&gt;</p>"
+    },
+    {
+      "text": "&copy; &amp; &#36; &#x41;",
+      "escaped": "\\&copy\\; \\&amp\\; \\&\\#⁠36\\; \\&\\#⁠x41\\;",
+      "html": "<p dir=\"auto\">&amp;copy; &amp;amp; &amp;#⁠36; &amp;#⁠x41;</p>"
+    },
+    {
+      "text": "_/Users/someone/private.txt_",
+      "escaped": "\\_\\/Users\\/someone\\/private\\.txt\\_",
+      "html": "<p dir=\"auto\">_/Users/someone/private.txt_</p>"
+    },
+    {
+      "text": "~/**notes**",
+      "escaped": "\\~\\/\\*\\*notes\\*\\*",
+      "html": "<p dir=\"auto\">~/**notes**</p>"
+    },
+    {
+      "text": "~/`notes`",
+      "escaped": "\\~\\/\\`notes\\`",
+      "html": "<p dir=\"auto\">~/`notes`</p>"
+    },
+    {
+      "text": "/[home](https://example.com)/alice/private.txt",
+      "escaped": "\\/\\[home\\]\\(https\\:⁠\\/\\/example\\.com\\)\\/alice\\/private\\.txt",
+      "html": "<p dir=\"auto\">/[home](https:⁠//example.com)/alice/private.txt</p>"
+    },
+    {
+      "text": "ping @someone and @smithersai/team",
+      "escaped": "ping \\@⁠someone and \\@⁠smithersai\\/team",
+      "html": "<p dir=\"auto\">ping @⁠someone and @⁠smithersai/team</p>"
+    },
+    {
+      "text": "see #1 and GH-1 and codeplanesmithers/smithers-e2e-scratch#1",
+      "escaped": "see \\#⁠1 and GH\\-⁠1 and codeplanesmithers\\/smithers\\-e2e\\-scratch\\#⁠1",
+      "html": "<p dir=\"auto\">see #⁠1 and GH-⁠1 and codeplanesmithers/smithers-e2e-scratch#⁠1</p>"
+    },
+    {
+      "text": "commit 0123456789abcdef0123456789abcdef01234567",
+      "escaped": "commit 0123⁠456789abcdef0123456789abcdef01234567",
+      "html": "<p dir=\"auto\">commit 0123⁠456789abcdef0123456789abcdef01234567</p>"
+    },
+    {
+      "text": "commit a877b78446d1879df196773d9cfaf461cbc247df and short a877b78",
+      "escaped": "commit a877⁠b78446d1879df196773d9cfaf461cbc247df and short a877⁠b78",
+      "html": "<p dir=\"auto\">commit a877⁠b78446d1879df196773d9cfaf461cbc247df and short a877⁠b78</p>"
+    },
+    {
+      "text": "https://example.com/x and www.example.com and someone@example.com",
+      "escaped": "https\\:⁠\\/\\/example\\.com\\/x and www\\.example\\.com and someone\\@⁠example\\.com",
+      "html": "<p dir=\"auto\">https:⁠//example.com/x and www.example.com and someone@⁠example.com</p>"
+    },
+    {
+      "text": "<https://example.com>",
+      "escaped": "\\<https\\:⁠\\/\\/example\\.com\\>",
+      "html": "<p dir=\"auto\">&lt;https:⁠//example.com&gt;</p>"
+    },
+    {
+      "text": ":smile: :+1:",
+      "escaped": "\\:⁠smile\\:⁠ \\:⁠\\+1\\:⁠",
+      "html": "<p dir=\"auto\">:⁠smile:⁠ :⁠+1:⁠</p>"
+    },
+    {
+      "text": "| a | b |\n|---|---|\n| 1 | 2 |",
+      "escaped": "\\| a \\| b \\|\n\\|\\-\\-\\-\\|\\-\\-\\-\\|\n\\| 1 \\| 2 \\|",
+      "html": "<p dir=\"auto\">| a | b |<br>\n|---|---|<br>\n| 1 | 2 |</p>"
+    },
+    {
+      "text": "# heading\n## two",
+      "escaped": "\\#⁠ heading\n\\#⁠\\#⁠ two",
+      "html": "<p dir=\"auto\">#⁠ heading<br>\n#⁠#⁠ two</p>"
+    },
+    {
+      "text": "- one\n* two\n+ three\n1. four\n2) five",
+      "escaped": "\\- one\n\\* two\n\\+ three\n1\\. four\n2\\) five",
+      "html": "<p dir=\"auto\">- one<br>\n* two<br>\n+ three<br>\n1. four<br>\n2) five</p>"
+    },
+    {
+      "text": "> quote\n>> deeper",
+      "escaped": "\\> quote\n\\>\\> deeper",
+      "html": "<p dir=\"auto\">&gt; quote<br>\n&gt;&gt; deeper</p>"
+    },
+    {
+      "text": "```\nfence\n```",
+      "escaped": "\\`\\`\\`\nfence\n\\`\\`\\`",
+      "html": "<p dir=\"auto\">```<br>\nfence<br>\n```</p>"
+    },
+    {
+      "text": "~~~\nfence\n~~~",
+      "escaped": "\\~\\~\\~\nfence\n\\~\\~\\~",
+      "html": "<p dir=\"auto\">~~~<br>\nfence<br>\n~~~</p>"
+    },
+    {
+      "text": "    indented code",
+      "escaped": "&#32;&#32;&#32;&#32;indented code",
+      "html": "<p dir=\"auto\">    indented code</p>"
+    },
+    {
+      "text": "\tindented with a tab",
+      "escaped": "&#9;indented with a tab",
+      "html": "<p dir=\"auto\">\tindented with a tab</p>"
+    },
+    {
+      "text": "line one\nline two\n\nparagraph two",
+      "escaped": "line one\nline two\n\nparagraph two",
+      "html": "<p dir=\"auto\">line one<br>\nline two</p>\n<p dir=\"auto\">paragraph two</p>"
+    },
+    {
+      "text": "trailing two spaces  \nnext",
+      "escaped": "trailing two spaces  \nnext",
+      "html": "<p dir=\"auto\">trailing two spaces<br>\nnext</p>"
+    },
+    {
+      "text": "---\n***\n___",
+      "escaped": "\\-\\-\\-\n\\*\\*\\*\n\\_\\_\\_",
+      "html": "<p dir=\"auto\">---<br>\n***<br>\n___</p>"
+    },
+    {
+      "text": "[ref]: https://example.com\n[ref]",
+      "escaped": "\\[ref\\]\\:⁠ https\\:⁠\\/\\/example\\.com\n\\[ref\\]",
+      "html": "<p dir=\"auto\">[ref]:⁠ https:⁠//example.com<br>\n[ref]</p>"
+    },
+    {
+      "text": "![alt](https://example.com/x.png)",
+      "escaped": "\\!\\[alt\\]\\(https\\:⁠\\/\\/example\\.com\\/x\\.png\\)",
+      "html": "<p dir=\"auto\">![alt](https:⁠//example.com/x.png)</p>"
+    },
+    {
+      "text": "- [ ] task\n- [x] done",
+      "escaped": "\\- \\[ \\] task\n\\- \\[x\\] done",
+      "html": "<p dir=\"auto\">- [ ] task<br>\n- [x] done</p>"
+    },
+    {
+      "text": "a ~~strike~~ b",
+      "escaped": "a \\~\\~strike\\~\\~ b",
+      "html": "<p dir=\"auto\">a ~~strike~~ b</p>"
+    },
+    {
+      "text": "$x^2$ and $$y$$",
+      "escaped": "⁠\\$x\\^2⁠\\$ and ⁠\\$⁠\\$y⁠\\$⁠\\$",
+      "html": "<p dir=\"auto\">⁠$x^2⁠$ and ⁠$⁠$y⁠$⁠$</p>"
+    },
+    {
+      "text": "<details><summary>s</summary>x</details>",
+      "escaped": "\\<details\\>\\<summary\\>s\\<\\/summary\\>x\\<\\/details\\>",
+      "html": "<p dir=\"auto\">&lt;details&gt;&lt;summary&gt;s&lt;/summary&gt;x&lt;/details&gt;</p>"
+    },
+    {
+      "text": "\\\\ backslashes \\\\\\",
+      "escaped": "\\\\\\\\ backslashes \\\\\\\\\\\\",
+      "html": "<p dir=\"auto\">\\\\ backslashes \\\\\\</p>"
+    },
+    {
+      "text": "emoji 😀 and é and ünïcode",
+      "escaped": "emoji 😀 and é and ünïcode",
+      "html": "<p dir=\"auto\">emoji 😀 and é and ünïcode</p>"
+    }
+  ]
+}

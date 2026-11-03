@@ -11,6 +11,7 @@ import type { Services } from "./Apply.ts"
 import { withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import { fetchIssue, project } from "./Project.ts"
+import { attribution, contentProblem, escapeMarkdown, fitsGitHub, titleProblem } from "../../src/features/issues/publicContent.mjs"
 
 // Machine writes (docs/features/machine-tokens.md): an agent, with a machine token and no person, opens or updates an
 // issue, comments or files a sub-issue. The route records the write in `machine_writes` and starts the owner's one
@@ -97,58 +98,28 @@ export const decodeBody = (text: string) => Option.map(decodeRaw(text), (body): 
  */
 export const isReservedLabel = (label: string) => label.trim().toLowerCase().startsWith("smithers:")
 
-// No leading `\\b`: Markdown's `_smm_…_` puts a word character right before a token.
-const CREDENTIAL_SHAPES: ReadonlyArray<RegExp> = [
-  /smm_[A-Za-z0-9_-]{8,}/i,
-  /(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/,
-  /sk-[A-Za-z0-9_-]{16,}/,
-  /AKIA[0-9A-Z]{16}/,
-  /(?:xox[abpr]-|glpat-)[A-Za-z0-9-]{10,}/,
-  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
-  /-----BEGIN [A-Z ]*PRIVATE KEY/,
-  // A scheme is tried once per run of scheme characters, from where the run starts (digits and `+.-` first are part of
-  // the run), so a long run costs one try, not one from each letter.
-  /(?<![a-z0-9+.-])[0-9+.-]*[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i,
-  /(?:authorization|bearer|token|secret|password|api[_-]?key)(?:\s*[:=]\s*|\s+)["']?[A-Za-z0-9_./+=-]{12,}/i,
-]
-const HOME_PATH = /(?<![\w.~/-])(?:\/(?:Users|home)\/[A-Za-z0-9._-]+|~\/[A-Za-z0-9._-])/
-
-/** `text` with percent escapes and numeric HTML entities decoded, as a link or a page renders it. Never throws. */
-export const renderedForms = (text: string): ReadonlyArray<string> => {
-  const forms = [text]
-  let current = text
-  for (let round = 0; round < 3; round++) {
-    const next = current
-      .replace(/%[0-9a-f]{2}/gi, (escape) => String.fromCharCode(Number.parseInt(escape.slice(1), 16)))
-      .replace(/&#(x[0-9a-f]+|\d+);?/gi, (_, code: string) => {
-        const point = code[0]!.toLowerCase() === "x" ? Number.parseInt(code.slice(1), 16) : Number(code)
-        return point <= 0x10ffff ? String.fromCodePoint(point) : ""
-      })
-    if (next === current) break
-    forms.push(next)
-    current = next
-  }
-  return forms
-}
-
 /**
- * The public-content rule at the server: what a machine posts is public, so credential-shaped text and home paths are
- * refused, as written and as rendered, whatever client sent them. Names the kind, never the text.
+ * The public-content rule at the server, shared with the lane helper (src/features/issues/publicContent.mjs): what a
+ * machine posts is public, so credentials and home paths are refused, as written and decoded, whatever client sent
+ * them. A body is filed escaped, so that is what a page shows. Names the kind, never the text.
  */
 export const publicContentProblem = (texts: ReadonlyArray<string | null | undefined>): "credential" | "home_path" | undefined => {
   for (const text of texts) {
     if (text === null || text === undefined) continue
-    for (const form of renderedForms(text)) {
-      if (CREDENTIAL_SHAPES.some((shape) => shape.test(form))) return "credential"
-      if (HOME_PATH.test(form)) return "home_path"
-    }
+    const problem = contentProblem(text)
+    if (problem !== undefined) return problem
   }
   return undefined
 }
 
+/** Markdown's escaping, for what the dispatcher files: every ASCII punctuation character backslash-escaped. */
+export { escapeMarkdown, fitsGitHub }
+
 /** The refusal a body earns before it reaches the database, or nothing. */
-export const refusalOf = (body: MachineBody): "reserved_label" | "credential" | "home_path" | undefined => {
+export const refusalOf = (body: MachineBody): "reserved_label" | "markup" | "credential" | "home_path" | undefined => {
   if (body.op === "issue/create" && (body.labels ?? []).some(isReservedLabel)) return "reserved_label"
+  // A title is filed as written, and shows code spans: a backtick there is refused.
+  if ("title" in body && body.title !== undefined && titleProblem(body.title) !== undefined) return "markup"
   return publicContentProblem([
     "title" in body ? body.title : undefined,
     "body" in body ? body.body : undefined,
@@ -466,7 +437,9 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const token = minted.success
       const path = `/repos/${repository.owner}/${repository.name}`
       const payload = write.payload
-      const attributed = (text: string) => `${text}\n\nFiled by the agent ${write.agent}, lane ${write.lane}.`
+      // Every ASCII punctuation character escaped, so GitHub shows exactly what was written (publicContent.mjs): no
+      // emphasis, link, entity, HTML or mention can change what a reader sees, and the scan reads what the page shows.
+      const attributed = (text: string) => `${escapeMarkdown(text)}${attribution(write.agent, write.lane)}`
       const get = (url: string, as = token) => call(services, observed, as, "GET", url)
       /** A read that didn't answer. A limit `observed` heard holds on its own; this goes to the back of the line. */
       const notNow = Effect.gen(function* () {

@@ -1,7 +1,10 @@
-// The lane helper (ops/issues/track.mjs): identity, matching, links and sub-issues, against a recorded fetch.
+// The lane helper (ops/issues/track.mjs): tokens, matching, links and machine writes, against a recorded fetch.
 import { describe, expect, test } from "vitest"
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 // @ts-expect-error: a plain .mjs script, untyped.
-import { attach, clientOf, findMatch, identityOf, link, linkOf, normalizeTitle, open, parentRefOf, retryWaitOf, verifyIdentity } from "./track.mjs"
+import { clientOf, comment, findMatch, laneFor, link, linkOf, normalizeTitle, open, parentRefOf, relate, repoOf, retryWrite, scopedWriteId, tokenFor, update } from "./track.mjs"
 
 type Sent = { url: string; init: RequestInit }
 const recorder = (answer: (url: string, init: RequestInit) => [number, unknown]) => {
@@ -13,165 +16,186 @@ const recorder = (answer: (url: string, init: RequestInit) => [number, unknown])
   }
   return { sent, fetch }
 }
-const identity = { login: "agent-bot", cookie: "c=secret-cookie", personId: "p-1", runnerToken: "secret-runner", githubToken: "secret-gh" }
+const client = (fetch: unknown) => clientOf({ origin: "https://smithers.test", dryRun: false, fetch, token: () => "smm_secret", lane: () => "fixer/lane-1" })
+const sleep = async () => {}
+const shape = (rows: Array<object> = []) => [...rows.map((value, i) => ({ headers: { operation: "insert" }, key: `k${i}`, value })), { headers: { control: "up-to-date" } }]
 
 describe("the lane helper", () => {
-  test("refuses to write without an identity file, without a login, or as a person", () => {
-    const read = (body: string) => () => body
-    expect(() => identityOf(undefined)).toThrow("no identity")
-    expect(() => identityOf("/x", read("{}"), () => false)).toThrow("does not exist")
-    expect(() => identityOf("/x", read("{}"), () => true)).toThrow("names no login")
-    expect(() => identityOf("/x", read('{"login":"RoninJin10"}'), () => true)).toThrow("is a person's")
-    expect(identityOf("/x", read('{"login":"agent-bot"}'), () => true)).toMatchObject({ login: "agent-bot" })
+  test("reads a repository's token from the file its map names, and refuses anything else", () => {
+    const token = `smm_${"x".repeat(43)}`
+    const files: Record<string, string> = { "/map": '{"acme/a":{"file":"/a","agent":"fixer","lane":"lane-1"},"acme/b":{"file":"/b","agent":"fixer","lane":"lane-1"}}', "/a": `${token}\n`, "/b": "ghp_notours\n" }
+    const read = (path: string) => files[path]!
+    expect(tokenFor("acme/a", read, "/map")).toBe(token)
+    expect(() => tokenFor("acme/a", read, undefined)).toThrow("SMITHERS_ISSUE_TOKENS")
+    expect(() => tokenFor("acme/c", read, "/map")).toThrow("no machine token for acme/c")
+    expect(() => tokenFor("acme/b", read, "/map")).toThrow("holds no machine token")
   })
 
-  test("a dry run sends nothing and prints each request with its secrets named, not shown", async () => {
-    const { sent, fetch } = recorder(() => [500, {}])
-    const client = clientOf({ origin: "https://smithers.test", identity, dryRun: true, fetch })
-    const result = await open(client, { repo: "acme/widgets", title: "Lint panics", body: "What and why.", key: "fuzz:a:1", labels: ["fuzz-finding"] })
-    expect(sent).toEqual([])
-    expect(result).toMatchObject({ number: null, reused: false, labelsApplied: true, missingLabels: [] })
-    const printed = JSON.stringify(client.requests)
-    for (const secret of ["secret-cookie", "secret-runner", "secret-gh", "p-1"]) expect(printed).not.toContain(secret)
-    const create = client.requests.find((r: { method: string }) => r.method === "POST")
-    expect(create.url).toBe("https://smithers.test/api/repos/acme/widgets/writes")
-    expect(create.body).toMatchObject({ op: "issue/create", title: "Lint panics" })
-    expect(create.body.body).toContain("key: fuzz:a:1\nlabels: fuzz-finding")
-  })
-
-  test("open applies its labels on GitHub, creating the missing ones, and keeps the body marker", async () => {
-    const shape = [{ headers: { operation: "insert" }, key: "k4", value: { number: "4", kind: "issue", state: "open", title: "Lint panics", body: "x\nkey: fuzz:a:1\n" } }, { headers: { control: "up-to-date" } }]
-    const run = async (createStatus: number) => {
-      const { sent, fetch } = recorder((url, init) => {
-        if (url.includes("/api/shapes/items")) return [200, shape]
-        if (url.endsWith("/repos/acme/widgets/labels?per_page=100&page=1")) return [200, [{ name: "fuzz-finding" }]]
-        if (url.endsWith("/repos/acme/widgets/labels") && init.method === "POST") return [createStatus, {}]
-        if (url.endsWith("/issues/4/labels")) return [200, []]
-        return [404, {}]
-      })
-      const client = clientOf({ origin: "https://smithers.test", identity, dryRun: false, fetch, githubEveryMs: 0 })
-      const result = await open(client, { repo: "acme/widgets", title: "Lint panics", body: "x", key: "fuzz:a:1", labels: ["fuzz-finding", "migrate:alchemy"] })
-      return { sent, result }
+  test("a token file must be private and hold one whole token; no error quotes a token or its path", () => {
+    const token = `smm_${"A".repeat(43)}`
+    const dir = mkdtempSync(join(tmpdir(), "track-token-"))
+    const file = (name: string, text: string, mode: number) => {
+      const path = join(dir, name)
+      writeFileSync(path, text, { mode })
+      chmodSync(path, mode)
+      return path
     }
-    const created = await run(201)
-    expect(created.result).toMatchObject({ number: 4, reused: true, by: "key", labelsApplied: true, missingLabels: [] })
-    const apply = created.sent.find((s) => s.url.endsWith("/issues/4/labels"))!
-    expect(JSON.parse(String(apply.init.body))).toEqual({ labels: ["fuzz-finding", "migrate:alchemy"] })
-    expect((apply.init.headers as Record<string, string>).authorization).toBe("Bearer secret-gh")
-    const refused = await run(403)
-    expect(refused.result).toMatchObject({ labelsApplied: false, missingLabels: ["migrate:alchemy"] })
-    expect(JSON.parse(String(refused.sent.find((s) => s.url.endsWith("/issues/4/labels"))!.init.body))).toEqual({ labels: ["fuzz-finding"] })
+    const lane = { agent: "fixer", lane: "lane-1" }
+    const map = (entry: unknown, mode = 0o600) => file(`map-${Math.random()}`, JSON.stringify({ "acme/a": entry }), mode)
+    expect(tokenFor("acme/a", undefined, map({ file: file("ok", `${token}\n`, 0o600), ...lane }))).toBe(token)
+    expect(laneFor("acme/a", undefined, map({ file: file("ok3", `${token}\n`, 0o600), ...lane }))).toBe("fixer/lane-1")
+    const refusals: Array<[string, () => unknown]> = [
+      ["readable by others", () => tokenFor("acme/a", undefined, map({ file: file("open", `${token}\n`, 0o644), ...lane }))],
+      ["readable by others", () => tokenFor("acme/a", undefined, map({ file: file("ok2", `${token}\n`, 0o600), ...lane }, 0o644))],
+      ["holds no machine token", () => tokenFor("acme/a", undefined, map({ file: file("split", `${token.slice(0, 20)}\n${token.slice(20)}\n`, 0o600), ...lane }))],
+      ["names a token", () => tokenFor("acme/a", undefined, map({ file: token, ...lane }))],
+      ["can't be read", () => tokenFor("acme/a", undefined, map({ file: join(dir, "missing"), ...lane }))],
+      ["is not { \"file\"", () => tokenFor("acme/a", undefined, map(file("bare", `${token}\n`, 0o600)))],
+      ["names no agent and lane", () => tokenFor("acme/a", undefined, map({ file: file("ok4", `${token}\n`, 0o600), agent: "a/b", lane: "c" }))],
+      ["names no agent and lane", () => laneFor("acme/a", undefined, map({ file: file("ok5", `${token}\n`, 0o600) }))],
+    ]
+    for (const [why, read] of refusals) {
+      let message = ""
+      try {
+        read()
+      } catch (error) {
+        message = String((error as Error).message)
+      }
+      expect(message, why).toContain(why)
+      expect(message).not.toContain(token.slice(4, 24))
+      expect(message).not.toContain(dir)
+    }
+  })
+
+  test("a repository name shaped like a credential is refused, and an update's state is open or closed", async () => {
+    const token = `smm_${"E".repeat(43)}`
+    expect(() => repoOf(`acme/${token}`)).toThrow("not a repository name")
+    let message = ""
+    try {
+      repoOf(`acme/${token}`)
+    } catch (error) {
+      message = String((error as Error).message)
+    }
+    expect(message).not.toContain(token.slice(4, 24))
+    const { fetch } = recorder(() => [202, {}])
+    await expect(update(client(fetch), { repo: "acme/a", issue: 3, state: token, sleep })).rejects.toThrow("--state is open or closed")
+  })
+
+  test("a failed request answers a fixed message, never what fetch said about its headers", async () => {
+    const token = `smm_${"B".repeat(43)}`
+    const fetch = async () => {
+      throw new TypeError(`Headers.append: "Bearer ${token}" is an invalid header value.`)
+    }
+    const failing = clientOf({ origin: "https://smithers.test", dryRun: false, fetch, token: () => token, lane: () => "fixer/lane-1" })
+    await expect(failing.send({ repo: "acme/a", path: "/writes" })).rejects.toThrow("the request to https://smithers.test failed")
+    await failing.send({ repo: "acme/a", path: "/writes" }).catch((error: Error) => expect(error.message).not.toContain(token))
+  })
+
+  test("write ids are scoped to the agent and lane, and the op: a new token retries the same write, another lane never shares one", async () => {
+    const ids = async (token: string, lane: string) => {
+      const { sent, fetch } = recorder((url, init) => (init.method === "POST" ? [202, {}] : [200, { status: "done", number: 3, failure: null }]))
+      const c = clientOf({ origin: "https://smithers.test", dryRun: false, fetch, token: () => token, lane: () => lane })
+      await relate(c, { repo: "acme/a", issue: 3, parent: "acme/a#1", sleep })
+      return sent.filter((call) => call.init.method === "POST").map((call) => JSON.parse(String(call.init.body)).writeId)
+    }
+    const before = await ids(`smm_${"C".repeat(43)}`, "fixer/lane-1")
+    expect(await ids(`smm_${"D".repeat(43)}`, "fixer/lane-1")).toEqual(before)
+    expect(await ids(`smm_${"C".repeat(43)}`, "fixer/lane-2")).not.toEqual(before)
+    expect(scopedWriteId("x", "issue/create", "acme/a", "link:k")).not.toBe(scopedWriteId("x", "issue/relate", "acme/a", "k"))
+  })
+
+  test("a dry run sends nothing and prints each request with the token named, not shown", async () => {
+    const { sent, fetch } = recorder(() => [500, {}])
+    const dry = clientOf({ origin: "https://smithers.test", dryRun: true, fetch, token: () => "smm_secret" })
+    const result = await open(dry, { repo: "acme/widgets", title: "Lint panics", body: "What and why.", key: "fuzz:a:1", labels: ["fuzz-finding"], parent: "acme/plan#3" })
+    expect(sent).toEqual([])
+    expect(result).toMatchObject({ number: null, reused: false })
+    expect(JSON.stringify(dry.requests)).not.toContain("smm_secret")
+    const create = dry.requests.find((r: { method: string }) => r.method === "POST")
+    expect(create.url).toBe("https://smithers.test/api/repos/acme/widgets/writes")
+    expect(create.body).toMatchObject({ op: "issue/create", title: "Lint panics", labels: ["fuzz-finding"] })
+    expect(create.body.body).toContain("key: fuzz:a:1\nlabels: fuzz-finding")
+    expect(create.headers.authorization).toBe("Bearer [machine token for acme/widgets]")
   })
 
   test("refuses to open an issue whose title can't be made clean, before any request", async () => {
-    const client = clientOf({ origin: "https://smithers.test", identity, dryRun: true })
-    await expect(open(client, { repo: "acme/widgets", title: "fails on nyc-07", body: "x" })).rejects.toThrow("title (host)")
-    expect(client.requests).toEqual([])
+    const dry = clientOf({ origin: "https://smithers.test", dryRun: true })
+    await expect(open(dry, { repo: "acme/widgets", title: "fails on nyc-07", body: "x" })).rejects.toThrow("title (host)")
+    expect(dry.requests).toEqual([])
   })
 
-  test("reuses an open issue with the key marker, else the same normalized title, never a closed one", () => {
+  test("a keyed issue is found by its exact marker only, closed included; a same-title issue is never a receipt", () => {
     const rows = [
-      { number: "3", kind: "issue", state: "closed", title: "Lint panics", body: "key: k:1" },
-      { number: "4", kind: "issue", state: "open", title: "Other", body: "text\nkey: k:1\n" },
-      { number: "5", kind: "issue", state: "open", title: "`Lint` panics!", body: "" },
+      { number: "3", kind: "issue", state: "closed", title: "Old", body: "text\nkey: k:1\n" },
+      { number: "5", kind: "issue", state: "open", title: "`Lint` panics!", body: "key: k:10" },
     ]
-    expect(findMatch(rows, { title: "x", key: "k:1" })).toEqual({ number: 4, by: "key" })
-    expect(findMatch(rows, { title: "lint  panics", key: "k:2" })).toEqual({ number: 5, by: "title" })
-    expect(findMatch(rows, { title: "nothing", key: "k:3" })).toBeUndefined()
+    expect(findMatch(rows, { title: "x", key: "k:1" })).toEqual({ number: 3, by: "key" })
+    expect(findMatch(rows, { title: "lint  panics", key: "k:2" })).toBeUndefined()
+    // A lane opening an issue on purpose, with no key, may reuse an open issue of the same title.
+    expect(findMatch(rows, { title: "lint  panics" })).toEqual({ number: 5, by: "title" })
+    expect(findMatch(rows, { title: "old" })).toBeUndefined()
     expect(normalizeTitle("`Lint` panics.")).toBe("lint panics")
   })
 
-  test("a lane link is a session link, and the runner token goes as a bearer only", async () => {
-    expect(linkOf({ kind: "lane", ref: "fix-1", at: "t" })).toEqual({ kind: "session", ref: "lane:fix-1", label: "lane fix-1", at: "t" })
-    expect(() => linkOf({ kind: "lane", ref: "x", state: "bogus" })).toThrow("--state")
-    expect(() => linkOf({ kind: "queue", ref: "x", url: "http://x" })).toThrow("https")
-    const { sent, fetch } = recorder(() => [200, { links: 1, changed: 1 }])
-    const client = clientOf({ origin: "https://smithers.test", identity, dryRun: false, fetch })
-    await link(client, { repo: "acme/widgets", issue: "12", kind: "queue", ref: "q-1", state: "queued", at: "2026-11-02T10:00:00.000Z" })
-    expect(sent[0]!.url).toBe("https://smithers.test/api/repos/acme/widgets/issues/12/links")
-    expect((sent[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer secret-runner")
-    expect(String(sent[0]!.init.body)).not.toContain("secret")
+  test("opens by a machine write with the token as a bearer, watches it settle, and files it under its parent", async () => {
+    let looks = 0
+    const { sent, fetch } = recorder((url, init) => {
+      if (url.includes("/api/shapes/items")) return [200, shape()]
+      if (init.method === "POST") return [202, {}]
+      return [200, url.endsWith(String(firstWrite())) && looks++ === 0 ? { status: "pending", number: null, failure: null } : { status: "done", number: 12, failure: null }]
+    })
+    const firstWrite = () => JSON.parse(String(sent.find((s) => s.init.method === "POST")!.init.body)).writeId
+    const result = await open(client(fetch), { repo: "acme/widgets", title: "Lint panics", body: "x", key: "k:1", parent: "acme/plan#3", sleep })
+    expect(result).toMatchObject({ number: 12, reused: false, parent: "acme/plan#3" })
+    const posts = sent.filter((s) => s.init.method === "POST")
+    expect(posts.map((s) => JSON.parse(String(s.init.body)).op)).toEqual(["issue/create", "issue/relate"])
+    expect(JSON.parse(String(posts[1]!.init.body))).toMatchObject({ number: 12, parent: { repo: "acme/plan", number: 3 } })
+    expect((posts[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer smm_secret")
+    expect(String(posts[0]!.init.body)).not.toContain("smm_secret")
+    // The shape is public: it never carries the token.
+    expect((sent[0]!.init.headers as Record<string, string>).authorization).toBeUndefined()
   })
 
-  test("files a sub-issue by the child's id, across repositories of one owner, and refuses GitHub's limits", async () => {
-    const answers = (total: number, ancestors: number) => recorder((url) => {
-      if (url.endsWith("/sub_issues")) return [201, {}]
-      const up = /issues\/(\d+)\/parent$/.exec(url)
-      if (up !== null) return Number(up[1]) > 100 - ancestors ? [200, { number: Number(up[1]) - 1, url: `https://api.github.com/repos/acme/plan/issues/${Number(up[1]) - 1}` }] : [404, {}]
-      if (url.endsWith("/issues/100")) return [200, { sub_issues_summary: { total } }]
-      return [200, { id: 987654 }]
-    })
-    const ok = answers(3, 2)
-    const placed = await attach(clientOf({ origin: "o", identity, dryRun: false, fetch: ok.fetch }), { child: { owner: "acme", name: "code", number: 7 }, parent: { owner: "acme", name: "plan", number: 100 } })
-    expect(placed).toEqual({ parent: "acme/plan#100", depth: 4 })
-    const post = ok.sent.find((s) => s.init.method === "POST")!
-    expect(JSON.parse(String(post.init.body))).toEqual({ sub_issue_id: 987654 })
-    expect((post.init.headers as Record<string, string>).authorization).toBe("Bearer secret-gh")
-    const full = answers(100, 0)
-    await expect(attach(clientOf({ origin: "o", identity, dryRun: false, fetch: full.fetch }), { child: { owner: "acme", name: "code", number: 7 }, parent: { owner: "acme", name: "plan", number: 100 } })).rejects.toMatchObject({ code: "children_limit" })
-    const deep = answers(0, 7)
-    await expect(attach(clientOf({ origin: "o", identity, dryRun: false, fetch: deep.fetch }), { child: { owner: "acme", name: "code", number: 7 }, parent: { owner: "acme", name: "plan", number: 100 } })).rejects.toMatchObject({ code: "depth_limit" })
-    await expect(attach(clientOf({ origin: "o", identity, dryRun: true }), { child: { owner: "other", name: "code", number: 7 }, parent: { owner: "acme", name: "plan", number: 100 } })).rejects.toMatchObject({ code: "cross_owner" })
+  test("reuses a keyed issue without writing, and says why a write was refused", async () => {
+    const reuse = recorder(() => [200, shape([{ number: "4", kind: "issue", state: "closed", title: "Other", body: "key: k:1" }])])
+    expect(await open(client(reuse.fetch), { repo: "acme/widgets", title: "Lint", body: "x", key: "k:1" })).toMatchObject({ number: 4, reused: true, by: "key" })
+    expect(reuse.sent.filter((s) => s.init.method === "POST")).toEqual([])
+    const refused = recorder((url, init) => (init.method === "POST" ? [202, {}] : [200, { status: "refused", failure: "has_parent", number: null }]))
+    await expect(relate(client(refused.fetch), { repo: "acme/widgets", issue: 2, parent: "acme/plan#3", sleep })).rejects.toThrow("has_parent")
+    const dead = recorder(() => [401, { code: "authentication" }])
+    await expect(comment(client(dead.fetch), { repo: "acme/widgets", issue: 2, body: "hello", sleep })).rejects.toMatchObject({ exit: 3 })
     expect(parentRefOf("acme/plan#12")).toEqual({ owner: "acme", name: "plan", number: 12 })
     expect(() => parentRefOf("acme/plan")).toThrow("--parent")
   })
 
-  test("verifies who each credential belongs to before writing, and refuses a mismatch or a person", async () => {
-    const check = (session: unknown, user: unknown) => {
-      const { fetch } = recorder((url) => (url.endsWith("/api/auth/session") ? [200, session] : [200, user]))
-      return verifyIdentity(clientOf({ origin: "https://smithers.test", identity, dryRun: false, fetch }), identity)
-    }
-    await expect(check({ signedIn: true, personId: "p-1", login: "agent-bot" }, { login: "Agent-Bot", id: 9 })).resolves.toMatchObject({ verified: true, personId: "p-1", githubId: 9 })
-    await expect(check({ signedIn: false }, { login: "agent-bot" })).rejects.toThrow("not signed in")
-    await expect(check({ signedIn: true, personId: "p-1", login: "other-bot" }, { login: "agent-bot" })).rejects.toThrow("belongs to other-bot")
-    await expect(check({ signedIn: true, personId: "p-2", login: "agent-bot" }, { login: "agent-bot" })).rejects.toThrow("another person")
-    await expect(check({ signedIn: true, personId: "p-1", login: "roninjin10" }, { login: "agent-bot" })).rejects.toThrow("belongs to a person")
-    await expect(check({ signedIn: true, personId: "p-1", login: "agent-bot" }, { login: "roninjin10" })).rejects.toThrow("GitHub token belongs to a person")
-    await expect(verifyIdentity(clientOf({ origin: "o", identity, dryRun: true }), identity)).resolves.toEqual({ verified: false })
+  test("updates by a machine write, refuses an empty one, and a failed write says how to run it again", async () => {
+    const done = recorder((url, init) => (init.method === "POST" ? [202, {}] : [200, { status: "done", number: 3, failure: null }]))
+    expect(await update(client(done.fetch), { repo: "acme/widgets", issue: 3, title: "Renamed", state: "closed", sleep })).toMatchObject({ number: 3 })
+    expect(JSON.parse(String(done.sent[0]!.init.body))).toMatchObject({ op: "issue/update", number: 3, title: "Renamed", state: "closed" })
+    await expect(update(client(done.fetch), { repo: "acme/widgets", issue: 3, sleep })).rejects.toThrow("--title")
+    // Close, reopen, close: each is its own act, or the second close answers the first's receipt and does nothing.
+    const repeated = recorder((url, init) => (init.method === "POST" ? [202, {}] : [200, { status: "done", number: 3, failure: null }]))
+    for (const state of ["closed", "open", "closed"]) await update(client(repeated.fetch), { repo: "acme/widgets", issue: 3, state, sleep })
+    const ids = repeated.sent.filter((call) => call.init.method === "POST").map((call) => JSON.parse(String(call.init.body)).writeId)
+    expect(ids).toHaveLength(3)
+    expect(new Set(ids).size).toBe(3)
+    const failed = recorder((url, init) => (init.method === "POST" ? [202, {}] : [200, { status: "failed", number: null, failure: "exhausted" }]))
+    await expect(update(client(failed.fetch), { repo: "acme/widgets", issue: 3, title: "T", sleep })).rejects.toThrow("track.mjs retry --write")
+    const again = recorder((url, init) => (init.method === "POST" ? [202, {}] : [200, { status: "done", number: 3, failure: null }]))
+    expect(await retryWrite(client(again.fetch), { repo: "acme/widgets", writeId: "w-1", sleep })).toMatchObject({ number: 3 })
+    expect(again.sent[0]!.url).toBe("https://smithers.test/api/repos/acme/widgets/writes/w-1/retry")
+    const refused = recorder(() => [409, { code: "conflict" }])
+    await expect(retryWrite(client(refused.fetch), { repo: "acme/widgets", writeId: "w-1", sleep })).rejects.toThrow("409 conflict")
   })
 
-  test("paces GitHub-bound mutations 7.5 s apart and waits out a secondary rate limit", async () => {
-    let clock = 0
-    const waits: Array<number> = []
-    const sleep = async (ms: number) => {
-      waits.push(ms)
-      clock += ms
-    }
-    let calls = 0
-    const fetch = async () => {
-      calls++
-      return calls === 2
-        ? new Response("{}", { status: 403, headers: { "retry-after": "61" } })
-        : new Response("{}", { status: 201 })
-    }
-    const client = clientOf({ origin: "o", identity, dryRun: false, fetch, sleep, now: () => clock })
-    await client.send({ method: "POST", url: "https://api.github.com/x", use: "github", body: {} })
-    await client.send({ method: "POST", url: "https://api.github.com/y", use: "github", body: {} })
-    expect(calls).toBe(3)
-    expect(waits).toEqual([7500, 61000])
-    await client.send({ url: "https://api.github.com/z", use: "github" })
-    expect(waits).toHaveLength(2)
-    const headers = (h: Record<string, string>) => new Headers(h)
-    expect(retryWaitOf(403, headers({}), 60000)).toBeUndefined()
-    expect(retryWaitOf(403, headers({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": "100" }), 60000, 40_000)).toBe(61_000)
-    expect(retryWaitOf(429, headers({}), 60000)).toBe(60000)
-  })
-
-  test("attach looks first: the same parent is a no-op, another parent is refused unless replaced", async () => {
-    const under = (number: number) => recorder((url) => {
-      if (url.endsWith("/issues/7/parent")) return [200, { number, url: `https://api.github.com/repos/acme/plan/issues/${number}` }]
-      if (url.endsWith("/sub_issues")) return [201, {}]
-      if (url.endsWith("/parent")) return [404, {}]
-      return [200, { id: 5, sub_issues_summary: { total: 1 } }]
-    })
-    const same = under(100)
-    await expect(attach(clientOf({ origin: "o", identity, dryRun: false, fetch: same.fetch }), { child: { owner: "acme", name: "code", number: 7 }, parent: { owner: "acme", name: "plan", number: 100 } })).resolves.toEqual({ parent: "acme/plan#100", noop: true })
-    expect(same.sent.some((s) => s.init.method === "POST")).toBe(false)
-    const other = under(50)
-    await expect(attach(clientOf({ origin: "o", identity, dryRun: false, fetch: other.fetch }), { child: { owner: "acme", name: "code", number: 7 }, parent: { owner: "acme", name: "plan", number: 100 } })).rejects.toMatchObject({ code: "has_parent" })
-    expect(other.sent.some((s) => s.init.method === "POST")).toBe(false)
-    const moved = under(50)
-    await expect(attach(clientOf({ origin: "o", identity, dryRun: false, fetch: moved.fetch }), { child: { owner: "acme", name: "code", number: 7 }, parent: { owner: "acme", name: "plan", number: 100 }, replace: true })).resolves.toMatchObject({ replaced: "acme/plan#50" })
-    expect(JSON.parse(String(moved.sent.find((s) => s.init.method === "POST")!.init.body))).toEqual({ sub_issue_id: 5, replace_parent: true })
+  test("a lane link is a session link with the token as a bearer", async () => {
+    expect(linkOf({ kind: "lane", ref: "fix-1", at: "t" })).toEqual({ kind: "session", ref: "lane:fix-1", label: "lane fix-1", at: "t" })
+    expect(() => linkOf({ kind: "lane", ref: "x", state: "bogus" })).toThrow("--state")
+    expect(() => linkOf({ kind: "queue", ref: "x", url: "http://x" })).toThrow("https")
+    const { sent, fetch } = recorder(() => [200, { links: 1, changed: 1 }])
+    await link(client(fetch), { repo: "acme/widgets", issue: "12", kind: "queue", ref: "q-1", state: "queued", at: "2026-11-02T10:00:00.000Z" })
+    expect(sent[0]!.url).toBe("https://smithers.test/api/repos/acme/widgets/issues/12/links")
+    expect((sent[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer smm_secret")
+    expect(String(sent[0]!.init.body)).not.toContain("secret")
   })
 })

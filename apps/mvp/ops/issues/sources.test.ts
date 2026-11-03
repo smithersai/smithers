@@ -2,28 +2,26 @@
 // input only.
 import { describe, expect, test } from "vitest"
 // @ts-expect-error: a plain .mjs script, untyped.
-import { draftRecords, fuzzRecords, migrationRecords, queueRecords, reviewRoundRecords, scopedRecords } from "./sources.mjs"
+import { draftRecords, fuzzRecords, migrationRecords, queuePlan, reviewRoundRecords, scopedRecords } from "./sources.mjs"
 // @ts-expect-error: a plain .mjs script, untyped.
-import { nodeOfLane, nodeOfParentText, place, ROOT } from "./tree.mjs"
+import { nodeOfParentText, place, ROOT } from "./tree.mjs"
 
 type Row = { key: string; parent: string; labels: Array<string>; links: Array<{ kind: string; state?: string }>; title: string; body: string; depth: number }
 const keys = (rows: Array<Row>) => rows.map((row) => row.key)
 
 describe("the importer's records", () => {
-  test("queue: queued and held entries, and a rejected one only while it is its lane's latest", () => {
-    const rows = queueRecords([
-      { id: "1-a", lane: "migfix-alchemy", rev: "aaa", at: "2026-11-01T00:00:00Z", state: "queued" },
-      { id: "2-b", lane: "fix-b", at: "2026-11-01T00:00:00Z", state: "rejected" },
-      { id: "3-b", lane: "fix-b", at: "2026-11-02T00:00:00Z", state: "landed" },
-      { id: "4-c", lane: "spec-lander", at: "2026-11-02T00:00:00Z", state: "rejected", reason: "conflicts" },
-      { id: "5-d", lane: "fix-d", at: "2026-11-02T00:00:00Z", state: "superseded" },
-      { id: "6-e", lane: "fix-e", at: "2026-11-02T00:00:00Z", state: "held" },
+  test("queue: open entries file no issue: one naming issues gives a queue link per issue, one naming none stays aside", () => {
+    const { links, unlinked } = queuePlan([
+      { id: "1-a", lane: "migfix-alchemy", rev: "aaa", at: "2026-11-01T00:00:00Z", state: "queued", issues: [12, 13] },
+      { id: "2-b", lane: "fix-b", at: "2026-11-01T00:00:00Z", state: "rejected", issues: [14] },
+      { id: "3-b", lane: "fix-b", at: "2026-11-02T00:00:00Z", state: "landed", issues: [14] },
+      { id: "4-c", lane: "spec-lander", at: "2026-11-02T00:00:00Z", state: "rejected", reason: "conflicts", issues: [15] },
+      { id: "5-d", lane: "fix-d", at: "2026-11-02T00:00:00Z", state: "superseded", issues: [16] },
+      { id: "6-e", lane: "fix-alchemy", at: "2026-11-02T00:00:00Z", state: "held" },
     ])
-    expect(keys(rows)).toEqual(["queue:1-a", "queue:4-c", "queue:6-e"])
-    expect(rows[0].labels).toEqual(["queue", "migrate:alchemy"])
-    expect(rows[0].parent).toBe("tree:repos:alchemy")
-    expect(rows[1].links.map((link: { kind: string; state?: string }) => `${link.kind}:${link.state ?? ""}`)).toEqual(["queue:failed", "session:"])
-    expect(rows[1].parent).toBe("tree:spec")
+    expect(links.map((row: { key: string; issue: number }) => [row.key, row.issue])).toEqual([["queue:1-a:12", 12], ["queue:1-a:13", 13], ["queue:4-c:15", 15]])
+    expect(links[2].link).toEqual({ kind: "queue", ref: "4-c", label: "4-c (rejected)", state: "failed" })
+    expect(unlinked).toEqual([{ id: "6-e", lane: "fix-alchemy", rev: null, at: "2026-11-02T00:00:00Z", state: "held", reason: null, labels: ["migrate:alchemy"] }])
   })
 
   test("spec review: the round's unfixed findings, and one record per still-open row across reviewers", () => {
@@ -101,7 +99,6 @@ describe("the importer's records", () => {
     expect(rows[0].labels).toEqual(["bug", "migrate:opencode"])
     expect(rows[1].key).toBe("draft:opencode:d1")
     expect(nodeOfParentText("The vibe and main workflow")).toBe("tree:workflow")
-    expect(nodeOfLane("core-land")).toBe("tree:explicit-effects")
   })
 
   test("drafts: closed ones skip, their own keys and links carry over, labels place an unparented one", () => {
@@ -132,7 +129,9 @@ describe("the importer's records", () => {
 describe("the issue tree", () => {
   test("places records under their nodes, splits a node past 100 children into parts, and stays within 8 levels", () => {
     const records = Array.from({ length: 230 }, (_, i) => ({ key: `fuzz:${i}`, title: `t${i}`, parent: "tree:fuzz:data" }))
-    records.push({ key: "x", title: "x", parent: "tree:nowhere" })
+    expect(() => place([...records, { key: "x", title: "x", parent: "tree:nowhere" }], [["tree:fuzz:data", "Fuzz findings: data", "tree:fuzz"]]))
+      .toThrow("x names tree:nowhere, which is not a node of the tree")
+    records.push({ key: "x", title: "x", parent: "tree:impl" })
     const tree = place(records, [["tree:fuzz:data", "Fuzz findings: data", "tree:fuzz"]])
     const root = tree.nodes.find((node: { key: string }) => node.key === ROOT)
     expect(root).toMatchObject({ title: "Ship VibeLang", depth: 1 })

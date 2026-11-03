@@ -605,6 +605,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (Option.isNone(body)) return refuse(400, "invalid")
         const write = body.value
         if (!machine.value.scope.includes(write.op)) return refuse(403, "forbidden")
+        // The body is filed escaped, with the server's attribution and marker: it must still fit GitHub's limit.
+        if ("body" in write && typeof write.body === "string" && !MachineWrite.fitsGitHub(write.body, machine.value.agent, machine.value.lane)) return refuse(413, "too_large")
         // What a machine posts is public, and a `smithers:` label is a person's or a flow's: refused whatever sent it.
         const content = MachineWrite.refusalOf(write)
         if (content !== undefined) {

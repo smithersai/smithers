@@ -6,6 +6,7 @@ import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { writeExecutionId } from "../../src/features/issues/contract.ts"
+import { attribution } from "../../src/features/issues/publicContent.mjs"
 import { FlowStarter } from "../Flows.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
@@ -135,12 +136,27 @@ describe("a machine token at the route", () => {
     expect((await h.fetch(`/api/repos/acme/widgets/issues/3/links`, post(links))).status).toBe(400)
   })
 
-  test("finds a token behind Markdown and in encoded URLs", async () => {
+  test("finds a credential or home path written plainly or encoded; Markdown and HTML are filed literally", async () => {
     const h = await githubHarness(runtime, { actor: null })
     await issueToken()
     const secret = `smm_${"a".repeat(43)}`
     for (const body of [`_${secret}_`, `*${secret}*`, `x${secret}`, `https://x.test/?a=%73mm%5f${"a".repeat(43)}`, `https://x.test/?a=%2573mm%255f${"a".repeat(43)}`, `&#115;mm_${"a".repeat(43)}`, `&#x73;mm_${"a".repeat(43)}`, `SMM_${"a".repeat(43)}`]) {
       expect((await h.fetch(ROUTE, post(create({ body })))).status, body).toBe(422)
+    }
+    const t = "a".repeat(43)
+    // A home path or credential the page shows, written plainly or encoded, is refused.
+    // A backslash a reader can see past still names the token: `smm\\_…`.
+    for (const body of [`smm\\_${t}`, "_/Users/someone/private.txt_", "*~/notes*", "`/home/someone/x`", "x\\~%2fnotes", "%24HOME/confidential/notes", "${HOME}/notes",
+      "&#36;HOME/private.txt", "%7E%2Flane%2Fprivate.txt", "password&#58; abcdefghijklmnop", "&#126;/confidential/notes", "xsk-abcdefghijklmnop x%73k-abcdefghijklmnop"]) {
+      expect((await h.fetch(ROUTE, post(create({ body })))).status, body).toBe(422)
+    }
+    // Markdown and HTML are filed escaped, so they show as written, never as a token: accepted, and literal on the page.
+    for (const body of [`**smm**_${t}`, `smm_**${t}**`, `sm**m**_${t}`, `smm_\`${t}\``, `smm<!--x-->_${t}`, `<div>smm&lowbar;aaaaaaaaaaaaaaaa</div>`, "<b>x</b>", "&copy; me"]) {
+      expect((await h.fetch(ROUTE, post(create({ body })))).status, body).toBe(202)
+    }
+    // Literal punctuation inside words is not Markdown, and is not refused.
+    for (const body of ["token_initialization", "token*initialization", "token`initialization", "packages/foo_/home/x.ts", "a*b*c and snake_case_name"]) {
+      expect((await h.fetch(ROUTE, post(create({ body })))).status, body).toBe(202)
     }
     expect((await h.fetch(ROUTE, post(create({ body: "100%25 of the smm_ prefix" })))).status).toBe(202)
   })
@@ -148,6 +164,10 @@ describe("a machine token at the route", () => {
   test("the content check is linear: a 65,000-character body is read in well under a second", () => {
     const started = performance.now()
     expect(MachineWrite.publicContentProblem(["a".repeat(65_000)])).toBeUndefined()
+    // Bodies built to make a pattern retry from every position, or a parser quadratic.
+    for (const text of ["eyJ".repeat(21_666), "[a]".repeat(21_666), `<a${"-a".repeat(32_491)} title="<">`, "%25".repeat(21_666), "\\_".repeat(32_500), "smm".repeat(21_666), "-a".repeat(32_500), "a.".repeat(32_500)]) {
+      MachineWrite.publicContentProblem([text])
+    }
     expect(MachineWrite.publicContentProblem([`${"a".repeat(64_000)}://u:p@h`])).toBe("credential")
     // A scheme after digits or scheme punctuation is still a scheme: the shape refused these before it was made linear.
     for (const text of ["-https://u:p@h", ".https://u:p@h", "+https://u:p@h", "0https://u:p@h", "%2Dhttps://u:p@h", `${"-a".repeat(32_000)}://u:p@h`]) {
@@ -233,6 +253,85 @@ describe("a machine token at the route", () => {
   })
 })
 
+describe("what a machine writes renders as written", () => {
+  const ascii = Array.from({ length: 127 - 33 }, (_, i) => String.fromCharCode(33 + i))
+  const punctuation = ascii.filter((c) => !/[A-Za-z0-9]/.test(c))
+
+  test("mentions and issue references can't fire, and indented lines never become code that shows the escapes", () => {
+    const joiner = "\u2060"
+    expect(MachineWrite.escapeMarkdown("ping @someone about #12 and GH-3")).toBe(`ping \\@${joiner}someone about \\#${joiner}12 and GH\\-${joiner}3`)
+    // Leading spaces and tabs become numeric entities, which no block rule reads as indentation.
+    expect(MachineWrite.escapeMarkdown("    a.b\n\tc")).toBe("&#32;&#32;&#32;&#32;a\\.b\n&#9;c")
+    // A bare commit id GitHub would shorten into a link: a word joiner inside it, in every hex run of 7 or more.
+    expect(MachineWrite.escapeMarkdown("a877b78446d1879df196773d9cfaf461cbc247df and 0123abc")).toBe(`a877${joiner}b78446d1879df196773d9cfaf461cbc247df and 0123${joiner}abc`)
+  })
+
+  test("a body whose filed form would pass GitHub's 65,536 characters is refused before it is admitted", async () => {
+    const h = await githubHarness(runtime, { actor: null })
+    await issueToken()
+    expect((await h.fetch(ROUTE, post(create({ body: ".".repeat(40_000) })))).status).toBe(413)
+    // Measured with the attribution this agent and lane get: the longest names, all colons, push a body over.
+    const named = `smm_${"n".repeat(43)}`
+    await issueToken({ token: named, agent: ":".repeat(100), lane: ":".repeat(100) })
+    expect((await h.fetch(ROUTE, post(create({ body: "x".repeat(65_000) }), named))).status).toBe(413)
+    expect((await h.fetch(ROUTE, post(create({ body: ".".repeat(30_000) })))).status).toBe(202)
+    // Exactly at the limit once filed is admitted: the measure is the assembled body, to the character.
+    const room = 65_536 - attribution("fixer", "lane-1").length - "\n\n<!-- smithers:write=00000000-0000-0000-0000-000000000000 -->".length
+    // A dot files as two characters, so the body stays under the route's own 65,000 while its filed form meets the limit.
+    expect((await h.fetch(ROUTE, post(create({ body: ".".repeat(Math.floor(room / 2)) })))).status).toBe(202)
+    expect((await h.fetch(ROUTE, post(create({ body: ".".repeat(Math.floor(room / 2) + 1) })))).status).toBe(413)
+  })
+
+  test("every ASCII punctuation character is escaped, and nothing else", () => {
+    expect(punctuation).toHaveLength(32)
+    const joiner = "\u2060"
+    // A word joiner after `@`, `#` and `:` and before `$`: GitHub's own renderer showed mentions, references, emoji
+    // and math firing through a backslash (ops/issues/render-fixtures.json).
+    expect(MachineWrite.escapeMarkdown(punctuation.join(""))).toBe(punctuation.map((c) => (c === "$" ? `${joiner}\\$` : `\\${c}${"@#:".includes(c) ? joiner : ""}`)).join(""))
+    expect(MachineWrite.escapeMarkdown("plain words, then\na line")).toBe("plain words\\, then\na line")
+  })
+
+  test("each reviewer's case is filed as literal text, and the plain forms are caught before it", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const d = await dispatcher(github)
+    const t = "a".repeat(43)
+    // Each renders on GitHub exactly as written: escaped, nothing joins, links, decodes or mentions.
+    const cases: Array<[string, string]> = [
+      [`[sm](https://example.com)m_${t}`, `\\[sm\\]\\(https\\:\u2060\\/\\/example\\.com\\)m\\_${t}`],
+      [`sm**m**_${t}`, `sm\\*\\*m\\*\\*\\_${t}`],
+      ["<b>x</b> &copy; @someone #12", "\\<b\\>x\\<\\/b\\> \\&copy\\; \\@\u2060someone \\#\u206012"],
+      ["~/**notes**", "\\~\\/\\*\\*notes\\*\\*"],
+    ]
+    for (const [body, escaped] of cases) {
+      const write = create({ title: "Literal", body }) as { writeId: string }
+      expect(await admitAs(write), body).toEqual({ kind: "inserted" })
+      await d.next()
+      const made = [...github.issues.values()].at(-1)!
+      expect(made.body!.startsWith(`${escaped}\n\nFiled by`), body).toBe(true)
+    }
+  })
+
+  test("the plain forms of what a page could have shown are refused at the route", async () => {
+    const h = await githubHarness(runtime, { actor: null })
+    await issueToken()
+    const t = "ab_".repeat(14) + "A"
+    for (const body of [`smm_${t}`, `sk-${"a".repeat(48)}`, `ghp_${"a".repeat(36)}`, `_eyJ${"a".repeat(12)}.${"b".repeat(12)}.${"c".repeat(12)}`, `xeyJ${"a".repeat(12)}.${"b".repeat(12)}.${"c".repeat(12)}`, `.eyJ${"a".repeat(12)}.${"b".repeat(12)}.${"c".repeat(12)}`, `log.eyJ${"a".repeat(12)}.${"b".repeat(12)}.${"c".repeat(12)}`, `&#00000000115;mm_${"a".repeat(43)}`, `&#x0000000073;mm_${"a".repeat(43)}`,
+      `smm_\u2060${"a".repeat(43)}`, `sm\ufeffm_${"a".repeat(43)}`, `smm_%E2%81%A0${"a".repeat(43)}`, "/Us\u2060ers/alice/private.txt", "/home\u200d/alice/x",
+      "file:///Users/alice/private.txt", "file:///home/alice/.ssh/id_ed25519", "file://localhost/home/alice/x", "FILE://build-host/Users/alice/x", "/home/alice/private.txt", "~/notes", "$HOME/x", "%2FUsers%2Fsomeone%2Fx", "&#36;HOME/private.txt"]) {
+      expect((await h.fetch(ROUTE, post(create({ body })))).status, body).toBe(422)
+    }
+    // Titles show code spans: a backtick is refused there.
+    const titled = await h.fetch(ROUTE, post(create({ title: "Lint `panics`" })))
+    expect(titled.status).toBe(422)
+    expect(await titled.json()).toEqual({ code: "public_content", reason: "markup" })
+    // Prose that only looked like a trick before is filed as it is.
+    for (const body of ["We use **token** initialization.", "token_initialization", "packages/foo_/home/x.ts", "R&D and A & B"]) {
+      expect((await h.fetch(ROUTE, post(create({ body })))).status, body).toBe(202)
+    }
+  })
+})
+
 describe("github/MachineDispatch", () => {
   // A real flow: its second round sleeps the real 7.5 s spacing after the send, so it needs more than the default 30 s
   // on a loaded host.
@@ -247,7 +346,7 @@ describe("github/MachineDispatch", () => {
     expect(Exit.isSuccess(ran.exit)).toBe(true)
     const made = github.issues.get(1)!
     expect(made.login).toBe(BOT_LOGIN)
-    expect(made.body).toContain("Filed by the agent fixer, lane lane-1.")
+    expect(made.body).toContain("What and why\\.\n\nFiled by the agent fixer, lane lane\\-1\\.")
     expect(made.labels).toContain("migrate:alchemy")
     expect(github.seen("POST", /\/issues$/).map((call) => call.token)).toEqual(["installation"])
     expect(await row(write.writeId)).toMatchObject({ status: "done", number: 1 })
@@ -330,7 +429,7 @@ describe("github/MachineDispatch", () => {
     expect(await row(update.writeId)).toMatchObject({ status: "done", number: 1 })
     const made = github.issues.get(1)!
     expect(made).toMatchObject({ title: "Renamed", state: "closed" })
-    expect(made.body).toContain("New words.")
+    expect(made.body).toContain("New words\\.")
     const [{ recovery }] = (await sql(runtime, `SELECT recovery_id::text AS recovery FROM machine_writes WHERE id = '${write.writeId}'`)) as unknown as Array<{ recovery: string }>
     expect(made.body).toContain(`<!-- smithers:write=${recovery} -->`)
     expect(made.body).not.toContain(write.writeId)
@@ -861,7 +960,7 @@ describe("recovery is the dispatcher's own", () => {
     await d.next()
     expect(await row(stale.writeId)).toMatchObject({ status: "done" })
     expect(github.issues.get(1)!).toMatchObject({ title: "Newer", state: "closed" })
-    expect(github.issues.get(1)!.body).toContain("Newer words.")
+    expect(github.issues.get(1)!.body).toContain("Newer words\\.")
 
     // Every field it asked for a newer one has set since: superseded, and nothing is sent.
     const reopen2 = { writeId: crypto.randomUUID(), op: "issue/update", number: 1, state: "open" }

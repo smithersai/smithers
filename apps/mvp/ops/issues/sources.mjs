@@ -3,7 +3,7 @@
 // and becomes the body's `key:` marker line, which `track.mjs open` matches to reuse an issue. Tested by
 // sources.test.ts with synthetic input only.
 import { createHash } from "node:crypto"
-import { MIGRATED_REPOS, nodeOfLane, nodeOfParentText } from "./tree.mjs"
+import { MIGRATED_REPOS, nodeOfParentText } from "./tree.mjs"
 
 const VIBELANG = "smithersai/vibelang"
 const MAX_TITLE = 200
@@ -28,39 +28,39 @@ export const FIXED = /\bFIXED\b|\b(?:fixed|landed|resolved) (?:in|on|as|by)\b|\b
 // ── Merge-queue entries ───────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Open queue entries from the queue's rows (latest state per id): `queued` and `held`, and a `rejected` entry that is
- * its lane's latest, since nothing replaced it. Landed, withdrawn and superseded entries are closed: a superseded
- * entry's work moved to the entry that replaced it.
+ * What the open queue entries mean for the tree: a queue entry is work, not a problem, so it never files an issue.
+ * Open is `queued` and `held`, and a `rejected` entry that is its lane's latest, since nothing replaced it. An entry
+ * naming issues (`issues`, from "Fixes #N", "Refs #N" or `--issue N`) gives one `queue` work link per issue, posted
+ * once the issues exist. One naming none goes in `unlinked`, kept aside until TODO leaves can hold it.
  */
-export const queueRecords = (entries) => {
+export const queuePlan = (entries) => {
   const latest = new Map()
   for (const entry of entries) {
     const before = latest.get(entry.lane)
     if (before === undefined || String(entry.at) > String(before.at)) latest.set(entry.lane, entry)
   }
   const open = entries.filter((entry) => entry.state === "queued" || entry.state === "held" || (entry.state === "rejected" && latest.get(entry.lane) === entry))
-  return open.map((entry) => ({
-    key: `queue:${entry.id}`,
-    kind: "queue",
-    repo: VIBELANG,
-    title: oneLine(`Merge queue: ${entry.lane} ${entry.rev ?? ""} is ${entry.state}`),
-    body: body([
-      `Merge-queue entry \`${entry.id}\` of lane \`${entry.lane}\`.`,
-      "",
-      `- revision: \`${entry.rev ?? "?"}\`, ${entry.commits ?? "?"} commit(s)`,
-      `- queued: ${entry.at ?? "?"}`,
-      `- state: ${entry.state}${entry.state === "rejected" ? " (the lane's latest entry; nothing replaced it)" : ""}`,
-      entry.reason ? `- reason: ${clip(String(entry.reason), 3000)}` : undefined,
-      "",
-      `Fix status: open until the entry lands or is withdrawn.`,
-    ]),
-    labels: ["queue", ...migrateLabels(entry.lane)],
-    links: [
-      { kind: "queue", ref: entry.id, label: `${entry.id} (${entry.state})`, state: entry.state === "rejected" ? "failed" : "queued" },
-      { kind: "session", ref: `lane:${entry.lane}`, label: `lane ${entry.lane}` },
-    ],
-    parent: nodeOfLane(entry.lane),
-  }))
+  const named = (entry) => (Array.isArray(entry.issues) ? entry.issues.filter((number) => Number.isSafeInteger(number) && number > 0) : [])
+  return {
+    links: open.flatMap((entry) =>
+      named(entry).map((issue) => ({
+        key: `queue:${entry.id}:${issue}`,
+        kind: "queue-link",
+        repo: VIBELANG,
+        issue,
+        link: { kind: "queue", ref: entry.id, label: `${entry.id} (${entry.state})`, state: entry.state === "rejected" ? "failed" : "queued" },
+      })),
+    ),
+    unlinked: open.filter((entry) => named(entry).length === 0).map((entry) => ({
+      id: entry.id,
+      lane: entry.lane,
+      rev: entry.rev ?? null,
+      at: entry.at ?? null,
+      state: entry.state,
+      reason: entry.reason ?? null,
+      labels: migrateLabels(entry.lane),
+    })),
+  }
 }
 
 // ── Spec review rounds ────────────────────────────────────────────────────────────────────────────────────────────

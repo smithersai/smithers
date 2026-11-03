@@ -1,6 +1,7 @@
 /** Repository flows, release workflows, and the retained migration fixtures. */
 import { Smithers } from "@smthrs/targets"
 import { existsSync, readdirSync } from "node:fs"
+import { Package as mvpPackage } from "../../apps/mvp/PACKAGE.ts"
 import { Package as repoTargetsPackage } from "../../packages/repo-targets/PACKAGE.ts"
 import { libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
@@ -613,6 +614,32 @@ const fixtures = Smithers.NodeTest({
 
 // Security review over the files this package owns. `wiki/` is a nested
 // package with its own review; suites, fixtures and installs are excluded.
+/**
+ * The `issues/file-tree` flow that files an issue import plan as a tree of GitHub sub-issues. `flow.test.ts` drives
+ * its real graph on the in-memory engine against a fake smithers.sh (what it files, whom it refuses, exact-identity
+ * recovery); `resume.test.mjs` runs it through this checkout's CLI, kills it between a create and its attach and right
+ * after a send, and resumes it each time.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const issuesFileTree = Smithers.NodeTest({
+  summary: "Filing an issue plan as GitHub sub-issues recovers by exact key and survives a kill.",
+  runner: Smithers.testRunner([
+    Smithers.file("//.smithers/flows/issues/file-tree/flow.test.ts"),
+    Smithers.file("//.smithers/flows/issues/file-tree/resume.test.mjs")
+  ]),
+  timeout: "30m",
+  cache: false,
+  srcs: [
+    sources,
+    Smithers.file("//.smithers/flows/issues/file-tree/steps.mjs"),
+    Smithers.file("//.smithers/flows/issues/file-tree/fake-smithers.mjs")
+  ],
+  deps: [mvpPackage.issueFileTreeSources],
+  cwd
+})
+
 /**
  * The untrusted-report boundary for issue and pull-request triage.
  *
@@ -1595,6 +1622,7 @@ export const Package = Smithers.Package({
     provider,
     wiki,
     triagePublish,
+    issuesFileTree,
     automation,
     packManifest,
     changelog,

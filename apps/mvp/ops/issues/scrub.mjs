@@ -10,6 +10,7 @@
 // Private repository names are not in this file, since this file is public: the caller passes them (`privateRepos`),
 // read at run time from `gh repo list --visibility private` or a local file.
 import { CREDENTIAL_SHAPES } from "../issue-tracking/records.mjs"
+import { formsOf, revealed } from "../../src/features/issues/publicContent.mjs"
 
 /** Repositories whose qualified names may appear: both targets and the public example repositories. */
 export const PUBLIC_REPOS = new Set([
@@ -40,19 +41,23 @@ const CHECKED_OWNERS = ["smithersai", "roninjin10", "evmts", "codeplanesmithers"
 const redactions = (privateRepos, publicRepos) => [
   ["private-key", /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, "[redacted key]"],
   ["ssh-key", /\bssh-(?:rsa|ed25519|dss|ecdsa[\w-]*) AAAA[A-Za-z0-9+/=]+/g, "[redacted key]"],
-  ["url-credentials", /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/:@]+:[^\s/@]+@/gi, "$1[redacted]@"],
+  // A machine token, named outright, with no leading \\b: Markdown's `_smm_…_` puts a word character right before one.
+  ["machine-token", /smm_[A-Za-z0-9_-]{8,}/gi, "[redacted]"],
+  // The scheme is tried once per run of scheme characters, as the server's shape does (publicContent.mjs).
+  ["url-credentials", /(?<![a-z0-9+.-])((?:[0-9+.-]*)[a-z][a-z0-9+.-]*:\/\/)[^\s/:@]+:[^\s/@]+@/gi, "$1[redacted]@"],
   ["query-secret", /([?&](?:token|key|secret|password|sig|signature|access_token|auth)=)[^\s&#]+/gi, "$1[redacted]"],
   ...CREDENTIAL_SHAPES.slice(0, -1).map((shape) => ["credential", new RegExp(shape.source, shape.flags), "[redacted]"]),
   // collect.mjs's long opaque string, less a path or a hyphenated name: a token has a long mixed-case run somewhere.
   ["credential", new RegExp(CREDENTIAL_SHAPES.at(-1).source, CREDENTIAL_SHAPES.at(-1).flags), (match) => (opaque(match) ? "[redacted]" : match)],
   // Hosts before paths: a host name glued to a path ("on host~/x") must not hide the path from its rule.
-  ["host", /\b(?:[a-z0-9-]+\.)+local\b/gi, "[host]"],
+  ["host", /(?<![a-z0-9.-])(?:[a-z0-9-]+\.)+local\b/gi, "[host]"],
   ["host", /nyc-?\d+/gi, "[host]"],
   ["host", /\b(?:latitude|(?:mac[ -]?)?mini)\b/gi, "[host]"],
   ["host", /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[host]"],
   ["email", EMAIL, "[email]"],
   // Home paths, whole: `~/x` is as private as `/home/lane/x` on a machine nobody outside can read.
-  ["home-path", /(?:(?<![\w.~/-])\/(?:Users|home)\/(?:[A-Za-z0-9._-]+)?|\$HOME|\$\{HOME\}|(?<![\w.~])~(?=\/))(?:\/[^\s`'"),\]}>]*)?/g, "[path]"],
+  // Not after a word or a path, but after a lone `_`, which a page shows beside the path (publicContent.mjs).
+  ["home-path", /(?:(?:(?<![\w.~/-])|(?<=(?<![A-Za-z0-9])_)|(?<=[Ff][Ii][Ll][Ee]:\/\/[^\s/]*))\/(?:Users|home)\/(?:[A-Za-z0-9._-]+)?|\$HOME|\$\{HOME\}|(?<![\w.~])~(?=\/))(?:\/[^\s`'"),\]}>]*)?/g, "[path]"],
   ["system-path", /(?<![\w./-])\/(?:private|tmp|var|opt|root|mnt|srv|run|data|etc|scratch|Volumes)\/[^\s`'"),\]}>]*/g, "[path]"],
   ["private-repo", qualifiedRepo, (match) => (publicRepos.has(match) ? match : "[repo]")],
   ...privateRepos.filter(distinctive).map((name) => ["private-repo", new RegExp(`(?<![\\w/-])${escape(name)}(?![\\w-])`, "gi"), "[repo]"]),
@@ -65,7 +70,7 @@ const redactions = (privateRepos, publicRepos) => [
  * `ops@example.com` goes.
  */
 const EMAIL = new RegExp(
-  String.raw`(?<![\w./@-])[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]*[A-Za-z][A-Za-z0-9-]*\.)+` +
+  String.raw`(?<![\w./@%+-])[A-Za-z0-9._%+-]+@(?:(?=[A-Za-z0-9-]*[A-Za-z])[A-Za-z0-9-]+\.)+` +
     String.raw`(?!(?:patch|tsx?|jsx?|mjs|cjs|mts|cts|md|json|vibex?|go|txt|log|ya?ml|toml|lock|css|html|png|svg|zip|tgz|gz)\b)[A-Za-z]{2,24}\b(?![.-]?[\w])`,
   "g",
 )
@@ -81,13 +86,34 @@ const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
  */
 const distinctive = (name) => typeof name === "string" && (name.includes("-") || name.length >= 10)
 
+const MACHINE_TOKEN = /smm_[A-Za-z0-9_-]{8,}/i
+const PREFIXED_CREDENTIAL = /(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}|sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|(?:xox[abpr]-|glpat-)[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/
+
+/**
+ * `text` as written and decoded (publicContent.mjs). The server files a machine's text with every punctuation character
+ * escaped, so a page shows exactly the text, and Markdown or HTML can't change what a reader sees.
+ */
+export const renderedForms = (text) => formsOf(text)
+
+/** `pattern`'s matches in `text`, by matched string, less any `keep` turns away. */
+const counts = (pattern, text, keep) => {
+  const found = new Map()
+  for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`))) {
+    if (keep === undefined || keep(match[0])) found.set(match[0], (found.get(match[0]) ?? 0) + 1)
+  }
+  return found
+}
+/** Whether `form` has a copy of some match `base` doesn't: one only that reading reveals. */
+const more = (form, base) => [...form].some(([match, count]) => count > (base.get(match) ?? 0))
+
 /** Rules a field must meet after redaction. A field that breaks one fails closed. */
 const checks = (privateRepos, publicRepos) => [
-  ["home-path", /(?<![\w.~/-])\/(?:Users|home)\//],
-  ["host", /nyc-?\d+|\b[a-z0-9-]+\.local\b|\b(?:latitude|mini)\b/i],
+  ["home-path", /(?:(?<![\w.~/-])|(?<=(?<![A-Za-z0-9])_)|(?<=[Ff][Ii][Ll][Ee]:\/\/[^\s/]*))\/(?:Users|home)\/|\$\{?HOME\}?\/|(?<![\w.~])~\//],
+  ["host", /nyc-?\d+|(?<![a-z0-9-])[a-z0-9-]+\.local\b|\b(?:latitude|mini)\b/i],
   ["account", /\b(?:claude|codex)-\d+\b/i],
   ["email", new RegExp(EMAIL.source)],
-  ["credential", /-----BEGIN [A-Z ]*PRIVATE KEY|\b(?:gh[pousr]_|github_pat_|sk-|xox[abpr]-|glpat-)[A-Za-z0-9_]{12,}/],
+  ["machine-token", /smm_[A-Za-z0-9_-]{8,}/i],
+  ["credential", /-----BEGIN [A-Z ]*PRIVATE KEY|\b(?:gh[pousr]_|github_pat_|sk-|xox[abpr]-|glpat-)[A-Za-z0-9_]{12,}|(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
   ["private-repo", new RegExp(`\\b(?:${CHECKED_OWNERS.join("|")})\\/[A-Za-z0-9._-]+`, "g"), (match) => !publicRepos.has(match)],
   ...privateRepos.map((name) => ["private-repo", new RegExp(`(?:^|[\\s/:(\`'"])(?:${CHECKED_OWNERS.join("|")})\\/${escape(name)}(?![\\w-])`, "i")]),
 ]
@@ -118,6 +144,28 @@ export const clean = (value, { kind = "text", privateRepos = [], publicRepos: ex
     } else if (pattern.test(text)) refused.add(rule)
   }
   if (fired.has("private-key")) refused.add("private-key")
+  if (fired.has("machine-token")) refused.add("machine-token")
+  // A credential only a reading of the written text reveals. Counted by occurrence: a plain copy, which redaction
+  // handled above, never excuses a hidden one.
+  for (const form of formsOf(original).slice(1)) {
+    if (revealed(MACHINE_TOKEN, form, original)) refused.add("machine-token")
+    if (revealed(PREFIXED_CREDENTIAL, form, original)) refused.add("credential")
+  }
+  // Every decoded reading of what redaction left: every redaction rule and every check reads it, and a match only
+  // a reading reveals is refused. A rule can still match what redaction left (its own replacement), so it is compared.
+  const rules = (form) => [
+    ...redactions(privateRepos, publicRepos).map(([rule, pattern, replacement]) => [rule, counts(pattern, form, (match) => {
+      const out = typeof replacement === "function" ? replacement(match) : match.replace(new RegExp(pattern.source, pattern.flags.replace("g", "")), replacement)
+      return out !== match
+    })]),
+    ...checks(privateRepos, publicRepos).map(([rule, pattern, keep]) => [rule, counts(pattern, form, keep)]),
+  ]
+  const base = rules(text)
+  for (const form of renderedForms(text).filter((candidate) => candidate !== text)) {
+    rules(form).forEach(([rule, found], index) => {
+      if (more(found, base[index][1])) refused.add(rule)
+    })
+  }
   if (kind === "exact" && fired.size > 0) for (const rule of fired) refused.add(rule)
   return { ok: refused.size === 0, text, rules: [...new Set([...fired, ...refused])].sort(), refused: [...refused].sort() }
 }

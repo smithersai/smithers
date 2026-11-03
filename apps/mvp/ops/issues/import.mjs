@@ -7,7 +7,9 @@
 //                              [--replace-findings <repo>]... [--pending-ref main]
 //
 // Sources, read at run time:
-// - the lane host, over SSH, read-only: the merge queue (`~/vibe/mq/queue.jsonl`, latest state per id), the latest
+// - the lane host, over SSH, read-only: the merge queue (`~/vibe/mq/queue.jsonl`, latest state per id; its entries are
+//   work, so they file no issue: one naming none goes in `<out>.queue-unlinked.jsonl`, mode 600, until TODO leaves
+//   can hold it), the latest
 //   spec-review round and the scoped reviews (`~/vibe/review-spec/loop`), and each example repository's migration
 //   inbox (`~/vibe/review-spec/fuzz-coverage/inbox/migrate-<repo>.md`); lane reports (`~/lanes/*.REPORT.md`) are
 //   counted and dated only, since they hold no open/fixed finding records;
@@ -18,8 +20,9 @@
 //   parsed findings. A repository's tracking draft becomes its tree node's issue.
 // Private repository names for the scrub come from `gh repo list <owner> --visibility private`, held in memory.
 //
-// Plan rows, in filing order: `{"type":"node", ...}` (the tree), then `{"type":"issue", ...}` (drafts, queue entries,
-// findings; each with key, repo, title, body, labels, links, parent, depth), then
+// Plan rows, in filing order: `{"type":"node", ...}` (the tree), then `{"type":"issue", ...}` (drafts, then findings;
+// each with key, repo, title, body, labels, links, parent, depth), then `{"type":"queue-link", key, repo, issue, link}`
+// (a `queue` work link per issue an open merge-queue entry names), then
 // `{"type":"dropped", key, kind, problems}` for each record the scrub refused (field and rule, plus its source title
 // for the operator), then `{"type":"summary", ...}` with counts per kind, repo, parent and drop rule.
 import { execFileSync } from "node:child_process"
@@ -27,7 +30,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { dirname, resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { cleanRecord } from "./scrub.mjs"
-import { draftRecords, fuzzRecords, migrationRecords, queueRecords, reviewRoundRecords, scopedRecords } from "./sources.mjs"
+import { draftRecords, fuzzRecords, migrationRecords, queuePlan, reviewRoundRecords, scopedRecords } from "./sources.mjs"
 import { MIGRATED_REPOS, place } from "./tree.mjs"
 import { markerOf, bodyWithMarker } from "./track.mjs"
 
@@ -56,7 +59,7 @@ for line in open(home + "/vibe/mq/queue.jsonl", errors="replace"):
     except ValueError: continue
     if isinstance(entry, dict) and entry.get("id"): entries[entry["id"]] = entry
 for entry in entries.values():
-    print(json.dumps({"kind": "queue", "entry": {k: entry.get(k) for k in ("id", "rev", "lane", "commits", "at", "state", "reason")}}))
+    print(json.dumps({"kind": "queue", "entry": {k: entry.get(k) for k in ("id", "rev", "lane", "commits", "at", "state", "reason", "issues")}}))
 loop = home + "/vibe/review-spec/loop"
 rounds = sorted(int(m.group(1)) for d in os.listdir(loop) for m in [re.match(r"r(\d+)$", d)] if m)
 if rounds:
@@ -108,15 +111,15 @@ const readDrafts = (file) => {
 
 const fuzz = fuzzRecords(pending)
 const round = remote.filter((row) => row.kind === "round")
-// Filing order: the tree, then the agents' drafts and the queue, then the findings. Drafts come first so they win a
-// title match against a finding of the same thing.
+// Filing order: the tree, then the agents' drafts, then the findings, then the queue's work links. Drafts come first so
+// they win a title match against a finding of the same thing. A queue entry is work, never an issue.
+const queue = queuePlan(remote.filter((row) => row.kind === "queue").map((row) => row.entry))
 const replaced = new Set(values["replace-findings"])
 const records = [
   ...values.draft.flatMap((spec) => {
     const [source, file] = [spec.slice(0, spec.indexOf("=")), spec.slice(spec.indexOf("=") + 1)]
     return draftRecords(source, readDrafts(file))
   }),
-  ...queueRecords(remote.filter((row) => row.kind === "queue").map((row) => row.entry)),
   ...reviewRoundRecords(round.map((row) => ({ reviewer: row.reviewer, round: row.round, text: row.text }))),
   ...remote.filter((row) => row.kind === "scoped").flatMap((row) => scopedRecords(row.scope, row.text)),
   ...remote.filter((row) => row.kind === "migration" && !replaced.has(row.repo)).flatMap((row) => migrationRecords(row.repo, row.text)),
@@ -152,6 +155,12 @@ for (const record of unique) {
   if (result.ok) clean.push(result.record)
   else dropped.push({ type: "dropped", key: record.key, kind: record.kind, problems: result.problems, sourceTitle: record.title })
 }
+const queueLinks = []
+for (const row of queue.links) {
+  const result = cleanRecord({ key: row.key, links: [row.link] }, { privateRepos })
+  if (result.ok) queueLinks.push({ type: "queue-link", ...row, link: result.record.links[0] })
+  else dropped.push({ type: "dropped", key: row.key, kind: row.kind, problems: result.problems, sourceTitle: row.key })
+}
 const tree = place(clean, fuzz.areas)
 const count = (rows, of) => rows.reduce((acc, row) => ({ ...acc, [of(row)]: (acc[of(row)] ?? 0) + 1 }), {})
 const reports = remote.find((row) => row.kind === "lane-reports")
@@ -162,6 +171,8 @@ const summary = {
   issues: tree.records.length,
   byKind: count(tree.records, (row) => row.kind),
   bySource: count(tree.records, (row) => (row.kind === "draft" ? `draft:${row.source}` : row.kind)),
+  queueLinks: queueLinks.length,
+  queueUnlinked: queue.unlinked.length,
   trackingDraftsAsNodes: tree.nodes.filter((node) => node.draft !== undefined).map((node) => node.key),
   replacedFindings: [...replaced],
   byRepo: count([...tree.nodes, ...tree.records], (row) => row.repo),
@@ -181,10 +192,14 @@ mkdirSync(dirname(out), { recursive: true, mode: 0o700 })
 const rows = [
   ...tree.nodes.map((node) => ({ type: "node", ...node, labels: node.labels ?? ["tree"] })),
   ...tree.records.map((record) => ({ type: "issue", ...record })),
+  ...queueLinks,
   ...dropped,
   ...duplicates.map((row) => ({ type: "duplicate", ...row })),
   summary,
 ]
+const queueOut = out.replace(/(\.jsonl)?$/, ".queue-unlinked.jsonl")
+writeFileSync(queueOut, queue.unlinked.map((row) => JSON.stringify(row)).join("\n") + "\n", { mode: 0o600 })
+chmodSync(queueOut, 0o600)
 writeFileSync(out, rows.map((row) => JSON.stringify(row)).join("\n") + "\n", { mode: 0o600 })
 chmodSync(out, 0o600)
 console.log(JSON.stringify({ out, ...summary }, null, 2))
