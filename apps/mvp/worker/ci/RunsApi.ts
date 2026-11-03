@@ -3,7 +3,7 @@ import type { QuickJSVariant } from "@smthrs/harness"
 import { GitHub } from "@smthrs/integrations"
 import { Cause, Clock, Effect, Function, type Layer, Metric, Option, Predicate, type Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
-import type { SqlClient } from "effect/sql"
+import { SqlClient } from "effect/sql"
 import { manualExecutionId, MAX_INPUT_BYTES, type RunsRefusal } from "../../src/features/actions/contract.ts"
 import { settled } from "../../src/features/runs/contract.ts"
 import { type Actor, Sessions } from "../Actor.ts"
@@ -239,7 +239,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
      * at its commit, never the branch's head now.
      */
     const startRun = (repository: Repository, request: RepoFlow.RunRequest, launchedBy: string) =>
-      Effect.gen(function* () {
+      Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
         const fresh = yield* RepoRuns.record({
           execution: request.run,
           repoId: repository.id,
@@ -248,16 +248,19 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           ref: request.ref,
           event: request.event,
           launchedBy,
-        }).pipe(Effect.provide(database))
+        })
         // Not new: its row is there, with the commit it recorded.
         const sha = fresh
           ? request.sha
-          : Option.getOrThrow(yield* RepoRuns.recordedSha(request.run).pipe(Effect.provide(database)))
+          : Option.getOrThrow(yield* RepoRuns.recordedSha(request.run))
         return yield* (yield* FlowStarter).start(RepoFlow.Run, { executionId: request.run, payload: { ...request, sha } }).pipe(
           Effect.as(fresh ? "started" as const : "existing" as const),
-          Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.succeed("conflict" as const)),
         )
-      })
+      }))).pipe(
+        Effect.provide(database),
+        // A conflicting intent must roll the ownership row back before the refusal becomes a success value.
+        Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.succeed("conflict" as const)),
+      )
 
     /** A run Retry starts again: the run's own request, or why not. */
     const retried = (repository: Repository, retryOf: string, failed: boolean) =>

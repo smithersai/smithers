@@ -24,6 +24,8 @@ import { REPOSITORY, reset, services as githubServices } from "../github/test/fi
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as RepoRuns from "../RepoRuns.ts"
+import * as RemoteRuns from "../RemoteRuns.ts"
+import { SandboxCall } from "../flows/SandboxCall.ts"
 import { noCommands } from "../test/commands.ts"
 import { build } from "../test/flowHost.ts"
 import { eventually, signedIn, testFile, uuid } from "../test/harness.ts"
@@ -151,8 +153,31 @@ const routes = async (
     variant,
     ...(options.contentsDown ? {} : http),
   }))
+  // The real Durable Object intent admission; only its storage binding is in memory.
+  const objects = new Map<string, ExecutionHost.Storage>()
+  const storage = (id: string) => {
+    let object = objects.get(id)
+    if (object === undefined) {
+      const values = new Map<string, unknown>()
+      object = {
+        get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),
+        put: (key, value) => Effect.sync(() => void values.set(key, structuredClone(value))),
+        delete: (key) => Effect.sync(() => values.delete(key)),
+        setAlarm: () => Effect.void,
+        deleteAlarm: () => Effect.void,
+      }
+      objects.set(id, object)
+    }
+    return object
+  }
   const starter = options.starter ?? FlowStarter.of({
-    start: (flow, start) => Effect.sync(() => void starts.push({ flow: flow._tag, ...start })),
+    start: (flow, start) => Effect.gen(function* () {
+      const intent = yield* Effect.orDie(ExecutionHost.intent(flow, { ...start, payload: start.payload as never }))
+      yield* ExecutionHost.recordStart(storage(start.executionId), intent).pipe(
+        Effect.catchTag("@smthrs/platform-cloudflare/IntentConflict", () => Effect.fail(new StartConflict())),
+      )
+      starts.push({ flow: flow._tag, ...start })
+    }),
   })
   const handler = HttpEffect.toWebHandler(
     api.fetch.pipe(
@@ -170,6 +195,8 @@ const routes = async (
   )
   return {
     starts,
+    starter,
+    roles,
     engineSchema: options.engineSchema ?? "flows_none",
     fetch: (path: string, init?: RequestInit) => handler(new Request(`http://chat.test${path}`, init)),
     count: (metric: typeof RunsApi.starts, attributes: Record<string, string>) =>
@@ -298,6 +325,47 @@ describe("GET /api/repos/<owner>/<name>/flows/<flow>?ref=", () => {
 })
 
 describe("POST /api/repos/<owner>/<name>/runs", () => {
+  test("a conflicting sandbox-call intent cannot claim or cancel another person's execution", async () => {
+    const { github } = repository()
+    github.push("main", {
+      ".smithers/factory.json": JSON.stringify({ apiVersion: 1, contributes: { triggers: [{ on: "manual", flow: "sandbox-call" }] } }),
+      ".smithers/flows/sandbox-call/flow.ts": RELEASE.replace('Flow.make("release"', 'Flow.make("sandbox-call"'),
+    })
+    const h = await routes(github)
+    const id = uuid()
+    const runId = `sandbox-call:${id}`
+    await runtime.runPromise(h.starter.start(SandboxCall, { executionId: runId, payload: {
+      callId: id, ownerId: GUS,
+      branch: { branchId: uuid(), owner: "acme", name: "private", branch: "main" },
+      call: { tool: "run", command: "true", timeoutSeconds: 1 },
+    } }))
+    expect(await answer(await h.fetch(repoRunsRoute(REPOSITORY.owner, REPOSITORY.name), post({
+      id, flow: "sandbox-call", ref: "main", input: { channel: "next" },
+    })))).toEqual([409, { code: "conflict" }])
+
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const { engine } = yield* build(Layer.empty)
+      const scratch = yield* TestDatabase.Scratch
+      const server = yield* TestDatabase.serverUrl
+      const stopped: string[] = []
+      const api = yield* RemoteRuns.make(scratch.database, {
+        database: ExecutionHost.readDatabase(server.toString(), engine.schema),
+        writer: ExecutionHost.database(server.toString(), engine.schema),
+        schema: engine.schema,
+        flows: [SandboxCall, RepoFlow.Run],
+        stop: (execution) => Effect.sync(() => void stopped.push(execution)),
+        transcript: () => Effect.die("unused"),
+      }, h.roles)
+      const handler = HttpEffect.toWebHandler(api.fetch.pipe(Effect.provide(signedIn(maya)), Effect.provide(FetchHttpClient.layer)))
+      yield* Effect.promise(async () => {
+        const response = await handler(new Request(`http://chat.test/api/remote-runs/${runId}/stop`, { method: "POST" }))
+        expect(response.status, "conflicting intent must not grant cancellation").toBe(403)
+        expect(stopped).toEqual([])
+      })
+    })))
+    expect(await rows(), "conflicting intent must leave no repository ownership").toEqual([])
+  })
+
   test("a host defect refuses a manual start and records unavailable", async () => {
     const { github } = repository()
     const id = uuid()
