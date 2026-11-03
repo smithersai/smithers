@@ -184,7 +184,7 @@ const scrubbed = (
   patterns: ReadonlyArray<string>,
   machine: string,
   name: string
-): Effect.Effect<void, ProviderError> => {
+): void!ProviderError => {
   const searched = `the disk of ${machine} could not be scrubbed of credentials`
   return Effect.flatMap(
     runGuest(
@@ -224,7 +224,7 @@ const scrubbed = (
 const flushed = (
   sandbox: Awaited<ReturnType<Awaited<ReturnType<Sdk["Sandbox"]["get"]>>["connect"]>>,
   machine: string
-): Effect.Effect<void, ProviderError> => {
+): void!ProviderError => {
   const flushing = `the disk of ${machine} could not be flushed`
   return Effect.flatMap(
     runGuest(
@@ -300,7 +300,7 @@ export interface CaptureOptions {
  * @category snapshots
  * @since 1.0.0
  */
-export const captureSnapshot = (options: CaptureOptions): Effect.Effect<string, ProviderError> => {
+export const captureSnapshot = (options: CaptureOptions): string!ProviderError => {
   const name = snapshotName(options.family, options.member)
   if (name === undefined) {
     return Effect.fail(
@@ -330,25 +330,29 @@ export const captureSnapshot = (options: CaptureOptions): Effect.Effect<string, 
       restore(attempt(() => options.sdk.Sandbox.get(options.machine), "unavailable", failed)),
       (handle) =>
         Effect.flatMap(
-          Effect.exit(restore(Effect.gen(function*() {
+          Effect.exit(restore(effect {
             // Starting a stopped machine that records no network would boot
             // it under the vendor's open default, which nobody asked for.
-            if (handle.status !== "running" && recordedNetwork(handle.configJson) === undefined) {
-              return yield* Effect.fail(
-                new ProviderError({
-                  code: "unavailable",
-                  message: `${failed}: it records no network, so starting it would open one`
-                })
-              )
+            if (
+              handle.status !== "running" &&
+              (try Effect.orDie(Effect.try({
+                  try: () => recordedNetwork(handle.configJson),
+                  catch: (error) => error
+                }))) === undefined
+            ) {
+              throw new ProviderError({
+                code: "unavailable",
+                message: `${failed}: it records no network, so starting it would open one`
+              })
             }
-            const sandbox = yield* attempt(
+            const sandbox = try attempt(
               () => handle.status === "running" ? handle.connect() : handle.start(),
               "unavailable",
               failed
             )
-            yield* scrubbed(sandbox, searched.patterns, options.machine, name)
-            yield* flushed(sandbox, options.machine)
-            yield* attempt(
+            try scrubbed(sandbox, searched.patterns, options.machine, name)
+            try flushed(sandbox, options.machine)
+            try attempt(
               async () => {
                 await handle.stop()
                 await handle.snapshot(name)
@@ -357,7 +361,7 @@ export const captureSnapshot = (options: CaptureOptions): Effect.Effect<string, 
               failed
             )
             return name
-          }))),
+          })),
           (exit) =>
             Effect.andThen(
               attempt(
@@ -378,20 +382,18 @@ export const captureSnapshot = (options: CaptureOptions): Effect.Effect<string, 
  * @category snapshots
  * @since 1.0.0
  */
-export const hasSnapshot = (sdk: Sdk, name: string): Effect.Effect<boolean, ProviderError> =>
+export const hasSnapshot = (sdk: Sdk, name: string): boolean!ProviderError =>
   Effect.tryPromise({
     try: () => sdk.Snapshot.get(name),
     catch: (cause) => cause
-  }).pipe(
-    Effect.as(true),
-    Effect.catch((cause) =>
-      isMissingSnapshot(cause)
-        ? Effect.succeed(false)
-        : Effect.fail(
-          new ProviderError({ code: "unavailable", message: `microsandbox: snapshot ${name} could not be read`, cause })
-        )
-    )
-  )
+  })
+  |> Effect.as(%, true)
+  |> Effect.catch(%, (cause) =>
+    isMissingSnapshot(cause)
+      ? Effect.succeed(false)
+      : Effect.fail(
+        new ProviderError({ code: "unavailable", message: `microsandbox: snapshot ${name} could not be read`, cause })
+      ))
 
 /**
  * Removes `family`'s snapshots (those {@link snapshotFamily} places in it,
@@ -407,7 +409,7 @@ export const pruneSnapshots = (
   family: string,
   keep: number,
   retain: ReadonlyArray<string> = []
-): Effect.Effect<ReadonlyArray<string>, ProviderError> =>
+): ReadonlyArray<string>!ProviderError =>
   attempt(
     async () => {
       const members = (await sdk.Snapshot.list())
@@ -435,17 +437,15 @@ export const pruneSnapshots = (
  * @category snapshots
  * @since 1.0.0
  */
-export const removeSnapshot = (sdk: Sdk, name: string): Effect.Effect<void, ProviderError> =>
-  Effect.tryPromise({ try: () => sdk.Snapshot.remove(name, { force: true }), catch: (cause) => cause }).pipe(
-    Effect.catch((cause) =>
-      isMissingSnapshot(cause)
-        ? Effect.void
-        : Effect.fail(
-          new ProviderError({
-            code: "unavailable",
-            message: `microsandbox: snapshot ${name} could not be removed`,
-            cause
-          })
-        )
-    )
-  )
+export const removeSnapshot = (sdk: Sdk, name: string): void!ProviderError =>
+  Effect.tryPromise({ try: () => sdk.Snapshot.remove(name, { force: true }), catch: (cause) => cause })
+  |> Effect.catch(%, (cause) =>
+    isMissingSnapshot(cause)
+      ? Effect.void
+      : Effect.fail(
+        new ProviderError({
+          code: "unavailable",
+          message: `microsandbox: snapshot ${name} could not be removed`,
+          cause
+        })
+      ))
