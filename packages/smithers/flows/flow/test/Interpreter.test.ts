@@ -8,7 +8,7 @@ import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { Context, Effect, Exit, Layer, Schema } from "effect"
-import { ExecutionMiddleware } from "../src/internal/ExecutionMiddleware.ts"
+import { ExecutionMiddleware } from "../src/internal/ExecutionMiddleware.vibe"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 

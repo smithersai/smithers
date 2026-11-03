@@ -43,7 +43,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
     1,
     "a conflicting Fault registration while modules load; a programming error, never at run time"
   ],
-  ["flow/src/Flow/internal.ts", 1, "a comment naming the throw payloadSchema.make performs"],
+  ["flow/src/Flow/internal.vibe", 1, "a comment naming the throw payloadSchema.make performs"],
   ["flow/src/internal/DeclarationSite.ts", 1, "captures a stack to locate a declaration; never thrown"],
   ["journal/src/RedactedLogger.ts", 1, "an empty Error clone that receives redacted fields; never thrown"],
   ["kernel/src/HttpClient.ts", 1, wrappedCause],

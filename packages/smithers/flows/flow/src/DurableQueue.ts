@@ -26,13 +26,13 @@ import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Tracer from "effect/Tracer"
 import * as Action from "./Action/index.ts"
-import * as DurableDeferred from "./DurableDeferred.ts"
+import * as DurableDeferred from "./DurableDeferred.vibe"
 import * as Fault from "./Fault.ts"
 import * as Flow from "./Flow/index.ts"
 import { annotateWaiting, FlowInstance, FlowRuntime } from "./FlowRuntime/index.ts"
-import * as SpanFailure from "./internal/SpanFailure.ts"
+import * as SpanFailure from "./internal/SpanFailure.vibe"
 import * as Interpreter from "./Interpreter.ts"
-import * as RetryPolicy from "./RetryPolicy.ts"
+import * as RetryPolicy from "./RetryPolicy.vibe"
 
 /**
  * Type-level identifier used to recognize `DurableQueue` values.

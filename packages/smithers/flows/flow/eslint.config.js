@@ -85,13 +85,13 @@ export default tseslint.config(
     }
   },
   {
-    files: ["src/Flow/Flow.ts"],
+    files: ["src/Flow/Flow.vibe"],
     rules: {
       "@typescript-eslint/no-empty-object-type": "off"
     }
   },
   {
-    files: ["src/DurableDeferred.ts"],
+    files: ["src/DurableDeferred.vibe"],
     rules: {
       "@typescript-eslint/no-unnecessary-type-assertion": "off"
     }

@@ -204,7 +204,7 @@ const securityReview = Smithers.SecurityReview({
         "WaitFor accepting a token whose flowName or executionId differs from the running instance, or accepting both token and name.",
         "TokenParsed.FromString accepting a JSON array whose members are not exactly three strings."
       ],
-      paths: ["src/DurableDeferred.ts", "src/WaitFor.ts", "src/HumanTask.ts"]
+      paths: ["src/DurableDeferred.vibe", "src/WaitFor.vibe", "src/HumanTask.ts"]
     },
     {
       id: "queue-item-trust",
@@ -277,11 +277,11 @@ const securityReview = Smithers.SecurityReview({
         "A worker loop that retries a failing store take without a pause."
       ],
       paths: [
-        "src/Sleep.ts",
-        "src/Poll.ts",
-        "src/RetryPolicy.ts",
-        "src/Stall.ts",
-        "src/DurableClock.ts",
+        "src/Sleep.vibe",
+        "src/Poll.vibe",
+        "src/RetryPolicy.vibe",
+        "src/Stall.vibe",
+        "src/DurableClock.vibe",
         "src/DurableQueue.ts"
       ]
     },

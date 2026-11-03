@@ -15,7 +15,7 @@ import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node, Plan } from "@smthrs/plan"
 import { Context, Effect, Schema } from "effect"
 import * as DeclarationSite from "../src/internal/DeclarationSite.ts"
-import * as Sleep from "../src/Sleep.ts"
+import * as Sleep from "../src/Sleep.vibe"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance, makeMemoryState } from "./MemoryFlowRuntime.ts"
 

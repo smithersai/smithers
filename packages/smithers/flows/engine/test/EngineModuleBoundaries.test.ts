@@ -33,7 +33,7 @@ const refusals = [
   },
   {
     name: "ExecutionIdentityConflict",
-    owner: "../../flow/src/FlowRuntime/ExecutionIdentityConflict.ts",
+    owner: "../../flow/src/FlowRuntime/ExecutionIdentityConflict.vibe",
     tag: "@smthrs/engine/ExecutionIdentityConflict",
     declared: ExecutionIdentityConflict
   }

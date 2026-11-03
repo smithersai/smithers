@@ -10,7 +10,7 @@
 import type { CapabilityPattern } from "@smthrs/capability/Capability";
 import * as Node from "@smthrs/plan/Node";
 import * as Schema from "effect/Schema";
-import { WaitingAnnotation } from "../../../../src/FlowRuntime/WaitingAnnotation.ts";
+import { WaitingAnnotation } from "../FlowRuntime/WaitingAnnotation.vibe";
 /**
  * A completed trampoline lineage value.
  *

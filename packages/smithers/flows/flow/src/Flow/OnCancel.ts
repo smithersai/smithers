@@ -21,7 +21,7 @@
  */
 
 import * as Context from "effect/Context"
-import type { Any } from "./Flow.ts"
+import type { Any } from "./Flow.vibe"
 
 /**
  * The cancellation a flow declares: the run to start and its execution id.

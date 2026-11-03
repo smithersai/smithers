@@ -356,7 +356,7 @@ const docsTextTest = Smithers.Shell.Test({
     Smithers.file("//packages/smthrs-deprecation/docs/notice.md"),
     Smithers.file("//packages/smithers/migrate/src/flow/MigrateFlow.ts"),
     Smithers.file("//packages/smithers/migrate/src/Scan.ts"),
-    Smithers.file("//packages/smithers/flows/flow/src/DurableClock.ts"),
+    Smithers.file("//packages/smithers/flows/flow/src/DurableClock.vibe"),
     Smithers.file("scripts/check-built-site.mjs"),
     Smithers.file("scripts/built-site.test.mjs"),
     Smithers.file("//apps/mvp/src/router.tsx"),
