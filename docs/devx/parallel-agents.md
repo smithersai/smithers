@@ -157,6 +157,14 @@ change ids, so a squash can't shed it. Change the code, or use the override and
 say why. A receipt holds its session's first review turn: resuming that session
 changes neither its verdict nor what it covers.
 
+**A stack's FAIL covers every commit in it.** One `review.mjs` session over a stack
+writes the same verdict into each commit's receipt, so a FAIL caused by one commit
+also blocks its unchanged siblings, whose diffs keep their hashes. The way out is to
+squash the stack into one commit after fixing it: the combined diff has a new hash,
+which no FAIL covers, and one review reads it whole. On 2026-11-03 the gate itself
+landed this way (06ee77f1): the rebased stack failed on one commit's list gap, and
+the squashed fix passed. To keep commits separate, review each with `--rev <change>`.
+
 **Follow-ups cost a new review.** Any fix after a pass changes the hash, so it
 needs another session; put "only the change since `<commit>`" in the request to
 keep it narrow. Measured on 2026-11-02's Astra reviews: narrow
