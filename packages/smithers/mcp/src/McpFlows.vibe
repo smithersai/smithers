@@ -15,7 +15,7 @@
 import * as Capability from "@smthrs/capability/Capability"
 import * as Effects from "@smthrs/core/Effects"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
-import { Effect, Exit, Schema, Scope } from "effect"
+import { Effect, Schema, Scope } from "effect"
 import * as McpClient from "./McpClient.ts"
 import { McpError } from "./McpError.vibe"
 
@@ -122,7 +122,7 @@ const toolBinding = (
     inputDocument: tool.inputSchema as Schema.Json,
     // McpClient authors these messages with remote/process diagnostics withheld.
     publicError: (error: McpError) => error.message,
-    handler: (input): Effect.Effect<typeof Result.Type, McpError> =>
+    handler: (input): typeof Result.Type!McpError =>
       Effect.map(client.callTool(toolName, input), (result) =>
         result.structuredContent === undefined
           ? { content: result.content, isError: result.isError }
@@ -174,38 +174,33 @@ export const mcp = (client: McpClient.McpClient, options: ProjectionOptions = {}
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const connected = <O extends McpClient.ConnectOptions>(
+export const connected = effect <O extends McpClient.ConnectOptions>(
   options: O & ProjectionOptions
-): Effect.Effect<FlowBinding.Source, McpError, McpClient.Requirements<O> | Scope.Scope> =>
-  Effect.gen(function*() {
-    if (options.namePrefix === "") {
-      return yield* Effect.fail(
-        new McpError({
-          code: "protocol_error",
-          message: `MCP server "${options.server}" option "namePrefix" must not be empty`,
-          server: options.server
-        })
-      )
-    }
-    return yield* Effect.acquireUseRelease(
-      Effect.flatMap(Effect.scope, Scope.fork),
-      (scope) =>
-        Effect.gen(function*() {
-          const client = yield* McpClient.connect(options)
-          const offered = new Set(client.tools.map((tool) => tool.name))
-          const missing = options.include?.find((name) => !offered.has(name))
-          if (missing !== undefined) {
-            return yield* Effect.fail(
-              new McpError({
-                code: "tool_not_found",
-                message: `MCP server "${client.server}" offers no requested include tool`,
-                server: client.server
-              })
-            )
-          }
-          return mcp(client, options)
-        }).pipe(Scope.provide(scope)),
-      // Projection rejection must release the successfully initialized client.
-      (scope, exit) => Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void
-    )
-  })
+): FlowBinding.Source!McpError!McpClient.Requirements<O> | Scope.Scope => {
+  if (options.namePrefix === "") {
+    throw new McpError({
+      code: "protocol_error",
+      message: `MCP server "${options.server}" option "namePrefix" must not be empty`,
+      server: options.server
+    })
+  }
+  return try Effect.acquireUseRelease(
+    Effect.flatMap(Effect.scope, Scope.fork),
+    (scope) =>
+      (effect {
+        const client = try McpClient.connect(options)
+        const offered = new Set(client.tools.map((tool) => tool.name))
+        const missing = options.include?.find((name) => !offered.has(name))
+        if (missing !== undefined) {
+          throw new McpError({
+            code: "tool_not_found",
+            message: `MCP server "${client.server}" offers no requested include tool`,
+            server: client.server
+          })
+        }
+        return mcp(client, options)
+      }) |> Scope.provide(%, scope),
+    // Projection rejection must release the successfully initialized client.
+    (scope, exit) => Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void
+  )
+}

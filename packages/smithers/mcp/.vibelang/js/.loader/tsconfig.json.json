@@ -110,7 +110,7 @@
      "relative": "packages/smithers/mcp/src"
     },
     null,
-    "yKCfRHFC8R2YrD3J-9KX_BzRElhVNR3ExPLGWcKacdk",
+    "AxOnspJEADRbvF5R6hMPPY3d6SODvNCeMQranCMbcFU",
     [],
     {
      "recursive": true,
@@ -296,8 +296,8 @@
     "path": {
      "relative": "packages/smithers/mcp/package.json"
     },
-    "size": 5854,
-    "hash": "-2uIl5RO_LJbQjhsY7M77T2so_9U9Had1jz7PBv7b24"
+    "size": 5882,
+    "hash": "bMV6CYGGI4MaDuo2XWMr1gjXZgXRdZn_LOhCggrnDP8"
    },
    {
     "path": {
@@ -2984,10 +2984,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/mcp/src/internal/Limits.ts"
+     "relative": "packages/smithers/mcp/src/internal/Limits.vibe"
     },
-    "size": 1533,
-    "hash": "N5geDX44Y34FSFS4ouklOFzTwBPgqq4dlFS8jCqe2lc"
+    "size": 1485,
+    "hash": "tXxKeRbD-_ctSoMX1nx0c71Tk-d7n8CeQtmvYkshgZc"
    },
    {
     "path": {
@@ -2998,17 +2998,402 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/mcp/src/internal/Transport.ts"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityId.d.ts"
     },
-    "size": 6239,
-    "hash": "rMnJ3QP62LMmHvD06ZiBAG4XiDBpTh-gb3odA9_a0Q0"
+    "size": 1452,
+    "hash": "8G6KvjvryXqT0lOzLVz0ddBd34nYGeX5PJ-TUXgxZLw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityType.d.ts"
+    },
+    "size": 1688,
+    "hash": "Pr9kw3NwirstIvug3uhdyEJcxyd3UcZJi_h3_qb_qYk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardId.d.ts"
+    },
+    "size": 3452,
+    "hash": "IRZYtpZiXKDE-crBMSrm0iKOcZS-aoL3MT5s66Ybqng"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityAddress.d.ts"
+    },
+    "size": 3010,
+    "hash": "SZDSwm7j3-YI_9Eh0kkQZVeFTOZr2-lQDTPLmcOrzNo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerAddress.d.ts"
+    },
+    "size": 3040,
+    "hash": "yrFRicKdgra5vnhnDh1zXykc_uaeqp5wmkoGMP0Xfbs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MachineId.d.ts"
+    },
+    "size": 1460,
+    "hash": "bSsSmAAMdM0qkQqMlCis3_mAuVUCx7_mi5YoSxSSVeg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Snowflake.d.ts"
+    },
+    "size": 6636,
+    "hash": "2VBrV_inJwvsXHU3OeEyArFJpjeFrVtkStxHYbLVjYg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterError.d.ts"
+    },
+    "size": 7433,
+    "hash": "HJuVgbkR2eLkp8af7NmcCYHV_lwNlHYdEbfvF8RKdRM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Envelope.d.ts"
+    },
+    "size": 11771,
+    "hash": "1stqdRL93Op15owECroyNwBVzcmXoST5dTEWDkQoHfY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Message.d.ts"
+    },
+    "size": 9872,
+    "hash": "X1umrjOArFnumH98ibH25OmdXXPqYq6ySwge6hJI8c4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Reply.d.ts"
+    },
+    "size": 10360,
+    "hash": "Y8xeHUmrlthiwICskWsLXc9t4OoJ_Pa8_YMyIyzyHX8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingConfig.d.ts"
+    },
+    "size": 18524,
+    "hash": "HL_NI8Jc-1XjO6o0UGXJz3eDhUaIhDQf2Ve2hyyWA4M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Entity.d.ts"
+    },
+    "size": 13096,
+    "hash": "iRHq5o8OmWj3pKEvtSKALC8zQ2mT1MBznsLDOV77j20"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MessageStorage.d.ts"
+    },
+    "size": 34555,
+    "hash": "mKDYRuaIlnF7LPrnOFL2AgOip1mz8lGwGJvzQcneaNQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sTypes.d.ts"
+    },
+    "size": 167852,
+    "hash": "MzaOsujXKwE01wYSdIB_9cJURiZPT6_ZPQRTE3eTq2c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sHttpClient.d.ts"
+    },
+    "size": 3629,
+    "hash": "5Pgx_v1Grrxhdl4IwxaedajTCDYRjx359m6zWULPA1k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runners.d.ts"
+    },
+    "size": 9902,
+    "hash": "i5zZdlh1sG2cuVK0Oy-J9-7Ct2Rug1wG5jJT6oNo-ps"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerHealth.d.ts"
+    },
+    "size": 3568,
+    "hash": "DGmZ-CMQIQW-6ZY-_NaaF8lfdHYoTtR6HKO2NaDpWT0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runner.d.ts"
+    },
+    "size": 3783,
+    "hash": "69XynDbyEGfcXTm_2YEpnkcPG3XNzv76QSfA0iCGKxI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerStorage.d.ts"
+    },
+    "size": 8502,
+    "hash": "k-BpEYMaDbHwjb6RrCmgQt92Pcl88BfX6ylYMQCi9jc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingletonAddress.d.ts"
+    },
+    "size": 1606,
+    "hash": "Jvz0RpNd6mtglj8ut8Cqf8pNg5m2wpcSWVlerpRw1l0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingRegistrationEvent.d.ts"
+    },
+    "size": 2625,
+    "hash": "DzqEGkDybRTSmzt2XBdXczG5cuVaMYl19Z1zPChvEFw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Sharding.d.ts"
+    },
+    "size": 6566,
+    "hash": "mAf9eV5VDjHayYpFIJB69aAJ_OCZWsn9jmq9tmhbMfg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterCron.d.ts"
+    },
+    "size": 3266,
+    "hash": "6oXHUEEOMyMmhYOL1_oUIMZtkuOWQwL95-sxXFdIHsU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterMetrics.d.ts"
+    },
+    "size": 8365,
+    "hash": "mgieQocV1C9i_XWkiaaLX8TI9OV5nTjE7ApoNJhdtxA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterSchema.d.ts"
+    },
+    "size": 6172,
+    "hash": "Xko8-BfThlGviTI6FW7SvVh_4hKZH4-SqWE-IdlNhws"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Workflow.d.ts"
+    },
+    "size": 18929,
+    "hash": "T9ym1nDkGu9D_4BX1TVD2t4tpo9nrcTDwbE4dOaXBTg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableDeferred.d.ts"
+    },
+    "size": 17080,
+    "hash": "0HYeLXjSxTYk2VxmgCR8lsaA7Bq82UNrkpMNKZc0kXg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableClock.d.ts"
+    },
+    "size": 1683,
+    "hash": "acpDCCT8b7Nx7nC7nWDNGg6pktVOgOR57nNFEur5P64"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/WorkflowEngine.d.ts"
+    },
+    "size": 12971,
+    "hash": "4iB3RMXpMelb_0M-FV7m_hX1LXYhTrUzjNOWE7ejhu0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Activity.d.ts"
+    },
+    "size": 6644,
+    "hash": "O94vksRKgyrgx3OpMnXkXv-ze3pAieV5454TvoG64YA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterWorkflowEngine.d.ts"
+    },
+    "size": 4850,
+    "hash": "QmHx8o8GTlbXU_8dolLMcz9IuE0FNXzEvM3sCRv9H8s"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/DeliverAt.d.ts"
+    },
+    "size": 1543,
+    "hash": "Ibq4ocbdh2IG6-2ubhgLC-7utULf4uXp_F5y__Ili5M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Sse.d.ts"
+    },
+    "size": 11379,
+    "hash": "Fmwr_ayd9o5g0s8kNgVtDPEZ15dytzKkVRuOJDQAXEU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStatus.d.ts"
+    },
+    "size": 3210,
+    "hash": "Rm3ULiRjM_JPPOBlrnCzVFmuPHq4e2yHtMfYnqF5dwY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSchema.d.ts"
+    },
+    "size": 33776,
+    "hash": "oRRMtbP_t1NtFNCBVNcTlHmPIiYNmBd58ezmpza039c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiError.d.ts"
+    },
+    "size": 22439,
+    "hash": "Etkv-dnkktQNseuaNP54LHQ72o8ZJHTkp1wHM2AzQ_Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSecurity.d.ts"
+    },
+    "size": 6440,
+    "hash": "q2tAUGBZ_DdM4mtHAL9RI9iNXBdHoUffIzvFbHlvi08"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiMiddleware.d.ts"
+    },
+    "size": 17256,
+    "hash": "EbqaZWiaGwcb7UjXGnqHoS01JqeohAEfBL9GUdFauEY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiGroup.d.ts"
+    },
+    "size": 10492,
+    "hash": "A_KkgwnU5rqDsuZK4IFZ56-mqixiK3W_3mnbcG4ZuFQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiEndpoint.d.ts"
+    },
+    "size": 52343,
+    "hash": "c2mJ-w9tv2gSGS3KkbRh_MVxsAYMtEIijtJ5TvgqLZs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxy.d.ts"
+    },
+    "size": 6091,
+    "hash": "KxDdcwmF-ZTCWCwOTdF6iDpL5VSaHb2J44AsdW9DuMU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApi.d.ts"
+    },
+    "size": 11453,
+    "hash": "FGfWY8p54kEiztH4A3Wx-ERRwxrfWAG8B4eP1c2sQz0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxyServer.d.ts"
+    },
+    "size": 2133,
+    "hash": "bmMHlqj_ihcpQEXaCF3kgP7FAwzNKVbLoZhfVS-XmxE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityResource.d.ts"
+    },
+    "size": 3871,
+    "hash": "mXP4oDVO_i9Z2XGGVEFoEOeAHSoR6LijEePcguUn1XY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/HttpRunner.d.ts"
+    },
+    "size": 7605,
+    "hash": "7IROn5E5L336j0R3t8Z6Wf9pbt2jijPO911OeEy7ff4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerServer.d.ts"
+    },
+    "size": 2766,
+    "hash": "VIRLTgOJbKvN-uKw4a678tWL_BEBXh_N-mbt1RozfE4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingleRunner.d.ts"
+    },
+    "size": 2868,
+    "hash": "dZihTYTMszQrGTTdK09ZbcE861r7u-4aRGLWZ0Xpz6U"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Singleton.d.ts"
+    },
+    "size": 1982,
+    "hash": "-cmWeYzA3_N5yknjp7BQxpXTMRB4a_1aNizeMA7BidY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SocketRunner.d.ts"
+    },
+    "size": 2388,
+    "hash": "jgMC7JfEhtM9wsz0RZGvsYwaGkbRfz8IWOKsC_lUBjg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/Migrator.d.ts"
+    },
+    "size": 4293,
+    "hash": "U-MK1zwSqANvTD08iperVLajOJ6q8N3nxU7pxs9nghI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlMessageStorage.d.ts"
+    },
+    "size": 5399,
+    "hash": "4IhxmO3kZYtbzvxbnUmY5NeXG1izrpH82KGob9Yvpzw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlRunnerStorage.d.ts"
+    },
+    "size": 4301,
+    "hash": "QRDzqXBCqRCTVozYpCJLHrQmtSf8oN6M5XFkd37yaIc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/TestRunner.d.ts"
+    },
+    "size": 1023,
+    "hash": "S7Jp3TeumNcJNeTal7pDVdhK_FHlK5iBI8NKfdbmqA8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/index.d.ts"
+    },
+    "size": 3870,
+    "hash": "TCw4mrTHA5ASw2V2ECEmcvSyCaTQphcrVWlaD_pOQ0Q"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/mcp/src/internal/Transport.vibe"
+    },
+    "size": 6155,
+    "hash": "aHcIHhQCZIRD7hQYT17BL1MtgvN8oFUURyYzYSFrSBU"
    },
    {
     "path": {
      "relative": "packages/smithers/mcp/src/internal/HttpTransport.ts"
     },
-    "size": 20574,
-    "hash": "nXBS_ZvbgntgKoX29On4anAcQad5hdR_ku9VrOuElkY"
+    "size": 20578,
+    "hash": "pCoSACPsvXYWb5XkK5vvGwdQMgQXjivGx13YperJdd0"
    },
    {
     "path": {
@@ -3021,15 +3406,15 @@
     "path": {
      "relative": "packages/smithers/mcp/src/internal/StdioTransport.ts"
     },
-    "size": 21443,
-    "hash": "9HjX3rQv29p3plRZyeRM2YgnE5CEsJ3aWzP9lnEFoRo"
+    "size": 21447,
+    "hash": "90oUGxGzD42CpyBWlkj_iIyeO3nHDXcZmOE5xPg0qVU"
    },
    {
     "path": {
      "relative": "packages/smithers/mcp/src/McpClient.ts"
     },
-    "size": 36620,
-    "hash": "6QQTVrVcqTmKsxYTGEgzbjAoGovxU6VLuRV2EoiyDuo"
+    "size": 36624,
+    "hash": "ZfMjqoqk_iujGkzAMMRsjkdNLduUR84V-K9NwtllSVg"
    },
    {
     "path": {
@@ -3359,13 +3744,6 @@
     },
     "size": 16373,
     "hash": "vI4FK4XFTqsTpUyMJLfl2acrmVs42py0MswI7Dd-R60"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Sse.d.ts"
-    },
-    "size": 11379,
-    "hash": "Fmwr_ayd9o5g0s8kNgVtDPEZ15dytzKkVRuOJDQAXEU"
    },
    {
     "path": {
@@ -5679,13 +6057,6 @@
    },
    {
     "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/Migrator.d.ts"
-    },
-    "size": 4293,
-    "hash": "U-MK1zwSqANvTD08iperVLajOJ6q8N3nxU7pxs9nghI"
-   },
-   {
-    "path": {
      "relative": "packages/smithers/flows/database/src/Migrations.ts"
     },
     "size": 23374,
@@ -5833,17 +6204,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/mcp/src/McpFlows.ts"
+     "relative": "packages/smithers/mcp/src/McpFlows.vibe"
     },
-    "size": 8375,
-    "hash": "U0ldru7w98f_NG6pJvEwGIkse5-IzlUxN3fUVWamRJ4"
+    "size": 8140,
+    "hash": "uPMIFCoMCvasZbil2M1JUHBOnezZ3j38CZ2a3Tjfie4"
    },
    {
     "path": {
      "relative": "packages/smithers/mcp/src/index.ts"
     },
-    "size": 814,
-    "hash": "aM_kZDkbQydR1zvxXtmn6W2_KjqpKqocgo2VNPJuq6o"
+    "size": 816,
+    "hash": "EYRrlomyu9R_kHj33aynsciTGSGqqEEaBGpjftwkZLc"
    },
    {
     "path": {
@@ -6957,13 +7328,13 @@
     "relative": "packages/smithers/mcp/src/internal/JsonLimits.ts"
    },
    {
-    "relative": "packages/smithers/mcp/src/internal/Limits.ts"
+    "relative": "packages/smithers/mcp/src/internal/Limits.vibe"
    },
    {
     "relative": "packages/smithers/mcp/src/internal/Rpc.ts"
    },
    {
-    "relative": "packages/smithers/mcp/src/internal/Transport.ts"
+    "relative": "packages/smithers/mcp/src/internal/Transport.vibe"
    },
    {
     "relative": "packages/smithers/mcp/src/internal/HttpTransport.ts"
@@ -7677,7 +8048,7 @@
     "relative": "packages/smithers/agent/harness/src/FlowBinding.ts"
    },
    {
-    "relative": "packages/smithers/mcp/src/McpFlows.ts"
+    "relative": "packages/smithers/mcp/src/McpFlows.vibe"
    },
    {
     "relative": "packages/smithers/mcp/src/index.ts"
@@ -7693,6 +8064,16 @@
     "category": "warning",
     "code": "EK4837",
     "text": "McpError extends Schema.TaggedError; a schema error declaration, schema error McpError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/mcp/src/McpFlows.vibe"
+    },
+    "line": 40,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "Result holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema Result { … }.\n  Its quick fix writes schema Result { … }; vibelang --fix applies every such fix in the project."
    }
   ],
   "outputs": [
@@ -7754,6 +8135,66 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG;;AAEH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,MAAM,CAAC,QAAQ,CAAC;IAClC,cAAc;IACd,mBAAmB;IACnB,SAAS;IACT,gBAAgB;IAChB,gBAAgB;IAChB,aAAa;IACb,kBAAkB;CACnB,CAAC,CAAA;AAUF;;;;;;;;;;;;;;GAcG;AACH,MAAM,OAAO,QAAS,SAAQ,MAAM,CAAC,WAAW,EAAY,CAAC,oBAAoB,EAAE;IACjF,IAAI,EAAE,IAAI;IACV,OAAO,EAAE,MAAM,CAAC,MAAM;IACtB,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;CACvC,CAAC;CAAG"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/mcp/src/internal/Limits.vibe"
+     }
+    ],
+    "code": "/**\n * Positive-integer option bounds shared by the transport and the client.\n *\n * Both `connect` functions resolve their defaults and then reject the first\n * option that is not a positive safe integer, before any process is spawned.\n * The check and its error prose live here so the two option lists cannot\n * drift in wording or in semantics.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { McpError } from \"../McpError.js\";\n/**\n * Builds the `protocol_error` failure both modules report for malformed\n * options and frames.\n *\n * @category errors\n * @since 1.0.0-rc.0\n */\nexport const protocolError = (server, message) => new McpError({ code: \"protocol_error\", message, server });\n/**\n * Whether a value is a positive safe integer.\n *\n * @category validation\n * @since 1.0.0-rc.0\n */\nexport const isPositiveInteger = (value) => Number.isSafeInteger(value) && value > 0;\n/**\n * Fails with `protocol_error` naming the first option whose resolved value is\n * not a positive safe integer. Entries are checked in the order given.\n *\n * @category validation\n * @since 1.0.0-rc.0\n */\nexport const checkPositiveIntegers = (server, entries) => {\n    const invalid = entries.find(([, value]) => !isPositiveInteger(value));\n    return invalid === undefined\n        ? Effect.void\n        : Effect.fail(protocolError(server, `MCP option \"${invalid[0]}\" must be a positive integer`));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Limits.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/mcp/src/internal/Limits.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;GASG;;AAEH,OAAO,EAAE,QAAQ,EAAE,MAAM,gBAAkB,CAAA;AAE3C;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,CAAC,MAAc,EAAE,OAAe,EAAY,EAAE,CACzE,IAAI,QAAQ,CAAC,EAAE,IAAI,EAAE,gBAAgB,EAAE,OAAO,EAAE,MAAM,EAAE,CAAC,CAAA;AAE3D;;;;;GAKG;AACH,MAAM,CAAC,MAAM,iBAAiB,GAAG,CAAC,KAAa,EAAW,EAAE,CAAC,MAAM,CAAC,aAAa,CAAC,KAAK,CAAC,IAAI,KAAK,GAAG,CAAC,CAAA;AAErG;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,qBAAqB,GAAG,CACnC,MAAc,EACd,OAA8D,EAC/C,EAAE;IACjB,MAAM,OAAO,GAAG,OAAO,CAAC,IAAI,CAAC,CAAC,CAAC,EAAE,KAAK,CAAC,EAAE,EAAE,CAAC,CAAC,iBAAiB,CAAC,KAAK,CAAC,CAAC,CAAA;IACtE,OAAO,OAAO,KAAK,SAAS;QAC1B,CAAC,CAAC,MAAM,CAAC,IAAI;QACb,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,aAAa,CAAC,MAAM,EAAE,eAAe,OAAO,CAAC,CAAC,CAAC,8BAA8B,CAAC,CAAC,CAAA;AACjG,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/mcp/src/internal/Transport.vibe"
+     }
+    ],
+    "code": "/**\n * The request/notify surface both MCP transports provide, and the failure\n * wording they share. {@link McpClient} speaks to this interface only; stdio\n * and Streamable HTTP differ in how a frame travels, not in what it means.\n *\n * @since 1.0.0-rc.1\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Stream from \"effect/Stream\";\nimport { McpError } from \"../McpError.js\";\nimport * as Limits from \"./Limits.js\";\n/**\n * Default request deadline.\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const defaultRequestTimeoutMs = 120_000;\n/**\n * Default maximum inbound JSON-RPC frame size (one MiB).\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const defaultMaxFrameBytes = 1024 * 1024;\n/**\n * Default maximum outbound JSON-RPC frame size (one MiB).\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const defaultMaxOutboundFrameBytes = 1024 * 1024;\n/**\n * The reason sent with a best-effort `notifications/cancelled`.\n *\n * @category constants\n * @since 1.0.0-rc.1\n */\nexport const cancellationReason = \"request no longer awaited\";\n/**\n * A `connection_closed` failure naming the server.\n *\n * @category errors\n * @since 1.0.0-rc.1\n */\nexport const closed = (server, reason) => new McpError({ code: \"connection_closed\", message: `MCP server \"${server}\" ${reason}`, server });\n/**\n * A `timeout` failure naming the server, method and deadline.\n *\n * @category errors\n * @since 1.0.0-rc.1\n */\nexport const timeout = (server, method, timeoutMs) => new McpError({\n    code: \"timeout\",\n    message: `MCP server \"${server}\" did not answer ${method} within ${timeoutMs}ms`,\n    server\n});\n/**\n * The model-facing failure for a correlated JSON-RPC error reply. Remote text\n * is withheld; the caller reports it to Diagnostics.\n *\n * @category errors\n * @since 1.0.0-rc.1\n */\nexport const replyError = (server, method, reply) => {\n    // Servers do not standardize unknown-tool prose, so this heuristic stays\n    // limited to the two MCP error codes and an explicit tool plus absence phrase.\n    const remoteUnknownTool = (reply.code === -32_601 || reply.code === -32_602) &&\n        /\\btool\\b/i.test(reply.message) &&\n        /\\b(?:unknown|unrecognized|no such|not found)\\b/i.test(reply.message);\n    return new McpError({\n        code: method === \"tools/call\"\n            ? remoteUnknownTool ? \"tool_not_found\" : \"tool_failed\"\n            : \"protocol_error\",\n        message: `MCP server \"${server}\" failed ${method} (${reply.code}); remote details withheld`,\n        server\n    });\n};\n/**\n * Splits a byte stream into lines in linear time, retaining one bounded\n * partial line. Lines end at LF, with a CR before the LF dropped; with\n * `crTerminates`, as server-sent events require, a lone CR also ends a line.\n * Blank lines are kept: server-sent events use them as delimiters.\n *\n * @category constructors\n * @since 1.0.0-rc.1\n */\nexport const lines = (server, maxLineBytes, stream, options = {}) => {\n    const crTerminates = options.crTerminates === true;\n    const decoder = new TextDecoder();\n    const decode = (partial) => {\n        const joined = new Uint8Array(partial.bytes);\n        let offset = 0;\n        for (const piece of partial.pieces) {\n            joined.set(piece, offset);\n            offset += piece.byteLength;\n        }\n        const end = joined[partial.bytes - 1] === 0x0d ? partial.bytes - 1 : partial.bytes;\n        return decoder.decode(joined.subarray(0, end));\n    };\n    const terminator = (chunk, from) => {\n        if (!crTerminates)\n            return chunk.indexOf(0x0a, from);\n        for (let index = from; index < chunk.byteLength; index += 1) {\n            if (chunk[index] === 0x0a || chunk[index] === 0x0d)\n                return index;\n        }\n        return -1;\n    };\n    const tooLong = () => Effect.fail(Limits.protocolError(server, `MCP frame exceeded ${maxLineBytes} bytes`));\n    return stream.pipe(Stream.mapAccumEffect(() => ({ pieces: [], bytes: 0, skipLf: false }), (partial, chunk) => {\n        const complete = [];\n        const append = (piece) => {\n            if (piece.byteLength === 0)\n                return true;\n            const bytes = partial.bytes + piece.byteLength;\n            // A final CR may be the first half of CRLF. Allow that one byte\n            // beyond the cap, but count it if more frame content follows.\n            const contentBytes = bytes - (piece[piece.byteLength - 1] === 0x0d ? 1 : 0);\n            if (contentBytes > maxLineBytes)\n                return false;\n            partial.pieces.push(piece);\n            partial.bytes = bytes;\n            return true;\n        };\n        // The LF of a CRLF split across chunks ends nothing new.\n        let start = partial.skipLf && chunk[0] === 0x0a ? 1 : 0;\n        partial.skipLf = false;\n        for (let end = terminator(chunk, start); end !== -1; end = terminator(chunk, start)) {\n            if (!append(chunk.subarray(start, end)))\n                return tooLong();\n            complete.push(decode(partial));\n            partial = { pieces: [], bytes: 0, skipLf: false };\n            start = end + 1;\n            if (chunk[end] === 0x0d) {\n                if (start === chunk.byteLength)\n                    partial.skipLf = true;\n                else if (chunk[start] === 0x0a)\n                    start += 1;\n            }\n        }\n        if (!append(chunk.subarray(start)))\n            return tooLong();\n        return Effect.succeed([partial, complete]);\n    }, { onHalt: (partial) => partial.bytes === 0 ? [] : [decode(partial)] }));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Transport.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/mcp/src/internal/Transport.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/mcp/src/McpFlows.vibe"
+     }
+    ],
+    "code": "/**\n * Projects a connected MCP server's tools as an ordinary {@link FlowBinding.Source}.\n *\n * This is the whole adapter: `@smthrs/harness/FlowBinding`'s own module doc\n * already names the target directly: \"a standard filesystem flow, a memory\n * flow, an incoming MCP tool, a durable child agent\" are all just a flow\n * declaration plus the code that runs it. Nothing about the harness, the\n * registry, or the cell loop needs to know a given flow's implementation\n * happens to proxy a remote MCP `tools/call`; a cell that reads a file and a\n * cell that calls an MCP tool run the identical two lines.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Exit from \"effect/Exit\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Capability from \"@smthrs/capability/Capability\";\nimport * as Effects from \"@smthrs/core/Effects\";\nimport * as FlowBinding from \"@smthrs/harness/FlowBinding\";\nimport { Effect, Schema, Scope } from \"effect\";\nimport * as McpClient from \"./McpClient.js\";\nimport { McpError } from \"./McpError.js\";\n/**\n * Decoded input accepted by every MCP tool flow, which is whatever the remote\n * tool's own JSON Schema describes. The registry still discloses the real parameter\n * shape, as shown by {@link toolBinding}. This is only the runtime decode, and it\n * is permissive because the server, not this adapter, owns validation.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Args = Schema.Record(Schema.String, Schema.Unknown);\n/**\n * Decoded output returned by every MCP tool flow, carrying the tool's content\n * blocks by shape plus whether the server reported an error.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Result = Schema.Struct({\n    content: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),\n    isError: Schema.Boolean,\n    structuredContent: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))\n});\n/**\n * The authority every MCP tool flow declares.\n *\n * An MCP tool is opaque code this adapter does not control, the same\n * situation `@smthrs/registry/MarkdownFlow` calls \"unprojectable authority\"\n * for a skill with no declared `capabilities`: the honest declaration is\n * everything, not a guess.\n *\n * It is spelled as one exact `namespace:operation:resource` per action because\n * the cell boundary reads each declaration with `Capability.parse`, which\n * rejects anything that does not have exactly those three colon-separated\n * components. An unparseable declaration counts as unauthorized. The list is\n * derived from `Capability.Action.literals`, so adding a host action cannot\n * silently omit it from MCP tools, and it is frozen so no caller can narrow\n * or widen what every tool declares. Each binding records it deduplicated and\n * sorted, as `FlowBinding.make` records every declaration.\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const capabilities = Object.freeze(Capability.Action.literals.map((action) => `${action}:**`));\n/**\n * The conservative effect envelope every MCP tool flow declares.\n *\n * @category effects\n * @since 1.0.0-rc.0\n */\nexport const effects = Effects.make({\n    reads: [\"**\"],\n    writes: [\"**\"],\n    mode: \"expected\",\n    onConflict: \"serialize\",\n    tier: \"irreversible\"\n});\n/** One remote tool, bound to a flow name scoped by server so two servers may reuse a tool name. */\nconst toolBinding = (client, tool, prefix) => {\n    const toolName = tool.name;\n    return FlowBinding.make({\n        flow: {\n            name: `${prefix}/${toolName}`,\n            // The server authors this text, so it is attributed as remote content\n            // rather than read as if the host had written it. The client bounds it.\n            description: tool.description === undefined\n                ? `MCP tool \"${toolName}\" on server \"${client.server}\"`\n                : `MCP tool \"${toolName}\" on server \"${client.server}\". Server-supplied description: ${tool.description}`,\n            capabilities,\n            effects,\n            input: Args,\n            output: Result\n        },\n        // The server's own JSON Schema document, carried by value so a caller\n        // reading `ctx.flows` sees the real parameter shape rather than `Args`'s\n        // permissive record type.\n        inputDocument: tool.inputSchema,\n        // McpClient authors these messages with remote/process diagnostics withheld.\n        publicError: (error) => error.message,\n        handler: (input) => Effect.map(client.callTool(toolName, input), (result) => result.structuredContent === undefined\n            ? { content: result.content, isError: result.isError }\n            : {\n                content: result.content,\n                isError: result.isError,\n                structuredContent: result.structuredContent\n            })\n    });\n};\n/**\n * Projects an already-connected MCP session's tool catalog as a\n * {@link FlowBinding.Source}, one flow per tool.\n *\n * The client is a precondition, not a parameter this constructor resolves:\n * connecting is a scoped effect (it owns a subprocess), and a `Source` is not\n * scoped, so the host composes {@link McpClient.connect} once, at the same\n * place it composes every other scoped kernel service, and passes the live\n * client here.\n *\n * This constructor is total: it applies exact filters to the catalog it is\n * given. Use {@link connected} when unknown `include` names and an empty\n * `namePrefix` must fail loudly against a freshly fetched catalog.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const mcp = (client, options = {}) => {\n    const prefix = options.namePrefix ?? `mcp/${client.server}`;\n    const include = options.include === undefined || options.include.length === 0\n        ? undefined\n        : new Set(options.include);\n    const exclude = new Set(options.exclude ?? []);\n    const tools = client.tools.filter((tool) => (include === undefined || include.has(tool.name)) && !exclude.has(tool.name));\n    return FlowBinding.source(prefix, tools.map((tool) => toolBinding(client, tool, prefix)));\n};\n/**\n * Connects to an MCP server and projects its tools in one step.\n *\n * This is the checked entry point: it validates projection options against\n * the freshly fetched catalog before constructing the source. An empty prefix\n * fails before spawning. Failed or interrupted setup, including projection\n * validation, releases the connection before returning to the caller.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const connected = Effect_1.fnUntraced(function* connected(options) {\n    if (options.namePrefix === \"\") {\n        return yield* Effect_1.fail(new McpError({\n            code: \"protocol_error\",\n            message: `MCP server \"${options.server}\" option \"namePrefix\" must not be empty`,\n            server: options.server\n        }));\n    }\n    return yield* Effect.acquireUseRelease(Effect.flatMap(Effect.scope, Scope.fork), (scope) => Scope.provide((Effect_1.gen(function* () {\n        const client = yield* McpClient.connect(options);\n        const offered = new Set(client.tools.map((tool) => tool.name));\n        const missing = options.include?.find((name) => !offered.has(name));\n        if (missing !== undefined) {\n            return yield* Effect_1.fail(new McpError({\n                code: \"tool_not_found\",\n                message: `MCP server \"${client.server}\" offers no requested include tool`,\n                server: client.server\n            }));\n        }\n        return mcp(client, options);\n    })), scope), \n    // Projection rejection must release the successfully initialized client.\n    (scope, exit) => Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void);\n});\n",
+    "map": {
+     "version": 3,
+     "file": "McpFlows.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/mcp/src/McpFlows.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    }
   ]

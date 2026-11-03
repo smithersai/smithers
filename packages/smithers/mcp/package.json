@@ -58,8 +58,8 @@
       "default": "./.vibelang/js/src/McpError.js"
     },
     "./McpFlows": {
-      "types": "./src/McpFlows.ts",
-      "vibelang-source": "./src/McpFlows.ts",
+      "types": "./.vibe/declarations/src/McpFlows.d.vibe.ts",
+      "vibelang-source": "./src/McpFlows.vibe",
       "default": "./.vibelang/js/src/McpFlows.js"
     },
     "./index": {

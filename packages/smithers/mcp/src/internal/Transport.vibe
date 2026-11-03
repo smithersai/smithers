@@ -6,9 +6,8 @@
  * @since 1.0.0-rc.1
  */
 
-import { Effect, Stream } from "effect"
 import { McpError } from "../McpError.vibe"
-import * as Limits from "./Limits.ts"
+import * as Limits from "./Limits.vibe"
 import type * as Rpc from "./Rpc.ts"
 
 /**
@@ -19,9 +18,9 @@ import type * as Rpc from "./Rpc.ts"
  */
 export interface Transport {
   /** Sends a request and resolves with its `result`, or fails with the server's `error`. */
-  readonly request: (method: string, params?: unknown, timeoutMs?: number) => Effect.Effect<unknown, McpError>
+  readonly request: (method: string, params?: unknown, timeoutMs?: number) => unknown!McpError
   /** Sends a notification, bounding delivery by the optional positive-integer deadline. */
-  readonly notify: (method: string, params?: unknown, timeoutMs?: number) => Effect.Effect<void, McpError>
+  readonly notify: (method: string, params?: unknown, timeoutMs?: number) => void!McpError
 }
 
 /**
@@ -116,9 +115,9 @@ export const replyError = (
 export const lines = <E>(
   server: string,
   maxLineBytes: number,
-  stream: Stream.Stream<Uint8Array, E>,
+  stream: Stream<Uint8Array, E>,
   options: { readonly crTerminates?: boolean } = {}
-): Stream.Stream<string, E | McpError> => {
+): Stream<string, E | McpError> => {
   type PartialLine = { pieces: Array<Uint8Array>; bytes: number; skipLf: boolean }
   const crTerminates = options.crTerminates === true
   const decoder = new TextDecoder()

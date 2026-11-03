@@ -18,9 +18,9 @@ import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as DiagnosticReporter from "./internal/DiagnosticReporter.vibe"
 import * as HttpTransport from "./internal/HttpTransport.ts"
 import * as JsonLimits from "./internal/JsonLimits.ts"
-import * as Limits from "./internal/Limits.ts"
+import * as Limits from "./internal/Limits.vibe"
 import * as StdioTransport from "./internal/StdioTransport.ts"
-import * as Transport from "./internal/Transport.ts"
+import * as Transport from "./internal/Transport.vibe"
 import { McpError } from "./McpError.vibe"
 
 /**

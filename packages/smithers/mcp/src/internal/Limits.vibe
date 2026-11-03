@@ -9,7 +9,6 @@
  * @since 1.0.0-rc.0
  */
 
-import { Effect } from "effect"
 import { McpError } from "../McpError.vibe"
 
 /**
@@ -40,7 +39,7 @@ export const isPositiveInteger = (value: number): boolean => Number.isSafeIntege
 export const checkPositiveIntegers = (
   server: string,
   entries: ReadonlyArray<readonly [name: string, value: number]>
-): Effect.Effect<void, McpError> => {
+): void!McpError => {
   const invalid = entries.find(([, value]) => !isPositiveInteger(value))
   return invalid === undefined
     ? Effect.void

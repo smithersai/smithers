@@ -21,7 +21,7 @@ import * as Diagnostics from "../src/Diagnostics.vibe"
 import * as StdioTransport from "../src/internal/StdioTransport.ts"
 import * as McpClient from "../src/McpClient.ts"
 import { McpError } from "../src/McpError.vibe"
-import * as McpFlows from "../src/McpFlows.ts"
+import * as McpFlows from "../src/McpFlows.vibe"
 import { fakeHandle } from "./fixtures/FakeProcess.ts"
 import * as FixtureServer from "./fixtures/FixtureServer.ts"
 

@@ -68,7 +68,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/StdioTransport.ts",
         "src/internal/HttpTransport.ts",
-        "src/internal/Transport.ts",
+        "src/internal/Transport.vibe",
         "src/internal/JsonLimits.ts",
         "src/McpClient.ts"
       ]
@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/StdioTransport.ts",
         "src/McpClient.ts",
-        "src/McpFlows.ts",
+        "src/McpFlows.vibe",
         "src/internal/DiagnosticReporter.vibe",
         "src/McpError.vibe"
       ]
@@ -140,7 +140,7 @@ const securityReview = Smithers.SecurityReview({
         "A projected binding whose capabilities or effects are narrower than every action, making an opaque tool look safe to a read-only envelope.",
         "include/exclude or namePrefix handling that lets an empty or colliding prefix merge two servers' tools."
       ],
-      paths: ["src/McpFlows.ts", "src/McpClient.ts"]
+      paths: ["src/McpFlows.vibe", "src/McpClient.ts"]
     },
     {
       id: "catalog-prompt-injection",
@@ -151,7 +151,7 @@ const securityReview = Smithers.SecurityReview({
         "tool.description or inputSchema passed to FlowBinding without a length bound or marking as remote content.",
         "A catalog object exposed to consumers before JsonLimits.freezeParsed, so a later mutation changes what the model saw."
       ],
-      paths: ["src/McpFlows.ts", "src/McpClient.ts"]
+      paths: ["src/McpFlows.vibe", "src/McpClient.ts"]
     },
     {
       id: "docs-credential-examples",
