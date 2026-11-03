@@ -4,9 +4,7 @@
  * `node:path`, so `PostgresDatabase` raises it without reaching either.
  * @since 1.0.0
  */
-
-import { Schema } from "effect"
-
+import { Schema } from "effect";
 /**
  * The stable codes covering the rc.0 exclusions the drivers enforce.
  *
@@ -20,23 +18,18 @@ import { Schema } from "effect"
  * @category models
  * @since 1.0.0
  */
-export const UnsupportedDatabaseCode = Schema.Literals([
-  "unsupported_runtime",
-  "unsupported_database_file",
-  "database_locked",
-  "postgres_url_missing",
-  "postgres_url_invalid",
-  "postgres_schema_invalid"
-])
-
+export declare const UnsupportedDatabaseCode: Schema.Literals<readonly ["unsupported_runtime", "unsupported_database_file", "database_locked", "postgres_url_missing", "postgres_url_invalid", "postgres_schema_invalid"]>;
 /**
  * Stable code for an rc.0 refusal to open a durable database.
  *
  * @category models
  * @since 1.0.0
  */
-export type UnsupportedDatabaseCode = typeof UnsupportedDatabaseCode.Type
-
+export type UnsupportedDatabaseCode = typeof UnsupportedDatabaseCode.Type;
+declare const UnsupportedDatabase_base: Schema.Class<UnsupportedDatabase, Schema.TaggedStruct<"@smthrs/database/UnsupportedDatabase", {
+    readonly code: Schema.Literals<readonly ["unsupported_runtime", "unsupported_database_file", "database_locked", "postgres_url_missing", "postgres_url_invalid", "postgres_schema_invalid"]>;
+    readonly message: Schema.String;
+}>, import("effect/Cause").YieldableError>;
 /**
  * Refusal to open a durable database in rc.0.
  *
@@ -51,19 +44,13 @@ export type UnsupportedDatabaseCode = typeof UnsupportedDatabaseCode.Type
  * @category errors
  * @since 1.0.0
  */
-export class UnsupportedDatabase extends Schema.TaggedError<UnsupportedDatabase>()(
-  "@smthrs/database/UnsupportedDatabase",
-  {
-    code: UnsupportedDatabaseCode,
-    message: Schema.String
-  }
-) {}
-
+export declare class UnsupportedDatabase extends UnsupportedDatabase_base {
+}
 /**
  * Narrows an unknown defect to this driver's refusal.
  *
  * @category refinements
  * @since 1.0.0
  */
-export const isUnsupportedDatabase = (input: unknown): input is UnsupportedDatabase =>
-  input instanceof UnsupportedDatabase
+export declare const isUnsupportedDatabase: (input: unknown) => input is UnsupportedDatabase;
+export {};

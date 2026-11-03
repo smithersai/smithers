@@ -47,7 +47,7 @@ const test = Smithers.Shell.Test({
     Smithers.file("scripts/test-matrix.mjs"),
     Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
-    Smithers.glob("examples/**/*.ts"),
+    Smithers.glob("examples/**/*.{ts,vibe}"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
@@ -191,7 +191,7 @@ const securityReview = Smithers.SecurityReview({
         "previousNames accepting a name from another namespace, so a renamed migration adopts a foreign ledger row.",
         "A retry in run that re-applies a migration after a partial commit because the ledger insert and the migration are not in one transaction."
       ],
-      paths: ["src/Migrations.ts", "src/internal/WriteRetry.ts"]
+      paths: ["src/Migrations.ts", "src/internal/WriteRetry.vibe"]
     },
     {
       id: "test-helper-production-reach",

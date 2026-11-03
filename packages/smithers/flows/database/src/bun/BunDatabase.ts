@@ -12,7 +12,7 @@ import * as BunSqliteClient from "../internal/BunSqliteClient.ts"
 import * as PostgresSelection from "../internal/PostgresSelection.ts"
 import * as SqliteOpen from "../internal/SqliteOpen.ts"
 
-export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
+export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.vibe"
 
 /** Connection settings; migrations and DurableWriter are composed above the driver.
  * @since 1.0.0

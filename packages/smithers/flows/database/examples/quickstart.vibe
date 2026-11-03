@@ -13,14 +13,11 @@
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as Migrations from "@smthrs/database/Migrations"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as SqlClient from "effect/sql/SqlClient"
 
-const createNotes: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT NOT NULL)`
-})
+const createNotes: void!unknown!SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT NOT NULL)`
+}
 
 const notes: Migrations.MigrationSet = {
   namespace: "notes",
@@ -63,23 +60,23 @@ export interface QuickstartResult {
 export const quickstart = (filename: string): Promise<QuickstartResult> => {
   const database = Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename }))
 
-  const program = Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
-    const writer = yield* DurableWriter.DurableWriter
-    const applied = yield* Migrations.run([notes])
+  const program = effect {
+    const sql = try SqlClient.SqlClient
+    const writer = try DurableWriter.DurableWriter
+    const applied = try Migrations.run([notes])
 
-    yield* writer.write(sql`INSERT INTO notes (id, body) VALUES ('first', 'hello')`)
-    const rows = yield* sql<{ readonly body: string }>`SELECT body FROM notes ORDER BY id`
-    const ledger = yield* sql<{
+    try writer.write(sql`INSERT INTO notes (id, body) VALUES ('first', 'hello')`)
+    const rows = try sql<{ readonly body: string }>`SELECT body FROM notes ORDER BY id`
+    const ledger = try sql<{
       readonly migration_id: number
       readonly name: string
     }>`SELECT migration_id, name FROM ${sql(Migrations.table)} ORDER BY migration_id`
 
     const deleteFirst = writer.write(
-      sql`DELETE FROM notes WHERE id = ${"first"}`.raw.pipe(Effect.flatMap(DurableWriter.affectedRows))
+      sql`DELETE FROM notes WHERE id = ${"first"}`.raw |> Effect.flatMap(%, DurableWriter.affectedRows)
     )
-    const first = yield* deleteFirst
-    const second = yield* deleteFirst
+    const first = try deleteFirst
+    const second = try deleteFirst
 
     return {
       applied,
@@ -87,7 +84,7 @@ export const quickstart = (filename: string): Promise<QuickstartResult> => {
       ledger: ledger.map(({ migration_id, name }) => ({ migration_id: Number(migration_id), name })),
       deleted: [first, second] as const
     }
-  })
+  }
 
-  return Effect.runPromise(program.pipe(Effect.provide(database), Effect.scoped))
+  return Effect.runPromise(program |> Effect.provide(%, database) |> Effect.scoped(%))
 }

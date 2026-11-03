@@ -8,7 +8,7 @@ import { createHash } from "node:crypto"
 import { basename, resolve } from "node:path"
 import * as PostgresDatabase from "../postgres/PostgresDatabase.ts"
 import { forStore } from "../TestSchemas.ts"
-import { UnsupportedDatabase } from "./UnsupportedDatabase.ts"
+import { UnsupportedDatabase } from "./UnsupportedDatabase.vibe"
 
 /** Recognizes PostgreSQL connection strings.
  * @since 1.0.0
