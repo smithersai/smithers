@@ -7,9 +7,10 @@ import { resumeAdmissions } from "../../resumeAdmissions"
 import { reloadAfter } from "../../test/reloadTiming"
 import { comment as commentAction, create as createAction, open as openAction, retryWrite, search as searchAction, triage as triageAction } from "./actions"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
-import { RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
 import { role as readRepositoryRole } from "../repo/actions"
+import { check as checkSession } from "../auth/actions"
 // Issues on the tab (decision 0012 slice G0, docs/features/issues.md), driven as React drives them: the issues layer's
 // plain actions, its live queries and the slash commands, with no React. Each device runs the browser's own layer
 // (`appLayer`) on a Node device whose engine leads (src/test/chatApi.ts), against ChatApi's real handler and its git
@@ -17,10 +18,10 @@ import { role as readRepositoryRole } from "../repo/actions"
 // GitHub's flows would (the write's settlement and GitHub's row), through the server's own store
 // (worker/github/Store.ts). Only the model is scripted. Unhappy paths give the tab a faulty `IssuesClient`, the real one
 // behind switches (test.faults-by-injection), or a host capability that fails (an outbox storage that refuses).
-import { type ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
+import { ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { GitHub } from "@smthrs/integrations"
-import { Context, Effect, Exit, Fiber, Layer, type ManagedRuntime, Metric, Stream } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, type ManagedRuntime, Metric, Option, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
@@ -32,6 +33,7 @@ import { EngineFaults, persistenceFailingOnce } from "../../test/faults"
 import { startedOnRead } from "../../test/liveQueries"
 import { read } from "../../test/otlp"
 import { anonymousRun, AuthStore, SESSION } from "../auth/store"
+import { repoVisibility } from "../repo/visibility"
 import { Auth } from "../auth/auth"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
@@ -55,9 +57,10 @@ import {
 } from "./contract"
 import { Issues } from "./issues"
 import { IssueWrites } from "./writes"
-import { evictions, pendingActions, sends } from "./metrics"
+import { AuthClient, AuthUnreachable } from "../auth/api"
+import { detailsUnlisted, evictions, pendingActions, sends } from "./metrics"
 import { shapeRetries, shapeTransitions } from "./shapeSync"
-import { IssuesStore } from "./store"
+import { IssuesStore, type RepoIssues } from "./store"
 import {
   commentOf,
   type CommentRow,
@@ -69,7 +72,7 @@ import {
   syncsHere,
   triageSwitchOf,
 } from "./view"
-import { type ItemSummary, SEARCHED } from "./schema"
+import { SEARCHED } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -161,16 +164,24 @@ const confirmedSession = async (runtime: App, expected?: "signed_in" | "signed_o
 }
 
 /** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading and session confirmed. */
-const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
+const open = async (options: TabOptions = {}, actor: Actor | null = maya, prepare?: (api: TestChatApi["Service"]) => Promise<void>) => {
   const runtime: ManagedRuntime.ManagedRuntime<
     WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | Auth | AuthStore | RepoStore | RepoClient | TestChatApi,
     unknown
-  > = openTestApp(options, { actor, confirmedSessions: actor === null ? [] : [actor] })
+  > = openTestApp(options, { actor, confirmedSessions: actor === null ? [] : [actor], ...(prepare === undefined ? {} : { prepare }) })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   if (options.sessionLifecycle !== false) await confirmedSession(runtime, actor === null ? "signed_out" : "signed_in")
   return { ...(await tabOf(runtime)), api }
 }
+
+/** What the route's gate decides for the test repository now (`repoVisibility`). */
+const visibility = (runtime: App) => runtime.runPromise(Effect.gen(function* () {
+  const auth = yield* AuthStore
+  const repos = yield* RepoStore
+  const session = Option.getOrThrow(yield* auth.session.get(SESSION))
+  return repoVisibility(session, Option.getOrUndefined(yield* repos.roles.get(REPO_ID)))
+}))
 
 /** Another device on the same ChatApi. */
 const another = async (api: TestChatApi["Service"], options: TabOptions = {}) => {
@@ -337,7 +348,7 @@ describe("a new issue", () => {
     tab.store.searches.repoId = "elsewhere"
     await tab.actions.open(OWNER, NAME)
     await tab.runtime.runPromise(tab.store.searched.insert({ id: SEARCHED, repoId: "elsewhere", q: "other", issues: [] }))
-    await tab.runtime.runPromise((tab.store.opened(REPO_ID)!.items as unknown as { readonly currentApplied: Effect.Effect<void> }).currentApplied)
+    await tab.runtime.runPromise(tab.store.opened(REPO_ID)!.itemsApplied)
     expect(tab.store.searched.tanstack.toArray[0]).toMatchObject({ q: "other" })
     // This repository's own: its summaries answer searches from now on, so the route's answer goes.
     const second = await another(tab.api)
@@ -612,6 +623,8 @@ describe("a comment", () => {
       kind === "deleted"
         ? sql`UPDATE items SET deleted_at = now() WHERE id = ${itemId(REPO_ID, 7)}`
         : sql`UPDATE items SET kind = 'pull' WHERE id = ${itemId(REPO_ID, 7)}`)))
+    // The store's items are a live query, which starts on its first read, as a page's `useLiveQuery` starts it.
+    tab.store.opened(REPO_ID)!.items.tanstack.startSyncImmediate()
     await until(() => expect(tab.store.opened(REPO_ID)?.items.tanstack.get(itemId(REPO_ID, 7))).toMatchObject(
       kind === "deleted" ? { deletedAt: expect.any(String) } : { kind: "pull" }))
     await until(() => expect(tab.comments()).toEqual([]))
@@ -619,7 +632,7 @@ describe("a comment", () => {
 })
 
 describe("loading", () => {
-  test("a cached issue stays visible through transport failures; session authority evicts it", async () => {
+  test("a cached issue stays visible through transport failures; a shape's 403 evicts it", async () => {
     const runtime = openFaultyApp()
     runtimes.push(runtime)
     const tab = await tabOf(runtime)
@@ -642,7 +655,6 @@ describe("loading", () => {
     expect(currentPage()).toBe("shown")
     await runtime.runPromise(faults.refuse(403))
     await runtime.runPromise(tab.store.routed().reconnect)
-    await runtime.runPromise(Effect.flatMap(AuthStore, (auth) => auth.session.update(SESSION, (row) => { row.role = null })))
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false }), 5_000)
     // Authority refused the person: the cached issue leaves the device, and the page says Not found.
     await until(() => expect(tab.issues.queries.item.toArray).toEqual([]))
@@ -654,19 +666,330 @@ describe("loading", () => {
     expect(currentPage()).toBe("missing")
   }, WITHIN)
 
-  test("a transport refusal is unavailable and does not decide session authority", async () => {
+  // Astra on 66193380's lineage: an issue page read before this load stores its detail in a collection of its own, which
+  // nothing in this load opened.
+  test("a refusal wipes the details of issues read on an earlier load of the device", async () => {
+    const refusing = { now: false }
+    const host = nodeDevice()
+    const source = Layer.succeed(ShapeSource.ShapeSource, {
+      request: (url, init) => Effect.suspend(() => refusing.now
+        ? Effect.succeed(new Response(null, { status: 403 }))
+        : ShapeSource.fetchSource.request(url, init)),
+    })
+    const { api } = await open()
+    const first = openTab(api, { host, replace: source })
+    const earlier = await tabOf(first)
+    await first.runPromise(readRepositoryRole(OWNER, NAME))
+    await server(api).seed(4, "Earlier issue")
+    await earlier.actions.open(OWNER, NAME, 4)
+    await until(() => expect(earlier.issues.queries.item.toArray[0]).toMatchObject({ number: 4 }))
+    const detail = `issue-items:${REPO_ID}#4`
+    await until(() => expect(host.stored(detail)).toBeGreaterThan(0))
+    await first.dispose()
+    // The next load of the device, on the list only: it never opens issue 4, and the repository refuses it.
+    const list = await another(api, { host, replace: source })
+    await list.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    await list.actions.open(OWNER, NAME)
+    await until(() => expect(list.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed" }))
+    expect(host.stored(detail)).toBeGreaterThan(0)
+    refusing.now = true
+    await server(api).seed(5, "Wakes the shapes")
+    await until(() => expect(host.stored(detail)).toBe(0), 20_000)
+  }, WITHIN)
+
+  // A private TanStack table can change shape in any upgrade. Listing what the device stores then fails, and the failure
+  // is reported, while nothing private renders: opening that issue under the refusal evicts it first.
+  test("a refusal that can't list the device's collections reports it and renders nothing private", async () => {
+    const refusing = { now: false }
+    const host = nodeDevice()
+    const source = Layer.succeed(ShapeSource.ShapeSource, {
+      request: (url, init) => Effect.suspend(() => refusing.now
+        ? Effect.succeed(new Response(null, { status: 403 }))
+        : ShapeSource.fetchSource.request(url, init)),
+    })
+    const { api } = await open()
+    const first = openTab(api, { host, replace: source })
+    const earlier = await tabOf(first)
+    await first.runPromise(readRepositoryRole(OWNER, NAME))
+    await server(api).seed(4, "Earlier issue")
+    await earlier.actions.open(OWNER, NAME, 4)
+    await until(() => expect(earlier.issues.queries.item.toArray[0]).toMatchObject({ number: 4 }))
+    const detail = `issue-items:${REPO_ID}#4`
+    await until(() => expect(host.stored(detail)).toBeGreaterThan(0))
+    await first.dispose()
+    const changedShape = {
+      ...host,
+      persistence: {
+        ...host.persistence,
+        open: async () => {
+          const database = await host.persistence.open() as { execute: (sql: string, params?: ReadonlyArray<unknown>) => Promise<ReadonlyArray<unknown>> }
+          return {
+            ...database,
+            execute: (sql: string, params?: ReadonlyArray<unknown>) => sql === Persistence.LIST_COLLECTIONS ? Promise.reject(new Error("no such column")) : database.execute(sql, params),
+          }
+        },
+      },
+    }
+    const list = await another(api, { host: changedShape as typeof host, replace: source })
+    await list.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    await list.actions.open(OWNER, NAME)
+    await until(() => expect(list.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed" }))
+    refusing.now = true
+    await server(api).seed(5, "Wakes the shapes")
+    await until(() => expect(list.count(detailsUnlisted, {})).toBe(1), 20_000)
+    // The rows that can't be listed stay at rest until the page that would read them opens, and that evicts them.
+    expect(host.stored(detail)).toBeGreaterThan(0)
+    // The mark stands, so reading it is refused before it paints.
+    expect(list.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden" })
+    await list.actions.open(OWNER, NAME, 4)
+    await until(() => expect(host.stored(detail)).toBe(0))
+    expect(list.issues.queries.item.toArray).toEqual([])
+  }, WITHIN)
+
+  // The ruling: a cached row may paint while the first session check is pending, the cold path. Once a check failed, the
+  // page shows no private row and offers Try again.
+  test("a cached issue keeps painting when the session check fails on the network", async () => {
+    const failing = { now: false }
+    const session = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      session: Effect.suspend(() => failing.now ? Effect.fail(new AuthUnreachable({ code: "unreachable" })) : real.session),
+    }))).pipe(Layer.provide(AuthClient.layer({ origin: CHATAPI_ORIGIN, within: "10 seconds" })))
+    const tab = await open({ replace: session })
+    await server(tab.api).seed(31, "Cached issue")
+    await tab.actions.open(OWNER, NAME, 31)
+    const page = () => pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
+      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])
+    await until(() => expect(page()).toBe("shown"))
+    failing.now = true
+    await tab.runtime.runPromise(Effect.flatMap(AuthStore, (auth) => auth.askCheck))
+    await until(() => expect(tab.issues.queries.access.toArray[0]?.status).toBe("unknown"))
+    expect(page()).toBe("shown")
+    expect(await visibility(tab.runtime)).toBe("show")
+  }, WITHIN)
+
+  test("a cached issue is hidden by the gate once a reached server couldn't verify the session", async () => {
+    const failing = { now: false }
+    const session = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      session: Effect.suspend(() => failing.now ? Effect.fail(new AuthUnreachable({ status: 503, code: "status" })) : real.session),
+    }))).pipe(Layer.provide(AuthClient.layer({ origin: CHATAPI_ORIGIN, within: "10 seconds" })))
+    const tab = await open({ replace: session })
+    await server(tab.api).seed(31, "Cached issue")
+    await tab.actions.open(OWNER, NAME, 31)
+    const page = () => pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
+      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])
+    await until(() => expect(page()).toBe("shown"))
+    failing.now = true
+    await tab.runtime.runPromise(Effect.flatMap(AuthStore, (auth) => auth.askCheck))
+    // The route's gate hides the page (`repoVisibility`): the view itself still has the row.
+    await until(async () => expect(await visibility(tab.runtime)).toBe("unverified"))
+    // Try again asks the session, and the page shows again when it answers.
+    failing.now = false
+    await tab.actions.retry()
+    await until(async () => expect(await visibility(tab.runtime)).toBe("show"))
+    expect(page()).toBe("shown")
+  }, WITHIN)
+
+  // Astra on 0c7b9f01: a retry that failed on the network replaced `unverifiable`, so the cached rows showed again with
+  // no session answer. Only a session answer ends the hiding.
+  test("a network failure after a session the server couldn't verify keeps the repository hidden", async () => {
+    const failing: { now: AuthUnreachable | undefined } = { now: undefined }
+    const session = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      session: Effect.suspend(() => failing.now !== undefined ? Effect.fail(failing.now) : real.session),
+    }))).pipe(Layer.provide(AuthClient.layer({ origin: CHATAPI_ORIGIN, within: "10 seconds" })))
+    const tab = await open({ replace: session })
+    await server(tab.api).seed(32, "Cached issue")
+    await tab.actions.open(OWNER, NAME, 32)
+    await until(() => expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 32 }))
+    // A check returns once the session row says how it ended.
+    const check = () => tab.runtime.runPromise(checkSession("retry") as unknown as Effect.Effect<string>)
+    failing.now = new AuthUnreachable({ status: 503, code: "status" })
+    expect(await check()).toBe("unreachable")
+    expect(await visibility(tab.runtime)).toBe("unverified")
+    expect(tab.issues.queries.item.toArray).toEqual([])
+    // The retry fails on the network: nothing answered for the session, so it stays hidden.
+    failing.now = new AuthUnreachable({ code: "unreachable" })
+    expect(await check()).toBe("unreachable")
+    expect(await visibility(tab.runtime)).toBe("unverified")
+    expect(tab.issues.queries.item.toArray).toEqual([])
+    // A session answer ends it.
+    failing.now = undefined
+    expect(await check()).toBe("signed_in")
+    expect(await visibility(tab.runtime)).toBe("show")
+  }, WITHIN)
+
+  // Astra on 0c7b9f01: with no 403 first, a role answer that grants nothing left the gate open. It hides the repository
+  // without a wipe (ruling #2): only a 403 wipes.
+  test("a role answer that grants nothing hides the repository's rows and wipes none", async () => {
+    const host = nodeDevice()
+    const { api } = await open()
+    const nothing = { now: false }
+    const roleAnswers = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      return nothing.now && new URL(request.url).pathname.endsWith("/role")
+        ? Response.json({ role: null, own: false, readable: false })
+        : api.fetch(request)
+    }) as typeof fetch
+    const tab = await another({ ...api, fetch: roleAnswers }, { host })
+    await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    await server(api).seed(33, "Private issue")
+    await tab.actions.open(OWNER, NAME, 33)
+    await until(() => expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 33 }))
+    await until(() => expect(tab.list().issues.map(({ number }) => number)).toContain(33))
+    const detail = `issue-items:${REPO_ID}#33`
+    await until(() => expect(host.stored(detail)).toBeGreaterThan(0))
+    nothing.now = true
+    await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    expect(Option.getOrUndefined(await tab.runtime.runPromise(repos.roles.get(REPO_ID)))).toMatchObject({ role: null, readable: false })
+    expect(tab.issues.queries.item.toArray).toEqual([])
+    expect(tab.list().issues).toEqual([])
+    expect(repos.isRefused(REPO_ID)).toBe(false)
+    expect(host.stored(detail)).toBeGreaterThan(0)
+  }, WITHIN)
+
+  // The data gate (decision 0110, 2026-11-03): a page that forgot the route's gate reads the store's queries, and those
+  // hold nothing of a repository that may not show, from the change that hides it, before any wipe runs.
+  test("every query the store exposes drops a repository's rows in the change that hides it, and shows them again", async () => {
+    const tab = await open()
+    await server(tab.api).seed(31, "Private issue")
+    await tab.actions.open(OWNER, NAME, 31)
+    await until(() => expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 31 }))
+    await until(() => expect(tab.list().issues.map(({ number }) => number)).toContain(31))
+    const exposed = (repo: RepoIssues): Record<string, unknown> => ({
+      items: repo.items, details: repo.details, comments: repo.comments, sync: repo.sync, triageSettings: repo.triageSettings,
+      workLinks: repo.workLinks, itemRows: repo.itemRows, syncRows: repo.syncRows, newestFirst: repo.newestFirst,
+      walked: repo.walked, list: repo.list, publicList: repo.publicList, item: repo.item, summary: repo.summary,
+    })
+    /** How many rows each exposed query holds, read in the same Effect as `change`, with nothing run between. */
+    const countsAfter = (change: Effect.Effect<unknown>) => tab.runtime.runPromise(Effect.gen(function* () {
+      const store = yield* IssuesStore
+      type Exposed = { readonly tanstack: { startSyncImmediate: () => void }; readonly toArray: Effect.Effect<ReadonlyArray<unknown>> }
+      const queries: ReadonlyArray<readonly [string, Exposed]> = [
+        ...Object.entries(exposed(store.opened(REPO_ID)!)).map(([name, query]) => [`repo.${name}`, query as Exposed] as const),
+        ...Object.entries(exposed(store.routed())).map(([name, query]) => [`routed.${name}`, query as Exposed] as const),
+      ]
+      for (const [, query] of queries) query.tanstack.startSyncImmediate()
+      yield* change
+      return yield* Effect.forEach(queries, ([name, query]) => Effect.map(query.toArray, (rows) => [name, rows.length] as const))
+    }))
+    let shown: ReadonlyArray<readonly [string, number]> = []
+    await until(async () => {
+      shown = await countsAfter(Effect.void)
+      expect(shown.filter(([name]) => ["repo.items", "repo.itemRows", "repo.newestFirst", "routed.item", "routed.list", "routed.summary"]
+        .includes(name)).map(([, count]) => count > 0)).toEqual([true, true, true, true, true, true])
+    })
+    const auth = await tab.runtime.runPromise(Effect.service(AuthStore))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    const member = Option.getOrThrow(await tab.runtime.runPromise(repos.roles.get(REPO_ID)))
+    // A reached server couldn't verify the session: nothing wipes, and nothing shows.
+    const unverified = await countsAfter(Effect.orDie(auth.session.update(SESSION, (row) => {
+      row.status = "unreachable"
+      row.unverifiable = true
+    })))
+    expect(unverified.filter(([, count]) => count > 0)).toEqual([])
+    const verified = await countsAfter(Effect.orDie(auth.session.update(SESSION, (row) => {
+      row.status = "signed_in"
+      delete row.unverifiable
+    })))
+    expect(verified).toEqual(shown)
+    // The refusal mark alone, before any wipe: nothing shows.
+    const refused = await countsAfter(replaceRole(repos, { id: REPO_ID, role: null, own: false, refused: "forbidden" }))
+    expect(refused.filter(([, count]) => count > 0)).toEqual([])
+    // The mark started the wipe; a grant shows the repository again once its shapes sync from the start.
+    await countsAfter(replaceRole(repos, member))
+    await until(() => expect(tab.list().issues.map(({ number }) => number)).toContain(31))
+  }, WITHIN)
+
+  // Astra on d3cd07db: the refusal lived in one tab's memory. It is a mark on the device: every tab reads it, it survives a
+  // lost message and a reload, and it paints nothing before the role answers.
+  test("a refusal reaches the device's other tab and the next load, before any role answer", async () => {
+    const refusing = { now: false }
+    const host = nodeDevice()
+    const source = Layer.succeed(ShapeSource.ShapeSource, {
+      request: (url, init) => Effect.suspend(() => refusing.now
+        ? Effect.succeed(new Response(null, { status: 403 }))
+        : ShapeSource.fetchSource.request(url, init)),
+    })
+    const { api } = await open()
+    const quiet = await another(api, { host })
+    await quiet.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    await server(api).seed(4, "Private issue")
+    await quiet.actions.open(OWNER, NAME, 4)
+    await until(() => expect(quiet.issues.queries.item.toArray[0]).toMatchObject({ number: 4 }))
+    const refused = openTab(api, { host, replace: source })
+    const refusedTab = await tabOf(refused)
+    await refused.runPromise(readRepositoryRole(OWNER, NAME))
+    await refusedTab.actions.open(OWNER, NAME)
+    await until(() => expect(refusedTab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed" }))
+    refusing.now = true
+    await server(api).seed(5, "Wakes the shapes")
+    // The tab that heard nothing from the server knows, and shows nothing.
+    await until(() => expect(quiet.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden" }), 20_000)
+    await until(() => expect(quiet.issues.queries.item.toArray).toEqual([]), 20_000)
+    await refused.dispose()
+    // The next load, whose role read can't answer: it knows before any answer, and a failed read doesn't undo it.
+    const roleDown = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      return new URL(request.url).pathname.endsWith("/role") ? new Response(null, { status: 503 }) : api.fetch(request)
+    }) as typeof fetch
+    const next = await another({ ...api, fetch: roleDown }, { host })
+    await next.actions.open(OWNER, NAME, 4)
+    await until(() => expect(next.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden" }))
+    expect(next.issues.queries.item.toArray).toEqual([])
+  }, WITHIN)
+
+  // Astra on c64fd4bc: a shape's 403 runs `refuse` inside that shape's own request, and the refusal's cleanup aborts
+  // it. The device must still store the mark, so the next load knows.
+  test("a refusal a shape's 403 starts is stored on the device, though its cleanup aborts that request", async () => {
+    const refusing = { now: false }
+    const host = nodeDevice()
+    const { api } = await open()
+    const tab = await another(api, {
+      host,
+      replace: Layer.succeed(ShapeSource.ShapeSource, {
+        request: (url, init) => Effect.suspend(() => refusing.now && new URL(url).pathname === "/api/shapes/item-summaries"
+          ? Effect.succeed(new Response(null, { status: 403 }))
+          : ShapeSource.fetchSource.request(url, init)),
+      }),
+    })
+    await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    refusing.now = true
+    await tab.actions.open(OWNER, NAME)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden" }), 20_000)
+    await until(() => expect(host.stored("repo-refusals")).toBe(1), 10_000)
+  }, WITHIN)
+
+  // Astra on d3cd07db: bodies, comments and triage settings have shapes of their own, and each is a repository's.
+  test.each(["/api/shapes/items", "/api/shapes/triage-settings"])("%s's 403 refuses the repository", async (route) => {
+    const refusing = { now: false }
+    const tab = await open({
+      replace: Layer.succeed(ShapeSource.ShapeSource, {
+        request: (url, init) => Effect.suspend(() => refusing.now && new URL(url).pathname === route
+          ? Effect.succeed(new Response(null, { status: 403 }))
+          : ShapeSource.fetchSource.request(url, init)),
+      }),
+    })
+    await server(tab.api).seed(4, "Private issue")
+    refusing.now = true
+    await tab.actions.open(OWNER, NAME, 4)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden" }), 20_000)
+  }, WITHIN)
+
+  test("a shape's 403 before any row is a refusal, and a later 503 doesn't undo it", async () => {
     const runtime = openFaultyApp({}, (faults) => faults.refuse(403))
     runtimes.push(runtime)
     const tab = await tabOf(runtime)
     await tab.actions.open(OWNER, NAME, 3)
-    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false }), 5_000)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false }), 5_000)
     const faults = await runtime.runPromise(Effect.service(ShapeSource.Faults))
     await runtime.runPromise(faults.refuse(503))
     await runtime.runPromise(tab.store.routed().reconnect)
-    await until(() => expect(tab.count(shapeTransitions, { phase: "failed" })).toBeGreaterThan(0), 5_000)
-    expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false })
+    await runtime.runPromise(Effect.sleep("500 millis"))
+    expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false })
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
-      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])).toBe("unknown")
+      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])).toBe("missing")
   }, WITHIN)
 
   test("a 404 after the role answered says the deployment doesn't sync the repository, never who may read it", async () => {
@@ -720,7 +1043,7 @@ describe("loading", () => {
     // A link's warm opens the repository's issues, whose items shape installs its first batch.
     await tab.actions.warm(OWNER, NAME)
     await until(() => expect(tab.count(shapeTransitions, { phase: "ready" })).toBeGreaterThan(0))
-    await tab.runtime.runPromise(Effect.flatMap(tab.store.forRepo(REPO_ID), (repo) => (repo.items as ElectricCollection.ElectricCollection<ItemSummary>).sync.pipe(
+    await tab.runtime.runPromise(Effect.flatMap(tab.store.forRepo(REPO_ID), (repo) => repo.itemSync.pipe(
       Stream.filter((event) => event._tag === "Sent"),
       Stream.runHead,
       Effect.timeout("10 seconds"),
@@ -1068,11 +1391,13 @@ describe("sending", () => {
 
 describe("doors", () => {
   test("the agent's call opens the issue as the App, for the person; its door is the agent's", async () => {
-    const tab = await open()
     // The default home conversation is a public copy without an installation: its access needs a visibility receipt.
-    await Effect.runPromise(tab.api.github.run(Effect.gen(function* () {
+    // It is there before the app's first request: a tab that asks first (its watch of the home conversation, which it
+    // knows from the session answer) would have its role there decided from GitHub, which has no such repository, and
+    // kept for the role's freshness window.
+    const tab = await open({}, maya, (api) => Effect.runPromise(api.github.run(Effect.gen(function* () {
       yield* Store.recordRepository(yield* Conversations.homeRepository, { private: false }, yield* Store.repositoryObservation)
-    })))
+    }))))
     await tab.actions.open(OWNER, NAME)
     const chat = await tab.runtime.runPromise(Effect.service(Chat))
     const asked = (await chat.actions.ask("Open an issue about the crash"))

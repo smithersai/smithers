@@ -1,6 +1,9 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Cache, Context, Effect, Fiber, Layer, Metric, Scope, Stream } from "effect"
+import { Cache, Context, Effect, Fiber, Layer, Metric, Option, Scope, Stream } from "effect"
+import type { Source } from "../repo/gate"
+import { RepoStore } from "../repo/store"
+import { shapeRefusals } from "../issues/source"
 import { runners } from "../../boundary"
 import { feedDocumentId, FEEDS_SHAPE_ROUTE } from "./contract"
 import { FeedDocument } from "./schema"
@@ -29,15 +32,27 @@ export const documents = Metric.counter("smithers_web_feed_documents", {
   incremental: true,
 })
 
-/** A repository's index, by name. */
-const indexQuery = (collection: ElectricCollection.ElectricCollection<FeedDocument>) =>
-  LiveQuery.make((q) => q.from({ document: collection.tanstack }).orderBy(({ document }) => document.name, "asc"))
+/** A repository's index, by name, read through the data gate (repo/gate.ts). */
+const indexQuery = (documents: Source<FeedDocument>) =>
+  LiveQuery.make((q) => q.from({ document: documents.tanstack }).orderBy(({ document }) => document.name, "asc"))
 
-/** One repository's index: its collection and its rows by name. */
+/** One repository's index: its rows by name, only while the repository may show. */
 export interface FeedIndex {
-  readonly collection: ElectricCollection.ElectricCollection<FeedDocument>
   readonly byName: Effect.Success<ReturnType<typeof indexQuery>>
 }
+
+/**
+ * `collection`'s documents while their repository may show (repo/gate.ts): each names its repository `owner/name`, which
+ * the gate joins as `github/owner/name`. Without the repository store (a test's), every document.
+ */
+const shownDocuments = (
+  repos: Option.Option<RepoStore["Service"]>,
+  collection: ElectricCollection.ElectricCollection<FeedDocument>,
+): Effect.Effect<Source<FeedDocument>, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    if (Option.isNone(repos)) return collection
+    return (yield* repos.value.gate(collection, "repo")) as unknown as Source<FeedDocument>
+  })
 
 /** The shape of `repo`'s documents: its index, or one document by `name`. */
 const shapeOf = (origin: string, repo: string, name?: string) => ({
@@ -65,6 +80,32 @@ export class FeedsStore extends Context.Service<
         const scope = yield* Effect.scope
         const context = yield* Effect.context<never>()
         const run = runners(context, "feeds")
+        // What is open of each repository (`owner/name`): its refusal drops all of it.
+        const holding = new Map<string, Set<{ readonly evict: Effect.Effect<void> }>>()
+        const held = (repo: string) => {
+          const key = `github/${repo}`.toLowerCase()
+          const set = holding.get(key) ?? new Set()
+          holding.set(key, set)
+          return set
+        }
+        const repos = yield* Effect.serviceOption(RepoStore)
+        // A feed shape's 403 refuses the repository's feeds, not the repository (ruling #3): its documents go.
+        const narrow = Option.isNone(repos) ? undefined : yield* shapeRefusals(repos.value, scope)
+        // Requests wait while the repository is refused, so an eviction doesn't sync rows back (decision 0110).
+        const unrefused = (source: ShapeSource.Source, repo: string) => {
+          if (Option.isNone(repos) || narrow === undefined) return source
+          const id = `github/${repo}`.toLowerCase()
+          const marked = ShapeSource.gated(source, repos.value.rolesState.rows.pipe(
+            Stream.map((rows) => rows.find((row) => row.id === id)?.refused !== "forbidden"),
+            Stream.changes,
+          ))
+          return narrow.source(marked, id, Effect.suspend(() =>
+            Effect.forEach(holding.get(id) ?? [], (collection) => collection.evict, { discard: true })))
+        }
+        if (Option.isSome(repos)) {
+          yield* repos.value.registerCache(["feeds", "feed"], (id) =>
+            Effect.suspend(() => Effect.forEach(holding.get(id) ?? [], (collection) => collection.evict, { discard: true })))
+        }
         // Opening an index twice at once opens it once: the cache runs one lookup per repository and keeps it.
         const opening = yield* Cache.make({
           lookup: (repo: string) =>
@@ -75,8 +116,9 @@ export class FeedsStore extends Context.Service<
                 getKey: (row) => row.id,
                 syncMode: "eager",
                 shape: shapeOf(config.origin, repo),
-              })
-              return { collection, byName: yield* indexQuery(collection) }
+              }).pipe(Effect.provideService(ShapeSource.ShapeSource, unrefused(yield* ShapeSource.ShapeSource, repo)))
+              held(repo).add(collection)
+              return { byName: yield* indexQuery(yield* shownDocuments(repos, collection)) }
             }).pipe(Scope.provide(scope), Effect.orDie),
           capacity: Number.MAX_SAFE_INTEGER,
         })
@@ -90,8 +132,11 @@ export class FeedsStore extends Context.Service<
               getKey: (row) => row.id,
               syncMode: "eager",
               shape: shapeOf(config.origin, repo, name),
-            })
-            const query = yield* LiveQuery.make((q) => q.from({ document: collection.tanstack }))
+            }).pipe(Effect.provideService(ShapeSource.ShapeSource, unrefused(yield* ShapeSource.ShapeSource, repo)))
+            held(repo).add(collection)
+            yield* Effect.addFinalizer(() => Effect.sync(() => held(repo).delete(collection)))
+            const shown = yield* shownDocuments(repos, collection)
+            const query = yield* LiveQuery.make((q) => q.from({ document: shown.tanstack }))
             yield* Stream.runForEach(query.rows, (rows) => Effect.sync(() => onRows(rows)))
           }))
 

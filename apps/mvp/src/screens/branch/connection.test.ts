@@ -1,10 +1,13 @@
+import * as ConversationPeople from "../../../worker/branch/ConversationPeople"
+import { ConversationOwners } from "../../features/conversations/owners"
+import { member } from "../../test/chatApi"
 import { Spend } from "../../features/spend/spend"
 import { renderConnection } from "./connection-render"
 // The repository header on the branch page, rendered with the real app layers over the compose Postgres/Electric.
 // The host reports offline, as navigator.onLine does; the collections, queries and components remain real.
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 import { Effect } from "effect"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import * as Conversations from "../../../worker/branch/Conversations.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { Attention } from "../../features/attention/attention"
@@ -44,6 +47,9 @@ test("a branch page announces Offline and the queued count, then clears on recon
   expect(connection()).toContain("Offline · 1")
   const tracked = await runtime.runPromise(api.branches.run(Conversations.track("github/octo/hello", "main", "open", shaOf("main"))))
   const conversationId = tracked.branch.conversationId
+  await runtime.runPromise(api.branches.run(ConversationPeople.opened(conversationId, member.subject.id, "octo", "hello", "main")))
+  const owners = await runtime.runPromise(Effect.service(ConversationOwners))
+  await vi.waitFor(() => expect(owners.mine.tanstack.has(conversationId)).toBe(true))
   await chat.actions.show(conversationId)
   chat.queries.of(conversationId).queued.startSyncImmediate()
   expect(connection()).toContain("Offline")

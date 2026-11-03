@@ -23,7 +23,8 @@ pnpmfileChecksum: sha256-WT4I+tYhRao6cP63D8ZRgAv3w9Cn2XcR/8xhNAyhVro=
 
 patchedDependencies:
   '@tanstack/browser-db-sqlite-persistence@0.2.36': 1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4
-  '@tanstack/db-sqlite-persistence-core@0.4.11': be9b4f06349b5f3877f2d793eff2ab107ba08b6e59aaad889b8c8f6e93eaca5d
+  '@tanstack/db-sqlite-persistence-core@0.4.11': 631a5e6e8d27c897082699a082cfbf674d625ea3fce721473c407a208ced0175
+  '@tanstack/db@0.15.1': c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026
   '@vitest/coverage-v8@5.0.0': 5ff25d10ede694ff8371f186d7bae6a84b701b321993f71381189b9ead3544eb
   alchemy@2.0.0-beta.83: 2933f9537c73d8f23829dba9e46d5d52180522c6eaec39bbc392d278a4e330c7
   vibelang@0.0.8: 48de99cc88ba9dadd2cf1f668553618cafb63a4a362ddf53e26db06ba294b688
@@ -525,7 +526,7 @@ importers:
         version: 0.2.36(patch_hash=1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4)(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
       '@tanstack/db':
         specifier: 0.15.1
-        version: 0.15.1(typescript@5.9.3)
+        version: 0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)
       '@tanstack/electric-db-collection':
         specifier: 0.6.2
         version: 0.6.2(supports-color@10.2.2)(typescript@5.9.3)
@@ -985,10 +986,10 @@ importers:
         version: 0.2.36(patch_hash=1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4)(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
       '@tanstack/db':
         specifier: 0.15.1
-        version: 0.15.1(typescript@5.9.3)
+        version: 0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)
       '@tanstack/db-sqlite-persistence-core':
         specifier: 0.4.11
-        version: 0.4.11(patch_hash=be9b4f06349b5f3877f2d793eff2ab107ba08b6e59aaad889b8c8f6e93eaca5d)(typescript@5.9.3)
+        version: 0.4.11(patch_hash=631a5e6e8d27c897082699a082cfbf674d625ea3fce721473c407a208ced0175)(typescript@5.9.3)
       '@tanstack/electric-db-collection':
         specifier: 0.6.2
         version: 0.6.2(supports-color@10.2.2)(typescript@5.9.3)
@@ -1057,10 +1058,10 @@ importers:
         version: 0.2.36(patch_hash=1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4)(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
       '@tanstack/db':
         specifier: 0.15.1
-        version: 0.15.1(typescript@5.9.3)
+        version: 0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)
       '@tanstack/db-sqlite-persistence-core':
         specifier: 0.4.11
-        version: 0.4.11(patch_hash=be9b4f06349b5f3877f2d793eff2ab107ba08b6e59aaad889b8c8f6e93eaca5d)(typescript@5.9.3)
+        version: 0.4.11(patch_hash=631a5e6e8d27c897082699a082cfbf674d625ea3fce721473c407a208ced0175)(typescript@5.9.3)
       '@tanstack/offline-transactions':
         specifier: 1.1.3
         version: 1.1.3(typescript@5.9.3)
@@ -4888,7 +4889,7 @@ importers:
         version: 0.2.36(patch_hash=1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4)(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)
       '@tanstack/db':
         specifier: 0.15.1
-        version: 0.15.1(typescript@5.9.3)
+        version: 0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -20535,7 +20536,7 @@ snapshots:
   '@tanstack/browser-db-sqlite-persistence@0.2.36(patch_hash=1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4)(@journeyapps/wa-sqlite@1.7.2)(typescript@5.9.3)':
     dependencies:
       '@journeyapps/wa-sqlite': 1.7.2
-      '@tanstack/db-sqlite-persistence-core': 0.4.11(patch_hash=be9b4f06349b5f3877f2d793eff2ab107ba08b6e59aaad889b8c8f6e93eaca5d)(typescript@5.9.3)
+      '@tanstack/db-sqlite-persistence-core': 0.4.11(patch_hash=631a5e6e8d27c897082699a082cfbf674d625ea3fce721473c407a208ced0175)(typescript@5.9.3)
       typescript: 5.9.3
 
   '@tanstack/db-ivm@0.2.0(typescript@5.9.3)':
@@ -20543,13 +20544,13 @@ snapshots:
       fractional-indexing: 3.4.0
       typescript: 5.9.3
 
-  '@tanstack/db-sqlite-persistence-core@0.4.11(patch_hash=be9b4f06349b5f3877f2d793eff2ab107ba08b6e59aaad889b8c8f6e93eaca5d)(typescript@5.9.3)':
+  '@tanstack/db-sqlite-persistence-core@0.4.11(patch_hash=631a5e6e8d27c897082699a082cfbf674d625ea3fce721473c407a208ced0175)(typescript@5.9.3)':
     dependencies:
       '@standard-schema/spec': 1.1.0
-      '@tanstack/db': 0.15.1(typescript@5.9.3)
+      '@tanstack/db': 0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)
       typescript: 5.9.3
 
-  '@tanstack/db@0.15.1(typescript@5.9.3)':
+  '@tanstack/db@0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@tanstack/db-ivm': 0.2.0(typescript@5.9.3)
@@ -20560,7 +20561,7 @@ snapshots:
     dependencies:
       '@electric-sql/client': 1.5.28
       '@standard-schema/spec': 1.1.0
-      '@tanstack/db': 0.15.1(typescript@5.9.3)
+      '@tanstack/db': 0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)
       debug: 4.4.3(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
@@ -20570,7 +20571,7 @@ snapshots:
 
   '@tanstack/offline-transactions@1.1.3(typescript@5.9.3)':
     dependencies:
-      '@tanstack/db': 0.15.1(typescript@5.9.3)
+      '@tanstack/db': 0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
 
@@ -20578,7 +20579,7 @@ snapshots:
 
   '@tanstack/react-db@0.5.11(react@19.2.8)(typescript@5.9.3)':
     dependencies:
-      '@tanstack/db': 0.15.1(typescript@5.9.3)
+      '@tanstack/db': 0.15.1(patch_hash=c190fedebd87d63b499f41e33bb60fd1e492cc4a1eac52971e8a485f7f0a6026)(typescript@5.9.3)
       react: 19.2.8
     transitivePeerDependencies:
       - typescript

@@ -48,6 +48,10 @@ import { followNotice } from "../timeline/notice"
 import { AttentionStore } from "../attention/store"
 import { chatShortcuts } from "./shortcuts"
 import { ChatStore } from "./store"
+import { Status } from "../status/status"
+import { ConversationOwners } from "../conversations/owners"
+import { AuthStore, SESSION } from "../auth/store"
+import { replaceRole, RepoStore } from "../repo/store"
 import { PLACE } from "./schema"
 import { SharedPrompt } from "./sharedPrompt"
 import { ask as askAction } from "./actions"
@@ -273,6 +277,48 @@ describe("asking", () => {
     asked((await a.actions.ask("hello")))
     await until(() => expect(b.shown()).toEqual(["user done hello", "assistant streaming "]))
     expect(b.queued()).toBe(0)
+  })
+})
+
+// The data gate (decision 0110; the coordinator's ruling 3): the home conversation shows only while ConversationOwners
+// attributes it to this person (their my-conversations row, which asking writes) and its repository may show.
+describe("the home conversation through the data gate", () => {
+  // Ruling 3a (decision 0110): the home conversation is the person's own, named by the session answer. It shows by that
+  // id alone, with no my-conversations row and no repository's say; a device whose session names no home shows none of it.
+  test("shows by the session's home id alone: with no my-conversations row, under its repository's refusal, and never without the id", async () => {
+    const a = await openChat()
+    asked((await a.actions.ask("private question")))
+    await until(() => expect(a.shown()).toContain("user done private question"))
+    const conversationId = a.store.messages.tanstack.toArray.find((row) => row.conversationId !== undefined)!.conversationId!
+    const auth = await a.runtime.runPromise(Effect.service(AuthStore))
+    const status = (await a.runtime.runPromise(Effect.service(Status))).queries.of(null)
+    status.statuses.startSyncImmediate()
+    status.latest.startSyncImmediate()
+    await until(() => expect(status.statuses.toArray).toHaveLength(1))
+    expect(status.latest.toArray).toHaveLength(1)
+    expect(auth.session.tanstack.get(SESSION)?.homeConversationId).toBe(conversationId)
+    // The asker's my-conversations row goes: the conversation still shows, as theirs.
+    await a.onApi(a.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`DELETE FROM conversation_people WHERE conversation_id = ${conversationId}`)))
+    const owners = await a.runtime.runPromise(Effect.service(ConversationOwners))
+    await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(false))
+    expect(a.shown()).toContain("user done private question")
+    // The home repository refusing this person hides nothing of their own conversation.
+    const repos = await a.runtime.runPromise(Effect.service(RepoStore))
+    const shownUnderRefusal = await a.runtime.runPromise(Effect.andThen(
+      replaceRole(repos, { id: "github/smithersai/smithers", role: null, own: false, refused: "forbidden" }),
+      Effect.sync(() => a.shown()),
+    ))
+    expect(shownUnderRefusal).toContain("user done private question")
+    // A session that names no home: the conversation is unattributed, and hides in the same change.
+    const unnamed = await a.runtime.runPromise(Effect.andThen(
+      Effect.orDie(auth.session.update(SESSION, (row) => void delete row.homeConversationId)),
+      Effect.sync(() => ({ messages: a.shown(), statuses: status.statuses.toArray, latest: status.latest.toArray })),
+    ))
+    expect(unnamed.messages.filter((line) => line.includes("private question"))).toEqual([])
+    expect(unnamed.statuses).toEqual([])
+    expect(unnamed.latest).toEqual([])
+    expect(a.store.messages.tanstack.toArray.some((row) => row.text === "private question")).toBe(true)
   })
 })
 

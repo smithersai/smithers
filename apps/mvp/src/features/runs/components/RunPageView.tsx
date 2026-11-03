@@ -1,3 +1,6 @@
+import type { ReactNode } from "react"
+import { RepoGate } from "../../repo/components/RepoGate"
+import { runRepository } from "../repository"
 import { useMemo } from "react"
 import {
   Button,
@@ -41,16 +44,23 @@ export function RunPageView({ fromRuns = false }: { readonly fromRuns?: boolean 
   const { queries, actions } = useRuns()
   const { data } = useLiveQuery(queries.page)
   const { data: repoRuns } = useLiveQuery(queries.repoRuns)
+  const { data: cloud } = useLiveQuery(queries.cloudRuns)
   if (data === undefined) return <Skeleton aria-label="Loading run" className="run-page-loading" />
   const { view, page } = data
+  // A repository's run shows only while the repository may (`RepoGate`): the one the route names, else the one its
+  // Cloudflare row or its parent's names, so `/app/runs/$runId` gates too. A person's own run has no repository.
+  const [cloudOwner = "", cloudName = ""] = (runRepository(page.id, page, cloud) ?? "").split("/")
+  const owner = view.repo?.owner ?? (cloudName === "" ? undefined : cloudOwner)
+  const name = view.repo?.name ?? (cloudName === "" ? undefined : cloudName)
+  const gate = (node: ReactNode) => owner === undefined || name === undefined ? node : <RepoGate owner={owner} name={name}>{node}</RepoGate>
   if (page.state === "loading") {
     const known = repoRuns.find((run) => run.execution === page.id)
-    return known === undefined ? <Skeleton aria-label="Loading run" className="run-page-loading" /> : <RunHeader title={flowWords(known.flow)} state={repoRunStateOf(known.status)}
+    return known === undefined ? <Skeleton aria-label="Loading run" className="run-page-loading" /> : gate(<RunHeader title={flowWords(known.flow)} state={repoRunStateOf(known.status)}
       startedAtMs={Date.parse(known.createdAt)} finishedAtMs={known.status === "running" ? null : Date.parse(known.updatedAt)}
-      now={view.now ?? Date.now()} />
+      now={view.now ?? Date.now()} />)
   }
   if (page.state !== "read") return <Card className="run-page-missing"><h1 className="sui-sr-only">Run</h1><EmptyState title={missingOf(page, view.repo != null)} /></Card>
-  return <ReadRunPage page={page} view={view} actions={actions} fromRuns={fromRuns} />
+  return gate(<ReadRunPage page={page} view={view} actions={actions} fromRuns={fromRuns} />)
 }
 
 function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: RunView; actions: RunsActions; fromRuns: boolean }) {

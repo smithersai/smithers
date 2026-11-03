@@ -290,6 +290,8 @@ describe("Commit", () => {
     // The stack's TODOs sync once the repository's role answers, as the stack page asks.
     await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
     await tab.todos.actions.open(OWNER, NAME)
+    // The stack page reads its TODOs through the data gate, a live query its subscription starts: start it as the page does.
+    tab.todosStore.opened(REPO_ID)!.todos.tanstack.startSyncImmediate()
     const draft = tab.todos.actions.newDraft(OWNER, NAME)
     tab.todos.actions.setTitle(draft, "Progress")
     tab.todos.actions.setPrompt(draft, "Show it.")
@@ -318,6 +320,8 @@ describe("Commit after recovery cleanup", () => {
     await tab.runtime.runPromise(Option.getOrThrow(shapes).withhold(NOTIFICATIONS_SHAPE_ROUTE))
     await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
     await tab.todos.actions.open(OWNER, NAME)
+    // The stack page reads its TODOs through the data gate, a live query its subscription starts: start it as the page does.
+    tab.todosStore.opened(REPO_ID)!.todos.tanstack.startSyncImmediate()
     const draft = tab.todos.actions.newDraft(OWNER, NAME)
     tab.todos.actions.setTitle(draft, "Successful answer")
     tab.todos.actions.setPrompt(draft, "Keep the result until its notification arrives.")

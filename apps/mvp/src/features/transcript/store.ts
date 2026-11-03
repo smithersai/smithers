@@ -1,6 +1,9 @@
-import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
+import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { RetryPolicy } from "@smthrs/flow"
-import { Context, Effect, FiberHandle, Layer, Ref } from "effect"
+import { Context, Effect, FiberHandle, Layer, Option, Ref } from "effect"
+import type { Source } from "../repo/gate"
+import { RunsStore } from "../runs/store"
+import type { RunPage } from "../runs/schema"
 import { EMPTY, type Folded } from "./fold"
 import { Item, PANEL, Panel } from "./schema"
 
@@ -22,8 +25,26 @@ export const panelQuery = (panel: Collection.Collection<Panel, string>) =>
   LiveQuery.make((q) => q.from({ panel: panel.tanstack }).findOne())
 
 /** The panel's items in the order they began. */
-export const itemsQuery = (items: Collection.Collection<Item, string>) =>
+export const itemsQuery = (items: Source<Item>) =>
   LiveQuery.make((q) => q.from({ item: items.tanstack }).orderBy(({ item }) => item.order))
+
+/**
+ * The items of a run whose read may show (the data gate, `RunsStore.shownPages`, with an inspection): a refused
+ * repository's run, one this tab can't attribute, or a page holding no read shows none. Both keys are expressions, so TanStack DB loads neither side lazily (repo/gate.ts).
+ */
+const shownItemsQuery = (items: Collection.Collection<Item, string>, pages: Source<RunPage>) =>
+  LiveQuery.make(
+    (q) =>
+      q
+        .from({ item: items.tanstack })
+        .innerJoin({ page: pages.tanstack }, ({ item, page }) =>
+          Query.eq(Query.coalesce(item.runId, ""), Query.coalesce(page.id, "")))
+        // Only a page that holds its run's read: one with none (loading, or a read that failed, as a late 403 after a
+        // refusal writes) shows through the gate unattributed, so it proves nothing (Astra on 19af7eb9).
+        .where(({ page }) => Query.not(Query.isNull(page.inspection)))
+        .select(({ item }) => item),
+    { getKey: (item) => item.id },
+  )
 
 /** The panel before it shows a run. */
 export const IDLE: Panel = {
@@ -46,6 +67,7 @@ export class TranscriptStore extends Context.Service<
     readonly redial: RetryPolicy.RetryPolicy
     readonly panel: Collection.Collection<Panel, string>
     readonly panelState: Effect.Success<ReturnType<typeof panelQuery>>
+    /** The items folded from the run's events: the store's own. What shows reads `itemsState`, through the data gate. */
     readonly items: Collection.Collection<Item, string>
     readonly itemsState: Effect.Success<ReturnType<typeof itemsQuery>>
     /** What folding remembers between frames, for the run the panel shows. */
@@ -66,13 +88,18 @@ export class TranscriptStore extends Context.Service<
           initialData: [IDLE],
         })
         const items = yield* Collection.local<Item, string>({ id: "transcript-items", schema: Item, getKey: (row) => row.id })
+        // A tab without the runs' store (a test's) has no run to attribute an item to, so it shows them as they are.
+        const runs = yield* Effect.serviceOption(RunsStore)
+        const shown: Source<Item> = Option.isSome(runs)
+          ? (yield* shownItemsQuery(items, runs.value.shownPages as unknown as Source<RunPage>)) as unknown as Source<Item>
+          : items
         return TranscriptStore.of({
           origin: config.origin,
           redial: config.redial ?? REDIAL,
           panel,
           panelState: yield* panelQuery(panel),
           items,
-          itemsState: yield* itemsQuery(items),
+          itemsState: yield* itemsQuery(shown),
           folded: yield* Ref.make(EMPTY),
           socket: yield* FiberHandle.make<void, never>(),
         })

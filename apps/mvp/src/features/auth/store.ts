@@ -32,6 +32,13 @@ export class AuthStore extends Context.Service<
     readonly checking: Semaphore.Semaphore
     /** Whether this tab's `auth/refresh` is running: a check that fails meanwhile starts no second one. */
     readonly refreshing: Ref.Ref<boolean>
+    /**
+     * Asks this tab to check the session (`bindSessionConnectivity`): what a repository shape's or role read's 401 does,
+     * since only a session confirmed ended wipes the device, never a 401 alone. Returns at once.
+     */
+    readonly askCheck: Effect.Effect<void>
+    /** Each `askCheck`, for the tab's session lifecycle. */
+    readonly checksAsked: Stream.Stream<void>
   }
 >()("@smthrs/mvp/auth/AuthStore") {
   /**
@@ -61,9 +68,10 @@ export class AuthStore extends Context.Service<
         id: "auth-confirmed",
         schema: Confirmed,
         getKey: (row) => row.id,
-        schemaVersion: 2,
+        schemaVersion: 3,
       })
       const confirmations = yield* PubSub.unbounded<number>()
+      const checksAsked = yield* PubSub.unbounded<void>()
       let confirmation = 0
       return {
         session,
@@ -76,6 +84,8 @@ export class AuthStore extends Context.Service<
         scope: yield* Effect.scope,
         checking: yield* Semaphore.make(1),
         refreshing: yield* Ref.make(false),
+        askCheck: Effect.sync(() => { PubSub.publishUnsafe(checksAsked, undefined) }),
+        checksAsked: Stream.fromPubSub(checksAsked),
       }
     }),
   )

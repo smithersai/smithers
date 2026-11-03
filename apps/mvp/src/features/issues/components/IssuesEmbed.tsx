@@ -1,4 +1,5 @@
 import { Card, EmptyState, IssuesView } from "@smthrs/ui"
+import { RepoGate } from "../../repo/components/RepoGate"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { ReactNode } from "react"
 import { SignInButton } from "../../auth/components/SignInButton"
@@ -13,7 +14,13 @@ import { useIssues } from "./IssuesContext"
 // `fullScreen` is the view's action, the repository's issues page. A person who may not read them sees sign in, or Not
 // found, and one this deployment doesn't sync a link to GitHub's list. The views' follower opens the repository's issues
 // (src/features/views/embeds.ts, `IssuesStore.forRepo`); this only renders what the device has.
-export function IssuesEmbed({
+/** The issues view, behind the repository's visibility (`RepoGate`). */
+export function IssuesEmbed(props: Parameters<typeof IssuesEmbedShown>[0]) {
+  const [owner = "", name = ""] = props.repo.split("/")
+  return <RepoGate owner={owner} name={name}><IssuesEmbedShown {...props} /></RepoGate>
+}
+
+function IssuesEmbedShown({
   repo,
   fullScreen,
   onOpen,

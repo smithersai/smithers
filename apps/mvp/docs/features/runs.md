@@ -312,3 +312,6 @@ Signed-out visitors read their device's history without requesting cloud history
 Steer actions retain a device recovery receipt before awaiting durable outbox admission. Retrying a storage refusal keeps the message identity. Admission never clears newer typing or another run’s draft; delivery is independent of the joining flow’s startup.
 
 Repeated Steer of a pending draft shares its write id. Retyping after admission creates a new message, including when its words are the same.
+
+
+System-run pages and expanded details use the same authorized cloud-list attribution as their list rows. A remote read without a repository or an explicitly listed system-run identity remains hidden by the data gate.

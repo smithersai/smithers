@@ -11,6 +11,8 @@
 
 ### Added
 
+- `LiveQuery.make(query, { getKey })` keys each result row itself, so a join's
+  row keeps its source collection's key.
 - `Persistence`: TanStack DB's SQLite persistence as an Effect service.
   `Persistence.layer({ open, make, coordinator })` takes the host's database,
   persistence and tab coordinator as arguments, and keeps rows in memory, with
@@ -51,3 +53,7 @@
   with `changes`, `preload` and `setWindow`, which fails with `LoadFailed`.
 - `Query`: TanStack DB's comparison, logic and null-check expressions and
   `caseWhen`, re-exported as pure data.
+
+- Add `LiveQuery.Publication`, `LiveQuery.incremental`, and a per-query publication override. Incremental publication keeps ordered refills from retaining rows withdrawn by an access gate; window and preload receipts still await settlement. The default remains settled publication.
+
+SQLite schema bootstrap uses the driver’s transactional batch when available, reducing cold-start autocommits and rolling back partial collection schema creation on failure.

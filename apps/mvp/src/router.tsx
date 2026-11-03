@@ -46,6 +46,7 @@ import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
 import { BranchesScreen } from "./screens/repo/BranchesScreen"
 import { RepoPendingScreen } from "./screens/repo/RepoPendingScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
+import { repoGated } from "./features/repo/components/RepoGate"
 import { Root } from "./screens/root/Root"
 import { RouteNotFound } from "./screens/root/RouteNotFound"
 import { RouteError } from "./screens/root/RouteError"
@@ -338,7 +339,7 @@ const repoPluginRoute = (path: (typeof ROUTE_PATHS)["repoPluginIndex" | "repoPlu
   createRoute({
     getParentRoute: () => rootRoute,
     path,
-    component: RepoPluginScreen,
+    component: repoGated(RepoPluginScreen),
     beforeLoad: ({ context, params, ...load }) => {
       const view = context.plugins.actions.viewAt(params.plugin, (params as { readonly _splat?: string })._splat ?? "", "repository")
       if (view === undefined) throw notFound()
@@ -368,7 +369,7 @@ const runRoute = createRoute({
 const repoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.repo,
-  component: RepoHomeScreen,
+  component: repoGated(RepoHomeScreen),
   validateSearch: lineSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
     enterRepo(
@@ -391,7 +392,7 @@ const repoRoute = createRoute({
 const branchesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.branches,
-  component: BranchesScreen,
+  component: repoGated(BranchesScreen),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("tree", params, {}), () =>
       context.repo.actions.openRoute("tree", params, {})),
@@ -406,7 +407,7 @@ const branchesRoute = createRoute({
 const treeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.tree,
-  component: TreeScreen,
+  component: repoGated(TreeScreen),
   pendingComponent: BranchPendingScreen,
   ...LOADING_PENDING,
   validateSearch: branchSearch,
@@ -432,7 +433,7 @@ const treeRoute = createRoute({
 const blobRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.blob,
-  component: BlobScreen,
+  component: repoGated(BlobScreen),
   pendingComponent: BranchPendingScreen,
   ...LOADING_PENDING,
   validateSearch: lineSearch,
@@ -472,7 +473,7 @@ const leaveWorkspace = (context: RouterContext) => {
 const rawRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.raw,
-  component: RepoScreen,
+  component: repoGated(RepoScreen),
   // Nothing to warm: a preload would load the raw file in place of the app.
   beforeLoad: ({ context, params, ...load }) =>
     enterRepo(context, params, load, local, async () => {
@@ -514,14 +515,14 @@ const docsBeforeLoad = (
 const docsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.docs,
-  component: DocsScreen,
+  component: repoGated(DocsScreen),
   beforeLoad: docsBeforeLoad,
 })
 
 const docsPageRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.docsPage,
-  component: DocsScreen,
+  component: repoGated(DocsScreen),
   beforeLoad: docsBeforeLoad,
 })
 
@@ -532,7 +533,7 @@ const docsPageRoute = createRoute({
 const issuesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.issues,
-  component: IssuesScreen,
+  component: repoGated(IssuesScreen),
   pendingComponent: IssuesPendingScreen,
   validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search), ...workSearch(search) }),
   beforeLoad: ({ context, params, ...load }) =>
@@ -551,7 +552,7 @@ const issuesRoute = createRoute({
 const newIssueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.newIssue,
-  component: NewIssueScreen,
+  component: repoGated(NewIssueScreen),
   validateSearch: (search: Record<string, unknown>): { readonly write?: string } =>
     typeof search.write === "string" && /^[0-9a-f-]{36}$/i.test(search.write) ? { write: search.write } : {},
   beforeLoad: ({ context, params, search, ...load }) =>
@@ -562,7 +563,7 @@ const newIssueRoute = createRoute({
 const issueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.issue,
-  component: IssueScreen,
+  component: repoGated(IssueScreen),
   pendingComponent: RepoPendingScreen,
   ...LOADING_PENDING,
   params: {
@@ -593,7 +594,7 @@ const issueRoute = createRoute({
 const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.actions,
-  component: ActionsScreen,
+  component: repoGated(ActionsScreen),
   beforeLoad: ({ context, params, ...load }) => enterRepository(context, params, load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
   // A Run still answering no longer moves a tab that left (docs/features/actions.md#running-a-flow-by-hand).
   onLeave: ({ context }) => context.runs.actions.closeRepoRuns(),
@@ -603,7 +604,7 @@ const actionsRoute = createRoute({
 const actionRunRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.actionRun,
-  component: ActionRunScreen,
+  component: repoGated(ActionRunScreen),
   validateSearch: runOriginSearch,
   beforeLoad: (load) =>
     enterRepo(load.context, load.params, load, local, () =>
@@ -615,7 +616,7 @@ const actionRunRoute = createRoute({
 const pullsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.pulls,
-  component: PullsScreen,
+  component: repoGated(PullsScreen),
   validateSearch: listSearch,
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo)),
@@ -647,7 +648,7 @@ const pluralPullRoute = createRoute({
 const pullRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.pull,
-  component: () => <PullScreen tab="conversation" />,
+  component: repoGated(() => <PullScreen tab="conversation" />),
   params: pullParams,
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo, params.number), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
@@ -657,10 +658,10 @@ const pullRoute = createRoute({
 const pullTabRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.pullTab,
-  component: function PullTab() {
+  component: repoGated(function PullTab() {
     const { tab } = pullTabRoute.useParams()
     return <PullScreen tab={tab} />
-  },
+  }),
   params: {
     parse: (params: { readonly owner: string; readonly repo: string; readonly number: string; readonly tab: string }) => {
       const number = issueNumberOf(params.number)
@@ -694,7 +695,7 @@ const pullTabRoute = createRoute({
 const repoSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.repoSettings,
-  component: RepoSettingsScreen,
+  component: repoGated(RepoSettingsScreen),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, local, () => context.domains.actions.open(params.owner, params.repo)),
 })
@@ -706,7 +707,7 @@ const repoSettingsRoute = createRoute({
 const stackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.stack,
-  component: StackScreen,
+  component: repoGated(StackScreen),
   validateSearch: (search: Record<string, unknown>): { readonly state?: StackFilter } =>
     stackFilterOf(search.state) === "closed" ? { state: "closed" } : {},
   beforeLoad: ({ context, params, ...load }) =>
@@ -721,7 +722,7 @@ const stackRoute = createRoute({
 const todoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.todo,
-  component: TodoScreen,
+  component: repoGated(TodoScreen),
   params: {
     parse: (params) => {
       const number = todoNumberOf(params.number)
@@ -746,7 +747,7 @@ const todoRoute = createRoute({
 const secretsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.secrets,
-  component: SecretsScreen,
+  component: repoGated(SecretsScreen),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params,
       load,

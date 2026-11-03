@@ -70,17 +70,19 @@ const mirror = (rows: ReadonlyArray<PublicationRow>) =>
     }
   })
 
-/** Keeps branch `branchId`'s pull request title equal to `title`, or none. */
-const keepTitle = (branchId: string, title: string | undefined) =>
+/** Keeps branch `branchId`'s pull request title equal to `found`'s, with its repository, or none. */
+const keepTitle = (branchId: string, found: { readonly repoId: string; readonly title: string } | undefined) =>
   Effect.gen(function* () {
     const { titles } = yield* PublishStore
     const kept = yield* titles.get(branchId)
-    if (title === undefined) {
+    if (found === undefined) {
       if (Option.isSome(kept)) yield* Effect.orDie(titles.delete(branchId))
       return
     }
     yield* Effect.orDie(
-      Option.isSome(kept) ? titles.update(branchId, (draft) => void (draft.title = title)) : titles.insert({ branchId, title }),
+      Option.isSome(kept)
+        ? titles.update(branchId, (draft) => void Object.assign(draft, found))
+        : titles.insert({ branchId, ...found }),
     )
   })
 
@@ -98,6 +100,7 @@ const pullTitles = (publication: PublicationRow | undefined) =>
         Stream.map((rows) =>
           rows.find((row) => row.number === publication.prNumber && row.kind === "pull" && row.deletedAt === null)?.title
         ),
+        Stream.map((title) => title === undefined ? undefined : { repoId: publication.repoId, title }),
       )
     }))
 

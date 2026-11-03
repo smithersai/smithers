@@ -6,6 +6,7 @@ import { listLoaded, listRows } from "../page"
 import { RunDetailsView } from "./RunDetailsView"
 import { useRuns } from "./RunsContext"
 import { routerLink } from "./routerLink"
+import { useRepoVisible } from "../../repo/components/RepoGate"
 
 // Every run on this device and the runs on Cloudflare this person may read, newest first, like a CI system's runs
 // (decision 0014 §5, ruling FLOW-13): each with what started it, its branch and who started it, opening its run page,
@@ -13,7 +14,10 @@ import { routerLink } from "./routerLink"
 export function RunListView({ flow, open }: { readonly flow?: string | undefined; readonly open?: string | undefined }) {
   const { queries } = useRuns()
   const { data: runs } = useLiveQuery(queries.runs)
-  const { data: cloud } = useLiveQuery(queries.cloudRuns)
+  const { data: everyCloud } = useLiveQuery(queries.cloudRuns)
+  // A repository's run shows only while the repository may (`repoVisibility`).
+  const visible = useRepoVisible()
+  const cloud = everyCloud.filter((run) => visible(run.repo))
   const { data: view } = useLiveQuery(queries.view)
   const rows = listRows(runs, cloud, { ...(flow === undefined ? {} : { flow }), ...(open === undefined ? {} : { open }) })
   // Until this device's list and the runs on Cloudflare have answered, none says nothing.

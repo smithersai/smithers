@@ -1,6 +1,6 @@
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
-import { Cause, Deferred, Effect, Exit, Layer, Schedule } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Option, Schedule } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, beforeEach, describe, expect, onTestFailed, onTestFinished, test, vi } from "vitest"
 import { fixture, shaOf } from "../../../worker/test/codeStorage"
@@ -13,7 +13,7 @@ import { persistenceOn } from "../../test/deviceFixture"
 import { tempDirectory } from "../../test/tempDirectory"
 import { join } from "node:path"
 import { SqlClient } from "effect/sql"
-import { RepoStore } from "./store"
+import { replaceRole, RepoStore } from "./store"
 import { VIEW } from "./rows"
 import { RepoClient, RepoRefused } from "./api"
 import { BUSY, COULDNT_LOAD, GITHUB_DOWN, GITHUB_LIMIT, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
@@ -178,7 +178,9 @@ describe("cloning from a tab", () => {
     const tab = await open(h)
     tab.repo.actions.clone("octocat", "Spoon-Knife")
     await waitFor(() => expect(tab.repo.lookups.repository("github/octocat/spoon-knife")?.status).toBe("ready"))
-    expect(tab.count(clones, { outcome: "existing" })).toBe(1)
+    // The send that counts RepoApi's answer runs beside the sync (`clone` forks it): the row can arrive first, now the
+    // data gate follows the repositories from the store's start.
+    await waitFor(() => expect(tab.count(clones, { outcome: "existing" })).toBe(1))
   })
 })
 
@@ -210,6 +212,66 @@ describe("reading a ready repository", () => {
     blob("src/index.ts")
     expect(tab.file().file?.state).toBe("text")
     expect(h.scripted.calls.filter((call) => call.startsWith("readFile"))).toHaveLength(reads)
+  })
+
+  // The data gate (decision 0110, 2026-11-03): what this tab loaded of a repository leaves every query and lookup the
+  // store exposes in the change that refuses it, before any wipe runs, and shows again when the mark goes.
+  test("a refused repository's files, file list, refs and about leave every query in the change that refuses it", async () => {
+    const h = await repoHarness(server)
+    h.scripted.syncPolls = 0
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
+    const tab = await open(h)
+    tab.repo.actions.openRoute("blob", { owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "src/index.ts" }, {})
+    await waitFor(() => expect(tab.file().file?.state).toBe("text"))
+    await waitFor(() => expect(tab.tree().tree?.state).toBe("ready"))
+    const store = await tab.runtime.runPromise(Effect.service(RepoStore))
+    /** What each exposed query and lookup holds of the repository, read in the same Effect as `change`. */
+    const shownAfter = (change: Effect.Effect<unknown>) => tab.runtime.runPromise(Effect.gen(function* () {
+      yield* change
+      const first = <A>(rows: ReadonlyArray<A>) => rows[0] as Record<string, unknown> | undefined
+      return {
+        file: first(yield* store.fileState.toArray)?.file,
+        tree: first(yield* store.treeState.toArray)?.tree,
+        refs: first(yield* store.refsState.toArray)?.refs,
+        about: first(yield* store.aboutState.toArray)?.about,
+        viewAbout: first(yield* store.viewState.toArray)?.about,
+        fileLookup: tab.repo.lookups.file(id, headSha, "src/index.ts"),
+        treeLookup: tab.repo.lookups.tree(id, headSha),
+      }
+    }))
+    const shown = await shownAfter(Effect.void)
+    expect([shown.file, shown.tree, shown.fileLookup, shown.treeLookup].every((row) => row !== undefined)).toBe(true)
+    const refused = await shownAfter(replaceRole(store, { id, role: null, own: false, refused: "forbidden" }))
+    expect(refused).toEqual({
+      file: undefined, tree: undefined, refs: undefined, about: undefined, viewAbout: undefined, fileLookup: undefined, treeLookup: undefined,
+    })
+    // Nothing was wiped: once the mark goes, the same rows show again.
+    const again = await shownAfter(Effect.orDie(store.roles.delete(id)))
+    expect(again.file).toEqual(shown.file)
+    expect(again.tree).toEqual(shown.tree)
+  })
+
+  // Astra on 0c7b9f01: the view and the lookups read the raw repositories, so a refused repository's head message and
+  // author, branch and commit still showed. Its own row is gated by its id, in the same change.
+  test("a refused repository's own row leaves the view and the lookup in the change that refuses it", async () => {
+    const h = await repoHarness(server)
+    h.scripted.syncPolls = 0
+    const { id } = await h.seed("octocat", "Spoon-Knife")
+    const tab = await open(h)
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife", ref: "main" }, {})
+    await waitFor(() => expect(tab.view().repository?.status).toBe("ready"))
+    await waitFor(() => expect(tab.repo.lookups.repository(id)?.status).toBe("ready"))
+    const store = await tab.runtime.runPromise(Effect.service(RepoStore))
+    const refused = await tab.runtime.runPromise(Effect.gen(function* () {
+      yield* replaceRole(store, { id, role: null, own: false, refused: "forbidden" })
+      return {
+        view: ((yield* store.viewState.toArray)[0] as Record<string, unknown> | undefined)?.repository,
+        lookup: tab.repo.lookups.repository(id),
+      }
+    }))
+    expect(refused).toEqual({ view: undefined, lookup: undefined })
+    // The raw row stays for the store's own actions.
+    expect(Option.isSome(await tab.runtime.runPromise(store.repositories.get(id)))).toBe(true)
   })
 
   test("a directory shows its README; a commit SHA reads there; another ref names nothing", async () => {
@@ -616,7 +678,7 @@ describe("who the person is on a repository (decision 0079)", () => {
     expect(tab.repo.queries.roles.toArray).toHaveLength(2)
   })
 
-  test("a refused authority answer clears stale authority, retains its failure and records the refusal", async () => {
+  test("a failed authority answer keeps an answered role, marks an unanswered one unavailable, and records the refusal", async () => {
     const h = await repoHarness(server, { roles: "octocat/Spoon-Knife" })
     let refusing = false
     const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
@@ -644,17 +706,22 @@ describe("who the person is on a repository (decision 0079)", () => {
     tab.repo.actions.role("octocat", "Spoon-Knife")
     tab.repo.actions.role("acme", "widgets")
     await waitFor(() => expect(tab.count(roleAnswers, { outcome: "refused", role: "unknown" })).toBe(2))
+    // A failed read keeps an answer this tab already had (Astra on c64fd4bc: a stack read offline still shows); a
+    // repository never answered reads unavailable.
     expect(tab.repo.queries.roles.toArray).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "github/octocat/spoon-knife", role: null, own: false, failure: "unavailable" }),
+      expect.objectContaining({ id: "github/octocat/spoon-knife", role: "member", own: true }),
       expect.objectContaining({ id: "github/acme/widgets", role: null, own: false, failure: "unavailable" }),
     ]))
     expect(tab.lines("repo.role").filter((line) => line.annotations.outcome === "refused").map((line) => [line.level, line.annotations.status]))
       .toEqual(expect.arrayContaining([["WARN", 503], ["WARN", 0]]))
     refusing = false
-    // Staying in the repository (`reuse`) never keeps a refused answer: it asks again.
-    tab.repo.actions.role("octocat", "Spoon-Knife", true)
-    await waitFor(() => expect(tab.repo.queries.roles.toArray.find((row) => row.id === "github/octocat/spoon-knife")).toMatchObject({ role: "member", own: true, failure: undefined }))
-    expect(tab.count(roleAnswers, { outcome: "answered", role: "member" })).toBe(2)
+    // Staying in the repository (`reuse`) never keeps a refused answer: it asks again. Widgets had none to keep.
+    tab.repo.actions.role("acme", "widgets", true)
+    tab.repo.actions.role("octocat", "Spoon-Knife")
+    await waitFor(() => expect(tab.repo.queries.roles.toArray.find((row) => row.id === "github/octocat/spoon-knife")).toMatchObject({ role: "member", own: true }))
+    expect(tab.repo.queries.roles.toArray.find((row) => row.id === "github/octocat/spoon-knife")?.failure).toBeUndefined()
+    // The row already said Member: wait for the answer itself.
+    await waitFor(() => expect(tab.count(roleAnswers, { outcome: "answered", role: "member" })).toBe(2))
   })
 
   test("staying in the repository keeps the tab's answered role and asks ChatApi nothing; a repository it never asked is asked", async () => {

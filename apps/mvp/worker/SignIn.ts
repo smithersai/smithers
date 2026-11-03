@@ -21,6 +21,8 @@ import {
 } from "../src/features/auth/contract.ts"
 import { installUrl } from "../src/features/repo/contract.ts"
 import * as Actor from "./Actor.ts"
+import { DEFAULT_REPOSITORY } from "./defaultRepository.ts"
+import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import { HOSTNAME, parseAliases } from "./aliases.ts"
 import * as Domains from "./domains/Store.ts"
@@ -42,8 +44,7 @@ import * as SessionStore from "./SessionStore.ts"
 // durable flow `auth/RevokeGitHubToken`, which ends the session and revokes its GitHub token: a route starts it through
 // `Flows.FlowStarter` and answers only once the start is recorded.
 
-/** The repository roles are read on when `GITHUB_REPOSITORY` is unset. */
-export const DEFAULT_REPOSITORY = "smithersai/smithers"
+export { DEFAULT_REPOSITORY }
 
 /** How long a session lasts when `SESSION_MAX_AGE_DAYS` is unset. */
 export const SESSION_MAX_AGE_DAYS = 30
@@ -981,10 +982,20 @@ export const make = <E, R>(
           Effect.as(record("session", { outcome: "failed", reason: "hosted_model", errorCode: codeOf(Cause.squash(cause)) }), true)
         ),
       )
+      // The home conversation is every signed-in person's own (decision 0110, the data gate): its rows show on their
+      // devices by this id, with no repository's say. None when the home branch doesn't exist yet.
+      const homeConversationId = Option.isSome(signed)
+        ? yield* Conversations.home.pipe(
+          Effect.provide(database),
+          // A deployment with no home repository configured, or a database that can't say, names none.
+          Effect.catchCause(() => Effect.succeed(undefined)),
+        )
+        : undefined
       const state: SessionState = Option.isSome(signed)
         ? {
           signedIn: true,
           personId: signed.value.actor.subject.id,
+          ...(homeConversationId === undefined ? {} : { homeConversationId }),
           login: signed.value.login,
           role: signed.value.actor.role,
           ...(signed.value.roleConfirmed === false ? { roleConfirmed: false } : {}),

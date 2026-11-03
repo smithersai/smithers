@@ -11,7 +11,8 @@ import { RepoClient } from "../repo/api"
 import { repoId } from "../repo/contract"
 import { sendingAdmitted } from "../../outboxAdmission"
 import { RepoStore } from "../repo/store"
-import { repositoryAccess, repositoryAccessChanges, repositoryShapeSource, syncStatusAfter, type Transport } from "./source"
+import type { Gated } from "../repo/gate"
+import { repositoryAccess, wipeAuthority, repositoryAccessChanges, repositoryShapeSource, revokingSource, syncStatusAfter, type Transport } from "./source"
 import {
   COMMENTS_SHAPE_ROUTE,
   ITEMS_SHAPE_ROUTE,
@@ -60,7 +61,7 @@ import {
   WorkLinkRow,
   WriteRow,
 } from "./schema"
-import { evictions } from "./metrics"
+import { detailsUnlisted, evictions } from "./metrics"
 import { observeIssueShape } from "./shapeSync"
 import { ISSUE_WRITE, IssueWrites, keep } from "./writes"
 
@@ -82,7 +83,7 @@ export interface Queued {
 
 type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
 
-/** A collection of `A` rows, synced or local: what the queries read. */
+/** A collection of `A` rows, synced or local: the store's own, never exposed. */
 type Rows<A extends object> = Collection.Collection<A, any, any>
 
 /**
@@ -91,15 +92,21 @@ type Rows<A extends object> = Collection.Collection<A, any, any>
  */
 export interface RepoIssues {
   readonly id: string
-  readonly items: Rows<ItemSummary>
-  readonly details: Rows<Item>
+  /** Each of its collections as the data gate exposes it (repo/gate.ts): no row while the repository may not show. */
+  readonly items: Gated<ItemSummary>
+  readonly details: Gated<Item>
   readonly requestDetails: Effect.Effect<void>
-  readonly comments: Rows<Comment>
-  readonly sync: Rows<SyncRow>
-  readonly triageSettings: Rows<TriageSettings>
+  /** Once the device's rows of its summaries and bodies are back in memory. */
+  readonly restored: Effect.Effect<void>
+  /** Its summaries shape's sync events, which carry no row, and once its latest batch is installed. */
+  readonly itemSync: Stream.Stream<ElectricCollection.SyncEvent>
+  readonly itemsApplied: Effect.Effect<void>
+  readonly comments: Gated<Comment>
+  readonly sync: Gated<SyncRow>
+  readonly triageSettings: Gated<TriageSettings>
   readonly access: Collection.Collection<Access, string>
   /** What links each of its issues to the work on it (decision 0147). */
-  readonly workLinks: Rows<WorkLinkRow>
+  readonly workLinks: Gated<WorkLinkRow>
   readonly workRows: LiveRows<WorkLinkRow>
   /** Its issues and pull requests, and its sync rows, every row, live: a home's `issues` block reads them. */
   readonly itemRows: LiveRows<ItemSummary>
@@ -134,15 +141,19 @@ export interface RepoIssues {
 export class IssuesStore extends Context.Service<
   IssuesStore,
   {
+    /** The person's writes, for the feature's own followers; what shows reads `writeRows`, through the data gate. */
     readonly writes: ElectricCollection.ElectricCollection<WriteRow>
-    readonly writeRows: LiveRows<WriteRow>
+    readonly writeRows: Gated<WriteRow>
+    /** This device's own writes, for the feature's actions to keep; what shows reads `sendingRows`, `requestedRows`. */
     readonly sending: Collection.Collection<Sending, string>
     readonly requested: Collection.Collection<Requested, string>
+    readonly sendingRows: Gated<Sending>
+    readonly requestedRows: Gated<Requested>
     readonly drafts: Collection.Collection<Draft, string>
     readonly view: Collection.Collection<IssueView, string>
     /** What the issues route last answered this tab's search, in memory (schema.ts `Searched`). */
     readonly searched: Collection.Collection<Searched, string>
-    readonly searchedRows: LiveRows<Searched>
+    readonly searchedRows: Gated<Searched>
     /** Takes the answer away. */
     readonly forgetSearch: Effect.Effect<void>
     /** Which search this tab asked last: only its answer is kept. */
@@ -212,6 +223,10 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   })
 
   const searched = yield* Collection.local<Searched, string>({ id: "issue-searched", schema: Searched, getKey: (row) => row.id })
+  // What shows of the person's writes and this device's own, through the data gate (repo/gate.ts).
+  const shownWrites = yield* repos.gate(writes)
+  const sendingRows = yield* repos.gate(sending)
+  const requestedRows = yield* repos.gate(requested)
   const searches = { latest: 0, repoId: "" }
   // An answer still on its way is dropped too: it checks `latest` before it stays.
   const forgetSearch = Effect.gen(function* () {
@@ -236,22 +251,36 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     access: Collection.Collection<Access, string>,
     workLinks: Rows<WorkLinkRow>,
   ) =>
-    Effect.all({
-      workRows: rowsQuery(workLinks),
-      itemRows: rowsQuery(items),
-      syncRows: rowsQuery(sync),
-      newestFirst: allIssuesQuery(items),
-      walked: syncedRepositoriesQuery(sync),
-      list: listQuery(view, items, requested, sending, writes),
-      publicList: publicListQuery(view, items),
-      item: itemQuery(view, details),
-      summary: summaryQuery(view, items),
-      conversation: conversationQuery(view, items, comments, requested, sending, writes),
-      synced: syncedQuery(view, sync),
-      unsynced: unsyncedQuery(sync),
-      triage: triageSettingsQuery(view, triageSettings),
-      triagePending: triagePendingQuery(view, requested, sending, writes),
-      accessState: accessQuery(access),
+    Effect.gen(function* () {
+      // The data gate (repo/gate.ts): every query below reads the repository's rows only through these.
+      const shown = {
+        items: yield* repos.gate(items),
+        details: yield* repos.gate(details),
+        comments: yield* repos.gate(comments),
+        sync: yield* repos.gate(sync),
+        triageSettings: yield* repos.gate(triageSettings),
+        workLinks: yield* repos.gate(workLinks),
+      }
+      return {
+        ...shown,
+        ...(yield* Effect.all({
+          workRows: rowsQuery(shown.workLinks),
+          itemRows: rowsQuery(shown.items),
+          syncRows: rowsQuery(shown.sync),
+          newestFirst: allIssuesQuery(shown.items),
+          walked: syncedRepositoriesQuery(shown.sync),
+          list: listQuery(view, shown.items, requestedRows, sendingRows, shownWrites),
+          publicList: publicListQuery(view, shown.items),
+          item: itemQuery(view, shown.details),
+          summary: summaryQuery(view, shown.items),
+          conversation: conversationQuery(view, shown.items, shown.comments, requestedRows, sendingRows, shownWrites),
+          synced: syncedQuery(view, shown.sync),
+          unsynced: unsyncedQuery(shown.sync),
+          triage: triageSettingsQuery(view, shown.triageSettings),
+          triagePending: triagePendingQuery(view, requestedRows, sendingRows, shownWrites),
+          accessState: accessQuery(access),
+        })),
+      }
     })
 
   /** Repository `id`'s access row, unknown until the session and its role answer. */
@@ -277,14 +306,11 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   const emptyWork = yield* Collection.local<WorkLinkRow, string>({ id: "issue-work-links-none", schema: WorkLinkRow, getKey: byId })
   const empty: RepoIssues = {
     id: "",
-    items: emptyItems,
-    details: emptyDetails,
     requestDetails: Effect.void,
-    comments: emptyComments,
-    sync: emptySync,
-    triageSettings: emptyTriage,
+    restored: Effect.void,
+    itemSync: Stream.empty,
+    itemsApplied: Effect.void,
     access: emptyAccess,
-    workLinks: emptyWork,
     ...(yield* queriesOf(emptyItems, emptyDetails, emptyComments, emptySync, emptyTriage, emptyAccess, emptyWork)),
     reconnect: Effect.void,
   }
@@ -345,7 +371,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     shapes: ReadonlyArray<{ readonly evict: Effect.Effect<void> }>,
     logged: boolean,
   ) =>
-    authority.pipe(
+    wipeAuthority(auth, authority).pipe(
       Stream.changesWith((a, b) => refused(a) === refused(b)),
       Stream.filter(refused),
       Stream.runForEach((status) =>
@@ -363,10 +389,22 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
    * Opens repository `id`'s shapes, its access follower and its delivered follower, in the store's scope. Each request
    * waits for the device's authority on `id` (decision 0110), never another repository's.
    */
+  // What `registerCache`'s wipe evicts: each repository's shapes and each issue's, as they open.
+  const opened = new Map<string, ReadonlyArray<{ readonly evict: Effect.Effect<void> }>>()
+  // Each repository's own collections, which the selected issues' queries read beside their own: never exposed.
+  const raw = new Map<string, {
+    readonly items: Rows<ItemSummary>
+    readonly sync: Rows<SyncRow>
+    readonly triageSettings: Rows<TriageSettings>
+    readonly workLinks: Rows<WorkLinkRow>
+  }>()
+  const openedDetails = new Map<string, ReadonlyArray<{ readonly evict: Effect.Effect<void> }>>()
   const open = (id: string) =>
     Effect.gen(function* () {
+      yield* repos.refusalsKnown
       const authority = repositoryAccessChanges(auth, repos, id)
-      const guarded = repositoryShapeSource(source, authority)
+      const revoking = revokingSource(source, auth, repos, id)
+      const guarded = repositoryShapeSource(revoking, authority)
       // Lists retain all count/search facts; large bodies and comments wait for a detail page.
       const items = yield* ElectricCollection.make<ItemSummary>({
         id: `issue-summaries:${id}`,
@@ -376,7 +414,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         ...kept,
         persist: { schemaVersion: 2 },
       }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
-      const bodyDemand = ShapeSource.gated(source, Stream.zipLatestWith(
+      const bodyDemand = ShapeSource.gated(revoking, Stream.zipLatestWith(
         authority,
         requestedDetails.changes({ initial: true }).pipe(Stream.mapEffect(() => Effect.map(requestedDetails.get(id), Option.isSome))),
         (status, needed) => status === "allowed" && needed,
@@ -411,7 +449,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         shape: shape(TRIAGE_SETTINGS_SHAPE_ROUTE, id),
         ...kept,
       }).pipe(Effect.provideService(ShapeSource.ShapeSource, ShapeSource.gated(
-        source,
+        revoking,
         Stream.zipLatestWith(signedInChanges(auth), authority, (signedIn, status) => signedIn && status === "allowed"),
       )))
       // What links its issues to the work on them: read on the list and the issue page, as the summaries are.
@@ -443,7 +481,10 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       for (const [shape, source] of [[items, "item-summaries"], [sync, "github-sync"], [triageSettings, "triage-settings"]] as const) {
         yield* observeInitialApplied(shape, source, id.slice("github/".length)).pipe(Effect.forkIn(scope, { startImmediately: true }))
       }
-      yield* evictWhenRefused(authority, [items, details, comments, sync, triageSettings, workLinks, { evict: forgetSearchOf(id) }], true)
+      const shapes = [items, details, comments, sync, triageSettings, workLinks, { evict: forgetSearchOf(id) }]
+      opened.set(id, shapes)
+      raw.set(id, { items, sync, triageSettings, workLinks })
+      yield* evictWhenRefused(authority, shapes, true)
       // Availability follows the shape the page reads. A summary receipt never certifies a missing detail body.
       yield* followAvailability(items, access, id)
       // Its summaries are here: they answer every search from now on, and the route's answer goes.
@@ -460,16 +501,14 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         Stream.runForEach((rows) => Effect.forEach(rows, ({ id }) => Effect.ignore(requested.delete(id)), { discard: true })),
         Effect.forkIn(scope, { startImmediately: true }),
       )
+      repos.track(id)
       const repo: RepoIssues = {
         id,
-        items,
-        details,
         requestDetails: Effect.ignore(requestedDetails.insert({ id })),
-        comments,
-        sync,
-        triageSettings,
+        restored: Effect.ignore(Effect.all([items.restored, details.restored], { discard: true })),
+        itemSync: items.sync,
+        itemsApplied: Effect.asVoid(items.currentApplied),
         access,
-        workLinks,
         ...(yield* queriesOf(items, details, comments, sync, triageSettings, access, workLinks)),
         reconnect: Effect.all([items.reconnect, details.reconnect, comments.reconnect, sync.reconnect, triageSettings.reconnect, workLinks.reconnect], {
           discard: true,
@@ -502,7 +541,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     const number = Number(key.slice(split + 1))
     const repo = yield* Cache.get(opening, id)
     const authority = repositoryAccessChanges(auth, repos, id)
-    const guarded = repositoryShapeSource(source, authority)
+    const guarded = repositoryShapeSource(revokingSource(source, auth, repos, id), authority)
     const selectedShape = (route: string) => ({ ...shape(route, id), url: `${shape(route, id).url}&number=${number}` })
     const details = yield* ElectricCollection.make<Item>({
       id: `issue-items:${key}`, schema: Item, getKey: byId,
@@ -519,17 +558,20 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       row.status = status
       if (status !== "allowed") row.installed = false
     }))), Effect.forkIn(scope, { startImmediately: true }))
+    openedDetails.set(key, [details, comments])
     yield* evictWhenRefused(authority, [details, comments], false)
     yield* followAvailability(details, access, id)
     yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "item" }), Effect.forkIn(scope, { startImmediately: true }))
-    const delivered = yield* deliveredQuery(requested, repo.items, comments, writes)
+    const delivered = yield* deliveredQuery(requested, raw.get(id)!.items, comments, writes)
     yield* delivered.rows.pipe(
       Stream.runForEach((rows) => Effect.forEach(rows, ({ id }) => Effect.ignore(requested.delete(id)), { discard: true })),
       Effect.forkIn(scope, { startImmediately: true }),
     )
+    const own = raw.get(id)!
     const selected: RepoIssues = {
-      ...repo, details, comments, access,
-      ...(yield* queriesOf(repo.items, details, comments, repo.sync, repo.triageSettings, access, repo.workLinks)),
+      ...repo, access,
+      restored: Effect.ignore(Effect.all([repo.restored, details.restored], { discard: true })),
+      ...(yield* queriesOf(own.items, details, comments, own.sync, own.triageSettings, access, own.workLinks)),
       reconnect: Effect.all([repo.reconnect, details.reconnect, comments.reconnect], { discard: true }),
     }
     return selected
@@ -541,6 +583,34 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     ? Cache.get(opening, id) : Cache.get(itemOpening, `${id}#${number}`)
   let routedRepo = empty
   const routed = () => routedRepo
+  // A refused repository's issues go, with the detail of every issue the device kept: each is a collection of its own,
+  // and one read on an earlier load is open nowhere. A list that can't be read is reported and never read as empty: the
+  // mark stands, so opening one of those issues evicts it first, and the next load tries again.
+  yield* repos.registerCache(
+    ["issue-summaries", "issue-items", "issue-comments", "issue-sync", "issue-triage-settings", "issue-work-links", "issue-searched"],
+    (id) => Effect.gen(function* () {
+      yield* forRepo(id)
+      yield* Effect.forEach(opened.get(id) ?? [], (shape) => shape.evict, { discard: true })
+      const stored = yield* (persistence.collections ?? Effect.succeed([])).pipe(
+        Effect.catch((error) => Effect.gen(function* () {
+          yield* Metric.update(detailsUnlisted, 1)
+          yield* Effect.logError("issues.access.details_unlisted").pipe(Effect.annotateLogs({ feature: "issues", error: error._tag }))
+          return []
+        })),
+      )
+      const numbers = new Set(stored.flatMap((collection) =>
+        [`issue-items:${id}#`, `issue-comments:${id}#`].flatMap((family) =>
+          collection.startsWith(family) ? [collection.slice(family.length)] : [])))
+      yield* Effect.forEach(numbers, (number) => Effect.gen(function* () {
+        const key = `${id}#${number}`
+        yield* forRepo(id, Number(number))
+        yield* Effect.forEach(openedDetails.get(key) ?? [], (shape) => shape.evict, { discard: true })
+      }), { discard: true })
+      for (const [key, shapes] of openedDetails) {
+        if (key.startsWith(`${id}#`)) yield* Effect.forEach(shapes, (shape) => shape.evict, { discard: true })
+      }
+    }),
+  )
 
   /**
    * Puts `write` in the device's outbox once: a write it holds or the route took already is queued. Its repository's
@@ -579,13 +649,15 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
 
   return IssuesStore.of({
     writes,
-    writeRows: yield* rowsQuery(writes),
+    writeRows: shownWrites,
     sending,
     requested,
+    sendingRows,
+    requestedRows,
     drafts,
     view,
     searched,
-    searchedRows: yield* rowsQuery(searched),
+    searchedRows: yield* repos.gate(searched),
     forgetSearch,
     searches,
     search,
@@ -608,7 +680,7 @@ export const repoIdOf = (repo: string): string => {
 }
 
 /** Whether authority refuses the person: sign in, or no role. */
-const refused = (status: Access["status"]): status is "sign_in" | "forbidden" => status === "sign_in" || status === "forbidden"
+const refused = (status: string): status is "sign_in" | "forbidden" => status === "sign_in" || status === "forbidden"
 
 /**
  * What one of a shape's sync events says of its availability, never of authority (decision 0110): it answered; it

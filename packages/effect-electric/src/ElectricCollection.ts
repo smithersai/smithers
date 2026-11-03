@@ -28,7 +28,7 @@
  */
 
 import { FetchError, isChangeMessage, type Row, type ShapeStreamOptions } from "@electric-sql/client"
-import { Collection, type Persistence } from "@smthrs/effect-tanstack-db"
+import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { whenSyncAccepted, withAcceptedReceipt } from "@tanstack/db"
 import {
   electricCollectionOptions,
@@ -179,8 +179,9 @@ export interface ElectricCollection<A extends object>
    * in flight is aborted, and nothing Electric was still applying lands. The shape then syncs again from the start,
    * when its `ShapeSource` next answers: keep a reader's requests waiting with `ShapeSource.gated` while they may not
    * read. The next collection made over the same id restores nothing. A persisted collection nobody read yet evicts
-   * what the device stored too. In a program that watches (`Persistence`'s `lock`), the rows go once the program that
-   * stores them evicts too. Span `electric.shape.evict`.
+   * what the device stored too. A program that watches (`Persistence`'s `lock`) writes nothing, so it asks the program
+   * that stores the rows to evict through the coordinator, and evicts itself if it comes to write first. The rows leave
+   * it as that transaction arrives. Span `electric.shape.evict`.
    */
   readonly evict: Effect.Effect<void>
   /**
@@ -199,6 +200,9 @@ export interface ElectricCollection<A extends object>
     timeout: Duration.Input
   ) => Effect.Effect<void, AwaitTimeout | SyncFailed>
 }
+
+/** What a watching program publishes to ask the program that stores a collection's rows to evict them. */
+const EVICT_MESSAGE = "smithers:electric:evict"
 
 /**
  * The schema of an Electric collection's rows: a `Schema.Struct` that checks
@@ -489,6 +493,21 @@ export function make<A extends Row<unknown>, E = never, R = never>(
       sync.metadata?.collection.set("electric:resume", { kind: "reset", updatedAt: Date.now() + 1 })
       sync.commit()
     }
+    // A program that watches has no sync metadata (internal/oneWriter.ts): its truncate would be dropped.
+    const watches = (sync: SyncControls) => options.persist !== undefined && sync.metadata === undefined
+    const service = yield* Effect.serviceOption(Persistence.Persistence)
+    const coordinator = options.persist !== undefined && Option.isSome(service) && Option.isSome(service.value.persistence)
+      ? service.value.persistence.value.coordinator
+      : undefined
+    const askWriterToEvict = () =>
+      coordinator?.publish(options.id, {
+        v: 1,
+        dbName: "",
+        collectionId: options.id,
+        senderId: coordinator.getNodeId(),
+        ts: Date.now(),
+        payload: { type: EVICT_MESSAGE }
+      })
     const startSession = (params: Parameters<typeof electricOptions.sync.sync>[0]) => {
       const current = ++sessions
       session = electricOptions.sync.sync(fenced({
@@ -525,7 +544,8 @@ export function make<A extends Row<unknown>, E = never, R = never>(
         ...electricOptions.sync,
         sync: (params: Parameters<typeof electricOptions.sync.sync>[0]) => {
           controls = params
-          if (evicting) {
+          if (evicting && watches(params)) askWriterToEvict()
+          if (evicting && !watches(params)) {
             evicting = false
             truncate(params)
           }
@@ -553,6 +573,35 @@ export function make<A extends Row<unknown>, E = never, R = never>(
         persist: options.persist
       }))
     const utils = collection.tanstack.utils
+    const evict = Effect.gen(function*() {
+      accepted = undefined
+      if (controls === undefined) {
+        // A persisted collection nobody read yet still holds what the device stored: starting it hands Electric's
+        // sync its controls once the stored rows are restored, and they go before the shape syncs from the start.
+        if (options.persist === undefined) return
+        evicting = true
+        collection.tanstack.startSyncImmediate()
+        return yield* controlled.await
+      }
+      // The session ends first, its requests aborted; then the rows and the resume state go, and a new session, whose
+      // start closes the old one's fence, syncs from the start (`offset=-1`) once its `ShapeSource` answers.
+      session!.cleanup()
+      if (watches(controls)) {
+        evicting = true
+        askWriterToEvict()
+      } else {
+        truncate(controls)
+      }
+      startSession(controls)
+    }).pipe(Effect.withSpan("electric.shape.evict", { attributes: { "electric.collection": options.id } }))
+    // Another program learned of a refusal while this one stores the rows: the wipe goes through here.
+    if (coordinator !== undefined) {
+      const off = coordinator.subscribe(options.id, (message) => {
+        const payload = message.payload as { readonly type?: unknown } | undefined
+        if (payload?.type === EVICT_MESSAGE && controls !== undefined && !watches(controls)) void run(evict, closing.signal)
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(off))
+    }
     self.current = {
       ...collection,
       sync: Stream.fromPubSub(events),
@@ -564,22 +613,7 @@ export function make<A extends Row<unknown>, E = never, R = never>(
         return Effect.sync(() => waitingForApplied.delete(ready))
       }),
       reconnect: Effect.andThen(woken.release, restart.open).pipe(Effect.asVoid),
-      evict: Effect.gen(function*() {
-        accepted = undefined
-        if (controls === undefined) {
-          // A persisted collection nobody read yet still holds what the device stored: starting it hands Electric's
-          // sync its controls once the stored rows are restored, and they go before the shape syncs from the start.
-          if (options.persist === undefined) return
-          evicting = true
-          collection.tanstack.startSyncImmediate()
-          return yield* controlled.await
-        }
-        // The session ends first, its requests aborted; then the rows and the resume state go, and a new session, whose
-        // start closes the old one's fence, syncs from the start (`offset=-1`) once its `ShapeSource` answers.
-        session!.cleanup()
-        truncate(controls)
-        startSession(controls)
-      }).pipe(Effect.withSpan("electric.shape.evict", { attributes: { "electric.collection": options.id } })),
+      evict,
       awaitTxId: (txid, timeout) => awaiting(() => utils.awaitTxId(txid, Duration.toMillis(timeout))),
       awaitMatch: (match, timeout) =>
         awaiting(() =>

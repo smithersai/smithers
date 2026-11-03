@@ -3,7 +3,8 @@
 // (`appLayer`) on a Node device (src/test/chatApi.ts) against ChatApi's real handler over the compose Postgres and
 // Electric, signed in as a Maintainer or a Member of the test repository. ChatApi's domain flows run on the Node host's
 // engine with the `Dns` provider, which finds no records for a name under `.example`, so a domain stays pending.
-import { Effect, type ManagedRuntime } from "effect"
+import { ShapeSource } from "@smthrs/effect-electric"
+import { Effect, Layer, type ManagedRuntime, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import {
@@ -20,6 +21,10 @@ import { EngineFaults } from "../../test/faults"
 import { read as readTelemetry } from "../../test/otlp"
 import { Domains } from "./domains"
 import { DomainsStore } from "./store"
+import { DOMAINS_SHAPE_ROUTE } from "./contract"
+import { AuthStore, SESSION } from "../auth/store"
+import { repoId } from "../repo/contract"
+import { replaceRole, RepoStore } from "../repo/store"
 
 const maintainer: Actor = { subject: { kind: "person", id: "person-maintainer" }, role: "maintainer" }
 const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
@@ -44,13 +49,21 @@ const until = (assertion: () => void | Promise<void>, timeout = 60_000) =>
  * its engine against that ChatApi (`agent`), so the flows a press dispatches run: a device without one never leads.
  * `clipboard` replaces the device's own.
  */
-const openSettings = async (actor: Actor, clipboard?: NodeDevice["clipboard"]) => {
+const openSettings = async (actor: Actor, clipboard?: NodeDevice["clipboard"], refusing: ReadonlySet<string> = new Set()) => {
   const app = openTestApi({ actor })
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const own = nodeDevice({ agent: api })
   const device: NodeDevice = clipboard === undefined ? own : { ...own, clipboard }
-  const runtime: ManagedRuntime.ManagedRuntime<Domains | DomainsStore, unknown> = openTab(api, { host: device })
+  // A shape request to a path in `refusing` answers 403, as a proxy refusing it would.
+  const runtime: ManagedRuntime.ManagedRuntime<Domains | DomainsStore | AuthStore | RepoStore, unknown> = openTab(api, {
+    host: device,
+    replace: Layer.succeed(ShapeSource.ShapeSource, {
+      request: (url, init) => Effect.suspend(() => refusing.has(new URL(url).pathname)
+        ? Effect.succeed(new Response(null, { status: 403 }))
+        : ShapeSource.fetchSource.request(url, init)),
+    }),
+  })
   runtimes.push(runtime)
   const domains = await runtime.runPromise(Effect.service(Domains))
   const store = await runtime.runPromise(Effect.service(DomainsStore))
@@ -64,6 +77,7 @@ const openSettings = async (actor: Actor, clipboard?: NodeDevice["clipboard"]) =
     saves: () => plain(store.savesState.tanstack.toArray),
     page: () => plain(store.pageState.tanstack.toArray),
     api,
+    runtime,
     /** Closes the tab, which flushes its exporter. */
     close: () => runtime.dispose(),
   }
@@ -96,6 +110,45 @@ describe("a Maintainer's Settings page", () => {
     // Remove takes it off the list.
     tab.domains.actions.remove("docs.vibelang-e2e.example")
     await until(() => expect(tab.list()).toEqual([]))
+  })
+
+  // The data gate (decision 0110, 2026-11-03): the list holds nothing of the repository from the change that hides it,
+  // a refusal mark or a session a reached server couldn't verify, before any eviction.
+  test("the list drops the repository's domains in the change that hides it, and shows them again", { timeout: BUDGET }, async () => {
+    const tab = await openSettings(maintainer)
+    tab.domains.actions.add("gate.vibelang-e2e.example")
+    await until(() => expect(tab.list().map((row) => row.hostname)).toEqual(["gate.vibelang-e2e.example"]))
+    const auth = await tab.runtime.runPromise(Effect.service(AuthStore))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    const id = repoId(owner, name)
+    const held = Option.getOrUndefined(await tab.runtime.runPromise(repos.roles.get(id)))
+    /** How many domains the list holds, read in the same Effect as `change`, with nothing run between. */
+    const countAfter = (change: Effect.Effect<unknown, unknown>) => tab.runtime.runPromise(Effect.gen(function* () {
+      yield* change
+      return (yield* tab.store.listState.toArray).length
+    }))
+    expect(await countAfter(Effect.orDie(auth.session.update(SESSION, (row) => { row.status = "unreachable"; row.unverifiable = true })))).toBe(0)
+    expect(await countAfter(Effect.orDie(auth.session.update(SESSION, (row) => { row.status = "signed_in"; delete row.unverifiable })))).toBe(1)
+    expect(await countAfter(replaceRole(repos, { id, role: null, own: false, refused: "forbidden" }))).toBe(0)
+    expect(await countAfter(held === undefined ? Effect.orDie(repos.roles.delete(id)) : replaceRole(repos, held))).toBe(1)
+  })
+
+  // Astra on 0c7b9f01, ruling #3: a domains shape's 403 is that shape's refusal, a tier the repository's readers may
+  // lack. Its domains leave the list; the repository is not refused, and its other rows still show.
+  test("a domains shape's 403 drops the repository's domains and leaves the repository shown", { timeout: BUDGET }, async () => {
+    const refusing = new Set<string>()
+    const tab = await openSettings(maintainer, undefined, refusing)
+    tab.domains.actions.add("tier.vibelang-e2e.example")
+    await until(() => expect(tab.list().map((row) => row.hostname)).toEqual(["tier.vibelang-e2e.example"]))
+    refusing.add(DOMAINS_SHAPE_ROUTE)
+    // A change wakes the shape's live request; the one after it is refused.
+    tab.domains.actions.add("wake.vibelang-e2e.example")
+    await until(() => expect(tab.list()).toEqual([]))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    const id = repoId(owner, name)
+    expect(repos.isRefused(id)).toBe(false)
+    expect(Option.getOrUndefined(await tab.runtime.runPromise(repos.roles.get(id)))?.refused).toBeUndefined()
+    expect(repos.visible.tanstack.get(id)?.show).toBe(true)
   })
 
   test("a name that can't be a domain is refused on the tab, unsent", async () => {

@@ -38,7 +38,7 @@ describe("embedShown", () => {
     expect(embedShown(row({ state: "not_cloned" }))).toEqual({ kind: "empty", title: NOT_CLONED })
     // A preview whose About isn't on the device, or has no top folder, shows Not cloned.
     expect(embedShown(row({ state: "preview" }))).toEqual({ kind: "empty", title: NOT_CLONED })
-    const about = (fields: Record<string, unknown>) => ({ key: "a", state: "ready" as const, about: fields as never, message: null })
+    const about = (fields: Record<string, unknown>) => ({ key: "a", repoId: "github/o/n", state: "ready" as const, about: fields as never, message: null })
     expect(embedShown(row({ state: "preview" }, { about: about({ defaultBranch: "main", root: null, readme: null }) })))
       .toEqual({ kind: "empty", title: NOT_CLONED })
     // GitHub's root with no README shows the folder alone.
@@ -52,8 +52,8 @@ describe("embedShown", () => {
   })
 
   test("a ready file shows the file; a directory its README, or none", () => {
-    const body = { key: "b", state: "text" as const, contents: "# Hi", size: 4, message: null }
-    const tree = { key: "t", state: "ready" as const, paths: ["README.md", "docs/a.md"], truncated: false, message: null }
+    const body = { key: "b", repoId: "github/o/n", state: "text" as const, contents: "# Hi", size: 4, message: null }
+    const tree = { key: "t", repoId: "github/o/n", state: "ready" as const, paths: ["README.md", "docs/a.md"], truncated: false, message: null }
     const repository = { owner: "octocat", name: "Spoon-Knife", defaultBranch: "main" }
     const file = embedShown(row({ state: "ready", kind: "blob", path: "README.md", revision: "dev", bodyPath: "README.md" }, { body, tree, repository }))
     expect(file).toEqual({

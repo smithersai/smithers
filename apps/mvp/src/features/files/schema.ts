@@ -25,6 +25,8 @@ export const FileTabRow = Schema.Struct({
   key: Schema.String,
   owner: Schema.String,
   name: Schema.String,
+  /** Its repository (`github/owner/name`): a tab shows only while the repository may (decision 0110, the data gate). */
+  repoId: Schema.String,
   revision: Schema.String,
   path: Schema.String,
   lines: Schema.NullOr(Schema.String),

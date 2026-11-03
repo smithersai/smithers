@@ -40,7 +40,7 @@ function Framed(
         : feed._tag === "Refused" || feed.documents === 0
         ? <EmptyState title="No feed yet" />
         : <div className="factory-grid">{children(feed.status, feed.status.at ?? 0)}</div>}
-      <OpenedPanel tab={tab} />
+      <OpenedPanel tab={tab} repository={repository} />
     </div>
   )
 }

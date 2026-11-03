@@ -241,3 +241,6 @@ A merge's attempt count is a record of how many times the step went to GitHub; i
 Issue and pull request detail pages link back to their repository's list. Every pull request tab keeps its title and number, including Checks, Commits and Files. The read-only `item-navigation.spec.ts` regression checks these links and headings against a deployment.
 
 Pull request bodies and conversation comments use the issue store's item-scoped persisted shapes. PR metadata, reviews, commits and checks continue using their existing repository shapes. Hover preload carries the PR number so its body starts before navigation.
+
+
+Comparisons are cached by repository and both commit SHAs. A read owns its cache row; completion after a refusal, wipe, or replacement read cannot modify another comparison. Forks that share SHAs keep separate rows.

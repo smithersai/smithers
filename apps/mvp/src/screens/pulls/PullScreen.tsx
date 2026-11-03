@@ -7,7 +7,7 @@ import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
 import { NOT_FOUND } from "../../features/issues/contract"
 import { usePulls } from "../../features/pulls/components/PullsContext"
-import { githubPullUrl, type PullTab, pullTabPath } from "../../features/pulls/contract"
+import { comparisonKey, githubPullUrl, type PullTab, pullTabPath } from "../../features/pulls/contract"
 import { ChangedFiles } from "../../features/pulls/components/ChangedFiles"
 import { CommitList } from "../../features/pulls/components/CommitList"
 import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf, pullPageOf, reviewBoxOf } from "../../features/pulls/view"
@@ -128,7 +128,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
         : null}
     </div>
   )
-  const filesKey = `${pull.baseSha}...${pull.headSha}`
+  const filesKey = comparisonKey(`github/${owner}/${repo}`, pull.baseSha, pull.headSha)
   const compared = (files ?? []).find((row) => row.id === filesKey)
   return (
     <main className="pulls-screen" aria-label={`Pull request ${pull.number}`}><RepoHeader />

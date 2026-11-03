@@ -5,6 +5,10 @@ import { CAPACITY_REASONS, CLONE_STAGES, FAILURES, STATUSES } from "./contract"
 // browser shares with RepoApi live in contract.ts. A row kept on the device is read by the next version of the app
 // too: change its shape only with its collection's `schemaVersion`.
 
+/** One refusal event. Independent keys prevent an older grant deleting a newer refusal from another tab. */
+export const RepoRefusal = Schema.Struct({ id: Schema.String, repoId: Schema.String, at: Schema.Number })
+export type RepoRefusal = typeof RepoRefusal.Type
+
 /**
  * One row of Postgres `repositories` as Electric delivers it (docs/features/repo.md#repositories-postgres): columns in
  * camelCase, `stored_bytes` (int8) parsed to a number, timestamps as Postgres prints them.

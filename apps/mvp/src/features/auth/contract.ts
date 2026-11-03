@@ -141,6 +141,8 @@ export type SessionState =
     readonly personId?: string
     /** False while the last observed role awaits a durable confirmation; identity remains signed in. */
     readonly roleConfirmed?: boolean
+    /** The home conversation's id, every signed-in person's own (decision 0110, the data gate); none when there is none. */
+    readonly homeConversationId?: string
     readonly login: string
     readonly role: Role | null
     readonly hostedModel?: boolean

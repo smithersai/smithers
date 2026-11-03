@@ -23,5 +23,5 @@ export const viewQuery = (view: Collection.Collection<SecretsView, string>) =>
   LiveQuery.make((q) => q.from({ view: view.tanstack }).findOne())
 
 /** Each form's last write on this tab. */
-export const formsQuery = (forms: Collection.Collection<SecretForm, string>) =>
+export const formsQuery = (forms: { readonly tanstack: Collection.Collection<SecretForm, any>["tanstack"] }) =>
   LiveQuery.make((q) => q.from({ form: forms.tanstack }))

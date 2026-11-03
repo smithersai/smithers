@@ -1,5 +1,5 @@
 import { LimitOffsetRequireOrderByError } from "@tanstack/db"
-import { Effect, Exit, Fiber, Scope, Stream } from "effect"
+import { Effect, Exit, Fiber, Schema, Scope, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { Collection, LiveQuery, Query } from "../src/index.ts"
 import { id, Note, note } from "./fixtures.ts"
@@ -67,6 +67,26 @@ describe("make", () => {
       return { before, after, status: ordered.tanstack.status }
     }))
     expect(result).toEqual({ before: ["b", "a"], after: ["c", "b", "a"], status: "cleaned-up" })
+  })
+
+  test("getKey keys a joined row as its source does", async () => {
+    const found = await run(Effect.gen(function*() {
+      const collection = yield* notes([note("a", 1), note("b", 2)])
+      const shown = yield* Collection.local({
+        id: id("shown"),
+        schema: Note,
+        getKey: (row) => row.id,
+        initialData: [note("a", 0)]
+      })
+      const query = yield* LiveQuery.make((q) =>
+        q
+          .from({ note: collection.tanstack })
+          .innerJoin({ shown: shown.tanstack }, ({ note, shown }) => Query.eq(note.id, shown.id))
+          .select(({ note }) => note), { getKey: (row) => row.id })
+      yield* query.preload
+      return { a: query.tanstack.get("a"), b: query.tanstack.get("b"), size: query.tanstack.size }
+    }))
+    expect(found).toEqual({ a: expect.objectContaining(note("a", 1)), b: undefined, size: 1 })
   })
 
   test("findOne reads one row", async () => {
@@ -155,7 +175,9 @@ describe("streams", () => {
   })
 })
 
-describe("setWindow", () => {
+describe.each(["settled", "incremental"] as const)("setWindow (%s publication)", (mode) => {
+  const run = <A, E>(program: Effect.Effect<A, E, Scope.Scope>) =>
+    Effect.runPromise(Effect.scoped(program.pipe(Effect.provideService(LiveQuery.Publication, { mode }))))
   const newest = (source: Collection.Collection<Note, string>, limit: number) =>
     LiveQuery.make((q) => q.from({ note: source.tanstack }).orderBy(({ note }) => note.n, "desc").limit(limit))
 
@@ -210,4 +232,203 @@ describe("setWindow", () => {
     }))
     expect(error._tag).toBe("LoadFailed")
   })
+})
+
+test.each(
+  [
+    { mode: undefined, override: undefined, remaining: 2 },
+    { mode: "incremental", override: undefined, remaining: 0 },
+    { mode: "settled", override: "incremental", remaining: 0 },
+    { mode: "incremental", override: "settled", remaining: 2 }
+  ] as const
+)(
+  "an ordered display withdraws gated rows according to publication $mode / $override",
+  async ({ mode, override, remaining }) => {
+    const options = override === undefined ? undefined : { publication: override }
+    const program = Effect.gen(function*() {
+      const source = yield* notes([note("a", 1, "repo"), note("b", 2, "repo")])
+      const permission = yield* Collection.local({
+        id: id("permission"),
+        schema: Schema.Struct({ id: Schema.String, show: Schema.Boolean }),
+        getKey: (row) => row.id,
+        initialData: [{ id: "repo", show: true }]
+      })
+      // A real sync source that has not supplied its initial readiness receipt yet.
+      const pending = yield* Collection.make(Note, {
+        id: id("pending"),
+        getKey: (row) => row.id,
+        syncMode: "eager",
+        sync: {
+          sync: ({ begin, commit }) => {
+            begin()
+            commit()
+            return () => {}
+          }
+        }
+      })
+      const gated = yield* LiveQuery.make((q) =>
+        q.from({ row: source.tanstack })
+          .innerJoin({ permission: permission.tanstack }, ({ row, permission }) => Query.eq(row.text, permission.id))
+          .where(({ permission }) => Query.eq(permission.show, true))
+          .leftJoin({ pending: pending.tanstack }, ({ row, pending }) => Query.eq(row.id, pending.id))
+          .select(({ row }) => row), options)
+      const latest = yield* LiveQuery.make(
+        (q) => q.from({ row: gated.tanstack }).orderBy(({ row }) => row.n, "desc").limit(50),
+        options
+      )
+      const display = yield* LiveQuery.make(
+        (q) => q.from({ row: latest.tanstack }).orderBy(({ row }) => row.n),
+        options
+      )
+      display.tanstack.startSyncImmediate()
+      yield* display.rows.pipe(Stream.filter((rows) => rows.length === 2), Stream.take(1), Stream.runDrain)
+      expect((yield* display.toArray).map((row) => row.id)).toEqual(["a", "b"])
+      yield* permission.update("repo", (row) => {
+        row.show = false
+      })
+      // Read in the same Effect: no microtask, timer or network completion may be needed for an incremental removal.
+      const withdrawn = yield* display.toArray
+      expect(withdrawn).toHaveLength(remaining)
+      expect(yield* source.toArray).toHaveLength(2)
+    })
+    await run(mode === undefined ? program : program.pipe(Effect.provideService(LiveQuery.Publication, { mode })))
+  }
+)
+
+test.each(["deny", "remove owner", "retain access"] as const)(
+  "incremental queries fail closed and recover current rows after %s",
+  async (change) =>
+    run(
+      Effect.gen(function*() {
+        const source = yield* notes([note("a", 1, "repo"), note("b", 2, "repo")])
+        const permission = yield* Collection.local({
+          id: id("permission"),
+          schema: Schema.Struct({ id: Schema.String, show: Schema.Boolean }),
+          getKey: (row) => row.id,
+          initialData: [{ id: "repo", show: true }]
+        })
+        let fail: () => void = () => {
+          throw new Error("source not started")
+        }
+        let recover: () => void = () => {
+          throw new Error("source not started")
+        }
+        const dependency = yield* Collection.make(Note, {
+          id: id("dependency"),
+          getKey: (row) => row.id,
+          sync: {
+            sync: ({ begin, commit, markReady, markError }) => {
+              fail = () => markError(new Error("read failed"))
+              recover = markReady
+              begin()
+              commit()
+              markReady()
+            }
+          }
+        })
+        const gate = yield* LiveQuery.make((q) =>
+          q.from({ row: source.tanstack })
+            .innerJoin({ permission: permission.tanstack }, ({ row, permission }) => Query.eq(row.text, permission.id))
+            .where(({ permission }) => Query.eq(permission.show, true)).select(({ row }) => row), {
+          getKey: (row) => row.id
+        })
+        const joined = yield* LiveQuery.make((q) =>
+          q.from({ row: gate.tanstack })
+            .leftJoin({ dependency: dependency.tanstack }, ({ row, dependency }) => Query.eq(row.id, dependency.id))
+            .select(({ row }) => row)
+        )
+        const display = yield* LiveQuery.make((q) => q.from({ row: joined.tanstack }).orderBy(({ row }) => row.n))
+        yield* display.preload
+        expect(ids(yield* display.toArray)).toEqual(["a", "b"])
+        yield* Effect.sync(fail)
+        expect(yield* joined.toArray).toEqual([])
+        expect(yield* display.toArray).toEqual([])
+        expect(display.tanstack.status).toBe("error")
+        if (change === "deny") {
+          yield* permission.update("repo", (row) => {
+            row.show = false
+          })
+        }
+        if (change === "remove owner") yield* permission.delete("repo")
+        yield* source.update("a", (row) => {
+          row.n = 3
+        })
+        yield* source.delete("b")
+        yield* source.insert(note("c", 0, "repo"))
+        expect(yield* display.toArray).toEqual([])
+        yield* Effect.sync(recover)
+        expect(display.tanstack.status).toBe("ready")
+        expect(ids(yield* display.toArray)).toEqual(change === "retain access" ? ["c", "a"] : [])
+        if (change === "deny") {
+          yield* permission.update("repo", (row) => {
+            row.show = true
+          })
+        }
+        if (change === "remove owner") yield* permission.insert({ id: "repo", show: true })
+        expect(ids(yield* display.toArray)).toEqual(["c", "a"])
+      }).pipe(Effect.provide(LiveQuery.incremental))
+    )
+)
+
+test("a failed lazy demand withdraws the downstream display until its read scope is reopened", async () => {
+  await run(
+    Effect.gen(function*() {
+      const rows = yield* notes([note("a", 1, "repo")])
+      const permission = yield* Collection.local({
+        id: id("permission"),
+        schema: Schema.Struct({ id: Schema.String, show: Schema.Boolean }),
+        getKey: (row) => row.id,
+        initialData: [{ id: "repo", show: true }]
+      })
+      let fail = false
+      const view = Effect.gen(function*() {
+        const dependency = yield* onDemand([note("a", 1)], () => fail ? "fail" : "rows")
+        const gate = yield* LiveQuery.make((q) =>
+          q.from({ row: rows.tanstack })
+            .innerJoin({ permission: permission.tanstack }, ({ row, permission }) => Query.eq(row.text, permission.id))
+            .where(({ permission }) => Query.eq(permission.show, true)).select(({ row }) => row)
+        )
+        const joined = yield* LiveQuery.make((q) =>
+          q.from({ row: gate.tanstack })
+            .leftJoin({ dependency: dependency.tanstack }, ({ row, dependency }) => Query.eq(row.id, dependency.id))
+            .select(({ row }) => row)
+        )
+        const display = yield* LiveQuery.make((q) => q.from({ row: joined.tanstack }).orderBy(({ row }) => row.n))
+        return { gate, joined, display }
+      })
+      const firstScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+      const first = yield* Scope.provide(view, firstScope)
+      yield* first.display.preload
+      expect(ids(yield* first.display.toArray)).toEqual(["a"])
+      fail = true
+      yield* rows.insert(note("b", 2, "repo"))
+      yield* Effect.callback<void>((resume) => {
+        const check = () => {
+          if (first.display.tanstack.status === "error") resume(Effect.void)
+        }
+        const off = first.display.tanstack.on("status:change", check)
+        check()
+        return Effect.sync(off)
+      })
+      expect(yield* first.joined.toArray).toEqual([])
+      expect(yield* first.display.toArray).toEqual([])
+      expect(first.display.tanstack.status).toBe("error")
+      expect(first.joined.tanstack.utils.lastSubsetError).toBeInstanceOf(Error)
+      yield* permission.update("repo", (row) => {
+        row.show = false
+      })
+      expect(yield* first.gate.toArray).toEqual([])
+      expect(yield* first.display.toArray).toEqual([])
+      yield* Scope.close(firstScope, Exit.void)
+      fail = false
+      const reopened = yield* view
+      yield* reopened.display.preload
+      expect(yield* reopened.display.toArray).toEqual([])
+      yield* permission.update("repo", (row) => {
+        row.show = true
+      })
+      yield* reopened.display.rows.pipe(Stream.filter((found) => found.length === 2), Stream.take(1), Stream.runDrain)
+      expect(ids(yield* reopened.display.toArray)).toEqual(["a", "b"])
+    }).pipe(Effect.provide(LiveQuery.incremental))
+  )
 })

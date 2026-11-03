@@ -262,7 +262,7 @@ index e43769a4b73ac4f958f98618063671948e005ac6..d05f7c547098859ddd5254e1fc0c7a94
 +        statements.push({ sql, params });
 +      },
 +      flush: async () => {
-+        if (statements.length > 0) await driver.batch(statements.splice(0));
++        if (statements.length > 0) await (driver.transactionBatch ?? driver.batch).call(driver, statements.splice(0));
 +      }
 +    };
 +  }
@@ -357,7 +357,7 @@ index e43769a4b73ac4f958f98618063671948e005ac6..d05f7c547098859ddd5254e1fc0c7a94
 +    };
 +  }
 +  async initializeBatched() {
-+    const results = await this.driver.batch([
++    const results = await (this.driver.transactionBatch ?? this.driver.batch).call(this.driver, [
 +      { sql: `CREATE TABLE IF NOT EXISTS cache_generation (
 +         logical_id TEXT NOT NULL,
 +         generation INTEGER NOT NULL,
@@ -761,7 +761,7 @@ index a632016fed33bbbbbc08ef688130054218b22328..17924a0a4739aa2b3b0d31b47609a4b7
 +        statements.push({ sql, params });
 +      },
 +      flush: async () => {
-+        if (statements.length > 0) await driver.batch(statements.splice(0));
++        if (statements.length > 0) await (driver.transactionBatch ?? driver.batch).call(driver, statements.splice(0));
 +      }
 +    };
 +  }
@@ -856,7 +856,7 @@ index a632016fed33bbbbbc08ef688130054218b22328..17924a0a4739aa2b3b0d31b47609a4b7
 +    };
 +  }
 +  async initializeBatched() {
-+    const results = await this.driver.batch([
++    const results = await (this.driver.transactionBatch ?? this.driver.batch).call(this.driver, [
 +      { sql: `CREATE TABLE IF NOT EXISTS cache_generation (
 +         logical_id TEXT NOT NULL,
 +         generation INTEGER NOT NULL,

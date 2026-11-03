@@ -68,6 +68,7 @@ Logs:
 | `unsent question handled` | Edit, Discard or Retry on an unsent question | Info | `questionId`, `action` (`edit`, `discard`, `retry`) |
 | `queued question taken back` | the tab's side of Edit on a queued question (`chat/edit`) | Info, Warn for `failed` | `questionId`, `outcome` (`edited`, `sent`, `failed`) |
 | `chat draft restored` | a reload put the kept draft back into the composer | Info | `draft.length` |
+| `chat.writes.ready` | draft restoration settled and outbox initialized, before repository display stores start; `smithers_web_chat_writes_ready_ms` records elapsed startup time | Info | `feature`, `durationMs`, `drafts` (`restored`, `failed`); no row content |
 | `chat draft saving`, `chat draft stored`, `chat draft failed` | a private draft write waits for the device, commits or fails; `chat.draft.save` spans the wait and `smithers_web_draft_writes{stage}` counts each stage (`waiting`, `stored`, `failed`) | Info / Warn on failure | `transactionId`, `conversation` (`home`, `branch`); never text or an error message |
 | `chat prompt shared` | the owner shared the branch shown, or took its last share away: the draft became the branch's prompt, or theirs again ([co-editing](features/coedit.md#the-prompt)) | Info | `shared` |
 | `outbox write withdrawn` | `Outbox.withdraw` took a write back (`@smthrs/effect-tanstack-db`) | Info | none of the write's contents |
@@ -1237,3 +1238,8 @@ count permitted subjects and repositories; failed reads count the subjects
 prepared so far and requested repositories. No URL, parameter, row, body,
 header value, token or error message is included. The shared proxy completion
 then records `validate_superseded` or `validate_failed` with the same correlation.
+
+
+`repo.refusals.unavailable` records a failed refusal-store restoration with only `feature: repo`. The data gate remains closed; this is distinct from `repo.refusals.known`, which is emitted only after successful restoration and application of its marks.
+
+`repo.refusal.unstored` reports a refusal mark that failed to persist or timed out, with `feature: repo`; cancellation adds `reason: interrupted`. The in-memory refusal remains closed. `repo.refusal.wipe_failed` reports a failed cache cleanup with `feature: repo` and the registered collection `family`. Both pass through the browser exporter and server relay; neither includes a repository identifier or the failure payload.

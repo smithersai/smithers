@@ -236,6 +236,8 @@ export interface ChatApiOptions {
    * set; a function sees how many calls came before, and is read at each call.
    */
   readonly provider?: ProviderReply | ((index: number) => ProviderReply)
+  /** What the server holds before the browser app starts, so no request of the app's sees it otherwise. */
+  readonly prepare?: (api: TestChatApi["Service"]) => Promise<void>
 }
 
 /** The header a test device's requests name their person with (`ChatApiOptions.people`). */
@@ -414,6 +416,7 @@ export class TestChatApi extends Context.Service<
      * `probe/Pause` under that id until this ChatApi closes.
      */
     readonly remote: {
+      readonly systemRun: () => Effect.Effect<string>
       readonly todoRun: (title: string) => Effect.Effect<string>
       readonly startExternal: (runId: string) => Effect.Effect<void>
       /** A repository's run of `flow` recorded on `TEST_REPOSITORY`, as a trigger records one: its execution id. */
@@ -1098,6 +1101,13 @@ export class TestChatApi extends Context.Service<
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie)
           },
           remote: {
+            systemRun: () => Effect.gen(function* () {
+              yield* remoteEngine
+              const runId = `ops-spend-${crypto.randomUUID()}`
+              yield* Effect.flatMap(SqlClient.SqlClient, (writer) => writer`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+                VALUES (${runId}, 'pending', ${Date.now()}, ${JSON.stringify({ version: 1, flowName: "ops/SpendAlert", payload: {} })})`).pipe(Effect.provide(remoteWriter))
+              return runId
+            }).pipe(Effect.orDie),
             ready: (runId) => Deferred.await(remoteGates.get(runId)!.ready),
             release: (runId) => Deferred.succeed(remoteGates.get(runId)!.release, undefined).pipe(Effect.asVoid),
             settled: (runId) => Fiber.join(remoteFibers.get(runId)!),
@@ -1676,7 +1686,8 @@ const withTabClock = <A, E, R>(layer: Layer.Layer<A, E, R>, clock?: Clock.Clock)
   clock === undefined ? layer : layer.pipe(Layer.provideMerge(Layer.succeed(Clock.Clock, clock)))
 
 const withChatApi = <A, E>(tab: (api: TestChatApi["Service"]) => Layer.Layer<A, E>, chatApi: ChatApiOptions) =>
-  Layer.unwrap(Effect.map(TestChatApi, tab)).pipe(
+  Layer.unwrap(Effect.flatMap(TestChatApi, (api) =>
+    Effect.as(chatApi.prepare === undefined ? Effect.void : Effect.promise(() => chatApi.prepare!(api)), tab(api)))).pipe(
     Layer.provideMerge(TestChatApi.layerWith(chatApi)),
     Layer.provideMerge(testChatDatabase("test_chat")),
     Layer.provideMerge(ownMetrics())

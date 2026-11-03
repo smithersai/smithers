@@ -1,6 +1,7 @@
 import type { Effect } from "effect"
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { ISSUES_STREAM } from "./contract"
+import type { Source } from "../repo/gate"
 import type {
   Access,
   Comment,
@@ -26,8 +27,9 @@ import type {
 
 type View = Collection.Collection<IssueView, string>
 /** A repository's synced rows, or the empty local rows of a repository nobody opened (store.ts `empty`). */
-type Synced<A extends object> = Collection.Collection<A, any, any>
-type Local<A extends object> = Collection.Collection<A, string>
+/** What a query reads: a repository's rows as the store exposes them, joined to the data gate (repo/gate.ts). */
+type Synced<A extends object> = Source<A>
+type Local<A extends object> = Source<A>
 
 /** Every row of one of a repository's collections, live: what a home's `issues` block reads (features/home). */
 export const rowsQuery = <A extends object>(rows: Synced<A>) => LiveQuery.make((q) => q.from({ row: rows.tanstack }))

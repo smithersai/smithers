@@ -3,6 +3,7 @@ import { Outbox } from "@smthrs/effect-tanstack-db"
 import { Effect, Metric } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { failingWorker, nodeDevice, openFaultyApp, type TabOptions, TestChatApi } from "../../test/chatApi"
+import { failRestore } from "../../test/restoreFailure"
 import { QuestionFaults } from "../../test/faults"
 import { read } from "../../test/otlp"
 import { Chat } from "./chat"
@@ -102,6 +103,11 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
     expect.objectContaining({ attributes: { ...chat, questionId: refused.questionId, action: "discard" } }),
   ])
 
+  const ready = records.log("chat.writes.ready")
+  expect(ready).toHaveLength(1)
+  expect(ready[0]!.attributes).toEqual({ feature: "chat", durationMs: expect.any(Number), drafts: "restored" })
+  expect(ready[0]!.attributes.durationMs).toBeGreaterThanOrEqual(0)
+
   // The ask's span, then each send's, linked to it; inside, the send and its POST, in ChatApi's trace.
   const [askStored] = records.span("chat.ask")
   expect(askStored?.attributes).toEqual({ ...ids(stored), "question.length": secret.length + 9 })
@@ -119,6 +125,7 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
   expect(post).toMatchObject({ traceId: send!.traceId, parentSpanId: send!.spanId, attributes: { "http.response.status_code": 202 } })
   expect(spans.find(({ name }) => name === "chat.question")?.traceId).toBe(send!.traceId)
 
+  expect(records.point("smithers_web_chat_writes_ready_ms")?.count).toBe(1)
   expect(records.point("smithers_web_questions", { queued: "false" })?.value).toBe(2)
   expect(records.point("smithers_web_ask_failures", { reason: "refused" })?.value).toBe(1)
   expect(records.point("smithers_web_unsent_actions", { action: "discard" })?.value).toBe(1)
@@ -198,4 +205,14 @@ test("the connection and the window: offline, retried and up again, earlier mess
   expect(records.point("smithers_web_sync_retries", { via: "button" })?.value).toBe(1)
   expect(records.point("smithers_web_history_loads")?.value).toBe(1)
   expect(tab.api.telemetry.map(({ body }) => body).join("\n")).not.toContain(secret)
+})
+
+
+test("a failed draft restore records its bounded outcome through the real telemetry exporter", async () => {
+  const tab = await open({ host: failRestore(nodeDevice(), "chat-drafts") })
+  const records = await tab.exported()
+  expect(records.log("chat.writes.ready")).toEqual([expect.objectContaining({
+    attributes: { feature: "chat", durationMs: expect.any(Number), drafts: "failed" },
+  })])
+  expect(records.point("smithers_web_chat_writes_ready_ms")?.count).toBe(1)
 })

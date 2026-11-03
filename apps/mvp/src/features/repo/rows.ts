@@ -7,6 +7,8 @@ import { About, Ref } from "./schema"
 /** A repository's file list at a commit, keyed `<id>@<sha>`, as the view takes it: loading, ready or failed. */
 export const TreeRow = Schema.Struct({
   key: Schema.String,
+  /** Its repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   state: Schema.Literals(["loading", "ready", "failed"]),
   paths: Schema.Array(Schema.String),
   truncated: Schema.Boolean,
@@ -20,6 +22,8 @@ export type TreeRow = typeof TreeRow.Type
  */
 export const BlobRow = Schema.Struct({
   key: Schema.String,
+  /** Its repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   state: Schema.Literals(["loading", "text", "binary", "too-large", "failed"]),
   contents: Schema.NullOr(Schema.String),
   size: Schema.NullOr(Schema.Number),
@@ -33,6 +37,8 @@ export type BlobRow = typeof BlobRow.Type
  */
 export const RefsRow = Schema.Struct({
   key: Schema.String,
+  /** Its repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   state: Schema.Literals(["loading", "ready", "failed"]),
   branches: Schema.Array(Ref),
   tags: Schema.Array(Ref),
@@ -60,6 +66,8 @@ export type CloneRow = typeof CloneRow.Type
  */
 export const AboutRow = Schema.Struct({
   key: Schema.String,
+  /** Its repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   state: Schema.Literals(["loading", "ready", "missing", "failed"]),
   about: Schema.NullOr(About),
   message: Schema.NullOr(Schema.String),
@@ -74,6 +82,8 @@ export type AboutRow = typeof AboutRow.Type
  */
 export const HeadRow = Schema.Struct({
   key: Schema.String,
+  /** Its repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   state: Schema.Literals(["loading", "ready", "absent", "failed"]),
   defaultBranch: Schema.NullOr(Schema.String),
   headSha: Schema.NullOr(Schema.String),

@@ -62,6 +62,9 @@ overrides:
 # @vitest/coverage-v8 5.0.0 remaps native-loader hits against code Vite did not run.
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
+  # Opt-in incremental query publication: access revocations must not wait behind ordered-window refills.
+  # LiveQuery.Publication preserves settled publication by default; apps/mvp selects incremental (decision 0110).
+  "@tanstack/db@0.15.1": patches/@tanstack__db@0.15.1.patch
   "@vitest/coverage-v8@5.0.0": patches/@vitest__coverage-v8@5.0.0.patch
   # Keep the loader template from being mistaken for its own inline map by Playwright.
   vibelang@0.0.8: patches/vibelang@0.0.8.patch

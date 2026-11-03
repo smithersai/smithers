@@ -1,10 +1,11 @@
+import { ChatWrites } from "./features/chat/writes"
 import { WriteIntents } from "./writeAdmission"
 import { resumeAdmissions } from "./resumeAdmissions"
 import type { PendingSnapshot } from "@smthrs/platform-browser"
 import { telemetryExport } from "./telemetryExport"
 import { FlowRegistry } from "./flows/registry"
 import { FetchFailures, LogFailures, Otlp } from "@smthrs/observability"
-import { Persistence } from "@smthrs/effect-tanstack-db"
+import { LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import {
   type BrowserEngine,
   type BrowserLanguageServer,
@@ -74,6 +75,7 @@ import { tabDoors } from "./flows/doors"
 import { RepoClient, REQUEST_WITHIN } from "./features/repo/api"
 import { tabClipboard } from "./features/repo/tab"
 import { Repo, type RepoView } from "./features/repo/repo"
+import { ConversationOwners } from "./features/conversations/owners"
 import { RepoStore } from "./features/repo/store"
 import { RunsNavigation } from "./features/runs/actions"
 import { Runs, type RunsView } from "./features/runs/runs"
@@ -276,8 +278,6 @@ export const appLayer = <S = never>(
     // and its terminal.
     Branch.layer({ origin, reopenRoute: host.reopenRoute }),
     Terminal.layer({ origin }),
-    // A run's external agent's transcript, live on its run page (docs/features/agent-transcripts.md).
-    Transcript.layer({ origin }),
     // Git issues (decision 0012): the issue pages, and this tab's answers to the issue writes' steps it started.
     Issues.layer,
     // Pull requests (decision 0012 §6): the list and one pull request's tabs, over the issues' store, and a person's
@@ -310,7 +310,9 @@ export const appLayer = <S = never>(
     // put the message in the device's outbox.
     tabRuns({ name: host.engineName }).pipe(Layer.provideMerge(RunSteers.layer), Layer.provide(TabChannel.layer)),
     // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
-    Layer.merge(Runs.layer.pipe(Layer.provide(RunSteers.layer), Layer.provide(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
+    // A run's external agent's transcript, live on its run page (docs/features/agent-transcripts.md), shown only while
+    // the run's page may show (the data gate), so over the runs' store.
+    Layer.merge(Layer.merge(Runs.layer.pipe(Layer.provide(RunSteers.layer)), Transcript.layer({ origin })).pipe(Layer.provideMerge(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
       editorTabId: host.editorTabId,
       ...(host.formSnapshot === undefined ? {} : { formSnapshot: host.formSnapshot }),
@@ -361,16 +363,23 @@ export const appLayer = <S = never>(
     Layer.provideMerge(
       Layer.merge(IssuesStore.layer({ origin }), TodosStore.layer({ origin })).pipe(
         Layer.provideMerge(ChatStore.layer(chatConfig(origin, chat), host)),
-        Layer.provideMerge(StackWrites.layer),
-        Layer.provideMerge(SteerWrites.layer),
-        Layer.provideMerge(IssueWrites.layer),
-        Layer.provideMerge(TextWrites.layer),
       ),
     ),
     // Below chat's store, whose conversation shows the views among the messages.
     Layer.provideMerge(ViewsStore.layer({ origin })),
-    Layer.provideMerge(Layer.succeed(WebTab, host.web)),
-    Layer.provideMerge(RepoStore.layer({ origin })),
+    // Which repository each of the person's conversations is of: what a conversation's rows show through (the data gate).
+    Layer.provideMerge(ConversationOwners.layer({ origin }).pipe(
+      Layer.provideMerge(Layer.succeed(WebTab, host.web)),
+      Layer.provideMerge(RepoStore.layer({ origin })),
+    )),
+    // Drafts and the outbox initialize before any repository's gate or conversation's display queries. Only a sent
+    // question's delivery confirmation waits for ChatStore's read side (chat/writes.ts).
+    Layer.provideMerge(ChatWrites.layer(host).pipe(
+      Layer.provideMerge(StackWrites.layer),
+      Layer.provideMerge(SteerWrites.layer),
+      Layer.provideMerge(IssueWrites.layer),
+      Layer.provideMerge(TextWrites.layer),
+    )),
     // Below the repository store, which shows the sign-in link in Clone's place from sign-in's row; beside it, the
     // branch this tab's route shows: the branch layer's, and the composer's, whose `/new` starts a conversation in its
     // repository (src/features/commands/actions.ts).
@@ -459,7 +468,7 @@ export const appLayer = <S = never>(
   )
   // The first run (decision 0121), above everything: its follower reads sign-in's, your model's, your conversations'
   // and chat's stores, which the layers below build once.
-  return Layer.merge(FirstRun.layer, modelNotices).pipe(Layer.provideMerge(app))
+  return Layer.merge(FirstRun.layer, modelNotices).pipe(Layer.provideMerge(app), Layer.provide(LiveQuery.incremental))
 }
 
 /**

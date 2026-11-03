@@ -30,6 +30,7 @@ import {
   PinPendingStore,
   BranchConversationsStore,
   FileTabsStore,
+  RepoRefusalsStore,
   ConversationPendingStore,
   PluginDraftsStore,
   SteerSentStore,
@@ -132,7 +133,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
     const branch = Object.keys(fixture.collections).find((id) => id.startsWith("chat-messages:"))!
     const legacy = fixture.build === "7b96f878"
     expect(outcomes).toEqual({
-      "auth-confirmed": "migrated 1→2 migrated 1 kept 0",
+      "auth-confirmed": "migrated 1→3 migrated 1 kept 0",
       "chat-drafts": `migrated 1→2 migrated ${rowsOf(fixture, "chat-drafts").length} kept 0`,
       "chat-messages": legacy ? "resync 2→6 migrated 0 kept 0" : "resync 3→6 migrated 0 kept 0",
       [branch]: legacy ? "resync 2→6 migrated 0 kept 0" : "resync 3→6 migrated 0 kept 0",
@@ -144,7 +145,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       "issue-requested": `migrated ${legacy ? 1 : 2}→3 migrated ${rowsOf(fixture, "issue-requested").length} kept 0`,
       preferences: "current 1→1 migrated 0 kept 0",
       "repo-repositories": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
-      runs: "resync 1→2 migrated 0 kept 0",
+      runs: "resync 1→3 migrated 0 kept 0",
       views: legacy ? "resync 1→5 migrated 0 kept 0" : "resync 2→5 migrated 0 kept 0"
     })
     expect(report.epoch).toBe(deviceRegistry.epoch)
@@ -293,6 +294,20 @@ test("a stack change build fed1790a60 kept opens at version 3 as it was (decisio
   expect(kept.every(Schema.is(TodoRequestedStore.schema))).toBe(true)
 })
 
+// Decision 0110, the data gate: a tab names its repository from version 2, which a version 1 tab gets from its own
+// owner and name, so a device's open files stay open and the gate can join them.
+test("a version 1 file tab names its repository after the migration", async () => {
+  const row = { key: "Acme/Widgets@main:README.md", owner: "Acme", name: "Widgets", revision: "main", path: "README.md", lines: "2", position: 1 }
+  const { path } = await deviceFrom({
+    build: "file-tabs-v1",
+    collections: { "file-tabs": { kind: "local", version: 1, key: "key", rows: [row] } },
+    outbox: {},
+  } as Fixture)
+  const report = await prepare(path, deviceRegistry)
+  expect(report.collections).toEqual([expect.objectContaining({ collection: "file-tabs", from: 1, to: 2, outcome: "migrated", migrated: 1 })])
+  expect(await opened(path, FileTabsStore)).toEqual([{ ...row, repoId: "github/acme/widgets" }])
+})
+
 test("a version 2 retry request retains its refusal when migrating to repository roles", async () => {
   const row = {
     id: "4b0d6f2a-8c1e-4e3f-9a5b-6c7d8e9f0a1b", repo: "acme/widgets", op: "retry",
@@ -316,7 +331,7 @@ test("device-local records restore and replace by their declared identity", asyn
     [FlowCodeStore, { id: "code:tab", name: "hello", state: "read", revision: 1, source: "source", text: "Before", busy: false, refusal: null }, "text", "After"],
     [PinPendingStore, { conversationId: "conversation", personId: "person", messageId: "message", changedAt: "2026-10-24", at: 1, home: false, failed: false, awaitAdmission: true }, "awaitAdmission", false],
     [BranchConversationsStore, { id: "acme/widgets@main", conversationId: "before" }, "conversationId", "after"],
-    [FileTabsStore, { key: "acme/widgets@main:README.md", owner: "acme", name: "widgets", revision: "main", path: "README.md", lines: null, position: 0 }, "lines", "2-4"],
+    [FileTabsStore, { key: "acme/widgets@main:README.md", owner: "acme", name: "widgets", repoId: "github/acme/widgets", revision: "main", path: "README.md", lines: null, position: 0 }, "lines", "2-4"],
     [ConversationPendingStore, { conversationId: "conversation", archived: false, at: 1 }, "archived", true],
     [PluginDraftsStore, { id: "note", text: "Before" }, "text", "After"],
     [SteerSentStore, { id: "steer", runId: "run", body: "Before", queuedAt: 1, status: "sent", reason: null }, "body", "After"],
@@ -437,4 +452,14 @@ describe("the device build 7df7c2ecb983 left", () => {
     expect(after.metadata.versions).toEqual({ "todo-sending": 3 })
     expect({ ...after, mutations: undefined, metadata: undefined }).toEqual({ ...before, mutations: undefined, metadata: undefined })
   })
+})
+
+
+test("a version 1 refusal remains denied after migration to independent refusal events", async () => {
+  const row = { id: "github/acme/private", at: 123 }
+  const { path } = await deviceFrom({ build: "refusal-v1", collections: {
+    "repo-refusals": { kind: "local", version: 1, key: "id", rows: [row] },
+  }, outbox: {} })
+  await prepare(path, deviceRegistry)
+  expect(await opened(path, RepoRefusalsStore)).toEqual([{ ...row, repoId: row.id }])
 })

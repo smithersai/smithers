@@ -71,7 +71,7 @@ export function TodoScreen() {
         {screen.kind === "unavailable" ? (
           <Card><CardContent><EmptyState
             title="Can't check your role on this repository right now."
-            action={<Button variant="outline" size="sm" onClick={() => repository.actions.role(owner, repo)}>Try again</Button>}
+            action={<Button variant="outline" size="sm" onClick={() => { auth.actions.reload(); repository.actions.role(owner, repo) }}>Try again</Button>}
           /></CardContent></Card>
         ) : null}
         {screen.kind === "waiting" ? (

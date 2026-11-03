@@ -4,7 +4,7 @@
 // compose Postgres and Electric (src/test/chatApi.ts). The forge is Code Storage scripted over the test git host
 // (worker/test/branch.ts), which can make a branch; the deployment's own repository is `octo/hello`. Unhappy paths use
 // ChatApi's real refusals.
-import { Effect, Metric } from "effect"
+import { Effect, Metric, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { CreateRefused, Forge } from "../../../worker/branch/Forge.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
@@ -22,6 +22,8 @@ import { NEW_BRANCH_PREFIX } from "./contract"
 import { CREATION } from "../../plugins/builtinFlows"
 import { dropped } from "./metrics"
 import { ConversationsStore } from "./store"
+import { repoId } from "../repo/contract"
+import { replaceRole, RepoStore } from "../repo/store"
 
 /** The deployment's own repository, whose `main` is the home conversation. */
 const DEPLOYMENT = TEST_REPOSITORY
@@ -89,6 +91,29 @@ const openDevice = async (api: TestChatApi["Service"], host: NodeDevice = nodeDe
 }
 
 describe("your conversations", () => {
+  // Astra on 0c7b9f01, ruling #4: the list projected the raw rows, so a refused repository's conversation kept its
+  // repository and branch names on the page. It leaves the list in the change that refuses it, and comes back after.
+  test("a refused repository's conversation leaves the list in the same change, names included", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api)
+    await laptop.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(laptop.list()).toEqual(["feature/one"]))
+    const repos = await laptop.runtime.runPromise(Effect.service(RepoStore))
+    const store = await laptop.runtime.runPromise(Effect.service(ConversationsStore))
+    const id = repoId("octo", "hello")
+    const held = Option.getOrUndefined(await laptop.runtime.runPromise(repos.roles.get(id)))
+    /** The list's rows, read in the same Effect as `change`, with nothing run between. */
+    const listedAfter = (change: Effect.Effect<unknown>) => laptop.runtime.runPromise(Effect.gen(function* () {
+      yield* change
+      return (yield* store.listState.toArray).map((row) => [row.repo, row.branch])
+    }))
+    expect(await listedAfter(replaceRole(repos, { id, role: null, own: false, refused: "forbidden" }))).toEqual([])
+    // The raw rows stay, for reconciling this device's acts.
+    expect((await laptop.runtime.runPromise(store.list.toArray)).map((row) => row.branch)).toEqual(["feature/one"])
+    await laptop.runtime.runPromise(held === undefined ? Effect.orDie(repos.roles.delete(id)) : replaceRole(repos, held))
+    await until(() => expect(laptop.list()).toEqual(["feature/one"]))
+  }, WITHIN)
+
   test("opening a branch lists its conversation on every device; Archive hides it on both; opening it brings it back", async () => {
     const api = await openApi()
     const [laptop, phone] = [await openDevice(api), await openDevice(api)]

@@ -2,6 +2,7 @@ import { RepoView } from "@smthrs/repo-view"
 import { Card, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { ReactNode } from "react"
+import { RepoGate } from "./RepoGate"
 import type { EmbedTarget } from "../embed"
 import { embedHref, embedShown, fullScreenHref } from "../embedView"
 import { useRepo } from "./RepoContext"
@@ -11,7 +12,13 @@ import { useRepo } from "./RepoContext"
 // root as GitHub has it. Every link is the app's URL of a location; a plain click opens it full screen (`onOpen`), and
 // `fullScreen(href)` is the view's action, opening what it shows. What it shows is loaded by the views' follower
 // (src/features/views/embeds.ts); this only renders what the device has.
-export function RepoEmbed({
+/** The repository view, behind the repository's visibility (`RepoGate`): a conversation shows none of a repository it may not. */
+export function RepoEmbed(props: Parameters<typeof RepoEmbedShown>[0]) {
+  const [owner = "", name = ""] = props.target.repo.split("/")
+  return <RepoGate owner={owner} name={name}><RepoEmbedShown {...props} /></RepoGate>
+}
+
+function RepoEmbedShown({
   viewId,
   target,
   fullScreen,

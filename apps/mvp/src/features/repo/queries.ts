@@ -1,8 +1,8 @@
-import type { ElectricCollection } from "@smthrs/effect-electric"
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Effect, Option } from "effect"
 import { blobKey, readmeOf, treeKey } from "./paths"
 import type { AboutRow, BlobRow, CloneRow, EmbedRow, RefsRow, TreeRow, ViewRow } from "./rows"
+import type { Gated, Source } from "./gate"
 import type { Repository } from "./schema"
 
 // What every frontend reads. The live queries follow the routed view's one row, so React renders them with
@@ -10,25 +10,29 @@ import type { Repository } from "./schema"
 // for the network: they read only what the device has.
 
 type Rows<A extends object> = Collection.Collection<A, string>
+/** A repository's rows as the store exposes them: through the data gate (gate.ts), never the collection itself. */
+type Shown<A extends object> = Source<A>
 
 /** The view, with its repository as Postgres has it and this tab's clone request for it, when there are. */
 export const viewQuery = (
   view: Rows<ViewRow>,
-  repositories: ElectricCollection.ElectricCollection<Repository>,
+  repositories: Shown<Repository>,
   clones: Rows<CloneRow>,
-  abouts: Rows<AboutRow>,
+  abouts: Shown<AboutRow>,
 ) =>
   LiveQuery.make((q) =>
     q
       .from({ view: view.tanstack })
-      .leftJoin({ repository: repositories.tanstack }, ({ view, repository }) => Query.eq(view.repoId, repository.id))
+      // A gated side's key is an expression: TanStack DB then reads the whole gated query rather than load it lazily
+      // by key, which held this query back while the repositories' shape hadn't answered (repo/gate.ts).
+      .leftJoin({ repository: repositories.tanstack }, ({ view, repository }) => Query.eq(view.repoId, Query.coalesce(repository.id, "")))
       .leftJoin({ clone: clones.tanstack }, ({ view, clone }) => Query.eq(view.repoId, clone.id))
-      .leftJoin({ about: abouts.tanstack }, ({ view, about }) => Query.eq(view.repoId, about.key))
+      .leftJoin({ about: abouts.tanstack }, ({ view, about }) => Query.eq(view.repoId, Query.coalesce(about.key, "")))
       .findOne(),
   )
 
 /** The view, with the file list at its commit when this tab has loaded or is loading it. */
-export const treeQuery = (view: Rows<ViewRow>, trees: Rows<TreeRow>) =>
+export const treeQuery = (view: Rows<ViewRow>, trees: Shown<TreeRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ view: view.tanstack })
@@ -37,7 +41,7 @@ export const treeQuery = (view: Rows<ViewRow>, trees: Rows<TreeRow>) =>
   )
 
 /** The view, with its repository's branches and tags when this tab has loaded or is loading them. */
-export const refsQuery = (view: Rows<ViewRow>, refs: Rows<RefsRow>) =>
+export const refsQuery = (view: Rows<ViewRow>, refs: Shown<RefsRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ view: view.tanstack })
@@ -46,7 +50,7 @@ export const refsQuery = (view: Rows<ViewRow>, refs: Rows<RefsRow>) =>
   )
 
 /** The view, with what GitHub says of its repository when this tab has loaded or is loading it. */
-export const aboutQuery = (view: Rows<ViewRow>, abouts: Rows<AboutRow>) =>
+export const aboutQuery = (view: Rows<ViewRow>, abouts: Shown<AboutRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ view: view.tanstack })
@@ -55,7 +59,7 @@ export const aboutQuery = (view: Rows<ViewRow>, abouts: Rows<AboutRow>) =>
   )
 
 /** The view, with the repository's generated-files manifest at its commit, when it has one. */
-export const manifestQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
+export const manifestQuery = (view: Rows<ViewRow>, blobs: Shown<BlobRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ view: view.tanstack })
@@ -64,7 +68,7 @@ export const manifestQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
   )
 
 /** The view, with the file it shows. */
-export const fileQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
+export const fileQuery = (view: Rows<ViewRow>, blobs: Shown<BlobRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ view: view.tanstack })
@@ -73,7 +77,7 @@ export const fileQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
   )
 
 /** The view, with the README of the directory it shows. */
-export const readmeQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
+export const readmeQuery = (view: Rows<ViewRow>, blobs: Shown<BlobRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ view: view.tanstack })
@@ -86,39 +90,46 @@ export const readmeQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
  * GitHub says of the repository, its row as Postgres has it, the location's file list, and the file or README.
  */
 export const embedsQuery = (
-  embeds: Rows<EmbedRow>,
-  repositories: ElectricCollection.ElectricCollection<Repository>,
-  abouts: Rows<AboutRow>,
-  trees: Rows<TreeRow>,
-  blobs: Rows<BlobRow>,
+  embeds: Shown<EmbedRow>,
+  repositories: Shown<Repository>,
+  abouts: Shown<AboutRow>,
+  trees: Shown<TreeRow>,
+  blobs: Shown<BlobRow>,
 ) =>
   LiveQuery.make((q) =>
     q
       .from({ embed: embeds.tanstack })
-      .leftJoin({ repository: repositories.tanstack }, ({ embed, repository }) => Query.eq(embed.repoId, repository.id))
-      .leftJoin({ about: abouts.tanstack }, ({ embed, about }) => Query.eq(embed.repoId, about.key))
+      .leftJoin({ repository: repositories.tanstack }, ({ embed, repository }) => Query.eq(embed.repoId, Query.coalesce(repository.id, "")))
+      .leftJoin({ about: abouts.tanstack }, ({ embed, about }) => Query.eq(embed.repoId, Query.coalesce(about.key, "")))
       .leftJoin({ tree: trees.tanstack }, ({ embed, tree }) => Query.eq(embed.treeKey, tree.key))
       .leftJoin({ body: blobs.tanstack }, ({ embed, body }) => Query.eq(embed.bodyKey, body.key))
   )
 
+/** The row at `key` of a gated query, once the query runs: `None` while its repository may not show. */
+const shownAt = <A extends object>(rows: Gated<A>, key: string) =>
+  Effect.sync(() => {
+    rows.tanstack.startSyncImmediate()
+    return Option.fromNullishOr(rows.tanstack.get(key))
+  })
+
 /**
  * Reads of any repository on this device (decision 0006 §2): its row, its file list at a commit, a file there, and a
- * directory's README there. Each is `None` until the device has it.
+ * directory's README there. Each is `None` until the device has it, or while the repository may not show (gate.ts).
  */
 export const reads = (store: {
-  readonly repositories: ElectricCollection.ElectricCollection<Repository>
-  readonly trees: Rows<TreeRow>
-  readonly blobs: Rows<BlobRow>
+  readonly shownRepositories: Gated<Repository>
+  readonly shownTrees: Gated<TreeRow>
+  readonly shownBlobs: Gated<BlobRow>
 }) => {
-  const tree = (id: string, sha: string) => store.trees.get(treeKey(id, sha))
+  const tree = (id: string, sha: string) => shownAt(store.shownTrees, treeKey(id, sha))
   return {
-    repository: (id: string) => store.repositories.get(id),
+    repository: (id: string) => shownAt(store.shownRepositories, id),
     tree,
-    file: (id: string, sha: string, path: string) => store.blobs.get(blobKey(id, sha, path)),
+    file: (id: string, sha: string, path: string) => shownAt(store.shownBlobs, blobKey(id, sha, path)),
     readme: (id: string, sha: string, dir: string) =>
       Effect.flatMap(tree(id, sha), (found) => {
         const path = Option.isSome(found) && found.value.state === "ready" ? readmeOf(found.value.paths, dir) : undefined
-        return path === undefined ? Effect.succeedNone : store.blobs.get(blobKey(id, sha, path))
+        return path === undefined ? Effect.succeedNone : shownAt(store.shownBlobs, blobKey(id, sha, path))
       }),
   }
 }

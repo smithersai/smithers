@@ -43,6 +43,8 @@ export const Item = Schema.Struct({
   status: Schema.NullOr(Schema.String),
   entries: Schema.Array(Schema.Struct({ content: Schema.String, status: Schema.String })),
   at: Schema.Number,
+  /** The run it is of: it shows only while that run's page may (the data gate). Set as the panel stores it. */
+  runId: Schema.optional(Schema.String),
 })
 export type Item = typeof Item.Type
 

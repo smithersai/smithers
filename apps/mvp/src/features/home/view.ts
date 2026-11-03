@@ -215,7 +215,8 @@ export const stackOf = (
 ): RepositoryHomeList | RepositoryHomeNotice => {
   if (access === "sign_in") return { notice: SIGN_IN }
   if (access === "forbidden") return { notice: MEMBERS_ONLY }
-  const onStack = todos
+  // A role read that failed: what the device kept doesn't show. What the repository may show at all is the gate's.
+  const onStack = (access === "unavailable" ? [] : todos)
     .filter((todo) => todo.position !== null)
     .sort((left, right) => left.position! - right.position!)
     .map((todo): RepositoryHomeEntry => ({

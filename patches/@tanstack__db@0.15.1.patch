@@ -1,0 +1,346 @@
+--- a/src/query/live/types.ts
++++ b/src/query/live/types.ts
+@@ -87,6 +87,9 @@
+    */
+   getKey?: (item: TResult) => string | number
+ 
++  /** Publish current graph rows during refills; window/preload promises still await settlement. Default: settled. */
++  publication?: "settled" | "incremental"
++
+   /**
+    * Optional schema for validation
+    */
+--- a/dist/esm/query/live/types.d.ts
++++ b/dist/esm/query/live/types.d.ts
+@@ -59,6 +59,9 @@
+      * If not provided, defaults to using the key from the D2 stream
+      */
+     getKey?: (item: TResult) => string | number;
++
++    /** Publish current graph rows during refills; window/preload promises still await settlement. Default: settled. */
++    publication?: "settled" | "incremental"
+     /**
+      * Optional schema for validation
+      */
+--- a/dist/cjs/query/live/types.d.cts
++++ b/dist/cjs/query/live/types.d.cts
+@@ -59,6 +59,9 @@
+      * If not provided, defaults to using the key from the D2 stream
+      */
+     getKey?: (item: TResult) => string | number;
++
++    /** Publish current graph rows during refills; window/preload promises still await settlement. Default: settled. */
++    publication?: "settled" | "incremental"
+     /**
+      * Optional schema for validation
+      */
+--- a/src/query/live/collection-config-builder.ts
++++ b/src/query/live/collection-config-builder.ts
+@@ -119,6 +119,7 @@
+   public currentSyncState: FullSyncState | undefined
+ 
+   // Error state tracking
++  private withdrawPublication: (() => void) | undefined
+   private isInErrorState = false
+   private fatalQueryError = false
+   private readonly erroredSourceIds = new Set<string>()
+@@ -823,6 +824,7 @@
+     this.windowOperationGeneration++
+     // Clear current sync run state
+     this.currentSyncConfig = undefined
++    this.withdrawPublication = undefined
+     this.currentSyncState = undefined
+     this.maybeRunGraphFn = undefined
+     this.loadMoreFn = undefined
+@@ -953,17 +955,30 @@
+       syncState.unsubscribeCallbacks.add(() => bucketFacades.cleanup())
+     }
+ 
++    // Keep the last published graph state private while an incremental query is in error.
++    let withdrawn: Map<unknown, Changes<TResult>> | undefined
++    this.withdrawPublication = () => {
++      if (this.config.publication !== "incremental" || withdrawn !== undefined) return
++      withdrawn = new Map([...config.collection._state.syncedData.values()].map(value => [this.resultKeys.get(value), {
++        value, inserts: 1, deletes: 0, orderByIndex: this.orderByIndices.get(value)
++      }]))
++      begin()
++      config.truncate({ markReady: false })
++      commit()
++    }
++
+     // Flush pending changes and reset the accumulator.
+     // Called at the end of each graph run to commit all accumulated changes.
+     syncState.flushPendingChanges = () => {
+-      const hasParentChanges = pendingChanges.size > 0
++      if (this.config.publication === "incremental" && this.isInErrorState) return
++      const hasParentChanges = pendingChanges.size > 0 || withdrawn !== undefined
+       const hasChildChanges = bucketFacades?.hasPendingChanges() ?? false
+ 
+       if (!hasParentChanges && !hasChildChanges) {
+         return
+       }
+ 
+-      if (
++      if (this.config.publication !== "incremental" && (
+         this.windowFailed ||
+         this.orderedLoadFailed ||
+         this.hasPendingSourceRecovery() ||
+@@ -973,7 +988,7 @@
+             info.joinedFilterSourceId !== undefined &&
+             this.hasPendingJoinedWork(info.joinedFilterSourceId),
+         )
+-      ) {
++      )) {
+         return
+       }
+ 
+@@ -990,6 +1005,15 @@
+         }
+       }
+ 
++      const publicationChanges = withdrawn === undefined ? pendingChanges : new Map(withdrawn)
++      if (withdrawn !== undefined) {
++        for (const [key, change] of pendingChanges) {
++          if (change.deletes > change.inserts) publicationChanges.delete(key)
++          else if (change.inserts > change.deletes || publicationChanges.has(key)) {
++            publicationChanges.set(key, { ...change, inserts: 1, deletes: 0 })
++          }
++        }
++      }
+       let facadePublication:
+         ReturnType<BucketFacadeAdapter[`flush`]> | undefined
+       let rootPublication:
+@@ -1001,7 +1025,7 @@
+           : undefined
+         const changesToApply: Map<unknown, Changes<TResult>> = bucketFacades
+           ? new Map(
+-              [...pendingChanges].map(([key, changes]) => {
++              [...publicationChanges].map(([key, changes]) => {
+                 const resolved: Changes<TResult> = {
+                   ...changes,
+                   value: bucketFacades.resolve(changes.value),
+@@ -1014,7 +1038,7 @@
+                 return [key, resolved]
+               }),
+             )
+-          : pendingChanges
++          : publicationChanges
+         // New facades are not reachable until their root row is installed, so
+         // make them ready first. A facade failure then leaves the root intact,
+         // and the root commit is the final state change before publication.
+@@ -1039,6 +1063,7 @@
+         facadePublication?.rollback()
+         throw error
+       }
++      withdrawn = undefined
+       pendingChanges = new Map()
+ 
+       let publicationError: unknown
+@@ -1222,6 +1247,7 @@
+ 
+   private setErrorState(message: string, error?: unknown) {
+     this.isInErrorState = true
++    this.withdrawPublication?.()
+ 
+     // Log error to console for debugging
+     console.error(
+--- a/dist/esm/query/live/collection-config-builder.js
++++ b/dist/esm/query/live/collection-config-builder.js
+@@ -25,6 +25,7 @@
+     this.cN = /* @__PURE__ */ new WeakMap();
+     this.br = false;
+     this.bq = 0;
++    this.withdrawPublication = undefined;
+     this.b6 = false;
+     this.cv = false;
+     this.cc = /* @__PURE__ */ new Set();
+@@ -512,6 +513,7 @@
+   fl() {
+     this.windowOperationGeneration++;
+     this.currentSyncConfig = void 0;
++    this.withdrawPublication = void 0;
+     this.currentSyncState = void 0;
+     this.bx = void 0;
+     this.e_ = void 0;
+@@ -605,15 +607,28 @@
+     if (bucketFacades) {
+       syncState.unsubscribeCallbacks.add(() => bucketFacades.cleanup());
+     }
++    // Keep the last published graph state private while an incremental query is in error.
++    let withdrawn
++    this.withdrawPublication = () => {
++      if (this.config.publication !== "incremental" || withdrawn !== undefined) return
++      withdrawn = new Map([...config.collection._state.syncedData.values()].map(value => [this.fz.get(value), {
++        value, inserts: 1, deletes: 0, orderByIndex: this.cN.get(value)
++      }]))
++      begin()
++      config.truncate({ markReady: false })
++      commit()
++    }
++
+     syncState.flushPendingChanges = () => {
+-      const hasParentChanges = pendingChanges.size > 0;
++      if (this.config.publication === "incremental" && this.b6) return
++      const hasParentChanges = pendingChanges.size > 0 || withdrawn !== undefined;
+       const hasChildChanges = bucketFacades?.hasPendingChanges() ?? false;
+       if (!hasParentChanges && !hasChildChanges) {
+         return;
+       }
+-      if (this.dq || this.ba || this.hasPendingSourceRecovery() || this.aG.size > 0 || Object.values(this.optimizableOrderByCollections).some(
++      if (this.config.publication !== "incremental" && (this.dq || this.ba || this.hasPendingSourceRecovery() || this.aG.size > 0 || Object.values(this.optimizableOrderByCollections).some(
+         (info) => info.joinedFilterSourceId !== void 0 && this.hasPendingJoinedWork(info.joinedFilterSourceId)
+-      )) {
++      ))) {
+         return;
+       }
+       for (const [key, { inserts, deletes }] of pendingChanges) {
+@@ -621,6 +636,15 @@
+           throw new Error(
+             devBuild() && process.env.NODE_ENV !== `production` ? `Live query result key ${String(key)} changed by ${inserts - deletes} rows in one flush; a key has at most one result row.` : codedMessage(150, { key, change: inserts - deletes })
+           );
++        }
++      }
++      const publicationChanges = withdrawn === undefined ? pendingChanges : new Map(withdrawn)
++      if (withdrawn !== undefined) {
++        for (const [key, change] of pendingChanges) {
++          if (change.deletes > change.inserts) publicationChanges.delete(key)
++          else if (change.inserts > change.deletes || publicationChanges.has(key)) {
++            publicationChanges.set(key, { ...change, inserts: 1, deletes: 0 })
++          }
+         }
+       }
+       let facadePublication;
+@@ -629,7 +653,7 @@
+         facadePublication = bucketFacades?.flush();
+         rootPublication = hasParentChanges ? config.collection._deferPublication() : void 0;
+         const changesToApply = bucketFacades ? new Map(
+-          [...pendingChanges].map(([key, changes]) => {
++          [...publicationChanges].map(([key, changes]) => {
+             const resolved = {
+               ...changes,
+               value: bucketFacades.resolve(changes.value)
+@@ -641,7 +665,7 @@
+             }
+             return [key, resolved];
+           })
+-        ) : pendingChanges;
++        ) : publicationChanges;
+         facadePublication?.prepare();
+         if (hasParentChanges) {
+           begin();
+@@ -663,6 +687,7 @@
+         facadePublication?.rollback();
+         throw error;
+       }
++      withdrawn = undefined;
+       pendingChanges = /* @__PURE__ */ new Map();
+       let publicationError;
+       for (const publish of [
+@@ -782,6 +807,7 @@
+   }
+   e8(message, error) {
+     this.b6 = true;
++    this.withdrawPublication?.()
+     console.error(
+       devBuild() && process.env.NODE_ENV !== `production` ? `[Live Query Error] ${message}` : message
+     );
+--- a/dist/cjs/query/live/collection-config-builder.cjs
++++ b/dist/cjs/query/live/collection-config-builder.cjs
+@@ -27,6 +27,7 @@
+     this.cN = /* @__PURE__ */ new WeakMap();
+     this.br = false;
+     this.bq = 0;
++    this.withdrawPublication = undefined;
+     this.b6 = false;
+     this.cv = false;
+     this.cc = /* @__PURE__ */ new Set();
+@@ -514,6 +515,7 @@
+   fl() {
+     this.windowOperationGeneration++;
+     this.currentSyncConfig = void 0;
++    this.withdrawPublication = void 0;
+     this.currentSyncState = void 0;
+     this.bx = void 0;
+     this.e_ = void 0;
+@@ -607,15 +609,28 @@
+     if (bucketFacades) {
+       syncState.unsubscribeCallbacks.add(() => bucketFacades.cleanup());
+     }
++    // Keep the last published graph state private while an incremental query is in error.
++    let withdrawn
++    this.withdrawPublication = () => {
++      if (this.config.publication !== "incremental" || withdrawn !== undefined) return
++      withdrawn = new Map([...config.collection._state.syncedData.values()].map(value => [this.fz.get(value), {
++        value, inserts: 1, deletes: 0, orderByIndex: this.cN.get(value)
++      }]))
++      begin()
++      config.truncate({ markReady: false })
++      commit()
++    }
++
+     syncState.flushPendingChanges = () => {
+-      const hasParentChanges = pendingChanges.size > 0;
++      if (this.config.publication === "incremental" && this.b6) return
++      const hasParentChanges = pendingChanges.size > 0 || withdrawn !== undefined;
+       const hasChildChanges = bucketFacades?.hasPendingChanges() ?? false;
+       if (!hasParentChanges && !hasChildChanges) {
+         return;
+       }
+-      if (this.dq || this.ba || this.hasPendingSourceRecovery() || this.aG.size > 0 || Object.values(this.optimizableOrderByCollections).some(
++      if (this.config.publication !== "incremental" && (this.dq || this.ba || this.hasPendingSourceRecovery() || this.aG.size > 0 || Object.values(this.optimizableOrderByCollections).some(
+         (info) => info.joinedFilterSourceId !== void 0 && this.hasPendingJoinedWork(info.joinedFilterSourceId)
+-      )) {
++      ))) {
+         return;
+       }
+       for (const [key, { inserts, deletes }] of pendingChanges) {
+@@ -623,6 +638,15 @@
+           throw new Error(
+             errorMessage.devBuild() && process.env.NODE_ENV !== `production` ? `Live query result key ${String(key)} changed by ${inserts - deletes} rows in one flush; a key has at most one result row.` : errorMessage.codedMessage(150, { key, change: inserts - deletes })
+           );
++        }
++      }
++      const publicationChanges = withdrawn === undefined ? pendingChanges : new Map(withdrawn)
++      if (withdrawn !== undefined) {
++        for (const [key, change] of pendingChanges) {
++          if (change.deletes > change.inserts) publicationChanges.delete(key)
++          else if (change.inserts > change.deletes || publicationChanges.has(key)) {
++            publicationChanges.set(key, { ...change, inserts: 1, deletes: 0 })
++          }
+         }
+       }
+       let facadePublication;
+@@ -631,7 +655,7 @@
+         facadePublication = bucketFacades?.flush();
+         rootPublication = hasParentChanges ? config.collection._deferPublication() : void 0;
+         const changesToApply = bucketFacades ? new Map(
+-          [...pendingChanges].map(([key, changes]) => {
++          [...publicationChanges].map(([key, changes]) => {
+             const resolved = {
+               ...changes,
+               value: bucketFacades.resolve(changes.value)
+@@ -643,7 +667,7 @@
+             }
+             return [key, resolved];
+           })
+-        ) : pendingChanges;
++        ) : publicationChanges;
+         facadePublication?.prepare();
+         if (hasParentChanges) {
+           begin();
+@@ -665,6 +689,7 @@
+         facadePublication?.rollback();
+         throw error2;
+       }
++      withdrawn = undefined;
+       pendingChanges = /* @__PURE__ */ new Map();
+       let publicationError;
+       for (const publish of [
+@@ -784,6 +809,7 @@
+   }
+   e8(message, error2) {
+     this.b6 = true;
++    this.withdrawPublication?.()
+     console.error(
+       errorMessage.devBuild() && process.env.NODE_ENV !== `production` ? `[Live Query Error] ${message}` : message
+     );

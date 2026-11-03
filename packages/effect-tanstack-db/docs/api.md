@@ -244,7 +244,8 @@ All three are `Data.TaggedError`s, so `Effect.catchTag` narrows them.
 
 ```ts
 const make: <Q extends AnyQuery>(
-  query: (q: InitialQueryBuilder) => Q
+  query: (q: InitialQueryBuilder) => Q,
+  options?: { readonly getKey?: (row: Row<Q>) => string | number }
 ) => Effect.Effect<LiveQuery<Q>, LoadFailed, Scope.Scope>
 ```
 
@@ -253,6 +254,10 @@ the expressions in `Query`, cleaned up when the scope closes. Name a source by
 its `tanstack` field: `q.from({ todo: todos.tanstack })`. It starts on its
 first read, `preload` or stream. Query-construction exceptions fail with
 `Collection.LoadFailed`, preserving the original exception as `cause`.
+
+TanStack DB keys a joined row by the keys of every row it joins. `getKey` keys
+each result row itself, so `tanstack.get(key)` finds a row of a join by the key
+its own collection gives it. Each result row's key must be unique.
 
 ### `LiveQuery.LiveQuery<Q>`
 
@@ -710,3 +715,11 @@ Diagnostic `collection` attributes identify the collection kind (the prefix befo
 ### Pending writes by key
 
 `collection.pendingWrites(key)` reads the actual unsettled transaction receipts affecting a key, including an optimistic deletion whose row is absent. Each receipt exposes its stable `id` and `persisted` Effect. Await the captured receipts before treating absence as durable, then check for newer pending writes before acknowledging cleanup. Cancellation of a waiter does not cancel persistence; failed receipts remain typed `TransactionFailed`. Reading receipts never starts or retries a write. Collection reads remain optimistic.
+
+### Publication during ordered refills
+
+Live queries retain their last settled window by default. Provide `LiveQuery.incremental` to a layer, or `Effect.provideService(LiveQuery.Publication, { mode: "incremental" })` to an Effect, when current graph changes must publish while an ordered refill is pending. Removals then reach downstream displays immediately; partial replacement rows may be visible during loading. `LiveQuery.make(query, { publication: "settled" | "incremental" })` overrides the service for one query. Preload and `setWindow` still wait for settlement and still report load failures. Access-sensitive apps should provide the policy to the whole query graph, including sorted projections after a gate.
+
+The pinned TanStack DB patch adds only this opt-in publication mode; unconfigured consumers keep its settled-window behavior.
+
+Incremental queries withdraw public rows on a source or demand error while preserving the error receipt. Recoverable sources apply queued changes before publishing again; a fatal demand failure stays empty until its read scope is reopened.

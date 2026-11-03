@@ -5,13 +5,17 @@ import { flowWords } from "../words"
 import { flowSummary } from "../summary"
 import { useRuns } from "./RunsContext"
 import { routerLink } from "./routerLink"
+import { useRepoVisible } from "../../repo/components/RepoGate"
 
 // The Runs page's flows (docs/features/runs.md#flows): runs, success and p95 per flow, this device's and Cloudflare's.
 // Each flow lists its own runs, as a CI system's workflows do; All lists every run again.
 export function FlowSummaryView({ flow }: { readonly flow?: string | undefined }) {
   const { queries } = useRuns()
   const { data: runs } = useLiveQuery(queries.runs)
-  const { data: cloud } = useLiveQuery(queries.cloudRuns)
+  const { data: everyCloud } = useLiveQuery(queries.cloudRuns)
+  // A repository's run counts only while the repository may show (`repoVisibility`).
+  const visible = useRepoVisible()
+  const cloud = everyCloud.filter((run) => visible(run.repo))
   const rows = flowSummary([...runs, ...cloud.map(cloudRowOf)])
   if (rows.length === 0) return null
   return (

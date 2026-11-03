@@ -90,7 +90,7 @@ export const closeFiles = (owner: string, name: string, number: number) =>
 
 /** Reads the files `base` and `head` differ by into this tab, once: a comparison of two SHAs never changes. */
 export const loadFiles = (owner: string, name: string, base: string, head: string) =>
-  Effect.flatMap(PullsStore, (store) => readComparison(store.files, store.scope, owner, name, base, head))
+  Effect.flatMap(PullsStore, (store) => readComparison(store.files, store.scope, owner, name, base, head, store.compared))
 
 /**
  * Merge on the routed pull request, bound to the head and base this device shows: a new write id, sent at once in the

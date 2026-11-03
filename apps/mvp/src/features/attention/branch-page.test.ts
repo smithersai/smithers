@@ -59,8 +59,9 @@ test("a branch page renders the shared toast stack, anchored under its chrome, o
     const html = branchRenderer({ home: await runtime.runPromise(Effect.service(Home)), files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views, plugins })(router)
     const services = { home: await runtime.runPromise(Effect.service(Home)), files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views, plugins }
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.all([
-      sql`INSERT INTO notifications (recipient, subject, kind, state, mine, title, href, occurred_at, updated_at)
-        SELECT 'person-member', 'main:overflow:' || n, 'main', 'update', false, 'Old update', '/acme/widgets', now() - interval '1 day', now() - interval '1 day'
+      // A push to `main` is a repository's: a notice of one names it (decision 0110, the data gate; one naming none is hidden).
+      sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, href, occurred_at, updated_at)
+        SELECT 'person-member', 'main:overflow:' || n, 'main', 'update', false, 'github/acme/widgets', 'Old update', '/acme/widgets', now() - interval '1 day', now() - interval '1 day'
         FROM generate_series(1, 283) AS n`,
       sql`INSERT INTO spend_alerts (id, window_start, window_end, calls, tokens, roles, day_tokens, budget)
         VALUES ('panel-spend', now() - interval '1 minute', now(), 1, 100, '[]', 100, 1000)`,

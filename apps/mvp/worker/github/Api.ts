@@ -1316,10 +1316,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     /**
      * The role route's `readable` (worker/home/Api.ts): whether the request may read `target`'s content by the shapes'
      * predicate (devpriv FINAL step 5), the deployment's checks included, so it never says a repository the deployment
-     * doesn't act on, or where the App is absent, is readable.
+     * doesn't act on, or where the App is absent, is readable. A check that couldn't decide (Postgres or GitHub not
+     * answering, a metadata 404/410) is `unavailable`, never `false`: the client's data gate reads `false` as a refusal.
      */
     const mayRead = (target: Repository) =>
-      Effect.map(access.repositoryReadable(target, "session"), ({ proof }) => proof._tag === "Readable")
+      Effect.map(access.repositoryReadable(target, "session"), ({ proof }) =>
+        proof._tag === "Readable" ? true
+        : proof.status === 503 ? { unavailable: true as const, retryAfterSeconds: proof.retryAfterSeconds }
+        : false)
 
     return { fetch, mayRead, maySync }
   })

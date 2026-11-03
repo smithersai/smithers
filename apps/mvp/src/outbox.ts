@@ -1,8 +1,8 @@
 import type { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Option } from "effect"
 
-// The device has one durable outbox (decision 0002 §3), which chat's store builds and leads
-// (src/features/chat/store.ts). A feature that writes through it hands its writes over here, from a layer built below
+// The device has one durable outbox (decision 0002 §3), which ChatWrites builds and leads
+// (src/features/chat/writes.ts). A feature that writes through it hands its writes over here, from a layer built below
 // chat's store: the collections its writes' optimistic rows go in and the mutations that send them, each under a name
 // that never changes, because a stored write names its collection and its mutation by them. Each mutation has its
 // services already: it runs as the outbox sends it, in whichever tab leads.

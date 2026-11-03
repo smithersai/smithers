@@ -8,7 +8,8 @@ import { FetchHttpClient } from "effect/http"
 import type { CuratedFile } from "../../../worker/home/Curated.ts"
 import { scriptedGitHub, spoonKnife } from "../../../worker/test/githubRest"
 import { RepoClient } from "../repo/api"
-import { RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store"
+import { repoId } from "../repo/contract"
 import { HomeClient, HomeRefused } from "./api"
 import { HomeStore } from "./store"
 import { HOME_FILE, HOME_INVALID, HOME_UNREADABLE } from "./contract"
@@ -134,6 +135,32 @@ describe("a repository's home", () => {
     await waitFor(() => expect(missing()).toBe(2))
     await waitFor(() => expect(files(tab)["docs/missing.md"]?.state).toBe("failed"))
     expect(h.scripted.calls.filter((call) => call.endsWith(":docs/intro.md"))).toHaveLength(1)
+  })
+
+  // The data gate (decision 0110, 2026-11-03): a refused repository's home, which holds its README's words and its
+  // Markdown files, leaves the page's queries in the change that marks the refusal, before any wipe.
+  test("a refusal mark hides the home and its files from the page's queries at once; a grant shows them again", async () => {
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
+    await seeded(h, { [HOME_FILE]: declared, "docs/intro.md": `# Intro ${SECRET}\n` })
+    const tab = await open(h)
+    tab.home.actions.open("maya", "tinyhttp")
+    await waitFor(() => expect(page(tab).page.kind).toBe("home"))
+    await waitFor(() => expect(files(tab)["docs/intro.md"]?.state).toBe("text"))
+    const id = repoId("maya", "tinyhttp")
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    // The person's role, as a role read answers it: this harness's home page asks for none.
+    const granted = { id, role: "member" as const, own: false }
+    await tab.runtime.runPromise(replaceRole(repos, granted))
+    /** How many rows the page's queries hold, read in the same Effect as `change`, with nothing run between. */
+    const countsAfter = (change: Effect.Effect<unknown>) => tab.runtime.runPromise(Effect.gen(function* () {
+      yield* change
+      const shown = tab.home.queries.home.toArray[0]
+      return { home: shown?.home === undefined ? 0 : 1, files: tab.home.queries.files.toArray.length }
+    }))
+    const shown = await countsAfter(Effect.void)
+    expect(shown).toEqual({ home: 1, files: 2 })
+    expect(await countsAfter(replaceRole(repos, { id, role: null, own: false, refused: "forbidden" }))).toEqual({ home: 0, files: 0 })
+    expect(await countsAfter(replaceRole(repos, granted))).toEqual(shown)
   })
 
   test("opening it again, or another page of it, reads nothing more: a home at a commit never changes", async () => {

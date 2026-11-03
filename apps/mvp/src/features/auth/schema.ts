@@ -10,6 +10,8 @@ export const SessionState = Schema.Union([
   Schema.Struct({
     signedIn: Schema.Literal(true),
     personId: Schema.optional(Schema.String),
+    /** The home conversation's id: the person's own, whose rows show by it (decision 0110, the data gate). */
+    homeConversationId: Schema.optional(Schema.String),
     login: Schema.String,
     role: Schema.NullOr(Schema.Literals(ROLES)),
     roleConfirmed: Schema.optional(Schema.Boolean),
@@ -32,6 +34,10 @@ export const SessionState = Schema.Union([
 export const Session = Schema.Struct({
   id: Schema.Literal("session"),
   status: Schema.Literals(["loading", "signed_in", "signed_out", "unreachable"]),
+  /** `unreachable` because ChatApi answered and couldn't say who this is, not because the network failed. */
+  unverifiable: Schema.optional(Schema.Boolean),
+  /** The person's home conversation, as the session answer named it: its rows are theirs (conversations/owners.ts). */
+  homeConversationId: Schema.optional(Schema.String),
   login: Schema.NullOr(Schema.String),
   role: Schema.NullOr(Schema.Literals(ROLES)),
   roleConfirmed: Schema.optional(Schema.Boolean),
@@ -52,6 +58,8 @@ export const Confirmed = Schema.Struct({
   login: Schema.String,
   personId: Schema.optional(Schema.String),
   role: Schema.NullOr(Schema.Literals(ROLES)),
+  /** The person's home conversation the answer named: a reload offline still shows it as theirs (conversations/owners.ts). */
+  homeConversationId: Schema.optional(Schema.String),
 })
 export type Confirmed = typeof Confirmed.Type
 

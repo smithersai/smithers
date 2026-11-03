@@ -268,6 +268,7 @@ describe("the callback", () => {
     expect(rows).not.toContain(Redacted.value(tokens.refreshToken!))
     expect(await h.session(cookies)).toEqual({
       signedIn: true,
+      homeConversationId: expect.any(String),
       personId: expect.any(String),
       login: "octocat",
       role: "member",
@@ -307,6 +308,19 @@ describe("the callback", () => {
     expect(signedOut.signedIn).toBe(false)
     expect(signedOut).not.toHaveProperty("expiresAt")
     expect(signedOut).not.toHaveProperty("serverNow")
+    expect(signedOut).not.toHaveProperty("homeConversationId")
+  })
+
+  // The data gate (decision 0110, ruling 3a): the home conversation is every signed-in person's own, and the session
+  // answer names it, so a device shows its rows by who the person is, never by a repository's answer.
+  test("a signed-in answer names the home conversation", async () => {
+    const h = await signInHarness(runtime)
+    const { cookies } = await h.signInAs()
+    const [home] = await query((sql) =>
+      sql<{ readonly id: string }>`SELECT c.id FROM branches b JOIN conversations c ON c.branch_id = b.id
+        WHERE b.repo_id = 'github/smithersai/smithers' AND b.name = 'main' AND b.deleted_at IS NULL`)
+    expect(home?.id).toEqual(expect.any(String))
+    expect(await h.session(cookies)).toMatchObject({ signedIn: true, homeConversationId: home!.id })
   })
 
   test("two sessions with different ends each answer with their own", async () => {
@@ -491,6 +505,7 @@ describe("the callback", () => {
       const { cookies } = await h.signInAs()
       expect(await h.session(cookies), permission).toMatchObject({
         signedIn: true,
+        homeConversationId: expect.any(String),
         hostedModel: answers,
         install: "https://github.com/apps/smithers-test/installations/new",
       })
@@ -539,7 +554,7 @@ describe("the callback", () => {
     github.expiring = false
     const h = await signInHarness(runtime, { github })
     const { cookies } = await h.signInAs()
-    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member", hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), serverNow: expect.any(Number) })
+    expect(await h.session(cookies)).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "octocat", role: "member", hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), serverNow: expect.any(Number) })
     const [session] = await sessionRows()
     expect(session!.refresh).toBeNull()
   })
@@ -592,7 +607,7 @@ describe("roles", () => {
       github.permission = permission
       const h = await signInHarness(runtime, { github })
       const { cookies } = await h.signInAs()
-      expect(await h.session(cookies), permission).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role, hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), serverNow: expect.any(Number) })
+      expect(await h.session(cookies), permission).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "octocat", role, hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), serverNow: expect.any(Number) })
     }
   })
 
@@ -984,7 +999,7 @@ describe("sessions", () => {
       config: {},
       fallback: { actor: localDeveloper, login: "local-developer" },
     })
-    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false, serverNow: expect.any(Number) })
+    expect(await dev.session()).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false, serverNow: expect.any(Number) })
   })
 
   test("local development's developer signs out and back in with a cookie, never reaching GitHub", async () => {
@@ -1015,7 +1030,7 @@ describe("sessions", () => {
     expect(back.status).toBe(303)
     expect(back.headers.get("location")).toBe("/app?tab=1")
     expect(setCookies(back)["smithers_dev_signed_out"]!.line).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/)
-    expect(await dev.session()).toEqual({ signedIn: true, personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false, serverNow: expect.any(Number) })
+    expect(await dev.session()).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "local-developer", role: "admin", hostedModel: false, serverNow: expect.any(Number) })
     expect(dev.github.calls).toEqual([])
     expect(dev.revocations).toEqual([])
     expect(dev.count({ route: "sign_out", outcome: "signed_out", reason: "local_developer" })).toBe(1)
@@ -1042,6 +1057,7 @@ describe("sessions", () => {
     })
     expect(await dev.session({ smithers_dev_person: "teammate" })).toEqual({
       signedIn: true,
+      homeConversationId: expect.any(String),
       personId: expect.any(String),
       login: "local-teammate",
       role: "member",
@@ -1051,6 +1067,7 @@ describe("sessions", () => {
     for (const person of ["nobody", "toString"]) {
       expect(await dev.session({ smithers_dev_person: person })).toEqual({
         signedIn: true,
+        homeConversationId: expect.any(String),
         personId: expect.any(String),
         login: "local-developer",
         role: "admin",
@@ -1239,6 +1256,7 @@ test("local development's newcomer is a Member nobody was before, named by the d
   const name = `newcomer-${Date.now().toString(36)}`
   expect(await dev.session({ smithers_dev_person: name })).toEqual({
     signedIn: true,
+    homeConversationId: expect.any(String),
     personId: name,
     login: name,
     role: "member",
@@ -1267,7 +1285,7 @@ test("local development's strangers hold no role on its repository; an owner- is
   const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" }, newcomer })
   for (const kind of ["owner", "reader"] as const) {
     const name = `${kind}-${Date.now().toString(36)}`
-    expect(await dev.session({ smithers_dev_person: name }), kind).toEqual({ signedIn: true, personId: name, login: name, role: null, hostedModel: false, serverNow: expect.any(Number) })
+    expect(await dev.session({ smithers_dev_person: name }), kind).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: name, login: name, role: null, hostedModel: false, serverNow: expect.any(Number) })
     const actor = { subject: { kind: "person" as const, id: name }, role: null }
     expect(devRoles(actor, repositoryOf(STRANGERS_REPOSITORY)), kind).toBe(kind === "owner" ? "admin" : "guest")
     expect(devRoles(actor, repositoryOf("octocat/Hello-World")), kind).toBeNull()

@@ -6,6 +6,7 @@
 // short, a stalled answer, 400 and 413 (test.faults-by-injection).
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Deferred, Effect, Fiber, FiberHandle, Layer, Logger, Metric, Ref } from "effect"
+import { ConversationOwners } from "../conversations/owners"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -142,6 +143,22 @@ describe("opening a branch", () => {
     expect(tab.api.branches.github.seen).toHaveLength(reads)
     expect(await tab.rows()).toEqual([{ name: "feature/one", mode: "open" }, { name: "main", mode: "locked" }])
     expect(tab.dispatched()).toBe(3)
+  }, WITHIN)
+
+  // The coordinator's ruling 5 on the data gate: a fresh branch's conversation shows nothing until its my-conversations
+  // row syncs (fail closed). This measures that wait from the open's start.
+  test("a fresh branch's conversation shows once its my-conversations row syncs, within seconds", async () => {
+    const tab = await open()
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    owners.shown.tanstack.startSyncImmediate()
+    const started = performance.now()
+    const branchId = await tab.actions.open("octo", "hello", "feature/one")
+    const conversationId = await conversationOf(branchId!)
+    await vi.waitFor(() => expect(owners.shown.tanstack.toArray.map((row) => row.conversationId)).toContain(conversationId),
+      { timeout: 10_000, interval: 10 })
+    const ms = Math.round(performance.now() - started)
+    console.log("MINE_DELAY_MS", ms)
+    expect(ms).toBeLessThan(10_000)
   }, WITHIN)
 
   test("another page of the branch the tab shows keeps it ready: nothing unmounts, and ChatApi isn't asked again", async () => {

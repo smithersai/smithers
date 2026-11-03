@@ -4,6 +4,7 @@ import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { keep } from "./writes"
 import type { Commitment } from "./lifecycle"
 import { Clock, Effect, Metric, Option, Stream } from "effect"
+import { AuthStore } from "../auth/store"
 import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
 import {
@@ -96,7 +97,10 @@ export const search = (owner: string, name: string, q: string) =>
   }).pipe(Effect.annotateLogs({ feature: "issues" }))
 
 /** A person's Try again on an unavailable direct issue. */
-export const retry = Effect.andThen(reconnectShapes, recordShapeRetry("issue"))
+export const retry = Effect.flatMap(AuthStore, (auth) => auth.askCheck).pipe(
+  Effect.andThen(reconnectShapes),
+  Effect.andThen(recordShapeRetry("issue")),
+)
 
 /**
  * What the route calls on a navigation: shows `owner/name`'s issues, or, with `number`, that issue; and opens that

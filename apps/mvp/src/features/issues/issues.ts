@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import type { AuthStore } from "../auth/store"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import {
@@ -113,7 +114,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
     Issues,
     Effect.gen(function* () {
       const store = yield* IssuesStore
-      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<IssuesStore | FlowDispatch>(), "issues")
+      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<IssuesStore | FlowDispatch | AuthStore>(), "issues")
       return Issues.of({
         // The routed repository's, read when the page renders.
         queries: {

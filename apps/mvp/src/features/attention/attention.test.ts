@@ -22,6 +22,10 @@ import { ChatStore } from "../chat/store"
 import { Status } from "../status/status"
 import { RUNS_SHAPE_ROUTE } from "../status/contract"
 import { StatusStore } from "../status/store"
+import { Home } from "../home/home"
+import { replaceRole, RepoStore } from "../repo/store"
+import { viewById } from "../../plugins/plugins"
+import { PluginsUi } from "../../plugins/ui"
 import { dropped, hide, retry } from "./actions"
 import { Attention } from "./attention"
 import { NOTIFICATIONS_SHAPE_ROUTE } from "./contract"
@@ -259,7 +263,8 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(tablet.entry(subject)).toMatchObject({ state: "done", listed: true }))
     tablet.attention.actions.dismiss(subject)
     await until(() => expect(tablet.entry(subject)).toBeUndefined())
-    expect(ann.entry(subject)).toMatchObject({ state: "done", listed: true })
+    // Each device has its own shape delivery; the tablet's receipt cannot establish Ann's current row.
+    await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done", listed: true }))
   })
 
   test("a tab follows each conversation it shows once per person, and not while signed out or a Guest", async () => {
@@ -569,6 +574,138 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
       expect(ann.pending()).toEqual([])
       await until(() => expect(ann.entry(subject)).toMatchObject({ stack: true }))
     }
+  })
+})
+
+// The data gate (decision 0110, 2026-11-03): a notice about a repository leaves every query the feed shows in the change
+// that hides the repository, a refusal mark or a session a reached server couldn't verify, before anything is wiped.
+describe("the data gate", { timeout: ENGINE_WITHIN }, () => {
+  test("a repository's notice leaves the toasts, the list, the panel and the bell in the change that hides it", async () => {
+    const api = await openApi()
+    const ann = await openDevice(api)
+    const subject = "clone:github/octo/hello"
+    const repoId = "github/octo/hello"
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href, version)
+        VALUES ('person-member', ${subject}, 'clone', 'failed', true, ${repoId}, 'octo/hello', 'failed:not_found',
+          '/octo/hello', 1)`)))
+    await until(() => expect(ann.feed()).toContain(subject))
+    const auth = await ann.run(Effect.service(AuthStore))
+    const repos = await ann.run(Effect.service(RepoStore) as unknown as Effect.Effect<RepoStore["Service"]>)
+    /** Every query the feed shows, read in the same Effect as `change`, with nothing run between. */
+    const shownAfter = (change: Effect.Effect<unknown>) => ann.run(Effect.gen(function* () {
+      const store = yield* AttentionStore
+      yield* change
+      const queries = [store.stack, store.stackHere, store.list, store.listHere, store.feed, store.unread, store.needs]
+      return (yield* Effect.forEach(queries, (query) => query.toArray)).flat().map((entry) => entry.id)
+    }))
+    expect(await shownAfter(Effect.void)).toContain(subject)
+    // A reached server couldn't verify the session: the notice shows nowhere, and shows again once it can.
+    expect(await shownAfter(Effect.orDie(auth.session.update(SESSION, (row) => {
+      row.status = "unreachable"
+      row.unverifiable = true
+    })))).not.toContain(subject)
+    expect(await shownAfter(Effect.orDie(auth.session.update(SESSION, (row) => {
+      row.status = "signed_in"
+      delete row.unverifiable
+    })))).toContain(subject)
+    // The refusal mark alone.
+    expect(await shownAfter(replaceRole(repos, { id: repoId, role: null, own: false, refused: "forbidden" }))).not.toContain(subject)
+  })
+
+  // Astra on b978c783: the host's strip read the raw waits, so a refused repository's question kept its option buttons,
+  // and the queue kept it selected. A wait shows through its run's conversation (runs.conversation_id), whose repository
+  // must show.
+  test("a refused repository's question leaves core/waits, the strip's rows and the queue's selection", async () => {
+    const api = await openApi()
+    const ann = await openDevice(api)
+    const branchId = crypto.randomUUID()
+    const conversationId = crypto.randomUUID()
+    const repoId = "github/octo/hello"
+    await Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      Effect.all([
+        sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, ${repoId}, 'feature', 'open')`,
+        sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, ${repoId}, ${branchId})`,
+        sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`,
+      ], { discard: true }))))
+    await ann.run(show(conversationId))
+    const answerId = await ask(ann, "Pick the release branch")
+    ;(await Effect.runPromise(api.answerTo("Pick the release branch"))).cell(
+      askCell(`{ kind: "question", prompt: "Which branch?", options: ["main", "release"] }`),
+    )
+    const ui = await ann.run(Effect.service(PluginsUi) as unknown as Effect.Effect<PluginsUi["Service"]>)
+    const statuses = await ann.run(Effect.service(StatusStore) as unknown as Effect.Effect<StatusStore["Service"]>)
+    const repos = await ann.run(Effect.service(RepoStore) as unknown as Effect.Effect<RepoStore["Service"]>)
+    statuses.waits.tanstack.startSyncImmediate()
+    ui.queries.views.startSyncImmediate()
+    const waitsCore = ui.actions.core("core/waits")!
+    waitsCore.rows.startSyncImmediate()
+    await until(() => expect(statuses.waits.tanstack.toArray.map((row) => row.runId)).toContain(answerId))
+    // The queue selects it, and the strip offers its options.
+    await ui.actions.tab("queue")
+    const state = () => ui.queries.views.toArray.find((row) => row.id === "queue/queue")
+    await until(() => expect(state()).toMatchObject({ query: "core/waits", item: answerId }))
+    const view = viewById(ui.contributions, "queue/queue")!
+    const offered = () => {
+      const item = (waitsCore.rows.toArray as unknown as ReadonlyArray<Readonly<Record<string, unknown>>>).find((row) => row.runId === state()?.item)
+      return ui.actions.strip(view, item).buttons.map((button) => button.label)
+    }
+    expect(offered()).toEqual(expect.arrayContaining(["main", "release"]))
+    // The repository refuses Ann: in the same change, no query the host or the strip reads holds the question.
+    const after = await ann.run(Effect.gen(function* () {
+      yield* replaceRole(repos, { id: repoId, role: null, own: false, refused: "forbidden" })
+      return {
+        waits: (yield* statuses.waits.toArray).map((row) => row.runId),
+        rows: (waitsCore.rows.toArray as unknown as ReadonlyArray<Readonly<Record<string, unknown>>>).map((row) => row.runId),
+        // What a plugin reads, in the same change (Astra on 0c7b9f01: it lagged behind a separate fiber).
+        live: waitsCore.live.current().map((row) => row["runId"]),
+      }
+    }))
+    expect(after).toEqual({ waits: [], rows: [], live: [] })
+    expect(offered()).toEqual([])
+    // The queue's selection of it goes.
+    await until(() => expect(state()?.item).toBeNull())
+  })
+
+  // Astra on 0c7b9f01: a branch's statuses read its raw messages, and the home's live blocks every raw run, so a refused
+  // repository's question showed in `Status.queries.of` and on another repository's home.
+  test("a refused repository's run leaves its branch's statuses and every home's runs in the same change", async () => {
+    const api = await openApi()
+    const ann = await openDevice(api)
+    const branchId = crypto.randomUUID()
+    const conversationId = crypto.randomUUID()
+    const repoId = "github/octo/hello"
+    await Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      Effect.all([
+        sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, ${repoId}, 'feature', 'open')`,
+        sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, ${repoId}, ${branchId})`,
+        sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`,
+      ], { discard: true }))))
+    await ann.run(show(conversationId))
+    const answerId = await ask(ann, "Pick the gadget")
+    ;(await Effect.runPromise(api.answerTo("Pick the gadget"))).cell(
+      askCell(`{ kind: "question", prompt: "Which gadget?", options: ["one", "two"] }`),
+    )
+    const statuses = await ann.run(Effect.service(StatusStore) as unknown as Effect.Effect<StatusStore["Service"]>)
+    const repos = await ann.run(Effect.service(RepoStore) as unknown as Effect.Effect<RepoStore["Service"]>)
+    // What a home's live run blocks read (`Home.queries.runs`).
+    const homeRuns = (await ann.run(Effect.service(Home) as unknown as Effect.Effect<Home["Service"]>)).queries.runs
+    homeRuns.startSyncImmediate()
+    await until(() => expect(statuses.opened(conversationId)).toBeDefined())
+    const branch = statuses.opened(conversationId)!.statuses
+    branch.tanstack.startSyncImmediate()
+    await until(() => {
+      expect(branch.tanstack.toArray.find((row) => row.id === answerId)?.state).toBe("needs_you")
+      expect(homeRuns.toArray.map((row) => row.id)).toContain(answerId)
+    })
+    const after = await ann.run(Effect.gen(function* () {
+      yield* replaceRole(repos, { id: repoId, role: null, own: false, refused: "forbidden" })
+      return {
+        statuses: (yield* branch.toArray).map((row) => row.id),
+        homeRuns: homeRuns.toArray.map((row) => row.id).filter((id) => id === answerId),
+      }
+    }))
+    expect(after).toEqual({ statuses: [], homeRuns: [] })
   })
 })
 

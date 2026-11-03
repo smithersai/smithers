@@ -1338,6 +1338,37 @@ test.each([undefined, "metadata-fixture-token"])("default metadata transport che
   }
 })
 
+// Astra on the data gate after 499b1e44: a metadata 404/410 is retryable unavailable, and the role route's `readable`
+// must say so rather than `false`, which the client's data gate shows as "You don't have access".
+test.each([404, 410])("readable is unavailable, never false, when a public repository's metadata answers %s", async (status) => {
+  const server = createServer((request, response) => {
+    expect(request.url).toBe("/repos/acme/widgets")
+    response.writeHead(status, { "content-type": "application/json" })
+    response.end(JSON.stringify({ message: "Not Found" }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
+    const config = ConfigProvider.fromUnknown({
+      ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl),
+      GITHUB_API_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    })
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scratch = yield* TestDatabase.Scratch
+      const roles = rolesThatRead(REPOSITORY, "member")
+      const routes = yield* make(scratch.database, { repository: REPOSITORY, app: Option.none(), roles })
+      const readable = yield* routes.mayRead(REPOSITORY).pipe(
+        Effect.provide(Actor.signedOut),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://app.test/"))),
+      )
+      expect(readable).toMatchObject({ unavailable: true })
+    })).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  }
+})
+
 test("the production metadata transport uses the configured read token and refuses a newly private repository", async () => {
   const seen: Array<{ path: string | undefined; authorization: string | undefined }> = []
   const server = createServer((request, response) => {

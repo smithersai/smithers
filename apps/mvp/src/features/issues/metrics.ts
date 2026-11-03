@@ -38,6 +38,12 @@ export const submissionFailures = Metric.counter("smithers_issue_submission_fail
 })
 
 /** Repositories whose issues the device evicted once this person lost read access, by `status` (`sign_in`, `forbidden`). */
+/** Refusals that couldn't list the device's stored issue details, so those details stayed at rest (decision 0110). */
+export const detailsUnlisted = Metric.counter("smithers_issue_access_details_unlisted", {
+  description: "Refusals that couldn't list the issue details the device stores",
+  incremental: true,
+})
+
 export const evictions = Metric.counter("smithers_issue_access_evictions", {
   description: "Repositories whose issues the device evicted after read access was lost, by status",
   incremental: true,

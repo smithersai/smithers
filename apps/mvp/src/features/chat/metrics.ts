@@ -6,6 +6,12 @@ import { Metric } from "effect"
 
 const MILLISECONDS = Metric.exponentialBoundaries({ start: 50, factor: 2, count: 12 })
 
+/** Milliseconds until local drafts and the outbox are initialized, before repository display stores start. */
+export const writesReadyMs = Metric.histogram("smithers_web_chat_writes_ready_ms", {
+  description: "Milliseconds until drafts and outbox are ready",
+  boundaries: MILLISECONDS,
+})
+
 /** Device draft writes by stage: waiting, stored or failed. */
 export const draftWrites = Metric.counter("smithers_web_draft_writes", {
   description: "Device draft writes by persistence stage",

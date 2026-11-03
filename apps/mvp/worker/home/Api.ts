@@ -72,11 +72,18 @@ export const handles = (path: string): boolean => parseHomePath(path) !== undefi
 
 const headers = { "cache-control": "no-store", vary: "cookie" }
 
+/** The shapes' answer to whether a person may read a repository, or that it couldn't decide now. */
+export type Readable = boolean | { readonly unavailable: true; readonly retryAfterSeconds?: number | undefined }
+
 /** What the route serves: who has which role on which repository, and the curated homes. */
 export interface Options<R> {
   /** The person's role on the routed repository (decision 0079); `R` is what its database's layer needs. */
   readonly roles: RepoRoles.RepoRoles<R>
-  readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean, never, R | Sessions>
+  /**
+   * Whether the person may read the repository's content by the shapes' check: `unavailable` when that check couldn't
+   * decide, which the route answers 503 with a wait, never `readable: false` (a refusal to the client's data gate).
+   */
+  readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable, never, R | Sessions>
   /** Whether the deployment syncs the repository's issues and pull requests (decision 0079 slice 1b), for anyone. */
   readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean, never, R>
   /** The curated homes: worker/home/curated/ unless a test gives its own. */
@@ -233,13 +240,23 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
     const workspaceRole = decided.success.source === "no_role_here" && Option.isSome(actor.success)
       ? RepoRoles.uninstalledRole(roles, actor.success.value, repositoryOf(`${target.owner}/${target.name}`))
       : decided.success.role
+    // Any role there reads its shapes: only a person with none needs the shapes' own check (a public repository),
+    // which resolves the role again.
+    const readable = mayRead === undefined ? undefined
+      : decided.success.role !== null ? true
+      : yield* mayRead(repositoryOf(`${target.owner}/${target.name}`))
+    if (typeof readable === "object") {
+      return yield* record(
+        HttpServerResponse.jsonUnsafe({ code: "unavailable" }, {
+          status: 503,
+          headers: { ...headers, "retry-after": String(readable.retryAfterSeconds ?? 5) },
+        }),
+        { outcome: "readable_unavailable", own, ...decided.success },
+      )
+    }
     const answer: RepoRoleAnswer = { role: decided.success.role, own,
       ...(workspaceRole === decided.success.role ? {} : { workspaceRole }),
-      // Any role there reads its shapes: only a person with none needs the shapes' own check (a public repository),
-      // which resolves the role again.
-      ...(mayRead === undefined ? {} : {
-        readable: decided.success.role !== null ? true : yield* mayRead(repositoryOf(`${target.owner}/${target.name}`)),
-      }),
+      ...(readable === undefined ? {} : { readable }),
       ...(maySync === undefined ? {} : { synced: yield* maySync(repositoryOf(`${target.owner}/${target.name}`)) }),
     }
     return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), { outcome: "answered", own, ...decided.success })

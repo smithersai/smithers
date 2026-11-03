@@ -2,6 +2,7 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserCollectionCoordinator } from "@tanstack/browser-db-sqlite-persistence"
 import { close as closeFile, FilesPage, open as openFile } from "./actions"
 import { FilesStore } from "./store"
+import { replaceRole, RepoStore } from "../repo/store"
 // File tabs (docs/features/files.md): the strip and its links as pure functions; then a tab on RepoApi's real handler
 // and Electric (src/test/repoDevice.ts), whose repository view keeps a tab for every file it shows, and whose
 // `file/open` and `file/close` run on its own engine through dispatch, the person's door and the agent's, asking the
@@ -29,6 +30,7 @@ const AT = { owner: "octocat", name: "Spoon-Knife", revision: "main" } as const
 const row = (path: string, position: number, overrides: Partial<FileTabRow> = {}): FileTabRow => ({
   key: tabKey(AT, path),
   ...AT,
+  repoId: "github/octocat/spoon-knife",
   path,
   lines: null,
   position,
@@ -195,6 +197,60 @@ describe("a file the repository view shows", () => {
     await show(tab, "tree", "docs")
     expect(paths(tab)).toEqual([["README.md", null], ["src/index.ts", "1-3"]])
     expect(tab.tabs().map((r) => r.revision)).toEqual(["main", "main"])
+  })
+
+  // Astra on 19af7eb9: the gate stays closed until the device's refusal marks are applied, so a cold reload shows no
+  // row before them. This measures what that costs (the coordinator's ruling: tell them if it is over 100 ms): the time
+  // from the store's start to the marks being known, and how long the strip's first tab waits past its stored row.
+  test("a cold reload with a stored refusal shows the strip once the refusals are known, and says how long that took", async () => {
+    const h = await repoHarness(server)
+    await h.seed("octocat", "Spoon-Knife")
+    const device = nodeDevice()
+    const persistence = Persistence.layer(device.persistence!)
+    const first = await openTab({ origin: h.origin, fetch: h.fetch, confirmWithin: "10 seconds", persistence })
+    tabs.push(first)
+    await show(first, "blob", "README.md", "2")
+    await waitFor(() => expect(paths(first)).toEqual([["README.md", "2"]]))
+    // Another repository refused this person: its mark is on the device.
+    await first.runtime.runPromise(Effect.flatMap(RepoStore, (store) => store.refuse("github/acme/refused")))
+    await waitFor(() => expect(device.stored("repo-refusals")).toBe(1))
+    await first.dispose()
+    tabs.splice(tabs.indexOf(first), 1)
+    const openedAt = performance.now()
+    const second = await openTab({ origin: h.origin, fetch: h.fetch, confirmWithin: "10 seconds", persistence })
+    tabs.push(second)
+    const files = await second.runtime.runPromise(Effect.service(FilesStore))
+    files.all.tanstack.startSyncImmediate()
+    let storedAt: number | undefined
+    let shownAt: number | undefined
+    await vi.waitFor(() => {
+      const now = performance.now()
+      if (storedAt === undefined && files.tabs.tanstack.toArray.length > 0) storedAt = now
+      if (shownAt === undefined && files.all.tanstack.toArray.length > 0) shownAt = now
+      expect(shownAt).toBeDefined()
+    }, { timeout: 10_000, interval: 1 })
+    const known = second.lines("repo.refusals.known")[0]?.annotations
+    expect(known).toMatchObject({ marks: 1 })
+    console.log(`[data gate timing] store start to refusals known: ${String(known?.durationMs)} ms; ` +
+      `strip's first tab after its stored row: ${(shownAt! - (storedAt ?? shownAt!)).toFixed(1)} ms; ` +
+      `tab open to first tab shown: ${(shownAt! - openedAt).toFixed(1)} ms`)
+    expect(files.all.tanstack.toArray.map((row) => row.path)).toEqual(["README.md"])
+  })
+
+  // Astra on 0c7b9f01: the strip filtered the tabs in its component; the store exposed every one. The store's query
+  // holds none of a repository that may not show, from the change that hides it, and they stay on the device.
+  test("a refused repository's tabs leave the store's query in the same change, and stay on the device", async () => {
+    const h = await repoHarness(server)
+    const tab = await open(h)
+    await show(tab, "blob", "README.md", "2")
+    await waitFor(() => expect(paths(tab)).toEqual([["README.md", "2"]]))
+    const after = await tab.runtime.runPromise(Effect.gen(function* () {
+      const repos = yield* RepoStore
+      const files = yield* FilesStore
+      yield* replaceRole(repos, { id: "github/octocat/spoon-knife", role: null, own: false, refused: "forbidden" })
+      return { shown: (yield* files.all.toArray).map((r) => r.path), kept: (yield* files.tabs.toArray).map((r) => r.path) }
+    }))
+    expect(after).toEqual({ shown: [], kept: ["README.md"] })
   })
 })
 

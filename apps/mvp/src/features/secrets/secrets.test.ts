@@ -23,6 +23,7 @@ import {
 import { Auth } from "../auth/auth"
 import { AuthStore, SESSION } from "../auth/store"
 import { repoId } from "../repo/contract"
+import { replaceRole, RepoStore } from "../repo/store"
 import { Repo } from "../repo/repo"
 import { SecretNotSaved, SecretsClient } from "./api"
 import { secretRoute } from "./contract"
@@ -86,7 +87,7 @@ const faultyClient = () => {
   return { layer, state }
 }
 
-type App = ManagedRuntime.ManagedRuntime<Secrets | SecretsStore | Auth | AuthStore | Repo | TestChatApi, unknown>
+type App = ManagedRuntime.ManagedRuntime<Secrets | SecretsStore | Auth | AuthStore | Repo | RepoStore | TestChatApi, unknown>
 
 /**
  * The app on a fresh ChatApi as `actor` (an Admin unless set), with an Admin among its `people`, on a device whose
@@ -405,6 +406,38 @@ describe("who sees what", () => {
     expect(leaks(tab.kept())).toEqual([])
   }, WITHIN)
 
+  // The data gate (decision 0110, 2026-11-03): a repository's secret names and its forms leave every query the store
+  // exposes in the change that hides the repository, before any wipe.
+  test("a repository's secret names and forms leave every exposed query in the change that hides it", async () => {
+    const tab = await open({
+      actor: person("member"),
+      before: (api) => putElsewhere(api, "STRIPE_KEY", { value: VALUE, hosts: ["api.stripe.com"], methods: ["GET"] }),
+    })
+    await until(() => expect(tab.rows()).toHaveLength(1))
+    expect(tab.actions.add("OTHER_KEY", VALUE, "api.stripe.com")).toBe(true)
+    await until(() => expect(tab.form("add")?.failure).toBe("forbidden"))
+    /** How many rows each exposed query holds, read in the same Effect as `change`, with nothing run between. */
+    const countsAfter = (change: Effect.Effect<unknown>) => tab.runtime.runPromise(Effect.gen(function* () {
+      yield* change
+      return { list: tab.queries.list(REPO_ID).toArray.length, forms: tab.queries.forms.toArray.length }
+    }))
+    expect(await countsAfter(Effect.void)).toEqual({ list: 1, forms: 1 })
+    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+    // A reached server couldn't verify the session: nothing wipes, and nothing shows.
+    expect(await countsAfter(Effect.orDie(session.update(SESSION, (row) => {
+      row.status = "unreachable"
+      row.unverifiable = true
+    })))).toEqual({ list: 0, forms: 0 })
+    expect(await countsAfter(Effect.orDie(session.update(SESSION, (row) => {
+      row.status = "signed_in"
+      delete row.unverifiable
+    })))).toEqual({ list: 1, forms: 1 })
+    // The refusal mark alone, before any wipe: nothing shows.
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    expect(await countsAfter(replaceRole(repos, { id: REPO_ID, role: null, own: false, refused: "forbidden" })))
+      .toEqual({ list: 0, forms: 0 })
+  }, WITHIN)
+
   test("a Guest and a signed-out person get no rows", async () => {
     for (const actor of [person("guest"), null]) {
       // The secret is in Postgres before the page opens, so its first sync would bring it to anyone allowed.
@@ -412,7 +445,14 @@ describe("who sees what", () => {
       expect(tab.access()).toBe("none")
       expect(await tab.list.toArrayWhenReady()).toEqual([])
       expect(tab.actions.add("OTHER_KEY", VALUE, "api.stripe.com")).toBe(true)
-      await until(() => expect(tab.form("add")?.failure).toBe(actor === null ? "authentication" : "forbidden"))
+      if (actor !== null) await until(() => expect(tab.form("add")?.failure).toBe("forbidden"))
+      else {
+        // Signed out, the role answer grants nothing, so the repository's rows, its forms included, show nothing and
+        // the page asks to sign in (decision 0110, the data gate). ChatApi's refusal is still kept on the form.
+        const { forms } = await tab.runtime.runPromise(Effect.service(SecretsStore))
+        await until(async () => expect(Option.getOrUndefined(await tab.runtime.runPromise(forms.get(`${REPO_ID}|add`)))?.failure).toBe("authentication"))
+        expect(tab.form("add")).toBeUndefined()
+      }
     }
   }, WITHIN * 2)
 })

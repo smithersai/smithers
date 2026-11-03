@@ -1,5 +1,5 @@
 import { createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
-import { Effect, Exit, Layer, Metric, Option, Schedule, Scope } from "effect"
+import { Cause, Effect, Exit, Layer, Metric, Option, Schedule, Scope } from "effect"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { describe, expect, test } from "vitest"
 import { Collection, Persistence } from "../src/index.ts"
@@ -313,5 +313,57 @@ describe("the layer", () => {
     expect(closed).toEqual(["coordinator", "database"])
     const exit = await Effect.runPromiseExit(Effect.scoped(Layer.build(layer(true))))
     expect(Exit.isSuccess(exit)).toBe(true)
+  })
+})
+
+// `collection_registry` is TanStack DB's private table. A refusal that wipes a family's members depends on it, so a
+// change must fail closed, and never read as a device that stores nothing.
+describe("the collections a database holds", () => {
+  const listing = (execute?: (sql: string) => Promise<ReadonlyArray<unknown>>) =>
+    Effect.runPromise(
+      Effect.scoped(Effect.flatMap(Persistence.Persistence, (service) => Effect.exit(service.collections!))).pipe(
+        Effect.provide(Persistence.layer({ open: () => ({ execute, close: () => {} }), make: () => ({}) as never }))
+      )
+    )
+
+  test("fails closed when a database cannot list its collections", async () => {
+    const answered = await listing()
+    expect(Exit.isFailure(answered)).toBe(true)
+    if (Exit.isFailure(answered)) {
+      expect(Cause.findErrorOption(answered.cause).pipe(Option.getOrThrow)).toBeInstanceOf(
+        Persistence.CollectionsUnreadable
+      )
+    }
+  })
+
+  test("lists what TanStack DB's table names", async () => {
+    const answered = await listing(async () => [{ collection_id: "a" }, { collection_id: "b" }])
+    expect(Exit.isSuccess(answered) && answered.value).toEqual(["a", "b"])
+  })
+
+  test.each(
+    [
+      ["the table is gone", async () => {
+        throw new Error("no such table")
+      }],
+      ["its column changed", async () => [{ id: "a" }]]
+    ] as const
+  )("fails when %s", async (_, execute) => {
+    expect(Exit.isFailure(await listing(execute))).toBe(true)
+  })
+
+  test("the real table answers, on the persistence the device uses", async () => {
+    const path = databaseFile()
+    const name = id("notes")
+    const answered = await program(
+      path,
+      Effect.gen(function*() {
+        const made = yield* notes(name)
+        yield* made.restored
+        yield* Effect.flatMap(made.insert(note("a", 1)), (written) => written.persisted)
+        return yield* (yield* Persistence.Persistence).collections!
+      })
+    )
+    expect(answered).toContain(name)
   })
 })

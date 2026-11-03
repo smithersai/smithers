@@ -381,7 +381,9 @@ describe("one access matrix for every reader of a repository's issues", () => {
         actions: cell.shapes,
         // A comparison the gate lets through asks GitHub for it, whatever GitHub then answers; a refused one never does.
         compare: cell.shapes === "200" ? { asked: true } : { answer: cell.shapes, asked: false },
-        readable: cell.shapes === "200",
+        // A viewer stage that couldn't decide is `unavailable`, never `false`: the client's data gate reads `false` as a
+        // refusal (Astra on the data gate after 499b1e44).
+        readable: cell.shapes === "200" ? true : cell.shapes.startsWith("503 ") ? expect.objectContaining({ unavailable: true }) : false,
       })
     }
 

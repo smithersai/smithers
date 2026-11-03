@@ -16,6 +16,11 @@ import { chain } from "./digest"
 import { dials, replays } from "./metrics"
 import type { Frame, Row } from "./schema"
 import { Transcript } from "./transcript"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { RepoRole, Session } from "../auth/schema"
+import { makeVisibility } from "../repo/gate"
+import { RunPage } from "../runs/schema"
+import { pageShowsAlone, RunsStore } from "../runs/store"
 
 const closers: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -69,13 +74,17 @@ const transcriptHost = async () => {
 /** The transcript layer of one tab on `origin`, with its own metrics and a quick redial. */
 const QUICK = RetryPolicy.make({ initialMs: 20, factor: 1, maxMs: 20, maxAttempts: 3 })
 
-/** The transcript layer of one tab on `origin`, with its own metrics; `redial` null is the panel's own policy. */
-const tab = async (origin: string, redial: RetryPolicy.RetryPolicy | null = QUICK) => {
+/**
+ * The transcript layer of one tab on `origin`, with its own metrics; `redial` null is the panel's own policy. `runs`, a
+ * runs' store, gives the run pages its items join.
+ */
+const tab = async (origin: string, redial: RetryPolicy.RetryPolicy | null = QUICK, runs: Layer.Layer<RunsStore> = Layer.empty as never) => {
   const registry: Metric.MetricRegistry = new Map()
   const runtime = ManagedRuntime.make(
     Transcript.layer(redial === null ? { origin } : { origin, redial }).pipe(
       Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, registry)),
       Layer.provideMerge(FetchHttpClient.layer),
+      Layer.provide(runs),
     ),
   )
   closers.push(() => runtime.dispose())
@@ -185,6 +194,66 @@ describe("watching a run's transcript", () => {
       expect(page.count(dials, { outcome: closed })).toBe(1)
     },
   )
+
+  // Astra on 0c7b9f01: a refused redial changed only the panel's status, and its items still rendered beside the refusal.
+  test("a refusal after events empties what the panel shows", async () => {
+    n = 0
+    const host = await transcriptHost()
+    host.plain.status = 403
+    const page = await tab(host.origin)
+    page.actions.watch(RUN)
+    await until(() => expect(host.peers).toHaveLength(1))
+    host.peers[0]!.send({ type: "events", events: [said("private plan")] })
+    await until(() => expect(page.items()).toHaveLength(1))
+    host.peers[0]!.drop()
+    await until(() => expect(page.panel()).toMatchObject({ phase: "closed", closed: "forbidden" }))
+    expect(page.items()).toEqual([])
+  })
+
+  // Astra on 0c7b9f01: the items showed whatever the run's repository. They join the run's page as the data gate shows
+  // it (`RunsStore.shownPages`), so a repository's refusal empties them in the same change.
+  test("a refusal of the run's repository empties the items in the same change", async () => {
+    n = 0
+    const host = await transcriptHost()
+    const REPO = "github/acme/widgets"
+    const held: { roles?: Collection.Collection<RepoRole, string>; pages?: Collection.Collection<RunPage, string> } = {}
+    const runs = Layer.effect(RunsStore, Effect.gen(function* () {
+      const roles = yield* Collection.local<RepoRole, string>({ id: `roles-${crypto.randomUUID()}`, schema: RepoRole, getKey: (row) => row.id })
+      const session = yield* Collection.local<Session, string>({
+        id: `session-${crypto.randomUUID()}`,
+        schema: Session,
+        getKey: (row) => row.id,
+        initialData: [{ id: "session", status: "signed_in", login: "ann", role: "member", available: true, signingOut: false, restored: true }],
+      })
+      const pages = yield* Collection.local<RunPage, string>({
+        id: `pages-${crypto.randomUUID()}`,
+        schema: RunPage,
+        getKey: (row) => row.id,
+        initialData: [{ id: RUN, state: "read", inspection: {}, more: [], hasMore: false, repoId: REPO }],
+      })
+      held.roles = roles
+      held.pages = pages
+      const visibility = yield* makeVisibility(roles, session)
+      // As the runs' store gates its pages: a page holding no read shows as it is.
+      return { shownPages: yield* visibility.gate(pages, "repoId", pageShowsAlone) } as unknown as RunsStore["Service"]
+    }))
+    const page = await tab(host.origin, QUICK, runs)
+    page.actions.watch(RUN)
+    await until(() => expect(host.peers).toHaveLength(1))
+    host.peers[0]!.send({ type: "events", events: [said("private plan")] })
+    await until(() => expect(page.items()).toHaveLength(1))
+    const roles = held.roles!
+    await Effect.runPromise(Effect.orDie(roles.insert({ id: REPO, role: null, own: false, refused: "forbidden" })))
+    expect(page.items()).toEqual([])
+    // Astra on 19af7eb9: a read still on its way when the refusal came fails (a 403) and writes a page holding no read,
+    // which shows unattributed. It proves nothing of the run, so the items stay hidden.
+    await Effect.runPromise(Effect.orDie(held.pages!.update(RUN, (draft) => {
+      draft.state = "unavailable"
+      draft.inspection = null
+      delete draft.repoId
+    })))
+    expect(page.items()).toEqual([])
+  })
 
   test("a run that can't be reached for the redial's whole policy closes the panel; letting go empties it", async () => {
     n = 0

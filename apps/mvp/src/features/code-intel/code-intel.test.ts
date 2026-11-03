@@ -410,7 +410,7 @@ describe("a TypeScript file opens in its commit's language server", () => {
 
 describe("the routed file and its lines", () => {
   const view = { ...emptyView, owner: "o", name: "n", kind: "blob" as const, sha: "s".repeat(40), path: "a.ts" }
-  const tree = { key: "t", state: "ready" as const, paths: ["a.ts", "b.md"], truncated: false, message: null }
+  const tree = { key: "t", repoId: "github/o/n", state: "ready" as const, paths: ["a.ts", "b.md"], truncated: false, message: null }
 
   test("a served file at a commit with its file list is the target; anything else is none", () => {
     expect(targetOf({ view, tree }, "main")).toEqual({

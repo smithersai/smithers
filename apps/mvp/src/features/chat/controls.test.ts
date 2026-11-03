@@ -1,6 +1,8 @@
+import { BranchStore } from "../branch/store"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Scope, Stream } from "effect"
+import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import {
@@ -13,6 +15,11 @@ import {
   TestChatApi,
 } from "../../test/chatApi"
 import { EngineFaults, QuestionFaults } from "../../test/faults"
+import { failRestore } from "../../test/restoreFailure"
+import { ConversationOwners } from "../conversations/owners"
+import { AuthStore, SESSION } from "../auth/store"
+import { role as readRole } from "../repo/actions"
+import { replaceRole, RepoStore } from "../repo/store"
 import { ask, copyableText, retryAnswer, setDraft, show, takeBack } from "./actions"
 import { Chat } from "./chat"
 import { shaOf } from "../../../worker/test/branch"
@@ -21,6 +28,7 @@ import { ViewsStore } from "../views/store"
 import { firstAnswerText } from "./metrics"
 import { HOME_DRAFT, PLACE } from "./schema"
 import { SharedPrompt } from "./sharedPrompt"
+import { ChatWrites, keepUnsent } from "./writes"
 import { ChatStore, chatConfig, confirmDelivery, timeFirstText } from "./store"
 import { postgresTime, timeOf } from "./view"
 
@@ -412,6 +420,80 @@ describe("times", () => {
 
 // A question, its draft, its delivery and its timing stay in their own conversation (docs/features/chat.md).
 describe("drafts and delivery stay in their own conversation", () => {
+  test("queued and unsent branch text waits for ownership and access, including cold refusal restoration", async () => {
+    const { api, device } = await openOffline()
+    api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main"), feature: shaOf("feature") } })
+    const tab = await openOn(api, device)
+    const branch = await tab.run(Effect.service(Branch))
+    await branch.actions.open("octo", "hello", "feature")
+    const conversationId = Option.getOrThrow(await tab.run(tab.store.place.get(PLACE))).conversationId!
+    const owners = await tab.run(Effect.service(ConversationOwners))
+    await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(true))
+    const queued = await tab.actions.ask("queued private text")
+    if (!queued.asked) throw new Error(queued.reason)
+    const unsentId = crypto.randomUUID()
+    await tab.run(Effect.flatten(keepUnsent(tab.store.unsent, {
+      v: 2, id: unsentId, answerId: crypto.randomUUID(), text: "unsent private text", queuedAt: Date.now(), conversationId,
+    }, "refused")))
+    const view = tab.queries.of(conversationId)
+    view.conversation.startSyncImmediate()
+    view.pinned.startSyncImmediate()
+    tab.queries.pinPending.startSyncImmediate()
+    const shown = () => view.conversation.toArray.map(({ role, status, text }) => `${role} ${status} ${text}`).sort()
+    const expected = ["user queued queued private text", "user unsent unsent private text"]
+    await until(() => expect(shown()).toEqual(expected))
+    tab.actions.pin(queued.questionId, true)
+    await until(() => expect(view.pinned.toArray.map(row => row.text)).toEqual(["queued private text"]))
+    expect(tab.queries.pinPending.toArray.map(row => row.text)).toEqual(["queued private text"])
+    const repos = await tab.run(Effect.service(RepoStore))
+    // The query closes in the same change as a denial, while delivery retains both raw rows.
+    const auth = await tab.run(Effect.service(AuthStore))
+    const denied = await tab.run(Effect.andThen(replaceRole(repos, { id: "github/octo/hello", role: null, own: false, refused: "forbidden" }),
+      Effect.sync(() => ({ conversation: shown(), pinned: view.pinned.toArray, pending: tab.queries.pinPending.toArray }))))
+    expect(denied, JSON.stringify({
+      visible: repos.visible.tanstack.get("github/octo/hello")?.show,
+      owner: owners.mine.tanstack.get(conversationId)?.owner,
+      repo: owners.mine.tanstack.get(conversationId)?.repo,
+      home: auth.session.tanstack.get(SESSION)?.homeConversationId === conversationId,
+      counts: [denied.conversation.length, denied.pinned.length, denied.pending.length],
+      stages: [tab.store.opened(conversationId)!.conversation.tanstack.size, tab.store.opened(conversationId)!.latest.tanstack.size],
+      sources: [tab.store.shownAsking.tanstack.size, tab.store.shownUnsent.tanstack.size],
+    })).toEqual({ conversation: [], pinned: [], pending: [] })
+    expect(tab.store.asking.tanstack.has(queued.questionId)).toBe(true)
+    expect(tab.store.unsent.tanstack.has(unsentId)).toBe(true)
+    await tab.run(readRole("octo", "hello"))
+    await until(() => expect(shown()).toEqual(expected))
+    expect(view.pinned.toArray.map(row => row.text)).toEqual(["queued private text"])
+    // Remove both verified attribution sources. Neither local text source may bypass that missing relation.
+    const branchCache = (await tab.run(Effect.service(BranchStore))).conversations
+    const cachedRoutes = branchCache.tanstack.toArray.filter(row => row.conversationId === conversationId).map(row => row.id)
+    if (cachedRoutes.length > 0) await tab.run(branchCache.delete(cachedRoutes).pipe(Effect.flatMap(write => write.persisted)))
+    const saved = await tab.run(api.github.run(Effect.flatMap(SqlClient.SqlClient, sql =>
+      sql<Record<string, unknown>>`DELETE FROM conversation_people WHERE conversation_id = ${conversationId} RETURNING *`)))
+    await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(false))
+    expect(shown()).toEqual([])
+    expect(view.pinned.toArray).toEqual([])
+    expect(tab.queries.pinPending.toArray).toEqual([])
+    await tab.run(api.github.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`INSERT INTO conversation_people ${sql.insert(saved)}`)))
+    await until(() => expect(shown()).toEqual(expected))
+    expect(view.pinned.toArray.map(row => row.text)).toEqual(["queued private text"])
+    await tab.run(repos.refuse("github/octo/hello"))
+    expect(shown()).toEqual([])
+    await tab.close()
+    const cold = await openOn(api, failRestore(device, "repo-refusals"))
+    await cold.run(show(conversationId))
+    await until(() => expect(cold.store.asking.tanstack.has(queued.questionId)).toBe(true))
+    await until(() => expect(cold.store.unsent.tanstack.has(unsentId)).toBe(true))
+    const coldView = cold.queries.of(conversationId)
+    coldView.conversation.startSyncImmediate()
+    coldView.pinned.startSyncImmediate()
+    cold.queries.pinPending.startSyncImmediate()
+    await until(() => expect(cold.store.pinState.pending.tanstack.has(conversationId)).toBe(true))
+    expect(coldView.conversation.toArray).toEqual([])
+    expect(coldView.pinned.toArray).toEqual([])
+    expect(cold.queries.pinPending.toArray).toEqual([])
+  }, 90_000)
+
   /** A tab showing branch `feature` of `octo/hello`, whose conversation it asks in. */
   const onBranch = async (options: TabOptions = {}) => {
     const { api, device } = await openApi()
@@ -559,7 +641,7 @@ describe("drafts and delivery stay in their own conversation", () => {
     const views = await tab.run(Effect.service(ViewsStore))
     let unavailable = true
     // The device can't open the branch's views collection while the question is confirmed (test.faults-by-injection).
-    const context = await tab.run(Layer.build(ChatStore.layer(chatConfig(api.origin, quick as never), host)).pipe(
+    const context = await tab.run(Layer.build(ChatStore.layer(chatConfig(api.origin, quick as never), host).pipe(Layer.provide(ChatWrites.layer(host)))).pipe(
       Effect.provideService(ViewsStore, { ...views, forConversation: (id) => unavailable
         ? Effect.die(new Error("collection unavailable")) : views.forConversation(id) }),
       Scope.provide(tab.store.scope),

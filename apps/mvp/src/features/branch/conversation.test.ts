@@ -1,3 +1,4 @@
+import { ConversationOwners } from "../conversations/owners"
 // One conversation per branch (decision 0013 §1, docs/features/branch-workspace.md#the-conversation): chat, the views and
 // a person's `/web` on the browser's own layer (`appLayer`) over a Node device whose engine leads, against ChatApi's
 // real handler over the compose Postgres and Electric (src/test/chatApi.ts). Branches are recorded as `POST
@@ -9,6 +10,7 @@ import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Effect, type ManagedRuntime, Scheduler, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import * as ConversationPeople from "../../../worker/branch/ConversationPeople.ts"
 import * as Conversations from "../../../worker/branch/Conversations.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { framable } from "../../../worker/test/pages.ts"
@@ -19,6 +21,7 @@ import { Chat } from "../chat/chat"
 import { COULDNT_ANSWER, QUESTIONS_ROUTE } from "../chat/contract"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
+import { replaceRole, RepoStore } from "../repo/store"
 import { ViewsStore } from "../views/store"
 import { Views } from "../views/views"
 
@@ -42,7 +45,7 @@ const quick: TabOptions = {
 
 /** A tab on `runtime`, signed in as a Member, with the live queries React starts on first render. */
 const tabOn = async <R, E>(
-  runtime: ManagedRuntime.ManagedRuntime<R | Chat | ChatStore | Views | ViewsStore | Commands | AuthStore | TestChatApi, E>,
+  runtime: ManagedRuntime.ManagedRuntime<R | ConversationOwners | Chat | ChatStore | Views | ViewsStore | Commands | AuthStore | TestChatApi, E>,
 ) => {
   runtimes.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
@@ -89,10 +92,27 @@ const tabOn = async <R, E>(
       return history.toArray[0]
     },
     place: () => chat.queries.place.toArray[0]?.conversationId,
-    /** Branch `name` of `octo/hello`, recorded as `POST /api/branches` records it: its conversation's id. */
+    /**
+     * Branch `name` of `octo/hello`, recorded as `POST /api/branches` records it: tracked, and opened by the person, whose
+     * list then has its conversation (worker/branch/ConversationPeople.ts). Its conversation's id.
+     */
     branch: (name: string) =>
+      runtime.runPromise(api.branches.run(Effect.gen(function* () {
+        const tracked = yield* Conversations.track("github/octo/hello", name, "open", shaOf(name))
+        yield* ConversationPeople.opened(tracked.branch.conversationId, member.subject.id, "octo", "hello", name)
+        return tracked.branch.conversationId
+      }))),
+    /** Branch `name` of `octo/hello`, tracked, which the person never opened: their list has no row of it. */
+    unopened: (name: string) =>
       runtime.runPromise(api.branches.run(Conversations.track("github/octo/hello", name, "open", shaOf(name))))
         .then((tracked) => tracked.branch.conversationId),
+    /** A message of conversation `conversationId` in Postgres, as the agent's answer writes it: its id. */
+    message: async (conversationId: string, text: string) => {
+      const id = crypto.randomUUID()
+      await sql((sql) => sql`INSERT INTO messages (id, role, text, status, conversation_id)
+        VALUES (${id}, 'user', ${text}, 'done', ${conversationId})`)
+      return id
+    },
     /** Asks `text` in conversation `conversationId` as another device does, through ChatApi. */
     askIn: async (conversationId: string, text: string) => {
       const ids = { id: crypto.randomUUID(), answerId: crypto.randomUUID() }
@@ -128,6 +148,8 @@ describe("a branch's conversation", () => {
   test("is its own: what is asked there syncs to it and never home, and home keeps its own", async () => {
     const tab = await openChat()
     const branch = await tab.branch("feature/one")
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    await until(() => expect(owners.mine.tanstack.has(branch)).toBe(true))
     await tab.chat.actions.show(branch)
     expect(tab.place()).toBe(branch)
 
@@ -499,6 +521,56 @@ describe("pages in a branch's conversation", () => {
       Effect.flatMap(Effect.flatMap(ViewsStore, (views) => views.forConversation(other)), (views) => views.preload),
     )
     expect(inOther.toArray).toEqual([])
+  }, WITHIN)
+
+  // The data gate (decision 0110, 2026-11-03; Astra on b978c783): a branch conversation's messages and views, and the
+  // full-screen route's view of one, show only while the conversation's repository may. Nothing wipes them on a
+  // refusal; they leave every query in the change that refuses it.
+  test("a branch conversation's messages and views leave every query in the change that refuses its repository", async () => {
+    const tab = await openWithPages()
+    const branch = await tab.branch("feature/gated")
+    await tab.chat.actions.show(branch)
+    tab.commands.actions.type("/web https://example.com/docs")
+    tab.commands.actions.submit("/web https://example.com/docs")
+    await until(() => expect(tab.shown(branch)).toEqual(["view webpage https://example.com/docs"]))
+    const viewId = tab.chat.queries.of(branch).conversation.toArray[0]!.id
+    await tab.message(branch, "A private message")
+    await until(() => expect(tab.shown(branch)).toContain("user done A private message"))
+    // The full-screen route on /app/views/$viewId?conversation=… (src/screens/view/ViewScreen.tsx) reads `shownIn`.
+    await tab.views.actions.show(viewId, branch)
+    const full = tab.views.queries.shownIn(branch)
+    full.startSyncImmediate()
+    await until(() => expect(full.toArray).toEqual([expect.objectContaining({ id: viewId })]))
+    const rows = tab.views.queries.rowsIn(branch)
+    rows.startSyncImmediate()
+    const { conversation, pinned, everything } = tab.chat.queries.of(branch)
+    for (const query of [conversation, pinned, everything]) query.startSyncImmediate()
+    const repository = "github/octo/hello"
+    const counts = () => ({
+      conversation: conversation.toArray.length, everything: everything.toArray.length, views: rows.toArray.length,
+      full: full.toArray.length,
+    })
+    const after = (change: Effect.Effect<unknown, never, RepoStore>) =>
+      tab.runtime.runPromise(Effect.andThen(change, Effect.sync(counts)))
+    expect(await after(Effect.flatMap(RepoStore, (repos) => replaceRole(repos, { id: repository, role: null, own: false, refused: "forbidden" }))))
+      .toEqual({ conversation: 0, everything: 0, views: 0, full: 0 })
+    // A grant shows them again: nothing was wiped.
+    await tab.runtime.runPromise(Effect.flatMap(RepoStore, (repos) => replaceRole(repos, { id: repository, role: "member", own: false })))
+    await until(() => expect(counts()).toMatchObject({ views: 1, full: 1 }))
+    expect(tab.shown(branch)).toContain("user done A private message")
+  }, WITHIN)
+
+  test("a branch conversation the person has no row of shows nothing", async () => {
+    const tab = await openChat()
+    const branch = await tab.unopened("feature/unlisted")
+    await tab.chat.actions.show(branch)
+    const id = await tab.message(branch, "Not on their list")
+    // The device has the row; no query shows it.
+    await until(async () => expect((await tab.runtime.runPromise(tab.store.opened(branch)!.messages.toArray)).map((row) => row.id)).toContain(id))
+    expect(tab.shown(branch)).toEqual([])
+    const rows = tab.views.queries.rowsIn(branch)
+    rows.startSyncImmediate()
+    expect(rows.toArray).toEqual([])
   }, WITHIN)
 
   test("the agent's page lands in its answer's conversation, however the asking tab moved", async () => {

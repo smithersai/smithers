@@ -19,7 +19,7 @@ test("standalone homes have empty issues, sync, runs, stack and access blocks", 
     expect(await runtime.runPromise(store.homes.get("repo@sha"))).toMatchObject({ value: { state: "absent" } })
     expect(await runtime.runPromise(store.curated.get("repo"))).toMatchObject({ value: { defaultBranch: "main" } })
 
-    await runtime.runPromise(store.files.insert({ key: "repo@sha:README.md", home: "repo@sha", path: "README.md", state: "text", text: "Home" }))
+    await runtime.runPromise(store.files.insert({ key: "repo@sha:README.md", repoId: "repo", home: "repo@sha", path: "README.md", state: "text", text: "Home" }))
     expect(await runtime.runPromise(store.files.get("repo@sha:README.md"))).toMatchObject({ value: { text: "Home" } })
   } finally {
     await runtime.dispose()
