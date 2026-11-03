@@ -15,10 +15,10 @@
 import type * as Path from "@smthrs/kernel/Path"
 import { Effect } from "effect"
 import type * as FileSystem from "effect/FileSystem"
-import type * as StdError from "../StdError.ts"
+import type * as StdError from "../StdError.vibe"
 import * as Ignore from "./Ignore.ts"
 import * as Prune from "./Prune.ts"
-import { rootFailure } from "./SearchContract.ts"
+import { rootFailure } from "./SearchContract.vibe"
 
 /**
  * Directory basenames excluded from recursive descent.
@@ -65,10 +65,10 @@ export const relativeForPattern = (path: Path.Path, from: string, to: string): s
 export const symbolicLinks = (
   fileSystem: FileSystem.FileSystem,
   candidates: ReadonlyArray<string>
-): Effect.Effect<ReadonlyArray<boolean>> =>
+): ReadonlyArray<boolean>!! =>
   Effect.forEach(
     candidates,
-    (candidate) => fileSystem.readLink(candidate).pipe(Effect.as(true), Effect.orElseSucceed(() => false)),
+    (candidate) => fileSystem.readLink(candidate) |> Effect.as(%, true) |> Effect.orElseSucceed(%, () => false),
     { concurrency }
   )
 
@@ -106,9 +106,11 @@ export const files = (
   hidden: boolean,
   noIgnore = false,
   included: (relative: string, basename: string) => boolean = () => true
-): Effect.Effect<Walked, StdError.StdError> =>
-  Effect.gen(function*() {
-    const info = yield* fileSystem.stat(root).pipe(Effect.mapError((error) => rootFailure(root, error)))
+): Walked!StdError.StdError =>
+  effect {
+    const info = fileSystem.stat(root) catch effect (error) => {
+      throw rootFailure(root, error)
+    }
     if (info.type === "File") return { explicitFile: true, files: [path.normalize(root)], ignored: false }
     const files: Array<string> = []
     let excluded = false
@@ -120,42 +122,42 @@ export const files = (
       const next = directories.pop()!
       const { directory } = next
       let scopes = next.scopes
-      const children: ReadonlyArray<string> = yield* fileSystem.readDirectory(directory).pipe(
-        Effect.catch((error) =>
-          directory === root
-            ? Effect.fail(rootFailure(directory, error))
-            : Effect.succeed<ReadonlyArray<string>>([])
-        )
-      )
+      const children: ReadonlyArray<string> = fileSystem.readDirectory(directory) catch effect (error) =>
+        try (directory === root
+          ? Effect.fail(rootFailure(directory, error))
+          : Effect.succeed<ReadonlyArray<string>>([]))
       if (!noIgnore && children.includes(".gitignore")) {
-        const content = yield* fileSystem.readFileString(path.join(directory, ".gitignore")).pipe(
-          Effect.orElseSucceed(() => "")
+        const content = fileSystem.readFileString(path.join(directory, ".gitignore")) catch () => ""
+        const scope = try Effect.orDie(
+          Effect.try({ try: () => Ignore.parse(directory, content), catch: (error) => error })
         )
-        const scope = Ignore.parse(directory, content)
         if (scope.rules.length > 0) scopes = [...scopes, scope]
       }
       const candidates = children
         .filter((child) => !skippedDirectories.has(child) && (hidden || !child.startsWith(".")))
         .map((child) => path.join(directory, child))
-      const entries = yield* Effect.forEach(candidates, (candidate) =>
-        fileSystem.stat(candidate).pipe(
-          Effect.map((candidateInfo): { readonly candidate: string; readonly type: string | undefined } => ({
-            candidate,
-            type: candidateInfo.type
-          })),
-          Effect.orElseSucceed(() => ({ candidate, type: undefined }))
-        ), { concurrency })
+      const entries = try Effect.forEach(candidates, (candidate) =>
+        fileSystem.stat(candidate)
+        |> Effect.map(%, (candidateInfo): { readonly candidate: string; readonly type: string | undefined } => ({
+          candidate,
+          type: candidateInfo.type
+        }))
+        |> Effect.orElseSucceed(%, () => ({ candidate, type: undefined })), { concurrency })
       const nested: Array<string> = []
       for (const entry of entries) {
         if (
           entry.type !== undefined &&
-          Ignore.ignored(
-            scopes,
-            entry.candidate,
-            path.basename(entry.candidate),
-            entry.type === "Directory",
-            (from, to) => relativeForPattern(path, from, to)
-          )
+          (try Effect.orDie(Effect.try({
+            try: () =>
+              Ignore.ignored(
+                scopes,
+                entry.candidate,
+                path.basename(entry.candidate),
+                entry.type === "Directory",
+                (from, to) => relativeForPattern(path, from, to)
+              ),
+            catch: (error) => error
+          })))
         ) {
           if (
             entry.type === "Directory" ||
@@ -166,11 +168,11 @@ export const files = (
         if (entry.type === "Directory") nested.push(entry.candidate)
         else if (entry.type === "File") files.push(path.normalize(entry.candidate))
       }
-      const links = yield* symbolicLinks(fileSystem, nested)
+      const links = try symbolicLinks(fileSystem, nested)
       for (let index = 0; index < nested.length; index++) {
         const candidate = nested[index]!
         if (links[index] !== true) directories.push({ directory: candidate, scopes })
       }
     }
     return { explicitFile: false, files: files.sort(), ignored: excluded }
-  })
+  }

@@ -102,7 +102,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Write.ts",
         "src/Edit.ts",
         "src/ApplyPatch.ts",
-        "src/internal/ApplyPatch.ts"
+        "src/internal/ApplyPatch.vibe"
       ]
     },
     {
@@ -178,7 +178,7 @@ const securityReview = Smithers.SecurityReview({
         "Error messages or logs that include the request, headers, or credential reference.",
         "An unbounded response.json read that a hostile or compromised endpoint can use to exhaust memory."
       ],
-      paths: ["src/ExaWebSearch.ts", "src/WebSearch.ts"]
+      paths: ["src/ExaWebSearch.ts", "src/WebSearch.vibe"]
     },
     {
       id: "untrusted-output-bounds",

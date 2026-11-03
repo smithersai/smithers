@@ -126,4 +126,4 @@ export declare const run: (input: {
     readonly body: string;
     readonly truncated: boolean;
     readonly notice?: string | undefined;
-}, import("../../../src/StdError.ts").StdError, import("@smthrs/kernel/GrantStore").GrantStore | import("effect/http/HttpClient").HttpClient>;
+}, import("./StdError.vibe").StdError, import("@smthrs/kernel/GrantStore").GrantStore | import("effect/http/HttpClient").HttpClient>;

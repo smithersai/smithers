@@ -11,7 +11,7 @@ import {
   printSummary,
   seekSequence,
   StreamingPatchParser
-} from "../src/internal/ApplyPatch.ts"
+} from "../src/internal/ApplyPatch.vibe"
 import { sourceLines } from "../src/internal/Text.ts"
 import { fileInfo, layer } from "./TestLayers.ts"
 

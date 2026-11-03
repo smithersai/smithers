@@ -45,10 +45,10 @@ export * as Grep from "./Grep.ts"
 export * as Search from "./Search.vibe"
 
 /** @category services @since 1.0.0 */
-export * as SearchContract from "./SearchContract.ts"
+export * as SearchContract from "./SearchContract.vibe"
 
 /** @category conformance @since 1.0.0 */
-export * as SearchConformance from "./SearchConformance.ts"
+export * as SearchConformance from "./SearchConformance.vibe"
 
 /** @category layers @since 1.0.0 */
 export * as PortableSearch from "./PortableSearch.ts"
@@ -87,7 +87,7 @@ export * as Relocate from "./Relocate.vibe"
 export * as TestRun from "./TestRun.ts"
 
 /** @category services @since 1.0.0 */
-export * as TestRunner from "./TestRunner.ts"
+export * as TestRunner from "./TestRunner.vibe"
 
 /**
  * @category classification
@@ -111,7 +111,7 @@ export * as ShellCommand from "./ShellCommand.ts"
  * @category flows
  * @since 1.0.0
  */
-export * as UpdatePlan from "./UpdatePlan.ts"
+export * as UpdatePlan from "./UpdatePlan.vibe"
 
 /**
  * @category flows
@@ -134,7 +134,7 @@ export * as Explore from "./Explore.vibe"
 /** @category flows @since 1.0.0 */
 export * as WebFetch from "./WebFetch.ts"
 /** @category flows @since 1.0.0 */
-export * as WebSearch from "./WebSearch.ts"
+export * as WebSearch from "./WebSearch.vibe"
 /** @category services @since 1.0.0 */
 export * as ExaWebSearch from "./ExaWebSearch.ts"
 /** @category services @since 1.0.0 */
@@ -152,4 +152,4 @@ export * as Manifest from "./Manifest.ts"
  * @category errors
  * @since 1.0.0
  */
-export * as StdError from "./StdError.ts"
+export * as StdError from "./StdError.vibe"

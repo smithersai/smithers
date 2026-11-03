@@ -5,7 +5,7 @@ import {
   parsePatch,
   seekSequence,
   StreamingPatchParser
-} from "../src/internal/ApplyPatch.ts"
+} from "../src/internal/ApplyPatch.vibe"
 
 const updateChunks = (patch: string) => {
   const hunk = parsePatch(patch).hunks[0]

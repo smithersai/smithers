@@ -13,10 +13,8 @@
  *
  * @since 1.0.0
  */
-
-import { Context, Effect, Layer } from "effect"
-import * as StdError from "./StdError.ts"
-
+import { Context, Effect, Layer } from "effect";
+import * as StdError from "./StdError.vibe";
 /**
  * The default ref naming a tree as it stood before the agent touched it.
  *
@@ -26,8 +24,7 @@ import * as StdError from "./StdError.ts"
  * @category constants
  * @since 1.0.0
  */
-export const captureBase = "refs/flows/capture-base"
-
+export declare const captureBase = "refs/flows/capture-base";
 /**
  * How this repository runs its tests.
  *
@@ -41,24 +38,23 @@ export const captureBase = "refs/flows/capture-base"
  * @since 1.0.0
  */
 export interface Runner {
-  /** The runner command line, without any test selection. */
-  readonly command: string
-  /** Where the runner runs; the container's path when `container` is set. */
-  readonly cwd?: string | undefined
-  /** The host path of the repository, when it differs from `cwd`. */
-  readonly root?: string | undefined
-  /** A container to route the run through, via the `Container` transport. */
-  readonly container?: string | undefined
-  /** Environment the runner needs. */
-  readonly env?: Record<string, string> | undefined
-  /** The ref whose commit is the pristine base; defaults to {@link captureBase}, then HEAD. */
-  readonly baseRef?: string | undefined
-  /** False refuses baseline requests before any process runs. */
-  readonly baseline?: false | undefined
-  /** Default wall-clock budget for one run. */
-  readonly timeoutMs?: number | undefined
+    /** The runner command line, without any test selection. */
+    readonly command: string;
+    /** Where the runner runs; the container's path when `container` is set. */
+    readonly cwd?: string | undefined;
+    /** The host path of the repository, when it differs from `cwd`. */
+    readonly root?: string | undefined;
+    /** A container to route the run through, via the `Container` transport. */
+    readonly container?: string | undefined;
+    /** Environment the runner needs. */
+    readonly env?: Record<string, string> | undefined;
+    /** The ref whose commit is the pristine base; defaults to {@link captureBase}, then HEAD. */
+    readonly baseRef?: string | undefined;
+    /** False refuses baseline requests before any process runs. */
+    readonly baseline?: false | undefined;
+    /** Default wall-clock budget for one run. */
+    readonly timeoutMs?: number | undefined;
 }
-
 /**
  * The declaration service.
  *
@@ -66,54 +62,40 @@ export interface Runner {
  * @since 1.0.0
  */
 export interface TestRunner {
-  readonly declared: Effect.Effect<Runner, StdError.StdError>
+    readonly declared: Effect.Effect<Runner, StdError.StdError>;
 }
-
 /**
  * The {@link TestRunner} service tag.
  *
  * @category services
  * @since 1.0.0
  */
-export const TestRunner: Context.Service<TestRunner, TestRunner> = Context.Service("@smthrs/std/TestRunner")
-
+export declare const TestRunner: Context.Service<TestRunner, TestRunner>;
 /**
  * Declares one repository's runner.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const make = (runner: Runner): TestRunner => TestRunner.of({ declared: Effect.succeed(runner) })
-
+export declare const make: (runner: Runner) => TestRunner;
 /**
  * Declares that this host knows of no runner.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const makeNoop = (): TestRunner =>
-  TestRunner.of({
-    declared: Effect.fail(
-      new StdError.StdError({
-        code: "provider_unavailable",
-        message:
-          "No test runner is declared for this repository, so there is nothing for the test flow to run. Use bash with the command this project's own documentation gives."
-      })
-    )
-  })
-
+export declare const makeNoop: () => TestRunner;
 /**
  * Provides {@link make}.
  *
  * @category layers
  * @since 1.0.0
  */
-export const layer = (runner: Runner): Layer.Layer<TestRunner> => Layer.succeed(TestRunner, make(runner))
-
+export declare const layer: (runner: Runner) => Layer.Layer<TestRunner>;
 /**
  * Provides {@link makeNoop}.
  *
  * @category layers
  * @since 1.0.0
  */
-export const layerNoop: Layer.Layer<TestRunner> = Layer.succeed(TestRunner, makeNoop())
+export declare const layerNoop: Layer.Layer<TestRunner>;

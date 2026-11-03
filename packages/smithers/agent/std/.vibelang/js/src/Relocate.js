@@ -46,7 +46,7 @@ const located = {
     read: { field: "path", kind: "path" },
     ls: { field: "path", kind: "path" },
     grep: { field: "root", kind: "path" },
-    glob: { field: "root", kind: "path" },
+    glob: { field: "root", kind: "path" }
 };
 /**
  * Resolves `.` and `..` inside a relative path, or answers `undefined` when the
@@ -136,7 +136,7 @@ export const relocate = (flow, input, materialized) => {
             : "";
         return {
             _tag: "Relocated",
-            input: { ...record, cwd: kept === undefined || kept === "" ? base : `${base}/${kept}` },
+            input: { ...record, cwd: kept === undefined || kept === "" ? base : `${base}/${kept}` }
         };
     }
     const relative = materialized.host.slice(withoutTrailingSlash(materialized.root).length + 1);

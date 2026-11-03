@@ -47,11 +47,11 @@
 
 import { Effect, Schema } from "effect"
 import { capability, envelope, rootSubtree } from "./internal/Declaration.ts"
-import { invalidInput } from "./internal/SearchContract.ts"
+import { invalidInput } from "./internal/SearchContract.vibe"
 import { MAX_GREP_MATCHES } from "./internal/Text.ts"
 import * as Search from "./Search.vibe"
-import * as Contract from "./SearchContract.ts"
-import * as StdError from "./StdError.ts"
+import * as Contract from "./SearchContract.vibe"
+import * as StdError from "./StdError.vibe"
 
 /**
  * The registry name for grep.

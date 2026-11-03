@@ -11,10 +11,10 @@ import * as FileSystem from "effect/FileSystem"
 import * as Exec from "./internal/Exec.ts"
 import * as Grouping from "./internal/Grouping.ts"
 import { notice, truncateBytes } from "./internal/Text.ts"
-import * as Walk from "./internal/Walk.ts"
+import * as Walk from "./internal/Walk.vibe"
 import * as Search from "./Search.vibe"
-import * as Contract from "./SearchContract.ts"
-import * as StdError from "./StdError.ts"
+import * as Contract from "./SearchContract.vibe"
+import * as StdError from "./StdError.vibe"
 
 /**
  * Maximum bytes captured from either stream across one search operation.

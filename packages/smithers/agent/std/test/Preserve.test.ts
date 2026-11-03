@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import * as ApplyPatch from "../src/ApplyPatch.ts"
 import * as Edit from "../src/Edit.ts"
 import * as Preserve from "../src/internal/Preserve.ts"
-import type * as StdError from "../src/StdError.ts"
+import type * as StdError from "../src/StdError.vibe"
 import * as Write from "../src/Write.ts"
 
 const original = "original content that must survive a failed replacement\n"

@@ -10,9 +10,8 @@ import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import type * as Scope from "effect/Scope"
-import * as Semaphore from "effect/Semaphore"
-import * as StdError from "../StdError.ts"
-import * as FsFailure from "./FsFailure.ts"
+import * as StdError from "../StdError.vibe"
+import * as FsFailure from "./FsFailure.vibe"
 
 /**
  * Authenticated standard-flow call session; absent callers cannot borrow another run's base.
@@ -52,8 +51,8 @@ export interface Change {
  */
 export interface Prepared {
   /** Return bytes matching the captured base, never an unchecked current read. */
-  readonly read: (path: string) => Effect.Effect<Uint8Array, StdError.StdError>
-  readonly commit: (changes: ReadonlyArray<Change>) => Effect.Effect<void, StdError.StdError>
+  readonly read: (path: string) => Uint8Array!StdError.StdError
+  readonly commit: (changes: ReadonlyArray<Change>) => void!StdError.StdError
 }
 
 /**
@@ -68,11 +67,11 @@ export interface VersionedFileSystem extends FileSystem.FileSystem {
       path: string,
       bytes: Uint8Array,
       session: string | undefined
-    ) => Effect.Effect<void, StdError.StdError>
+    ) => void!StdError.StdError
     readonly validate: (
       paths: ReadonlyArray<string>,
       session: string | undefined
-    ) => Effect.Effect<void, StdError.StdError>
+    ) => void!StdError.StdError
     /** Capture this invocation's bases from the existing ledger before tool-internal
      * reads. The returned commit must compare them again inside the provider, then
      * settle the entire batch before advancing the ledger. Concurrent reads or
@@ -82,7 +81,7 @@ export interface VersionedFileSystem extends FileSystem.FileSystem {
     readonly prepare?: (
       paths: ReadonlyArray<string>,
       session: string | undefined
-    ) => Effect.Effect<Prepared, StdError.StdError>
+    ) => Prepared!StdError.StdError
   }
 }
 
@@ -121,14 +120,13 @@ export const recordRead = (fs: FileSystem.FileSystem, path: string, bytes: Uint8
  * @category filesystem
  * @since 1.0.0
  */
-export const validate = (fs: FileSystem.FileSystem, paths: ReadonlyArray<string>) =>
-  Effect.gen(function*() {
-    const policy = (fs as VersionedFileSystem)[Preconditions]
-    if (policy === undefined) return
-    const session = yield* ReadSession
-    yield* policy.validate(paths, session)
-    if (policy.prepare === undefined) return yield* unavailable()
-  })
+export const validate = effect (fs: FileSystem.FileSystem, paths: ReadonlyArray<string>) => {
+  const policy = (fs as VersionedFileSystem)[Preconditions]
+  if (policy === undefined) return
+  const session = try ReadSession
+  try policy.validate(paths, session)
+  if (policy.prepare === undefined) return try unavailable()
+}
 
 /**
  * The portable body is used only for an ordinary, unversioned filesystem.
@@ -139,17 +137,17 @@ export const validate = (fs: FileSystem.FileSystem, paths: ReadonlyArray<string>
 export interface Mutation {
   readonly read: (
     path: string,
-    ordinary: Effect.Effect<Uint8Array, StdError.StdError>
-  ) => Effect.Effect<Uint8Array, StdError.StdError>
+    ordinary: Uint8Array!StdError.StdError
+  ) => Uint8Array!StdError.StdError
   readonly commit: (
     changes: ReadonlyArray<Change>,
-    ordinary: Effect.Effect<void, StdError.StdError>
-  ) => Effect.Effect<void, StdError.StdError>
+    ordinary: void!StdError.StdError
+  ) => void!StdError.StdError
 }
 
 // This serializes one host's preparation, ledger and diagnostic ordering only.
 // It is NOT the guest's outside-writer exclusion or its atomic commit boundary.
-const hostLocks = new WeakMap<object, Semaphore.Semaphore>()
+const hostLocks = new WeakMap<object, Semaphore>()
 
 // The on-disk lock protocol owns this hash; dependency upgrades must not
 // change the name and let two versions acquire different locks for one file.
@@ -174,58 +172,56 @@ const parent = (path: string) => path.slice(0, path.lastIndexOf(path.startsWith(
  * @private
  * @since 1.0.0
  */
-export const acquire = (
+export const acquire = effect (
   fileSystem: FileSystem.FileSystem,
   paths: ReadonlyArray<string>,
   creationPaths?: Path.Path
-): Effect.Effect<Mutation, StdError.StdError, Scope.Scope> =>
-  Effect.gen(function*() {
-    // Unavailable coding providers refuse before acquiring even protocol state.
-    // The versioned provider owns exclusion and revalidation at its commit;
-    // cooperative caller-side locks cannot exclude terminal or SSH writers.
-    yield* validate(fileSystem, paths)
-    const policy = (fileSystem as VersionedFileSystem)[Preconditions]
-    if (policy !== undefined) {
-      let lock = hostLocks.get(policy)
-      if (lock === undefined) {
-        lock = Semaphore.makeUnsafe(1)
-        hostLocks.set(policy, lock)
-      }
-      const held = lock
-      yield* Effect.acquireRelease(held.take(1), () => held.release(1), { interruptible: true })
-      const session = yield* ReadSession
-      const prepared = yield* policy.prepare!(paths, session)
-      return { read: (path) => prepared.read(path), commit: (changes) => prepared.commit(changes) }
+): Mutation!StdError.StdError!Scope.Scope => {
+  // Unavailable coding providers refuse before acquiring even protocol state.
+  // The versioned provider owns exclusion and revalidation at its commit;
+  // cooperative caller-side locks cannot exclude terminal or SSH writers.
+  try validate(fileSystem, paths)
+  const policy = (fileSystem as VersionedFileSystem)[Preconditions]
+  if (policy !== undefined) {
+    let lock = hostLocks.get(policy)
+    if (lock === undefined) {
+      lock = Semaphore.makeUnsafe(1)
+      hostLocks.set(policy, lock)
     }
-    const locks = new Map<string, string>()
-    for (const path of paths) {
-      const destination = yield* fileSystem.realPath(path).pipe(
-        Effect.catch((error) =>
-          error.reason._tag === "NotFound" && creationPaths !== undefined
-            ? fileSystem.realPath(creationPaths.dirname(path)).pipe(
-              Effect.map((directory) => creationPaths.join(directory, creationPaths.basename(path)))
-            )
-            : Effect.fail(error)
-        ),
-        Effect.mapError(FsFailure.reading(path, `File not found: ${path}`))
-      )
-      const lock = `${parent(destination)}.smithers-${lockHash(destination)}.lock`
-      locks.set(lock, path)
-    }
-    for (const [lock, path] of [...locks].sort(([left], [right]) => left.localeCompare(right))) {
-      yield* Effect.acquireRelease(
-        fileSystem.makeDirectory(lock, { mode: 0o700 }).pipe(
-          Effect.mapError(FsFailure.denied(path, (error) =>
+    const held = lock
+    try Effect.acquireRelease(held.take(1), () => held.release(1), { interruptible: true })
+    const session = try ReadSession
+    const prepared = try policy.prepare!(paths, session)
+    return { read: (path) => prepared.read(path), commit: (changes) => prepared.commit(changes) }
+  }
+  const locks = new Map<string, string>()
+  for (const path of paths) {
+    const destination = try (fileSystem.realPath(path)
+      |> Effect.catch(%, (error) =>
+        error.reason._tag === "NotFound" && creationPaths !== undefined
+          ? (fileSystem.realPath(creationPaths.dirname(path))
+            |> Effect.map(%, (directory) => creationPaths.join(directory, creationPaths.basename(path))))
+          : Effect.fail(error))
+      |> Effect.mapError(%, FsFailure.reading(path, `File not found: ${path}`)))
+    const lock = `${parent(destination)}.smithers-${lockHash(destination)}.lock`
+    locks.set(lock, path)
+  }
+  for (const [lock, path] of [...locks].sort(([left], [right]) => left.localeCompare(right))) {
+    try Effect.acquireRelease(
+      fileSystem.makeDirectory(lock, { mode: 0o700 })
+        |> Effect.mapError(
+          %,
+          FsFailure.denied(path, (error) =>
             new StdError.StdError({
               code: error.reason._tag === "AlreadyExists" ? "no_match" : "command_failed",
               message: error.reason._tag === "AlreadyExists"
                 ? `Concurrent mutation of ${path}: lock ${lock} is held. Re-read and retry after the other writer finishes; a stopped writer's lock requires explicit recovery.`
                 : `Could not lock ${path} for mutation`,
               path
-            })))
+            }))
         ),
-        () => fileSystem.remove(lock, { recursive: true }).pipe(Effect.orDie)
-      )
-    }
-    return { read: (_path, ordinary) => ordinary, commit: (_changes, ordinary) => ordinary }
-  })
+      () => fileSystem.remove(lock, { recursive: true }) |> Effect.orDie(%)
+    )
+  }
+  return { read: (_path, ordinary) => ordinary, commit: (_changes, ordinary) => ordinary }
+}

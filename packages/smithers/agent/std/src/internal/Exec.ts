@@ -20,7 +20,7 @@ import * as Effect from "effect/Effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import * as StdError from "../StdError.ts"
+import * as StdError from "../StdError.vibe"
 import { elideMiddle } from "./Text.ts"
 
 /**

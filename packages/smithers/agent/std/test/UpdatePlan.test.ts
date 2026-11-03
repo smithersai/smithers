@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as UpdatePlan from "../src/UpdatePlan.ts"
+import * as UpdatePlan from "../src/UpdatePlan.vibe"
 
 describe("UpdatePlan", () => {
   it("acknowledges with Codex's exact response text", async () => {

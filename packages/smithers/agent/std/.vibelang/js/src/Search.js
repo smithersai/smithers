@@ -36,7 +36,7 @@ export const make = (service) => Search.of(service);
 export const makeNoop = () => {
     const unavailable = () => Effect_1.suspend({ unavailable: () => { return (() => Effect_1.suspend(() => Effect_1.fail(new StdError.StdError({
             code: "provider_unavailable",
-            message: "No search implementation is configured",
+            message: "No search implementation is configured"
         }))))(); } }.unavailable);
     return make({ grep: unavailable, glob: unavailable });
 };

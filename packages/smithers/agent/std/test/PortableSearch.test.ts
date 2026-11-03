@@ -14,8 +14,8 @@ import * as LinearRegex from "../src/internal/LinearRegex.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
 import * as PortableSearch from "../src/PortableSearch.ts"
 import * as Search from "../src/Search.vibe"
-import * as SearchConformance from "../src/SearchConformance.ts"
-import * as SearchContract from "../src/SearchContract.ts"
+import * as SearchConformance from "../src/SearchConformance.vibe"
+import * as SearchContract from "../src/SearchContract.vibe"
 
 const root = mkdtempSync(join(tmpdir(), "portable-search-bounds-"))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
