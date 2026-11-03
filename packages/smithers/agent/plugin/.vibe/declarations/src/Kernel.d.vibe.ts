@@ -24,7 +24,7 @@ import type { ContextOf } from "./Hooks.vibe";
 import type { FlowsHooks } from "./index.vibe";
 import type { PluginInput } from "./Plugin.vibe";
 import type { PluginError } from "./PluginError.vibe";
-import * as Plugins from "./Plugins.vibe";
+import * as Plugins from "../../../src/Plugins.ts";
 import * as Resolve from "./Resolve.vibe";
 /**
  * Everything startup produces from a plugin list and a raw config.
