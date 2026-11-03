@@ -91,6 +91,129 @@ Catalog entry used for device snapshots: `@smthrs/effect-tanstack-db`. Its new
 locks remain accepted. Runtime epoch calculation and device preparation are
 unchanged. No existing Postgres migration or ledger key is renamed.
 
+## Review receipts
+
+On 2026-11-02 a lane reported "Astra found no issues" with no review in its log,
+and a real Astra run then found four P1s. A review is now a receipt the land tool
+checks. It applies to `workspace.mjs land` and `commit.mjs --push`. `git push`
+by hand skips it: this is a tool check, not a server rule.
+
+```text
+review.mjs --rev <revset> --prompt-file <f>
+  codex exec -m gpt-6-astra --sandbox read-only          the lane's request, then the tool's
+    answer's last line: VERDICT: PASS | VERDICT: FAIL    template and a Review-Manifest line
+  ~/smithers-builders/reviews/<change-id>/<session>.json one per commit, mode 600
+  ~/smithers-builders/reviews/logs/<session>.log
+
+land
+  every non-empty commit in main@origin..@
+    touches review-required.txt (read from main@origin)? if not, no review needed
+    a receipt for its change id and diff hash, proven by its rollout?
+      any FAIL: refuse     a PASS: land     neither: refuse, naming the command
+  land-log.jsonl records each receipt and override before the push
+```
+
+**What the land tool checks.** The receipt must name a rollout under its Codex
+home's `sessions/`, with a matching session id, one approved reviewer, only a
+`read-only` sandbox, and a completed first
+review turn whose tool-written manifest line names the commit, change, hash and
+repository, and whose final answer agrees with the verdict. A hand-written JSON file, a
+borrowed session, a receipt copied from another change and a FAIL edited to PASS
+all refuse. The gate runs again on the exact commits at publication, with no
+snapshot between it and the push. The verdict is the
+answer's last line only; prose never counts, and a session that ends without it
+writes no receipt.
+
+**Reviewers.** Astra by default. `--model gpt-6.1-sol` when Astra is unavailable; the
+receipt records the model the session ran. Fable is not accepted: a Claude session
+has no read-only sandbox record and a different format. With both Codex models out,
+use the override.
+
+**What it doesn't prove.** This is not cryptographic. Someone who forges a
+rollout file too can forge a receipt, and someone who deletes a FAIL receipt
+removes it. The lane writes the review request, so it can mislead Astra; the
+template tells Astra to treat that request as a description. Astra's PASS is one
+model's opinion, not a proof the code is right. Rollouts and receipts are local
+files, so review and land on the same host. Until the list is on main, the tool
+reads its own copy; a lane could empty that one, once.
+
+**The hash** is built from stored file contents (`jj file show` of each changed
+path in the commit and its one parent), with the line diff computed by the tool, never
+from `jj diff` text, whose format differs between jj 0.39, 0.45 and 0.46. A test pins
+the hash of a fixed pair of trees, so any change to its input fails loudly. It covers
+a commit's changed lines, three lines of context and hunk line numbers, so the same edit to a twin block differs. A rebase keeps it unless it
+shifts a hunk (a line added or removed above it in the same file) or edits within
+that context; then the land asks for a new review. A rebase past edits in other
+files keeps it. It ignores what landing rewrites: references that name a migration
+or decision the commit adds (its stem, "decision N", "migration N", and a decision's
+Markdown heading and links), quoted boundaries in migration tests, and the generated
+`target-index.json`, `MigrationManifest.ts` and `schemas.lock.json`. A bare number
+in code is content. A reference to a migration an earlier commit in the stack adds
+breaks the hash when that migration is renumbered.
+
+**A FAIL sticks to its diff.** A later PASS of identical content doesn't clear
+it, because rerunning isn't fixing. The lookup is by repository and hash across
+change ids, so a squash can't shed it. Change the code, or use the override and
+say why. A receipt holds its session's first review turn: resuming that session
+changes neither its verdict nor what it covers.
+
+**Follow-ups cost a new review.** Any fix after a pass changes the hash, so it
+needs another session; put "only the change since `<commit>`" in the request to
+keep it narrow. Measured on 2026-11-02's Astra reviews: narrow
+follow-up rounds took 20,000 to 64,000 tokens, and the median review took 105,000
+tokens and 4 minutes (90th percentile 153,000 tokens and 8.5 minutes). A
+stack is cheaper as one session over `main@origin..@`, and a separate fix commit
+on top needs a review only of itself. In that day's audit four commits changed after
+their pass with no new review, and four more landed with an open finding; that is the gap this cost closes.
+
+**Overrides.** `--no-review-needed "<reason>"` lands anyway. It needs a one-line
+reason, and each use appends a line to `~/.vibe-orch/proxy/inbox.md` (`HH:MMZ
+[land-override] who=... commit=... reason=...`) and to `land-log.jsonl`, once per
+commit. `who` is self-reported. It is for false positives and for reverting a bad
+commit in an incident, when waiting for a review is the greater risk. It also works
+when the receipt store, a receipt or a rollout can't be read, where a normal land
+refuses. The inbox line is written first and is mandatory; the land log, kept in
+the receipt store, is written after it, and a failure there is reported, not fatal. A Git
+checkout has no change ids, so it can hold no receipt and needs the override.
+
+The inbox path comes from the passwd home directory, not `HOME` or any other
+environment variable, so a land can't point the line elsewhere. If the file can't
+be written the override refuses, and the tool never creates it. So the override
+works only on the host that has the inbox, the Mac. On nyc-01, which has no
+`~/.vibe-orch`, it refuses; get a receipt there, or land on the Mac.
+
+**One lock.** `commit.mjs` moves main under `main-push.lock`, as `land` does, so
+neither can move main between the other's gate and push, and both re-read main
+before pushing. The lock is per host. A land from another host doesn't serialize
+with the Mac's; a moved main then fails the push.
+
+**The required list** names the areas where most files decide who may act or what
+they may read (`worker/branch`, `github`, `runners`, `personal`, `stack`, `ci`,
+`packages/effect-electric/src`), named access checks outside them, the device
+store and the land tool. Name a new such file in it. Tests, fixtures and
+`schemas.lock.json` are excluded, and migrations match by name, so a migration
+needs a matching name to be caught. Against 2026-11-02's 132 landed commits, an
+unusually access-heavy day, it requires 48. Adding a path lands through the same
+gate, because the list is itself on it.
+
+## The land's typecheck
+
+`workspace.mjs land` or `commit.mjs --push` whose diff touches `apps/mvp` runs `pnpm typecheck` there, covering the app,
+worker, infra and evals projects, and `--validated` doesn't skip it. `vibelang -p
+tsconfig.json` alone skips worker tests, which let a type error reach main twice
+in two days (7ee5a29a, ab1b52fd). It runs on the farm with no local install and
+before `main-push.lock` is held: `SMITHERS_MINI_RUN` with five seconds of admission, then
+`SMITHERS_LAT_RUN` if the mini has no slot or doesn't answer. A type error refuses
+the land. So does a farm that can't answer: the check counts only if the command's
+own `SMITHERS_TYPECHECK_EXIT` line comes back, because a client that skips a
+package also exits 0. Rerun when the farm has capacity. `commit.mjs --push` also
+binds publication to the tree its checks saw: an edit made after they ran, such as
+while it waits for the lock, refuses the push. Latitude classifies the command as
+light, so it needs no heavy-test permit. `mini-run` starts its admission clock after
+its health check and sweeps the slots once even with no wait; the target index
+also gets five seconds, because an older `mini-run` read 0 as already expired and
+sent every land to cfbox.
+
 ## Implemented: workspace and landing lifecycle
 
 `workspace.mjs` creates a private child of fetched immutable main, without

@@ -4182,6 +4182,14 @@
         "path": ".smithers/flows/land/lane-prerequisites.test.mjs"
       },
       {
+        "kind": "file",
+        "path": ".smithers/flows/land/review.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/land/typecheck.test.mjs"
+      },
+      {
         "kind": "glob",
         "pattern": ".smithers/flows/**/*.ts",
         "exclude": []

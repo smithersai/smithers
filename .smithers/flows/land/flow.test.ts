@@ -71,6 +71,7 @@ test("the payload maps to the module's argument array", () => {
     "printf ok"
   ])
   assert.deepEqual(argv({ push: false, noTest: "docs only" }), ["--no-test", "docs only"])
+  assert.deepEqual(argv({ noReviewNeeded: "comment only" }), ["--no-review-needed", "comment only"])
   // The module, not the wrapper, refuses both together and a push with neither.
   assert.deepEqual(argv({ tests: ["true"], noTest: "docs only" }), ["--test", "true", "--no-test", "docs only"])
 })

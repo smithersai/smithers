@@ -1,11 +1,13 @@
 import assert from "node:assert/strict"
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
+import { pathToFileURL } from "node:url"
 
 const script = resolve(import.meta.dirname, "commit.mjs")
+const { landWorkspace } = await import("./workspace.mjs")
 process.env.PATH = `${resolve(import.meta.dirname, "../../../node_modules/.bin")}:${process.env.PATH}`
 const copyHygiene = (directory) => {
   writeFileSync(join(directory, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\nimporters:\n  .: {}\n")
@@ -71,6 +73,105 @@ const ok = (cwd, bin, args) => {
   return result.stdout.trim()
 }
 for (const vcs of ["git", "jj"]) {
+  test(`${vcs}: a push touching a required path needs a receipt or a recorded override`, () => {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-commit-review-"))
+    const remote = mkdtempSync(join(tmpdir(), "smithers-commit-review-remote-"))
+    try {
+      copyHygiene(directory)
+      ok(directory, "git", ["init", "-b", "main"])
+      ok(directory, "git", ["config", "user.name", "Commit test"])
+      ok(directory, "git", ["config", "user.email", "test@example.com"])
+      ok(directory, "git", ["add", "."])
+      ok(directory, "git", ["commit", "-m", "initial"])
+      ok(remote, "git", ["init", "--bare", "-b", "main"])
+      ok(directory, "git", ["remote", "add", "origin", remote])
+      if (vcs === "jj") {
+        ok(directory, "jj", ["git", "init", "--colocate"])
+        ok(directory, "jj", ["config", "set", "--repo", "user.name", "Commit test"])
+        ok(directory, "jj", ["config", "set", "--repo", "user.email", "test@example.com"])
+      }
+      // The inbox path is a test seam in the process, never an environment variable.
+      const inbox = join(remote, "inbox.md")
+      const seam = join(remote, "seam.mjs")
+      writeFileSync(seam, `import { overrideInbox } from ${JSON.stringify(pathToFileURL(resolve(import.meta.dirname, "review.mjs")).href)}\noverrideInbox.path = ${JSON.stringify(inbox)}\n`)
+      ok(directory, "node", [script, "--push", "--no-test", "first push"])
+      const before = ok(remote, "git", ["rev-parse", "main"])
+      mkdirSync(join(directory, ".smithers/flows/land"), { recursive: true })
+      writeFileSync(join(directory, ".smithers/flows/land/gate.mjs"), "export const gate = 1\n")
+      if (vcs === "git") {
+        // A commit that later reverts itself still publishes: the net diff is empty, the history isn't.
+        ok(directory, "git", ["add", "."])
+        ok(directory, "git", ["commit", "-m", "touch the gate"])
+        ok(directory, "git", ["rm", ".smithers/flows/land/gate.mjs"])
+        ok(directory, "git", ["commit", "-m", "put it back"])
+        const hidden = command(directory, process.execPath, [script, "--push", "--no-test", "unit"])
+        assert.match(hidden.stderr, /Astra review required/)
+        assert.equal(ok(remote, "git", ["rev-parse", "main"]), before)
+        // A merge can carry an edit neither parent has.
+        ok(directory, "git", ["reset", "--hard", before])
+        ok(directory, "git", ["switch", "-c", "side"])
+        writeFileSync(join(directory, "side.txt"), "side\n")
+        ok(directory, "git", ["add", "."])
+        ok(directory, "git", ["commit", "-m", "side"])
+        ok(directory, "git", ["switch", "main"])
+        writeFileSync(join(directory, "beside.txt"), "beside\n")
+        ok(directory, "git", ["add", "."])
+        ok(directory, "git", ["commit", "-m", "beside"])
+        ok(directory, "git", ["merge", "--no-commit", "--no-ff", "side"])
+        mkdirSync(join(directory, ".smithers/flows/land"), { recursive: true })
+        writeFileSync(join(directory, ".smithers/flows/land/gate.mjs"), "export const gate = 1\n")
+        ok(directory, "git", ["add", "."])
+        ok(directory, "git", ["commit", "-m", "merge"])
+        const merged = command(directory, process.execPath, [script, "--push", "--no-test", "unit"])
+        assert.match(merged.stderr, /Astra review required/)
+        assert.equal(ok(remote, "git", ["rev-parse", "main"]), before)
+        ok(directory, "git", ["rm", ".smithers/flows/land/gate.mjs"])
+        ok(directory, "git", ["commit", "-m", "drop it"])
+        mkdirSync(join(directory, ".smithers/flows/land"), { recursive: true })
+        writeFileSync(join(directory, ".smithers/flows/land/gate.mjs"), "export const gate = 1\n")
+      }
+      const refused = command(directory, process.execPath, [script, "--push", "--no-test", "unit", "--message", "fix: the gate"])
+      assert.notEqual(refused.status, 0)
+      assert.match(refused.stderr, /Astra review required/)
+      assert.match(refused.stderr, /gate\.mjs/)
+      assert.equal(ok(remote, "git", ["rev-parse", "main"]), before)
+      assert.notEqual(ok(directory, "git", ["log", "main", "-1", "--format=%s"]), "fix: the gate")
+      const blank = command(directory, process.execPath, ["--import", seam, script, "--push", "--no-test", "unit", "--no-review-needed", " "])
+      assert.notEqual(blank.status, 0)
+      const landing = ["--import", seam, script, "--push", "--no-test", "unit", "--message", "fix: the gate", "--no-review-needed", "fixture"]
+      const unseen = command(directory, process.execPath, landing)
+      assert.match(unseen.stderr, /--no-review-needed refused: cannot write/)
+      assert.equal(ok(remote, "git", ["rev-parse", "main"]), before)
+      writeFileSync(inbox, "")
+      ok(directory, process.execPath, landing)
+      const landed = ok(remote, "git", ["rev-parse", "main"])
+      const [line, ...others] = readFileSync(inbox, "utf8").trim().split("\n")
+      assert.deepEqual(others, [])
+      // The shared-checkout route owes apps/mvp the same typecheck, and refuses a farm with no answer.
+      mkdirSync(join(directory, "apps/mvp"), { recursive: true })
+      writeFileSync(join(directory, "apps/mvp/x.txt"), "x\n")
+      const fakeClient = join(remote, "client")
+      const clients = (body) => {
+        writeFileSync(fakeClient, `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+        return { SMITHERS_MINI_RUN: fakeClient, SMITHERS_LAT_RUN: fakeClient }
+      }
+      const silent = command(directory, process.execPath, [script, "--push", "--no-test", "unit"], clients("exit 0"))
+      assert.match(silent.stderr, /Cannot typecheck apps\/mvp: no farm client answered/)
+      const broken = command(directory, process.execPath, [script, "--push", "--no-test", "unit"], clients("echo SMITHERS_TYPECHECK_EXIT=2"))
+      assert.match(broken.stderr, /apps\/mvp does not typecheck/)
+      assert.equal(ok(remote, "git", ["rev-parse", "main"]), landed)
+      assert.match(line, new RegExp(`^\\d\\d:\\d\\dZ \\[land-override\\] who=\\S.*@.* commit=${vcs === "jj" ? "[0-9a-f]{40}" : landed} reason=fixture$`))
+      assert.equal(ok(remote, "git", ["log", "main", "-1", "--format=%s"]), "fix: the gate")
+      const [entry] = readFileSync(join(directory, ".git/test-home/smithers-builders/reviews/land-log.jsonl"), "utf8").trim().split("\n").map((row) => JSON.parse(row))
+      assert.equal(entry.outcome, "override")
+      assert.equal(entry.reason, "fixture")
+      assert.deepEqual(entry.paths, [".smithers/flows/land/gate.mjs"])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+      rmSync(remote, { recursive: true, force: true })
+    }
+  })
+
   test(`${vcs}: commits all contributors, preserves main, ignores secrets, pushes only on request`, () => {
     const directory = mkdtempSync(join(tmpdir(), "smithers-commit-test-"))
     const remote = mkdtempSync(join(tmpdir(), "smithers-commit-remote-"))
@@ -310,6 +411,96 @@ for (const vcs of ["git", "jj"]) {
     }
   }
 }
+
+for (const vcs of ["git", "jj"]) {
+  test(`${vcs}: an edit made after the checks ran, while the push waits for the lock, refuses the push`, async () => {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-commit-bound-"))
+    const remote = mkdtempSync(join(tmpdir(), "smithers-commit-bound-remote-"))
+    try {
+      copyHygiene(directory)
+      ok(directory, "git", ["init", "-b", "main"])
+      ok(directory, "git", ["config", "user.name", "Commit test"])
+      ok(directory, "git", ["config", "user.email", "test@example.com"])
+      ok(directory, "git", ["add", "."])
+      ok(directory, "git", ["commit", "-m", "initial"])
+      ok(remote, "git", ["init", "--bare", "-b", "main"])
+      ok(directory, "git", ["remote", "add", "origin", remote])
+      if (vcs === "jj") {
+        ok(directory, "jj", ["git", "init", "--colocate"])
+        ok(directory, "jj", ["config", "set", "--repo", "user.name", "Commit test"])
+        ok(directory, "jj", ["config", "set", "--repo", "user.email", "test@example.com"])
+      }
+      ok(directory, "node", [script, "--push", "--no-test", "first push"])
+      const before = ok(remote, "git", ["rev-parse", "main"])
+      writeFileSync(join(directory, "checked.txt"), "checked\n")
+      const lock = join(remote, "main-push.lock")
+      mkdirSync(lock); writeFileSync(join(lock, "owner"), "the test\n")
+      const child = spawn(process.execPath, [script, "--push", "--no-test", "unit", "--message", "fix: checked"], {
+        cwd: directory, env: { ...process.env, SMITHERS_LAND_LOCK: lock, HOME: join(directory, ".git/test-home"), PATH: `${join(directory, ".git/test-bin")}:${process.env.PATH}` }
+      })
+      let stderr = ""
+      const closed = new Promise((resolveClosed) => child.once("close", resolveClosed))
+      child.stdout.resume()
+      await new Promise((resolveWaiting, reject) => {
+        child.stderr.on("data", (chunk) => { stderr += chunk; if (stderr.includes("WAITING landing lock")) resolveWaiting() })
+        child.once("close", () => reject(new Error(`finished before waiting on the lock:\n${stderr}`)))
+      })
+      writeFileSync(join(directory, "unchecked.txt"), "written after the checks\n")
+      rmSync(lock, { recursive: true })
+      assert.notEqual(await closed, 0)
+      assert.match(stderr, /changed after its checks ran; nothing pushed/)
+      assert.equal(ok(remote, "git", ["rev-parse", "main"]), before)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+      rmSync(remote, { recursive: true, force: true })
+    }
+  })
+}
+
+test("a concurrent commit waits for the shared lock; a land publishes only what its gate checked", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-commit-race-"))
+  const remote = mkdtempSync(join(tmpdir(), "smithers-commit-race-remote-"))
+  try {
+    copyHygiene(directory)
+    rmSync(join(directory, ".smithers/target-index.json"), { force: true })
+    ok(directory, "git", ["init", "-b", "main"])
+    ok(directory, "git", ["config", "user.name", "Commit test"])
+    ok(directory, "git", ["config", "user.email", "test@example.com"])
+    ok(directory, "git", ["add", "."])
+    ok(directory, "git", ["commit", "-m", "initial"])
+    ok(remote, "git", ["init", "--bare", "-b", "main"])
+    ok(directory, "git", ["remote", "add", "origin", remote])
+    ok(directory, "git", ["push", "origin", "main"])
+    ok(directory, "jj", ["git", "init", "--colocate"])
+    ok(directory, "jj", ["config", "set", "--repo", "user.name", "Commit test"])
+    ok(directory, "jj", ["config", "set", "--repo", "user.email", "test@example.com"])
+    ok(directory, "jj", ["bookmark", "track", "main@origin"])
+    writeFileSync(join(directory, "reviewed.txt"), "reviewed\n")
+    const lockPath = join(remote, "main-push.lock")
+    let child, closed
+    await landWorkspace(directory, {
+      message: "fix: what the gate checked", validation: "fixture", lockPath,
+      beforePush: () => new Promise((resolvePaused, reject) => {
+        // Paused between the gate and the push: a checkpoint with a protected edit arrives.
+        mkdirSync(join(directory, ".smithers/flows/land"), { recursive: true })
+        writeFileSync(join(directory, ".smithers/flows/land/late.mjs"), "export const late = 1\n")
+        child = spawn(process.execPath, [script, "--message", "chore: a late checkpoint"], { cwd: directory, env: { ...process.env, SMITHERS_LAND_LOCK: lockPath, HOME: join(directory, ".git/test-home"), PATH: `${join(directory, ".git/test-bin")}:${process.env.PATH}` } })
+        closed = new Promise((resolveClosed) => child.once("close", resolveClosed))
+        child.stdout.resume()
+        child.stderr.on("data", (chunk) => { if (String(chunk).includes("WAITING landing lock")) resolvePaused() })
+        child.once("close", (status) => reject(new Error(`the checkpoint finished before the land released the lock: ${status}`)))
+      })
+    })
+    assert.equal(ok(remote, "git", ["log", "main", "-1", "--format=%s"]).split("\n")[0], "fix: what the gate checked")
+    assert.match(ok(remote, "git", ["show", "main:reviewed.txt"]), /reviewed/)
+    assert.equal(ok(remote, "git", ["ls-tree", "--name-only", "main", ".smithers/flows/land/late.mjs"]), "")
+    assert.equal(await closed, 0)
+    assert.equal(ok(remote, "git", ["ls-tree", "--name-only", "main", ".smithers/flows/land/late.mjs"]), "")
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+    rmSync(remote, { recursive: true, force: true })
+  }
+})
 
 test("git: credential store refuses before tests, gates and push", () => {
   const directory = mkdtempSync(join(tmpdir(), "smithers-credential-refusal-"))

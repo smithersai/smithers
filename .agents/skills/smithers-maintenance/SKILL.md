@@ -72,6 +72,12 @@ Use `node .smithers/flows/land/workspace.mjs` from the invoking workspace:
   checks when rerunning is unavailable; it does not claim fresh execution.
 - `land --require path[=content] ...`: require a file/content predicate on
   fetched main. This fails promptly rather than waiting on a rewritten commit id.
+- A land touching `apps/mvp` runs all four `pnpm typecheck` projects on the farm,
+  before the lock and even with `--validated`. A type error or a farm with no
+  answer refuses it.
+- `land --no-review-needed "<reason>"`: land a commit the review gate refuses,
+  recording who and why in the land log and the proxy inbox. It refuses where
+  that inbox can't be written. See "Review receipts" below.
 - `remove`: forget and delete only a tool-owned workspace whose source is
   already on remote main. Unpublished edits, unresolved safeguards, and ignored
   personal files (including installs) prevent removal. The source and tool state
@@ -94,6 +100,26 @@ relay; cfbox caching is disabled in relay mode.
 This is bootstrap automation, like `commit.mjs`: it must recover a source-only
 checkout even when the installed CLI or durable host cannot load. It does not
 introduce a workflow engine, background retry service, or product action.
+
+## Review receipts
+
+A lane's statement that Astra found nothing is not a review. `land` and
+`pnpm commit --push` refuse any commit that touches a path in
+`.smithers/flows/land/review-required.txt` unless a receipt shows Codex Astra
+passed that exact diff. Run the review from your workspace after your last
+edit; a hand-written receipt does not pass:
+
+```sh
+node .smithers/flows/land/review.mjs --rev @ --prompt-file <what to check>
+node .smithers/flows/land/review.mjs --rev 'main@origin..@' --prompt-file <what to check>
+```
+
+Exit 0 is PASS, 2 is FAIL, 1 is no verdict and no receipt. Add
+`--model gpt-6.1-sol` when Astra is unavailable. Set
+`SMITHERS_REVIEW_CODEX_HOME` to the Codex account to bill (then `CODEX_HOME`,
+then `~/.smithers/accounts/codex-2`). Read the
+[parallel-agents note](../../../docs/devx/parallel-agents.md#review-receipts)
+for what a receipt proves and what a follow-up fix costs.
 
 ## Farm bootstrap clients
 

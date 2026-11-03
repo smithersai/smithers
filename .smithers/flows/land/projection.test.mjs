@@ -61,9 +61,10 @@ for (const [name, body] of [
   assert.equal(existsSync(readFileSync(join(root, ".jj/box-tree"), "utf8")), false)
 })
 
-test("mini admission never waits, and a real failure does not invoke cfbox", async (t) => {
+test("mini admission gets a few seconds, never 0, and a real failure does not invoke cfbox", async (t) => {
+  // An older mini-run read 0 as already expired and skipped even an idle mini: every land fell to cfbox.
   const { root, mini, box } = fixture(t, `
-    require("node:assert/strict").equal(process.env.MINI_RUN_WAIT_SECONDS, "0")
+    require("node:assert/strict").equal(process.env.MINI_RUN_WAIT_SECONDS, "5")
     console.error("generation failed"); process.exit(23)
   `, 'require("node:fs").writeFileSync("box-called", "yes")')
   await assert.rejects(regenerateIndex(root, mini, undefined, box), /generation failed/)

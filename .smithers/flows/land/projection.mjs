@@ -21,10 +21,10 @@ export function decodeProjection(output) {
 /** Only publish the projection if local source stayed unchanged throughout sync and generation. */
 export async function regenerateIndex(root, runner = process.env.SMITHERS_MINI_RUN ?? join(homedir(), ".smithers-lead/scratchpad-mirror/mini-run"), signal, box = process.env.SMITHERS_CFBOX ?? join(homedir(), ".vibe-orch/bin/cfbox")) {
   const before = jj(root, ["log", "-r", "@", "--no-graph", "-T", "commit_id"])
-  console.error("PREPARING target index on mini (no capacity wait, no local install)")
+  console.error("PREPARING target index on mini (5 s admission, no local install)")
   let host = "mini"
   let result = await runProcess(runner, [".", "--", "node", ".smithers/flows/land/index-projection.mjs"], {
-    cwd: root, env: { ...process.env, MINI_RUN_SRC: root, MINI_RUN_WAIT_SECONDS: "0" }, signal, streamError: true, timeoutMs: 15 * 60 * 1000
+    cwd: root, env: { ...process.env, MINI_RUN_SRC: root, MINI_RUN_WAIT_SECONDS: "5" }, signal, streamError: true, timeoutMs: 15 * 60 * 1000
   })
   if (result.status !== 0 && (result.status === 7 || /\bCAPACITY_TIMEOUT\b/.test(result.stdout + "\n" + result.stderr))) {
     host = "cfbox"

@@ -26,8 +26,8 @@ import { Schema } from "effect"
 import { ModuleFailed, runModule } from "../automation/run-module.ts"
 
 /**
- * `commit.mjs`'s command line: `--message`, `--push`, each `--test` and
- * `--no-test`. The module, not this schema, refuses `tests` with `noTest` and a
+ * `commit.mjs`'s command line: `--message`, `--push`, each `--test`,
+ * `--no-test` and `--no-review-needed`. The module, not this schema, refuses `tests` with `noTest` and a
  * `push` with neither.
  *
  * @since 1.0.0
@@ -37,7 +37,8 @@ export const Request = Schema.Struct({
   message: Schema.optionalKey(Schema.NonEmptyString),
   push: Schema.optionalKey(Schema.Boolean),
   tests: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
-  noTest: Schema.optionalKey(Schema.NonEmptyString)
+  noTest: Schema.optionalKey(Schema.NonEmptyString),
+  noReviewNeeded: Schema.optionalKey(Schema.NonEmptyString)
 })
 
 const implementationVersion = "land/v1"
@@ -66,7 +67,8 @@ export const argv = (request: typeof Request.Type): ReadonlyArray<string> => [
   ...(request.message === undefined ? [] : ["--message", request.message]),
   ...(request.push === true ? ["--push"] : []),
   ...(request.tests ?? []).flatMap((command) => ["--test", command]),
-  ...(request.noTest === undefined ? [] : ["--no-test", request.noTest])
+  ...(request.noTest === undefined ? [] : ["--no-test", request.noTest]),
+  ...(request.noReviewNeeded === undefined ? [] : ["--no-review-needed", request.noReviewNeeded])
 ]
 
 /**

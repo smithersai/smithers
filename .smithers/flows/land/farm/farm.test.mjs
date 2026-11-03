@@ -35,6 +35,21 @@ test("disk admission reads the real filesystem and fails before mutation with a 
   assert.equal(run("bash", ["health.sh", here], { env: { ...process.env, FARM_MIN_FREE_KB: "bad" } }).status, 2)
 })
 
+test("mini-run's admission starts after a slow health check and always sweeps the slots once", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "devx-farm-admission-"))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  install(root)
+  mkdirSync(join(root, "bin")); mkdirSync(join(root, "src"))
+  // The health check takes 2 s; reservations succeed; anything after that fails, which is fine here.
+  writeFileSync(join(root, "bin/ssh"), `#!/bin/bash\ncat >/dev/null\ncase "\${@: -1}" in *'"$HOME"'*) sleep 2; exit 0;; "bash -s -- "*) exit 0;; esac\nexit 9\n`, { mode: 0o755 })
+  const result = spawnSync("bash", [join(root, "mini-run"), ".", "--", "true"], {
+    encoding: "utf8", timeout: 30000,
+    env: { ...process.env, PATH: `${join(root, "bin")}:${process.env.PATH}`, MINI_RUN_HOST: "fake", MINI_RUN_SRC: join(root, "src"), MINI_RUN_WAIT_SECONDS: "0" }
+  })
+  assert.doesNotMatch(result.stderr, /CAPACITY_TIMEOUT/)
+  assert.match(result.stderr, /\[mini-run\] slot 1;/)
+})
+
 test("clients reject malformed input and credentials before any SSH or reservation", () => {
   const mini = run("bash", ["mini-run", "-e", "SECRET_VALUE=do-not-print", ".", "--", "true"])
   assert.equal(mini.status, 2)

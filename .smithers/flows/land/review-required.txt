@@ -1,0 +1,79 @@
+# Paths whose commits need a Codex Astra PASS receipt before landing.
+# One glob per line: `*` stays inside a directory, `**` crosses them, `!` excludes.
+# The land tool reads this file from main@origin, so a lane cannot edit its own
+# requirement. See docs/devx/parallel-agents.md.
+
+# Whole areas: most of these files decide who may act or what they may read
+apps/mvp/worker/branch/**
+apps/mvp/worker/ci/**
+apps/mvp/worker/github/**
+apps/mvp/worker/personal/**
+apps/mvp/worker/runners/**
+apps/mvp/worker/stack/**
+apps/mvp/worker/about/*
+packages/effect-electric/src/**
+
+# Sign-in, sessions and actors
+apps/mvp/worker/Actor.ts
+apps/mvp/worker/GitHubAuth.ts
+apps/mvp/worker/RunCredentials.ts
+apps/mvp/worker/SessionKeys.ts
+apps/mvp/worker/SessionStore.ts
+apps/mvp/worker/ShapeAccess.ts
+apps/mvp/worker/SignIn.ts
+apps/mvp/worker/flows/RevokeGitHubToken.ts
+
+# Sockets and the hosts that hold them
+apps/mvp/worker/SocketAccess.ts
+apps/mvp/worker/SocketChecks.ts
+apps/mvp/worker/BranchRooms.ts
+apps/mvp/worker/BranchSandboxes.ts
+
+# Access checks outside those areas, and what they guard
+apps/mvp/worker/*Authority.ts
+apps/mvp/worker/WriteAuthority.ts
+apps/mvp/worker/Chat.ts
+apps/mvp/worker/ModelEndpoint.ts
+apps/mvp/worker/Notifications.ts
+apps/mvp/worker/RemoteRuns.ts
+apps/mvp/worker/RepoAbout.ts
+apps/mvp/worker/RepoApi.ts
+apps/mvp/worker/RepoRuns.ts
+apps/mvp/worker/RunContent.ts
+apps/mvp/worker/Views.ts
+apps/mvp/worker/WebPreview.ts
+apps/mvp/worker/bugs/Api.ts
+apps/mvp/worker/domains/Api.ts
+apps/mvp/worker/feeds/Api.ts
+apps/mvp/worker/flows/BugReport.ts
+apps/mvp/worker/flows/FleetAlert.ts
+apps/mvp/worker/flows/RecheckRole.ts
+apps/mvp/worker/flows/RedactFeed.ts
+
+# Stored credentials
+apps/mvp/worker/secrets/*.ts
+
+# Migrations for the above, by name
+apps/mvp/db/migrations/*access*
+apps/mvp/db/migrations/*auth*
+apps/mvp/db/migrations/*credential*
+apps/mvp/db/migrations/*fence*
+apps/mvp/db/migrations/*role*
+apps/mvp/db/migrations/*runner*
+apps/mvp/db/migrations/*secret*
+apps/mvp/db/migrations/*session*
+apps/mvp/db/migrations/*socket*
+
+# The device store, its wipe, and the browser's sign-in
+apps/mvp/src/device/**
+apps/mvp/src/features/auth/**
+apps/mvp/src/wipe.ts
+
+# The land tool, which enforces all of this
+.smithers/flows/land/**
+
+# Tests and generated files change no access decision
+!**/*.test.*
+!**/test/**
+!**/fixtures/**
+!apps/mvp/src/device/schemas.lock.json

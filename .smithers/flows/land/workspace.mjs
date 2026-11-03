@@ -13,6 +13,8 @@ import { captureLane, repairLane, checkManifest, indexPath } from "./generated.m
 import { regenerateIndex } from "./projection.mjs"
 import { runProcess } from "./process.mjs"
 import { engineeringGateEnvironment } from "./engineering-gate-environment.mjs"
+import { logLanding, requireReviews } from "./review.mjs"
+import { typecheckApp } from "./typecheck.mjs"
 
 const marker = ".jj/agent-workspace.json"
 const excluded = new Set([".jj", ".git", "node_modules", ".cache", "dist", "target", ".alchemy", ".wrangler", "coverage", "test-results", "playwright-report", ".venv"])
@@ -271,9 +273,10 @@ export function removeWorkspace(root) {
 
 /**
  * @param {string} root
- * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, signal?: AbortSignal, lockPath?: string}} [options]
+ * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, noReviewNeeded?: string, afterValidation?: () => void, beforePush?: () => Promise<void>, signal?: AbortSignal, lockPath?: string}} [options]
  */
-export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, signal, lockPath = process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock") } = {}) {
+export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, noReviewNeeded, afterValidation, beforePush, signal, lockPath = process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock") } = {}) {
+  const reviews = (tip) => requireReviews(root, `(main@origin..${tip}) ~ empty()`, { override: noReviewNeeded })
   const lock = () => acquireLock(lockPath, { timeoutMs: Number(process.env.SMITHERS_LOCK_TIMEOUT_MS ?? 300000), signal })
   let release = await lock()
   let base
@@ -295,6 +298,10 @@ export async function landWorkspace(root, { message, tests = [], validation, req
   if (existsSync(join(root, indexPath))) await regenerateIndex(root, undefined, signal)
   jj(root, ["status"])
   const tested = revision(root, "@")
+  // Refuse before spending the tests; the check under the lock below is the one that counts.
+  reviews("@")
+  // Runs whatever validation the land names, --validated included, and holds no lock.
+  await typecheckApp(root, { signal })
   for (const command of tests) {
     const result = await runProcess("bash", ["-o", "pipefail", "-c", command], { cwd: root, stream: true, signal, timeoutMs: 40 * 60 * 1000, env: engineeringGateEnvironment(process.env) })
     if (result.status !== 0) throw new Error(`Landing test failed: ${command}`)
@@ -307,6 +314,7 @@ export async function landWorkspace(root, { message, tests = [], validation, req
     jj(root, ["git", "fetch", "--remote", "origin"])
     if (revision(root, "main@origin") !== base) throw new Error("Main advanced during validation; rerun land to sync and validate the new base")
     if (revision(root, "@") !== tested) throw new Error("Source changed during validation; rerun land before publishing")
+    afterValidation?.()
     rejectConflicts(root)
     checkNumbers(root)
     checkManifest(root)
@@ -326,9 +334,15 @@ export async function landWorkspace(root, { message, tests = [], validation, req
       jj(root, ["describe", "-r", commit, "-m", text])
     } else if (!jj(root, ["log", "-r", commit, "--no-graph", "-T", "description"]).trim()) throw new Error("Describe the change or supply --message")
     const pushed = revision(root, candidate)
-    jj(root, ["bookmark", "set", "main", "-r", pushed])
+    // describe was the last snapshot: what is published must be the tree that was tested and typechecked.
+    if (jj(root, ["diff", "--ignore-working-copy", "--from", tested, "--to", pushed, "--name-only"]).trim()) throw new Error("Source changed after validation; nothing pushed, rerun land")
+    // From the gate to the push nothing snapshots, so an edit made now cannot join what was checked.
+    logLanding(root, pushed, reviews(pushed))
+    jj(root, ["bookmark", "set", "main", "-r", pushed, "--ignore-working-copy"])
+    await beforePush?.()
+    if (revision(root, "main") !== pushed) throw new Error("main moved after the review gate; nothing pushed, rerun land")
     console.error(`PUSH ${pushed}`)
-    jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main"])
+    jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main", "--ignore-working-copy"])
     jj(root, ["git", "fetch", "--remote", "origin", "--ignore-working-copy"])
     if (!revision(root, `${pushed} & ::main@origin`)) throw new Error("Push returned but remote ancestry does not contain the landed change")
     // Leave an immutable parent and a fresh private working-copy child for the next change.
@@ -341,7 +355,7 @@ export async function landWorkspace(root, { message, tests = [], validation, req
 
 export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
   if (args[0] === "--help" || !args.length) {
-    console.log("Usage: node .smithers/flows/land/workspace.mjs create <path> <name> | sync | recover | land [--message <text>] [--test <command>] [--validated <receipt>] | remove\nRun from the invoking workspace. No installs. Sync and push use main-push.lock; remote validation runs unlocked. Waits are bounded. Ignored data prevents removal.")
+    console.log("Usage: node .smithers/flows/land/workspace.mjs create <path> <name> | sync | recover | land [--message <text>] [--test <command>] [--validated <receipt>] [--no-review-needed <reason>] | remove\nRun from the invoking workspace. No installs. Sync and push use main-push.lock; remote validation runs unlocked. Waits are bounded. Ignored data prevents removal. Commits touching review-required.txt paths need a receipt from review.mjs.")
     return
   }
   const [command, ...rest] = args
@@ -353,6 +367,7 @@ export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
       else if (rest[i] === "--test") options.tests.push(rest[i + 1])
       else if (rest[i] === "--validated") options.validation = rest[i + 1]
       else if (rest[i] === "--require") options.requirements.push(rest[i + 1])
+      else if (rest[i] === "--no-review-needed") options.noReviewNeeded = rest[i + 1]
       else throw new Error(`Unknown option: ${rest[i]}`)
     }
   } else if (command === "create" ? rest.length !== 2 : rest.length !== 0) throw new Error("Invalid command arguments")

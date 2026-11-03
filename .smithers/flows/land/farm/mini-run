@@ -13,7 +13,6 @@ ARTIFACTS=${MINI_RUN_ARTIFACTS:-0}
 case "$ARTIFACTS" in 0|1) ;; *) echo '[mini-run] invalid artifact selection' >&2; exit 2;; esac
 [[ "$WAIT_SECONDS" =~ ^[0-9]+$ && "$RUN_SECONDS" =~ ^[1-9][0-9]*$ ]] || { echo '[mini-run] invalid timeout' >&2; exit 2; }
 RUN_ID="$(date +%s)-$$"
-START=$SECONDS
 TIMER=
 REMOTE_OWNER="$(hostname) $$ $RUN_ID"
 SRC=${MINI_RUN_SRC:-$HOME/smithers}
@@ -42,6 +41,8 @@ NODE_VERSION=$(node -v) || exit 3
 quote() { printf '%q ' "$@"; }
 # Fail before reserving or syncing an unhealthy host.
 ssh "$HOST" 'bash -s -- "$HOME"' < "$BASE/health.sh" || exit $?
+# Admission starts after the health check, and every run sweeps the slots once, even with no wait.
+START=$SECONDS
 mkdir -p "$STATE"
 export RSYNC_RSH='ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -o ControlMaster=no -o ControlPath=none'
 reserve_remote() {
@@ -103,11 +104,6 @@ trap 'exit 129' HUP
 # Preserve the original local mkdir/PID lock convention. A remote companion
 # lock prevents another client machine from syncing an occupied slot.
 while [ -z "$SLOT" ]; do
-  if [ $((SECONDS - START)) -ge "$WAIT_SECONDS" ]; then
-    echo "[mini-run] CAPACITY_TIMEOUT after ${WAIT_SECONDS}s; all four slots reserved (including remote or ownerless locks); no lock was stolen" >&2
-    ssh "$HOST" 'for n in 1 2 3 4; do printf "slot%s: " "$n"; cat ~/smithers-mirror/.farm/slot$n.lock/owner 2>/dev/null || echo ownerless; done' </dev/null >&2 || :
-    exit 75
-  fi
   for n in 1 2 3 4; do
     lock=$STATE/slot$n.lock
     if [ -f "$lock/owner" ]; then
@@ -125,7 +121,13 @@ while [ -z "$SLOT" ]; do
       [ "$result" != 255 ] || exit 255
     fi
   done
-  [ -n "$SLOT" ] || sleep 3
+  [ -z "$SLOT" ] || break
+  if [ $((SECONDS - START)) -ge "$WAIT_SECONDS" ]; then
+    echo "[mini-run] CAPACITY_TIMEOUT after ${WAIT_SECONDS}s; all four slots reserved (including remote or ownerless locks); no lock was stolen" >&2
+    ssh "$HOST" 'for n in 1 2 3 4; do printf "slot%s: " "$n"; cat ~/smithers-mirror/.farm/slot$n.lock/owner 2>/dev/null || echo ownerless; done' </dev/null >&2 || :
+    exit 75
+  fi
+  sleep 3
 done
 printf '[mini-run] slot %s; source %s\n' "$SLOT" "$SRC" >&2
 ssh "$HOST" "printf '%s\\n' '$REMOTE_OWNER' > ~/smithers-mirror/.farm/slot$SLOT.lock/owner" </dev/null || exit 3
