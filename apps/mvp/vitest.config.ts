@@ -106,6 +106,7 @@ export default defineConfig({
         "worker/RepoAbout.ts",
         "worker/about/*.ts",
         "db/migrations/0060_repo_about.ts",
+        "db/migrations/0098_about_claim_generation.ts",
         "worker/CloneFeed.ts",
         "db/migrations/0028_clone_progress.ts",
         // Who asked each question, which the answer routes require (docs/features/agent.md#the-answer-routes).

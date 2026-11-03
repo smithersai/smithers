@@ -9,8 +9,8 @@ import { SqlClient } from "effect/sql"
 // GitHub's last refusal, kept so a burst of visitors during an outage is answered without asking again; `not_found`
 // also drops the answer. `app_absent_until` remembers that the Smithers App isn't installed on the repository.
 //
-// The about read never fails for the store: a store that can't answer is `StoreUnavailable`, and the read goes to
-// GitHub as if nothing were kept.
+// A store that cannot establish ownership refuses the read. A claim generation survives every terminal write,
+// so an expired or completed writer can never replace a newer answer or visibility refusal.
 
 /** Which token a kept answer was read with. */
 export type Via = "app" | "deployment" | "anonymous"
@@ -48,13 +48,13 @@ export interface AboutStore<R = never> {
   readonly get: (repoId: string) => Effect.Effect<Option.Option<Kept>, StoreUnavailable, R>
   /**
    * Takes `repoId`'s next read until `untilMs`, only when it is due at `nowMs` (no row, or `next_read_at` passed):
-   * `true` when this caller holds it.
+   * the generation when this caller holds it, `false` otherwise.
    */
-  readonly claim: (repoId: string, nowMs: number, untilMs: number, recoverAnonymous?: boolean) => Effect.Effect<boolean, StoreUnavailable, R>
-  /** Keeps a fresh answer, due again at its `freshUntilMs`, and forgets any refusal; an older read never overwrites a newer. */
-  readonly keep: (repoId: string, answer: KeptAnswer) => Effect.Effect<void, StoreUnavailable, R>
+  readonly claim: (repoId: string, nowMs: number, untilMs: number, recoverAnonymous?: boolean) => Effect.Effect<string | false, StoreUnavailable, R>
+  /** Keeps an answer only for the matching claim generation, consuming it; `false` means superseded. */
+  readonly keep: (repoId: string, answer: KeptAnswer, generation: string) => Effect.Effect<boolean, StoreUnavailable, R>
   /** Keeps GitHub's refusal with no read before `nextReadAtMs`; `not_found` also drops the answer. */
-  readonly refuse: (repoId: string, refusal: KeptRefusal, nextReadAtMs: number, via?: Via) => Effect.Effect<void, StoreUnavailable, R>
+  readonly refuse: (repoId: string, refusal: KeptRefusal, nextReadAtMs: number, via: Via | undefined, generation: string) => Effect.Effect<boolean, StoreUnavailable, R>
   /** Remembers that the Smithers App isn't installed on `repoId`, until `untilMs`. */
   readonly appAbsent: (repoId: string, untilMs: number) => Effect.Effect<void, StoreUnavailable, R>
 }
@@ -111,35 +111,36 @@ export const postgres = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>)
     claim: (repoId, nowMs, untilMs, recoverAnonymous = false) =>
       run("claim", (sql) =>
         Effect.map(
-          sql<{ readonly repoId: string }>`
-            INSERT INTO repo_about (repo_id, next_read_at) VALUES (${repoId}, ${iso(untilMs)}::timestamptz)
-            ON CONFLICT (repo_id) DO UPDATE SET next_read_at = EXCLUDED.next_read_at, refusal = NULL, refusal_via = NULL
+          sql<{ readonly generation: string }>`
+            INSERT INTO repo_about (repo_id, next_read_at, claim_generation) VALUES (${repoId}, ${iso(untilMs)}::timestamptz, 1)
+            ON CONFLICT (repo_id) DO UPDATE SET next_read_at = EXCLUDED.next_read_at, refusal = NULL, refusal_via = NULL,
+              claim_generation = repo_about.claim_generation + 1
             WHERE repo_about.next_read_at IS NULL OR repo_about.next_read_at <= ${iso(nowMs)}::timestamptz
               OR (${recoverAnonymous} AND repo_about.refusal = 'rate_limited' AND
                 (repo_about.refusal_via IS NULL OR repo_about.refusal_via = 'anonymous'))
-            RETURNING repo_id AS "repoId"`,
-          (rows) => rows.length === 1,
+            RETURNING claim_generation::text AS generation`,
+          ([row]) => row?.generation ?? false,
         )),
-    keep: (repoId, answer) =>
+    keep: (repoId, answer, generation) =>
       run("keep", (sql) =>
-        sql`
-          INSERT INTO repo_about (repo_id, about, via, read_at, fresh_until, next_read_at, refusal)
-          VALUES (${repoId}, ${answer.text}, ${answer.via}, ${iso(answer.readAtMs)}::timestamptz,
-            ${iso(answer.freshUntilMs)}::timestamptz, ${iso(answer.freshUntilMs)}::timestamptz, NULL)
-          ON CONFLICT (repo_id) DO UPDATE SET about = EXCLUDED.about, via = EXCLUDED.via, read_at = EXCLUDED.read_at,
-            fresh_until = EXCLUDED.fresh_until, next_read_at = EXCLUDED.next_read_at, refusal = NULL, refusal_via = NULL
-          WHERE repo_about.read_at IS NULL OR repo_about.read_at <= EXCLUDED.read_at`.pipe(Effect.asVoid)),
-    refuse: (repoId, refusal, nextReadAtMs, via) =>
+        Effect.map(sql`
+          UPDATE repo_about SET about = ${answer.text}, via = ${answer.via},
+            read_at = ${iso(answer.readAtMs)}::timestamptz, fresh_until = ${iso(answer.freshUntilMs)}::timestamptz,
+            next_read_at = ${iso(answer.freshUntilMs)}::timestamptz, refusal = NULL, refusal_via = NULL,
+            claim_generation = claim_generation + 1
+          WHERE repo_id = ${repoId} AND claim_generation = ${generation}::bigint
+          RETURNING repo_id`, (rows) => rows.length === 1)),
+    refuse: (repoId, refusal, nextReadAtMs, via, generation) =>
       run("refuse", (sql) =>
-        sql`
-          INSERT INTO repo_about (repo_id, refusal, next_read_at, refusal_via)
-          VALUES (${repoId}, ${refusal}, ${iso(nextReadAtMs)}::timestamptz, ${via ?? null})
-          ON CONFLICT (repo_id) DO UPDATE SET refusal = EXCLUDED.refusal, next_read_at = EXCLUDED.next_read_at, refusal_via = EXCLUDED.refusal_via,
-            about = CASE WHEN EXCLUDED.refusal = 'not_found' THEN NULL ELSE repo_about.about END,
-            via = CASE WHEN EXCLUDED.refusal = 'not_found' THEN NULL ELSE repo_about.via END,
-            read_at = CASE WHEN EXCLUDED.refusal = 'not_found' THEN NULL ELSE repo_about.read_at END,
-            fresh_until = CASE WHEN EXCLUDED.refusal = 'not_found' THEN NULL ELSE repo_about.fresh_until END`
-          .pipe(Effect.asVoid)),
+        Effect.map(sql`
+          UPDATE repo_about SET refusal = ${refusal}, next_read_at = ${iso(nextReadAtMs)}::timestamptz,
+            refusal_via = ${via ?? null}, claim_generation = claim_generation + 1,
+            about = CASE WHEN ${refusal} = 'not_found' THEN NULL ELSE about END,
+            via = CASE WHEN ${refusal} = 'not_found' THEN NULL ELSE via END,
+            read_at = CASE WHEN ${refusal} = 'not_found' THEN NULL ELSE read_at END,
+            fresh_until = CASE WHEN ${refusal} = 'not_found' THEN NULL ELSE fresh_until END
+          WHERE repo_id = ${repoId} AND claim_generation = ${generation}::bigint
+          RETURNING repo_id`, (rows) => rows.length === 1)),
     appAbsent: (repoId, untilMs) =>
       run("app_absent", (sql) =>
         sql`

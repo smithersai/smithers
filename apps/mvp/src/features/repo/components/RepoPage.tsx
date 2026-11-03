@@ -175,7 +175,7 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
         href={() => `/${encodeURIComponent(view.owner)}/${encodeURIComponent(view.name)}`}
         onNavigate={() => undefined}
         fileTree={false}
-        aside={<RepoAside about={aboutRow?.about} repository={repository} />}
+        aside={<RepoAside about={aboutRow?.about} repository={repository} onRetry={() => actions.retryAbout(view.owner, view.name)} />}
       />
     )
   }
@@ -196,7 +196,7 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
         href={at}
         onNavigate={(target) => void navigate({ href: at(target) })}
         fileTree={false}
-        aside={<RepoAside about={aboutRow?.about} repository={repository} />}
+        aside={<RepoAside about={aboutRow?.about} repository={repository} onRetry={() => actions.retryAbout(view.owner, view.name)} />}
         revision={
           <span className="repo-revision">
             <Badge variant="outline">{preview.defaultBranch}</Badge>
@@ -263,7 +263,7 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
       onNavigate={(location) => void navigate({ href: href(location) })}
       // The top level, as GitHub's repository page: no tree beside the listing, the about panel on the right.
       fileTree={!root}
-      aside={root ? <RepoAside about={aboutRow?.about} repository={repository} /> : intel.aside}
+      aside={root ? <RepoAside about={aboutRow?.about} repository={repository} onRetry={() => actions.retryAbout(view.owner, view.name)} /> : intel.aside}
       code={intel.code}
       revision={
         <span className="repo-revision">

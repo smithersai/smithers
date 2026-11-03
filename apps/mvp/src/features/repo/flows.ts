@@ -124,13 +124,16 @@ export const ReadAbout = Action.make("repo/ReadAbout", {
   payload: refsPayload,
   success: About,
   error: ReadFailure,
-  retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 1, maxMs: 1_000, maxAttempts: 1 }),
+  retryPolicy: RetryPolicy.make({
+    initialMs: 1_000, factor: 1, maxMs: 15 * 60_000, maxAttempts: 3,
+    retryable: [{ tag: "@smthrs/mvp/repo/RepoReadUnavailable" }],
+  }),
 })
 
 /**
  * `repo/about { repo }`: what GitHub says of a repository, cloned or not, for its page. A refusal that may pass (GitHub
- * or RepoApi busy, unreachable or rate limited) is tried again under `READ_RETRY`; none for a repository that isn't
- * there or a spent read budget.
+ * or RepoApi busy, unreachable or rate limited) gets at most three attempts, honoring Retry-After up to 15 minutes
+ * per wait (1 second without a hint); none for a repository that isn't there or a spent read budget.
  */
 export const RepoAbout = Flow.make("repo/about", {
   description: "What GitHub says of a public repository (owner/name), cloned or not: description, topics, languages, " +

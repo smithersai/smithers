@@ -8,6 +8,7 @@ import type { CodeStorage } from "@smthrs/effect-code-storage"
 import { type Flow, FlowRuntime } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import {
+  Clock,
   ConfigProvider,
   Context,
   Duration,
@@ -121,6 +122,8 @@ const objectStorage = (): ExecutionHost.Storage => {
 }
 
 export interface RepoHarnessOptions {
+  /** A controlled application clock for deadline tests; all dependencies remain real. */
+  readonly clock?: Clock.Clock
   /** Who is signed in on every request: `member` unless set; `null` is signed out. */
   readonly actor?: Actor.Actor | null
   /** Sessions in place of `actor`, such as ones that can't be read. */
@@ -195,6 +198,7 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
       Effect.provideService(ConfigProvider.ConfigProvider, provider),
+      options.clock === undefined ? (effect) => effect : Effect.provideService(Clock.Clock, options.clock),
     )
 
   const scope = await Effect.runPromise(Scope.make())

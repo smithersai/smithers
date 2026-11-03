@@ -733,7 +733,7 @@ describe("what GitHub says, cloned or not", () => {
     // that are already imported". Before, GitHub down showed "Couldn't load".
     ["github_unavailable", GITHUB_DOWN],
     ["unavailable", COULDNT_LOAD],
-  ])("the first %s About refusal is visible and can be retried", async (code, message) => {
+  ])("an exhausted %s About refusal is visible and can be retried", async (code, message) => {
     const h = await repoHarness(server)
     h.github.publish("octocat", "Spoon-Knife")
     const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
@@ -752,9 +752,9 @@ describe("what GitHub says, cloned or not", () => {
     const tab = await openTab({ origin: h.origin, fetch: h.fetch, client: faulty })
     tabs.push(tab)
     tab.repo.actions.open(root("octocat", "Spoon-Knife"))
-    // A person sees the real refusal immediately; only Try again starts another durable read.
+    // The engine exhausts its three attempts; only Try again starts another durable read.
     await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message }))
-    expect(attempts).toBe(1)
+    expect(attempts).toBe(3)
     expect(tab.histogramCount(aboutLoadMs, { outcome: "failed" })).toBe(1)
     const exhausted = attempts
     tab.repo.actions.open(root("octocat", "Spoon-Knife"))

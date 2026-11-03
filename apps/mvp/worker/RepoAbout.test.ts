@@ -3,7 +3,7 @@
 // only while fresh even when GitHub can't answer, the waits after GitHub refused, many visitors causing one read across
 // two, with no request resuming on another's work, and a store that fails, injected. The reads themselves are worker/about/GitHubRead.test.ts.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Clock, ConfigProvider, Duration, Effect, Layer, Logger, Metric, Option, Redacted } from "effect"
+import { Clock, ConfigProvider, Deferred, Duration, Effect, Layer, Logger, Metric, Option, Redacted } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test, vi } from "vitest"
@@ -15,15 +15,10 @@ import * as RepoMetrics from "./RepoMetrics.ts"
 import { testFile } from "./test/harness.ts"
 import { type ScriptedGitHub, scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
 
-const runtime = testFile("repo_about")
+let runtime: ReturnType<typeof testFile>
 
 const sql = <A extends object = Record<string, unknown>>(statement: string) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe<A>(statement))))
-
-beforeEach(async () => {
-  await sql("DELETE FROM repo_about")
-  await sql("DELETE FROM github_repositories")
-})
 
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 
@@ -43,24 +38,26 @@ const isolate = async (
   options: {
     readonly config?: Record<string, string>
     readonly store?: AboutStore.AboutStore
+    readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
     readonly timing?: RepoAbout.Timing
-    readonly now?: number
+    readonly now?: number | (() => number)
   } = {},
 ) => {
-  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  const database = options.database ?? (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
   const logs: Array<StructuredLog> = []
   const logger = Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))
   const registry: Metric.MetricRegistry = new Map()
   const provider = ConfigProvider.fromUnknown(options.config ?? {})
   const live = Effect.runSync(Clock.clockWith(Effect.succeed))
+  const now = () => typeof options.now === "function" ? options.now() : options.now!
   const clock: Clock.Clock = options.now === undefined ? live : {
     ...live,
     monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
     sleep: (duration) => live.sleep(duration),
-    currentTimeMillis: Effect.succeed(options.now),
-    currentTimeMillisUnsafe: () => options.now!,
-    currentTimeNanos: Effect.succeed(BigInt(options.now) * 1_000_000n),
-    currentTimeNanosUnsafe: () => BigInt(options.now!) * 1_000_000n,
+    currentTimeMillis: Effect.sync(now),
+    currentTimeMillisUnsafe: now,
+    currentTimeNanos: Effect.sync(() => BigInt(now()) * 1_000_000n),
+    currentTimeNanosUnsafe: () => BigInt(now()) * 1_000_000n,
   }
   const fetch = ((input: RequestInfo | URL, init?: RequestInit) => github.fetch(new Request(input, init))) as typeof globalThis.fetch
   const observed = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) =>
@@ -75,7 +72,7 @@ const isolate = async (
   const source = await Effect.runPromise(observed(Effect.flatMap(
     RepoAbout.settings,
     (settings) =>
-      RepoAbout.make(settings, options.store ?? AboutStore.postgres(scratch.database), scratch.database, options.timing),
+      RepoAbout.make(settings, options.store ?? AboutStore.postgres(database), database, options.timing),
   )))
   return {
     answer: (owner: string, name: string, member = false) =>
@@ -135,6 +132,21 @@ const age = (id: string, ago = "11 minutes") =>
 
 const SPOON = "github/octocat/spoon-knife"
 const VIBE = "github/smithersai/vibelang"
+
+/** Seed a refusal through real ownership, including the legacy missing-quota representation. */
+const seedRefusal = (store: AboutStore.AboutStore, id: string, refusal: AboutStore.KeptRefusal, until: number, via?: AboutStore.Via) =>
+  Effect.gen(function* () {
+    const generation = yield* store.claim(id, until - 600_000, until - 570_000)
+    if (generation === false) return yield* Effect.die("expected seed claim")
+    return yield* store.refuse(id, refusal, until, via, generation)
+  })
+
+describe("Postgres-backed About", () => {
+runtime = testFile("repo_about")
+beforeEach(async () => {
+  await sql("DELETE FROM repo_about")
+  await sql("DELETE FROM github_repositories")
+})
 
 describe("settings", () => {
   test("defaults: fresh 10 minutes with a token and 60 anonymously, no App, every repository allowed", async () => {
@@ -196,7 +208,9 @@ describe("whose quota a read spends", () => {
     github.state.remaining = 4321
     const one = await isolate(github, { config: await appConfig() })
     const outcome = answered(await one.answer("smithersai", "vibelang"))
-    expect(outcome).toMatchObject({ cache: "miss", via: "app", about: { name: "smithersai/vibelang" }, maxAgeSeconds: 600 })
+    expect(outcome).toMatchObject({ cache: "miss", via: "app", about: { name: "smithersai/vibelang" } })
+    expect(outcome.maxAgeSeconds).toBeGreaterThan(0)
+    expect(outcome.maxAgeSeconds).toBeLessThanOrEqual(600)
     expect(github.calls).toEqual(["/installation", "access_tokens", "graphql", "/contributors"])
     expect(github.minted).toEqual([{ token: "ghs_about_1", repositories: ["vibelang"], permissions: { contents: "read" } }])
     expect(github.authorizations.slice(2)).toEqual(["Bearer ghs_about_1", "Bearer ghs_about_1"])
@@ -215,7 +229,10 @@ describe("whose quota a read spends", () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
     const one = await isolate(github, { config: await appConfig() })
-    expect(answered(await one.answer("octocat", "Spoon-Knife"))).toMatchObject({ via: "anonymous", maxAgeSeconds: 3600 })
+    const outcome = answered(await one.answer("octocat", "Spoon-Knife"))
+    expect(outcome.via).toBe("anonymous")
+    expect(outcome.maxAgeSeconds).toBeGreaterThan(0)
+    expect(outcome.maxAgeSeconds).toBeLessThanOrEqual(3600)
     expect(github.calls[0]).toBe("/installation")
     expect(github.calls).not.toContain("graphql")
     expect(github.authorizations.slice(1).every((authorization) => authorization === null)).toBe(true)
@@ -231,7 +248,10 @@ describe("whose quota a read spends", () => {
     const github = scriptedGitHub()
     github.publish("Effect-TS", "effect")
     const one = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" } })
-    expect(answered(await one.answer("Effect-TS", "effect"))).toMatchObject({ via: "deployment", maxAgeSeconds: 600 })
+    const outcome = answered(await one.answer("Effect-TS", "effect"))
+    expect(outcome.via).toBe("deployment")
+    expect(outcome.maxAgeSeconds).toBeGreaterThan(0)
+    expect(outcome.maxAgeSeconds).toBeLessThanOrEqual(600)
     expect(github.calls).not.toContain("graphql")
     expect(new Set(github.authorizations)).toEqual(new Set(["Bearer ghp_curated"]))
     expect(JSON.stringify(one.logs)).not.toContain("ghp_curated")
@@ -242,7 +262,7 @@ describe("whose quota a read spends", () => {
     github.publish("Effect-TS", "effect")
     const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
     const store = AboutStore.postgres(scratch.database)
-    await runtime.runPromise(store.refuse("github/effect-ts/effect", "rate_limited", Date.now() + 600_000, via))
+    await runtime.runPromise(seedRefusal(store, "github/effect-ts/effect", "rate_limited", Date.now() + 600_000, via))
     const one = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" } })
     const outcome = await one.answer("Effect-TS", "effect")
     if (via === undefined || via === "anonymous") {
@@ -261,7 +281,7 @@ describe("whose quota a read spends", () => {
     github.publish("Effect-TS", "effect")
     const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
     const store = AboutStore.postgres(scratch.database)
-    await runtime.runPromise(store.refuse("github/effect-ts/effect", "rate_limited", Date.now() + 600_000, "anonymous"))
+    await runtime.runPromise(seedRefusal(store, "github/effect-ts/effect", "rate_limited", Date.now() + 600_000, "anonymous"))
     const winner = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" } })
     // Inject a competing claim that finishes the real winner before reporting this request lost its claim.
     const loser = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" }, store: {
@@ -275,7 +295,7 @@ describe("whose quota a read spends", () => {
   test("a curated cached anonymous rate limit stays held without an authenticated fallback", async () => {
     const github = scriptedGitHub()
     const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
-    await runtime.runPromise(AboutStore.postgres(scratch.database).refuse("github/effect-ts/effect", "rate_limited", Date.now() + 600_000, "anonymous"))
+    await runtime.runPromise(seedRefusal(AboutStore.postgres(scratch.database), "github/effect-ts/effect", "rate_limited", Date.now() + 600_000, "anonymous"))
     const one = await isolate(github)
     expect(await one.answer("Effect-TS", "effect")).toMatchObject({ _tag: "Refused", cache: "refusal", refusalVia: "anonymous" })
     expect(github.calls).toEqual([])
@@ -316,7 +336,10 @@ describe("whose quota a read spends", () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
     const one = await isolate(github, { config: { GITHUB_TOKEN: "ghp_deployment" } })
-    expect(answered(await one.answer("octocat", "Spoon-Knife", true))).toMatchObject({ via: "deployment", maxAgeSeconds: 600 })
+    const outcome = answered(await one.answer("octocat", "Spoon-Knife", true))
+    expect(outcome.via).toBe("deployment")
+    expect(outcome.maxAgeSeconds).toBeGreaterThan(0)
+    expect(outcome.maxAgeSeconds).toBeLessThanOrEqual(600)
     expect(new Set(github.authorizations)).toEqual(new Set(["Bearer ghp_deployment"]))
     expect(github.calls[0]).toBe("graphql")
     expect(JSON.stringify(one.logs)).not.toContain("ghp_deployment")
@@ -610,11 +633,12 @@ describe("many visitors, one read", () => {
     const github = scriptedGitHub()
     const watchedStore = await watched()
     const now = Date.now()
-    await runtime.runPromise(watchedStore.store.claim(SPOON, now, now + 30_000))
+    const generation = await runtime.runPromise(watchedStore.store.claim(SPOON, now, now + 30_000))
+    if (generation === false) throw new Error("expected ownership")
     const one = await isolate(github, { store: watchedStore.store, timing: { waitFor: Duration.seconds(2), poll: Duration.millis(10) } })
     const waiting = one.answer("octocat", "Spoon-Knife")
     await until(() => watchedStore.looks.count >= 2)
-    await runtime.runPromise(watchedStore.store.refuse(SPOON, "rate_limited", now + 60_000))
+    await runtime.runPromise(watchedStore.store.refuse(SPOON, "rate_limited", now + 60_000, undefined, generation))
     const waited = await waiting
     expect(waited).toMatchObject({ _tag: "Refused", cache: "refusal", code: "rate_limited", waitedMs: expect.any(Number) })
     expect(waited).not.toHaveProperty("refusalVia")
@@ -658,28 +682,138 @@ describe("a store that fails", () => {
     appAbsent: () => unavailable("app_absent"),
   }
 
-  test("never fails the read: every request reads GitHub, answers, and names what failed", async () => {
+  test("lookup errors refuse a cold crowd without reading GitHub and name the failure", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
     const one = await isolate(github, { config: await appConfig(), store: down })
-    const served = await one.answer("octocat", "Spoon-Knife")
-    expect(served).toMatchObject({ _tag: "Answered", cache: "miss", store: ["get", "app_absent", "keep"] })
-    expect(RepoAbout.fieldsOf(served)).toMatchObject({ store: "get,app_absent,keep" })
-    expect(await one.answer("octocat", "Gone")).toMatchObject({ _tag: "Refused", code: "not_found", store: ["get", "app_absent", "refuse"] })
+    const crowd = await Promise.all(Array.from({ length: 12 }, () => one.answer("octocat", "Spoon-Knife")))
+    for (const served of crowd) {
+      expect(served).toMatchObject({ _tag: "Refused", code: "unavailable", retryAfterMillis: 1000, store: ["get"] })
+      expect(RepoAbout.fieldsOf(served)).toMatchObject({ store: "get" })
+    }
+    expect(github.calls).toEqual([])
   })
+})
+test("a superseded public reader cannot republish or return content after a newer not_found in real Postgres", async () => {
+  const github = scriptedGitHub()
+  github.publish("octocat", "Spoon-Knife")
+  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  const real = AboutStore.postgres(scratch.database)
+  const reached = Deferred.makeUnsafe<void>()
+  const released = Deferred.makeUnsafe<void>()
+  let now = Date.UTC(2026, 10, 2)
+  const a = await isolate(github, { now: () => now, store: {
+    ...real,
+    keep: (...args) => Effect.gen(function* () {
+      yield* Deferred.succeed(reached, undefined)
+      yield* Deferred.await(released)
+      return yield* real.keep(...args)
+    }),
+  } })
+  const delayed = a.answer("octocat", "Spoon-Knife")
+  try {
+    await Effect.runPromise(Deferred.await(reached)) // A has already read the public README; only its real SQL write is held.
+    now += 30_000 // The claim expires; no wall-clock wait.
+    github.fail("", 404)
+    const b = await isolate(github, { now: () => now })
+    expect(await b.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Refused", code: "not_found" })
+  } finally { await Effect.runPromise(Deferred.succeed(released, undefined)) }
+  const rejected = await delayed
+  expect(rejected).toMatchObject({ _tag: "Refused", code: "unavailable", writeRejected: "keep" })
+  expect(RepoAbout.fieldsOf(rejected)).toMatchObject({ writeRejected: "keep" })
+  const kept = Option.getOrThrow(await runtime.runPromise(real.get(SPOON)))
+  expect(kept.answer).toEqual(Option.none())
+  expect(kept.refusal).toBe("not_found")
+})
 
-  test("a claim that fails reads GitHub anyway", async () => {
+})
+
+// These regressions use the same clock and store seams without needing a database.
+const noDatabase = Layer.effect(SqlClient.SqlClient, Effect.die("This read must not access Postgres"))
+
+test("store reads decide freshness on completion and never extend the remaining cache lifetime", async () => {
+  for (const waiting of [false, true]) {
+    for (const remaining of [1500, 500, 0, -1]) {
+      const github = scriptedGitHub()
+      let now = 0
+      let reading = waiting
+      const completed: AboutStore.Kept = {
+        answer: Option.some({ text: "fresh", via: "anonymous", readAtMs: 0, freshUntilMs: 2000 }),
+        nextReadAtMs: 30_000, refusal: "github_unavailable", appAbsentUntilMs: null,
+      }
+      const store: AboutStore.AboutStore = {
+        get: () => Effect.sync(() => {
+          if (reading) {
+            reading = false
+            return Option.some({ ...completed, answer: Option.none(), refusal: null })
+          }
+          now = 2000 - remaining // Time passes while the store reads, including across expiry.
+          return Option.some(completed)
+        }),
+        claim: () => Effect.succeed(false),
+        keep: () => Effect.succeed(true), refuse: () => Effect.succeed(true), appAbsent: () => Effect.void,
+      }
+      const one = await isolate(github, { store, database: noDatabase, now: () => now, timing: { poll: Duration.zero, waitFor: RepoAbout.WAIT_FOR } })
+      const result = await one.answer("octocat", "Spoon-Knife")
+      expect(result, JSON.stringify({ waiting, remaining })).toMatchObject(remaining > 0
+        ? { _tag: "Answered", text: "fresh", maxAgeSeconds: Math.floor(remaining / 1000) }
+        : { _tag: "Refused", code: "github_unavailable" })
+      expect(github.calls).toEqual([])
+    }
+  }
+  // A newly fetched answer can also age while the store persists it.
+  for (const remaining of [1500, 500, 0, -1]) {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
-    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
-    const real = AboutStore.postgres(scratch.database)
-    const one = await isolate(github, { store: { ...real, claim: () => unavailable("claim") } })
-    expect(await one.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Answered", cache: "miss", store: ["claim"] })
-    expect(answered(await one.answer("octocat", "Spoon-Knife")).cache).toBe("hit")
-    // An expired answer cannot mask a failed claim: read GitHub again.
-    await age(SPOON)
-    const calls = github.calls.length
-    expect(await one.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Answered", cache: "miss", store: ["claim"] })
-    expect(github.calls.length).toBeGreaterThan(calls)
-  })
+    let now = 0
+    const store: AboutStore.AboutStore = {
+      get: () => Effect.succeed(Option.none()),
+      claim: () => Effect.succeed("1"),
+      keep: () => Effect.sync(() => { now = 60_000 - remaining; return true }),
+      refuse: () => Effect.succeed(true), appAbsent: () => Effect.void,
+    }
+    const one = await isolate(github, {
+      store, database: noDatabase, now: () => now, config: { REPO_ABOUT_ANONYMOUS_FRESH_MINUTES: "1" },
+    })
+    expect(await one.answer("octocat", "Spoon-Knife")).toMatchObject(remaining > 0
+      ? { _tag: "Answered", maxAgeSeconds: Math.floor(remaining / 1000) }
+      : { _tag: "Refused", code: "unavailable", retryAfterMillis: 1000 })
+  }
+})
+
+test("failed claims refuse a crowd with either an existing or missing row without reading GitHub", async () => {
+  for (const exists of [true, false]) {
+    const github = scriptedGitHub()
+    github.publish("octocat", "Spoon-Knife")
+    const expired: AboutStore.Kept = {
+      answer: Option.some({ text: "expired", via: "anonymous", readAtMs: 0, freshUntilMs: 1000 }),
+      nextReadAtMs: null, refusal: null, appAbsentUntilMs: null,
+    }
+    const store: AboutStore.AboutStore = {
+      get: () => Effect.succeed(exists ? Option.some(expired) : Option.none()),
+      claim: () => Effect.fail(new AboutStore.StoreUnavailable({ op: "claim" })),
+      keep: () => Effect.succeed(true), refuse: () => Effect.succeed(true), appAbsent: () => Effect.void,
+    }
+    const one = await isolate(github, { store, database: noDatabase, now: 2000 })
+    const crowd = await Promise.all(Array.from({ length: 12 }, () => one.answer("octocat", "Spoon-Knife")))
+    for (const result of crowd) expect(result).toMatchObject({
+      _tag: "Refused", code: "unavailable", retryAfterMillis: 1000, store: ["claim"],
+    })
+    expect(github.calls).toEqual([])
+  }
+})
+
+
+
+test("a failed curated recovery claim performs zero GitHub token or metadata reads", async () => {
+  const github = scriptedGitHub()
+  const store: AboutStore.AboutStore = {
+    get: () => Effect.succeed(Option.some({ answer: Option.none(), refusal: "rate_limited", refusalVia: "anonymous", nextReadAtMs: 60_000, appAbsentUntilMs: null })),
+    claim: () => Effect.fail(new AboutStore.StoreUnavailable({ op: "claim" })),
+    keep: () => Effect.die("no save without ownership"), refuse: () => Effect.die("no refusal write without ownership"),
+    appAbsent: () => Effect.die("no token lookup without ownership"),
+  }
+  const one = await isolate(github, { store, database: noDatabase, now: 0, config: await appConfig() })
+  expect(await one.answer("Effect-TS", "effect")).toMatchObject({ _tag: "Refused", code: "unavailable", store: ["claim"], retryAfterMillis: 1000 })
+  expect(github.calls).toEqual([])
 })

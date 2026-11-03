@@ -95,6 +95,7 @@ import m0094 from "./migrations/0094_admin_fences.ts"
 import m0095 from "./migrations/0095_runner_reauthorization.ts"
 import m0096 from "./migrations/0096_github_repo_role_state.ts"
 import m0097 from "./migrations/0097_runner_reconfirmation.ts"
+import m0098 from "./migrations/0098_about_claim_generation.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -194,4 +195,5 @@ export const migrations = {
   "0095_runner_reauthorization": m0095,
   "0096_github_repo_role_state": m0096,
   "0097_runner_reconfirmation": m0097,
+  "0098_about_claim_generation": m0098,
 }

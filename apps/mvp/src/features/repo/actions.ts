@@ -214,8 +214,8 @@ const aboutFailure = (failure: ReadFailure | undefined): string =>
  * Loads what GitHub says of `owner/name` unless this tab has it or is loading it. A failed read waits for Try again, so
  * navigation through the repository cannot spend another rate-limit window. It needs no
  * clone, so the page shows it from the first visit: the about panel, and before a clone the top folder and README.
- * The read is the flow `repo/about`, door `view`, on this device's engine. Its first refusal leaves the reason and
- * Try again in the page, rather than hiding an outage behind a loading placeholder for the retry budget.
+ * The read is the flow `repo/about`, door `view`, on this device's engine. After at most three attempts for a
+ * retryable refusal, it leaves the reason and Try again in the page.
  */
 const ensureAbout = (owner: string, name: string, id: string, door: "view" | "button" = "view") =>
   Effect.gen(function* () {

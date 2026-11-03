@@ -496,7 +496,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             const bytes = encoder.encode(outcome.text)
             fields.bytes = bytes.length
             return HttpServerResponse.uint8Array(bytes, {
-              headers: { "cache-control": `public, max-age=${outcome.maxAgeSeconds}` },
+              headers: {
+                "cache-control": `public, max-age=${outcome.maxAgeSeconds}, must-revalidate`,
+              },
               contentType: "application/json",
             })
           }

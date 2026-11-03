@@ -5,7 +5,8 @@ import * as Conversations from "./branch/Conversations.ts"
 // Clones run on the Node host in this process (worker/test/repos.ts). Unhappy paths arm a fault on the scripted
 // provider, or give RepoApi a faulty service; nothing intercepts a request.
 import { Action } from "@smthrs/flow"
-import { Cause, Effect, Exit, Layer, Option, Redacted, Stream } from "effect"
+import { Cause, Clock, Effect, Exit, Layer, ManagedRuntime, Option, Redacted, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { RepoClient } from "../src/features/repo/api.ts"
 import { SqlClient } from "effect/sql"
@@ -975,7 +976,10 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     h.github.publish("octocat", "Spoon-Knife")
     const response = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
     expect(response.status).toBe(200)
-    expect(response.headers.get("cache-control")).toBe("public, max-age=3600")
+    expect(response.headers.get("cache-control")).toMatch(/^public, max-age=\d+, must-revalidate$/)
+    const maxAge = Number(response.headers.get("cache-control")?.match(/max-age=(\d+)/)?.[1])
+    expect(maxAge).toBeGreaterThan(0)
+    expect(maxAge).toBeLessThanOrEqual(3600)
     expect(await response.json()).toEqual({
       name: "octocat/Spoon-Knife",
       description: "This repo is for demonstration purposes only.",
@@ -1251,4 +1255,28 @@ test("refs retains a role refusal's diagnostics and ray while keeping its unavai
   expect(h.line("repo.refs").at(-1)?.annotations).toMatchObject({ code: "rate_limited", stage: "permission", upstreamStatus: 429,
     retryAfterSeconds: 12, failureSource: "fresh", ray, status: 503 })
   expect(JSON.stringify(h.logs)).not.toContain("PRIVATE_COOKIE")
+})
+
+
+test("About HTTP caches must revalidate even with max-age=0 and refuse an expired answer", async () => {
+  const time = ManagedRuntime.make(TestClock.layer())
+  try {
+    const now = Date.UTC(2026, 10, 2)
+    await time.runPromise(TestClock.setTime(now))
+    const clock = await time.runPromise(Effect.service(Clock.Clock))
+    const h = await repoHarness(runtime, { actor: null, clock })
+    h.github.publish("octocat", "Spoon-Knife")
+    const first = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect(first.status).toBe(200)
+    expect(first.headers.get("cache-control")).toBe("public, max-age=3600, must-revalidate")
+    await time.runPromise(TestClock.adjust(3_599_500))
+    const last = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect(last.status).toBe(200)
+    expect(last.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate")
+    await time.runPromise(TestClock.adjust(500))
+    h.github.fail("", 404)
+    const expired = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect(expired.status).toBe(404)
+    expect(expired.headers.get("cache-control")).toBe("no-store")
+  } finally { await time.dispose() }
 })

@@ -182,3 +182,20 @@ describe("RepoClient against a gateway", () => {
     expect(result._tag === "Success" ? [...result.success.bytes] : undefined).toEqual([0, 1, 2, 255])
   })
 })
+
+
+test("legacy cached About responses without a deadline still load a healthy repository", async () => {
+  const about = {
+    name: "octocat/Spoon-Knife", description: "public", homepage: null, topics: [], stars: 0, forks: 0, watchers: 0,
+    license: null, defaultBranch: "main", archived: false, languages: [], release: null, releases: 0, contributors: [],
+    contributorCount: 0, commits: null, branches: null, tags: null, head: null, root: null, readme: null, installUrl: null,
+  }
+  const server = await serve((_request, response) => {
+    response.setHeader("cache-control", "public, max-age=3600")
+    response.setHeader("content-type", "application/json")
+    response.end(JSON.stringify(about))
+  })
+  const result = await withClient(server.origin, (client) => client.about("octocat", "Spoon-Knife"))
+  expect(result._tag).toBe("Success")
+  expect(result._tag === "Success" ? result.success : undefined).toEqual(about)
+})
