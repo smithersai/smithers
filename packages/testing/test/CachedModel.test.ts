@@ -8,9 +8,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CachedModel from "../src/CachedModel.vibe"
-import { decode, type Fixture, type RecordedCall, recordedRequest } from "../src/Fixture.ts"
+import { decode, type Fixture, type RecordedCall, recordedRequest } from "../src/Fixture.vibe"
 import * as FixtureStore from "../src/FixtureStore.ts"
-import type { ModelErrorLike, RecordedRequestLike } from "../src/ModelLike.ts"
+import type { ModelErrorLike, RecordedRequestLike } from "../src/ModelLike.vibe"
 import { UnscriptedModelError } from "../src/TestingError.ts"
 
 type Complete<T> = { readonly [K in keyof T]-?: Exclude<T[K], undefined> }

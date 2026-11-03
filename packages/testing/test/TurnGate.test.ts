@@ -3,7 +3,7 @@ import * as Model from "@smthrs/model/Model"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Deferred, Effect, Fiber, Stream } from "effect"
-import * as TurnGate from "../src/TurnGate.ts"
+import * as TurnGate from "../src/TurnGate.vibe"
 
 const request = (text: string): ModelRequest.ModelRequest =>
   ModelRequest.ModelRequest.make({

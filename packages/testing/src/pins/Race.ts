@@ -14,7 +14,7 @@ import * as Ref from "effect/Ref"
 import * as TestClock from "effect/testing/TestClock"
 import type { ConformanceCase } from "../Conformance.vibe"
 import type { EngineSubject, ExecutionResult, FlowSpec, JournalEntryLike, StepSpec } from "../EngineSubject.vibe"
-import { assert, awaitFiber, fail, invoke, waitUntil } from "../internal/Pin.ts"
+import { assert, awaitFiber, fail, invoke, waitUntil } from "../internal/Pin.vibe"
 import { same } from "../internal/Structural.ts"
 import type { ConformanceViolation, EngineSubjectError } from "../TestingError.ts"
 

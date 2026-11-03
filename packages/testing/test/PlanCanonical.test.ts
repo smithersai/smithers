@@ -15,8 +15,8 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as Plan from "../src/Plan.ts"
-import { expectPlan } from "../src/PlanAssertions.ts"
+import * as Plan from "../src/Plan.vibe"
+import { expectPlan } from "../src/PlanAssertions.vibe"
 import type { PlanLike } from "../src/PlanLike.ts"
 
 const emptyPlan = (envelope: Record<string, unknown>): PlanLike => ({

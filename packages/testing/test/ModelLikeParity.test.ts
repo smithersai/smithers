@@ -30,14 +30,14 @@ import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { describe, expect, it } from "vitest"
-import { canonicalRequestDigest, recordedRequest } from "../src/Fixture.ts"
+import { canonicalRequestDigest, recordedRequest } from "../src/Fixture.vibe"
 import {
   type ModelErrorLike,
   modelErrorTag,
   type ModelEventLike,
   type ModelRequestLike,
   type ProviderCacheHint
-} from "../src/ModelLike.ts"
+} from "../src/ModelLike.vibe"
 
 /** Mutual assignability, which is what makes an added field visible. */
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
