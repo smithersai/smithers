@@ -271,6 +271,28 @@ const promptOf = (task: AgentRunner.Task, earlier: boolean): string =>
 const failed = (reason: (typeof AgentRunner.FAILURES)[number]): AgentRunner.Outcome => ({ _tag: "Failed", reason })
 
 /**
+ * Why an agent's process didn't start, for a log: the error's code and the first line of its message, every absolute
+ * path replaced. Nothing of the agent's environment.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const spawnFailureOf = (cause: Cause.Cause<unknown>): { readonly code: string; readonly reason: string } => {
+  const error = Cause.squash(cause) as {
+    readonly code?: unknown
+    readonly message?: unknown
+    readonly _tag?: unknown
+    readonly cause?: { readonly code?: unknown }
+  }
+  const code = [error.code, error.cause?.code, error._tag].find((each) => typeof each === "string")
+  const message = typeof error.message === "string" ? error.message : String(error)
+  return {
+    code: code ?? "unknown",
+    reason: (message.split("\n")[0] ?? "").replace(/\/[^\s'"`:,)]+/g, "<path>").slice(0, 200)
+  }
+}
+
+/**
  * Does one job's work and answers how it ended. Never fails: every way it can
  * end is an outcome. Interrupted (the claim was lost), it stops the agent's
  * whole tree and answers nothing.
@@ -572,7 +594,10 @@ const session = (options: {
       killSignal: "SIGINT",
       forceKillAfter: 15_000
     }))
-    if (Exit.isFailure(spawned)) return ended(failed("refused"), "spawn")
+    if (Exit.isFailure(spawned)) {
+      yield* Effect.logWarning("runner.spawn").pipe(Effect.annotateLogs(spawnFailureOf(spawned.cause)))
+      return ended(failed("refused"), "spawn")
+    }
     const handle = spawned.value
     const tree = Tree.watch(handle.targetPid)
     // Each look at the tree also counts its CPU time, which the host's stall rule reads from the heartbeat.

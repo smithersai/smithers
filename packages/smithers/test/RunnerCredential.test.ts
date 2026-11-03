@@ -1,10 +1,11 @@
 // A job's git credential, as the runner asks the host for it (src/runner/Credential.ts, decision 0148): reused while it
 // lasts, asked for once at a time per claim, and only a `404` means "fetch without one".
 import type * as AgentRunner from "@smthrs/agent/AgentRunner"
-import { Effect, Exit, Option } from "effect"
+import { Cause, Effect, Exit, Option } from "effect"
 import { expect, test } from "vitest"
 import * as Credential from "../src/runner/Credential.ts"
 import * as Host from "../src/runner/Host.ts"
+import * as Session from "../src/runner/Session.ts"
 
 type Answer = typeof AgentRunner.GitCredentialResponse.Type | Host.HostError
 
@@ -85,4 +86,12 @@ test("only a 404 is no credential; the host unavailable is retryable with its wa
   expect(Exit.isFailure(await Effect.runPromise(Effect.exit(Credential.forJob(host, held))))).toBe(true)
   expect(Option.isSome(await Effect.runPromise(Credential.forJob(host, held)))).toBe(true)
   expect(asks.count).toBe(2)
+})
+
+// The "ten jobs at once" flake settled `refused` with `stop: spawn`, and nothing said why the agent didn't start.
+test("why an agent didn't start is logged with its code, never a path", () => {
+  const failure = Object.assign(new Error("spawn /home/lane/secret/agent ENOENT\nand more"), { code: "ENOENT" })
+  expect(Session.spawnFailureOf(Cause.fail(failure))).toEqual({ code: "ENOENT", reason: "spawn <path> ENOENT" })
+  expect(Session.spawnFailureOf(Cause.die(Object.assign(new Error("gone"), { cause: { code: "EAGAIN" } }))))
+    .toEqual({ code: "EAGAIN", reason: "gone" })
 })
