@@ -41,18 +41,34 @@
     },
     "./Vitest": {
       "types": "./.vibe/declarations/src/Vitest.d.vibe.ts",
-      "import": "./src/Vitest.vibe"
+      "import": {
+        "types": "./.vibe/declarations/src/Vitest.d.vibe.ts",
+        "vibelang-source": "./src/Vitest.vibe",
+        "default": "./.vibelang/js/src/Vitest.js"
+      }
     },
     "./internal/*": null,
     "./*/index": null,
-    "./CachedModel": "./src/CachedModel.vibe",
-    "./Conformance": "./src/Conformance.vibe",
+    "./CachedModel": {
+      "types": "./.vibe/declarations/src/CachedModel.d.vibe.ts",
+      "vibelang-source": "./src/CachedModel.vibe",
+      "default": "./.vibelang/js/src/CachedModel.js"
+    },
+    "./Conformance": {
+      "types": "./.vibe/declarations/src/Conformance.d.vibe.ts",
+      "vibelang-source": "./src/Conformance.vibe",
+      "default": "./.vibelang/js/src/Conformance.js"
+    },
     "./Divergence": {
       "types": "./.vibe/declarations/src/Divergence.d.vibe.ts",
       "vibelang-source": "./src/Divergence.vibe",
       "default": "./.vibelang/js/src/Divergence.js"
     },
-    "./EngineSubject": "./src/EngineSubject.vibe",
+    "./EngineSubject": {
+      "types": "./.vibe/declarations/src/EngineSubject.d.vibe.ts",
+      "vibelang-source": "./src/EngineSubject.vibe",
+      "default": "./.vibelang/js/src/EngineSubject.js"
+    },
     "./Faults": "./src/Faults.ts",
     "./Fixture": {
       "types": "./.vibe/declarations/src/Fixture.d.vibe.ts",
@@ -74,7 +90,11 @@
       "vibelang-source": "./src/HostSuite.ts",
       "default": "./.vibelang/js/src/HostSuite.js"
     },
-    "./JournalAssertions": "./src/JournalAssertions.vibe",
+    "./JournalAssertions": {
+      "types": "./.vibe/declarations/src/JournalAssertions.d.vibe.ts",
+      "vibelang-source": "./src/JournalAssertions.vibe",
+      "default": "./.vibelang/js/src/JournalAssertions.js"
+    },
     "./MemoryEngine": {
       "types": "./src/MemoryEngine.ts",
       "vibelang-source": "./src/MemoryEngine.ts",

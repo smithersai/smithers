@@ -47,7 +47,11 @@
       "vibelang-source": "./src/CacheStore.vibe",
       "default": "./.vibelang/js/src/CacheStore.js"
     },
-    "./CacheStoreMetrics": "./src/CacheStoreMetrics.vibe",
+    "./CacheStoreMetrics": {
+      "types": "./.vibe/declarations/src/CacheStoreMetrics.d.vibe.ts",
+      "vibelang-source": "./src/CacheStoreMetrics.vibe",
+      "default": "./.vibelang/js/src/CacheStoreMetrics.js"
+    },
     "./CombinedCacheStore": {
       "types": "./.vibe/declarations/src/CombinedCacheStore.d.vibe.ts",
       "vibelang-source": "./src/CombinedCacheStore.vibe",

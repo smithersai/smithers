@@ -34,37 +34,117 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./test/contract": "./src/test/HostContract.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./CapabilitySet": "./src/CapabilitySet.ts",
-    "./ChildProcessSpawner": "./src/ChildProcessSpawner.ts",
-    "./CommandLine": "./src/CommandLine.ts",
-    "./ContainedSpawner": "./src/ContainedSpawner.ts",
-    "./FileSystem": "./src/FileSystem.ts",
+    "./CapabilitySet": {
+      "types": "./src/CapabilitySet.ts",
+      "vibelang-source": "./src/CapabilitySet.ts",
+      "default": "./.vibelang/js/src/CapabilitySet.js"
+    },
+    "./ChildProcessSpawner": {
+      "types": "./src/ChildProcessSpawner.ts",
+      "vibelang-source": "./src/ChildProcessSpawner.ts",
+      "default": "./.vibelang/js/src/ChildProcessSpawner.js"
+    },
+    "./CommandLine": {
+      "types": "./src/CommandLine.ts",
+      "vibelang-source": "./src/CommandLine.ts",
+      "default": "./.vibelang/js/src/CommandLine.js"
+    },
+    "./ContainedSpawner": {
+      "types": "./src/ContainedSpawner.ts",
+      "vibelang-source": "./src/ContainedSpawner.ts",
+      "default": "./.vibelang/js/src/ContainedSpawner.js"
+    },
+    "./FileSystem": {
+      "types": "./src/FileSystem.ts",
+      "vibelang-source": "./src/FileSystem.ts",
+      "default": "./.vibelang/js/src/FileSystem.js"
+    },
     "./GrantEvent": {
       "types": "./.vibe/declarations/src/GrantEvent.d.vibe.ts",
-      "default": "./src/GrantEvent.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/GrantEvent.d.vibe.ts",
+        "vibelang-source": "./src/GrantEvent.vibe",
+        "default": "./.vibelang/js/src/GrantEvent.js"
+      }
     },
-    "./GrantStore": "./src/GrantStore.ts",
+    "./GrantStore": {
+      "types": "./src/GrantStore.ts",
+      "vibelang-source": "./src/GrantStore.ts",
+      "default": "./.vibelang/js/src/GrantStore.js"
+    },
     "./HostError": "./src/HostError.ts",
-    "./HostServices": "./src/HostServices.ts",
-    "./HttpClient": "./src/HttpClient.ts",
-    "./Jj": "./src/Jj.ts",
-    "./JournalGrantStore": "./src/JournalGrantStore.ts",
-    "./Path": "./src/Path.ts",
-    "./ProcessLedger": "./src/ProcessLedger.ts",
-    "./Rooted": "./src/Rooted.ts",
-    "./Workspace": "./src/Workspace.ts",
-    "./index": "./src/index.ts",
+    "./HostServices": {
+      "types": "./src/HostServices.ts",
+      "vibelang-source": "./src/HostServices.ts",
+      "default": "./.vibelang/js/src/HostServices.js"
+    },
+    "./HttpClient": {
+      "types": "./src/HttpClient.ts",
+      "vibelang-source": "./src/HttpClient.ts",
+      "default": "./.vibelang/js/src/HttpClient.js"
+    },
+    "./Jj": {
+      "types": "./src/Jj.ts",
+      "vibelang-source": "./src/Jj.ts",
+      "default": "./.vibelang/js/src/Jj.js"
+    },
+    "./JournalGrantStore": {
+      "types": "./src/JournalGrantStore.ts",
+      "vibelang-source": "./src/JournalGrantStore.ts",
+      "default": "./.vibelang/js/src/JournalGrantStore.js"
+    },
+    "./Path": {
+      "types": "./src/Path.ts",
+      "vibelang-source": "./src/Path.ts",
+      "default": "./.vibelang/js/src/Path.js"
+    },
+    "./ProcessLedger": {
+      "types": "./src/ProcessLedger.ts",
+      "vibelang-source": "./src/ProcessLedger.ts",
+      "default": "./.vibelang/js/src/ProcessLedger.js"
+    },
+    "./Rooted": {
+      "types": "./src/Rooted.ts",
+      "vibelang-source": "./src/Rooted.ts",
+      "default": "./.vibelang/js/src/Rooted.js"
+    },
+    "./Workspace": {
+      "types": "./src/Workspace.ts",
+      "vibelang-source": "./src/Workspace.ts",
+      "default": "./.vibelang/js/src/Workspace.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./test/HostContract": "./src/test/HostContract.ts",
     "./test/TestGrantStore": "./src/test/TestGrantStore.ts",
-    "./ChildProcessEnvironment": "./src/ChildProcessEnvironment.ts",
-    "./ProcessConfinement": "./src/ProcessConfinement.ts",
+    "./ChildProcessEnvironment": {
+      "types": "./src/ChildProcessEnvironment.ts",
+      "vibelang-source": "./src/ChildProcessEnvironment.ts",
+      "default": "./.vibelang/js/src/ChildProcessEnvironment.js"
+    },
+    "./ProcessConfinement": {
+      "types": "./src/ProcessConfinement.ts",
+      "vibelang-source": "./src/ProcessConfinement.ts",
+      "default": "./.vibelang/js/src/ProcessConfinement.js"
+    },
     "./Unreachable": {
       "types": "./.vibe/declarations/src/Unreachable.d.vibe.ts",
-      "default": "./src/Unreachable.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/Unreachable.d.vibe.ts",
+        "vibelang-source": "./src/Unreachable.vibe",
+        "default": "./.vibelang/js/src/Unreachable.js"
+      }
     }
   },
   "files": [
@@ -77,7 +157,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

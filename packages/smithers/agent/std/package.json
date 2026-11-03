@@ -92,7 +92,11 @@
       "vibelang-source": "./src/HttpPost.vibe",
       "default": "./.vibelang/js/src/HttpPost.js"
     },
-    "./LanguageServer": "./src/LanguageServer.vibe",
+    "./LanguageServer": {
+      "types": "./.vibe/declarations/src/LanguageServer.d.vibe.ts",
+      "vibelang-source": "./src/LanguageServer.vibe",
+      "default": "./.vibelang/js/src/LanguageServer.js"
+    },
     "./Ls": {
       "types": "./src/Ls.ts",
       "vibelang-source": "./src/Ls.ts",
@@ -128,13 +132,21 @@
       "vibelang-source": "./src/Read.ts",
       "default": "./.vibelang/js/src/Read.js"
     },
-    "./Relocate": "./src/Relocate.vibe",
+    "./Relocate": {
+      "types": "./.vibe/declarations/src/Relocate.d.vibe.ts",
+      "vibelang-source": "./src/Relocate.vibe",
+      "default": "./.vibelang/js/src/Relocate.js"
+    },
     "./RemoteSearch": {
       "types": "./src/RemoteSearch.ts",
       "vibelang-source": "./src/RemoteSearch.ts",
       "default": "./.vibelang/js/src/RemoteSearch.js"
     },
-    "./Search": "./src/Search.vibe",
+    "./Search": {
+      "types": "./.vibe/declarations/src/Search.d.vibe.ts",
+      "vibelang-source": "./src/Search.vibe",
+      "default": "./.vibelang/js/src/Search.js"
+    },
     "./SearchConformance": {
       "types": "./src/SearchConformance.ts",
       "vibelang-source": "./src/SearchConformance.ts",

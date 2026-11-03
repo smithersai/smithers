@@ -34,17 +34,53 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.vibe",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./ArtifactBackupLease": "./src/ArtifactBackupLease.ts",
-    "./ArtifactStore": "./src/ArtifactStore.ts",
-    "./ArtifactStoreMetrics": "./src/ArtifactStoreMetrics.vibe",
-    "./ArtifactSweep": "./src/ArtifactSweep.ts",
-    "./CombinedArtifacts": "./src/CombinedArtifacts.ts",
-    "./FileLease": "./src/FileLease.ts",
-    "./RemoteArtifacts": "./src/RemoteArtifacts.ts",
-    "./index": "./src/index.vibe"
+    "./ArtifactBackupLease": {
+      "types": "./src/ArtifactBackupLease.ts",
+      "vibelang-source": "./src/ArtifactBackupLease.ts",
+      "default": "./.vibelang/js/src/ArtifactBackupLease.js"
+    },
+    "./ArtifactStore": {
+      "types": "./src/ArtifactStore.ts",
+      "vibelang-source": "./src/ArtifactStore.ts",
+      "default": "./.vibelang/js/src/ArtifactStore.js"
+    },
+    "./ArtifactStoreMetrics": {
+      "types": "./.vibe/declarations/src/ArtifactStoreMetrics.d.vibe.ts",
+      "vibelang-source": "./src/ArtifactStoreMetrics.vibe",
+      "default": "./.vibelang/js/src/ArtifactStoreMetrics.js"
+    },
+    "./ArtifactSweep": {
+      "types": "./src/ArtifactSweep.ts",
+      "vibelang-source": "./src/ArtifactSweep.ts",
+      "default": "./.vibelang/js/src/ArtifactSweep.js"
+    },
+    "./CombinedArtifacts": {
+      "types": "./src/CombinedArtifacts.ts",
+      "vibelang-source": "./src/CombinedArtifacts.ts",
+      "default": "./.vibelang/js/src/CombinedArtifacts.js"
+    },
+    "./FileLease": {
+      "types": "./src/FileLease.ts",
+      "vibelang-source": "./src/FileLease.ts",
+      "default": "./.vibelang/js/src/FileLease.js"
+    },
+    "./RemoteArtifacts": {
+      "types": "./src/RemoteArtifacts.ts",
+      "vibelang-source": "./src/RemoteArtifacts.ts",
+      "default": "./.vibelang/js/src/RemoteArtifacts.js"
+    },
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -56,7 +92,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

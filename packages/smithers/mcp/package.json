@@ -35,14 +35,38 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Diagnostics": "./src/Diagnostics.vibe",
-    "./McpClient": "./src/McpClient.ts",
-    "./McpError": "./src/McpError.vibe",
-    "./McpFlows": "./src/McpFlows.ts",
-    "./index": "./src/index.ts"
+    "./Diagnostics": {
+      "types": "./.vibe/declarations/src/Diagnostics.d.vibe.ts",
+      "vibelang-source": "./src/Diagnostics.vibe",
+      "default": "./.vibelang/js/src/Diagnostics.js"
+    },
+    "./McpClient": {
+      "types": "./src/McpClient.ts",
+      "vibelang-source": "./src/McpClient.ts",
+      "default": "./.vibelang/js/src/McpClient.js"
+    },
+    "./McpError": {
+      "types": "./.vibe/declarations/src/McpError.d.vibe.ts",
+      "vibelang-source": "./src/McpError.vibe",
+      "default": "./.vibelang/js/src/McpError.js"
+    },
+    "./McpFlows": {
+      "types": "./src/McpFlows.ts",
+      "vibelang-source": "./src/McpFlows.ts",
+      "default": "./.vibelang/js/src/McpFlows.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -54,7 +78,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

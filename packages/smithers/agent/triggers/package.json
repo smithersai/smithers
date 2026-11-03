@@ -34,23 +34,79 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./migrations/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./CatchUp": "./src/CatchUp.vibe",
-    "./Channel": "./src/Channel.vibe",
-    "./Cron": "./src/Cron.ts",
-    "./DispatchReader": "./src/DispatchReader.ts",
-    "./Overlap": "./src/Overlap.ts",
-    "./Schedule": "./src/Schedule.vibe",
-    "./Scheduler": "./src/Scheduler.ts",
-    "./SqlTriggerStore": "./src/SqlTriggerStore.ts",
-    "./Trigger": "./src/Trigger.ts",
-    "./TriggerError": "./src/TriggerError.vibe",
-    "./TriggerStore": "./src/TriggerStore.ts",
-    "./Webhook": "./src/Webhook.ts",
-    "./index": "./src/index.ts",
+    "./CatchUp": {
+      "types": "./.vibe/declarations/src/CatchUp.d.vibe.ts",
+      "vibelang-source": "./src/CatchUp.vibe",
+      "default": "./.vibelang/js/src/CatchUp.js"
+    },
+    "./Channel": {
+      "types": "./.vibe/declarations/src/Channel.d.vibe.ts",
+      "vibelang-source": "./src/Channel.vibe",
+      "default": "./.vibelang/js/src/Channel.js"
+    },
+    "./Cron": {
+      "types": "./src/Cron.ts",
+      "vibelang-source": "./src/Cron.ts",
+      "default": "./.vibelang/js/src/Cron.js"
+    },
+    "./DispatchReader": {
+      "types": "./src/DispatchReader.ts",
+      "vibelang-source": "./src/DispatchReader.ts",
+      "default": "./.vibelang/js/src/DispatchReader.js"
+    },
+    "./Overlap": {
+      "types": "./src/Overlap.ts",
+      "vibelang-source": "./src/Overlap.ts",
+      "default": "./.vibelang/js/src/Overlap.js"
+    },
+    "./Schedule": {
+      "types": "./.vibe/declarations/src/Schedule.d.vibe.ts",
+      "vibelang-source": "./src/Schedule.vibe",
+      "default": "./.vibelang/js/src/Schedule.js"
+    },
+    "./Scheduler": {
+      "types": "./src/Scheduler.ts",
+      "vibelang-source": "./src/Scheduler.ts",
+      "default": "./.vibelang/js/src/Scheduler.js"
+    },
+    "./SqlTriggerStore": {
+      "types": "./src/SqlTriggerStore.ts",
+      "vibelang-source": "./src/SqlTriggerStore.ts",
+      "default": "./.vibelang/js/src/SqlTriggerStore.js"
+    },
+    "./Trigger": {
+      "types": "./src/Trigger.ts",
+      "vibelang-source": "./src/Trigger.ts",
+      "default": "./.vibelang/js/src/Trigger.js"
+    },
+    "./TriggerError": {
+      "types": "./.vibe/declarations/src/TriggerError.d.vibe.ts",
+      "vibelang-source": "./src/TriggerError.vibe",
+      "default": "./.vibelang/js/src/TriggerError.js"
+    },
+    "./TriggerStore": {
+      "types": "./src/TriggerStore.ts",
+      "vibelang-source": "./src/TriggerStore.ts",
+      "default": "./.vibelang/js/src/TriggerStore.js"
+    },
+    "./Webhook": {
+      "types": "./src/Webhook.ts",
+      "vibelang-source": "./src/Webhook.ts",
+      "default": "./.vibelang/js/src/Webhook.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./test/TestTriggers": "./src/test/TestTriggers.ts"
   },
   "files": [
@@ -63,7 +119,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

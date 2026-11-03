@@ -39,7 +39,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./GraphBuildError": "./src/GraphBuildError.vibe",
+    "./GraphBuildError": {
+      "types": "./.vibe/declarations/src/GraphBuildError.d.vibe.ts",
+      "vibelang-source": "./src/GraphBuildError.vibe",
+      "default": "./.vibelang/js/src/GraphBuildError.js"
+    },
     "./Node": {
       "types": "./src/Node.ts",
       "vibelang-source": "./src/Node.ts",
@@ -54,19 +58,43 @@
     "./*/index": null,
     "./Effects": {
       "types": "./.vibe/declarations/src/Effects.d.vibe.ts",
-      "default": "./src/Effects.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/Effects.d.vibe.ts",
+        "vibelang-source": "./src/Effects.vibe",
+        "default": "./.vibelang/js/src/Effects.js"
+      }
     },
-    "./CachePolicy": "./src/CachePolicy.vibe",
-    "./Repetition": "./src/Repetition.vibe",
-    "./FileSet": "./src/FileSet.vibe",
-    "./KeyMaterial": "./src/KeyMaterial.vibe",
+    "./CachePolicy": {
+      "types": "./.vibe/declarations/src/CachePolicy.d.vibe.ts",
+      "vibelang-source": "./src/CachePolicy.vibe",
+      "default": "./.vibelang/js/src/CachePolicy.js"
+    },
+    "./Repetition": {
+      "types": "./.vibe/declarations/src/Repetition.d.vibe.ts",
+      "vibelang-source": "./src/Repetition.vibe",
+      "default": "./.vibelang/js/src/Repetition.js"
+    },
+    "./FileSet": {
+      "types": "./.vibe/declarations/src/FileSet.d.vibe.ts",
+      "vibelang-source": "./src/FileSet.vibe",
+      "default": "./.vibelang/js/src/FileSet.js"
+    },
+    "./KeyMaterial": {
+      "types": "./.vibe/declarations/src/KeyMaterial.d.vibe.ts",
+      "vibelang-source": "./src/KeyMaterial.vibe",
+      "default": "./.vibelang/js/src/KeyMaterial.js"
+    },
     "./Migrations": null,
     "./Plan": {
       "types": "./src/Plan.ts",
       "vibelang-source": "./src/Plan.ts",
       "default": "./.vibelang/js/src/Plan.js"
     },
-    "./Placement": "./src/Placement.vibe",
+    "./Placement": {
+      "types": "./.vibe/declarations/src/Placement.d.vibe.ts",
+      "vibelang-source": "./src/Placement.vibe",
+      "default": "./.vibelang/js/src/Placement.js"
+    },
     "./PlanDiff": {
       "types": "./src/PlanDiff.ts",
       "vibelang-source": "./src/PlanDiff.ts",

@@ -95,6 +95,13 @@
     },
     "size": 1367,
     "hash": "kX8q1iNWIj4BmVzY_IUz7VZgBYmXEViKvqcjm5q_7aM"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/control/tsconfig.json"
+    },
+    "size": 1367,
+    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
    }
   ],
   "directories": [
@@ -325,8 +332,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/package.json"
     },
-    "size": 18127,
-    "hash": "MDjaUZQyp_CJy2LE1HknuIRT3QgaQc7fN8xxaIQpKa8"
+    "size": 18573,
+    "hash": "2MTB8GqVrCQ6TB1TWgEnhU0tpUCL8nYX4nU7Ck-Oato"
    },
    {
     "path": {
@@ -395,8 +402,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
-    "size": 13994,
-    "hash": "beI6HOfpTl_6nVbacXJ2pnPOAiBe0IsKLLaJELEk9I8"
+    "size": 15062,
+    "hash": "tB6dMRn77O4ZHVfBCOw1pqLh2Lw0Wjbk4lsw8dSwUW4"
    },
    {
     "path": {
@@ -430,15 +437,15 @@
     "path": {
      "relative": "packages/smithers/agent/registry/package.json"
     },
-    "size": 9092,
-    "hash": "pRVxdQxObC1bbmilPE8Ff9x5u_hh6ckCNy44rF1bZhQ"
+    "size": 9702,
+    "hash": "6K-hOCKbKxxHQyXbDgmJNziUXVAX_ZHxXGmGSE9Q-Z8"
    },
    {
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
-    "size": 13592,
-    "hash": "xAITb4kh_UIkkX9nnYV4bSviacWIWY7p3Q2LuRQz5VQ"
+    "size": 17494,
+    "hash": "kUPx6stWOEs-tWAcZ_w1b0KNKkMkqYluGKUPlHvMQ7w"
    },
    {
     "path": {
@@ -4693,17 +4700,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/model/src/Model.ts"
+     "relative": "packages/smithers/agent/model/src/Model.vibe"
     },
-    "size": 7135,
-    "hash": "wrVkNAzfVzo_0HY9QFyybcVuHeUfvVnmv1I2Hl5DQOQ"
+    "size": 7109,
+    "hash": "HM3Hyl5U0KIvrSOjWg6BxyjHdUq1s47cysCatAyF8LI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/src/Evaluator.ts"
     },
-    "size": 42668,
-    "hash": "NDp-ZPQtMHv_Uz6XT8qiK4_dW0I2r1PZnX8Qqvpyv5o"
+    "size": 42670,
+    "hash": "l-AT5NvAOT9rER9MI4w9q_TzmQl2ymRaCmIZF69ygbE"
    },
    {
     "path": {
@@ -4840,17 +4847,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/Lineage.ts"
+     "relative": "packages/smithers/control/src/Lineage.vibe"
     },
-    "size": 7567,
-    "hash": "WrZERRA0QmP1uyoWzkokTJkkLKxOLAnOoQt6Fgcqof4"
+    "size": 7535,
+    "hash": "2BLqom8Nke_IrpNL0fidWqN0VBGW4fiQAzf0lDTF8mQ"
    },
    {
     "path": {
      "relative": "packages/smithers/control/src/ControlSchema.ts"
     },
-    "size": 44287,
-    "hash": "73X35bnLZCcByau413No3po9Rz1k8eFm8MNmS4EtuTs"
+    "size": 44289,
+    "hash": "tvJLOOR4H8JeL2knON6j1xlKrqDUT237tv41y7y00X4"
    },
    {
     "path": {
@@ -4861,10 +4868,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/CredentialCipher.ts"
+     "relative": "packages/smithers/control/src/CredentialCipher.vibe"
     },
-    "size": 2979,
-    "hash": "9PCtkref8_PWPXiVoSD-gEv7xmy5WPXwS9ocG27M-II"
+    "size": 2947,
+    "hash": "iUVCgDHBpySG_I3ULVtmEnLvK3be-rMSuJ9mPqtWwjg"
    },
    {
     "path": {
@@ -4877,8 +4884,8 @@
     "path": {
      "relative": "packages/smithers/control/src/Credential.ts"
     },
-    "size": 11447,
-    "hash": "Cebhxfz3FEp5saLDtccatx-GajunbKPqWq0px0ve6LE"
+    "size": 11449,
+    "hash": "1VInZ7EOwb5mHq7FNRQyLa1kicMHKf48V4lT75hZTPw"
    },
    {
     "path": {
@@ -6910,7 +6917,7 @@
     "relative": "packages/smithers/agent/model/src/Pricing.vibe"
    },
    {
-    "relative": "packages/smithers/agent/model/src/Model.ts"
+    "relative": "packages/smithers/agent/model/src/Model.vibe"
    },
    {
     "relative": "packages/smithers/agent/model/src/Evaluator.ts"
@@ -6973,7 +6980,7 @@
     "relative": "packages/smithers/agent/registry/src/Descriptor.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/Lineage.ts"
+    "relative": "packages/smithers/control/src/Lineage.vibe"
    },
    {
     "relative": "packages/smithers/control/src/ControlSchema.ts"
@@ -6982,7 +6989,7 @@
     "relative": "packages/smithers/control/src/ControlError.ts"
    },
    {
-    "relative": "packages/smithers/control/src/CredentialCipher.ts"
+    "relative": "packages/smithers/control/src/CredentialCipher.vibe"
    },
    {
     "relative": "packages/smithers/control/src/CredentialStore.ts"

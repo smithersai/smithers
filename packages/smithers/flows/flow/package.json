@@ -45,9 +45,21 @@
       "default": "./.vibelang/js/src/Action/index.js"
     },
     "./Action/*": null,
-    "./CacheEnvironment": "./src/Action/CacheEnvironment.vibe",
-    "./FileBoundary": "./src/Action/FileBoundary.vibe",
-    "./FileInput": "./src/Action/FileInput.vibe",
+    "./CacheEnvironment": {
+      "types": "./.vibe/declarations/src/Action/CacheEnvironment.d.vibe.ts",
+      "vibelang-source": "./src/Action/CacheEnvironment.vibe",
+      "default": "./.vibelang/js/src/Action/CacheEnvironment.js"
+    },
+    "./FileBoundary": {
+      "types": "./.vibe/declarations/src/Action/FileBoundary.d.vibe.ts",
+      "vibelang-source": "./src/Action/FileBoundary.vibe",
+      "default": "./.vibelang/js/src/Action/FileBoundary.js"
+    },
+    "./FileInput": {
+      "types": "./.vibe/declarations/src/Action/FileInput.d.vibe.ts",
+      "vibelang-source": "./src/Action/FileInput.vibe",
+      "default": "./.vibelang/js/src/Action/FileInput.js"
+    },
     "./Flow": {
       "types": "./src/Flow/index.ts",
       "vibelang-source": "./src/Flow/index.ts",

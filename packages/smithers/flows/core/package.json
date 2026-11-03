@@ -41,8 +41,16 @@
     },
     "./internal/*": null,
     "./*/index": null,
-    "./Annotations": "./src/Annotations.vibe",
-    "./Digest": "./src/Digest.vibe",
+    "./Annotations": {
+      "types": "./.vibe/declarations/src/Annotations.d.vibe.ts",
+      "vibelang-source": "./src/Annotations.vibe",
+      "default": "./.vibelang/js/src/Annotations.js"
+    },
+    "./Digest": {
+      "types": "./.vibe/declarations/src/Digest.d.vibe.ts",
+      "vibelang-source": "./src/Digest.vibe",
+      "default": "./.vibelang/js/src/Digest.js"
+    },
     "./Effects": {
       "types": "./src/Effects.ts",
       "vibelang-source": "./src/Effects.ts",
