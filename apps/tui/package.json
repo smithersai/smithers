@@ -16,7 +16,7 @@
     "lint": "eslint src --max-warnings=0 && dprint check"
   },
   "dependencies": {
-    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node": "4.1.1",
     "@opentui/core": "0.5.11",
     "@opentui/react": "0.5.11",
     "@smthrs/agent": "workspace:*",
@@ -36,12 +36,12 @@
     "@smthrs/sandbox": "workspace:*",
     "@smthrs/std": "workspace:*",
     "diff": "9.0.0",
-    "effect": "4.1.0",
+    "effect": "4.1.1",
     "react": "19.2.8",
     "string-width": "7.2.0",
     "@smthrs/ui": "workspace:*",
     "@smthrs/crypto": "workspace:*",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-0316568e1eb7.tgz"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
@@ -56,6 +56,6 @@
     "eslint-plugin-unicorn": "65.0.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz"
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-1339d0a354a3.tgz"
   }
 }

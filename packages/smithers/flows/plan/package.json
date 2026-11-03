@@ -256,17 +256,17 @@
     "@smthrs/crypto": "1.0.0-rc.16",
     "@smthrs/keys": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-8416bfd7c827.tgz"
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-0316568e1eb7.tgz"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.1.0",
-    "@effect/vitest": "4.1.0",
+    "@effect/platform-node": "4.1.1",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.1.0",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -276,12 +276,12 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz",
-    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-94168276647a.tgz",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-1339d0a354a3.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-621d46edc61e.tgz",
     "vitest": "5.0.0",
     "fast-check": "4.9.0"
   },
   "peerDependencies": {
-    "effect": "4.1.0"
+    "effect": "4.1.1"
   }
 }

@@ -56,6 +56,6 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "typescript": "~5.9.3",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-c443c9d3b455.tgz"
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-1339d0a354a3.tgz"
   }
 }
