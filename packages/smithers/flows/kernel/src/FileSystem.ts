@@ -33,7 +33,7 @@ import {
 import { Base64 } from "effect/encoding"
 import * as Batch from "./FileSystemBatch.vibe"
 import { GrantStore } from "./GrantStore.ts"
-import { makeCapability } from "./internal/makeCapability.ts"
+import { makeCapability } from "./internal/makeCapability.vibe"
 import { Workspace } from "./Workspace.ts"
 
 export * from "./FileSystemBatch.vibe"

@@ -52,7 +52,7 @@ import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as UrlParams from "effect/http/UrlParams"
 import { GrantStore, type Service as GrantService } from "./GrantStore.ts"
-import { makeCapability } from "./internal/makeCapability.ts"
+import { makeCapability } from "./internal/makeCapability.vibe"
 
 const snapshotRawBody = (value: unknown): unknown => {
   if (value instanceof globalThis.Uint8Array) return value.slice()

@@ -75,7 +75,7 @@ const securityReview = Smithers.SecurityReview({
         "An envelope grant whose planDigest or scope is not bound to the run that replays it.",
         "Request ids that are guessable across runs, or a double reply that activates two rules."
       ],
-      paths: ["src/GrantStore.ts", "src/CapabilitySet.ts", "src/GrantEvent.vibe", "src/internal/makeCapability.ts"]
+      paths: ["src/GrantStore.ts", "src/CapabilitySet.ts", "src/GrantEvent.vibe", "src/internal/makeCapability.vibe"]
     },
     {
       id: "grant-journal-replay",
