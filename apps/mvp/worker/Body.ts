@@ -2,7 +2,7 @@ import { Data, Effect, Stream } from "effect"
 import type { HttpServerRequest } from "effect/http"
 
 // Route-specific UTF-8 and byte limits (docs/features/chat.md#contract). WriteAdmission first buffers raw write
-// bodies under its aggregate cap and deadline; each handler then enforces its smaller limit here.
+// bodies under the route cap and deadline; handlers also enforce UTF-8 and their contracts here.
 
 /** Why a body couldn't be read: larger than the route's limit (`too_large`), malformed UTF-8 (`utf8`), or cut off. */
 export class BodyRefused extends Data.TaggedError("BodyRefused")<{ readonly reason: "too_large" | "utf8" | "body" }> {}

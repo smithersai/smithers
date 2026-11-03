@@ -246,3 +246,8 @@ Question actions resolve after durable outbox admission. The queued question sur
 An admission still in progress cannot clear newer typing or a later conversation’s draft. A second storage refusal on Retry retains the same unsent question.
 
 Repeated Send of one pending draft shares its receipt. New typing starts a separate question; cancellation releases the pending reservation and wakes its waiters.
+
+The edge throttle runs before write-body buffering. A throttled telemetry request reads no body. Other writes stop
+reading at their route's byte cap, before authentication; the fixed upload deadline is 60 seconds. A 1 MiB coedit
+seed expands in base64 JSON and needs more than 10 seconds at 1 Mbit/s. Authority is resolved only after EOF.
+Early body refusals are recorded as `write.body` and `smithers_write_bodies`, before a feature handler runs.

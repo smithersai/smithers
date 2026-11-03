@@ -1,3 +1,4 @@
+import { modelBytes, DEFAULT_MODEL_BYTES as MAX_REQUEST_BYTES } from "./BodyLimits.ts"
 import { finalFailure } from "./ModelRefusal.ts"
 import type { FlowEngineLike } from "@smthrs/agent"
 import { FlowRuntime } from "@smthrs/flow"
@@ -61,7 +62,7 @@ export const MAX_MESSAGES = 200
  * (`CONTEXT_WINDOW_TOKENS`, src/features/agent/host.ts), about 128 KiB of text at four bytes a token, and its JSON
  * body adds field names and escapes, so a smaller bound would refuse requests the agent counts as fitting.
  */
-export const MAX_REQUEST_BYTES = 192 * 1024
+export { MAX_REQUEST_BYTES }
 
 /**
  * How long a call's reservation lasts before it is final, when `MODEL_RESERVATION_EXPIRY` is unset: an hour. A
@@ -119,9 +120,7 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
       Config.withDefault(MAX_OUTPUT_TOKENS),
     )
     const maxMessages = yield* Config.schema(positive, "MODEL_MAX_MESSAGES").pipe(Config.withDefault(MAX_MESSAGES))
-    const maxBodyBytes = yield* Config.schema(positive, "MODEL_MAX_REQUEST_BYTES").pipe(
-      Config.withDefault(MAX_REQUEST_BYTES),
-    )
+    const maxBodyBytes = yield* modelBytes
     const expiry = yield* Config.Duration("MODEL_RESERVATION_EXPIRY").pipe(Config.withDefault(RESERVATION_EXPIRY))
     // Whether the deployment's model answers when no Admin set it; a value that doesn't parse is off.
     const hostedDefault = yield* HostedModel.hostedModelDefault(hostedFallback).pipe(Effect.orElseSucceed(() => false))

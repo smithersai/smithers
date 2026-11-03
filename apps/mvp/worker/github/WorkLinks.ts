@@ -207,4 +207,4 @@ export const workOf = (repoId: string, numbers: ReadonlyArray<number>) =>
   })
 
 /** The largest post, in bytes: `MAX_LINKS_PER_POST` links of the longest ref, label and URL, and their JSON. */
-export const MAX_POST_BYTES = 4 * MAX_LINKS_PER_POST * (MAX_REF_LENGTH + MAX_LABEL_LENGTH + MAX_URL_LENGTH + 200)
+export { MAX_POST_BYTES } from "../../src/features/issues/work.ts"

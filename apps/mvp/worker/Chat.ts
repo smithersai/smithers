@@ -1,3 +1,4 @@
+import { MAX_QUESTION_BODY_BYTES } from "../src/features/chat/contract.ts"
 import * as Pins from "./Pins.ts"
 import * as TimelineSummaries from "./TimelineSummaries.ts"
 import { PIN_ROUTE, PINS_SHAPE_ROUTE } from "../src/features/pins/contract.ts"
@@ -62,9 +63,6 @@ import * as WebPreview from "./WebPreview.ts"
 // ChatApi's routes (docs/features/chat.md#contract). ChatApi.ts runs them on Cloudflare; the tests run them as they
 // are. ChatApi only stores a question and its empty `streaming` answer: the browser's agent answers it, through the
 // model endpoint and the answer routes (docs/features/agent.md).
-
-/** The largest `POST /api/questions` body: 64 KiB. */
-const MAX_BODY_BYTES = 64 * 1024
 
 /**
  * The `messages` columns every device syncs: all of them but `asked_by`, the asker's person id, which only the answer
@@ -492,11 +490,11 @@ const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
 const isModelRole = (value: string): value is ModelRole => (MODEL_ROLES as ReadonlyArray<string>).includes(value)
 
 /**
- * Reads at most `MAX_BODY_BYTES` as UTF-8 (`readBounded`): a larger body is 413, and malformed UTF-8 or a body that
+ * Reads at most `MAX_QUESTION_BODY_BYTES` as UTF-8 (`readBounded`): a larger body is 413, and malformed UTF-8 or a body that
  * breaks off is 400. Records how many bytes it read.
  */
 const readBody = (request: HttpServerRequest.HttpServerRequest, fields: Record<string, string | number | boolean>) =>
-  readBounded(request, MAX_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
+  readBounded(request, MAX_QUESTION_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
     Effect.mapError((refused) =>
       refused.reason === "too_large"
         ? new Refusal({ status: 413, errorCode: "too_large" })

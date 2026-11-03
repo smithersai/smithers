@@ -108,3 +108,6 @@ export const passesWorkFilter = (filter: WorkFilter, kinds: ReadonlyArray<WorkLi
 
 /** The list's filter link for `pr-or-queue`. */
 export const WORK_FILTER_LABEL = "Linked to a PR or queued merge"
+
+/** Maximum links POST bytes, including JSON and worst-case UTF-8. */
+export const MAX_POST_BYTES = 4 * MAX_LINKS_PER_POST * (MAX_REF_LENGTH + MAX_LABEL_LENGTH + MAX_URL_LENGTH + 200)

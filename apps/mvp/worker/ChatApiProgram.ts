@@ -406,14 +406,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           const answered = yield* options.door({ executions, database })
           if (Option.isSome(answered)) return answered.value
         }
-        return yield* runnerAdmin.admit(WriteAdmission.afterBody(Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
         const runtime = yield* RuntimeContext
-        const limited = yield* Throttle.make({
+        const throttle = Effect.flatMap(HttpServerRequest.HttpServerRequest, Throttle.make({
           shape: { limit: (key) => shapeLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
           telemetry: { limit: (key) => telemetryLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
-        })(request)
-        if (Option.isSome(limited)) return limited.value
+        }))
+        return yield* runnerAdmin.admit(WriteAdmission.afterBody(Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
         // Who is asking, and their role on a branch's repository for every branch check (decision 0079).
         const signedIn = Layer.mergeAll(checks, signIn.sessions.pipe(Layer.provide(checks)), BranchRoles.layer(roles))
@@ -529,7 +528,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           Effect.provide(docsSource),
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         )
-        })))
+        }), throttle))
       }).pipe(
         withRequestRay,
         Effect.provideService(Conversations.homeRepositoryNames, homeRepository),

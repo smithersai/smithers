@@ -1,3 +1,4 @@
+import { MAX_REVIEW_BYTES } from "../../src/features/issues/contract.ts"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -38,9 +39,6 @@ export const requests = Metric.counter("smithers_pull_review_requests", {
   description: "Requests to review a pull request's head, by outcome",
   incremental: true,
 })
-
-/** The most bytes a request's body may have: `{ "headSha": "<40 hex>" }` and room. */
-export const MAX_REVIEW_BYTES = 1024
 
 const Body = Schema.Struct({ headSha: Schema.optional(Schema.String.check(Schema.isPattern(SHA))) })
 const decodeBody = Schema.decodeUnknownOption(Schema.fromJsonString(Body))
@@ -199,3 +197,5 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     )
     return response
   }).pipe(Effect.withSpan("pull.review.request", { kind: "server" }))
+
+export { MAX_REVIEW_BYTES } from "../../src/features/issues/contract.ts"

@@ -1,11 +1,12 @@
 import { SharedText } from "@smthrs/sync"
 import { Base64 } from "effect/encoding"
-import { Clock, Effect, Option } from "effect"
+import { Clock, ConfigProvider, Effect, Option } from "effect"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
+import * as Throttle from "./Throttle.ts"
 import { afterBody } from "./WriteAdmission.ts"
 import { testFile } from "./test/harness.ts"
 import { cookie, signInHarness } from "./test/signIn.ts"
@@ -92,3 +93,60 @@ test.each(["coedit seed", "issue"])("a valid paced %s upload lasting over ten se
   expect(await response.json()).toEqual({ body: text })
   expect(performance.now() - start).toBeGreaterThan(10_000)
 }, 20_000)
+
+
+test("a throttled 8 MiB telemetry caller consumes no body", async () => {
+  let pulls = 0
+  let handled = 0
+  const limit = Throttle.make({ shape: { limit: () => Effect.succeed({ success: false }) }, telemetry: { limit: () => Effect.succeed({ success: false }) } })
+  const check = Effect.flatMap(HttpServerRequest.HttpServerRequest, limit)
+  const handler = HttpEffect.toWebHandler(afterBody(Effect.sync(() => {
+    handled++
+    return HttpServerResponse.empty({ status: 204 })
+  }), check))
+  const response = await handler(new Request("http://smithers.test/api/telemetry/v1/logs", { method: "POST", duplex: "half",
+    body: new ReadableStream<Uint8Array>({ pull(controller) {
+      pulls++
+      controller.enqueue(new Uint8Array(8 * 1024 * 1024))
+      controller.close()
+    } }, { highWaterMark: 0 }),
+  } as RequestInit))
+  expect([response.status, pulls, handled]).toEqual([429, 0, 0])
+})
+
+test.each([
+  ["/api/telemetry/v1/logs", 128 * 1024],
+  ["/api/repos/octo/hello/runners/runner", 8 * 1024],
+  ["/api/repos/octo/hello/secrets/KEY", 32 * 1024],
+  ["/api/questions", 64 * 1024],
+] as const)("%s enforces its route size before reading the rest", async (path, limit) => {
+  let pulls = 0
+  let handled = 0
+  const handler = HttpEffect.toWebHandler(afterBody(Effect.sync(() => {
+    handled++
+    return HttpServerResponse.empty({ status: 204 })
+  })))
+  const response = await handler(new Request(`http://smithers.test${path}`, { method: path.includes("runners") || path.includes("secrets") ? "PUT" : "POST", duplex: "half",
+    body: new ReadableStream<Uint8Array>({ pull(controller) {
+      pulls++
+      controller.enqueue(new Uint8Array(limit + 1))
+      if (pulls === 2) controller.close()
+    } }, { highWaterMark: 0 }),
+  } as RequestInit))
+  expect([response.status, pulls, handled]).toEqual([413, 1, 0])
+})
+
+
+
+test("model buffering uses the configured byte cap and rejects content-length before pulling", async () => {
+  let pulls = 0
+  const handler = HttpEffect.toWebHandler(afterBody(Effect.succeed(HttpServerResponse.empty({ status: 204 }))).pipe(
+    Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ MODEL_MAX_REQUEST_BYTES: "32" })),
+  ))
+  const accepted = await handler(new Request("http://smithers.test/api/model/chat", { method: "POST", body: new Uint8Array(32) }))
+  expect(accepted.status).toBe(204)
+  const response = await handler(new Request("http://smithers.test/api/model/chat", { method: "POST", duplex: "half", headers: { "content-length": "33" },
+    body: new ReadableStream({ pull(controller) { pulls++; controller.enqueue(new Uint8Array(33)); controller.close() } }, { highWaterMark: 0 }),
+  } as RequestInit))
+  expect([response.status, pulls]).toEqual([413, 0])
+})

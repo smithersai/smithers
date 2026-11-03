@@ -54,3 +54,6 @@ export const ARCS_FROM = 12
 export const MOST_COVERED = 100_000
 /** Spans one record may write. */
 export const SEGMENT_SPANS = 12
+
+/** Maximum raw JSON request bytes, shared by dispatch and the handler. */
+export const MAX_SUMMARY_BODY_BYTES = 16_384

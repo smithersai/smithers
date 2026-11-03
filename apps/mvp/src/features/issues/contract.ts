@@ -532,3 +532,6 @@ export const TRIAGE_TELEMETRY = {
   ],
   fields: ["repoId", "number", "runId", "decisionId", "decision", "reason", "via", "outcome", "dropped", "tokens"],
 } as const
+
+/** Maximum raw JSON request bytes, shared by dispatch and the handler. */
+export const MAX_REVIEW_BYTES = 1024

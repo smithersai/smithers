@@ -1,3 +1,4 @@
+import { MAX_CREDENTIAL_BODY_BYTES } from "../src/features/status/contract.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Result, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -39,9 +40,6 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 //
 // A report or an answer that writes the row routes it to the feed in the same transaction (worker/Notifications.ts,
 // decision 0009): the run's launcher and the people on its branch.
-
-/** The largest `POST /api/runs/<run>/credential` body: a flow's name and its declared ceiling. */
-export const MAX_CREDENTIAL_BODY_BYTES = 16 * 1024
 
 /** Runs route requests, by `route` (`report`, `answer`, `credential`) and `status`. */
 export const requests = Metric.counter("smithers_run_requests", {
@@ -439,3 +437,5 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
 
     return { route, shape }
   })
+
+export { MAX_CREDENTIAL_BODY_BYTES } from "../src/features/status/contract.ts"

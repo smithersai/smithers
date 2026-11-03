@@ -50,7 +50,7 @@ Library catalog: existing Effect HTTP/Stream and Effect SQL; no new dependency. 
 in core, shared by plugins, rather than a new feature or a private plugin interface.
 
 `ChatApiProgram` wraps its route dispatcher with `WriteAdmission.afterBody`. For POST, PUT, PATCH and DELETE,
-that boundary reaches EOF before any handler can resolve a session or run credential. One 10-second deadline spans
+that boundary reaches EOF before any handler can resolve a session or run credential. One 60-second deadline spans
 the entire read; chunks never renew it. A native request with no body is already at EOF. Raw bytes are replayed through
 all Effect request accessors, preserving original URL, cookies and headers. The aggregate cap is 8 MiB; handlers
 retain their smaller byte/UTF-8/schema limits. Refusals: 408 `body_timeout`, 413 `too_large`, 400 `invalid`.
@@ -256,3 +256,21 @@ Authority is checked only after EOF, so this longer upload budget retains no old
 Red: `/tmp/retro-repair-3-red-valid.log`, 2 failed, 6 filtered skips: expected `[200, 1]`, received `[408, 0]`
 at WriteAdmission.test.ts:91. The valid CRDT seed and issue each arrive in 16 paced chunks over 11.2 seconds.
 Green: `/tmp/retro-repair-3-green.log`, 8 passed, 5 filtered skips (item 4 regressions not selected).
+
+### Astra repair 4 — cheap refusal before buffering
+
+The dispatcher calls its existing edge throttle before body admission. A throttled telemetry request consumes zero
+stream chunks and reaches no handler. Admission selects each registered route's existing byte limit before reading;
+it checks Content-Length and accumulated bytes, and stops at the first chunk that crosses that limit. Limits come
+from shared feature contracts, including the configured model request cap. The aggregate ceiling remains 8 MiB.
+Model oversize refusals retain ModelProxy.ErrorBody and its request-id header. Library entry: @smthrs/model ModelProxy,
+existing Effect Stream and feature contracts. The admission span covers buffering, so it adds no parent to a handler's
+request trace. Early refusal logs/counts belong to write.body/smithers_write_bodies, before feature handlers run.
+
+Red: `/tmp/retro-repair-4-red.log`, 5 failed, 8 filtered skips. Throttled telemetry expected `[429, 0, 0]`, received
+`[204, 1, 1]`; route oversize expected `[413, 1, 0]`, received `[204, 2, 1]` (status, pulls, handler calls).
+The first combined green run: `/tmp/retro-repair-4-green.log`, 94 passed, 0 skipped. Broader checks found and fixed
+stale early-refusal assertions and an import cycle in the new protected-role helper; ProtectedAuthority now keeps
+role dependencies out of the persisted session schema's module. Receipts below supersede intermediate failed runs.
+
+Expanded green: `/tmp/retro-repair-4-green-complete.log`, 249 passed, 0 skipped across seven files.

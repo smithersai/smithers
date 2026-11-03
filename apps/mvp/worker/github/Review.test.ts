@@ -309,10 +309,12 @@ describe("what the route refuses", { timeout: 60_000 }, () => {
     const pull = await opened(github)
     const h = await githubHarness(runtime, { own: OWN, github, actor: await person("maya") })
     const route = reviewRoute("acme", "widgets", pull.number)
-    for (const body of [{ headSha: "HEAD" }, "not json", JSON.stringify({ headSha: "a".repeat(40), pad: "x".repeat(2000) })]) {
+    for (const body of [{ headSha: "HEAD" }, "not json"]) {
       const response = await h.fetch(route, post(body))
       expect([response.status, await response.json()]).toEqual([400, { code: "invalid" }])
     }
+    const oversized = await h.fetch(route, post(JSON.stringify({ headSha: "a".repeat(40), pad: "x".repeat(2000) })))
+    expect([oversized.status, await oversized.json()]).toEqual([413, { code: "too_large" }])
     expect((await h.fetch(route, { method: "GET" })).headers.get("allow")).toBe("POST")
     // An empty body asks for the current head.
     expect((await h.fetch(route, post(""))).status).toBe(202)

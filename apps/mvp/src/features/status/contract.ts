@@ -76,3 +76,6 @@ export const STATUS_TELEMETRY = {
   ],
   fields: ["runId", "status", "outcome", "delivered", "version", "surface", "errorCode", "reason", "smithers.run.id"],
 } as const
+
+/** Maximum raw JSON request bytes, shared by dispatch and the handler. */
+export const MAX_CREDENTIAL_BODY_BYTES = 16 * 1024

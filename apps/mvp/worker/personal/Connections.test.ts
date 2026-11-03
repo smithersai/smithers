@@ -1168,13 +1168,13 @@ describe("POST /api/me/model/jev", () => {
     expect((await usage(runtime)).map((row) => row.errorCode)).toEqual(["refused", "empty"])
   })
 
-  test("a body that doesn't read is 400, too large too; a method but POST is 405; signed out is 401", async () => {
+  test("a malformed body is 400, an oversized body 413; a method but POST is 405; signed out is 401", async () => {
     await jev()
     const gateway = scriptedGateway(() => ({ status: 200, body: answers }))
     const h = await open({ actor: member, provider: gateway.fetch })
     expect(await json(await h.fetch(JEV_ROUTE, post("not json")))).toEqual([400, { code: "invalid" }])
     expect(await json(await h.fetch(JEV_ROUTE, post({ state: {} })))).toEqual([400, { code: "invalid" }])
-    expect(await json(await h.fetch(JEV_ROUTE, post("x".repeat(MAX_JEV_BODY_BYTES + 1))))).toEqual([400, { code: "invalid" }])
+    expect(await json(await h.fetch(JEV_ROUTE, post("x".repeat(MAX_JEV_BODY_BYTES + 1))))).toEqual([413, { code: "too_large" }])
     expect(gateway.seen).toEqual([])
     const get = await h.fetch(JEV_ROUTE, { method: "GET" })
     expect([get.status, get.headers.get("allow")]).toEqual([405, "POST"])

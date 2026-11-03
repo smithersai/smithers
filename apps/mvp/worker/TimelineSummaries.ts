@@ -1,3 +1,4 @@
+import { MAX_SUMMARY_BODY_BYTES } from "../src/features/timeline/contract.ts"
 import { Clock, Config, Effect, Metric, Option, Schema } from "effect"
 import type { Layer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -36,7 +37,6 @@ const Level = Schema.Literals([1, 2])
 /** How many of the conversation's items a segmentation stands for. */
 const Read = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(MOST_COVERED))
 /** What a person may hand this route: the largest record, twelve spans' words. */
-const MAX_BODY = 16_384
 const Request = Schema.Union([
   Schema.Struct({ op: Schema.Literal("claim"), messageId: Id, revision: Revision, owner: Owner, reason: Schema.Literals(SUMMARY_REASONS) }),
   Schema.Struct({
@@ -81,7 +81,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, uns
       const act = actor.value.act
       const flow = act?.kind === "flow" ? act.chain?.at(-1) : undefined
       if (act !== undefined && flow !== SUMMARIZE_FLOW && flow !== PHASES_FLOW) return answer(403, { code: "person_only" })
-      const body = yield* readBounded(request, MAX_BODY).pipe(Effect.option)
+      const body = yield* readBounded(request, MAX_SUMMARY_BODY_BYTES).pipe(Effect.option)
       const parsed = Option.isNone(body) ? Option.none() : yield* decode(body.value).pipe(Effect.option)
       if (Option.isNone(parsed)) return answer(400, { code: "invalid_request" })
       const p = parsed.value

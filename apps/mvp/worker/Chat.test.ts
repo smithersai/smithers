@@ -1,3 +1,4 @@
+import * as WriteAdmission from "./WriteAdmission.ts"
 // ChatApi's routes (worker/Chat.ts) as the browser calls them, against the compose Postgres in this file's own schema
 // (worker/test/harness.ts). ChatApi stores questions and never answers them: the browser's agent does
 // (src/features/agent/agent.test.ts). The contract is docs/features/chat.md; the records, docs/observability.md.
@@ -209,7 +210,8 @@ describe("POST /api/questions", () => {
     const response = await chunked(h, [bytes(`{"id":"${uuid()}"`)], "error")
     expect(response.status).toBe(400)
     expect(await rowCount(runtime)).toBe(0)
-    expect(h.only("chat.question").annotations).toMatchObject({ status: 400, errorCode: "body" })
+    expect(h.only("write.body").annotations).toMatchObject({ status: 400 })
+    expect(h.line("chat.question")).toHaveLength(0)
   })
 
   test("a character split across chunks arrives whole", async () => {
@@ -236,16 +238,11 @@ describe("POST /api/questions", () => {
       body: JSON.stringify({ id: uuid(), answerId: uuid(), text: "small" }),
     })
     expect(response.status).toBe(413)
-    expect(await response.text()).toBe("")
+    expect(await response.json()).toEqual({ code: "too_large" })
     expect(await rowCount(runtime)).toBe(0)
-    // Nothing was read.
-    expect(h.only("chat.question").annotations).toEqual({
-      status: 413,
-      errorCode: "too_large",
-      durationMs: expect.any(Number),
-      trace_id: expect.any(String),
-      span_id: expect.any(String),
-    })
+    expect(h.only("write.body").annotations).toMatchObject({ status: 413 })
+    expect(h.count(WriteAdmission.bodies, { status: "413" })).toBe(1)
+    expect(h.line("chat.question")).toHaveLength(0)
   })
 
   test("413 for a body that streams past 64 KiB, before any of it is stored; 64 KiB is read", async () => {
@@ -262,11 +259,11 @@ describe("POST /api/questions", () => {
     const streamed = await sized(65_537)
     expect(streamed.status).toBe(413)
     expect(await rowCount(runtime)).toBe(0)
-    expect(h.count(ChatMetrics.questions, { status: "413" })).toBe(1)
+    expect(h.count(WriteAdmission.bodies, { status: "413" })).toBe(1)
     expect(h.line("chat.question").map((line) => [line.annotations.errorCode, line.annotations.bytes])).toEqual([
       ["invalid", 65_536],
-      ["too_large", 65_537],
     ])
+    expect(h.only("write.body").annotations).toMatchObject({ status: 413 })
   })
 
   test("503 when Postgres can't be reached", async () => {

@@ -86,10 +86,11 @@ test("the route refuses what isn't a person's finished answer they may view", as
   const flow = await harness(runtime, answers("Hi"), { actor: { ...actor, act: { kind: "flow", id: "run-4", chain: ["timeline/summarize"] } } })
   expect(await (await poster(flow)(claim(answer))).json()).toEqual({ claimed: true })
   for (const body of [
-    "bad", "a".repeat(16_385), {}, { ...claim(answer), op: "other" }, { ...claim(answer), reason: "words" }, { ...claim(answer), revision: "NOT-HEX" },
+    "bad", {}, { ...claim(answer), op: "other" }, { ...claim(answer), reason: "words" }, { ...claim(answer), revision: "NOT-HEX" },
     { ...claim(answer), messageId: "bad" }, { op: "record", messageId: answer, revision: revision(3), summary: "" },
     { op: "record", messageId: answer, revision: revision(3), summary: "two\nlines" }, { op: "record", messageId: answer, revision: revision(3), summary: "x".repeat(97) },
   ]) expect((await post(body)).status, JSON.stringify(body).slice(0, 60)).toBe(400)
+  expect((await post("a".repeat(16_385))).status).toBe(413)
   expect((await post(claim(crypto.randomUUID()))).status).toBe(404)
   expect((await post(claim(streaming.answer))).status).toBe(409)
   const { tracked } = await import("./test/branch.ts")

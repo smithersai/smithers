@@ -221,3 +221,6 @@ export const CHAT_TELEMETRY = {
     "watchers",
   ],
 } as const
+
+/** Maximum raw JSON request bytes, shared by dispatch and the handler. */
+export const MAX_QUESTION_BODY_BYTES = 64 * 1024
