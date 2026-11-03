@@ -30,9 +30,7 @@
 import type { Crypto } from "@smthrs/crypto"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Cause from "effect/Cause"
-import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import type * as FileSet from "./FileSet.vibe"
 import type * as KeyMaterial from "./KeyMaterial.vibe"
@@ -194,8 +192,8 @@ export interface DigestMemo {
   readonly digest: (
     from: string,
     path: ReadonlyArray<string>,
-    compute: Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
-  ) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+    compute: StepKey!Schema.SchemaError!Crypto.Crypto
+  ) => StepKey!Schema.SchemaError!Crypto.Crypto
 }
 
 /**
@@ -207,7 +205,7 @@ export interface DigestMemo {
  * @category constructors
  */
 export const makeDigestMemo = (): DigestMemo => {
-  const entries = new Map<string, Deferred.Deferred<StepKey, Schema.SchemaError>>()
+  const entries = new Map<string, Deferred<StepKey, Schema.SchemaError>>()
   // Registering the entry and installing its exit handler run uninterruptibly,
   // so an interrupt can never land between them and strand a Deferred that no
   // fiber will complete. The wait and the computation stay interruptible.
@@ -226,16 +224,13 @@ export const makeDigestMemo = (): DigestMemo => {
         }
         const pending = Deferred.makeUnsafe<StepKey, Schema.SchemaError>()
         entries.set(address, pending)
-        return restore(compute).pipe(
-          Effect.onExit((exit) =>
-            Effect.gen(function*() {
-              if (Exit.isFailure(exit) && entries.get(address) === pending) {
-                entries.delete(address)
-              }
-              yield* Deferred.done(pending, exit)
-            })
-          )
-        )
+        return restore(compute)
+          |> Effect.onExit(%, effect (exit) => {
+            if (Exit.isFailure(exit) && entries.get(address) === pending) {
+              entries.delete(address)
+            }
+            try Deferred.done(pending, exit)
+          })
       })
     )
   return { digest }
@@ -418,16 +413,15 @@ const decodeKey = Schema.decodeUnknownEffect(DerivedKey)
  * @since 1.0.0
  * @category constructors
  */
-export const environmentIdentity = (
+export const environmentIdentity = effect (
   environment?: EnvironmentIdentity
-): Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
-  Effect.gen(function*() {
-    const captured = environment === undefined ? undefined : yield* decodeEnvironment(environment)
-    return yield* decodeKey({
-      kind: "execution-environment/v1",
-      environment: captured === undefined ? null : normalizeEnvironment(captured)
-    })
+): StoredKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto => {
+  const captured = environment === undefined ? undefined : try decodeEnvironment(environment)
+  return try decodeKey({
+    kind: "execution-environment/v1",
+    environment: captured === undefined ? null : normalizeEnvironment(captured)
   })
+}
 
 /**
  * Produces a cross-run reusable key for a sealed or hermetic step. Set-like
@@ -440,21 +434,20 @@ export const environmentIdentity = (
  * @since 0.1.0
  * @category constructors
  */
-export const content = (
+export const content = effect (
   identity: ContentIdentity
-): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
-  Effect.gen(function*() {
-    const environment = identity.environment === undefined ? undefined : yield* decodeEnvironment(identity.environment)
-    return yield* decodeKey({
-      kind: "content",
-      body: identity.body,
-      inputs: normalizeInputs(identity.inputs),
-      layers: sortStrings(identity.layers),
-      capabilities: normalizeCapabilities(identity.capabilities),
-      ...(environment === undefined ? {} : { environment: normalizeEnvironment(environment) }),
-      ...(identity.hermetic === undefined ? {} : { hermetic: normalizeHermetic(identity.hermetic) })
-    })
+): StepKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto => {
+  const environment = identity.environment === undefined ? undefined : try decodeEnvironment(identity.environment)
+  return try decodeKey({
+    kind: "content",
+    body: identity.body,
+    inputs: normalizeInputs(identity.inputs),
+    layers: sortStrings(identity.layers),
+    capabilities: normalizeCapabilities(identity.capabilities),
+    ...(environment === undefined ? {} : { environment: normalizeEnvironment(environment) }),
+    ...(identity.hermetic === undefined ? {} : { hermetic: normalizeHermetic(identity.hermetic) })
   })
+}
 
 /**
  * Produces a run-local ordinal key for compensable, irreversible, or unsealed
@@ -467,7 +460,7 @@ export const content = (
  */
 export const ordinal = (
   identity: OrdinalIdentity
-): Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto> => decodeKey({ kind: "ordinal", ...identity })
+): StepKey!Schema.SchemaError!Crypto.Crypto => decodeKey({ kind: "ordinal", ...identity })
 
 /**
  * Resolves graph-local references to dependency digests and constructs a
@@ -491,7 +484,7 @@ export const ordinal = (
 export const fromKeyMaterial = (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> => {
+): StepKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto => {
   if (material.kind !== "sealed") {
     return Effect.fail(
       new KeyMaterialError({
@@ -500,7 +493,7 @@ export const fromKeyMaterial = (
       })
     )
   }
-  return materialIdentity(material, dependencyDigests).pipe(Effect.flatMap(content))
+  return materialIdentity(material, dependencyDigests) |> Effect.flatMap(%, content)
 }
 
 /**
@@ -516,10 +509,10 @@ export const fromKeyMaterial = (
 export const planIdentity = (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+): StepKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto =>
   material.kind === "sealed" ?
     fromKeyMaterial(material, dependencyDigests) :
-    materialIdentity(material, dependencyDigests).pipe(Effect.flatMap((identity) =>
+    (materialIdentity(material, dependencyDigests) |> Effect.flatMap(%, (identity) =>
       decodeKey({
         kind: "plan-declaration",
         tier: material.kind,
@@ -527,8 +520,7 @@ export const planIdentity = (
         inputs: normalizeInputs(identity.inputs),
         layers: sortStrings(identity.layers),
         capabilities: normalizeCapabilities(identity.capabilities)
-      })
-    ))
+      })))
 
 /**
  * Reads the entry a graph reference names. Only an own data property counts:
@@ -541,7 +533,7 @@ const ownDataProperty = (
   record: Readonly<Record<string, unknown>>,
   from: string,
   label: "Digest" | "Settled result"
-): Effect.Effect<unknown, KeyMaterialError> => {
+): unknown!KeyMaterialError => {
   const descriptor = Object.getOwnPropertyDescriptor(record, from)
   if (descriptor === undefined) {
     return Effect.fail(
@@ -569,33 +561,32 @@ const ownDataProperty = (
  *
  * @private
  */
-const resolveInputs = <E, R>(
+const resolveInputs = effect <E, R>(
   material: KeyMaterial.KeyMaterial,
-  resolve: (reference: Exclude<KeyMaterial.InputRef, { readonly _tag: "Literal" }>) => Effect.Effect<string, E, R>
-): Effect.Effect<Record<string, unknown>, E, R> =>
-  Effect.gen(function*() {
-    const inputs: Record<string, unknown> = {}
-    for (let index = 0; index < material.inputs.length; index++) {
-      const input = material.inputs[index]!
-      if (input._tag === "Literal") {
-        inputs[String(index)] = input.value
-        continue
-      }
-      const digest = yield* resolve(input)
-      inputs[String(index)] = input._tag === "Pending"
-        ? digestInput(digest, { reference: "pending" })
-        : input.path.length > 0
-        ? digestInput(digest, { reference: "ref-projected", path: input.path })
-        : digestInput(digest, { reference: "ref" })
+  resolve: (reference: Exclude<KeyMaterial.InputRef, { readonly _tag: "Literal" }>) => string!E!R
+): Record<string, unknown>!E!R => {
+  const inputs: Record<string, unknown> = {}
+  for (let index = 0; index < material.inputs.length; index++) {
+    const input = material.inputs[index]!
+    if (input._tag === "Literal") {
+      inputs[String(index)] = input.value
+      continue
     }
-    return inputs
-  })
+    const digest = try resolve(input)
+    inputs[String(index)] = input._tag === "Pending"
+      ? digestInput(digest, { reference: "pending" })
+      : input.path.length > 0
+      ? digestInput(digest, { reference: "ref-projected", path: input.path })
+      : digestInput(digest, { reference: "ref" })
+  }
+  return inputs
+}
 
 /** Resolves plan references once for both content and non-cacheable declarations. */
 const materialIdentity = (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-): Effect.Effect<ContentIdentity, KeyMaterialError> =>
+): ContentIdentity!KeyMaterialError =>
   resolveInputs(
     material,
     (reference) =>
@@ -606,12 +597,12 @@ const materialIdentity = (
             message: `Digest for graph dependency ${reference.from} must be a string`
           })
         ))
-  ).pipe(Effect.map((inputs) => ({
+  ) |> Effect.map(%, (inputs) => ({
     body: materialBody(material),
     inputs,
     layers: material.layers,
     capabilities: { declared: material.capabilities }
-  })))
+  }))
 
 /**
  * The node's own declaration, hashed. Shared by {@link planIdentity},
@@ -697,7 +688,7 @@ export const project = (value: unknown, path: ReadonlyArray<string>): unknown =>
  * @since 0.1.0
  * @category constructors
  */
-export const dispatchIdentity = (options: {
+export const dispatchIdentity = effect (options: {
   readonly material: KeyMaterial.KeyMaterial
   /** The settled output value of each dependency, by node id. */
   readonly results: Readonly<Record<string, unknown>>
@@ -706,31 +697,30 @@ export const dispatchIdentity = (options: {
   readonly environment?: EnvironmentIdentity | undefined
   /** Reuses projected-value digests while the corresponding settled values remain immutable. */
   readonly digestMemo?: DigestMemo | undefined
-}): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
-  Effect.gen(function*() {
-    const material = options.material
-    if (material.kind !== "sealed") {
-      return yield* new KeyMaterialError({
-        code: "non_content_material",
-        message: `Cannot create a dispatch key for ${material.kind} material`
-      })
-    }
-    const environment = options.environment === undefined ? undefined : yield* decodeEnvironment(options.environment)
-    const inputs = yield* resolveInputs(material, (reference) =>
-      reference._tag === "Pending"
-        ? Effect.succeed(orderingOnly)
-        : Effect.flatMap(ownDataProperty(options.results, reference.from, "Settled result"), (settled) => {
-          const compute = decodeKey({ kind: "input-value", value: project(settled, reference.path) })
-          return options.digestMemo === undefined
-            ? compute
-            : options.digestMemo.digest(reference.from, reference.path, compute)
-        }))
-    return yield* content({
-      body: materialBody(material),
-      inputs,
-      layers: material.layers,
-      capabilities: { declared: material.capabilities },
-      environment,
-      hermetic: options.hermetic
+}): StepKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto => {
+  const material = options.material
+  if (material.kind !== "sealed") {
+    throw new KeyMaterialError({
+      code: "non_content_material",
+      message: `Cannot create a dispatch key for ${material.kind} material`
     })
+  }
+  const environment = options.environment === undefined ? undefined : try decodeEnvironment(options.environment)
+  const inputs = try resolveInputs(material, (reference) =>
+    reference._tag === "Pending"
+      ? Effect.succeed(orderingOnly)
+      : Effect.flatMap(ownDataProperty(options.results, reference.from, "Settled result"), (settled) => {
+        const compute = decodeKey({ kind: "input-value", value: project(settled, reference.path) })
+        return options.digestMemo === undefined
+          ? compute
+          : options.digestMemo.digest(reference.from, reference.path, compute)
+      }))
+  return try content({
+    body: materialBody(material),
+    inputs,
+    layers: material.layers,
+    capabilities: { declared: material.capabilities },
+    environment,
+    hermetic: options.hermetic
   })
+}

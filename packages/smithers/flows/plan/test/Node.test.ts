@@ -7,8 +7,8 @@ import { readFileSync } from "node:fs"
 import { GraphBuildError } from "../src/GraphBuildError.vibe"
 import * as internal from "../src/internal/node.ts"
 import * as Node from "../src/Node.ts"
-import * as Planned from "../src/Planned.ts"
-import * as StepKey from "../src/StepKey.ts"
+import * as Planned from "../src/Planned.vibe"
+import * as StepKey from "../src/StepKey.vibe"
 import { withCrypto } from "./Crypto.ts"
 
 const tagged = <T extends internal.NodeAst["_tag"]>(

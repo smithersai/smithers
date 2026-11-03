@@ -28,7 +28,7 @@ import { GraphBuildError } from "./GraphBuildError.vibe"
 import * as Conflicts from "./internal/ConflictAnnotation.ts"
 import { jsonMirror } from "./internal/JsonMirror.ts"
 import * as KeyMaterial from "./KeyMaterial.vibe"
-import * as StepKey from "./StepKey.ts"
+import * as StepKey from "./StepKey.vibe"
 
 /**
  * What a node does to the world, declared. Paths only — measuring them is

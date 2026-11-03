@@ -87,14 +87,14 @@ export * as Placement from "./Placement.vibe"
  * @category models
  * @slop
  */
-export * as Planned from "./Planned.ts"
+export * as Planned from "./Planned.vibe"
 
 /**
  * @since 0.1.0
  * @category constructors
  * @slop
  */
-export * as StepKey from "./StepKey.ts"
+export * as StepKey from "./StepKey.vibe"
 
 /**
  * @since 1.0.0

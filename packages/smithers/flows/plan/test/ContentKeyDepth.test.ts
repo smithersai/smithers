@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import { createHash } from "node:crypto"
-import * as StepKey from "../src/StepKey.ts"
+import * as StepKey from "../src/StepKey.vibe"
 import { withCrypto } from "./Crypto.ts"
 
 describe("content-key depth includes its material envelope", () => {
