@@ -1,6 +1,6 @@
 import type { Transcript } from "@smthrs/agent"
 import { RuntimeContext } from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer } from "effect"
 import type { SqlClient } from "effect/sql"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
