@@ -3,14 +3,8 @@
  *
  * @since 0.1.0
  */
-
-import { Projection as JournalProjection } from "@smthrs/journal"
-import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
-import * as Replay from "./internal/replay.ts"
-import * as NotificationEvent from "./NotificationEvent.ts"
-import * as NotificationState from "./NotificationState.ts"
-
+import { Projection as JournalProjection } from "@smthrs/journal";
+import * as NotificationState from "../../../src/NotificationState.ts";
 /**
  * Re-derives pending notifications from admitted and promoted journal events.
  * Foreign journal entries leave the state unchanged.
@@ -32,17 +26,4 @@ import * as NotificationState from "./NotificationState.ts"
  * @category projections
  * @since 0.1.0
  */
-export const derive = JournalProjection.make({
-  name: "flows/notifications",
-  initial: NotificationState.empty(NotificationState.defaultCapacity),
-  reduce: (state, entry) => {
-    const decoded = NotificationEvent.fromEntry(entry)
-    if (Option.isNone(decoded)) return Effect.succeed(state)
-
-    const event = decoded.value
-    if (NotificationEvent.isAdmitted(event)) {
-      return Effect.succeed(Replay.applyAdmitted(state, event, entry.seq))
-    }
-    return Effect.succeed(NotificationState.applyPromoted(state, event.ids))
-  }
-})
+export declare const derive: JournalProjection.Projection<NotificationState.State, never, never>;

@@ -8,7 +8,7 @@ import * as Notification from "../../../packages/smithers/notifications/src/Noti
 import * as NotificationEvent from "../../../packages/smithers/notifications/src/NotificationEvent.ts"
 import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.ts"
 import { defaultCapacity } from "../../../packages/smithers/notifications/src/NotificationState.ts"
-import * as SteerPayload from "../../../packages/smithers/notifications/src/SteerPayload.ts"
+import * as SteerPayload from "../../../packages/smithers/notifications/src/SteerPayload.vibe"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
 import { CodingError, PlanningInput } from "./schema.ts"
 

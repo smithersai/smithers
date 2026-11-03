@@ -29,7 +29,7 @@ const securityReview = Smithers.SecurityReview({
         "An AlertError or failed-delivery journal payload that embeds the url, the request, the headers, or the HttpClientError cause instead of only its reason tag.",
         "Caller headers set after Idempotency-Key so a deployment header can replace the dedupe key."
       ],
-      paths: ["src/layerWebhook.ts", "src/AlertSink.vibe", "src/AlertRuntime.ts"]
+      paths: ["src/layerWebhook.vibe", "src/AlertSink.vibe", "src/AlertRuntime.ts"]
     },
     {
       id: "webhook-bounded-delivery",
@@ -41,7 +41,7 @@ const securityReview = Smithers.SecurityReview({
         "A 3xx or other non-2xx status counted as delivered instead of sink_rejected.",
         "A sink failure that escapes the tick as a defect instead of being recorded as flows.alerts.failed."
       ],
-      paths: ["src/layerWebhook.ts", "src/AlertRuntime.ts"]
+      paths: ["src/layerWebhook.vibe", "src/AlertRuntime.ts"]
     },
     {
       id: "steer-payload-classification",
@@ -55,7 +55,7 @@ const securityReview = Smithers.SecurityReview({
         "A SeatPayload that accepts an arbitrary model seat string without any bound or validation at this seam.",
         "decode applied to a system-event or webhook-provenance notification, so a machine producer's {kind: \"Tools\"} or {kind: \"Seat\"} payload changes another run's tools or model."
       ],
-      paths: ["src/SteerPayload.ts", "src/Notification.vibe"]
+      paths: ["src/SteerPayload.vibe", "src/Notification.vibe"]
     },
     {
       id: "notification-admission-validation",
@@ -105,7 +105,7 @@ const securityReview = Smithers.SecurityReview({
         "The NotificationQueue fold or Projection.derive applying a decoded Admitted record whose decision was never produced by applyAdmission.",
         "A forged Promoted record whose ids remove another lineage's pending notifications, dropping an operator steer."
       ],
-      paths: ["src/NotificationEvent.ts", "src/NotificationQueue.ts", "src/Projection.ts", "src/NotificationState.ts"]
+      paths: ["src/NotificationEvent.ts", "src/NotificationQueue.ts", "src/Projection.vibe", "src/NotificationState.ts"]
     },
     {
       id: "alert-journal-evidence-spoofing",

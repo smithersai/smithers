@@ -9,11 +9,6 @@
  * @since 1.0.0
  */
 
-import { Cause, Duration, Effect, Exit, Layer, Option, Tracer } from "effect"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
-import * as Headers from "effect/http/Headers"
-import * as HttpClient from "effect/http/HttpClient"
-import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { alertId } from "./AlertPolicy.ts"
 import { AlertError, Sink } from "./AlertSink.vibe"
 
@@ -24,7 +19,7 @@ import { AlertError, Sink } from "./AlertSink.vibe"
  * @category constants
  * @since 1.0.0
  */
-export const defaultWebhookTimeout: Duration.Duration = Duration.seconds(10)
+export const defaultWebhookTimeout: Duration = Duration.seconds(10)
 
 /**
  * The one check the webhook endpoint gets before an alert is ever built on
@@ -37,7 +32,7 @@ export const defaultWebhookTimeout: Duration.Duration = Duration.seconds(10)
  * composition the way an impossible policy rule does. The error names no
  * url: the value can carry basic-auth credentials, and an error is logged.
  */
-const webhookUrl = (raw: string): Effect.Effect<string, AlertError> =>
+const webhookUrl = (raw: string): string!AlertError =>
   Effect.suspend(() => {
     const misconfigured = new AlertError({
       code: "sink_misconfigured",
@@ -65,7 +60,7 @@ const webhookUrl = (raw: string): Effect.Effect<string, AlertError> =>
  * status rule, which calls it `sink_rejected`: a redirecting pager endpoint
  * is a misconfiguration to fix, not an address to forward credentials to.
  */
-const followingNoRedirects = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+const followingNoRedirects = <A, E, R>(effect: A!E!R): A!E!R =>
   Effect.flatMap(
     Effect.serviceOption(FetchHttpClient.RequestInit),
     (init) =>
@@ -113,7 +108,7 @@ const redirectHeaderNames: ReadonlyArray<string> = ["location", "content-locatio
  * the span ends with the outcome alone: nothing on success, the refusing
  * status, or that the endpoint could not be reached.
  */
-const withoutRequest = (tracer: Tracer.Tracer): Tracer.Tracer =>
+const withoutRequest = (tracer: Tracer): Tracer =>
   Tracer.make({
     ...tracer,
     span(options) {
@@ -178,14 +173,14 @@ export const layerWebhook = (
   options: {
     readonly url: string
     readonly headers?: Readonly<Record<string, string>> | undefined
-    readonly timeout?: Duration.Duration | undefined
+    readonly timeout?: Duration | undefined
   }
-): Layer.Layer<Sink> =>
+): Layer<Sink> =>
   Layer.effect(
     Sink,
-    Effect.gen(function*() {
-      const url = yield* Effect.orDie(webhookUrl(options.url))
-      const client = HttpClient.withScope(yield* HttpClient.HttpClient)
+    effect {
+      const url = try Effect.orDie(webhookUrl(options.url))
+      const client = HttpClient.withScope(try HttpClient.HttpClient)
       const timeout = options.timeout ?? defaultWebhookTimeout
       // `Headers.isRedactedName` compares a string matcher against an
       // already-lowercased header name without lowercasing the matcher.
@@ -202,38 +197,36 @@ export const layerWebhook = (
               HttpClientRequest.setHeader("Idempotency-Key", alertId(alert)),
               HttpClientRequest.bodyJsonUnsafe({ ...alert, alertId: alertId(alert) })
             )
-          ).pipe(
-            followingNoRedirects,
-            Effect.updateService(Headers.CurrentRedactedNames, (names) => [...names, ...redactedNames]),
-            // A host may name HTTP spans for their url. This one is named for
-            // its method, as the client names it by default.
-            Effect.provideService(HttpClient.SpanNameGenerator, (request) => request.method),
-            Effect.updateService(Tracer.Tracer, withoutRequest),
-            Effect.flatMap((response) =>
-              response.status >= 200 && response.status < 300
-                ? Effect.void
-                : Effect.fail(rejected(response.status))
-            ),
-            Effect.timeout(timeout),
-            Effect.scoped,
-            Effect.catchTag("TimeoutError", () =>
-              Effect.fail(
-                new AlertError({
-                  code: "sink_timeout",
-                  message: `Alert webhook did not answer within ${Duration.toMillis(timeout)} ms`
-                })
-              )),
-            // The transport error holds the request, and the request holds the
-            // caller's headers. Only its reason tag crosses into the failure.
-            Effect.catchTag("HttpClientError", (cause) =>
-              Effect.fail(
-                new AlertError({
-                  code: "sink_unreachable",
-                  reason: cause.reason._tag,
-                  message: "Alert webhook could not be reached"
-                })
-              ))
           )
+          |> followingNoRedirects(%)
+          |> Effect.updateService(%, Headers.CurrentRedactedNames, (names) => [...names, ...redactedNames])
+          // A host may name HTTP spans for their url. This one is named for
+          // its method, as the client names it by default.
+          |> Effect.provideService(%, HttpClient.SpanNameGenerator, (request) => request.method)
+          |> Effect.updateService(%, Tracer.Tracer, withoutRequest)
+          |> Effect.flatMap(%, (response) =>
+            response.status >= 200 && response.status < 300
+              ? Effect.void
+              : Effect.fail(rejected(response.status)))
+          |> Effect.timeout(%, timeout)
+          |> Effect.scoped(%)
+          |> Effect.catchTag(%, "TimeoutError", () =>
+            Effect.fail(
+              new AlertError({
+                code: "sink_timeout",
+                message: `Alert webhook did not answer within ${Duration.toMillis(timeout)} ms`
+              })
+            ))
+          // The transport error holds the request, and the request holds the
+          // caller's headers. Only its reason tag crosses into the failure.
+          |> Effect.catchTag(%, "HttpClientError", (cause) =>
+            Effect.fail(
+              new AlertError({
+                code: "sink_unreachable",
+                reason: cause.reason._tag,
+                message: "Alert webhook could not be reached"
+              })
+            ))
       }
-    })
+    }
   ).pipe(Layer.provide(FetchHttpClient.layer))

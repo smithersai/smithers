@@ -9,7 +9,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import * as Channels from "../src/Channels.ts"
+import * as Channels from "../src/Channels.vibe"
 
 const API_KEY = "re_SYNTHETIC_CHANNEL_KEY"
 const BOT_TOKEN = "123456:SYNTHETIC_BOT_TOKEN"

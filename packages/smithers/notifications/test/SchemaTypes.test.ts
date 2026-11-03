@@ -6,7 +6,7 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Notification from "../src/Notification.vibe"
-import * as SteerPayload from "../src/SteerPayload.ts"
+import * as SteerPayload from "../src/SteerPayload.vibe"
 
 const humanSteer: Notification.HumanSteer = {
   _tag: "human-steer",
