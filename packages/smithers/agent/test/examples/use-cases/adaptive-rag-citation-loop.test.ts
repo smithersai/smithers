@@ -18,7 +18,7 @@ import {
   Retrieve,
   reviewTask,
   RouteQuery
-} from "../../../examples/use-cases/adaptive-rag-citation-loop.ts"
+} from "../../../examples/use-cases/adaptive-rag-citation-loop.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "adaptive-rag-citation-loop-"))

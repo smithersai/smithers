@@ -183,7 +183,7 @@ const securityReview = Smithers.SecurityReview({
         "A scripted model that splices prompt text into cell code without JSON.stringify.",
         "Budget.layerUnbounded or QuotaPolicy.layerUnclassified used in an example that reaches a real provider."
       ],
-      paths: ["examples/11-agent-step.ts", "examples/25-agent-tools-in-sandbox.ts", "examples/39-agent-policies.ts"]
+      paths: ["examples/11-agent-step.vibe", "examples/25-agent-tools-in-sandbox.ts", "examples/39-agent-policies.vibe"]
     },
     {
       id: "flow-store-confinement",
