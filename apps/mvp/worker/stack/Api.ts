@@ -1,4 +1,5 @@
 import { withRequestRay } from "../RequestRay.ts"
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { canAsk } from "../Actor.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
@@ -314,10 +315,11 @@ export const make = <E, R>(
             : "todo/drop"
           if (admitted.op !== "retry" && (yield* refusesPersonOnly(who, act))) return refused("forbidden")
           // The role is the person's on this repository, never another's (decision 0079).
-          const resolved = yield* roles.resolve(who, repositoryNamed(`${target.owner}/${target.name}`)).pipe(Effect.result)
+          const resolved = yield* WriteAuthority.wait("role", roles.resolve(who, repositoryNamed(`${target.owner}/${target.name}`))).pipe(Effect.result)
           if (resolved._tag === "Failure") {
             const { code, retryAfterSeconds } = resolved.failure
-            Object.assign(fields, RepoRoles.refusalFields(resolved.failure))
+            Object.assign(fields, resolved.failure instanceof RepoRoles.RoleRefused
+                ? RepoRoles.refusalFields(resolved.failure) : { stage: resolved.failure.stage })
             fields.outcome = code
             return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
           }
@@ -352,10 +354,10 @@ export const make = <E, R>(
           }
           let stoppedAttemptId: string | undefined
           if (admitted.op === "retry" && Option.isSome(runs) && runs.value.isStopped !== undefined) {
-            const candidate = yield* Stack.retryCandidate(repoId(target.owner, target.name), admitted.number).pipe(Effect.provide(database))
-            if (candidate !== undefined && (yield* runs.value.isStopped(candidate))) stoppedAttemptId = candidate
+            const candidate = yield* WriteAuthority.wait("retry_candidate", Stack.retryCandidate(repoId(target.owner, target.name), admitted.number).pipe(Effect.provide(database)))
+            if (candidate !== undefined && (yield* WriteAuthority.wait("run_status", runs.value.isStopped(candidate)))) stoppedAttemptId = candidate
           }
-          const apply = (actor: typeof scopedActor, held: Option.Option<RepoRoles.Held>) => Stack.apply(
+          const apply = (actor: typeof scopedActor, held: Option.Option<RepoRoles.Held>) => WriteAuthority.wait("commit", Stack.apply(
             {
               opId: admitted.opId.toLowerCase(),
               repoId: repoId(target.owner, target.name),
@@ -378,16 +380,17 @@ export const make = <E, R>(
                 : { kind: admitted.op, number: admitted.number },
             },
             { runs: Option.isSome(runs), ...(Option.isSome(held) ? { holds: RepoRoles.holds(held.value) } : {}), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
-          ).pipe(Effect.provide(database), Effect.catchTag("@smthrs/mvp/stack/RetryForbidden", () => Effect.succeed({ kind: "forbidden" as const })))
+          ).pipe(Effect.provide(database), Effect.catchTag("@smthrs/mvp/stack/RetryForbidden", () => Effect.succeed({ kind: "forbidden" as const }))))
           let applied = yield* apply(scopedActor, held)
           // The row the request read expired, or changed, while the change waited: GitHub decides again, once, as for
           // an issue write (decision 0079 §6), and the change is admitted only under that answer.
           if (applied.kind === "stale" && Option.isSome(held) && roles.refresh !== undefined) {
             fields.refreshed = 1
-            const again = yield* roles.refresh(who, repositoryNamed(`${target.owner}/${target.name}`), held.value).pipe(Effect.result)
+            const again = yield* WriteAuthority.wait("role_refresh", roles.refresh(who, repositoryNamed(`${target.owner}/${target.name}`), held.value)).pipe(Effect.result)
             if (again._tag === "Failure") {
               const { code, retryAfterSeconds } = again.failure
-              Object.assign(fields, RepoRoles.refusalFields(again.failure))
+              Object.assign(fields, again.failure instanceof RepoRoles.RoleRefused
+                ? RepoRoles.refusalFields(again.failure) : { stage: again.failure.stage })
               fields.outcome = code
               return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
             }

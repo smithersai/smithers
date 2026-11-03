@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Duration, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Actor } from "./Actor.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
@@ -68,3 +68,24 @@ export const protectedOf = (actor: Actor, held: Option.Option<RepoRoles.Held> = 
     scope: Option.isSome(held) ? { _tag: "Repo", held: held.value } : { _tag: "Deployment" } }
 }
 
+
+/** Budgets cover the complete Effect, including service/layer acquisition, BEGIN and COMMIT. */
+export const WAIT_MILLIS = {
+  role: 10_000, role_refresh: 10_000, retry_candidate: 2_000, run_status: 2_000,
+  runner_lookup: 2_000, commit: 6_000,
+} as const
+export class WaitExpired extends Schema.TaggedError<WaitExpired>()("write/WaitExpired", {
+  stage: Schema.Literals(Object.keys(WAIT_MILLIS) as Array<keyof typeof WAIT_MILLIS>),
+  code: Schema.Literal("unavailable"),
+  retryAfterSeconds: Schema.optional(Schema.Number),
+}) {}
+export const waitTimeouts = Metric.counter("smithers_write_wait_timeouts", { incremental: true,
+  description: "Bounded synchronous write waits that expired, by stage" })
+
+/** One bounded wait, with no detached work or renewed timer. Interruption cancels the underlying operation. */
+export const wait = <A, E, R>(stage: keyof typeof WAIT_MILLIS, effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.timeoutOrElse({ duration: Duration.millis(WAIT_MILLIS[stage]), orElse: () => Effect.gen(function* () {
+    yield* Metric.update(Metric.withAttributes(waitTimeouts, { stage }), 1)
+    yield* Effect.logWarning("write.wait").pipe(Effect.annotateLogs({ stage, outcome: "timeout", budgetMs: WAIT_MILLIS[stage] }))
+    return yield* new WaitExpired({ stage, code: "unavailable", retryAfterSeconds: 1 })
+  }) }))

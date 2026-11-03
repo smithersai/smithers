@@ -1,6 +1,6 @@
 ---
 title: Commit-time write authority
-status: in-progress
+status: completed
 area: access
 owner: Codex / Astra repair
 updated: 2026-11-02
@@ -52,8 +52,8 @@ in core, shared by plugins, rather than a new feature or a private plugin interf
 `ChatApiProgram` wraps its route dispatcher with `WriteAdmission.afterBody`. For POST, PUT, PATCH and DELETE,
 that boundary reaches EOF before any handler can resolve a session or run credential. One 60-second deadline spans
 the entire read; chunks never renew it. A native request with no body is already at EOF. Raw bytes are replayed through
-all Effect request accessors, preserving original URL, cookies and headers. The aggregate cap is 8 MiB; handlers
-retain their smaller byte/UTF-8/schema limits. Refusals: 408 `body_timeout`, 413 `too_large`, 400 `invalid`.
+all Effect request accessors, preserving original URL, cookies and headers. Reading enforces each route's byte cap,
+with an 8 MiB aggregate ceiling; handlers retain their UTF-8/schema checks. Refusals: 408 `body_timeout`, 413 `too_large`, 400 `invalid`.
 `write.admission` spans, `smithers_write_bodies` counts and `write.body` refusal logs carry no body or credential.
 
 ### Route inventory
@@ -162,18 +162,19 @@ application table/row locks. This is a Postgres 17 contract, matching the declar
 wire/cancel-drain latency and work outside that transaction are not represented as lock waits.
 
 WorkLinks has one writing transaction (5 s). A runner/agent/overflow attempt has one outer writing transaction (5 s).
-Stack can apply twice after its single stale-role refresh: at most 10 s in writing transactions, plus the separate
-role refresh's existing 10-second deadline (and initial role resolution, also separately bounded). No write transaction
-holds locks across a network role refresh. A durable retry is a new admission attempt, not an extension of one transaction.
-Natural session expiry after shared admission, or after a deferred action's single final authority check, may race
-this short bounded work. No absolute-deadline checks after each lock wait, or expiry-derived lock timeouts, are added.
+Stack can apply twice after its single stale-role refresh. The Astra repair below adds complete application wait
+budgets outside these server transaction caps, including database acquisition, retry status and role refresh.
+No write transaction holds locks across a network role refresh. A durable retry is a new attempt.
+Natural session expiry and explicit revocation after shared admission are both accepted during the bounded
+synchronous Stack/WorkLinks window. Deferred actions still revalidate in their final transaction.
+No per-route session rechecks or expiry-derived lock timeouts are added.
 
 Actual blocked-write tests retain a lock on a second real Postgres connection until the writer fails; no release sleep
 or query mock. The first passing run measured WorkLinks 1009 ms, Stack 1009 ms and runner 1003 ms. Mutation triggers
 independently assert all three installed settings, including the 5-second total cap. These are farm/Postgres receipts,
 not production latency or transport bounds.
 
-### SQL round trips, relative to the five-commit parent
+### SQL round trips at c16da997, before the Astra repairs
 
 | Path | Added round trips |
 | --- | --- |
@@ -242,7 +243,7 @@ Secrets retain deployment scope and require Admin at the final transaction. Tria
 serialization row or repository role row, and the admitting session/alias; replay returns its existing receipt.
 Missing protected scope fails closed. Library entry: existing Effect SQL, SessionStore.latestRole and RepoRoles.holds.
 Red: `/tmp/retro-repair-2-red.log`, 6 failed, 93 filtered skips. Secrets expected `stale`, received `replace`/`deleted`
-at DurableAuthority.test.ts:72; deployment and repository triage expected `refused`, received `done` at Triage.test.ts:91.
+at DurableAuthority.test.ts:63; deployment and repository triage expected `refused`, received `done` at Triage.test.ts:91.
 
 Green: `/tmp/retro-repair-2-green-final.log`, DurableAuthority, Triage and Secrets 135 passed, 0 skipped.
 The first broad run exposed a fixture that claimed Maintainer in the actor but stored Member in its session;
@@ -274,3 +275,67 @@ stale early-refusal assertions and an import cycle in the new protected-role hel
 role dependencies out of the persisted session schema's module. Receipts below supersede intermediate failed runs.
 
 Expanded green: `/tmp/retro-repair-4-green-complete.log`, 249 passed, 0 skipped across seven files.
+
+### Astra repair 5 — every synchronous wait
+
+No session/alias rechecks were restored in Stack.ts or WorkLinks.ts. Each awaited service between completed
+authentication and commit now has an Effect deadline around the entire operation, outside database layer provision.
+This includes pool/layer acquisition and BEGIN/COMMIT, rather than starting the timer after a connection is obtained.
+Timeouts cancel the operation, answer retryable unavailable, and emit `write.wait` with a finite stage and budget,
+plus `smithers_write_wait_timeouts{stage}`. No detached writer or background timeout cleanup is introduced.
+
+| Stack wait, in execution order | Maximum |
+| --- | --- |
+| Initial repository role resolution: cached-row read or GitHub read, record and cleanup | 10 s |
+| Retry candidate database lookup, only for Retry with a run host | 2 s |
+| Remote run host isStopped, only for a candidate | 2 s |
+| First complete apply, database acquisition through transaction end | 6 s |
+| One stale-role refresh, including its GitHub read, record, feed locks and cleanup | 10 s |
+| Second complete apply | 6 s |
+| **Total, conservative sum including all optional waits** | **36 s** |
+
+| WorkLinks wait | Maximum |
+| --- | --- |
+| Person's repository role resolution, including GitHub when needed | 10 s |
+| Runner token lookup instead of the person's role resolution | 2 s |
+| Complete writing transaction, including database acquisition | 6 s |
+| **Person total / runner total** | **16 s / 8 s** |
+
+**The largest bound is 36 seconds, exceeding 10 seconds.** The body is already buffered when authentication runs;
+its UTF-8 replay adds no network wait. Parsing, hashing and clock reads are synchronous. Logs/metrics use the
+in-process services. Stack's run starts/stops happen after commit and do not extend this authority window.
+Repository roles retain their own 10-second whole-read budget; the new outer role budgets also cover the first
+layer acquisition, cached read and injected role service. GitHub's client's 30-second default cannot extend them.
+Every SQL writing transaction additionally retains lock=1 s, statement=2 s, transaction=5 s on Postgres 17.
+These are application/SQL operation budgets, not a promise of network delivery time to the browser: transport and
+cancellation drain can delay the returned response while the cancelled operation unwinds. No further application
+write proceeds during that unwind. The tests exercise stuck interruptible services and actual blocked Postgres writes;
+production transport and Hyperdrive cancellation latency are not measured here.
+
+Red: `/tmp/retro-repair-5-red-final.log`, 8 failed, 0 skipped. Every stalled service was entered; each failed
+`expected 499 to be 503` at CommitWaits.test.ts:44 or :66. 499 is the test observer's 12-second sentinel, not an HTTP
+response from Smithers. The earlier `/tmp/retro-repair-5-red.log` hit all eight 16-second test timeouts; it is not used
+instead of these explicit failing assertions. Faulty Effect services stall initial role reads, refresh, transaction
+acquisition, retry lookup, remote status, runner lookup and WorkLinks transaction acquisition.
+
+
+Green for the wait repair: `/tmp/retro-repair-5-green.log`, 62 passed, 0 skipped across five files.
+`pnpm typecheck` in apps/mvp passed all four configurations on the farm (`/tmp/retro-repair-typecheck-final.log`).
+The timer repair adds zero SQL round trips. Protected secret/deployment-role writes add a person lock and latest-role
+read to the earlier session checks; repository triage adds RepoRoles.holds. Neither introduces a new read-path query.
+
+### Final farm receipts for the Astra repairs
+
+The combined 23-file run (`/tmp/retro-repair-final-tests.log`) executed 738 cases with 737 passed, 1 failed,
+0 skipped. Its only failure was Connections' old assertion of 400/invalid for a body over the Jev route cap;
+the new shared admission correctly answered 413/too_large before the handler. That assertion is updated.
+The complete Connections rerun (`/tmp/retro-repair-connections-final.log`) passed all 63 cases, 0 skipped.
+The other 22 files in the combined run passed all 675 cases. Thus **738 distinct cases across 23 files have passing
+final receipts, with 0 skipped**; the combined run itself is not described as green. Stack Api/CommitAuthority were
+also rerun after removing an unintended read-route timer: 39 passed, 0 skipped (`/tmp/retro-repair-stack-final.log`).
+
+Final `pnpm typecheck` in apps/mvp passed all four configurations with command exit 0 on the farm:
+`/tmp/retro-repair-typecheck-complete.log`. Tests use the existing remote Mini farm because Latitude's disk admission
+refused both hosts before source transfer. Test stdout/stderr is retained in the named files. No local install or
+repository copy was made. Coverage instrumentation was disabled; these are API/engine/Postgres tests, not production
+or browser E2E evidence. This note records implementation and executed checks, not an external review result.

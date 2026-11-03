@@ -94,3 +94,10 @@ Settings: `E2E_TRACKING_REPOSITORY`, `E2E_TRACKING_RECORDS`, `E2E_TRACKING_SEED_
 | `ops/issue-tracking/records.test.ts` | the import's scrubbing, its records and links, and their order |
 | `e2e/issue-tracking.spec.ts` | production: volume, import, links and status, above |
 | `e2e/issue-waterfall.spec.ts` | production: the cold list's and the cold issue page's stages, above |
+
+A person's session is decided after complete body admission; natural expiry or explicit revocation during a bounded
+wait is accepted without another per-route session check. Repository-role resolution has a 10 s whole-service budget
+including GitHub; runner token lookup instead has 2 s. The complete writing call, including database acquisition, has
+6 s: totals are 16 s for a person or 8 s for a runner. The transaction also keeps its Postgres 5 s cap (lock 1 s,
+statement 2 s). Timeout stages emit `write.wait` and `smithers_write_wait_timeouts`.
+See [the wait inventory and transport limits](../work/commit-authority.md#astra-repair-5--every-synchronous-wait).

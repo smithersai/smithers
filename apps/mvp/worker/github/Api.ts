@@ -1006,7 +1006,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const text = yield* readBounded(request, WorkLinks.MAX_POST_BYTES).pipe(Effect.result)
           if (Option.isSome(actor.value)) {
             fields.by = "person"
-            const resolved = yield* options.roles.resolve(actor.value.value, target).pipe(Effect.result)
+            const resolved = yield* WriteAuthority.wait("role", options.roles.resolve(actor.value.value, target)).pipe(Effect.result)
             if (resolved._tag === "Failure") {
               const { code, retryAfterSeconds } = resolved.failure
               fields.outcome = code
@@ -1016,7 +1016,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             source = actor.value.value.login ?? actor.value.value.subject.id
           } else {
             fields.by = "runner"
-            const runner = yield* WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database), Effect.result)
+            const runner = yield* WriteAuthority.wait("runner_lookup", WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database))).pipe(Effect.result)
             if (runner._tag === "Failure") return refused(503, "unavailable")
             if (Option.isNone(runner.success)) return refused(401, "authentication")
             // Registered, but not current as a claim requires (decision 0148): it needs registering again.
@@ -1030,10 +1030,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const post = WorkLinks.decode(text.success)
           const now = yield* Clock.currentTimeMillis
           if (post === undefined || WorkLinks.fromTheFuture(post, now)) return refused(400, "invalid")
-          const written = yield* WorkLinks.write(target.id, named.number, post, source, now, byRunner).pipe(
+          const written = yield* WriteAuthority.wait("commit", WorkLinks.write(target.id, named.number, post, source, now, byRunner).pipe(
             Effect.provide(database),
-            Effect.result,
-          )
+          )).pipe(Effect.result)
           if (written._tag === "Failure") {
             fields.errorCode = codeOf(written.failure)
             return refused(503, "unavailable")

@@ -402,3 +402,10 @@ Input storage refusal shows Not sent on both the stack and TODO detail. The same
 Machine access remains restricted to Members or above of `GITHUB_REPOSITORY` (decision 0122 amendment). Per-person sandbox hours and concurrent TODO-machine accounting are held for a separate design.
 
 Steering a running TODO also requires deployment membership; a repository Member without it may still read the run (decision 0122 amendment).
+
+Synchronous Stack writes retain the session decision made after body admission, accepting natural expiry or explicit
+revocation during bounded waits. No per-route session recheck is added. Complete service budgets are 10 s for each
+role read/refresh, 2 s each for retry-candidate lookup and remote stopped status, and 6 s for each complete apply
+(including database acquisition). The conservative total is 36 s, with at most one refresh and second apply.
+Postgres independently caps each writing transaction at 5 s (lock 1 s, statement 2 s). Timeout stages emit `write.wait`
+and `smithers_write_wait_timeouts`. See [the complete bound and transport limits](../work/commit-authority.md#astra-repair-5--every-synchronous-wait).
