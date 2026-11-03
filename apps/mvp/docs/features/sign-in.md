@@ -374,3 +374,5 @@ A timed-out body returns `408 body_timeout`, a broken body `400 invalid`, and an
 by status alone. Neither records content or credentials. Bodyless writes are already at EOF. Reads add no database query.
 
 A session read waits at most one second for the role-check start acknowledgment. A timeout cancels that wait, records `auth.role_check` with `start_timeout` and counts it, then returns the live session. A later request can start the same idempotent execution.
+
+`POST /api/auth/handoff` is bounded to 4 KiB during body admission, matching the handler, including requests with a query string. Oversize declared or streamed bodies return 413 before authority resolution.

@@ -1,9 +1,9 @@
 ---
 title: Commit-time write authority
-status: in-progress
+status: done
 area: access
 owner: Codex / write seam follow-ups
-updated: 2026-11-02
+updated: 2026-11-03
 links: []
 ---
 
@@ -449,3 +449,98 @@ Library catalog: existing Effect timeout/SQL, `@smthrs/flow` retries, and
    Added final-transaction promotion/demotion and expiry-after-refresh checks.
    Full mini typecheck passed: `/tmp/write-seam-typecheck-2.log`, PID 7221 slot 1.
    Initial `/tmp/write-seam-typecheck.log` failed on the corrected fixture callback type.
+
+3. Handoff: `/api/auth/handoff` has the handler's 4 KiB cap at body admission.
+   Red `/tmp/write-seam-3-red.log`, PID 94986 slot 3, 4 failed, 2 passed, 0 skipped.
+   Lines 26–44: cap 8388608 instead of 4096 (test line 8); lines 46–64: declared
+   and streamed 4097-byte uploads returned 200 instead of 413 (test line 23).
+   Green `/tmp/write-seam-3-green.log`, PID 97007 slot 2: BodyLimits and Body,
+   10 passed, 0 failed, 0 skipped, including 4096-byte admission and query strings.
+
+Rebased the local write-seam chain onto fetched `main@origin` (`45e4f5e4dec6`).
+Resolved conflicts in their owning commits: Stack/ChatApi imports retain request-ray
+correlation and write admission/authority; runner fences use the shared session/alias
+identity and fixed write bounds, retaining main's final deadline check and rollback;
+the runner documentation states both. No migration file differs from `main@origin`.
+No unresolved conflict remains in the rebased chain. Final mini checks follow.
+
+While final checks waited for mini capacity, `main@origin` advanced to
+`cbd72272bce7`; rebased the chain again without conflicts. Migration contents
+still match origin exactly. The post-rebase typechecks caught and corrected two
+integration points in their owning commits: Stack timeout failures cannot be passed
+to the upstream-role-only diagnostic formatter, and one new runner regression from
+main needed the shared `session` fence shape instead of top-level sessionId/alias.
+`/tmp/write-seam-rebased-typecheck-3.log` (PID 24012 slot 3) passed after these
+corrections; `/tmp/write-seam-final-typecheck.log` (PID 25215 slot 2) passed on
+the newer base. Overflow: `/tmp/write-seam-rebased-overflow.log`, PID 23673
+slot 2, 9 passed, 0 failed, 0 skipped. `/tmp/write-seam-rebased-tests.log`
+reached its 600-second capacity deadline before executing or collecting tests.
+No lock or reservation was stolen. Final 12-file run retried on the newer base.
+
+Final regressions: `/tmp/write-seam-final-tests.log`, mini PID 26692 slot 2,
+12 files, 320 passed, 0 failed, 0 skipped (112.29 s). Coverage disabled as requested.
+Includes SignIn 61, BodyLimits 6, Body 4, deferred triage 13, RepoRoles 65, Host 4,
+Stack API 39, Stack commit authority 40, CommitWaits 8, runner deadlines 3,
+Runners 68 and Overflow 9. No production or browser evidence is claimed.
+Origin advanced again during this run: rebased cleanly onto `c2412875cc63`.
+Compared the tested revision `833eaaef3e4cc6d8fe526758ab1111700e3dd565` with
+the rebased result: no worker or SDK source changed. The new origin changes
+are coding-flow maintenance and deployment/e2e tooling. Migration contents remain
+identical to this origin base. Full typecheck on this last base follows.
+
+Resumed after the account switch: the interrupted c241 typecheck was terminated
+before execution. `/tmp/write-seam-resume-typecheck-c241.log`, mini PID 34683
+slot 3, passed the full `pnpm typecheck` (exit 0). The 320-test receipt above
+remains valid for the identical worker/SDK sources. Origin then advanced to
+`ec64fab12052` (TODO leaves/attachment); integrating that base follows.
+
+Rebased onto `ec64fab12052`. The overlap was Stack's new `attach` dispatch
+beside the earlier session fence. Resolved it in the original commits, retaining
+the session check before mutation and `attachIssue` after repository authority.
+Later admission refactoring and the final Stack liveness repair retain their
+intended order. No unresolved conflict remains; migrations match this base byte
+for byte. Final mini runs add Stack and LeafTrigger to the 12-file regression set.
+
+Full typecheck on `ec64fab12052` passed: `/tmp/write-seam-final-typecheck-ec64.log`,
+mini PID 43967 slot 2, exit 0 (app, worker, infrastructure and evals configs).
+`/tmp/write-seam-final-tests-ec64.log` reached the 600-second capacity limit,
+exit 75, before execution or collection. No reservation was removed. Retrying
+the identical 14-file command in `/tmp/write-seam-final-tests-ec64-2.log`.
+
+That run (mini PID 16082 slot 3) executed 399 cases: 394 passed, 5 failed,
+0 skipped, plus one unhandled rejection. All three requested regressions passed.
+The first RepoRoles failure at log lines 6787–6807 counted another schema's idle
+transaction (`open: 1`); its assertion skipped the gate release and caused three
+later duplicate-key failures. Diagnostics now filter by the fixture's
+`application_name`, and a `finally` releases and drains the in-flight burst.
+The Overflow lock-order test used two 300 ms sleeps; with a one-second lock bound
+and concurrent suites it timed out and left an unhandled rejection. Its real SQL
+span now signals the old writer when the new writer attempts the runner lock,
+with no sleep, and both results are joined. The success assertion retains the
+lock-order check under the same fixed production deadlines.
+These test-only corrections are folded into the owning deferred-role and bounded
+write commits. No production bound or assertion was relaxed. Re-running the same
+14 files and full typecheck; logs end `ec64-3.log` and `typecheck-ec64-2.log`.
+
+`/tmp/write-seam-final-tests-ec64-3.log`, mini PID 20638 slot 1: 398 passed,
+1 failed, 0 skipped, no unhandled errors (399 total, 142.27 s). The remaining
+failure was the new Overflow assertion using Effect Result's serialized `value`
+instead of its actual `success` field; the real write returned `set` in 191 ms.
+Corrected that assertion and rerunning Overflow alone; the other 13 files have
+390 passing cases, including all 65 RepoRoles and both new Stack/leaf suites.
+
+Final full typecheck after the test-only corrections passed, exit 0:
+`/tmp/write-seam-final-typecheck-ec64-2.log`, mini PID 70143 slot 2. No check
+or installation ran on the MacBook. Overflow-only validation remains queued.
+
+Final Overflow validation passed: `/tmp/write-seam-final-overflow-ec64.log`,
+mini PID 73517 slot 1, 9 passed, 0 failed, 0 skipped, no unhandled errors
+(17.12 s). Final test evidence is the other 13 files' 390 passing cases from
+`write-seam-final-tests-ec64-3.log` plus these 9: 399 distinct cases across
+14 files, all passing, 0 skipped. This is two receipts, not a claim of a single
+all-green 14-file invocation. Full typecheck is green on the final source.
+
+Complete, kept local and unpushed. The three requested fixes remain three commits
+on top of the prior write seam, rebased onto origin's `ec64fab12052`. All conflicts
+are resolved, and migration files match that base exactly. No landing, pushing,
+review, production, browser, coverage, MacBook installation or tree-copy claim.

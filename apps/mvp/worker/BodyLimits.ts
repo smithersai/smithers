@@ -40,7 +40,7 @@ export const forRequest = (url: string) => Effect.gen(function* () {
   if (path.startsWith("/api/runners/")) return MAX_RUNNER_BODY_BYTES
   if (path.startsWith("/api/model/")) return Math.min(MAX_BODY_BYTES, yield* modelBytes)
   if (path === "/api/auth/arrive") return 1024
-  if (path === "/api/auth/sign-out") return 4096
+  if (path === "/api/auth/sign-out" || path === "/api/auth/handoff") return 4096
   if (path === "/api/github/webhook") return MAX_WEBHOOK_BYTES
   if (path === "/api/questions") return MAX_QUESTION_BODY_BYTES
   if (path.startsWith("/api/answers/")) return MAX_ANSWER_BODY_BYTES
