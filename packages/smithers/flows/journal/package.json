@@ -48,7 +48,11 @@
     "./RedactedLogger": "./src/RedactedLogger.ts",
     "./Redaction": "./src/Redaction.ts",
     "./SqlJournal": "./src/SqlJournal.ts",
-    "./TelemetryLog": "./src/TelemetryLog.ts",
+    "./TelemetryLog": {
+      "types": "./.vibe/declarations/src/TelemetryLog.d.vibe.ts",
+      "vibelang-source": "./src/TelemetryLog.vibe",
+      "default": "./.vibelang/js/src/TelemetryLog.js"
+    },
     "./index": "./src/index.ts",
     "./test/Notifying": "./src/test/Notifying.ts",
     "./test/TestJournal": "./src/test/TestJournal.ts",
