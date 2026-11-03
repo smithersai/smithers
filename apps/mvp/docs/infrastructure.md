@@ -169,9 +169,13 @@ A Worker's pool doesn't count against the budget: Hyperdrive multiplexes every W
 
 ### Ops database TLS
 
-`ops/feed-barrier/confirm.ts`, `ops/role-age/expire.ts` and `ops/runner-cutover/cutover.ts` validate `DATABASE_URL` before network access. Remote databases require `sslmode=verify-full`, or `sslmode=require&sslrootcert=<CA file>`. A pin must contain CA certificates and replaces public roots. Localhost, IPv4 loopback and `::1` can run without TLS. Endpoint overrides and duplicate TLS parameters are refused; diagnostics contain only the hostname.
+`db/migrate.ts`, `ops/feed-barrier/confirm.ts`, `ops/role-age/expire.ts` and `ops/runner-cutover/cutover.ts` share the verified connection boundary in `ops/database/Connection.ts` and validate `DATABASE_URL` before network access. `.smithers/flows/land/lane-gates.sh` validates `SMITHERS_TEST_DATABASE_URL` through `ops/database/Probe.ts`; every database subprocess in the release-host recorder validates `PGDATABASE` through the same `Policy.ts`. The recorder accepts Postgres URLs only; bare libpq database names and key/value connection strings are refused. Remote databases require `sslmode=verify-full`, or `sslmode=require&sslrootcert=<CA file>`. A pin must contain CA certificates and replaces public roots. Localhost, IPv4 loopback and `::1` can run without TLS. Endpoint overrides and duplicate TLS parameters are refused; diagnostics contain only the hostname.
 
-Neon-derived ops URLs select `verify-full` with Node's default root store, including `NODE_EXTRA_CA_CERTS` loaded at startup. The driver's unsupported `channel_binding` parameter is removed; certificate chain and hostname verification stay explicit. See [decision 0154](decisions/0154-ops-database-tls.md). The standalone tests use `pnpm exec vitest run --config ops/database/vitest.config.ts`; the TLS fixture skips explicitly when PostgreSQL or OpenSSL tools are absent.
+Deploy migrations receive Neon’s `connectionUri` through `infra/Postgres.migrationUrl`, which calls the same `neonConnectionUri` helper as the operator commands; Alchemy’s `ChatMigrations` action calls `Connection.migrate`. Both the standalone CLI and deploy therefore use the same verified SQL layer. Electric’s separate `directUrl` retains its existing parser behavior.
+
+Neon-derived ops and migration URLs select `verify-full` with Node's default root store, including `NODE_EXTRA_CA_CERTS` loaded at startup. The driver's unsupported `channel_binding` parameter is removed; certificate chain and hostname verification stay explicit. See [decision 0154](decisions/0154-ops-database-tls.md). libpq connections promote pinned `require` to `verify-full`, use system roots when no CA is pinned, and remove ambient `PG*` overrides. Validated URL components become explicit libpq environment fields; no URI is handed to `PGDATABASE` as a database name. Unsupported libpq query options are refused, and GSS transport is disabled so verified TLS remains mandatory. Gate failures print only the hostname to stdout and `$HOME/lanes/$LANE.gates.log`; database failures never forward driver messages, including nested URLs.
+
+The standalone tests use `pnpm exec vitest run --config ops/database/vitest.config.ts`; the TLS fixture skips explicitly when PostgreSQL or OpenSSL tools are absent.
 
 ### Placement
 
@@ -621,3 +625,5 @@ success counts alone cannot establish that a particular body reached a client;
 a later successful probe does not resolve an earlier truncation.
 
 The real sandbox Docker suites share `worker/test/sandboxImage.globalSetup.ts`: when selected, they pack this checkout’s CLI with `infra/sandbox/pack-cli.mjs` and build the deployment Dockerfile once before test workers start. A targeted run without these suites does no image work.
+
+Production Neon certificate-chain verification is owner-run; the owned TLS fixture does not establish that chain.

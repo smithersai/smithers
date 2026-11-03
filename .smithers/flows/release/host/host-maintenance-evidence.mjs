@@ -2,6 +2,7 @@
 // executable from the repository being backed up. Receipts are diagnostic until
 // the engineering receipt gate authenticates them at the released commit.
 import { spawn } from 'node:child_process'
+import { diagnostic, libpqEnvironment } from '../../../../apps/mvp/ops/database/Policy.ts'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, readdir, readFile, readlink, writeFile, mkdir, realpath } from 'node:fs/promises'
@@ -10,12 +11,21 @@ import { isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export async function run(program, args, { env = {}, expected = 0, timeout = 30_000 } = {}) {
+  const database = env.PGDATABASE
+  if (database !== undefined) env = libpqEnvironment(database, env)
   const began = new Date().toISOString()
-  const child = spawn(program, args, { env: { HOME: homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin', ...env }, stdio: ['ignore', 'pipe', 'pipe'], signal: AbortSignal.timeout(timeout) })
+  let child
+  try {
+    child = spawn(program, args, { env: { HOME: homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin', ...env }, stdio: ['ignore', 'pipe', 'pipe'], signal: AbortSignal.timeout(timeout) })
+  } catch (error) {
+    throw database === undefined ? error : new Error(diagnostic(error, database))
+  }
   let stdout = '', stderr = ''
   child.stdout.on('data', bytes => { stdout += bytes })
   child.stderr.on('data', bytes => { stderr += bytes })
   const status = await new Promise((yes, no) => { child.once('error', no); child.once('close', yes) })
+    .catch(error => { throw database === undefined ? error : new Error(diagnostic(error, database)) })
+  if (database !== undefined && status !== 0) { stdout = ''; stderr = diagnostic(undefined, database) }
   const receipt = { began, ended: new Date().toISOString(), program, args, status, stdout, stderr }
   if (expected !== null && status !== expected) throw Object.assign(new Error(`command exited ${status}: ${program}`), { receipt })
   return receipt

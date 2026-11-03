@@ -37,12 +37,12 @@ for (const command of commands.slice(0, 2)) {
     const result = await cli(command, `postgresql://private-user:private-pass@${host}:1/private-db`)
     expect(result.code).toBe(1)
     expect(result.stdout).toBe("")
-    expect(result.stderr.trim()).toBe(`${command.prefix}: PgConnection: Failed to connect`)
+    expect(result.stderr.trim()).toBe(`${command.prefix}: database operation failed for ${host.replace(/^\[|\]$/g, "")}`)
   })
   test(`${command.script} admits remote verify-full to the driver`, async () => {
     const result = await cli(command, "postgresql://private-user:private-pass@database.invalid/private-db?sslmode=verify-full")
     expect(result.code).toBe(1)
-    expect(result.stderr.trim()).toBe(`${command.prefix}: PgConnection: Failed to connect`)
+    expect(result.stderr.trim()).toBe(`${command.prefix}: database operation failed for database.invalid`)
   })
 }
 for (const command of commands) {

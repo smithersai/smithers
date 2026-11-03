@@ -4,7 +4,8 @@ import { join } from "node:path"
 import { getCACertificates } from "node:tls"
 import { Redacted } from "effect"
 import { afterAll, expect, test } from "vitest"
-import { neonConnectionUri, sslFor } from "./Connection.ts"
+import { diagnostic, neonConnectionUri, sslFor } from "./Connection.ts"
+import { libpqEnvironment } from "./Policy.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "ops-ca-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
@@ -75,4 +76,59 @@ test("malformed certificate blocks are not usable CA pins", () => {
 test("loopback also permits an empty CA setting, and verified IPv6 has no DNS servername", () => {
   expect(ssl("postgresql://u:p@localhost/local?sslmode=require&sslrootcert=")).toBeUndefined()
   expect(ssl("postgresql://u:p@[::1]/local?sslmode=verify-full")?.servername).toBeUndefined()
+})
+
+
+test.each(["service=private", "servicefile=private"])("rejects libpq endpoint indirection %s", (query) => {
+  expect(() => ssl(`postgresql://u:p@localhost/db?${query}`)).toThrow("unsupported endpoint overrides")
+})
+
+test("libpq explicitly verifies hostnames, strips ambient PG overrides and retains no URL in argv", () => {
+  const env = libpqEnvironment(`${uri}?sslmode=require&sslrootcert=${encodeURIComponent(pin)}`, {
+    PATH: "path", PGHOSTADDR: "192.0.2.1", PGSERVICE: "private", PGSSLMODE: "disable", PGOPTIONS: "unsafe",
+  })
+  expect(env.PATH).toBe("path")
+  expect(env.PGHOSTADDR).toBeUndefined()
+  expect(env.PGSERVICE).toBeUndefined()
+  expect(env.PGSSLMODE).toBe("verify-full")
+  expect(env.PGOPTIONS).toBe("-c default_transaction_read_only=on")
+  expect(env.PGHOST).toBe("database.invalid")
+  expect(env.PGPORT).toBe("6543")
+  expect(env.PGDATABASE).toBe("private-db")
+  expect(env.PGUSER).toBe("private-user")
+  expect(env.PGPASSWORD).toBe("private-pass")
+  expect(env.PGSSLROOTCERT).toBe(pin)
+  expect(env.PGGSSENCMODE).toBe("disable")
+})
+
+test("libpq uses system roots for verify-full and explicit plaintext only for loopback", () => {
+  expect(libpqEnvironment(`${uri}?sslmode=verify-full`).PGSSLROOTCERT).toBe("system")
+  const local = libpqEnvironment("postgresql://u:p@localhost/db?sslrootcert=")
+  expect(local.PGSSLMODE).toBe("disable")
+  expect(local.PGSSLROOTCERT).toBeUndefined()
+})
+
+test("database diagnostics never relay a driver message, even with unrelated nested credentials", () => {
+  const error = new Error("postgresql://otheruser:otherpass@otherhost/otherdatabase")
+  expect(diagnostic(error, Redacted.make(uri))).toBe("database operation failed for database.invalid")
+  expect(diagnostic(error, Redacted.make("bad-private-url"))).toBe("DATABASE_URL is not a valid Postgres URL")
+})
+
+
+test("libpq preserves supported options and decodes credentials without exposing them as connection strings", () => {
+  const env = libpqEnvironment("postgresql://private%40user:private%2Fpass@[::1]/private%20db?connect_timeout=2&application_name=ops")
+  expect(env.PGHOST).toBe("::1")
+  expect(env.PGPORT).toBe("5432")
+  expect(env.PGUSER).toBe("private@user")
+  expect(env.PGPASSWORD).toBe("private/pass")
+  expect(env.PGDATABASE).toBe("private db")
+  expect(env.PGCONNECT_TIMEOUT).toBe("2")
+  expect(env.PGAPPNAME).toBe("ops")
+  const anonymous = libpqEnvironment("postgresql://localhost/local")
+  expect(anonymous.PGUSER).toBeUndefined()
+  expect(anonymous.PGPASSWORD).toBeUndefined()
+})
+
+test.each(["requiressl=0", "gssencmode=prefer", "unknown=private", "connect_timeout=1&connect_timeout=2"])("libpq refuses unsupported or ambiguous options %s", query => {
+  expect(() => libpqEnvironment(`postgresql://u:p@localhost/db?${query}`)).toThrow("DATABASE_URL for localhost has unsupported libpq parameters")
 })

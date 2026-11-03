@@ -1,5 +1,5 @@
-import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process"
-import { chownSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { execFile, execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process"
+import { chmodSync, chownSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -27,6 +27,7 @@ beforeAll(async () => {
       "-addext", "basicConstraints=critical,CA:TRUE", "-keyout", `${name}.key`, "-out", `${name}.crt`])
   }
   run("openssl", ["req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost", "-keyout", "server.key", "-out", "server.csr"])
+  chmodSync(join(directory, "server.key"), 0o600)
   writeFileSync(join(directory, "extensions"), "subjectAltName=DNS:localhost\nbasicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\n")
   run("openssl", ["x509", "-req", "-in", "server.csr", "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-days", "1", "-extfile", "extensions", "-out", "server.crt"])
   writeFileSync(join(directory, "password"), "test-password\n", { mode: 0o600 })
@@ -151,4 +152,67 @@ test.skipIf(!available)("the shared ops layer performs a verified TLS query on i
     (sql) => sql`SELECT ssl, current_user AS person FROM pg_stat_ssl WHERE pid = pg_backend_pid()`,
   ).pipe(Effect.provide(layer(Redacted.make(url.toString()))))))
   expect(rows).toEqual([{ ssl: true, person: "ops_tls" }])
+})
+
+// The exact boundary used by Alchemy's ChatMigrations action, with a Neon-shaped URI and a real TLS server.
+test.skipIf(!available)("deploy migration boundary normalizes Neon's URI and applies all migrations over verified TLS", async () => {
+  const { migrate, neonConnectionUri } = await import("./Connection.ts")
+  const connection = neonConnectionUri(`postgresql://ops_tls:test-password@localhost:${port}/postgres?sslmode=require&channel_binding=require&sslrootcert=${encodeURIComponent(join(directory, "ca.crt"))}`)
+  expect(new URL(Redacted.value(connection)).searchParams.get("sslmode")).toBe("verify-full")
+  await Effect.runPromise(Effect.scoped(migrate(connection)))
+  await Effect.runPromise(Effect.scoped(migrate(connection)))
+  const rows = await Effect.runPromise(Effect.scoped(Effect.flatMap(SqlClient.SqlClient,
+    sql => sql`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'feed_barriers'`,
+  ).pipe(Effect.provide(layer(connection)))))
+  expect(rows).toEqual([{ n: 1 }])
+})
+
+test.skipIf(!available)("standalone migrations succeed on loopback and verify-full with a pinned CA", () => {
+  for (const query of ["", `?sslmode=require&sslrootcert=${encodeURIComponent(join(directory, "ca.crt"))}`]) {
+    const result = execFileSync(process.execPath, ["db/migrate.ts"], {
+      cwd: fileURLToPath(new URL("../..", import.meta.url)), encoding: "utf8", timeout: 20_000,
+      env: { PATH: process.env.PATH, DATABASE_URL: `postgresql://ops_tls:test-password@localhost:${port}/postgres${query}` },
+    })
+    expect(result).toContain("db:migrate: up to date")
+  }
+})
+
+const hasPsql = (() => { try { execFileSync("psql", ["--version"], { stdio: "ignore" }); return true } catch { return false } })()
+for (const { host, pin, success } of [
+  { host: "localhost", pin: "ca", success: true },
+  { host: "127.0.0.1", pin: "ca", success: false },
+  { host: "localhost", pin: "other", success: false },
+  { host: "localhost", pin: undefined, success: false },
+]) test.skipIf(!available || !hasPsql)(`host recorder libpq verifies chain and hostname: ${host}, ${pin ?? "system roots"}`, async () => {
+  const { run } = await import(/* @vite-ignore */ new URL("../../../../.smithers/flows/release/host/host-maintenance-evidence.mjs", import.meta.url).href)
+  const psql = execFileSync("which", ["psql"], { encoding: "utf8" }).trim()
+  const uri = `postgresql://ops_tls:test-password@${host}:${port}/postgres?${pin === undefined ? "sslmode=verify-full" : `sslmode=require&sslrootcert=${encodeURIComponent(join(directory, `${pin}.crt`))}`}`
+  const pending = run(psql, ["-X", "-Atc", "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()"], { env: { PGDATABASE: uri }, expected: null })
+  const result = await pending
+  if (success) {
+    if (result.status !== 0) {
+      const { libpqEnvironment } = await import("./Policy.ts")
+      const raw = spawnSync(psql, ["-X", "-Atc", "SELECT 1"], { encoding: "utf8", env: libpqEnvironment(uri) })
+      // Classify this owned fixture's failure without printing driver text or a URL.
+      const classes = ["certificate", "hostname", "host name", "SSL", "GSS", "password", "authentication", "role", "database", "refused", "resolve", "invalid", "permission", "root", "parameter", "read-only", "key", "file", "exist", "socket", "not supported"]
+      throw new Error(`owned psql failure ${raw.status}: ${classes.filter(word => raw.stderr.includes(word)).join(", ")}`)
+    }
+    expect(result.status).toBe(0)
+    expect(result.stdout.trim()).toBe("t")
+    expect(result.stderr).toBe("")
+  } else {
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toBe("")
+    expect(result.stderr).toBe(`database operation failed for ${host}`)
+    expect(JSON.stringify(result)).not.toMatch(/postgresql|test-password|ops_tls/)
+  }
+})
+
+
+test.skipIf(!available || !hasPsql)("lane readiness connects over verified libpq TLS and retains its real readiness fallback", async () => {
+  const { probe } = await import("./Probe.ts")
+  const uri = `postgresql://ops_tls:test-password@localhost:${port}/postgres?sslmode=require&sslrootcert=${encodeURIComponent(join(directory, "ca.crt"))}`
+  expect(probe(uri, { PATH: process.env.PATH })).toEqual({ code: 0 })
+  // Wrong authentication makes the SQL probe fail; the real server still answers libpq's readiness probe.
+  expect(probe(uri.replace("test-password", "wrong-password"), { PATH: process.env.PATH })).toEqual({ code: 0 })
 })

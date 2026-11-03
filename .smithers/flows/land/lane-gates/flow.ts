@@ -38,7 +38,7 @@ export const Request = Schema.Struct({
   allowDeleted: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
 })
 
-const implementationVersion = "land/lane-gates/v1"
+const implementationVersion = "land/lane-gates/v2"
 
 /**
  * Runs `lane-gates.sh`.

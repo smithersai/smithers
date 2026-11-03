@@ -1,6 +1,13 @@
-// pnpm db:migrate: applies db/migrations to DATABASE_URL (the compose Postgres by default).
-import { NodeRuntime } from "@effect/platform-node"
-import { Effect } from "effect"
+// pnpm db:migrate: one host-only diagnostic; both CLI and deploy use the verified ops migration boundary.
+import { Effect, Redacted } from "effect"
 import * as Database from "./Database.ts"
+import * as Connection from "../ops/database/Connection.ts"
 
-NodeRuntime.runMain(Database.migrateAndReport.pipe(Effect.provide(Database.layer(Database.url))))
+let connection: Redacted.Redacted<string> | undefined
+try {
+  connection = await Effect.runPromise(Database.url)
+  await Effect.runPromise(Effect.scoped(Connection.migrate(connection)))
+} catch (error) {
+  console.error(`db:migrate: ${Connection.diagnostic(error, connection ?? Redacted.make(""))}`)
+  process.exitCode = 1
+}

@@ -47,6 +47,8 @@ export default defineConfig({
       reportsDirectory: join(tmpdir(), `mvp-coverage-${process.pid}`),
       include: [
         "ops/database/Connection.ts",
+        "ops/database/Policy.ts",
+        "ops/database/Probe.ts",
         "src/**/*.{ts,vibe}",
         "plugins/*/src/**/*.ts",
         // Production's hostname and the docs site's routes on it (docs/infrastructure.md#domain).

@@ -50,6 +50,7 @@ export const run = async (
   fetch: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<number> => {
   let url: Redacted.Redacted<string> | undefined
+  let databaseOperation = false
   try {
     refuseUncheckedTls(env)
     const { values } = parseArgs({
@@ -71,14 +72,17 @@ export const run = async (
         if (env.NEON_ORG_ID === undefined || env.NEON_ORG_ID === "") throw new Error("NEON_ORG_ID is not set: run under mvp-prod-env")
         return neonUri({ key: env.NEON_API_KEY, orgId: env.NEON_ORG_ID, project: values.project, stage: values.stage! }, fetch)
       })()
+    databaseOperation = true
     const database = Database.layer(url)
+    databaseOperation = false
+    databaseOperation = true
     const row = await Effect.runPromise(Effect.scoped(
       expire(`github/${values.repo}`, values.person).pipe(Effect.provide(database)),
     ))
     io.out(JSON.stringify(row))
     return 0
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = databaseOperation && url !== undefined ? Database.diagnostic(error, url) : (error instanceof Error ? error.message : String(error))
     io.err(scrub(`role row not aged: ${message.split("\n")[0]}`, secretsOf(env, url)))
     return 1
   }

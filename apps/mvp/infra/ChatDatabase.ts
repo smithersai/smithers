@@ -6,8 +6,9 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Effect, FileSystem, type Redacted } from "effect"
 import * as Database from "../db/Database.ts"
+import * as Connection from "../ops/database/Connection.ts"
 import { COMPUTE_MAX_CU, COMPUTE_MIN_CU, CONNECTION_BUDGET } from "./Connections.ts"
-import { Compute, directUrl, Postgres } from "./Postgres.ts"
+import { Compute, migrationUrl, Postgres } from "./Postgres.ts"
 
 /**
  * Applies `db/migrations` to the production database with `Database.migrate`, the migrations `pnpm db:migrate` runs
@@ -17,10 +18,7 @@ import { Compute, directUrl, Postgres } from "./Postgres.ts"
 const Migrations = Alchemy.Action(
   "ChatMigrations",
   (input: { readonly database: Redacted.Redacted<string>; readonly migrations: ReadonlyArray<string> }) =>
-    Database.migrateAndReport.pipe(
-      Effect.as(input.migrations),
-      Effect.provide(Database.layer(Effect.succeed(input.database))),
-    ),
+    Connection.migrate(input.database).pipe(Effect.as(input.migrations)),
 )
 
 /** The migration files in `db/migrations`, in order. */
@@ -58,7 +56,7 @@ export const Databases = Effect.gen(function* () {
     minCu: COMPUTE_MIN_CU,
     maxCu: COMPUTE_MAX_CU,
   })
-  const migrated = yield* Migrations({ database: directUrl(postgres), migrations: yield* migrationFiles })
+  const migrated = yield* Migrations({ database: migrationUrl(postgres), migrations: yield* migrationFiles })
   const origin = Output.map(Output.all(postgres.origin, migrated, compute), ([origin]) => origin)
   // Each config's share of the compute's connections (infra/Connections.ts `CONNECTION_BUDGET`).
   const chat = yield* Cloudflare.Hyperdrive.Connection("ChatDatabase", {

@@ -102,6 +102,7 @@ export const run = async (
   fetch: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<number> => {
   let url: Redacted.Redacted<string> | undefined
+  let databaseOperation = false
   const secrets = () => [...secretsOf(env, url), ...(env.CLOUDFLARE_API_TOKEN === undefined ? [] : [env.CLOUDFLARE_API_TOKEN])]
   try {
     refuseUncheckedTls(env)
@@ -134,21 +135,26 @@ export const run = async (
         if (env.NEON_API_KEY === undefined || env.NEON_ORG_ID === undefined) throw new Error("NEON_API_KEY and NEON_ORG_ID are required: run under mvp-prod-env")
         return neonUri({ key: env.NEON_API_KEY, orgId: env.NEON_ORG_ID, project: values.project, stage: values.stage! }, fetch)
       })()
+    databaseOperation = true
     const database = Database.layer(url)
+    databaseOperation = false
     const serving = await check()
+    databaseOperation = true
     const result = await Effect.runPromise(Effect.scoped(cutover(ENGINE_SCHEMA).pipe(Effect.provide(database))))
     if (result.outcome === "blocked") {
       io.out(JSON.stringify(result))
       return 1
     }
     // What started while it ran: a deploy, a TODO. It holds settings read before the cut, so the cut must run again.
+    databaseOperation = false
     const after = await check()
+    databaseOperation = true
     const raced = await Effect.runPromise(Effect.scoped(blockers(ENGINE_SCHEMA).pipe(Effect.provide(database))))
     const clean = JSON.stringify(after) === JSON.stringify(serving) && raced.jobs.length === 0 && raced.runs.length === 0
     io.out(JSON.stringify({ ...result, by: values.by, release: values.release, serving, ...(clean ? {} : { rerun: raced }) }))
     return clean ? 0 : 1
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = databaseOperation && url !== undefined ? Database.diagnostic(error, url) : (error instanceof Error ? error.message : String(error))
     io.err(scrub(`runner cutover not done: ${message.split("\n")[0]}`, secrets()))
     return 1
   }
@@ -156,7 +162,7 @@ export const run = async (
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const fail = (error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = Database.diagnostic(error, Redacted.make(process.env.DATABASE_URL ?? ""))
     process.stderr.write(`${scrub(`runner cutover not done: ${message.split("\n")[0]}`, secretsOf(process.env))}\n`)
     process.exit(1)
   }

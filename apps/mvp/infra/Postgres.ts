@@ -5,6 +5,7 @@ import * as Alchemy from "alchemy"
 import * as Neon from "alchemy/Neon"
 import * as Output from "alchemy/Output"
 import { Config, Effect, Option, Redacted, Schema } from "effect"
+import { neonConnectionUri } from "../ops/database/Connection.ts"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 /** The most restore history Neon's Free plan allows, in seconds: six hours. */
@@ -33,15 +34,18 @@ export const Postgres = Neon.Project(
 ).pipe(Alchemy.RemovalPolicy.retain())
 
 /**
- * The project's direct (non-pooled) connection URI with `sslmode=require`, as a secret. Neon's URI also asks for
- * `channel_binding`, which Electric's URL parser doesn't take, so it is dropped; TLS still verifies the server.
+ * Electric's direct (non-pooled) URI, as a secret. Its parser does not take channel_binding.
  */
-export const directUrl = (postgres: Neon.Project) =>
+export const directUrl = (postgres: Pick<Neon.Project, "connectionUri">) =>
   Output.map(postgres.connectionUri, (uri: string) => {
     const url = new URL(uri)
     url.searchParams.delete("channel_binding")
     return Redacted.make(url.toString())
   })
+
+/** Deployment migrations share the operator's Neon normalization and explicit verify-full boundary. */
+export const migrationUrl = (postgres: Pick<Neon.Project, "connectionUri">) =>
+  Output.map(postgres.connectionUri, neonConnectionUri)
 
 const Endpoint = Schema.Struct({
   id: Schema.String,

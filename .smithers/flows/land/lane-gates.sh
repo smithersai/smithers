@@ -149,8 +149,10 @@ newreds=()
 # PostgreSQL is required: database tests must run, never skip.
 export SMITHERS_TEST_DATABASE_URL=${SMITHERS_TEST_DATABASE_URL:-postgres://smithers@127.0.0.1:${FR_PG_PORT:-55440}/postgres?sslmode=disable}
 export SMITHERS_REQUIRE_DATABASE_TESTS=1
-if ! psql "$SMITHERS_TEST_DATABASE_URL" -Atc 'select 1' >/dev/null 2>&1 && ! pg_isready -d "$SMITHERS_TEST_DATABASE_URL" >/dev/null 2>&1; then
-  echo "BLOCKED: no PostgreSQL at $SMITHERS_TEST_DATABASE_URL (database tests must run, not skip)" | tee -a "$log"; exit 1
+database_probe=$(node "$root/apps/mvp/ops/database/Probe.ts" 2>&1); database_status=$?
+if [ "$database_status" -ne 0 ]; then
+  # Probe emits fixed host-only diagnostics; never tee the connection string or raw driver output.
+  printf '%s\n' "$database_probe" | tee -a "$log"; exit 1
 fi
 
 # 1. The gates .smithers/flows/land/commit.mjs requires before any push to main.

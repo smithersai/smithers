@@ -157,6 +157,8 @@ test('a lane checkout reaches its prerequisites under .smithers/flows/land', t =
   const repo = join(dir, 'repo'), home = join(dir, 'home'), bin = join(dir, 'bin')
   for (const path of [join(repo, '.smithers/flows/land'), join(home, 'lanes'), bin]) mkdirSync(path, { recursive: true })
   for (const file of ['lane-gates.sh', 'lane-prerequisites.sh']) copyFileSync(resolve(import.meta.dirname, file), join(repo, '.smithers/flows/land', file))
+  mkdirSync(join(repo, 'apps/mvp/ops/database'), { recursive: true })
+  for (const file of ['Probe.ts', 'Policy.ts']) copyFileSync(resolve(import.meta.dirname, '../../../apps/mvp/ops/database', file), join(repo, 'apps/mvp/ops/database', file))
   writeFileSync(join(home, 'lanes/main-baseline-failures.txt'), 'some test\n')
   writeFileSync(join(bin, 'bun'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
   // Cargo writes to the workspace target at the repository root, whatever its working directory.

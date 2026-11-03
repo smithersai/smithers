@@ -160,6 +160,7 @@ async (
   fetch: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<number> => {
   let url: Redacted.Redacted<string> | undefined
+  let databaseOperation = false
   try {
     refuseUncheckedTls(env)
     const { values } = parseArgs({
@@ -181,13 +182,16 @@ async (
         if (env.NEON_ORG_ID === undefined || env.NEON_ORG_ID === "") throw new Error("NEON_ORG_ID is not set: run under mvp-prod-env")
         return neonUri({ key: env.NEON_API_KEY, orgId: env.NEON_ORG_ID, project: values.project, stage: values.stage! }, fetch)
       })()
+    databaseOperation = true
     const database = Database.layer(url)
+    databaseOperation = false
     const work = await act({ by: values.by, release: values.release, id: values.id }, () => deployedBuild(env.APP_DOMAIN, fetch))
+    databaseOperation = true
     const row = await Effect.runPromise(Effect.scoped(work.pipe(Effect.provide(database))))
     io.out(JSON.stringify(row))
     return 0
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = databaseOperation && url !== undefined ? Database.diagnostic(error, url) : (error instanceof Error ? error.message : String(error))
     io.err(scrub(`${failure}: ${message.split("\n")[0]}`, secretsOf(env, url)))
     return 1
   }
@@ -198,7 +202,7 @@ export const asMain = (url: string, failure: string, command: ReturnType<typeof 
   if (url !== `file://${process.argv[1]}`) return
   // Anything that escapes the command still prints one scrubbed line and nothing else: never a stack, a key or a password.
   const fail = (error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = Database.diagnostic(error, Redacted.make(process.env.DATABASE_URL ?? ""))
     process.stderr.write(`${scrub(`${failure}: ${message.split("\n")[0]}`, secretsOf(process.env))}\n`)
     process.exit(1)
   }

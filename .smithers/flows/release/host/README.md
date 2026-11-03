@@ -117,3 +117,12 @@ calling backup. It never fills a volume itself. After restoring normal free
 space, `retention` takes four backups and verifies that exactly the newest three
 remain. These stages require the composed maintenance providers and have not
 been qualified on Linux.
+
+Database evidence queries require an explicit Postgres URL. Remote authorities
+require `sslmode=verify-full`, or `sslmode=require&sslrootcert=<CA file>`; the
+recorder promotes the latter to `verify-full` so libpq verifies the hostname.
+Unpinned verification uses libpq's system roots (`sslrootcert=system`, libpq 17
+or newer). Literal loopback may use plaintext. Bare database names, key/value
+connection strings and endpoint/service overrides are refused. Every database
+subprocess passes the shared `apps/mvp/ops/database/Policy.ts` boundary; failed
+receipts carry a fixed host-only diagnostic instead of driver text.
