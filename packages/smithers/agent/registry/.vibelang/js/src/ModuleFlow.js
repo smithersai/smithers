@@ -14,7 +14,7 @@
  */
 import * as Digest from "@smthrs/core/Digest";
 import * as Option from "effect/Option";
-import { BodyRefModule, DiscoveryWarning, FlowDescriptor, SchemaRefModule, SchemaRefNone, } from "./Descriptor.js";
+import { BodyRefModule, DiscoveryWarning, FlowDescriptor, SchemaRefModule, SchemaRefNone } from "./Descriptor.js";
 import * as ModuleMetadata from "./internal/ModuleMetadata.js";
 import { deriveBudget } from "./MarkdownFlow.js";
 const warning = (code, path, message, name) => new DiscoveryWarning({ code, path, message, name });
@@ -65,13 +65,13 @@ export const fromModule = (options) => {
                 // Absent, not empty, when the entry loads nothing beside itself: such
                 // a module keeps the identity it had before a closure was recorded.
                 ...(imports.length === 0 ? {} : { imports }),
-                ...(hostImports.length === 0 ? {} : { hostImports }),
+                ...(hostImports.length === 0 ? {} : { hostImports })
             }),
             input: metadata.hasInput
                 ? new SchemaRefModule({
                     path: options.path,
                     field: "input",
-                    ...metadata.inputDocument === undefined ? {} : { document: metadata.inputDocument },
+                    ...metadata.inputDocument === undefined ? {} : { document: metadata.inputDocument }
                 })
                 : new SchemaRefNone({}),
             output: metadata.hasOutput
@@ -86,9 +86,9 @@ export const fromModule = (options) => {
             ...budget === undefined ? {} : { budget },
             path: options.path,
             frontmatter: {},
-            provenance: options.provenance,
+            provenance: options.provenance
         })),
         tag: metadata.tag,
-        warnings,
+        warnings
     };
 };

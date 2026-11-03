@@ -25,8 +25,8 @@ export const mergePluginLayers = (plugins, cacheEnvironment) => {
                 code: "layer_failed",
                 message: `plugin "${plugin.name}" failed to build its layer`,
                 plugin: plugin.name,
-                cause,
-            })))),
+                cause
+            }))))
         ]
         : []);
     const merged = (layers.length === 0

@@ -25,7 +25,7 @@ const named = new Set([
     "/",
     "?",
     "[",
-    "]",
+    "]"
 ]);
 const modifiers = ["mod", "ctrl", "alt", "shift"];
 const stroke = (text) => {

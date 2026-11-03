@@ -71,7 +71,7 @@ export const split = (text) => {
     const body = rest.slice(closing.index + closing[0].length);
     return {
         frontmatter: rest.slice(0, closing.index),
-        body: body.replace(/^\r?\n/, ""),
+        body: body.replace(/^\r?\n/, "")
     };
 };
 /**
@@ -90,7 +90,7 @@ export const parse = (frontmatter) => {
     try {
         const document = parseDocument(frontmatter, {
             schema: "failsafe",
-            uniqueKeys: true,
+            uniqueKeys: true
         });
         if (document.errors.length > 0) {
             return Result.fail(document.errors.slice(0, 3).map(summarizeIssue).join("; "));
@@ -119,7 +119,7 @@ export const parse = (frontmatter) => {
             value: entry,
             enumerable: true,
             writable: false,
-            configurable: false,
+            configurable: false
         });
     }
     return Result.succeed(Object.freeze(result));

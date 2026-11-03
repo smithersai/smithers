@@ -29,6 +29,6 @@ export const make = Effect.map(Ref.make(new Map()), (entries) => {
         get: (triggerId) => Effect.map(Ref.get(entries), (current) => current.get(triggerId)),
         take: (triggerId, entry) => Ref.update(entries, (current) => new Map(current).set(triggerId, entry)),
         update: fenced,
-        remove: (triggerId, occurrence) => fenced(triggerId, occurrence, () => undefined),
+        remove: (triggerId, occurrence) => fenced(triggerId, occurrence, () => undefined)
     };
 });

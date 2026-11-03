@@ -77,7 +77,7 @@ const regexPrecedingKeywords = new Set([
     "throw",
     "typeof",
     "void",
-    "yield",
+    "yield"
 ]);
 /** The punctuation a regular expression may follow, rather than a division. */
 const regexPrecedingPunctuation = new Set(["(", "[", "{", ",", ":", ";", "=", "!", "?", "&", "|", "+", "-", "*", "%", "^", "~", "<", ">"]);
@@ -92,7 +92,7 @@ const start = {
     beforeThat: undefined,
     lineBreak: false,
     closesCondition: false,
-    reading: "likely",
+    reading: "likely"
 };
 /** Whether a name token is a property or private name (`a.return`, `#return`) rather than a keyword. */
 const isPropertyName = (token, before) => token.value.startsWith("#") || (before?.kind === "punctuation" && before.value === ".");
@@ -287,7 +287,7 @@ export const tokenize = (source, reading = "likely") => {
             beforeThat: tokens.at(-3),
             lineBreak: previous !== undefined && /[\n\r\u2028\u2029]/.test(source.slice(previous.end, index)),
             closesCondition,
-            reading,
+            reading
         };
     };
     while (offset < source.length) {
@@ -674,7 +674,7 @@ const effectDeclaration = (source, capabilities, warnings) => {
         warnings.push({
             message: properties === undefined
                 ? "Effects must be a statically projectable object literal; using conservative effects"
-                : "Effects contain an object spread or computed member; using conservative effects",
+                : "Effects contain an object spread or computed member; using conservative effects"
         });
     }
     const paths = (key) => {
@@ -698,8 +698,8 @@ const effectDeclaration = (source, capabilities, warnings) => {
                     writes: paths("writes"),
                     mode: literal("mode"),
                     onConflict: literal("onConflict"),
-                    tier: literal("tier"),
-                },
+                    tier: literal("tier")
+                }
     });
     let reportedPolicy = false;
     for (const problem of projection.problems) {
@@ -708,7 +708,7 @@ const effectDeclaration = (source, capabilities, warnings) => {
                 break;
             case "unreadableMember":
                 warnings.push({
-                    message: `Effects ${problem.member} must be a string-literal array; using the conservative wildcard`,
+                    message: `Effects ${problem.member} must be a string-literal array; using the conservative wildcard`
                 });
                 break;
             case "invalidMode":
@@ -716,18 +716,18 @@ const effectDeclaration = (source, capabilities, warnings) => {
                 if (!reportedPolicy) {
                     reportedPolicy = true;
                     warnings.push({
-                        message: "Effects mode and conflict policy must be string literals; using conservative effects",
+                        message: "Effects mode and conflict policy must be string literals; using conservative effects"
                     });
                 }
                 break;
             case "invalidTier":
                 warnings.push({
-                    message: "Effects tier must be a sealed, compensable, or irreversible string literal; using irreversible",
+                    message: "Effects tier must be a sealed, compensable, or irreversible string literal; using irreversible"
                 });
                 break;
             case "underClassifiedTier":
                 warnings.push({
-                    message: `Effect tier ${problem.declared} under-classifies declared authority; using ${problem.projected}`,
+                    message: `Effect tier ${problem.declared} under-classifies declared authority; using ${problem.projected}`
                 });
                 break;
         }
@@ -953,7 +953,7 @@ export const parse = (source) => {
             declaresName: false,
             declaredName: Option.none(),
             tag: Option.none(),
-            warnings: [{ message: "Could not statically read the default Flow.make declaration" }],
+            warnings: [{ message: "Could not statically read the default Flow.make declaration" }]
         };
     }
     const parsedProperties = propertiesFrom(source.slice(flowObject.start + 1, flowObject.end));
@@ -980,7 +980,7 @@ export const parse = (source) => {
     if (literalCapabilities === undefined) {
         warnings.push({
             message: "Capabilities must be a string-literal array for discovery; using the conservative wildcard",
-            line: lineAt(parsedProperties.offsets.get("capabilities")),
+            line: lineAt(parsedProperties.offsets.get("capabilities"))
         });
     }
     // A delegating flow that declares a readable capability list narrows the
@@ -992,13 +992,13 @@ export const parse = (source) => {
     if (hasUnprojectableFlows && !narrowsDelegation) {
         warnings.push({
             message: "Flow authority cannot be projected statically; using the conservative wildcard",
-            line: lineAt(parsedProperties.offsets.get("flows")),
+            line: lineAt(parsedProperties.offsets.get("flows"))
         });
     }
     if (parsedProperties.hasUnprojectableMembers) {
         warnings.push({
             message: "Object spread or computed properties make schemas and authority unprojectable; using conservative projections",
-            line: lineAt(parsedProperties.unprojectableOffset),
+            line: lineAt(parsedProperties.unprojectableOffset)
         });
     }
     const capabilities = narrowsDelegation && delegation !== undefined
@@ -1050,6 +1050,6 @@ export const parse = (source) => {
         declaresName: properties.has("name"),
         declaredName: Option.fromUndefinedOr(stringLiteral(properties.get("name"))),
         tag: Option.fromUndefinedOr(flowObject.tag),
-        warnings,
+        warnings
     };
 };

@@ -43,7 +43,7 @@ const nodeRecord = (event, eventType, decode) => {
     return {
         executionId: envelope.executionId,
         emittedAtMs: envelope.emittedAtMs,
-        payload: payload.value,
+        payload: payload.value
     };
 };
 const decodeScheduled = Schema.decodeUnknownOption(EngineEvent.NodeScheduledPayload);

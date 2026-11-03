@@ -73,8 +73,8 @@ export const loadModule = (loader) => Effect.tryPromise({
     catch: (cause) => new Sandbox.SandboxError({
         code: "runtime_failed",
         message: "QuickJS WebAssembly module could not be loaded",
-        cause,
-    }),
+        cause
+    })
 });
 /**
  * One compiled module per build, so two realms over one variant share it.

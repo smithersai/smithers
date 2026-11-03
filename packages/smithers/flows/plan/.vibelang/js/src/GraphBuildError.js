@@ -93,7 +93,7 @@ export const GraphBuildErrorCode = Schema.Literals([
     "dependency_cycle",
     "plan_too_large",
     "payload_too_large",
-    "invalid_node",
+    "invalid_node"
 ]);
 /**
  * A build the planner refuses, naming the site and the fix.
@@ -117,7 +117,7 @@ export class GraphBuildError extends Schema.TaggedError()("@smthrs/plan/GraphBui
     code: GraphBuildErrorCode,
     node: Schema.String,
     path: Schema.Array(Schema.String),
-    message: Schema.String,
+    message: Schema.String
 }) {
 }
 /**

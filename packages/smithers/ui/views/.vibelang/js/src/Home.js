@@ -266,7 +266,7 @@ export const Contributors = Schema.Literals(["role", "anyone"]);
 export const TextBlock = Schema.Struct({
     type: Schema.Literal("text"),
     title: Schema.optional(Title),
-    text: Prose,
+    text: Prose
 });
 /**
  * A list of links under an optional title: each a label and the URL it opens.
@@ -277,7 +277,7 @@ export const TextBlock = Schema.Struct({
 export const LinksBlock = Schema.Struct({
     type: Schema.Literal("links"),
     title: Schema.optional(Title),
-    links: Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumEntries)),
+    links: Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumEntries))
 });
 /**
  * The repository's flows, which the page lists from its own catalog: the
@@ -288,7 +288,7 @@ export const LinksBlock = Schema.Struct({
  */
 export const FlowsBlock = Schema.Struct({
     type: Schema.Literal("flows"),
-    title: Schema.optional(Title),
+    title: Schema.optional(Title)
 });
 /**
  * A prompt: a heading over the way to ask, and the flow that takes the
@@ -301,7 +301,7 @@ export const PromptBlock = Schema.Struct({
     type: Schema.Literal("prompt"),
     flow: Schema.optional(FlowName),
     title: Schema.optional(Title),
-    placeholder: Schema.optional(Title),
+    placeholder: Schema.optional(Title)
 });
 /**
  * The pictures an app block may wear: what the flow's result looks like.
@@ -321,7 +321,7 @@ export const AppBlock = Schema.Struct({
     type: Schema.Literal("app"),
     flow: FlowName,
     title: Title,
-    picture: AppPicture,
+    picture: AppPicture
 });
 /**
  * A Markdown file of the repository, read at the home's own commit.
@@ -332,7 +332,7 @@ export const AppBlock = Schema.Struct({
 export const MarkdownBlock = Schema.Struct({
     type: Schema.Literal("markdown"),
     path: RepositoryPath,
-    title: Schema.optional(Title),
+    title: Schema.optional(Title)
 });
 /**
  * The repository's live stack of changes, which the page reads itself: the
@@ -343,7 +343,7 @@ export const MarkdownBlock = Schema.Struct({
  */
 export const StackBlock = Schema.Struct({
     type: Schema.Literal("stack"),
-    title: Schema.optional(Title),
+    title: Schema.optional(Title)
 });
 /**
  * The view a repository flow declares, drawn in this place.
@@ -353,7 +353,7 @@ export const StackBlock = Schema.Struct({
  */
 export const ViewBlock = Schema.Struct({
     type: Schema.Literal("view"),
-    flow: FlowName,
+    flow: FlowName
 });
 /**
  * A project's opening: its name, a tagline, a paragraph, the command that
@@ -370,7 +370,7 @@ export const HeroBlock = Schema.Struct({
     text: Schema.optional(Line),
     install: Schema.optional(Command),
     actions: Schema.optional(Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumActions))),
-    announcement: Schema.optional(Link),
+    announcement: Schema.optional(Link)
 });
 /**
  * Source code shown as an example, with the file it would live in and its
@@ -384,7 +384,7 @@ export const CodeBlock = Schema.Struct({
     title: Schema.optional(Title),
     file: Schema.optional(Title),
     language: Schema.optional(Language),
-    code: Code,
+    code: Code
 });
 /**
  * One card: a title, a line under it, a small label above it (such as a
@@ -397,7 +397,7 @@ export const Card = Schema.Struct({
     title: Title,
     text: Schema.optional(Line),
     label: Schema.optional(Title),
-    url: Schema.optional(Url),
+    url: Schema.optional(Url)
 });
 /**
  * A grid of up to {@link maximumEntries} cards, with a link to the rest.
@@ -409,7 +409,7 @@ export const CardsBlock = Schema.Struct({
     type: Schema.Literal("cards"),
     title: Schema.optional(Title),
     cards: Schema.NonEmptyArray(Card).check(Schema.isMaxLength(maximumEntries)),
-    more: Schema.optional(Link),
+    more: Schema.optional(Link)
 });
 /**
  * One stat: a short value over its label, such as `MIT` over `License`.
@@ -428,7 +428,7 @@ export const Stat = Schema.Struct({ value: Title, label: Title });
 export const StatsBlock = Schema.Struct({
     type: Schema.Literal("stats"),
     title: Schema.optional(Title),
-    stats: Schema.NonEmptyArray(Stat).check(Schema.isMaxLength(maximumStats)),
+    stats: Schema.NonEmptyArray(Stat).check(Schema.isMaxLength(maximumStats))
 });
 /**
  * One release: its name, the page that describes it, its date and a line of
@@ -441,7 +441,7 @@ export const Release = Schema.Struct({
     name: Title,
     url: Url,
     date: IsoDate,
-    summary: Schema.optional(Line),
+    summary: Schema.optional(Line)
 });
 /**
  * Up to {@link maximumEntries} releases, newest first as declared, with a link
@@ -454,7 +454,7 @@ export const ReleasesBlock = Schema.Struct({
     type: Schema.Literal("releases"),
     title: Schema.optional(Title),
     releases: Schema.NonEmptyArray(Release).check(Schema.isMaxLength(maximumEntries)),
-    more: Schema.optional(Link),
+    more: Schema.optional(Link)
 });
 /**
  * The repository's issues and pull requests at a glance, which the page
@@ -466,7 +466,7 @@ export const ReleasesBlock = Schema.Struct({
  */
 export const IssuesBlock = Schema.Struct({
     type: Schema.Literal("issues"),
-    title: Schema.optional(Title),
+    title: Schema.optional(Title)
 });
 /**
  * A key a person presses for an `action` block's button: one lowercase letter.
@@ -488,7 +488,7 @@ export const ActionBlock = Schema.Struct({
     type: Schema.Literal("action"),
     flow: FlowName,
     title: Title,
-    key: Schema.optional(Key),
+    key: Schema.optional(Key)
 });
 /**
  * Recent flow runs, which the page reads itself, failures first. The block
@@ -499,7 +499,7 @@ export const ActionBlock = Schema.Struct({
  */
 export const RunsBlock = Schema.Struct({
     type: Schema.Literal("runs"),
-    title: Schema.optional(Title),
+    title: Schema.optional(Title)
 });
 /**
  * One declared block.
@@ -523,7 +523,7 @@ export const Block = Schema.Union([
     ReleasesBlock,
     IssuesBlock,
     RunsBlock,
-    ActionBlock,
+    ActionBlock
 ]);
 /**
  * The kinds of block this reader knows, by their `type`.
@@ -547,7 +547,7 @@ export const kinds = [
     "releases",
     "issues",
     "runs",
-    "action",
+    "action"
 ];
 /**
  * The kinds of block whose rows a page reads itself, under its own access
@@ -567,7 +567,7 @@ export const liveKinds = ["flows", "stack", "issues", "runs"];
  */
 export const SectionHeading = Schema.Struct({
     title: Schema.optional(Title),
-    audience: Schema.optional(Audience),
+    audience: Schema.optional(Audience)
 });
 const known = new Set(kinds);
 const decodeBlock = Schema.decodeUnknownResult(Block);

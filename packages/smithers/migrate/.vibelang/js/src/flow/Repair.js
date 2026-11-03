@@ -30,14 +30,14 @@ export const action = AgentAction.make("smithers/migrate-v1/Repair", {
     payload: {
         unit: Contract.UnitBrief,
         round: Schema.Int,
-        failures: Report.VerificationResult,
+        failures: Report.VerificationResult
     },
     output: Transform.UnitResult,
     seat: Transform.seat,
     system: [Contract.text],
     prompt: ({ failures, round, unit }) => Contract.unitPrompt(unit, { round, verification: failures }),
     corrections: 1,
-    maxFrames: Transform.maxFrames,
+    maxFrames: Transform.maxFrames
 });
 /**
  * The repair step's implementation. It is the same agent loop, the same seat,

@@ -10,105 +10,105 @@
   "root": {
    "relative": "packages/smithers/ui/views"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/ui/views/tsconfig.json"
     },
-    "size": 1317,
-    "hash": "s02AZ7iiPkQY4QDvRQLvGNdJG57q_Eq68Lha1KWzSls"
+    "size": 1278,
+    "hash": "fdV_EYkhwhntjc3KDPpMtIf-xdYphiReKL1n1h0Bviw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/tsconfig.json"
     },
-    "size": 1454,
-    "hash": "Qi3miZE-DWxLH1zIyMGLuVTTSRHrvEfzFb2ynnEutmI"
+    "size": 1415,
+    "hash": "CQGGkEBWRZqHYtj0LlTgLdLgsLcO6SkyNgBS9k0d9Hs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "kX8q1iNWIj4BmVzY_IUz7VZgBYmXEViKvqcjm5q_7aM"
+    "size": 1328,
+    "hash": "ma5DHvQE48VgxNilZCWgqR7uME4BIWXbdVjvlXaBW2o"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/harness/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    }
   ],
   "directories": [
@@ -286,7 +286,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -311,7 +311,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -340,98 +340,98 @@
      "relative": "packages/smithers/ui/views/package.json"
     },
     "size": 3470,
-    "hash": "qZZc8kRJqKi1X8-TAC60kfdtI6J4KJ-kDa-Mz_dqB7Q"
+    "hash": "R_4gcb8-aIlvMAJx_alO-Cuj2wEPDNjN2ag3h556DOo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
+    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
+    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
+    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "kTwGKJsTp4FVGxmKUOPZg3c06ZLfQDJah4Eo8ALa1HE"
+    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "HkEsBZn5oE73FkMHp1IVWloRAQivyKChWC6xDwTCWqA"
+    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "fK0vdi3dDFOTMob0LKiDB1WNp5SxbwEp_tzeMqevZQc"
+    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "BdDRbIPt5QY59jYpdII9ws0c-Hr64YvA6FvaiRCvZII"
+    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
-    "size": 15062,
-    "hash": "Ehoav5n_0WiCoUYF2geBfe9CWBxFJmFFbZd4MnMPjks"
+    "size": 15090,
+    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/harness/package.json"
     },
     "size": 20352,
-    "hash": "nrt7xT9VLByhTqWYw_IL5Pb0VUTeRvz2p3S1lGUc6i0"
+    "hash": "WdHH54Psx7LmsVGgdyKbD73Ry0-Pj8AAyBFlZNBFSIQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "O9iDHySpA30BJ4H48_xLoYKtd_38nfhgRWUlLwL8hII"
+    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
    },
    {
     "path": {
@@ -445,7 +445,7 @@
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "UCLgpI-A-WxW-qbLTBrkIVPiG78MZVE_4OtUN_SdOtE"
+    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
    },
    {
     "path": {
@@ -487,7 +487,7 @@
      "relative": "packages/smithers/notifications/package.json"
     },
     "size": 8141,
-    "hash": "Q3EwCJGuGWWUzIoXyNqaEnYRl5mtDjBK9jLf-5q7QiU"
+    "hash": "O-3M6m6J761jj3XuevgCMWkZ0TCgCy_P5F6i9Z8fX9g"
    },
    {
     "path": {
@@ -662,7 +662,7 @@
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "ChhNRC9WpUe0JlBdu_RF9QYJMOG0J9A3o5IgLYQETzo"
+    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
    },
    {
     "path": {
@@ -2539,8 +2539,8 @@
     "path": {
      "relative": "packages/smithers/ui/views/src/Interactions.vibe"
     },
-    "size": 4643,
-    "hash": "_lYAqRfHnZsC-wSK-HgtgnBGy0HiVRroK5CCVLHx1fA"
+    "size": 4641,
+    "hash": "rQO5-PTg4AN9K8XxSINT3kAPBTA1M_cbbFr77YtxPxs"
    },
    {
     "path": {
@@ -2616,8 +2616,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -2805,15 +2805,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -3113,8 +3113,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -3190,8 +3190,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -3351,8 +3351,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -3904,8 +3904,8 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
     },
-    "size": 1367,
-    "hash": "KMRUmP-9Pq4fef97WjRMVwdSdKCtuF_hiS_zyvdpojA"
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
    },
    {
     "path": {
@@ -3988,15 +3988,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -4135,15 +4135,15 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelEvent.vibe"
     },
-    "size": 18314,
-    "hash": "eOL13_VciDeTo0iNlkIXAmFUugbKekeib4ci8BPEZPs"
+    "size": 18290,
+    "hash": "EM2Wgs3n09Qq5zx2VFOfkjl-HAEFcuMUcUT86SIXfmM"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelError.vibe"
     },
-    "size": 8728,
-    "hash": "wSPjMwN0Cbn18xiMUEWl6WVNKsvJ8I_-NwW9RnxkzAM"
+    "size": 8723,
+    "hash": "zGcY8dlcbHfrNn7DKU23zk9XRa_KITDZljq1K_pXAL8"
    },
    {
     "path": {
@@ -4184,8 +4184,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/StepFact.vibe"
     },
-    "size": 2106,
-    "hash": "4p5BwxZdwwqDTkEe6XaRTdBpC9svUS3xGkJGFphRfmo"
+    "size": 2103,
+    "hash": "b3kkgDyilW3C-FW4fdO4ounbiKeP_KuJRi79-7KoC5s"
    },
    {
     "path": {
@@ -4219,15 +4219,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/EventTally.vibe"
     },
-    "size": 801,
-    "hash": "jqNAp8SGRoVgR2UGFcQbDqD4VnG7fA7oCOkc8hwA_Nw"
+    "size": 800,
+    "hash": "_DXFihbOGu_VKm5BvOTjgOjn52C9LseZwxmqEucrkvQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
     },
-    "size": 963,
-    "hash": "h558rP8T8bGGWY1J39KkFj2H_C3ZwzleEC_jdLro1WY"
+    "size": 962,
+    "hash": "MWPlQMr_t56pVGgwDW0MWW24aMFIVC-RYfA3thfgK7w"
    },
    {
     "path": {
@@ -4240,8 +4240,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
     },
-    "size": 4805,
-    "hash": "TV_P427Tpq3T5TcSdUJ13uwDMQgjY6FQgBXaWOQ7ORA"
+    "size": 4800,
+    "hash": "0MAnTLasHh_cI-vlZtI_0FpjmdWsh6Itt25uXOU7e9c"
    },
    {
     "path": {
@@ -4366,8 +4366,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/internal/CallTiming.vibe"
     },
-    "size": 5055,
-    "hash": "03zZJDLpkCipolLqyh6_vw7-bJ8pM76ZL9U24RRJUBg"
+    "size": 5049,
+    "hash": "m7MdltMdCMjfgMT7s3m6iODwAVH17BcK75IT8cq16PM"
    },
    {
     "path": {
@@ -4380,8 +4380,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Pricing.vibe"
     },
-    "size": 6515,
-    "hash": "Q7ywCOCqjPaB7HvdXI_frhgUjKgiMAT098WeAbn0YZw"
+    "size": 6514,
+    "hash": "a4_mNhjGrGplAxO9L7QXxCq7NHo2aBrYmLsTcsJf49s"
    },
    {
     "path": {
@@ -4611,15 +4611,15 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Limits.vibe"
     },
-    "size": 3219,
-    "hash": "CIj4MRtMTMc11jEn1pXnOLibMR1El2LxLzoNrRnOQVI"
+    "size": 3214,
+    "hash": "OFcLpAJzZWsJJ0cybMQ-Srkp_OgQcrWBGg4_w0VT_Lo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Signature.vibe"
     },
-    "size": 16471,
-    "hash": "HNeTROivOMqBJzQGXqsGcTenpxegL4XxK8key3d-2K4"
+    "size": 16444,
+    "hash": "_n53tKqUgjWnQj9oNaOLwRVpIwXRvKOknhBGcnaPi-c"
    },
    {
     "path": {
@@ -4933,8 +4933,8 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/skillFrontmatter.vibe"
     },
-    "size": 5100,
-    "hash": "JkPsJqXZHDDpRQDbS0e8Zm7nhuNp5OPkbZP_qWhNadA"
+    "size": 5097,
+    "hash": "POYj7x08XrCO954XGJiLpfLZ2Y-_Cxm3zeoxm8ExRM0"
    },
    {
     "path": {
@@ -4954,8 +4954,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Classifier.vibe"
     },
-    "size": 20005,
-    "hash": "9TB5l95-0Vi6bJP8wZ5PhA_Y_8BtlptgXaLVTCiTFyQ"
+    "size": 20026,
+    "hash": "qh_rs-6k3bn46d8dUsOS0eqa_vHOYWVdW4Dw_qN7IVg"
    },
    {
     "path": {
@@ -5171,15 +5171,15 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/CallLedger.vibe"
     },
-    "size": 25247,
-    "hash": "H-0T0hZ9QqDSMIgQb3gzxgXpxTpL5nkkhWqVlrVdbOU"
+    "size": 25240,
+    "hash": "3ugD1cpzRsXW_fODldJ2pP4LNItW61IUin3Z5tWLtJI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/harness/src/VariablesPanel.vibe"
     },
-    "size": 6226,
-    "hash": "jAflhTjKPGkeNbnrDFKn3boF5mfVoRusHWf5Civc9lw"
+    "size": 6221,
+    "hash": "uwFqzJBPA7oew-W-HeVG88j4qwu9BL1cFqhCwJ2RvVw"
    },
    {
     "path": {
@@ -5255,8 +5255,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/Monitor.vibe"
     },
-    "size": 17852,
-    "hash": "Flc3gBbItY_DQeu6thxB4okELBh7iNuiw8WWhBiD1hw"
+    "size": 17833,
+    "hash": "NEtjlp3rpp0yTybk3owhjC3sx0skM5LXK4zGVYWBu2c"
    },
    {
     "path": {
@@ -5269,8 +5269,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/Tokens.vibe"
     },
-    "size": 2974,
-    "hash": "viofe3i6t9-pLLtYHjqXM9_2UqXmra5CSo0C11gVsis"
+    "size": 2968,
+    "hash": "U2uTaPgKNIdTtGQzc40lJZB-Vj2zjwftp8e_dNpcw68"
    },
    {
     "path": {
@@ -5311,8 +5311,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/ToolStream.vibe"
     },
-    "size": 5173,
-    "hash": "q78qpzje1IHT39pSPmDJuEDpukf6vZZnml9MUx1vXiE"
+    "size": 5167,
+    "hash": "FgCEbMv-DYHPU1BqyJ3FMJ2LGjwOZhrJioG8A7YsVws"
    },
    {
     "path": {
@@ -5332,15 +5332,15 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Framing.vibe"
     },
-    "size": 5578,
-    "hash": "BZLuOHG89uW6suIxd32wbB794QeFHgsLSJWMszfEQiU"
+    "size": 5570,
+    "hash": "H9r5zYPbjlwaPq6EbEiP8pjJLd8Sv2yQPufCyVMKJQ0"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/src/FailureCopy.vibe"
     },
-    "size": 12850,
-    "hash": "htDARDEMzEC0_r_u5SqUIi_poaoD4TUdk0UioRvXCp4"
+    "size": 12824,
+    "hash": "cNkf89a6wMU2Sm88rSi6W1X3MipUVpRlykKFUIj9Zic"
    },
    {
     "path": {
@@ -5351,17 +5351,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/model/src/WireTrace.ts"
+     "relative": "packages/smithers/agent/model/src/WireTrace.vibe"
     },
-    "size": 1871,
-    "hash": "QqnAhj0oOFse3laKGJjOZ7HD7LcUgfHsjqC0DNmQje4"
+    "size": 1780,
+    "hash": "w3P2pIxy9SMe8gqz6WxN9_PprCDVCmtCi3gWJ5mMydM"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/model/src/internal/WireTrace.ts"
+     "relative": "packages/smithers/agent/model/src/internal/WireTrace.vibe"
     },
-    "size": 6969,
-    "hash": "x90FoUtH9BSQFze0Fdj_DgGFDZs_7Iwo5do6CSuK64k"
+    "size": 6884,
+    "hash": "uOsU5MNpe9TfwcpibMYZU4ihQjeAXB83I6ySsOId_n0"
    },
    {
     "path": {
@@ -5381,8 +5381,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Route.ts"
     },
-    "size": 28169,
-    "hash": "8dL1G_1WroInFDW3smyKKlveSMMtrHSRhY-bDSQAXgw"
+    "size": 28173,
+    "hash": "eDV-QvchQ1bt4ZgITahjSJ9xyeDO--yA0k_Lzt8jM7w"
    },
    {
     "path": {
@@ -5402,8 +5402,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/index.ts"
     },
-    "size": 2452,
-    "hash": "nBReT_h1x51he_CZ5c8PadX1ZM0glrAiFfsfVjbClFk"
+    "size": 2454,
+    "hash": "GwdYBHzVTMRrPRWqAW_R1527RSBYd_cePCQp3Jr7-Dw"
    },
    {
     "path": {
@@ -5626,15 +5626,15 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/QuickJSVariant.vibe"
     },
-    "size": 3711,
-    "hash": "LMG-EYkztTT9uzs3qs2Wxpz-7viUEQzGq2RMNXq6eJQ"
+    "size": 3707,
+    "hash": "KhVi5qgw8GhHOWjzPUbEsUkEkhOJWzVcTJI8hTQn5OE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/RegistryError.vibe"
     },
-    "size": 4329,
-    "hash": "7_18snT3dvkHYGAZBjHFbB5rEgaj1dvf1_ARWw64aYI"
+    "size": 4324,
+    "hash": "cVjx0oNYrfXf6huK-m3fBHVVUdBaFL7t4hvNLDogJBw"
    },
    {
     "path": {
@@ -6424,15 +6424,15 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Declared.vibe"
     },
-    "size": 1751,
-    "hash": "34cgDS6_EH_1EkMOHnE6_nJaisImMuCHzllFZWXB6AQ"
+    "size": 1747,
+    "hash": "uKJa4EmBRtlCx_DtDQNIrZrBMyxbWBXXLM6fDQQG2bA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/ModuleMetadata.vibe"
     },
-    "size": 43378,
-    "hash": "21-WakM0o_CV6QicRw2FleF7BdnfxP5qL0-B2Xj_QOQ"
+    "size": 43354,
+    "hash": "-j1rwxLHLFlz-TKpMYUfS1q49e8lTUmmmgkjUVdRLfw"
    },
    {
     "path": {
@@ -6445,22 +6445,22 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Names.vibe"
     },
-    "size": 2285,
-    "hash": "S-VM0xuTkTTvmKRwC0zZfSpaWgNpPkxSVjVWpwWVhyo"
+    "size": 2278,
+    "hash": "N58QLlT5ecYmsWcVOc9S3Qa9LdLrL5vqa84GBazkHqI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/MarkdownFlow.vibe"
     },
-    "size": 27635,
-    "hash": "LmH-9zS2mqqLUOThJ_a8fwbaCVjNxXW6dsK0cOoUrw0"
+    "size": 27581,
+    "hash": "6GqoFcuVy41_AYi_c5y3ujBTHiXEgWTDDq2dOSXTScQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/ModuleFlow.vibe"
     },
-    "size": 6463,
-    "hash": "lLr6mCi40WxUocDU8qK-wqGQccYQQW9TLfKOSy14aa8"
+    "size": 6451,
+    "hash": "2djBZIpwBzyexhd-7cfSz2DVkQKEwTP03Gk9_5YNttA"
    },
    {
     "path": {
@@ -6480,15 +6480,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -6522,15 +6522,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -6634,8 +6634,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/TruncatedOutput.vibe"
     },
-    "size": 10500,
-    "hash": "Zi-orCgBwfzGubTNvYrk3R878yfiiKsv46u3qD_BV-E"
+    "size": 10493,
+    "hash": "52U1XPYbUmG_uJ4PWS8690IANBdKFEtxoXC4S-PcAA0"
    },
    {
     "path": {
@@ -6676,8 +6676,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/DoneText.vibe"
     },
-    "size": 11989,
-    "hash": "jxb9Nf6x18b8K8N63C7YdI_hmGLyjfay_lKF8pBLWLE"
+    "size": 11987,
+    "hash": "ITfHlYATBZK1hz1QTd-Z4jsbbhiYVj324zG8yuq4DMI"
    },
    {
     "path": {
@@ -6704,8 +6704,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/VacuousVerification.vibe"
     },
-    "size": 14226,
-    "hash": "i6EeEx5OyygjZ1KG-0gQSsa9U84Jvtsa_zepiZqMwSM"
+    "size": 14221,
+    "hash": "YcxZg88wYvFkpUYV3RPOd2YphEyD5ksH5ang-VE3yXs"
    },
    {
     "path": {
@@ -6753,8 +6753,8 @@
     "path": {
      "relative": "packages/smithers/ui/views/src/Bridge.vibe"
     },
-    "size": 11745,
-    "hash": "tBiO-IDti2dL7i3R5ph8u_uzwdYlfcwg0gG7x4p12uc"
+    "size": 11734,
+    "hash": "V28iZoK0jX-qNJ7ds24kZFb0tht3A6je5AQDiFLWlvc"
    },
    {
     "path": {
@@ -6774,8 +6774,8 @@
     "path": {
      "relative": "packages/smithers/ui/views/src/Home.vibe"
     },
-    "size": 23800,
-    "hash": "gm1-MYs4y3ILRby3B9R9YVM1_XkHl6GehTce-1x8A9Y"
+    "size": 23770,
+    "hash": "qCSbRebLVm1RqmHb7xXCwox6bx0qyzps2UyS8MmRHnc"
    },
    {
     "path": {
@@ -6816,8 +6816,8 @@
     "path": {
      "relative": "packages/smithers/ui/views/src/ViewCsp.vibe"
     },
-    "size": 4420,
-    "hash": "7ReNm42NWI5TR7wzg7Qud6eQgfjAz6wo9K-WX3bDhAM"
+    "size": 4419,
+    "hash": "alXgbvnUSSi5QO-c7kXIBAftCSnwK3JIfCLXEsfjKqI"
    },
    {
     "path": {
@@ -7739,10 +7739,10 @@
     "relative": "packages/smithers/agent/model/src/FailureCopy.vibe"
    },
    {
-    "relative": "packages/smithers/agent/model/src/WireTrace.ts"
+    "relative": "packages/smithers/agent/model/src/WireTrace.vibe"
    },
    {
-    "relative": "packages/smithers/agent/model/src/internal/WireTrace.ts"
+    "relative": "packages/smithers/agent/model/src/internal/WireTrace.vibe"
    },
    {
     "relative": "packages/smithers/agent/model/src/OpenAIChatCompletions.ts"
@@ -8222,7 +8222,7 @@
       "relative": "packages/smithers/ui/views/src/Interactions.vibe"
      }
     ],
-    "code": "/**\n * The events a generated view declares, and the `data-event` attribute that\n * names one on an element.\n *\n * A view never runs code in the browser. Instead it marks a button or a form\n * with `data-event=\"name\"` or `data-event=\"name:arg\"`, and declares each name\n * in its module's `interactions` export:\n *\n * - a `state` event runs the view's `reduce` and renders again, with no model\n *   call;\n * - a `message` event becomes a question from the person, carrying the\n *   element's form values as data.\n *\n * An event whose name the view did not declare is refused, wherever it comes\n * from.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport * as Schema from \"effect/Schema\";\n/**\n * The most interactions one view may declare.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxDeclared = 32;\n/**\n * The longest `arg` an event may carry, in UTF-16 code units.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxArgLength = 256;\n/**\n * The longest label a `message` interaction may carry.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxLabelLength = 80;\nconst namePattern = /^[a-z][A-Za-z0-9_-]{0,31}$/;\n/**\n * An interaction's name: a lowercase letter, then up to 31 letters, digits,\n * `_` or `-`. It never contains `:`, which separates the name from its\n * argument in a `data-event` attribute.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Name = Schema.String.check(Schema.isPattern(namePattern));\n/**\n * An event that changes the view's own state: the parent runs `reduce` and\n * renders again. It never calls a model.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const StateInteraction = Schema.Struct({ kind: Schema.Literal(\"state\") });\n/**\n * An event that becomes a question from the person. `label` is the question's\n * text, such as the label of the button that sent it.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const MessageInteraction = Schema.Struct({\n    kind: Schema.Literal(\"message\"),\n    label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maxLabelLength)),\n});\n/**\n * One declared interaction.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Interaction = Schema.Union([StateInteraction, MessageInteraction]);\n/**\n * A view's `interactions` export: each event name it may send, and its kind.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Declared = Schema.Record(Schema.String, Interaction).check(Schema.isPropertyNames(Name), Schema.isMaxProperties(maxDeclared));\n/**\n * The argument a `data-event=\"name:arg\"` attribute carries.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Arg = Schema.String.check(Schema.isMaxLength(maxArgLength));\n/**\n * One event a view sent: the declared name and the optional argument from its\n * `data-event` attribute. `reduce` receives exactly this.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Event = Schema.Struct({ name: Name, arg: Schema.optionalKey(Arg) });\nconst decodeEvent = Schema.decodeUnknownOption(Event);\n/**\n * Reads a `data-event` attribute: `\"name\"` or `\"name:arg\"`. Everything after\n * the first `:` is the argument. A malformed name or an overlong argument is\n * `None`.\n *\n * @category parsing\n * @since 0.1.0\n */\nexport const parse = (attribute) => {\n    const at = attribute.indexOf(\":\");\n    return at === -1\n        ? decodeEvent({ name: attribute })\n        : decodeEvent({ name: attribute.slice(0, at), arg: attribute.slice(at + 1) });\n};\n/**\n * Writes the `data-event` attribute for an event: the inverse of {@link parse}.\n *\n * @category parsing\n * @since 0.1.0\n */\nexport const format = (event) => event.arg === undefined ? event.name : `${event.name}:${event.arg}`;\n/**\n * The declared interaction an event names, or `None` when the view did not\n * declare it. Own properties only, so `constructor` or `__proto__` never\n * match.\n *\n * @category lookups\n * @since 0.1.0\n */\nexport const lookup = (declared, name) => name !== \"constructor\" && name !== \"__proto__\" && Object.hasOwn(declared, name)\n    ? Option.some(declared[name])\n    : Option.none();\n",
+    "code": "/**\n * The events a generated view declares, and the `data-event` attribute that\n * names one on an element.\n *\n * A view never runs code in the browser. Instead it marks a button or a form\n * with `data-event=\"name\"` or `data-event=\"name:arg\"`, and declares each name\n * in its module's `interactions` export:\n *\n * - a `state` event runs the view's `reduce` and renders again, with no model\n *   call;\n * - a `message` event becomes a question from the person, carrying the\n *   element's form values as data.\n *\n * An event whose name the view did not declare is refused, wherever it comes\n * from.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport * as Schema from \"effect/Schema\";\n/**\n * The most interactions one view may declare.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxDeclared = 32;\n/**\n * The longest `arg` an event may carry, in UTF-16 code units.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxArgLength = 256;\n/**\n * The longest label a `message` interaction may carry.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxLabelLength = 80;\nconst namePattern = /^[a-z][A-Za-z0-9_-]{0,31}$/;\n/**\n * An interaction's name: a lowercase letter, then up to 31 letters, digits,\n * `_` or `-`. It never contains `:`, which separates the name from its\n * argument in a `data-event` attribute.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Name = Schema.String.check(Schema.isPattern(namePattern));\n/**\n * An event that changes the view's own state: the parent runs `reduce` and\n * renders again. It never calls a model.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const StateInteraction = Schema.Struct({ kind: Schema.Literal(\"state\") });\n/**\n * An event that becomes a question from the person. `label` is the question's\n * text, such as the label of the button that sent it.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const MessageInteraction = Schema.Struct({\n    kind: Schema.Literal(\"message\"),\n    label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maxLabelLength))\n});\n/**\n * One declared interaction.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Interaction = Schema.Union([StateInteraction, MessageInteraction]);\n/**\n * A view's `interactions` export: each event name it may send, and its kind.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Declared = Schema.Record(Schema.String, Interaction).check(Schema.isPropertyNames(Name), Schema.isMaxProperties(maxDeclared));\n/**\n * The argument a `data-event=\"name:arg\"` attribute carries.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Arg = Schema.String.check(Schema.isMaxLength(maxArgLength));\n/**\n * One event a view sent: the declared name and the optional argument from its\n * `data-event` attribute. `reduce` receives exactly this.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Event = Schema.Struct({ name: Name, arg: Schema.optionalKey(Arg) });\nconst decodeEvent = Schema.decodeUnknownOption(Event);\n/**\n * Reads a `data-event` attribute: `\"name\"` or `\"name:arg\"`. Everything after\n * the first `:` is the argument. A malformed name or an overlong argument is\n * `None`.\n *\n * @category parsing\n * @since 0.1.0\n */\nexport const parse = (attribute) => {\n    const at = attribute.indexOf(\":\");\n    return at === -1\n        ? decodeEvent({ name: attribute })\n        : decodeEvent({ name: attribute.slice(0, at), arg: attribute.slice(at + 1) });\n};\n/**\n * Writes the `data-event` attribute for an event: the inverse of {@link parse}.\n *\n * @category parsing\n * @since 0.1.0\n */\nexport const format = (event) => event.arg === undefined ? event.name : `${event.name}:${event.arg}`;\n/**\n * The declared interaction an event names, or `None` when the view did not\n * declare it. Own properties only, so `constructor` or `__proto__` never\n * match.\n *\n * @category lookups\n * @since 0.1.0\n */\nexport const lookup = (declared, name) => name !== \"constructor\" && name !== \"__proto__\" && Object.hasOwn(declared, name)\n    ? Option.some(declared[name])\n    : Option.none();\n",
     "map": {
      "version": 3,
      "file": "Interactions.js",
@@ -8242,7 +8242,7 @@
       "relative": "packages/smithers/ui/views/src/Bridge.vibe"
      }
     ],
-    "code": "/**\n * The four messages between a generated view's frame and the page that shows\n * it, and the checks the page runs on every message the frame sends.\n *\n * | Method | Direction | What it does |\n * | --- | --- | --- |\n * | `ui/initialize` | frame to page, request | the frame's runtime asks once with the nonce the page wrote into it; the reply carries `{ html, theme, size }` and transfers a `MessagePort` |\n * | `ui/notifications/host-context-changed` | page to frame | new HTML or a new theme |\n * | `ui/notifications/size-changed` | frame to page | the content's height |\n * | `smithers/interaction` | frame to page | `{ event, arg?, values? }` from a real click or submit on a `data-event` element |\n *\n * Every message is JSON-RPC 2.0, and the names follow MCP Apps where the two\n * overlap. Only `ui/initialize` travels by `postMessage` on the window; every\n * later message uses the transferred port.\n *\n * {@link receive} is what the page runs on a message from the port. It\n * decodes the message, bounds it, refuses an event the view did not declare,\n * and admits at most {@link maxInteractionsPerSecond} interactions a second.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport * as Schema from \"effect/Schema\";\nimport * as Interactions from \"./Interactions.js\";\nimport { jsonLength } from \"./internal/bytes.js\";\n/**\n * The largest form values one interaction may carry, as UTF-8 JSON.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxValuesBytes = 16 * 1024;\n/**\n * The largest view state, as UTF-8 JSON.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxStateBytes = 16 * 1024;\n/**\n * The largest HTML one render may produce, in UTF-8 bytes.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxHtmlBytes = 512 * 1024;\n/**\n * How many interactions the page admits from one frame in any second.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxInteractionsPerSecond = 10;\n/**\n * The most form values one interaction may carry.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxValues = 64;\n/**\n * The shortest and tallest an `inline` view's frame may be, in CSS pixels.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const inlineHeight = { min: 80, max: 480 };\n/**\n * The tallest height a frame may report. A larger report is malformed.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxReportedHeight = 1_000_000;\n/**\n * Where a view shows: `inline` in the message, `full` on its own page.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Size = Schema.Literals([\"inline\", \"full\"]);\n/**\n * The page's color theme, as the frame applies it.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Theme = Schema.Literals([\"light\", \"dark\"]);\n/**\n * The per-mount secret the page writes into the frame's document. Only the\n * frame it wrote can answer with it.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Nonce = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{22,128}$/));\nconst Id = Schema.Union([Schema.String.check(Schema.isMaxLength(64)), Schema.Int]);\n/**\n * `ui/initialize`: the frame's first and only window message.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Initialize = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    id: Id,\n    method: Schema.Literal(\"ui/initialize\"),\n    params: Schema.Struct({ nonce: Nonce }),\n});\n/**\n * What the frame needs to show the view: the sanitized-on-arrival HTML, the\n * theme, and the size it shows at.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const HostContext = Schema.Struct({\n    html: Schema.String,\n    theme: Theme,\n    size: Size,\n});\n/**\n * The page's answer to `ui/initialize`, posted with the port it transfers.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const InitializeResult = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    id: Id,\n    result: HostContext,\n});\n/**\n * `ui/notifications/host-context-changed`: new HTML, a new theme, or both.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const HostContextChanged = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    method: Schema.Literal(\"ui/notifications/host-context-changed\"),\n    params: Schema.Struct({ html: Schema.optionalKey(Schema.String), theme: Schema.optionalKey(Theme) }),\n});\n/**\n * `ui/notifications/size-changed`: the content's height in CSS pixels.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const SizeChanged = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    method: Schema.Literal(\"ui/notifications/size-changed\"),\n    params: Schema.Struct({\n        height: Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: maxReportedHeight })),\n    }),\n});\n/**\n * One form value an interaction carries.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Value = Schema.Union([Schema.String, Schema.Number.check(Schema.isFinite()), Schema.Boolean]);\n/**\n * The form values an interaction carries, by field name.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Values = Schema.Record(Schema.String, Value).check(Schema.isPropertyNames(Schema.String.check(Schema.isMaxLength(128))), Schema.isMaxProperties(maxValues));\n/**\n * `smithers/interaction`: a real click or submit on a `data-event` element.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Interaction = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    method: Schema.Literal(\"smithers/interaction\"),\n    params: Schema.Struct({\n        event: Interactions.Name,\n        arg: Schema.optionalKey(Interactions.Arg),\n        values: Schema.optionalKey(Values),\n    }),\n});\n/**\n * Every message the frame sends over its port.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const FrameMessage = Schema.Union([SizeChanged, Interaction]);\n/**\n * Why the page refused a message:\n *\n * - `wrong_source`: a window message that did not come from this mount's frame\n *   with its nonce;\n * - `malformed`: not one of the bridge's messages;\n * - `too_large`: form values over {@link maxValuesBytes};\n * - `undeclared`: an event the view did not declare;\n * - `rate_limited`: more than {@link maxInteractionsPerSecond} interactions in\n *   one second.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Refusal = Schema.Literals([\"wrong_source\", \"malformed\", \"too_large\", \"undeclared\", \"rate_limited\"]);\nconst decodeFrameMessage = Schema.decodeUnknownOption(FrameMessage);\nconst decodeInitialize = Schema.decodeUnknownOption(Initialize);\n/**\n * Decides what to do with one message from a frame's port.\n *\n * `now` is the page's clock in milliseconds. The returned `window` replaces\n * the one passed in. A refused interaction does not count against the rate.\n *\n * @category receiving\n * @since 0.1.0\n */\nexport const receive = (input) => {\n    const refuse = (reason) => ({ verdict: { _tag: \"Refused\", reason }, window: input.window });\n    const decoded = decodeFrameMessage(input.message);\n    if (Option.isNone(decoded))\n        return refuse(\"malformed\");\n    const message = decoded.value;\n    if (message.method === \"ui/notifications/size-changed\") {\n        return { verdict: { _tag: \"Resize\", height: message.params.height }, window: input.window };\n    }\n    const { arg, event: name, values = {} } = message.params;\n    const valuesBytes = jsonLength(values);\n    /* v8 ignore next -- `Values` admits only strings, finite numbers and booleans in a plain record, so its JSON always exists; the guard keeps the bound total */\n    if (valuesBytes === undefined || valuesBytes > maxValuesBytes)\n        return refuse(\"too_large\");\n    const declared = Interactions.lookup(input.declared, name);\n    if (Option.isNone(declared))\n        return refuse(\"undeclared\");\n    const recent = input.window.filter((at) => input.now - at < 1000 && at <= input.now);\n    if (recent.length >= maxInteractionsPerSecond)\n        return { ...refuse(\"rate_limited\"), window: recent };\n    const window = [...recent, input.now];\n    const event = arg === undefined ? { name } : { name, arg };\n    return declared.value.kind === \"state\"\n        ? { verdict: { _tag: \"State\", event }, window }\n        : { verdict: { _tag: \"Message\", event, label: declared.value.label, values }, window };\n};\n/**\n * Checks the frame's `ui/initialize`: it must decode and carry `nonce`. The\n * caller checks the other half, that the message came from this mount's\n * frame (`event.source === iframe.contentWindow`); an opaque `null` origin is\n * never identity.\n *\n * @category receiving\n * @since 0.1.0\n */\nexport const acceptInitialize = (message, nonce) => Option.filter(decodeInitialize(message), (initialize) => initialize.params.nonce === nonce);\n/**\n * The reply to an accepted `ui/initialize`.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const initializeResult = (initialize, context) => ({\n    jsonrpc: \"2.0\",\n    id: initialize.id,\n    result: context,\n});\n/**\n * A `ui/notifications/host-context-changed` notification.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const hostContextChanged = (params) => ({\n    jsonrpc: \"2.0\",\n    method: \"ui/notifications/host-context-changed\",\n    params,\n});\n/**\n * The height an `inline` frame takes for a reported content height: clamped\n * to {@link inlineHeight}.\n *\n * @category sizing\n * @since 0.1.0\n */\nexport const inlineFrameHeight = (reported) => Math.min(inlineHeight.max, Math.max(inlineHeight.min, Math.ceil(reported)));\n",
+    "code": "/**\n * The four messages between a generated view's frame and the page that shows\n * it, and the checks the page runs on every message the frame sends.\n *\n * | Method | Direction | What it does |\n * | --- | --- | --- |\n * | `ui/initialize` | frame to page, request | the frame's runtime asks once with the nonce the page wrote into it; the reply carries `{ html, theme, size }` and transfers a `MessagePort` |\n * | `ui/notifications/host-context-changed` | page to frame | new HTML or a new theme |\n * | `ui/notifications/size-changed` | frame to page | the content's height |\n * | `smithers/interaction` | frame to page | `{ event, arg?, values? }` from a real click or submit on a `data-event` element |\n *\n * Every message is JSON-RPC 2.0, and the names follow MCP Apps where the two\n * overlap. Only `ui/initialize` travels by `postMessage` on the window; every\n * later message uses the transferred port.\n *\n * {@link receive} is what the page runs on a message from the port. It\n * decodes the message, bounds it, refuses an event the view did not declare,\n * and admits at most {@link maxInteractionsPerSecond} interactions a second.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport * as Schema from \"effect/Schema\";\nimport * as Interactions from \"./Interactions.js\";\nimport { jsonLength } from \"./internal/bytes.js\";\n/**\n * The largest form values one interaction may carry, as UTF-8 JSON.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxValuesBytes = 16 * 1024;\n/**\n * The largest view state, as UTF-8 JSON.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxStateBytes = 16 * 1024;\n/**\n * The largest HTML one render may produce, in UTF-8 bytes.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxHtmlBytes = 512 * 1024;\n/**\n * How many interactions the page admits from one frame in any second.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxInteractionsPerSecond = 10;\n/**\n * The most form values one interaction may carry.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxValues = 64;\n/**\n * The shortest and tallest an `inline` view's frame may be, in CSS pixels.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const inlineHeight = { min: 80, max: 480 };\n/**\n * The tallest height a frame may report. A larger report is malformed.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxReportedHeight = 1_000_000;\n/**\n * Where a view shows: `inline` in the message, `full` on its own page.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Size = Schema.Literals([\"inline\", \"full\"]);\n/**\n * The page's color theme, as the frame applies it.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Theme = Schema.Literals([\"light\", \"dark\"]);\n/**\n * The per-mount secret the page writes into the frame's document. Only the\n * frame it wrote can answer with it.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Nonce = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{22,128}$/));\nconst Id = Schema.Union([Schema.String.check(Schema.isMaxLength(64)), Schema.Int]);\n/**\n * `ui/initialize`: the frame's first and only window message.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Initialize = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    id: Id,\n    method: Schema.Literal(\"ui/initialize\"),\n    params: Schema.Struct({ nonce: Nonce })\n});\n/**\n * What the frame needs to show the view: the sanitized-on-arrival HTML, the\n * theme, and the size it shows at.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const HostContext = Schema.Struct({\n    html: Schema.String,\n    theme: Theme,\n    size: Size\n});\n/**\n * The page's answer to `ui/initialize`, posted with the port it transfers.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const InitializeResult = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    id: Id,\n    result: HostContext\n});\n/**\n * `ui/notifications/host-context-changed`: new HTML, a new theme, or both.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const HostContextChanged = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    method: Schema.Literal(\"ui/notifications/host-context-changed\"),\n    params: Schema.Struct({ html: Schema.optionalKey(Schema.String), theme: Schema.optionalKey(Theme) })\n});\n/**\n * `ui/notifications/size-changed`: the content's height in CSS pixels.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const SizeChanged = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    method: Schema.Literal(\"ui/notifications/size-changed\"),\n    params: Schema.Struct({\n        height: Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: maxReportedHeight }))\n    })\n});\n/**\n * One form value an interaction carries.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Value = Schema.Union([Schema.String, Schema.Number.check(Schema.isFinite()), Schema.Boolean]);\n/**\n * The form values an interaction carries, by field name.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Values = Schema.Record(Schema.String, Value).check(Schema.isPropertyNames(Schema.String.check(Schema.isMaxLength(128))), Schema.isMaxProperties(maxValues));\n/**\n * `smithers/interaction`: a real click or submit on a `data-event` element.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Interaction = Schema.Struct({\n    jsonrpc: Schema.Literal(\"2.0\"),\n    method: Schema.Literal(\"smithers/interaction\"),\n    params: Schema.Struct({\n        event: Interactions.Name,\n        arg: Schema.optionalKey(Interactions.Arg),\n        values: Schema.optionalKey(Values)\n    })\n});\n/**\n * Every message the frame sends over its port.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const FrameMessage = Schema.Union([SizeChanged, Interaction]);\n/**\n * Why the page refused a message:\n *\n * - `wrong_source`: a window message that did not come from this mount's frame\n *   with its nonce;\n * - `malformed`: not one of the bridge's messages;\n * - `too_large`: form values over {@link maxValuesBytes};\n * - `undeclared`: an event the view did not declare;\n * - `rate_limited`: more than {@link maxInteractionsPerSecond} interactions in\n *   one second.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Refusal = Schema.Literals([\"wrong_source\", \"malformed\", \"too_large\", \"undeclared\", \"rate_limited\"]);\nconst decodeFrameMessage = Schema.decodeUnknownOption(FrameMessage);\nconst decodeInitialize = Schema.decodeUnknownOption(Initialize);\n/**\n * Decides what to do with one message from a frame's port.\n *\n * `now` is the page's clock in milliseconds. The returned `window` replaces\n * the one passed in. A refused interaction does not count against the rate.\n *\n * @category receiving\n * @since 0.1.0\n */\nexport const receive = (input) => {\n    const refuse = (reason) => ({ verdict: { _tag: \"Refused\", reason }, window: input.window });\n    const decoded = decodeFrameMessage(input.message);\n    if (Option.isNone(decoded))\n        return refuse(\"malformed\");\n    const message = decoded.value;\n    if (message.method === \"ui/notifications/size-changed\") {\n        return { verdict: { _tag: \"Resize\", height: message.params.height }, window: input.window };\n    }\n    const { arg, event: name, values = {} } = message.params;\n    const valuesBytes = jsonLength(values);\n    /* v8 ignore next -- `Values` admits only strings, finite numbers and booleans in a plain record, so its JSON always exists; the guard keeps the bound total */\n    if (valuesBytes === undefined || valuesBytes > maxValuesBytes)\n        return refuse(\"too_large\");\n    const declared = Interactions.lookup(input.declared, name);\n    if (Option.isNone(declared))\n        return refuse(\"undeclared\");\n    const recent = input.window.filter((at) => input.now - at < 1000 && at <= input.now);\n    if (recent.length >= maxInteractionsPerSecond)\n        return { ...refuse(\"rate_limited\"), window: recent };\n    const window = [...recent, input.now];\n    const event = arg === undefined ? { name } : { name, arg };\n    return declared.value.kind === \"state\"\n        ? { verdict: { _tag: \"State\", event }, window }\n        : { verdict: { _tag: \"Message\", event, label: declared.value.label, values }, window };\n};\n/**\n * Checks the frame's `ui/initialize`: it must decode and carry `nonce`. The\n * caller checks the other half, that the message came from this mount's\n * frame (`event.source === iframe.contentWindow`); an opaque `null` origin is\n * never identity.\n *\n * @category receiving\n * @since 0.1.0\n */\nexport const acceptInitialize = (message, nonce) => Option.filter(decodeInitialize(message), (initialize) => initialize.params.nonce === nonce);\n/**\n * The reply to an accepted `ui/initialize`.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const initializeResult = (initialize, context) => ({\n    jsonrpc: \"2.0\",\n    id: initialize.id,\n    result: context\n});\n/**\n * A `ui/notifications/host-context-changed` notification.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const hostContextChanged = (params) => ({\n    jsonrpc: \"2.0\",\n    method: \"ui/notifications/host-context-changed\",\n    params\n});\n/**\n * The height an `inline` frame takes for a reported content height: clamped\n * to {@link inlineHeight}.\n *\n * @category sizing\n * @since 0.1.0\n */\nexport const inlineFrameHeight = (reported) => Math.min(inlineHeight.max, Math.max(inlineHeight.min, Math.ceil(reported)));\n",
     "map": {
      "version": 3,
      "file": "Bridge.js",
@@ -8262,7 +8262,7 @@
       "relative": "packages/smithers/ui/views/src/Home.vibe"
      }
     ],
-    "code": "/**\n * A repository's own home: the blocks `.smithers/home.json` declares, read\n * where the home is shown.\n *\n * A home is data, never code. Each block is one of a closed set of kinds,\n * every string in it is bounded, and a string carrying an HTML tag is\n * refused (a `code` block's source excepted: a page draws it as text), so a\n * page draws a home from these values and runs nothing the repository\n * wrote. A button a block names runs only when a person presses it.\n *\n * Blocks sit in sections, and each section names its {@link Audience}: who\n * may see it. A page shows a viewer only the sections {@link sees} allows,\n * and {@link visible} picks them. A file with a bare `blocks` array is one\n * section for everyone. The live blocks (`issues`, `runs`, `flows`,\n * `stack`) carry no rows: the page reads them itself, through its own\n * access checks.\n *\n * {@link read} is the reader a page uses: it takes the file's text and\n * answers the sections to draw, skipping a kind it doesn't know so a newer\n * declaration still shows on an older page, or says the file is invalid.\n * This module is the format's one copy: `@smthrs/targets` writes the same\n * document from `.smithers/FACTORY.ts` (`Smithers.Factory.Home`) with these\n * very schemas.\n *\n * @since 0.1.0\n */\nimport * as Result from \"effect/Result\";\nimport * as Schema from \"effect/Schema\";\n/**\n * The file a repository declares its home in, at its default branch's head.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const path = \".smithers/home.json\";\n/**\n * Maximum length of one block's title or one link's label.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumTitleLength = 120;\n/**\n * Maximum length of one text block.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumTextLength = 4096;\n/**\n * Maximum length of one link URL.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumUrlLength = 2048;\n/**\n * Maximum number of blocks one home declares, unknown kinds included.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumBlocks = 32;\n/**\n * Maximum number of sections one home declares.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumSections = 8;\n/**\n * Maximum number of entries in one list a block carries: a `cards` block's\n * cards, a `releases` block's releases, a `links` block's links.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumEntries = 12;\n/**\n * Maximum number of a `stats` block's stats.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumStats = 6;\n/**\n * Maximum number of a `hero` block's actions.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumActions = 3;\n/**\n * Maximum length of a short line of prose: a card's text, a release's summary,\n * a hero's tagline.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumLineLength = 280;\n/**\n * Maximum length of a `code` block's source.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumCodeLength = 4096;\n/**\n * The shape of raw HTML in a string: a tag, a closing tag, a comment, or a\n * processing instruction opener. Prose that mentions `a < b` does not match;\n * `<b>bold</b>` and `<!-- note -->` do.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const htmlPattern = /<\\/?[A-Za-z!?]/;\nconst noHtml = Schema.makeFilter((text) => htmlPattern.test(text) ? \"must not contain HTML; blocks are declared values, never markup\" : true);\n/**\n * A one-line title or label: non-empty, bounded, one line, no HTML.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Title = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTitleLength), Schema.isPattern(/^[^\\r\\n]*$/), noHtml);\n/**\n * A paragraph of plain text: non-empty, bounded, no HTML.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTextLength), noHtml);\n/**\n * A link target: an absolute `http` or `https` URL.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Url = Schema.NonEmptyString.check(Schema.isMaxLength(maximumUrlLength), Schema.isPattern(/^https?:\\/\\/[^\\s<>\"']+$/i));\n/**\n * Where a home's docs are listed: the absolute `https` URL of the docs site's\n * index in the `llms.txt` format, such as `https://vibelang.sh/llms.txt`,\n * with no user or password. `@smthrs/views`' `Docs` reads the index.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const DocsUrl = Schema.NonEmptyString.check(Schema.isMaxLength(maximumUrlLength), Schema.isPattern(/^https:\\/\\/[^\\s<>\"'@]+$/i));\n/**\n * A relative path that cannot escape the repository.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const RepositoryPath = Schema.NonEmptyString.check(Schema.isMaxLength(1024), Schema.makeFilter((value) => value.startsWith(\"/\") || value.includes(\"\\\\\")\n    || value.split(\"/\").some((part) => part === \"\" || part === \".\" || part === \"..\")\n    || /[%:?#]/.test(value) || [...value].some((character) => character.charCodeAt(0) < 0x20)\n    ? \"must be a relative in-repository path\"\n    : true));\n/**\n * A flow's name as a home names it: a slash command or a repository flow,\n * at most {@link maximumTitleLength} characters.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const FlowName = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTitleLength), Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/));\n/**\n * A short line of prose: non-empty, one line, at most\n * {@link maximumLineLength} characters, no HTML.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Line = Schema.NonEmptyString.check(Schema.isMaxLength(maximumLineLength), Schema.isPattern(/^[^\\r\\n]*$/), noHtml);\n/**\n * A shell command a person copies, such as `npm install effect`: one line, at\n * most {@link maximumLineLength} characters, no HTML. A page shows it as text\n * and runs nothing.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Command = Line;\n/**\n * A `code` block's source: non-empty, at most {@link maximumCodeLength}\n * characters, no NUL. It may hold `<` and `>`, since source code does, and a\n * page draws it as text, never as markup.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Code = Schema.NonEmptyString.check(Schema.isMaxLength(maximumCodeLength), \n// NUL is exactly what the pattern refuses; the app's stored homes hash this very pattern (apps/mvp/src/device).\n// eslint-disable-next-line no-control-regex\nSchema.isPattern(/^[^\\u0000]*$/));\n/**\n * The language a `code` block is written in, as a lowercase name such as\n * `ts`, `tsx`, `sh` or `json`: a page may color it, and shows it as plain\n * text otherwise.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Language = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z][a-z0-9+#-]{0,19}$/));\n/**\n * A calendar date, `YYYY-MM-DD`, that exists.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const IsoDate = Schema.String.check(Schema.makeFilter((value) => {\n    const match = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(value);\n    if (match === null)\n        return \"must be a date, YYYY-MM-DD\";\n    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];\n    const date = new Date(0);\n    date.setUTCFullYear(year, month - 1, day);\n    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day\n        ? true\n        : \"must be a date that exists\";\n}));\n/**\n * A link: a label and the absolute `http` or `https` URL it opens.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Link = Schema.Struct({ label: Title, url: Url });\n/**\n * Who may see a section:\n *\n * - `everyone`: anyone who may open the repository's page, signed out\n *   included;\n * - `contributor`: anyone signed in with a role on the repository, a Guest\n *   included, and anyone at all when the home opens its contributors'\n *   sections ({@link Contributors});\n * - `maintainer`: a Maintainer and above.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Audience = Schema.Literals([\"everyone\", \"contributor\", \"maintainer\"]);\n/**\n * The audiences, from the widest to the narrowest.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const audiences = [\"everyone\", \"contributor\", \"maintainer\"];\n/**\n * Who counts as a contributor to a home: `role`, a person signed in with a\n * role on the repository (the default); or `anyone`, everyone with the link,\n * for a repository that welcomes contributions from anyone.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Contributors = Schema.Literals([\"role\", \"anyone\"]);\n/**\n * A paragraph of plain text under an optional title.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const TextBlock = Schema.Struct({\n    type: Schema.Literal(\"text\"),\n    title: Schema.optional(Title),\n    text: Prose,\n});\n/**\n * A list of links under an optional title: each a label and the URL it opens.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const LinksBlock = Schema.Struct({\n    type: Schema.Literal(\"links\"),\n    title: Schema.optional(Title),\n    links: Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumEntries)),\n});\n/**\n * The repository's flows, which the page lists from its own catalog: the\n * block carries no rows.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const FlowsBlock = Schema.Struct({\n    type: Schema.Literal(\"flows\"),\n    title: Schema.optional(Title),\n});\n/**\n * A prompt: a heading over the way to ask, and the flow that takes the\n * question, if not the conversation itself.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const PromptBlock = Schema.Struct({\n    type: Schema.Literal(\"prompt\"),\n    flow: Schema.optional(FlowName),\n    title: Schema.optional(Title),\n    placeholder: Schema.optional(Title),\n});\n/**\n * The pictures an app block may wear: what the flow's result looks like.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const AppPicture = Schema.Literals([\"issue\", \"review\", \"wiki\", \"schedule\"]);\n/**\n * An app: one flow's button, with a title and a picture. A page shows it only\n * when it has that flow.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const AppBlock = Schema.Struct({\n    type: Schema.Literal(\"app\"),\n    flow: FlowName,\n    title: Title,\n    picture: AppPicture,\n});\n/**\n * A Markdown file of the repository, read at the home's own commit.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const MarkdownBlock = Schema.Struct({\n    type: Schema.Literal(\"markdown\"),\n    path: RepositoryPath,\n    title: Schema.optional(Title),\n});\n/**\n * The repository's live stack of changes, which the page reads itself: the\n * block carries no rows.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const StackBlock = Schema.Struct({\n    type: Schema.Literal(\"stack\"),\n    title: Schema.optional(Title),\n});\n/**\n * The view a repository flow declares, drawn in this place.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const ViewBlock = Schema.Struct({\n    type: Schema.Literal(\"view\"),\n    flow: FlowName,\n});\n/**\n * A project's opening: its name, a tagline, a paragraph, the command that\n * installs it, up to {@link maximumActions} links (the first is the primary\n * one) and an announcement above the name.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const HeroBlock = Schema.Struct({\n    type: Schema.Literal(\"hero\"),\n    title: Title,\n    tagline: Schema.optional(Line),\n    text: Schema.optional(Line),\n    install: Schema.optional(Command),\n    actions: Schema.optional(Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumActions))),\n    announcement: Schema.optional(Link),\n});\n/**\n * Source code shown as an example, with the file it would live in and its\n * language.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const CodeBlock = Schema.Struct({\n    type: Schema.Literal(\"code\"),\n    title: Schema.optional(Title),\n    file: Schema.optional(Title),\n    language: Schema.optional(Language),\n    code: Code,\n});\n/**\n * One card: a title, a line under it, a small label above it (such as a\n * package's name) and the URL it opens.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Card = Schema.Struct({\n    title: Title,\n    text: Schema.optional(Line),\n    label: Schema.optional(Title),\n    url: Schema.optional(Url),\n});\n/**\n * A grid of up to {@link maximumEntries} cards, with a link to the rest.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const CardsBlock = Schema.Struct({\n    type: Schema.Literal(\"cards\"),\n    title: Schema.optional(Title),\n    cards: Schema.NonEmptyArray(Card).check(Schema.isMaxLength(maximumEntries)),\n    more: Schema.optional(Link),\n});\n/**\n * One stat: a short value over its label, such as `MIT` over `License`.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Stat = Schema.Struct({ value: Title, label: Title });\n/**\n * A row of up to {@link maximumStats} declared facts. They are the\n * repository's own words, never counted by the page.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const StatsBlock = Schema.Struct({\n    type: Schema.Literal(\"stats\"),\n    title: Schema.optional(Title),\n    stats: Schema.NonEmptyArray(Stat).check(Schema.isMaxLength(maximumStats)),\n});\n/**\n * One release: its name, the page that describes it, its date and a line of\n * what changed.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Release = Schema.Struct({\n    name: Title,\n    url: Url,\n    date: IsoDate,\n    summary: Schema.optional(Line),\n});\n/**\n * Up to {@link maximumEntries} releases, newest first as declared, with a link\n * to the rest.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const ReleasesBlock = Schema.Struct({\n    type: Schema.Literal(\"releases\"),\n    title: Schema.optional(Title),\n    releases: Schema.NonEmptyArray(Release).check(Schema.isMaxLength(maximumEntries)),\n    more: Schema.optional(Link),\n});\n/**\n * The repository's issues and pull requests at a glance, which the page\n * reads itself: how many are proposed, accepted and not accepted, the ones\n * that need triage, and the pull requests waiting. The block carries no rows.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const IssuesBlock = Schema.Struct({\n    type: Schema.Literal(\"issues\"),\n    title: Schema.optional(Title),\n});\n/**\n * A key a person presses for an `action` block's button: one lowercase letter.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Key = Schema.String.check(Schema.isPattern(/^[a-z]$/));\n/**\n * A primary button that runs one flow when a person presses it, or presses\n * its `key` while not typing, such as New branch: unlike an `app` block, it\n * starts the flow at once rather than opening the composer. A page shows it\n * only when it has that flow.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const ActionBlock = Schema.Struct({\n    type: Schema.Literal(\"action\"),\n    flow: FlowName,\n    title: Title,\n    key: Schema.optional(Key),\n});\n/**\n * Recent flow runs, which the page reads itself, failures first. The block\n * carries no rows.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const RunsBlock = Schema.Struct({\n    type: Schema.Literal(\"runs\"),\n    title: Schema.optional(Title),\n});\n/**\n * One declared block.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Block = Schema.Union([\n    TextBlock,\n    LinksBlock,\n    FlowsBlock,\n    PromptBlock,\n    MarkdownBlock,\n    StackBlock,\n    AppBlock,\n    ViewBlock,\n    HeroBlock,\n    CodeBlock,\n    CardsBlock,\n    StatsBlock,\n    ReleasesBlock,\n    IssuesBlock,\n    RunsBlock,\n    ActionBlock,\n]);\n/**\n * The kinds of block this reader knows, by their `type`.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const kinds = [\n    \"text\",\n    \"links\",\n    \"flows\",\n    \"prompt\",\n    \"markdown\",\n    \"stack\",\n    \"app\",\n    \"view\",\n    \"hero\",\n    \"code\",\n    \"cards\",\n    \"stats\",\n    \"releases\",\n    \"issues\",\n    \"runs\",\n    \"action\",\n];\n/**\n * The kinds of block whose rows a page reads itself, under its own access\n * checks: the declaration names the block, never its data.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const liveKinds = [\"flows\", \"stack\", \"issues\", \"runs\"];\n/**\n * A section's heading and audience, as declared. A section's blocks are read\n * one by one, so a block of a kind this reader doesn't know is skipped there\n * as anywhere.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const SectionHeading = Schema.Struct({\n    title: Schema.optional(Title),\n    audience: Schema.optional(Audience),\n});\nconst known = new Set(kinds);\nconst decodeBlock = Schema.decodeUnknownResult(Block);\nconst decodeHeading = Schema.decodeUnknownResult(SectionHeading);\nconst isContributors = Schema.is(Contributors);\nconst isDocsUrl = Schema.is(DocsUrl);\n/** A block that names a kind as a string this reader doesn't know: a newer declaration's. */\nconst unknownKind = (value) => {\n    if (typeof value !== \"object\" || value === null)\n        return false;\n    const type = value.type;\n    return typeof type === \"string\" && !known.has(type);\n};\nconst isObject = (value) => typeof value === \"object\" && value !== null && !Array.isArray(value);\n/**\n * Reads `.smithers/home.json`'s text: the sections it declares, or why it is\n * not a home. A file with `blocks` is one section for everyone; a file with\n * `sections` names each section's audience, `everyone` when it names none, and\n * may say `\"contributors\": \"anyone\"` to show its contributors' sections to\n * everyone with the link, and `\"docs\"` to name its docs index. A\n * block of a kind this reader doesn't know is skipped and counted; any other\n * block that breaks its schema makes the whole file invalid, so a page never\n * draws half of a home. The answer carries no text from the file but the\n * sections themselves.\n *\n * @example\n * ```ts\n * import { Home } from \"@smthrs/views\"\n *\n * const home = Home.read('{\"blocks\":[{\"type\":\"text\",\"text\":\"Hello.\"},{\"type\":\"chart\"}]}')\n * // { _tag: \"Declared\", sections: [{ audience: \"everyone\", blocks: [{ type: \"text\", text: \"Hello.\" }] }],\n * //   contributors: \"role\", skipped: 1 }\n * ```\n *\n * @category reading\n * @since 0.1.0\n */\nexport const read = (text) => {\n    let document;\n    try {\n        document = JSON.parse(text);\n    }\n    catch {\n        return { _tag: \"Invalid\", reason: \"json\" };\n    }\n    if (!isObject(document))\n        return { _tag: \"Invalid\", reason: \"shape\" };\n    const { blocks, sections, contributors = \"role\", docs } = document;\n    if (!isContributors(contributors))\n        return { _tag: \"Invalid\", reason: \"shape\" };\n    if (docs !== undefined && !isDocsUrl(docs))\n        return { _tag: \"Invalid\", reason: \"shape\" };\n    const declared = Array.isArray(blocks) && sections === undefined\n        ? [{ blocks }]\n        : Array.isArray(sections) && blocks === undefined\n            ? sections\n            : undefined;\n    if (declared === undefined)\n        return { _tag: \"Invalid\", reason: \"shape\" };\n    if (declared.length > maximumSections)\n        return { _tag: \"Invalid\", reason: \"sections\" };\n    let count = 0;\n    for (const section of declared) {\n        if (!isObject(section) || !Array.isArray(section.blocks))\n            return { _tag: \"Invalid\", reason: \"section\" };\n        count += section.blocks.length;\n    }\n    if (count > maximumBlocks)\n        return { _tag: \"Invalid\", reason: \"blocks\" };\n    const read = [];\n    let skipped = 0;\n    for (const section of declared) {\n        const heading = decodeHeading(section);\n        if (Result.isFailure(heading))\n            return { _tag: \"Invalid\", reason: \"section\" };\n        const drawn = [];\n        for (const entry of section.blocks) {\n            if (unknownKind(entry)) {\n                skipped++;\n                continue;\n            }\n            const decoded = decodeBlock(entry);\n            if (Result.isFailure(decoded))\n                return { _tag: \"Invalid\", reason: \"block\" };\n            drawn.push(decoded.success);\n        }\n        const { title, audience = \"everyone\" } = heading.success;\n        read.push(title === undefined ? { audience, blocks: drawn } : { title, audience, blocks: drawn });\n    }\n    return docs === undefined\n        ? { _tag: \"Declared\", sections: read, contributors, skipped }\n        : { _tag: \"Declared\", sections: read, contributors, docs, skipped };\n};\n/**\n * Whether a viewer of audience `viewer` may see a section for `section`: a\n * maintainer sees every section, a contributor every section but a\n * maintainer's, and anyone else only `everyone`'s.\n *\n * @example\n * ```ts\n * import { Home } from \"@smthrs/views\"\n *\n * Home.sees(\"contributor\", \"maintainer\") // false\n * Home.sees(\"maintainer\", \"contributor\") // true\n * ```\n *\n * @category audiences\n * @since 0.1.0\n */\nexport const sees = (viewer, section) => audiences.indexOf(viewer) >= audiences.indexOf(section);\n/**\n * The sections a viewer of audience `viewer` may see, in order. A page that\n * holds a whole home calls this before drawing it; a server that answers a\n * home calls it before sending one, so a viewer never receives a section\n * meant for others.\n *\n * @category audiences\n * @since 0.1.0\n */\nexport const visible = (sections, viewer) => sections.filter((section) => sees(viewer, section.audience));\n/**\n * The audience a viewer has on a home that says who counts as a contributor:\n * with `anyone`, everyone is at least a contributor; otherwise the audience\n * stands.\n *\n * @example\n * ```ts\n * import { Home } from \"@smthrs/views\"\n *\n * Home.widen(\"everyone\", \"anyone\") // \"contributor\"\n * Home.widen(\"everyone\", \"role\") // \"everyone\"\n * ```\n *\n * @category audiences\n * @since 0.1.0\n */\nexport const widen = (viewer, contributors) => viewer === \"everyone\" && contributors === \"anyone\" ? \"contributor\" : viewer;\n",
+    "code": "/**\n * A repository's own home: the blocks `.smithers/home.json` declares, read\n * where the home is shown.\n *\n * A home is data, never code. Each block is one of a closed set of kinds,\n * every string in it is bounded, and a string carrying an HTML tag is\n * refused (a `code` block's source excepted: a page draws it as text), so a\n * page draws a home from these values and runs nothing the repository\n * wrote. A button a block names runs only when a person presses it.\n *\n * Blocks sit in sections, and each section names its {@link Audience}: who\n * may see it. A page shows a viewer only the sections {@link sees} allows,\n * and {@link visible} picks them. A file with a bare `blocks` array is one\n * section for everyone. The live blocks (`issues`, `runs`, `flows`,\n * `stack`) carry no rows: the page reads them itself, through its own\n * access checks.\n *\n * {@link read} is the reader a page uses: it takes the file's text and\n * answers the sections to draw, skipping a kind it doesn't know so a newer\n * declaration still shows on an older page, or says the file is invalid.\n * This module is the format's one copy: `@smthrs/targets` writes the same\n * document from `.smithers/FACTORY.ts` (`Smithers.Factory.Home`) with these\n * very schemas.\n *\n * @since 0.1.0\n */\nimport * as Result from \"effect/Result\";\nimport * as Schema from \"effect/Schema\";\n/**\n * The file a repository declares its home in, at its default branch's head.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const path = \".smithers/home.json\";\n/**\n * Maximum length of one block's title or one link's label.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumTitleLength = 120;\n/**\n * Maximum length of one text block.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumTextLength = 4096;\n/**\n * Maximum length of one link URL.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumUrlLength = 2048;\n/**\n * Maximum number of blocks one home declares, unknown kinds included.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumBlocks = 32;\n/**\n * Maximum number of sections one home declares.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumSections = 8;\n/**\n * Maximum number of entries in one list a block carries: a `cards` block's\n * cards, a `releases` block's releases, a `links` block's links.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumEntries = 12;\n/**\n * Maximum number of a `stats` block's stats.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumStats = 6;\n/**\n * Maximum number of a `hero` block's actions.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumActions = 3;\n/**\n * Maximum length of a short line of prose: a card's text, a release's summary,\n * a hero's tagline.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumLineLength = 280;\n/**\n * Maximum length of a `code` block's source.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumCodeLength = 4096;\n/**\n * The shape of raw HTML in a string: a tag, a closing tag, a comment, or a\n * processing instruction opener. Prose that mentions `a < b` does not match;\n * `<b>bold</b>` and `<!-- note -->` do.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const htmlPattern = /<\\/?[A-Za-z!?]/;\nconst noHtml = Schema.makeFilter((text) => htmlPattern.test(text) ? \"must not contain HTML; blocks are declared values, never markup\" : true);\n/**\n * A one-line title or label: non-empty, bounded, one line, no HTML.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Title = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTitleLength), Schema.isPattern(/^[^\\r\\n]*$/), noHtml);\n/**\n * A paragraph of plain text: non-empty, bounded, no HTML.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTextLength), noHtml);\n/**\n * A link target: an absolute `http` or `https` URL.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Url = Schema.NonEmptyString.check(Schema.isMaxLength(maximumUrlLength), Schema.isPattern(/^https?:\\/\\/[^\\s<>\"']+$/i));\n/**\n * Where a home's docs are listed: the absolute `https` URL of the docs site's\n * index in the `llms.txt` format, such as `https://vibelang.sh/llms.txt`,\n * with no user or password. `@smthrs/views`' `Docs` reads the index.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const DocsUrl = Schema.NonEmptyString.check(Schema.isMaxLength(maximumUrlLength), Schema.isPattern(/^https:\\/\\/[^\\s<>\"'@]+$/i));\n/**\n * A relative path that cannot escape the repository.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const RepositoryPath = Schema.NonEmptyString.check(Schema.isMaxLength(1024), Schema.makeFilter((value) => value.startsWith(\"/\") || value.includes(\"\\\\\")\n    || value.split(\"/\").some((part) => part === \"\" || part === \".\" || part === \"..\")\n    || /[%:?#]/.test(value) || [...value].some((character) => character.charCodeAt(0) < 0x20)\n    ? \"must be a relative in-repository path\"\n    : true));\n/**\n * A flow's name as a home names it: a slash command or a repository flow,\n * at most {@link maximumTitleLength} characters.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const FlowName = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTitleLength), Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/));\n/**\n * A short line of prose: non-empty, one line, at most\n * {@link maximumLineLength} characters, no HTML.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Line = Schema.NonEmptyString.check(Schema.isMaxLength(maximumLineLength), Schema.isPattern(/^[^\\r\\n]*$/), noHtml);\n/**\n * A shell command a person copies, such as `npm install effect`: one line, at\n * most {@link maximumLineLength} characters, no HTML. A page shows it as text\n * and runs nothing.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Command = Line;\n/**\n * A `code` block's source: non-empty, at most {@link maximumCodeLength}\n * characters, no NUL. It may hold `<` and `>`, since source code does, and a\n * page draws it as text, never as markup.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Code = Schema.NonEmptyString.check(Schema.isMaxLength(maximumCodeLength), \n// NUL is exactly what the pattern refuses; the app's stored homes hash this very pattern (apps/mvp/src/device).\n// eslint-disable-next-line no-control-regex\nSchema.isPattern(/^[^\\u0000]*$/));\n/**\n * The language a `code` block is written in, as a lowercase name such as\n * `ts`, `tsx`, `sh` or `json`: a page may color it, and shows it as plain\n * text otherwise.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Language = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z][a-z0-9+#-]{0,19}$/));\n/**\n * A calendar date, `YYYY-MM-DD`, that exists.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const IsoDate = Schema.String.check(Schema.makeFilter((value) => {\n    const match = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(value);\n    if (match === null)\n        return \"must be a date, YYYY-MM-DD\";\n    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];\n    const date = new Date(0);\n    date.setUTCFullYear(year, month - 1, day);\n    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day\n        ? true\n        : \"must be a date that exists\";\n}));\n/**\n * A link: a label and the absolute `http` or `https` URL it opens.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Link = Schema.Struct({ label: Title, url: Url });\n/**\n * Who may see a section:\n *\n * - `everyone`: anyone who may open the repository's page, signed out\n *   included;\n * - `contributor`: anyone signed in with a role on the repository, a Guest\n *   included, and anyone at all when the home opens its contributors'\n *   sections ({@link Contributors});\n * - `maintainer`: a Maintainer and above.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Audience = Schema.Literals([\"everyone\", \"contributor\", \"maintainer\"]);\n/**\n * The audiences, from the widest to the narrowest.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const audiences = [\"everyone\", \"contributor\", \"maintainer\"];\n/**\n * Who counts as a contributor to a home: `role`, a person signed in with a\n * role on the repository (the default); or `anyone`, everyone with the link,\n * for a repository that welcomes contributions from anyone.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Contributors = Schema.Literals([\"role\", \"anyone\"]);\n/**\n * A paragraph of plain text under an optional title.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const TextBlock = Schema.Struct({\n    type: Schema.Literal(\"text\"),\n    title: Schema.optional(Title),\n    text: Prose\n});\n/**\n * A list of links under an optional title: each a label and the URL it opens.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const LinksBlock = Schema.Struct({\n    type: Schema.Literal(\"links\"),\n    title: Schema.optional(Title),\n    links: Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumEntries))\n});\n/**\n * The repository's flows, which the page lists from its own catalog: the\n * block carries no rows.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const FlowsBlock = Schema.Struct({\n    type: Schema.Literal(\"flows\"),\n    title: Schema.optional(Title)\n});\n/**\n * A prompt: a heading over the way to ask, and the flow that takes the\n * question, if not the conversation itself.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const PromptBlock = Schema.Struct({\n    type: Schema.Literal(\"prompt\"),\n    flow: Schema.optional(FlowName),\n    title: Schema.optional(Title),\n    placeholder: Schema.optional(Title)\n});\n/**\n * The pictures an app block may wear: what the flow's result looks like.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const AppPicture = Schema.Literals([\"issue\", \"review\", \"wiki\", \"schedule\"]);\n/**\n * An app: one flow's button, with a title and a picture. A page shows it only\n * when it has that flow.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const AppBlock = Schema.Struct({\n    type: Schema.Literal(\"app\"),\n    flow: FlowName,\n    title: Title,\n    picture: AppPicture\n});\n/**\n * A Markdown file of the repository, read at the home's own commit.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const MarkdownBlock = Schema.Struct({\n    type: Schema.Literal(\"markdown\"),\n    path: RepositoryPath,\n    title: Schema.optional(Title)\n});\n/**\n * The repository's live stack of changes, which the page reads itself: the\n * block carries no rows.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const StackBlock = Schema.Struct({\n    type: Schema.Literal(\"stack\"),\n    title: Schema.optional(Title)\n});\n/**\n * The view a repository flow declares, drawn in this place.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const ViewBlock = Schema.Struct({\n    type: Schema.Literal(\"view\"),\n    flow: FlowName\n});\n/**\n * A project's opening: its name, a tagline, a paragraph, the command that\n * installs it, up to {@link maximumActions} links (the first is the primary\n * one) and an announcement above the name.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const HeroBlock = Schema.Struct({\n    type: Schema.Literal(\"hero\"),\n    title: Title,\n    tagline: Schema.optional(Line),\n    text: Schema.optional(Line),\n    install: Schema.optional(Command),\n    actions: Schema.optional(Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumActions))),\n    announcement: Schema.optional(Link)\n});\n/**\n * Source code shown as an example, with the file it would live in and its\n * language.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const CodeBlock = Schema.Struct({\n    type: Schema.Literal(\"code\"),\n    title: Schema.optional(Title),\n    file: Schema.optional(Title),\n    language: Schema.optional(Language),\n    code: Code\n});\n/**\n * One card: a title, a line under it, a small label above it (such as a\n * package's name) and the URL it opens.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Card = Schema.Struct({\n    title: Title,\n    text: Schema.optional(Line),\n    label: Schema.optional(Title),\n    url: Schema.optional(Url)\n});\n/**\n * A grid of up to {@link maximumEntries} cards, with a link to the rest.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const CardsBlock = Schema.Struct({\n    type: Schema.Literal(\"cards\"),\n    title: Schema.optional(Title),\n    cards: Schema.NonEmptyArray(Card).check(Schema.isMaxLength(maximumEntries)),\n    more: Schema.optional(Link)\n});\n/**\n * One stat: a short value over its label, such as `MIT` over `License`.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Stat = Schema.Struct({ value: Title, label: Title });\n/**\n * A row of up to {@link maximumStats} declared facts. They are the\n * repository's own words, never counted by the page.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const StatsBlock = Schema.Struct({\n    type: Schema.Literal(\"stats\"),\n    title: Schema.optional(Title),\n    stats: Schema.NonEmptyArray(Stat).check(Schema.isMaxLength(maximumStats))\n});\n/**\n * One release: its name, the page that describes it, its date and a line of\n * what changed.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Release = Schema.Struct({\n    name: Title,\n    url: Url,\n    date: IsoDate,\n    summary: Schema.optional(Line)\n});\n/**\n * Up to {@link maximumEntries} releases, newest first as declared, with a link\n * to the rest.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const ReleasesBlock = Schema.Struct({\n    type: Schema.Literal(\"releases\"),\n    title: Schema.optional(Title),\n    releases: Schema.NonEmptyArray(Release).check(Schema.isMaxLength(maximumEntries)),\n    more: Schema.optional(Link)\n});\n/**\n * The repository's issues and pull requests at a glance, which the page\n * reads itself: how many are proposed, accepted and not accepted, the ones\n * that need triage, and the pull requests waiting. The block carries no rows.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const IssuesBlock = Schema.Struct({\n    type: Schema.Literal(\"issues\"),\n    title: Schema.optional(Title)\n});\n/**\n * A key a person presses for an `action` block's button: one lowercase letter.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Key = Schema.String.check(Schema.isPattern(/^[a-z]$/));\n/**\n * A primary button that runs one flow when a person presses it, or presses\n * its `key` while not typing, such as New branch: unlike an `app` block, it\n * starts the flow at once rather than opening the composer. A page shows it\n * only when it has that flow.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const ActionBlock = Schema.Struct({\n    type: Schema.Literal(\"action\"),\n    flow: FlowName,\n    title: Title,\n    key: Schema.optional(Key)\n});\n/**\n * Recent flow runs, which the page reads itself, failures first. The block\n * carries no rows.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const RunsBlock = Schema.Struct({\n    type: Schema.Literal(\"runs\"),\n    title: Schema.optional(Title)\n});\n/**\n * One declared block.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Block = Schema.Union([\n    TextBlock,\n    LinksBlock,\n    FlowsBlock,\n    PromptBlock,\n    MarkdownBlock,\n    StackBlock,\n    AppBlock,\n    ViewBlock,\n    HeroBlock,\n    CodeBlock,\n    CardsBlock,\n    StatsBlock,\n    ReleasesBlock,\n    IssuesBlock,\n    RunsBlock,\n    ActionBlock\n]);\n/**\n * The kinds of block this reader knows, by their `type`.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const kinds = [\n    \"text\",\n    \"links\",\n    \"flows\",\n    \"prompt\",\n    \"markdown\",\n    \"stack\",\n    \"app\",\n    \"view\",\n    \"hero\",\n    \"code\",\n    \"cards\",\n    \"stats\",\n    \"releases\",\n    \"issues\",\n    \"runs\",\n    \"action\"\n];\n/**\n * The kinds of block whose rows a page reads itself, under its own access\n * checks: the declaration names the block, never its data.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const liveKinds = [\"flows\", \"stack\", \"issues\", \"runs\"];\n/**\n * A section's heading and audience, as declared. A section's blocks are read\n * one by one, so a block of a kind this reader doesn't know is skipped there\n * as anywhere.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const SectionHeading = Schema.Struct({\n    title: Schema.optional(Title),\n    audience: Schema.optional(Audience)\n});\nconst known = new Set(kinds);\nconst decodeBlock = Schema.decodeUnknownResult(Block);\nconst decodeHeading = Schema.decodeUnknownResult(SectionHeading);\nconst isContributors = Schema.is(Contributors);\nconst isDocsUrl = Schema.is(DocsUrl);\n/** A block that names a kind as a string this reader doesn't know: a newer declaration's. */\nconst unknownKind = (value) => {\n    if (typeof value !== \"object\" || value === null)\n        return false;\n    const type = value.type;\n    return typeof type === \"string\" && !known.has(type);\n};\nconst isObject = (value) => typeof value === \"object\" && value !== null && !Array.isArray(value);\n/**\n * Reads `.smithers/home.json`'s text: the sections it declares, or why it is\n * not a home. A file with `blocks` is one section for everyone; a file with\n * `sections` names each section's audience, `everyone` when it names none, and\n * may say `\"contributors\": \"anyone\"` to show its contributors' sections to\n * everyone with the link, and `\"docs\"` to name its docs index. A\n * block of a kind this reader doesn't know is skipped and counted; any other\n * block that breaks its schema makes the whole file invalid, so a page never\n * draws half of a home. The answer carries no text from the file but the\n * sections themselves.\n *\n * @example\n * ```ts\n * import { Home } from \"@smthrs/views\"\n *\n * const home = Home.read('{\"blocks\":[{\"type\":\"text\",\"text\":\"Hello.\"},{\"type\":\"chart\"}]}')\n * // { _tag: \"Declared\", sections: [{ audience: \"everyone\", blocks: [{ type: \"text\", text: \"Hello.\" }] }],\n * //   contributors: \"role\", skipped: 1 }\n * ```\n *\n * @category reading\n * @since 0.1.0\n */\nexport const read = (text) => {\n    let document;\n    try {\n        document = JSON.parse(text);\n    }\n    catch {\n        return { _tag: \"Invalid\", reason: \"json\" };\n    }\n    if (!isObject(document))\n        return { _tag: \"Invalid\", reason: \"shape\" };\n    const { blocks, sections, contributors = \"role\", docs } = document;\n    if (!isContributors(contributors))\n        return { _tag: \"Invalid\", reason: \"shape\" };\n    if (docs !== undefined && !isDocsUrl(docs))\n        return { _tag: \"Invalid\", reason: \"shape\" };\n    const declared = Array.isArray(blocks) && sections === undefined\n        ? [{ blocks }]\n        : Array.isArray(sections) && blocks === undefined\n            ? sections\n            : undefined;\n    if (declared === undefined)\n        return { _tag: \"Invalid\", reason: \"shape\" };\n    if (declared.length > maximumSections)\n        return { _tag: \"Invalid\", reason: \"sections\" };\n    let count = 0;\n    for (const section of declared) {\n        if (!isObject(section) || !Array.isArray(section.blocks))\n            return { _tag: \"Invalid\", reason: \"section\" };\n        count += section.blocks.length;\n    }\n    if (count > maximumBlocks)\n        return { _tag: \"Invalid\", reason: \"blocks\" };\n    const read = [];\n    let skipped = 0;\n    for (const section of declared) {\n        const heading = decodeHeading(section);\n        if (Result.isFailure(heading))\n            return { _tag: \"Invalid\", reason: \"section\" };\n        const drawn = [];\n        for (const entry of section.blocks) {\n            if (unknownKind(entry)) {\n                skipped++;\n                continue;\n            }\n            const decoded = decodeBlock(entry);\n            if (Result.isFailure(decoded))\n                return { _tag: \"Invalid\", reason: \"block\" };\n            drawn.push(decoded.success);\n        }\n        const { title, audience = \"everyone\" } = heading.success;\n        read.push(title === undefined ? { audience, blocks: drawn } : { title, audience, blocks: drawn });\n    }\n    return docs === undefined\n        ? { _tag: \"Declared\", sections: read, contributors, skipped }\n        : { _tag: \"Declared\", sections: read, contributors, docs, skipped };\n};\n/**\n * Whether a viewer of audience `viewer` may see a section for `section`: a\n * maintainer sees every section, a contributor every section but a\n * maintainer's, and anyone else only `everyone`'s.\n *\n * @example\n * ```ts\n * import { Home } from \"@smthrs/views\"\n *\n * Home.sees(\"contributor\", \"maintainer\") // false\n * Home.sees(\"maintainer\", \"contributor\") // true\n * ```\n *\n * @category audiences\n * @since 0.1.0\n */\nexport const sees = (viewer, section) => audiences.indexOf(viewer) >= audiences.indexOf(section);\n/**\n * The sections a viewer of audience `viewer` may see, in order. A page that\n * holds a whole home calls this before drawing it; a server that answers a\n * home calls it before sending one, so a viewer never receives a section\n * meant for others.\n *\n * @category audiences\n * @since 0.1.0\n */\nexport const visible = (sections, viewer) => sections.filter((section) => sees(viewer, section.audience));\n/**\n * The audience a viewer has on a home that says who counts as a contributor:\n * with `anyone`, everyone is at least a contributor; otherwise the audience\n * stands.\n *\n * @example\n * ```ts\n * import { Home } from \"@smthrs/views\"\n *\n * Home.widen(\"everyone\", \"anyone\") // \"contributor\"\n * Home.widen(\"everyone\", \"role\") // \"everyone\"\n * ```\n *\n * @category audiences\n * @since 0.1.0\n */\nexport const widen = (viewer, contributors) => viewer === \"everyone\" && contributors === \"anyone\" ? \"contributor\" : viewer;\n",
     "map": {
      "version": 3,
      "file": "Home.js",
@@ -8302,7 +8302,7 @@
       "relative": "packages/smithers/ui/views/src/ViewCsp.vibe"
      }
     ],
-    "code": "/**\n * The frame a generated view shows in, written by the trusted page and never\n * by the model.\n *\n * A view's HTML never runs as script. The page shows it in\n * `<iframe sandbox=\"allow-scripts\" srcdoc>`: an opaque origin with no cookies,\n * storage or parent DOM. The frame's document carries a Content Security\n * Policy whose only script is the page's own runtime, pinned by its SHA-256\n * hash, and it forbids inline event handlers, every network fetch, plugins,\n * nested frames, workers, `<base>` and form submission.\n *\n * The runtime asks the page for the view's HTML over the bridge (see\n * `Bridge`), parses it inertly and copies only allowlisted elements and\n * attributes into the document. This module writes the document around it.\n *\n * @since 0.1.0\n */\nimport * as Base64 from \"effect/encoding/Base64\";\nimport { digestSync } from \"@smthrs/crypto\";\n/**\n * The frame's `sandbox` attribute: scripts for the page's runtime, and\n * nothing else. No `allow-same-origin`, `allow-forms`, `allow-popups`,\n * `allow-downloads`, `allow-modals` or `allow-top-navigation`.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const sandbox = \"allow-scripts\";\n/**\n * The attribute on the frame document's `<html>` element that carries the\n * per-mount nonce for `ui/initialize`.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const nonceAttribute = \"data-smithers-nonce\";\n/**\n * A script's CSP source expression: `'sha256-<base64>'` over its UTF-8 text.\n *\n * @category hashing\n * @since 0.1.0\n */\nexport const hash = (script) => {\n    const hex = digestSync(script);\n    const bytes = new Uint8Array(32);\n    for (let index = 0; index < 32; index++)\n        bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);\n    return `'sha256-${Base64.encode(bytes)}'`;\n};\n/**\n * The frame's policy for a runtime with the given {@link hash}.\n *\n * `script-src-attr 'none'` blocks inline event handlers even where a\n * sanitizer missed one. `style-src 'unsafe-inline'` admits the page's theme\n * sheet and React's `style` attributes; `img-src` and `font-src` admit only\n * `data:` URLs, so nothing in a view reaches the network.\n *\n * @category policies\n * @since 0.1.0\n */\nexport const policy = (runtimeHash) => [\n    \"default-src 'none'\",\n    `script-src ${runtimeHash}`,\n    \"script-src-attr 'none'\",\n    \"style-src 'unsafe-inline'\",\n    \"img-src data:\",\n    \"font-src data:\",\n    \"connect-src 'none'\",\n    \"media-src 'none'\",\n    \"object-src 'none'\",\n    \"frame-src 'none'\",\n    \"child-src 'none'\",\n    \"worker-src 'none'\",\n    \"manifest-src 'none'\",\n    \"base-uri 'none'\",\n    \"form-action 'none'\",\n].join(\"; \");\n/** Keeps a script or style sheet from closing its own element early. */\nconst inert = (text, tag) => text.replace(new RegExp(`</(${tag})`, \"gi\"), \"<\\\\/$1\");\nconst attribute = (value) => value.replace(/&/g, \"&amp;\").replace(/\"/g, \"&quot;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");\n/**\n * The frame's `srcdoc`: the policy, the page's styles and the runtime, and no\n * view content. The view's HTML arrives later over the bridge. The runtime is\n * the body's only child, so the body exists when it runs.\n *\n * The runtime is hashed exactly as it is written into the document, after any\n * `</script` in it is escaped, so the policy always admits it.\n *\n * @category documents\n * @since 0.1.0\n */\nexport const frameDocument = (options) => {\n    const runtime = inert(options.runtime, \"script\");\n    return `<!doctype html><html ${nonceAttribute}=\"${attribute(options.nonce)}\" data-theme=\"${attribute(options.theme)}\"><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"${attribute(policy(hash(runtime)))}\"><meta name=\"referrer\" content=\"no-referrer\"><style>${inert(options.styles, \"style\")}</style></head><body><script>${runtime}</script></body></html>`;\n};\n",
+    "code": "/**\n * The frame a generated view shows in, written by the trusted page and never\n * by the model.\n *\n * A view's HTML never runs as script. The page shows it in\n * `<iframe sandbox=\"allow-scripts\" srcdoc>`: an opaque origin with no cookies,\n * storage or parent DOM. The frame's document carries a Content Security\n * Policy whose only script is the page's own runtime, pinned by its SHA-256\n * hash, and it forbids inline event handlers, every network fetch, plugins,\n * nested frames, workers, `<base>` and form submission.\n *\n * The runtime asks the page for the view's HTML over the bridge (see\n * `Bridge`), parses it inertly and copies only allowlisted elements and\n * attributes into the document. This module writes the document around it.\n *\n * @since 0.1.0\n */\nimport * as Base64 from \"effect/encoding/Base64\";\nimport { digestSync } from \"@smthrs/crypto\";\n/**\n * The frame's `sandbox` attribute: scripts for the page's runtime, and\n * nothing else. No `allow-same-origin`, `allow-forms`, `allow-popups`,\n * `allow-downloads`, `allow-modals` or `allow-top-navigation`.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const sandbox = \"allow-scripts\";\n/**\n * The attribute on the frame document's `<html>` element that carries the\n * per-mount nonce for `ui/initialize`.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const nonceAttribute = \"data-smithers-nonce\";\n/**\n * A script's CSP source expression: `'sha256-<base64>'` over its UTF-8 text.\n *\n * @category hashing\n * @since 0.1.0\n */\nexport const hash = (script) => {\n    const hex = digestSync(script);\n    const bytes = new Uint8Array(32);\n    for (let index = 0; index < 32; index++)\n        bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);\n    return `'sha256-${Base64.encode(bytes)}'`;\n};\n/**\n * The frame's policy for a runtime with the given {@link hash}.\n *\n * `script-src-attr 'none'` blocks inline event handlers even where a\n * sanitizer missed one. `style-src 'unsafe-inline'` admits the page's theme\n * sheet and React's `style` attributes; `img-src` and `font-src` admit only\n * `data:` URLs, so nothing in a view reaches the network.\n *\n * @category policies\n * @since 0.1.0\n */\nexport const policy = (runtimeHash) => [\n    \"default-src 'none'\",\n    `script-src ${runtimeHash}`,\n    \"script-src-attr 'none'\",\n    \"style-src 'unsafe-inline'\",\n    \"img-src data:\",\n    \"font-src data:\",\n    \"connect-src 'none'\",\n    \"media-src 'none'\",\n    \"object-src 'none'\",\n    \"frame-src 'none'\",\n    \"child-src 'none'\",\n    \"worker-src 'none'\",\n    \"manifest-src 'none'\",\n    \"base-uri 'none'\",\n    \"form-action 'none'\"\n].join(\"; \");\n/** Keeps a script or style sheet from closing its own element early. */\nconst inert = (text, tag) => text.replace(new RegExp(`</(${tag})`, \"gi\"), \"<\\\\/$1\");\nconst attribute = (value) => value.replace(/&/g, \"&amp;\").replace(/\"/g, \"&quot;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");\n/**\n * The frame's `srcdoc`: the policy, the page's styles and the runtime, and no\n * view content. The view's HTML arrives later over the bridge. The runtime is\n * the body's only child, so the body exists when it runs.\n *\n * The runtime is hashed exactly as it is written into the document, after any\n * `</script` in it is escaped, so the policy always admits it.\n *\n * @category documents\n * @since 0.1.0\n */\nexport const frameDocument = (options) => {\n    const runtime = inert(options.runtime, \"script\");\n    return `<!doctype html><html ${nonceAttribute}=\"${attribute(options.nonce)}\" data-theme=\"${attribute(options.theme)}\"><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"${attribute(policy(hash(runtime)))}\"><meta name=\"referrer\" content=\"no-referrer\"><style>${inert(options.styles, \"style\")}</style></head><body><script>${runtime}</script></body></html>`;\n};\n",
     "map": {
      "version": 3,
      "file": "ViewCsp.js",

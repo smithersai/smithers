@@ -9,7 +9,7 @@ import * as OtelLogger from "@effect/opentelemetry/OtelLogger";
 import * as OtelMetrics from "@effect/opentelemetry/OtelMetrics";
 import * as OtelTracer from "@effect/opentelemetry/OtelTracer";
 import * as Layer from "effect/Layer";
-import { layer as resourceLayer, Resource, } from "./Resource.js";
+import { layer as resourceLayer, Resource } from "./Resource.js";
 /**
  * Composes Effect tracer, logger, and metric bridges from already-created
  * OpenTelemetry providers or provider factories, and from metric readers this
@@ -39,7 +39,7 @@ export const layerOtel = (options) => {
     const metrics = acquireMetricReader === undefined
         ? Layer.empty
         : OtelMetrics.layer(() => acquireMetricReader(), {
-            temporality: options.metricTemporality,
+            temporality: options.metricTemporality
         });
     return Layer.mergeAll(tracer, logger, metrics).pipe(Layer.provideMerge(resource));
 };

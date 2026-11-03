@@ -39,7 +39,7 @@ const asModelError = (failure) => new ModelError({
     quotaScope: failure.quotaScope,
     providerCode: failure.providerCode,
     requestId: failure.requestId,
-    httpStatus: failure.httpStatus,
+    httpStatus: failure.httpStatus
 });
 const replay = (call) => {
     const events = Stream.fromIterable(call.events);
@@ -52,7 +52,7 @@ const replay = (call) => {
 const unscripted = (request) => Stream.die(new UnscriptedModelError({
     modelId: request.modelId,
     messageCount: request.messages.length,
-    toolNames: request.tools.map((tool) => tool.name),
+    toolNames: request.tools.map((tool) => tool.name)
 }));
 /**
  * Builds a model that replays a fixture hit and records a miss.
@@ -75,8 +75,8 @@ export const make = (options) => {
         ...(options.live?.providerName === undefined ? {} : { providerName: options.live.providerName }),
         stream: (request) => Stream.unwrap(Effect.map(options.fixture.load(), (loaded) => Option.match(Option.flatMap(loaded, (fixture) => hit(fixture, normalize(recordedRequest(request)))), {
             onNone: () => miss(request),
-            onSome: replay,
-        }))),
+            onSome: replay
+        })))
     });
 };
 /**

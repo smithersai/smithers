@@ -21,7 +21,7 @@ const schemaFailure = (code, method) => new FsError({
     method,
     description: code === "encode_failed"
         ? "The flow output did not satisfy its schema"
-        : "The command input did not satisfy the flow schema",
+        : "The command input did not satisfy the flow schema"
 });
 /**
  * Runs a program and turns any cause, defects included, into one sanitized
@@ -64,7 +64,7 @@ const record = (input) => typeof input === "object" && input !== null && !Array.
 const unsupportedSchema = () => new FsError({
     code: "unsupported_schema",
     method: "SchemaBridge.toCommandSchema",
-    description: "The flow input schema cannot be projected into command input",
+    description: "The flow input schema cannot be projected into command input"
 });
 const resolveReference = Effect_1.fnUntraced({ *resolveReference(input, definitions, seen = new Set()) {
         const schema = record(input);
@@ -181,7 +181,7 @@ const documentOf = (schema) => {
     const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" });
     return {
         root: document.schema,
-        definitions: document.definitions,
+        definitions: document.definitions
     };
 };
 const objectDescriptors = Effect_1.fnUntraced(function* objectDescriptors(root, definitions) {
@@ -192,7 +192,7 @@ const objectDescriptors = Effect_1.fnUntraced(function* objectDescriptors(root, 
     // options object is guaranteed to refuse.
     return {
         args: Object.hasOwn(shape, "args") ? z.object({ args: shape.args }) : undefined,
-        options,
+        options
     };
 });
 const positionalRecord = (args) => {
@@ -281,7 +281,7 @@ const projectSchema = Effect_1.fnUntraced(runtime.$joinedFrame(function* project
             args: descriptors.args,
             options: descriptors.options,
             assemble: (args, options) => Object.freeze({ value: { ...positionalRecord(args), ...options } }),
-            decode: (assembly) => Effect_1.suspend({ decode: () => { return decodeWith(schema, command, assembly); } }.decode),
+            decode: (assembly) => Effect_1.suspend({ decode: () => { return decodeWith(schema, command, assembly); } }.decode)
         };
         return Object.freeze(projected);
     }
@@ -296,7 +296,7 @@ const projectSchema = Effect_1.fnUntraced(runtime.$joinedFrame(function* project
             if (!parsed.success)
                 return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
             return yield* decodeInput(schema, parsed.data.input);
-        }),
+        })
     };
     return Object.freeze(projected);
 }));
@@ -312,7 +312,7 @@ export function toCommandSchema(arg_8, arg_9) {
             return yield* Effect_1.fail(new FsError({
                 code: "unsupported_schema",
                 method: "SchemaBridge.toCommandSchema",
-                description: "An output locator cannot describe command input",
+                description: "An output locator cannot describe command input"
             }));
         }
         if (ref._tag === "None") {
@@ -327,7 +327,7 @@ export function toCommandSchema(arg_8, arg_9) {
                         return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
                     }
                     return yield* recover(Schema.decodeUnknownEffect(schema)(undefined), () => Effect_1.sync(() => { return schemaFailure("decode_failed", "SchemaBridge.decodeInput"); }));
-                }),
+                })
             };
             return Object.freeze(none);
         }
@@ -337,7 +337,7 @@ export function toCommandSchema(arg_8, arg_9) {
                 args: z.object({ args: z.array(z.string()).optional() }),
                 options: z.object({}).strict(),
                 assemble: (args, options) => Object.freeze({ value: { args: positionalText(args), ...options } }),
-                decode: (assembly) => Effect_1.suspend({ decode: () => { return decodeWith(schema, command, assembly); } }.decode),
+                decode: (assembly) => Effect_1.suspend({ decode: () => { return decodeWith(schema, command, assembly); } }.decode)
             };
             return Object.freeze(markdown);
         }

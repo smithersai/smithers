@@ -28,7 +28,7 @@ export const nativeCallEvent = (event) => {
     return {
         ...event,
         kind: fact.value.phase === "invoked" ? "control.agent.cell-call-started" : "control.agent.cell-call-settled",
-        payload: JSON.parse(JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs })),
+        payload: JSON.parse(JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs }))
     };
 };
 /** Normalize a checkpoint only within its recorded execution and source.
@@ -62,8 +62,8 @@ export const nativeStepEvent = (event) => {
         payload: {
             ...fact.payload,
             step: { ...step, generation: fact.generation, frame: fact.frame, ordinal: fact.ordinal },
-            at: fact.at,
-        },
+            at: fact.at
+        }
     };
 };
 /** Scope call matching to the recorded invocation, including its generation.
@@ -85,7 +85,7 @@ export const callScope = (event) => {
         scope.ask,
         scope.retry,
         scope.scope,
-        scope.generation,
+        scope.generation
     ]);
 };
 /**
@@ -201,6 +201,6 @@ export const callEventFilter = () => {
             seen.add(key);
             const preferred = native.get(key);
             return { _tag: "keep", event: preferred === undefined ? event : { ...preferred, sequence: event.sequence } };
-        },
+        }
     };
 };

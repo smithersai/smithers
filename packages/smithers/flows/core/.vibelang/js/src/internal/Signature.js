@@ -61,7 +61,7 @@ export const build = (options) => {
         ...(effects === undefined ? {} : { effects }),
         success: options.output,
         error: options.error,
-        annotations: options.annotations,
+        annotations: options.annotations
     };
     const body = options.body;
     // A signature without a body IS the action a host implements later; the flow
@@ -71,7 +71,7 @@ export const build = (options) => {
         ? Action.make(options.name, {
             ...declared,
             declaredFrom: options.original?.action,
-            tier: tierOf(effects),
+            tier: tierOf(effects)
         })
         : undefined;
     let nativeBody;
@@ -97,13 +97,13 @@ export const build = (options) => {
         ...(options.budget === undefined ? {} : { budget: options.budget }),
         ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
         declaredFrom: options.original?.flow,
-        body: nativeBody,
+        body: nativeBody
     });
     const self = {
         [TypeId]: {
             _Input: identity,
             _Output: identity,
-            _Error: identity,
+            _Error: identity
         },
         name: options.name,
         description: options.description,
@@ -124,11 +124,11 @@ export const build = (options) => {
         pipe() {
             // eslint-disable-next-line prefer-rest-params
             return pipeArguments(this, arguments);
-        },
+        }
     };
     built.set(self, {
         ...options,
-        original: options.original ?? { flow, action },
+        original: options.original ?? { flow, action }
     });
     return self;
 };
@@ -151,7 +151,7 @@ export const within = dual(2, (self, placement) => {
     const options = optionsOf(self);
     return build({
         ...options,
-        annotations: Annotations.add(options.annotations, Annotations.Placement, placement),
+        annotations: Annotations.add(options.annotations, Annotations.Placement, placement)
     });
 });
 /**
@@ -172,7 +172,7 @@ export const annotate = dual(3, (self, key, value) => {
     const options = optionsOf(self);
     return build({
         ...options,
-        annotations: Annotations.add(options.annotations, key, value),
+        annotations: Annotations.add(options.annotations, key, value)
     });
 });
 /**
@@ -188,5 +188,5 @@ export const annotate = dual(3, (self, key, value) => {
  */
 export const withFlows = dual(2, (self, flows) => build({
     ...optionsOf(self),
-    flows: [...flows],
+    flows: [...flows]
 }));

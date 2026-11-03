@@ -68,7 +68,7 @@ const warningSnapshot = (warning) => new Descriptor.DiscoveryWarning({
     code: warning.code,
     path: warning.path,
     message: warning.message,
-    name: warning.name,
+    name: warning.name
 });
 /**
  * Scans a flows root without importing or evaluating any flow module.
@@ -99,7 +99,7 @@ export function scan(arg_3) {
         // Discovery confines entries, not companions: a UI module is recorded only
         // when its real path stays inside the root's real path.
         const withinRoot = Effect_1.fnUntraced(function* withinRoot(location) {
-            const [realRoot, real] = yield* $catchExpression(() => all([fileSystem.realPath(root), fileSystem.realPath(location)]), () => Effect_1.suspend(() => (() => Effect_1.suspend(() => Effect_1.fail(readFailure())))()));
+            const [realRoot, real] = yield* $catchExpression(() => all([fileSystem.realPath(root), fileSystem.realPath(location)]), () => Effect_1.suspend(() => { return (() => Effect_1.suspend(() => Effect_1.fail(readFailure())))(); }));
             return real.startsWith(path.join(realRoot, path.sep));
         });
         if (result.entries.length > CommandTree.maximumRoutes) {
@@ -122,12 +122,12 @@ export function scan(arg_3) {
                                     code: "duplicate_route",
                                     method: "FileRouter.scan",
                                     description: "Distinct source paths collapse to one command name",
-                                    path: name,
+                                    path: name
                                 }));
                             }
                             const directory = path.dirname(sourcePath);
                             const uiPath = path.join(directory, "ui.tsx");
-                            const hasUi = (yield* $catchExpression(() => fileSystem.exists(uiPath), () => Effect_1.suspend(() => (() => Effect_1.suspend(() => Effect_1.fail(readFailure())))()))) && (yield* withinRoot(uiPath));
+                            const hasUi = (yield* $catchExpression(() => fileSystem.exists(uiPath), () => Effect_1.suspend(() => { return (() => Effect_1.suspend(() => Effect_1.fail(readFailure())))(); }))) && (yield* withinRoot(uiPath));
                             const route = yield* Route.snapshot({
                                 name,
                                 segments,
@@ -142,7 +142,7 @@ export function scan(arg_3) {
                                 effects: descriptor.effects,
                                 modelInvocable: descriptor.modelInvocable,
                                 placement: descriptor.placement,
-                                ui: hasUi ? Option.some(uiPath) : Option.none(),
+                                ui: hasUi ? Option.some(uiPath) : Option.none()
                             });
                             routes.set(name, route);
                         }
@@ -162,7 +162,7 @@ export function scan(arg_3) {
         const ordered = Array.from(routes.keys()).sort().map((name) => routes.get(name));
         return Object.freeze({
             routes: Object.freeze(ordered),
-            warnings: Object.freeze(result.warnings.map(warningSnapshot)),
+            warnings: Object.freeze(result.warnings.map(warningSnapshot))
         });
     }))).apply(this, arguments);
 }

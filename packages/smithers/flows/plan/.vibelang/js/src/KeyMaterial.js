@@ -34,7 +34,7 @@ import * as Effects from "./Effects.js";
 export const InputRef = Schema.Union([
     Schema.TaggedStruct("Literal", { value: Schema.Unknown }),
     Schema.TaggedStruct("Ref", { from: Schema.NonEmptyString, path: Schema.Array(Schema.String) }),
-    Schema.TaggedStruct("Pending", { from: Schema.NonEmptyString }),
+    Schema.TaggedStruct("Pending", { from: Schema.NonEmptyString })
 ]);
 /**
  * The material version. Folded into every hashed body so a bump re-keys every
@@ -68,7 +68,7 @@ export const KeyMaterial = Schema.Struct({
     layers: Schema.Array(Schema.String),
     capabilities: Schema.Array(Schema.String),
     effects: Schema.optional(Schema.Unknown),
-    placement: Schema.optional(Schema.Unknown),
+    placement: Schema.optional(Schema.Unknown)
 });
 /**
  * The graph-local dependencies a material names, in declaration order and

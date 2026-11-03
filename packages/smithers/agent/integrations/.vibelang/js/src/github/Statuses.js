@@ -63,13 +63,13 @@ export const Status = Schema.Struct({
     context: Schema.String,
     description: Schema.NullOr(Schema.String),
     target_url: Schema.NullOr(Schema.String),
-    created_at: Schema.String,
+    created_at: Schema.String
 });
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const invalid = (field, message, value) => new IntegrationError("invalid-config", message, {
     field,
     value: typeof value === "string" ? value.slice(0, 64) : typeof value,
-    retryable: false,
+    retryable: false
 });
 const requireInput = Effect_1.fnUntraced(function* requireInput(sha, input) {
     if (typeof sha !== "string" || !SHA.test(sha)) {
@@ -88,7 +88,7 @@ const requireInput = Effect_1.fnUntraced(function* requireInput(sha, input) {
         state: input.state,
         context: input.context,
         ...(input.description === undefined ? {} : { description: cut(input.description) }),
-        ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl }),
+        ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl })
     };
 });
 const isHttps = (url) => {
@@ -116,8 +116,8 @@ export const create = (owner, repo, sha, input) => Effect.withSpan((Effect_1.gen
     const body = yield* requireInput(sha, input);
     return yield* client.request("POST", `/repos/${repository}/statuses/${sha}`, body, {
         schema: Status,
-        retryUnsafeWrites: true,
+        retryUnsafeWrites: true
     });
 })), "GitHub.Statuses.create", {
-    attributes: { "github.owner": owner, "github.repo": repo, "github.status.state": input.state },
+    attributes: { "github.owner": owner, "github.repo": repo, "github.status.state": input.state }
 });

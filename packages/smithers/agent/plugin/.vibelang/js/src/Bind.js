@@ -72,7 +72,7 @@ export const references = (args, at = "") => {
                 refused ??= new Refusal({
                     reason: "invalid",
                     path: at === "" ? written : `${at}.${written}`,
-                    detail: "the reference is outside the binding grammar",
+                    detail: "the reference is outside the binding grammar"
                 });
             }
         });

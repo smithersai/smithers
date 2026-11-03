@@ -46,7 +46,7 @@ export class Recent extends runtime.$service("@smthrs/observability/LogFailures/
  */
 export const failures = Metric.counter("flows_observability_log_failures", {
     description: "Log lines at Warn or above, by record, code and area",
-    incremental: true,
+    incremental: true
 });
 /**
  * The annotations read for a line's code when {@link Options.codes} is
@@ -63,7 +63,7 @@ export const defaultCodeFields = [
     "error.type",
     "error",
     "name",
-    "status",
+    "status"
 ];
 /**
  * Distinct records kept when {@link Options.records} is omitted; past it a
@@ -173,7 +173,7 @@ export const layer = (options) => Layer.unwrap(Effect_1.gen(runtime.$joinedFrame
             level,
             record: recordOf(message),
             code: found === undefined ? "none" : code(found),
-            area: typeof rawArea === "string" && identifier.test(rawArea) ? area(rawArea) : "none",
+            area: typeof rawArea === "string" && identifier.test(rawArea) ? area(rawArea) : "none"
         };
         Metric.withAttributes(failures, attributes).updateUnsafe(1, fiber.context);
         if (keep === 0)
@@ -182,10 +182,12 @@ export const layer = (options) => Layer.unwrap(Effect_1.gen(runtime.$joinedFrame
         entries.push({
             at: date.getTime(),
             ...attributes,
-            ...(span === undefined ? {} : { traceId: span.traceId, spanId: span.spanId }),
+            ...(span === undefined ? {} : { traceId: span.traceId, spanId: span.spanId })
         });
         if (entries.length > keep)
             entries.shift();
     });
-    return Layer.merge(Logger.layer([logger], { mergeWithExisting: true }), Layer.succeed(Recent, Recent.of({ entries: Effect_1.sync({ entries: () => entries.slice() }.entries) })));
+    return Layer.merge(Logger.layer([logger], { mergeWithExisting: true }), Layer.succeed(Recent, Recent.of({
+        entries: Effect_1.sync({ entries: () => entries.slice() }.entries)
+    })));
 })));

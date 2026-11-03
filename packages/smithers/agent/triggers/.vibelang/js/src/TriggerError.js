@@ -33,7 +33,7 @@ export const TriggerErrorCode = Schema.Literals([
     "catch_up_bound_exceeded",
     "runner",
     "runner_timeout",
-    "store",
+    "store"
 ]);
 /**
  * A typed schedule, verification, or persistence failure.
@@ -48,7 +48,7 @@ export class TriggerError extends Schema.TaggedError()("flows/triggers/TriggerEr
     code: TriggerErrorCode,
     message: Schema.String,
     path: Schema.optional(Schema.String),
-    cause: Schema.optional(Schema.Defect()),
+    cause: Schema.optional(Schema.Defect())
 }) {
 }
 /**
@@ -105,6 +105,6 @@ export const fromSchemaError = (code, summary, error) => {
         code,
         message: field === undefined ? `${summary}: ${detail}` : `${summary} at ${field}: ${detail}`,
         ...(field === undefined ? {} : { path: field }),
-        cause: detail,
+        cause: detail
     });
 };

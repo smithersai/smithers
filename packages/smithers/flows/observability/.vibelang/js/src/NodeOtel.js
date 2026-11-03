@@ -32,22 +32,22 @@ export const layerOtel = (options) => Layer.unwrap(Effect.map(Effect.all([Resour
     const resource = Resource.toOpenTelemetryConfiguration(decoded);
     const spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter({ url: Endpoint.signalUrl(endpoint, "traces") }));
     const logRecordProcessor = new BatchLogRecordProcessor({
-        exporter: new OTLPLogExporter({ url: Endpoint.signalUrl(endpoint, "logs") }),
+        exporter: new OTLPLogExporter({ url: Endpoint.signalUrl(endpoint, "logs") })
     });
     const metricReader = options.exportIntervalMillis === undefined
         ? new PeriodicExportingMetricReader({
-            exporter: new OTLPMetricExporter({ url: Endpoint.signalUrl(endpoint, "metrics") }),
+            exporter: new OTLPMetricExporter({ url: Endpoint.signalUrl(endpoint, "metrics") })
         })
         : new PeriodicExportingMetricReader({
             exporter: new OTLPMetricExporter({ url: Endpoint.signalUrl(endpoint, "metrics") }),
-            exportIntervalMillis: options.exportIntervalMillis,
+            exportIntervalMillis: options.exportIntervalMillis
         });
     return {
         resource,
         spanProcessor,
         logRecordProcessor,
         metricReader,
-        shutdownTimeout: options.shutdownTimeout,
+        shutdownTimeout: options.shutdownTimeout
     };
 }).pipe(
 // NodeSdk merges Resource.layerFromEnv after our admission check.

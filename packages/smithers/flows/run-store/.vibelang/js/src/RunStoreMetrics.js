@@ -27,7 +27,7 @@ import * as Metric from "effect/Metric";
  * @since 0.1.0
  */
 export const claims = Metric.counter("flows_run_claims", {
-    description: "Ownership claim compare-and-swaps by operation and outcome",
+    description: "Ownership claim compare-and-swaps by operation and outcome"
 });
 /**
  * Counter over fenced run state transitions, dimensioned by `outcome`
@@ -38,7 +38,7 @@ export const claims = Metric.counter("flows_run_claims", {
  * @since 0.1.0
  */
 export const transitions = Metric.counter("flows_run_transitions", {
-    description: "Fenced run state transitions by outcome and target status",
+    description: "Fenced run state transitions by outcome and target status"
 });
 /**
  * Counter over fenced ownership heartbeats, dimensioned by `outcome`
@@ -50,7 +50,7 @@ export const transitions = Metric.counter("flows_run_transitions", {
  * @since 0.1.0
  */
 export const heartbeats = Metric.counter("flows_run_heartbeats", {
-    description: "Fenced ownership heartbeats by outcome",
+    description: "Fenced ownership heartbeats by outcome"
 });
 /** Rewrites an outcome tag (`AlreadyClaimed`) as an attribute value (`already_claimed`). */
 const attributeValue = (tag) => tag.replace(/(?<=[a-z0-9])(?=[A-Z])/g, "_").toLowerCase();

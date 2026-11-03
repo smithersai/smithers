@@ -17,7 +17,7 @@ import * as Schema from "effect/Schema";
 export class SnapshotBoundaryRequired extends Schema.TaggedError()("@smthrs/engine/SnapshotBoundaryRequired", {
     code: Schema.Literal("snapshot_boundary_required").pipe(Schema.withConstructorDefault(Effect.succeed("snapshot_boundary_required"))),
     actionName: Schema.String,
-    message: Schema.String,
+    message: Schema.String
 }) {
 }
 /**

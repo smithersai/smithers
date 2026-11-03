@@ -34,7 +34,7 @@ import * as Supervisor from "./Supervisor.js";
 export const budgets = {
     lint: { at: 0.8, consecutive: 1, cooldownFrames: 6, limit: 2, priority: 30 },
     mood: { at: 0.8, consecutive: 2, cooldownFrames: 6, limit: 2, priority: 20 },
-    skill: { at: 0.85, consecutive: 1, cooldownFrames: 6, limit: 1, priority: 10 },
+    skill: { at: 0.85, consecutive: 1, cooldownFrames: 6, limit: 1, priority: 10 }
 };
 /**
  * The ids a monitor may take.
@@ -66,7 +66,7 @@ export const make = (input) => ({ ...budgets[input.kind], ...input });
  */
 export class InvalidMonitor extends Schema.TaggedError()("@smthrs/harness/Monitor/InvalidMonitor", {
     id: Schema.String,
-    message: Schema.String,
+    message: Schema.String
 }) {
 }
 Fault.register("@smthrs/harness/Monitor/InvalidMonitor", "bug");
@@ -142,8 +142,8 @@ export const lint = () => [
         limit: Number.MAX_SAFE_INTEGER,
         priority: 30,
         score: (reading) => Supervisor.crosses(reading) ? 1 : 0,
-        say: Supervisor.nudge,
-    }),
+        say: Supervisor.nudge
+    })
 ];
 /**
  * What the `paranoid` monitor says.
@@ -179,7 +179,7 @@ const mood = (id, text, fires, budget = {}) => make({
     kind: "mood",
     ...budget,
     score: (reading, snapshot) => fires(reading, snapshot) ? 1 : 0,
-    say: () => text,
+    say: () => text
 });
 /**
  * Stance monitors over the emotions and help the supervisor already reads.
@@ -200,7 +200,7 @@ export const moods = () => [
         && snapshot.frames.some((frame) => frame.transition === "complete")),
     mood("careful", carefulText, (reading) => reading.emotions.scared === "strong" || reading.needsHelp === "risky_action"),
     mood("step_back", stepBackText, (reading) => reading.emotions.frustrated === "strong", { consecutive: 2 }),
-    mood("clarify", clarifyText, (reading) => reading.emotions.confused === "strong"),
+    mood("clarify", clarifyText, (reading) => reading.emotions.confused === "strong")
 ];
 /**
  * The built-in monitors: {@link lint} then {@link moods}.
@@ -215,8 +215,8 @@ const skillQuestion = (index) => skillQuestions[index] ??= Classifier.boolean({
     instructions: `Would reading skills[${index}] now change what the run does next for the task as stated?`,
     criteria: {
         true: `the newest frames do the work skills[${index}] describes without having read it, or violate what it prescribes`,
-        false: "unrelated, or the run already follows it",
-    },
+        false: "unrelated, or the run already follows it"
+    }
 });
 const skillId = (name) => `skill_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")}`.slice(0, 48);
 /**
@@ -256,8 +256,8 @@ const useJevQuestion = Classifier.boolean({
     instructions: "Do the newest frames print lists of items (files, hits, failures, candidates) and then choose among them by hand?",
     criteria: {
         true: "a frame prints several items and a later cell or its prose picks among them without a jev call",
-        false: "no list is chosen from by hand, or the choice was a jev call",
-    },
+        false: "no list is chosen from by hand, or the choice was a jev call"
+    }
 });
 /**
  * The lint that nudges a run choosing among printed items by hand toward one
@@ -274,7 +274,7 @@ export const useJev = () => make({
     limit: 2,
     question: useJevQuestion,
     applies: (snapshot) => snapshot.jevAvailable,
-    say: () => useJevText,
+    say: () => useJevText
 });
 /**
  * The questions one snapshot adds to the supervisor's call, by
@@ -309,7 +309,7 @@ export const evaluate = (input) => {
                 kind: monitor.kind,
                 priority: monitor.priority,
                 p,
-                text: monitor.say(input.snapshot, input.reading),
+                text: monitor.say(input.snapshot, input.reading)
             });
         }
     }
@@ -324,7 +324,7 @@ export const evaluate = (input) => {
 export const Entry = Schema.Struct({
     streak: NonNegativeSafeInt.annotate({ description: "Consecutive readings that crossed" }),
     delivered: NonNegativeSafeInt.annotate({ description: "Deliveries so far" }),
-    lastFrame: Schema.Int.annotate({ description: "The frame of the last delivery; -1 never" }),
+    lastFrame: Schema.Int.annotate({ description: "The frame of the last delivery; -1 never" })
 });
 /**
  * Every monitor's delivery state, by monitor id.

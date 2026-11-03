@@ -147,7 +147,7 @@ export class Input extends Schema.Class("@smthrs/journal/JournalEvent/Input")({
     /** Non-empty, NUL-free, well-formed UTF-16 of at most 1,024 code units. */
     eventType: identifier,
     payload: Schema.Unknown,
-    meta: Schema.optional(Schema.Unknown),
+    meta: Schema.optional(Schema.Unknown)
 }) {
 }
 /**
@@ -179,7 +179,7 @@ export class Entry extends Schema.Class("@smthrs/journal/JournalEvent/Entry")({
      */
     eventType: identifier,
     payload: Schema.Unknown,
-    meta: Schema.Unknown,
+    meta: Schema.Unknown
 }) {
 }
 /**
@@ -269,7 +269,7 @@ const sha256Rounds = Uint32Array.from([
     0x90befffa,
     0xa4506ceb,
     0xbef9a3f7,
-    0xc67178f2,
+    0xc67178f2
 ]);
 const rotate = (value, bits) => (value >>> bits) | (value << (32 - bits));
 /**
@@ -296,7 +296,7 @@ const sha256Hex = (text) => {
         0x510e527f,
         0x9b05688c,
         0x1f83d9ab,
-        0x5be0cd19,
+        0x5be0cd19
     ]);
     const words = new Uint32Array(64);
     for (let block = 0; block < length; block += 64) {

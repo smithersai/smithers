@@ -24,7 +24,7 @@ const open = (fields) => Schema.StructWithRest(Schema.Struct(fields), rest);
 export const User = open({
     login: Schema.String,
     id: Schema.optional(Schema.Number),
-    type: Schema.optional(Schema.String),
+    type: Schema.optional(Schema.String)
 });
 /**
  * How the author of a comment, issue, or pull request relates to the
@@ -46,7 +46,7 @@ export const Repository = open({
     full_name: Schema.String,
     name: Schema.optional(Schema.String),
     owner: Schema.optional(User),
-    default_branch: Schema.optional(Schema.String),
+    default_branch: Schema.optional(Schema.String)
 });
 /**
  * A pull request.
@@ -65,7 +65,7 @@ export const PullRequest = open({
     merged: Schema.optional(Schema.Boolean),
     user: Schema.optional(User),
     head: Schema.optional(open({ ref: Schema.String, sha: Schema.String })),
-    base: Schema.optional(open({ ref: Schema.String, sha: Schema.optional(Schema.String) })),
+    base: Schema.optional(open({ ref: Schema.String, sha: Schema.optional(Schema.String) }))
 });
 /**
  * An issue.
@@ -81,7 +81,7 @@ export const Issue = open({
     html_url: Schema.optional(Schema.String),
     body: Schema.optional(Schema.NullOr(Schema.String)),
     user: Schema.optional(User),
-    labels: Schema.optional(Schema.Array(Schema.Unknown)),
+    labels: Schema.optional(Schema.Array(Schema.Unknown))
 });
 /**
  * An issue or pull-request comment.
@@ -94,7 +94,7 @@ export const Comment = open({
     author_association: Schema.optional(AuthorAssociation),
     body: Schema.optional(Schema.String),
     html_url: Schema.optional(Schema.String),
-    user: Schema.optional(User),
+    user: Schema.optional(User)
 });
 /**
  * A `pull_request` delivery.
@@ -107,7 +107,7 @@ export const PullRequestEvent = open({
     number: Schema.optional(Schema.Number),
     pull_request: PullRequest,
     repository: Repository,
-    sender: Schema.optional(User),
+    sender: Schema.optional(User)
 });
 /**
  * An `issues` delivery.
@@ -119,7 +119,7 @@ export const IssuesEvent = open({
     action: Schema.String,
     issue: Issue,
     repository: Repository,
-    sender: Schema.optional(User),
+    sender: Schema.optional(User)
 });
 /**
  * An `issue_comment` delivery.
@@ -132,7 +132,7 @@ export const IssueCommentEvent = open({
     issue: Issue,
     comment: Comment,
     repository: Repository,
-    sender: Schema.optional(User),
+    sender: Schema.optional(User)
 });
 /**
  * A `push` delivery.
@@ -146,5 +146,5 @@ export const PushEvent = open({
     after: Schema.optional(Schema.String),
     repository: Repository,
     commits: Schema.optional(Schema.Array(open({ id: Schema.optional(Schema.String), message: Schema.optional(Schema.String) }))),
-    pusher: Schema.optional(open({ name: Schema.optional(Schema.String) })),
+    pusher: Schema.optional(open({ name: Schema.optional(Schema.String) }))
 });

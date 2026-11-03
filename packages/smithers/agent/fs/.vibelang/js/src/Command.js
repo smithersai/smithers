@@ -24,7 +24,7 @@ function snapshotDecoded(arg_1) {
             return yield* Effect_1.fail(new FsError({
                 code: "decode_failed",
                 method: "Command.call",
-                description: "The decoded flow value did not satisfy the boundary",
+                description: "The decoded flow value did not satisfy the boundary"
             }));
         }
         return admitted.value;
@@ -32,10 +32,12 @@ function snapshotDecoded(arg_1) {
 }
 function validateDecoded(arg_2, arg_3, arg_4) {
     return Effect_1.fnUntraced(function* validateDecoded(schema, value, field) {
-        const decoded = yield* SchemaBridge.recover(Effect_1.gen(function* () { return yield* Schema.decodeUnknownEffect(Schema.toType(schema))(yield* snapshotDecoded(value)); }), () => Effect_1.sync(() => { return new FsError({
+        const decoded = yield* SchemaBridge.recover(Effect_1.gen(function* () {
+            return yield* Schema.decodeUnknownEffect(Schema.toType(schema))(yield* snapshotDecoded(value));
+        }), () => Effect_1.sync(() => { return new FsError({
             code: "decode_failed",
             method: "Command.call",
-            description: `The decoded flow ${field} did not satisfy its schema`,
+            description: `The decoded flow ${field} did not satisfy its schema`
         }); }));
         return yield* snapshotDecoded(decoded);
     }).apply(this, arguments);
@@ -72,7 +74,7 @@ export function make(arg_5) {
         const invoke = Effect_1.fnUntraced(function* invoke(route, flow, input) { return yield* (yield* FlowInvoker.FlowInvoker).invoke(Object.freeze({ name: route.name, flow, input })); });
         const listed = Object.freeze(CommandTree.traverse(tree).map((route) => Object.freeze({
             name: route.name,
-            description: Option.getOrUndefined(route.description),
+            description: Option.getOrUndefined(route.description)
         })));
         const surface = {
             list: () => listed,
@@ -92,7 +94,7 @@ export function make(arg_5) {
                     const decoded = yield* validateDecoded(flow.input, input, "input");
                     const output = yield* invoke(route, flow, decoded);
                     return (yield* validateDecoded(flow.output, output, "output"));
-                }), "Command.call"); } }.call),
+                }), "Command.call"); } }.call)
         };
         return Object.freeze(surface);
     })).apply(this, arguments);

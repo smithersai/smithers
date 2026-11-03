@@ -159,7 +159,7 @@ export function parseFlags(arg_2) {
         const captured = Boundary.stringArray(input, {
             maxItems: maximumCommandTokens,
             maxLength: maximumTokenLength,
-            allowEmpty: true,
+            allowEmpty: true
         });
         if (!captured.ok) {
             if (captured.kind === "invalid_text") {
@@ -228,7 +228,7 @@ export function parseFlags(arg_2) {
         }
         return Object.freeze({
             args: Object.freeze(args),
-            options: Object.freeze(options),
+            options: Object.freeze(options)
         });
     })).apply(this, arguments);
 }

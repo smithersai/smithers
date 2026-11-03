@@ -20,5 +20,5 @@ export const layerOtel = (options) => Layer.unwrap(Effect.map(Resource.decode(op
     spanProcessor: options.spanProcessor?.(),
     logRecordProcessor: options.logRecordProcessor?.(),
     metricReader: options.metricReader?.(),
-    loggerMergeWithExisting: options.loggerMergeWithExisting,
+    loggerMergeWithExisting: options.loggerMergeWithExisting
 }))));

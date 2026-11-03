@@ -36,7 +36,7 @@ import * as Metric from "effect/Metric";
  * @slop
  */
 export const puts = Metric.counter("flows_artifact_puts", {
-    description: "Successful artifact puts, including deduplicated ones",
+    description: "Successful artifact puts, including deduplicated ones"
 });
 /**
  * Counter over successful artifact gets. Missing and corrupt reads fail with
@@ -48,7 +48,7 @@ export const puts = Metric.counter("flows_artifact_puts", {
  * @slop
  */
 export const gets = Metric.counter("flows_artifact_gets", {
-    description: "Successful artifact gets",
+    description: "Successful artifact gets"
 });
 /**
  * Counter over opportunistic `CombinedArtifacts` transfers that failed or hit
@@ -63,7 +63,7 @@ export const gets = Metric.counter("flows_artifact_gets", {
  * @since 1.0.0-rc.1
  */
 export const remoteFailures = Metric.counter("flows_artifact_remote_failures", {
-    description: "Dropped combined-artifact transfers by operation",
+    description: "Dropped combined-artifact transfers by operation"
 });
 /**
  * `remoteFailures` views keyed by the dropped transfer.
@@ -73,5 +73,5 @@ export const remoteFailures = Metric.counter("flows_artifact_remote_failures", {
  */
 export const remoteFailure = {
     put: Metric.withAttributes(remoteFailures, { operation: "put" }),
-    write_back: Metric.withAttributes(remoteFailures, { operation: "write_back" }),
+    write_back: Metric.withAttributes(remoteFailures, { operation: "write_back" })
 };

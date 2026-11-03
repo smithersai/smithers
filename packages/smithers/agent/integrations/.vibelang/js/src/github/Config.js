@@ -50,5 +50,5 @@ export const resolve = (config = {}, env = Environment.ambientEnvironment()) => 
         ? firstNonEmpty([env["SMITHERS_GITHUB_TOKEN"], env["GITHUB_TOKEN"]])
         : firstNonEmpty([config.token]),
     apiBaseUrl: firstNonEmpty([config.apiBaseUrl, env["SMITHERS_GITHUB_API_BASE_URL"]]) ?? DEFAULT_API_BASE_URL,
-    requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT,
+    requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT
 });

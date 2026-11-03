@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema";
  */
 export class Count extends Schema.Class("flows/harness/Tokens/Count")({
     value: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-    estimated: Schema.Boolean,
+    estimated: Schema.Boolean
 }) {
 }
 /**
@@ -30,7 +30,7 @@ export class Count extends Schema.Class("flows/harness/Tokens/Count")({
 export class Segment extends Schema.Class("flows/harness/Tokens/Segment")({
     digest: Schema.String,
     zone: Schema.Literals(["prefix", "tail"]),
-    tokens: Count,
+    tokens: Count
 }) {
 }
 /**
@@ -45,7 +45,7 @@ export class Accounting extends Schema.Class("flows/harness/Tokens/Accounting")(
     prefix: Count,
     tail: Count,
     total: Count,
-    bySegment: Schema.Array(Segment),
+    bySegment: Schema.Array(Segment)
 }) {
 }
 /**
@@ -87,6 +87,6 @@ export const combine = (segments) => {
         prefix: new Count({ value: prefix, estimated }),
         tail: new Count({ value: tail, estimated }),
         total: new Count({ value: prefix + tail, estimated }),
-        bySegment: segments,
+        bySegment: segments
     });
 };

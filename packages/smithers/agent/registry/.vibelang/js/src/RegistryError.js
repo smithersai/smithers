@@ -30,7 +30,7 @@ export class DiscoveryError extends Schema.TaggedError()("flows/registry/Discove
     method: Schema.optional(Schema.String),
     path: Schema.optional(Schema.String),
     message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
+    cause: Schema.optional(Schema.Defect())
 }) {
 }
 /**
@@ -48,7 +48,7 @@ export const RegistryErrorCode = Schema.Literals([
     "invalid_pack",
     "incompatible_pack",
     "unreadable_pack_range",
-    "unknown",
+    "unknown"
 ]);
 /**
  * A failure while constructing, looking up, loading, or rendering a registry
@@ -63,7 +63,7 @@ export class RegistryError extends Schema.TaggedError()("flows/registry/Registry
     method: Schema.optional(Schema.String),
     path: Schema.optional(Schema.String),
     message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
+    cause: Schema.optional(Schema.Defect())
 }) {
 }
 const format = (code, module, method, description) => `${code}: ${module}.${method}${description ? `: ${description}` : ""}`;
@@ -88,7 +88,7 @@ export const discoveryError = (options) => {
         method: options.method,
         path: options.path,
         message: `${format(options.code, module, options.method, options.description)}${detail === undefined ? "" : `: ${detail}`}`,
-        cause: options.cause,
+        cause: options.cause
     });
 };
 /**
@@ -105,6 +105,6 @@ export const registryError = (options) => {
         method: options.method,
         path: options.path,
         message: format(options.code, module, options.method, options.description),
-        cause: options.cause,
+        cause: options.cause
     });
 };

@@ -43,7 +43,7 @@ const expressionKeywords = new Set([
     "throw",
     "typeof",
     "void",
-    "yield",
+    "yield"
 ]);
 /** A closing control header starts a statement, which may be a regex literal. */
 const controlKeywords = new Set(["if", "while", "for", "with"]);
@@ -210,7 +210,7 @@ const singleEscapes = {
     n: "\n",
     r: "\r",
     t: "\t",
-    v: "\v",
+    v: "\v"
 };
 /** `count` hex digits from `start`, as a `\x` or four-digit `\u` escape reads them. */
 const fixedHex = (program, start, count) => {

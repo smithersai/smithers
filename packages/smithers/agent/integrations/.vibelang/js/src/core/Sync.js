@@ -77,7 +77,7 @@ export const runSync = (options) => Effect.withSpan((Effect_1.gen(function* () {
         swept: 0,
         cursor,
         reset: false,
-        done: false,
+        done: false
     };
     while (report.pages < maxPages && !report.done) {
         const changes = yield* adapter.changes(cursor);
@@ -99,7 +99,7 @@ export const runSync = (options) => Effect.withSpan((Effect_1.gen(function* () {
             swept: report.swept + committed.swept,
             cursor,
             reset: report.reset || changes.reset,
-            done: changes.done,
+            done: changes.done
         };
     }
     return report;
@@ -107,6 +107,6 @@ export const runSync = (options) => Effect.withSpan((Effect_1.gen(function* () {
     attributes: {
         "integration.provider": options.adapter.provider,
         "integration.connection": options.adapter.connectionId,
-        "integration.stream": options.adapter.stream,
-    },
+        "integration.stream": options.adapter.stream
+    }
 });

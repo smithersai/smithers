@@ -13,7 +13,7 @@ const prefix = "flows_";
  * @since 0.1.0
  */
 export const runThroughput = Metric.counter(`${prefix}run_throughput`, {
-    description: "Completed flow runs",
+    description: "Completed flow runs"
 });
 /**
  * The number of execution seats currently held.
@@ -22,7 +22,7 @@ export const runThroughput = Metric.counter(`${prefix}run_throughput`, {
  * @since 0.1.0
  */
 export const activeSeats = Metric.gauge(`${prefix}seat_active`, {
-    description: "Currently active execution seats",
+    description: "Currently active execution seats"
 });
 /**
  * Counts runs parked because a quota was exhausted.
@@ -31,7 +31,7 @@ export const activeSeats = Metric.gauge(`${prefix}seat_active`, {
  * @since 0.1.0
  */
 export const quotaParks = Metric.counter(`${prefix}quota_park`, {
-    description: "Runs parked by quota enforcement",
+    description: "Runs parked by quota enforcement"
 });
 /**
  * Counts agent answers refused by their declared output schema.
@@ -40,7 +40,7 @@ export const quotaParks = Metric.counter(`${prefix}quota_park`, {
  * @since 1.0.0-rc.1
  */
 export const structuredOutputRejections = Metric.counter(`${prefix}agent_structured_output_rejections`, {
-    description: "Agent answers refused by their declared output schema",
+    description: "Agent answers refused by their declared output schema"
 });
 /**
  * Counts agent steps that failed after spending every output correction.
@@ -49,7 +49,7 @@ export const structuredOutputRejections = Metric.counter(`${prefix}agent_structu
  * @since 1.0.0-rc.1
  */
 export const structuredOutputExhausted = Metric.counter(`${prefix}agent_structured_output_exhausted`, {
-    description: "Agent steps whose output corrections were exhausted",
+    description: "Agent steps whose output corrections were exhausted"
 });
 /**
  * Counts operational log records lost before durable delivery.
@@ -62,7 +62,7 @@ export const structuredOutputExhausted = Metric.counter(`${prefix}agent_structur
  * @since 1.0.0-rc.0
  */
 export const droppedLogRecords = Metric.counter(`${prefix}observability_log_dropped`, {
-    description: "Operational log records dropped before durable delivery",
+    description: "Operational log records dropped before durable delivery"
 });
 /**
  * Counts OTLP records `OtlpRelay.serve` re-emitted as log lines, by `signal`.
@@ -71,7 +71,7 @@ export const droppedLogRecords = Metric.counter(`${prefix}observability_log_drop
  * @since 1.0.0-rc.16
  */
 export const relayedRecords = Metric.counter(`${prefix}observability_otlp_relayed`, {
-    description: "OTLP records relayed into the server's loggers",
+    description: "OTLP records relayed into the server's loggers"
 });
 /**
  * Counts OTLP records `OtlpRelay.serve` dropped, by `signal` and `reason`:
@@ -82,7 +82,7 @@ export const relayedRecords = Metric.counter(`${prefix}observability_otlp_relaye
  * @since 1.0.0-rc.16
  */
 export const relayDroppedRecords = Metric.counter(`${prefix}observability_otlp_relay_dropped`, {
-    description: "OTLP records the relay dropped: off its allowlist or over its per-request cap",
+    description: "OTLP records the relay dropped: off its allowlist or over its per-request cap"
 });
 /**
  * All metrics declared by this package.
@@ -98,5 +98,5 @@ export const registry = {
     structuredOutputExhausted,
     droppedLogRecords,
     relayedRecords,
-    relayDroppedRecords,
+    relayDroppedRecords
 };

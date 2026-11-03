@@ -111,7 +111,7 @@ export class Capture extends Schema.Class("flows/harness/TruncatedOutput/Capture
     /** Bytes the flow discarded, as it reported them; zero when it did not say. */
     droppedBytes: NonNegativeSafeInt,
     /** The digest of the exact string the flow returned. */
-    digest: Schema.String,
+    digest: Schema.String
 }) {
 }
 const encoder = new TextEncoder();
@@ -129,7 +129,7 @@ const captureField = (flow, node, field, into) => {
         flow,
         field,
         droppedBytes: droppedBytes(node, field),
-        digest: Digest.digest(text),
+        digest: Digest.digest(text)
     }));
 };
 const captureNode = (flow, node, into) => {

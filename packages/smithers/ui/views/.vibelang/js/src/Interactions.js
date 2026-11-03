@@ -67,7 +67,7 @@ export const StateInteraction = Schema.Struct({ kind: Schema.Literal("state") })
  */
 export const MessageInteraction = Schema.Struct({
     kind: Schema.Literal("message"),
-    label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maxLabelLength)),
+    label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maxLabelLength))
 });
 /**
  * One declared interaction.

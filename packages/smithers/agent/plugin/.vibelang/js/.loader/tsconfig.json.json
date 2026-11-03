@@ -10,63 +10,63 @@
   "root": {
    "relative": "packages/smithers/agent/plugin"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/agent/plugin/tsconfig.json"
     },
-    "size": 1384,
-    "hash": "ZIm2fGhGex1PiOk_SJ4av0pSJVitlShf1hv5eINv5zw"
+    "size": 1345,
+    "hash": "xaASBpq4vV4F53H08M1-HKOF3WW_rG75ZsSbtmxyFtw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "kX8q1iNWIj4BmVzY_IUz7VZgBYmXEViKvqcjm5q_7aM"
+    "size": 1328,
+    "hash": "ma5DHvQE48VgxNilZCWgqR7uME4BIWXbdVjvlXaBW2o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    }
   ],
   "directories": [
@@ -244,7 +244,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -269,7 +269,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -298,63 +298,63 @@
      "relative": "packages/smithers/agent/plugin/package.json"
     },
     "size": 10333,
-    "hash": "FIbZ3zD6w1svaUDMQ2MuBwhKqCQGI5jk1_6vDX4ynCg"
+    "hash": "UGt0Jg2fkgLSer-pRP23v5mP32QVHT0MadLvrXFNWCU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
+    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
+    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
+    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "UCLgpI-A-WxW-qbLTBrkIVPiG78MZVE_4OtUN_SdOtE"
+    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "O9iDHySpA30BJ4H48_xLoYKtd_38nfhgRWUlLwL8hII"
+    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
    },
    {
     "path": {
@@ -536,7 +536,7 @@
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "ChhNRC9WpUe0JlBdu_RF9QYJMOG0J9A3o5IgLYQETzo"
+    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
    },
    {
     "path": {
@@ -2042,8 +2042,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/Keys.vibe"
     },
-    "size": 4716,
-    "hash": "oeOBt_5fGKp3UQjPgirHgjZnBMJvZ1vRxDVrSgYe0WY"
+    "size": 4715,
+    "hash": "SLY5nbPyYvW6BiS3zxMQGF1ngJNSZ0ATn56pd_MLe3A"
    },
    {
     "path": {
@@ -2119,15 +2119,15 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/Contribution.vibe"
     },
-    "size": 5802,
-    "hash": "jvg5ruEKnC3VTLdILHoZ04jnrCksz-lN-6aTZq2CAv4"
+    "size": 5799,
+    "hash": "YtSzQIKq1kIDO_Otx9Kb_apLq2aQmACISMwcGcxJycE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/plugin/src/Bind.vibe"
     },
-    "size": 6956,
-    "hash": "-mXjAZdiXGSEH_EqrWDIu4GzczNg4CXYVa-khdFqrDg"
+    "size": 6950,
+    "hash": "PD_mGUNmUPraR4pIfimgOY9OUP_FpXt6PKlr9HVSWEo"
    },
    {
     "path": {
@@ -2140,8 +2140,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/PluginError.vibe"
     },
-    "size": 1648,
-    "hash": "aCPLSIjHVBNE0BjOpZg2afVaLWwzwblbXGSvolWmR-Y"
+    "size": 1646,
+    "hash": "wphey5V2orPPw1zHlx_r_LD-UoniSX0MCY39VsLvgxU"
    },
    {
     "path": {
@@ -2154,8 +2154,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/Hooks.vibe"
     },
-    "size": 5892,
-    "hash": "-WawT6pUeuRQwyInVBi-UNp4-e2S62Iguem0Y9wxwhg"
+    "size": 5891,
+    "hash": "Iu5H6UMJqwD2NvwViJAPfcH-OHCmOoZOLecyScAMQCU"
    },
    {
     "path": {
@@ -2266,8 +2266,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -2406,15 +2406,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -2791,8 +2791,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -2833,8 +2833,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -3484,8 +3484,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -3568,8 +3568,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/internal/mergePluginLayers.vibe"
     },
-    "size": 1925,
-    "hash": "GtnLbF1enldpI-x66_8PXkrj6Km1Qm7YNGgONaco2UU"
+    "size": 1920,
+    "hash": "I41G35P2L0LsQqtjs5K5Ad9bXhBK0as234EPOQ7srQU"
    },
    {
     "path": {
@@ -3596,8 +3596,8 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/RegistryError.vibe"
     },
-    "size": 4329,
-    "hash": "7_18snT3dvkHYGAZBjHFbB5rEgaj1dvf1_ARWw64aYI"
+    "size": 4324,
+    "hash": "cVjx0oNYrfXf6huK-m3fBHVVUdBaFL7t4hvNLDogJBw"
    },
    {
     "path": {
@@ -3638,15 +3638,15 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Limits.vibe"
     },
-    "size": 3219,
-    "hash": "CIj4MRtMTMc11jEn1pXnOLibMR1El2LxLzoNrRnOQVI"
+    "size": 3214,
+    "hash": "OFcLpAJzZWsJJ0cybMQ-Srkp_OgQcrWBGg4_w0VT_Lo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Signature.vibe"
     },
-    "size": 16471,
-    "hash": "HNeTROivOMqBJzQGXqsGcTenpxegL4XxK8key3d-2K4"
+    "size": 16444,
+    "hash": "_n53tKqUgjWnQj9oNaOLwRVpIwXRvKOknhBGcnaPi-c"
    },
    {
     "path": {
@@ -3946,8 +3946,8 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/skillFrontmatter.vibe"
     },
-    "size": 5100,
-    "hash": "JkPsJqXZHDDpRQDbS0e8Zm7nhuNp5OPkbZP_qWhNadA"
+    "size": 5097,
+    "hash": "POYj7x08XrCO954XGJiLpfLZ2Y-_Cxm3zeoxm8ExRM0"
    },
    {
     "path": {
@@ -4751,15 +4751,15 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Declared.vibe"
     },
-    "size": 1751,
-    "hash": "34cgDS6_EH_1EkMOHnE6_nJaisImMuCHzllFZWXB6AQ"
+    "size": 1747,
+    "hash": "uKJa4EmBRtlCx_DtDQNIrZrBMyxbWBXXLM6fDQQG2bA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/ModuleMetadata.vibe"
     },
-    "size": 43378,
-    "hash": "21-WakM0o_CV6QicRw2FleF7BdnfxP5qL0-B2Xj_QOQ"
+    "size": 43354,
+    "hash": "-j1rwxLHLFlz-TKpMYUfS1q49e8lTUmmmgkjUVdRLfw"
    },
    {
     "path": {
@@ -4772,22 +4772,22 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Names.vibe"
     },
-    "size": 2285,
-    "hash": "S-VM0xuTkTTvmKRwC0zZfSpaWgNpPkxSVjVWpwWVhyo"
+    "size": 2278,
+    "hash": "N58QLlT5ecYmsWcVOc9S3Qa9LdLrL5vqa84GBazkHqI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/MarkdownFlow.vibe"
     },
-    "size": 27635,
-    "hash": "LmH-9zS2mqqLUOThJ_a8fwbaCVjNxXW6dsK0cOoUrw0"
+    "size": 27581,
+    "hash": "6GqoFcuVy41_AYi_c5y3ujBTHiXEgWTDDq2dOSXTScQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/ModuleFlow.vibe"
     },
-    "size": 6463,
-    "hash": "lLr6mCi40WxUocDU8qK-wqGQccYQQW9TLfKOSy14aa8"
+    "size": 6451,
+    "hash": "2djBZIpwBzyexhd-7cfSz2DVkQKEwTP03Gk9_5YNttA"
    },
    {
     "path": {
@@ -4807,15 +4807,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -4849,15 +4849,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -6639,7 +6639,7 @@
       "relative": "packages/smithers/agent/plugin/src/Keys.vibe"
      }
     ],
-    "code": "/**\n * The closed key grammar a keybinding declares, and matching pressed keys\n * against it.\n *\n * A binding is one or two strokes separated by one space (`g q`). A stroke is\n * any of `mod+`, `ctrl+`, `alt+`, `shift+` followed by a key: `a`–`z`,\n * `0`–`9`, `digit` (any of `1`–`9`), `enter`, `escape`, `tab`, `space`, the\n * four arrows, `/`, `?`, `[` or `]`. `mod` is Meta on a Mac and Control\n * elsewhere.\n *\n * @since 1.1.0\n */\nimport * as Result from \"effect/Result\";\nconst named = new Set([\n    \"digit\",\n    \"enter\",\n    \"escape\",\n    \"tab\",\n    \"space\",\n    \"arrowup\",\n    \"arrowdown\",\n    \"arrowleft\",\n    \"arrowright\",\n    \"/\",\n    \"?\",\n    \"[\",\n    \"]\",\n]);\nconst modifiers = [\"mod\", \"ctrl\", \"alt\", \"shift\"];\nconst stroke = (text) => {\n    const parts = text.split(\"+\");\n    const key = parts.pop();\n    if (!/^[a-z0-9]$/.test(key) && !named.has(key))\n        return undefined;\n    const flags = { mod: false, ctrl: false, alt: false, shift: false };\n    for (const part of parts) {\n        const modifier = modifiers.find((name) => name === part);\n        if (modifier === undefined || flags[modifier])\n            return undefined;\n        flags[modifier] = true;\n    }\n    return { key, ...flags };\n};\n/**\n * Parses a binding, or says why it is outside the grammar.\n *\n * @category parsing\n * @since 1.1.0\n */\nexport const parse = (text) => {\n    const parts = text.split(\" \");\n    if (parts.length > 2)\n        return Result.fail(\"a binding is at most two strokes\");\n    const strokes = [];\n    for (const [index, part] of parts.entries()) {\n        const parsed = stroke(part);\n        if (parsed === undefined)\n            return Result.fail(`stroke ${index + 1} is outside the key grammar`);\n        strokes.push(parsed);\n    }\n    return Result.succeed({ strokes });\n};\nconst keyName = (key) => {\n    const lower = key.toLowerCase();\n    return lower === \" \" ? \"space\" : lower;\n};\n/** The digit's index, `1` → 0 … `9` → 8, for a `digit` stroke; else whether the key is the stroke's. */\nconst strokeKey = (expected, pressed) => {\n    if (expected !== \"digit\")\n        return expected === pressed;\n    return /^[1-9]$/.test(pressed) ? Number(pressed) - 1 : false;\n};\nconst sameModifiers = (expected, pressed, options) => pressed.meta === (options.mac && expected.mod)\n    && pressed.ctrl === (expected.ctrl || (!options.mac && expected.mod))\n    && pressed.alt === expected.alt\n    // `?` is typed with Shift on most layouts, so its Shift says nothing.\n    && (expected.key === \"?\" || pressed.shift === expected.shift);\n/**\n * Compares the strokes pressed since the keymap last reset with a binding.\n *\n * @category matching\n * @since 1.1.0\n */\nexport const match = (keys, pressed, options) => {\n    if (pressed.length === 0 || pressed.length > keys.strokes.length)\n        return { matched: false, partial: false };\n    let index;\n    for (const [position, key] of pressed.entries()) {\n        const expected = keys.strokes[position];\n        const found = strokeKey(expected.key, keyName(key.key));\n        if (found === false || !sameModifiers(expected, key, options))\n            return { matched: false, partial: false };\n        if (typeof found === \"number\")\n            index = found;\n    }\n    const matched = pressed.length === keys.strokes.length;\n    return index === undefined ? { matched, partial: !matched } : { matched, partial: !matched, index };\n};\n",
+    "code": "/**\n * The closed key grammar a keybinding declares, and matching pressed keys\n * against it.\n *\n * A binding is one or two strokes separated by one space (`g q`). A stroke is\n * any of `mod+`, `ctrl+`, `alt+`, `shift+` followed by a key: `a`–`z`,\n * `0`–`9`, `digit` (any of `1`–`9`), `enter`, `escape`, `tab`, `space`, the\n * four arrows, `/`, `?`, `[` or `]`. `mod` is Meta on a Mac and Control\n * elsewhere.\n *\n * @since 1.1.0\n */\nimport * as Result from \"effect/Result\";\nconst named = new Set([\n    \"digit\",\n    \"enter\",\n    \"escape\",\n    \"tab\",\n    \"space\",\n    \"arrowup\",\n    \"arrowdown\",\n    \"arrowleft\",\n    \"arrowright\",\n    \"/\",\n    \"?\",\n    \"[\",\n    \"]\"\n]);\nconst modifiers = [\"mod\", \"ctrl\", \"alt\", \"shift\"];\nconst stroke = (text) => {\n    const parts = text.split(\"+\");\n    const key = parts.pop();\n    if (!/^[a-z0-9]$/.test(key) && !named.has(key))\n        return undefined;\n    const flags = { mod: false, ctrl: false, alt: false, shift: false };\n    for (const part of parts) {\n        const modifier = modifiers.find((name) => name === part);\n        if (modifier === undefined || flags[modifier])\n            return undefined;\n        flags[modifier] = true;\n    }\n    return { key, ...flags };\n};\n/**\n * Parses a binding, or says why it is outside the grammar.\n *\n * @category parsing\n * @since 1.1.0\n */\nexport const parse = (text) => {\n    const parts = text.split(\" \");\n    if (parts.length > 2)\n        return Result.fail(\"a binding is at most two strokes\");\n    const strokes = [];\n    for (const [index, part] of parts.entries()) {\n        const parsed = stroke(part);\n        if (parsed === undefined)\n            return Result.fail(`stroke ${index + 1} is outside the key grammar`);\n        strokes.push(parsed);\n    }\n    return Result.succeed({ strokes });\n};\nconst keyName = (key) => {\n    const lower = key.toLowerCase();\n    return lower === \" \" ? \"space\" : lower;\n};\n/** The digit's index, `1` → 0 … `9` → 8, for a `digit` stroke; else whether the key is the stroke's. */\nconst strokeKey = (expected, pressed) => {\n    if (expected !== \"digit\")\n        return expected === pressed;\n    return /^[1-9]$/.test(pressed) ? Number(pressed) - 1 : false;\n};\nconst sameModifiers = (expected, pressed, options) => pressed.meta === (options.mac && expected.mod)\n    && pressed.ctrl === (expected.ctrl || (!options.mac && expected.mod))\n    && pressed.alt === expected.alt\n    // `?` is typed with Shift on most layouts, so its Shift says nothing.\n    && (expected.key === \"?\" || pressed.shift === expected.shift);\n/**\n * Compares the strokes pressed since the keymap last reset with a binding.\n *\n * @category matching\n * @since 1.1.0\n */\nexport const match = (keys, pressed, options) => {\n    if (pressed.length === 0 || pressed.length > keys.strokes.length)\n        return { matched: false, partial: false };\n    let index;\n    for (const [position, key] of pressed.entries()) {\n        const expected = keys.strokes[position];\n        const found = strokeKey(expected.key, keyName(key.key));\n        if (found === false || !sameModifiers(expected, key, options))\n            return { matched: false, partial: false };\n        if (typeof found === \"number\")\n            index = found;\n    }\n    const matched = pressed.length === keys.strokes.length;\n    return index === undefined ? { matched, partial: !matched } : { matched, partial: !matched, index };\n};\n",
     "map": {
      "version": 3,
      "file": "Keys.js",
@@ -6699,7 +6699,7 @@
       "relative": "packages/smithers/agent/plugin/src/Contribution.vibe"
      }
     ],
-    "code": "/**\n * What a loaded plugin set contributes, folded into one value, and the typed\n * refusal a plugin that cannot load is recorded with.\n *\n * `Load.load` produces a {@link Contributions} value; hosts read it to draw\n * views and slots, list commands, and bind keys. Nothing in it runs plugin\n * code.\n *\n * @since 1.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Why a plugin was not loaded. A closed set: a host lists it on the plugin\n * settings page and never guesses past it.\n *\n * @category models\n * @since 1.1.0\n */\nexport const Reason = Schema.Literals([\n    \"invalid\",\n    \"incompatible\",\n    \"range_unreadable\",\n    \"schema_unresolved\",\n    \"missing_dependency\",\n    \"cycle\",\n    \"undeclared_use\",\n    \"capability_exceeded\",\n    \"conflict\",\n    \"unsupported_point\",\n    \"stale_head\",\n    \"reserved\",\n    \"minimum_below_flow\",\n    \"credential_input\",\n    \"secret_field\",\n]);\n/**\n * A plugin the loader refused, with the field that refused it.\n *\n * `plugin` is the manifest's id when it could be read, `path` the failing\n * field (`contributes.keybindings[2].event`), and `detail` a short sentence.\n * A refusal never carries a manifest value other than an id, so it is safe to\n * log and show.\n *\n * @category errors\n * @since 1.1.0\n */\nexport class Refusal extends Schema.TaggedError()(\"plugin/Refusal\", {\n    plugin: Schema.optional(Schema.String),\n    reason: Reason,\n    path: Schema.optional(Schema.String),\n    detail: Schema.String,\n}) {\n}\n/**\n * Where a plugin comes from: compiled into the build, a repository's\n * `.smithers/plugins/`, or a person's own.\n *\n * @category models\n * @since 1.1.0\n */\nexport const Tier = Schema.Literals([\"built-in\", \"repository\", \"personal\"]);\n/**\n * A contribution point a host may advertise. View events are part of `views`.\n *\n * @category models\n * @since 1.1.0\n */\nexport const Point = Schema.Literals([\n    \"views\",\n    \"slots\",\n    \"commands\",\n    \"keybindings\",\n    \"flows\",\n    \"cards\",\n    \"settings\",\n    \"triggers\",\n    \"hooks\",\n    \"taps\",\n    \"modelRoles\",\n    \"records\",\n]);\n/**\n * No plugins, no contributions.\n *\n * @category constructors\n * @since 1.1.0\n */\nexport const empty = { plugins: [], views: [], slots: [], commands: [], keybindings: [] };\n",
+    "code": "/**\n * What a loaded plugin set contributes, folded into one value, and the typed\n * refusal a plugin that cannot load is recorded with.\n *\n * `Load.load` produces a {@link Contributions} value; hosts read it to draw\n * views and slots, list commands, and bind keys. Nothing in it runs plugin\n * code.\n *\n * @since 1.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Why a plugin was not loaded. A closed set: a host lists it on the plugin\n * settings page and never guesses past it.\n *\n * @category models\n * @since 1.1.0\n */\nexport const Reason = Schema.Literals([\n    \"invalid\",\n    \"incompatible\",\n    \"range_unreadable\",\n    \"schema_unresolved\",\n    \"missing_dependency\",\n    \"cycle\",\n    \"undeclared_use\",\n    \"capability_exceeded\",\n    \"conflict\",\n    \"unsupported_point\",\n    \"stale_head\",\n    \"reserved\",\n    \"minimum_below_flow\",\n    \"credential_input\",\n    \"secret_field\"\n]);\n/**\n * A plugin the loader refused, with the field that refused it.\n *\n * `plugin` is the manifest's id when it could be read, `path` the failing\n * field (`contributes.keybindings[2].event`), and `detail` a short sentence.\n * A refusal never carries a manifest value other than an id, so it is safe to\n * log and show.\n *\n * @category errors\n * @since 1.1.0\n */\nexport class Refusal extends Schema.TaggedError()(\"plugin/Refusal\", {\n    plugin: Schema.optional(Schema.String),\n    reason: Reason,\n    path: Schema.optional(Schema.String),\n    detail: Schema.String\n}) {\n}\n/**\n * Where a plugin comes from: compiled into the build, a repository's\n * `.smithers/plugins/`, or a person's own.\n *\n * @category models\n * @since 1.1.0\n */\nexport const Tier = Schema.Literals([\"built-in\", \"repository\", \"personal\"]);\n/**\n * A contribution point a host may advertise. View events are part of `views`.\n *\n * @category models\n * @since 1.1.0\n */\nexport const Point = Schema.Literals([\n    \"views\",\n    \"slots\",\n    \"commands\",\n    \"keybindings\",\n    \"flows\",\n    \"cards\",\n    \"settings\",\n    \"triggers\",\n    \"hooks\",\n    \"taps\",\n    \"modelRoles\",\n    \"records\"\n]);\n/**\n * No plugins, no contributions.\n *\n * @category constructors\n * @since 1.1.0\n */\nexport const empty = { plugins: [], views: [], slots: [], commands: [], keybindings: [] };\n",
     "map": {
      "version": 3,
      "file": "Contribution.js",
@@ -6719,7 +6719,7 @@
       "relative": "packages/smithers/agent/plugin/src/Bind.vibe"
      }
     ],
-    "code": "/**\n * The closed binding grammar a view event's `args` and a keybinding's\n * `fields` are written in, and the host's filling of them.\n *\n * A value is a JSON literal, or a string reference rooted at `$item` (the\n * selected row of the view's `reads`), `$event` (the event's payload) or\n * `$key` (the key pressed: `$key.index` is 0 for `1` … 8 for `9`), followed by\n * at most four `.<name>`, `[<n>]` or `[$event.<name>]` segments, as in\n * `$item.options[$event.index]`. A string not starting with `$` is a literal;\n * objects and arrays are walked. Nothing else is evaluated.\n *\n * @since 1.1.0\n */\nimport * as Result from \"effect/Result\";\nimport { Refusal } from \"./Contribution.js\";\nimport * as Path from \"./internal/path.js\";\n/**\n * The most segments after a reference's root.\n *\n * @category limits\n * @since 1.1.0\n */\nexport const maximumSegments = 4;\nconst rootPattern = /^\\$(item|event|key)/;\nconst segmentPattern = /^(?:\\.([A-Za-z_][A-Za-z0-9_-]{0,63})|\\[(\\d{1,6})\\]|\\[\\$event\\.([A-Za-z_][A-Za-z0-9_-]{0,63})\\])/;\nconst parseReference = (text) => {\n    const root = rootPattern.exec(text);\n    if (root === null)\n        return undefined;\n    const path = [];\n    let rest = text.slice(root[0].length);\n    while (rest !== \"\") {\n        const segment = segmentPattern.exec(rest);\n        if (segment === null || path.length === maximumSegments)\n            return undefined;\n        path.push(segment[1] !== undefined ? segment[1] : segment[2] !== undefined ? Number(segment[2]) : { event: segment[3] });\n        rest = rest.slice(segment[0].length);\n    }\n    return { root: root[1], path };\n};\nconst walk = (value, at, visit) => {\n    if (typeof value === \"string\") {\n        if (value.startsWith(\"$\"))\n            visit(value, at);\n    }\n    else if (Array.isArray(value)) {\n        value.forEach((member, index) => walk(member, Path.append(at, index), visit));\n    }\n    else if (typeof value === \"object\" && value !== null) {\n        for (const [key, member] of Object.entries(value))\n            walk(member, Path.append(at, key), visit);\n    }\n};\n/**\n * Every reference a binding makes, in the order written. A string starting\n * with `$` outside the grammar refuses `invalid`, its path `at` followed by\n * the arg it was written at.\n *\n * @category parsing\n * @since 1.1.0\n */\nexport const references = (args, at = \"\") => {\n    const found = [];\n    let refused;\n    for (const [key, value] of Object.entries(args)) {\n        walk(value, key, (text, written) => {\n            const parsed = parseReference(text);\n            if (parsed !== undefined)\n                found.push({ ...parsed, at: written });\n            else {\n                refused ??= new Refusal({\n                    reason: \"invalid\",\n                    path: at === \"\" ? written : `${at}.${written}`,\n                    detail: \"the reference is outside the binding grammar\",\n                });\n            }\n        });\n    }\n    return refused === undefined ? Result.succeed(found) : Result.fail(refused);\n};\nconst text = (root, path) => path.reduce((out, segment) => typeof segment === \"string\"\n    ? `${out}.${segment}`\n    : typeof segment === \"number\"\n        ? `${out}[${segment}]`\n        : `${out}[$event.${segment.event}]`, `$${root}`);\nconst own = (value, key) => {\n    if (typeof key === \"number\") {\n        return Array.isArray(value) && key < value.length ? { found: true, value: value[key] } : { found: false };\n    }\n    return typeof value === \"object\" && value !== null && !Array.isArray(value) && Object.hasOwn(value, key)\n        ? { found: true, value: value[key] }\n        : { found: false };\n};\nconst lookup = (reference, scope) => {\n    const parsed = parseReference(reference);\n    if (parsed === undefined)\n        return Result.fail(`${reference.slice(0, 64)} is outside the binding grammar`);\n    const missing = Result.fail(`${text(parsed.root, parsed.path)} is missing`);\n    let current = parsed.root === \"item\" ? scope.item : parsed.root === \"event\" ? scope.event : scope.key;\n    for (const segment of parsed.path) {\n        let key;\n        if (typeof segment === \"object\") {\n            const index = own(scope.event, segment.event);\n            if (!index.found || !Number.isInteger(index.value) || index.value < 0)\n                return missing;\n            key = index.value;\n        }\n        else\n            key = segment;\n        const next = own(current, key);\n        if (!next.found)\n            return missing;\n        current = next.value;\n    }\n    return current === undefined ? missing : Result.succeed(current);\n};\nconst fill = (value, scope) => {\n    if (typeof value === \"string\")\n        return value.startsWith(\"$\") ? lookup(value, scope) : Result.succeed(value);\n    if (Array.isArray(value)) {\n        const out = [];\n        for (const member of value) {\n            const filled = fill(member, scope);\n            if (Result.isFailure(filled))\n                return filled;\n            out.push(filled.success);\n        }\n        return Result.succeed(out);\n    }\n    if (typeof value === \"object\" && value !== null) {\n        const out = [];\n        for (const [key, member] of Object.entries(value)) {\n            const filled = fill(member, scope);\n            if (Result.isFailure(filled))\n                return filled;\n            out.push([key, filled.success]);\n        }\n        return Result.succeed(Object.fromEntries(out));\n    }\n    return Result.succeed(value);\n};\n/**\n * Fills a binding from a scope: literals as written, references by value. A\n * reference that reaches no value fails, naming the reference.\n *\n * @category binding\n * @since 1.1.0\n */\nexport const bind = (args, scope) => fill(args, scope);\n",
+    "code": "/**\n * The closed binding grammar a view event's `args` and a keybinding's\n * `fields` are written in, and the host's filling of them.\n *\n * A value is a JSON literal, or a string reference rooted at `$item` (the\n * selected row of the view's `reads`), `$event` (the event's payload) or\n * `$key` (the key pressed: `$key.index` is 0 for `1` … 8 for `9`), followed by\n * at most four `.<name>`, `[<n>]` or `[$event.<name>]` segments, as in\n * `$item.options[$event.index]`. A string not starting with `$` is a literal;\n * objects and arrays are walked. Nothing else is evaluated.\n *\n * @since 1.1.0\n */\nimport * as Result from \"effect/Result\";\nimport { Refusal } from \"./Contribution.js\";\nimport * as Path from \"./internal/path.js\";\n/**\n * The most segments after a reference's root.\n *\n * @category limits\n * @since 1.1.0\n */\nexport const maximumSegments = 4;\nconst rootPattern = /^\\$(item|event|key)/;\nconst segmentPattern = /^(?:\\.([A-Za-z_][A-Za-z0-9_-]{0,63})|\\[(\\d{1,6})\\]|\\[\\$event\\.([A-Za-z_][A-Za-z0-9_-]{0,63})\\])/;\nconst parseReference = (text) => {\n    const root = rootPattern.exec(text);\n    if (root === null)\n        return undefined;\n    const path = [];\n    let rest = text.slice(root[0].length);\n    while (rest !== \"\") {\n        const segment = segmentPattern.exec(rest);\n        if (segment === null || path.length === maximumSegments)\n            return undefined;\n        path.push(segment[1] !== undefined ? segment[1] : segment[2] !== undefined ? Number(segment[2]) : { event: segment[3] });\n        rest = rest.slice(segment[0].length);\n    }\n    return { root: root[1], path };\n};\nconst walk = (value, at, visit) => {\n    if (typeof value === \"string\") {\n        if (value.startsWith(\"$\"))\n            visit(value, at);\n    }\n    else if (Array.isArray(value)) {\n        value.forEach((member, index) => walk(member, Path.append(at, index), visit));\n    }\n    else if (typeof value === \"object\" && value !== null) {\n        for (const [key, member] of Object.entries(value))\n            walk(member, Path.append(at, key), visit);\n    }\n};\n/**\n * Every reference a binding makes, in the order written. A string starting\n * with `$` outside the grammar refuses `invalid`, its path `at` followed by\n * the arg it was written at.\n *\n * @category parsing\n * @since 1.1.0\n */\nexport const references = (args, at = \"\") => {\n    const found = [];\n    let refused;\n    for (const [key, value] of Object.entries(args)) {\n        walk(value, key, (text, written) => {\n            const parsed = parseReference(text);\n            if (parsed !== undefined)\n                found.push({ ...parsed, at: written });\n            else {\n                refused ??= new Refusal({\n                    reason: \"invalid\",\n                    path: at === \"\" ? written : `${at}.${written}`,\n                    detail: \"the reference is outside the binding grammar\"\n                });\n            }\n        });\n    }\n    return refused === undefined ? Result.succeed(found) : Result.fail(refused);\n};\nconst text = (root, path) => path.reduce((out, segment) => typeof segment === \"string\"\n    ? `${out}.${segment}`\n    : typeof segment === \"number\"\n        ? `${out}[${segment}]`\n        : `${out}[$event.${segment.event}]`, `$${root}`);\nconst own = (value, key) => {\n    if (typeof key === \"number\") {\n        return Array.isArray(value) && key < value.length ? { found: true, value: value[key] } : { found: false };\n    }\n    return typeof value === \"object\" && value !== null && !Array.isArray(value) && Object.hasOwn(value, key)\n        ? { found: true, value: value[key] }\n        : { found: false };\n};\nconst lookup = (reference, scope) => {\n    const parsed = parseReference(reference);\n    if (parsed === undefined)\n        return Result.fail(`${reference.slice(0, 64)} is outside the binding grammar`);\n    const missing = Result.fail(`${text(parsed.root, parsed.path)} is missing`);\n    let current = parsed.root === \"item\" ? scope.item : parsed.root === \"event\" ? scope.event : scope.key;\n    for (const segment of parsed.path) {\n        let key;\n        if (typeof segment === \"object\") {\n            const index = own(scope.event, segment.event);\n            if (!index.found || !Number.isInteger(index.value) || index.value < 0)\n                return missing;\n            key = index.value;\n        }\n        else\n            key = segment;\n        const next = own(current, key);\n        if (!next.found)\n            return missing;\n        current = next.value;\n    }\n    return current === undefined ? missing : Result.succeed(current);\n};\nconst fill = (value, scope) => {\n    if (typeof value === \"string\")\n        return value.startsWith(\"$\") ? lookup(value, scope) : Result.succeed(value);\n    if (Array.isArray(value)) {\n        const out = [];\n        for (const member of value) {\n            const filled = fill(member, scope);\n            if (Result.isFailure(filled))\n                return filled;\n            out.push(filled.success);\n        }\n        return Result.succeed(out);\n    }\n    if (typeof value === \"object\" && value !== null) {\n        const out = [];\n        for (const [key, member] of Object.entries(value)) {\n            const filled = fill(member, scope);\n            if (Result.isFailure(filled))\n                return filled;\n            out.push([key, filled.success]);\n        }\n        return Result.succeed(Object.fromEntries(out));\n    }\n    return Result.succeed(value);\n};\n/**\n * Fills a binding from a scope: literals as written, references by value. A\n * reference that reaches no value fails, naming the reference.\n *\n * @category binding\n * @since 1.1.0\n */\nexport const bind = (args, scope) => fill(args, scope);\n",
     "map": {
      "version": 3,
      "file": "Bind.js",
@@ -6739,7 +6739,7 @@
       "relative": "packages/smithers/agent/plugin/src/PluginError.vibe"
      }
     ],
-    "code": "/**\n * The single typed failure of the plugin kernel.\n *\n * The public package contract is documented at\n * {@link https://smithers.sh/docs/reference/api/plugin}; D14 in\n * `docs/pages/design-decisions.md` bounds it to host-owned cell hooks.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Closed set of plugin-system failure codes.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const PluginErrorCode = Schema.Literals([\n    \"duplicate_name\",\n    \"unknown_hook\",\n    \"hook_kind_mismatch\",\n    \"invalid_plugin\",\n    \"apply_failed\",\n    \"config_invalid\",\n    \"cache_environment_invalid\",\n    \"invalid_hook_result\",\n    \"resource_limit\",\n    \"hook_failed\",\n    \"layer_failed\",\n]);\n/**\n * Failure raised by plugin resolution, hook dispatch, config execution, or\n * layer construction.\n *\n * Parallel observer failures never fail the caller; they are returned from\n * `Plugins.parallel` with this same shape so they can be journalled on the\n * lossy telemetry channel.\n *\n * `cause` is the plugin's unredacted failure and may hold secrets; hosts\n * redact it before logging, persisting, or transmitting the error.\n *\n * @category errors\n * @since 1.0.0-rc.0\n */\nexport class PluginError extends Schema.TaggedError()(\"flows/plugin/PluginError\", {\n    code: PluginErrorCode,\n    message: Schema.String,\n    plugin: Schema.optional(Schema.String),\n    hook: Schema.optional(Schema.String),\n    path: Schema.optional(Schema.String),\n    cause: Schema.optional(Schema.Unknown),\n}) {\n}\n",
+    "code": "/**\n * The single typed failure of the plugin kernel.\n *\n * The public package contract is documented at\n * {@link https://smithers.sh/docs/reference/api/plugin}; D14 in\n * `docs/pages/design-decisions.md` bounds it to host-owned cell hooks.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Closed set of plugin-system failure codes.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const PluginErrorCode = Schema.Literals([\n    \"duplicate_name\",\n    \"unknown_hook\",\n    \"hook_kind_mismatch\",\n    \"invalid_plugin\",\n    \"apply_failed\",\n    \"config_invalid\",\n    \"cache_environment_invalid\",\n    \"invalid_hook_result\",\n    \"resource_limit\",\n    \"hook_failed\",\n    \"layer_failed\"\n]);\n/**\n * Failure raised by plugin resolution, hook dispatch, config execution, or\n * layer construction.\n *\n * Parallel observer failures never fail the caller; they are returned from\n * `Plugins.parallel` with this same shape so they can be journalled on the\n * lossy telemetry channel.\n *\n * `cause` is the plugin's unredacted failure and may hold secrets; hosts\n * redact it before logging, persisting, or transmitting the error.\n *\n * @category errors\n * @since 1.0.0-rc.0\n */\nexport class PluginError extends Schema.TaggedError()(\"flows/plugin/PluginError\", {\n    code: PluginErrorCode,\n    message: Schema.String,\n    plugin: Schema.optional(Schema.String),\n    hook: Schema.optional(Schema.String),\n    path: Schema.optional(Schema.String),\n    cause: Schema.optional(Schema.Unknown)\n}) {\n}\n",
     "map": {
      "version": 3,
      "file": "PluginError.js",
@@ -6779,7 +6779,7 @@
       "relative": "packages/smithers/agent/plugin/src/Hooks.vibe"
      }
     ],
-    "code": "/**\n * The typed hook surface: hook kinds, the hook entry shape, and the shared\n * kernel's base hook catalog.\n *\n * The public package contract is documented at\n * {@link https://smithers.sh/docs/reference/api/plugin}. The shared catalog is limited to\n * `config` and `configResolved`;\n * `@smthrs/agent` adds only `cellRegistry`, `cellFlows`, and\n * `cellModelRequest`. Durable-core lifecycle policy is not a hook catalog.\n *\n * `FlowsHooks` is **open for augmentation, closed for dispatch**: a host\n * declares its hooks with `declare module \"@smthrs/plugin\"`, supplies the\n * matching runtime catalog, and dispatches only that bounded set.\n *\n * @since 1.0.0-rc.0\n */\n/**\n * Runtime catalog of the shared kernel's hook names and kinds.\n *\n * The type system cannot enumerate an augmentable interface, so this constant\n * is what the `unknown_hook` guard checks against. A host passes its own\n * superset to {@link resolve}. The cell harness adds only the hooks it\n * dispatches; lifecycle and engine-policy hooks do not belong here.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nconst sharedHooks = Object.create(null);\nObject.defineProperties(sharedHooks, {\n    config: { value: \"waterfall\", enumerable: true },\n    configResolved: { value: \"parallel\", enumerable: true },\n});\n/**\n * Frozen runtime catalog for the shared configuration hooks.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const engineHooks = Object.freeze(sharedHooks);\n/**\n * Normalizes a hook entry to its handler.\n *\n * @category utils\n * @since 1.0.0-rc.0\n */\nexport const handlerOf = (entry) => typeof entry === \"function\"\n    ? entry\n    : entry.handler;\n/**\n * Reads the per-hook `order` of a hook entry.\n *\n * @category utils\n * @since 1.0.0-rc.0\n */\nexport const orderOf = (entry) => typeof entry === \"function\" ? undefined : entry.order;\n",
+    "code": "/**\n * The typed hook surface: hook kinds, the hook entry shape, and the shared\n * kernel's base hook catalog.\n *\n * The public package contract is documented at\n * {@link https://smithers.sh/docs/reference/api/plugin}. The shared catalog is limited to\n * `config` and `configResolved`;\n * `@smthrs/agent` adds only `cellRegistry`, `cellFlows`, and\n * `cellModelRequest`. Durable-core lifecycle policy is not a hook catalog.\n *\n * `FlowsHooks` is **open for augmentation, closed for dispatch**: a host\n * declares its hooks with `declare module \"@smthrs/plugin\"`, supplies the\n * matching runtime catalog, and dispatches only that bounded set.\n *\n * @since 1.0.0-rc.0\n */\n/**\n * Runtime catalog of the shared kernel's hook names and kinds.\n *\n * The type system cannot enumerate an augmentable interface, so this constant\n * is what the `unknown_hook` guard checks against. A host passes its own\n * superset to {@link resolve}. The cell harness adds only the hooks it\n * dispatches; lifecycle and engine-policy hooks do not belong here.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nconst sharedHooks = Object.create(null);\nObject.defineProperties(sharedHooks, {\n    config: { value: \"waterfall\", enumerable: true },\n    configResolved: { value: \"parallel\", enumerable: true }\n});\n/**\n * Frozen runtime catalog for the shared configuration hooks.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const engineHooks = Object.freeze(sharedHooks);\n/**\n * Normalizes a hook entry to its handler.\n *\n * @category utils\n * @since 1.0.0-rc.0\n */\nexport const handlerOf = (entry) => typeof entry === \"function\"\n    ? entry\n    : entry.handler;\n/**\n * Reads the per-hook `order` of a hook entry.\n *\n * @category utils\n * @since 1.0.0-rc.0\n */\nexport const orderOf = (entry) => typeof entry === \"function\" ? undefined : entry.order;\n",
     "map": {
      "version": 3,
      "file": "Hooks.js",
@@ -6839,7 +6839,7 @@
       "relative": "packages/smithers/agent/plugin/src/internal/mergePluginLayers.vibe"
      }
     ],
-    "code": "/**\n * Effect layer composition for a resolved plugin list.\n *\n * @private\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { Action } from \"@smthrs/flow\";\nimport * as Layer from \"effect/Layer\";\nimport { PluginError } from \"../PluginError.js\";\n/**\n * Merges plugin layers left-to-right, wrapping each build failure as\n * `layer_failed`, then seals the cache environment: it is supplied beneath\n * the plugin layers and overrides anything they output, and an absent\n * declaration stays absent.\n *\n * @private\n * @since 1.0.0-rc.0\n */\nexport const mergePluginLayers = (plugins, cacheEnvironment) => {\n    const layers = plugins.flatMap((plugin) => plugin.layer\n        ? [\n            Layer.catchCause(plugin.layer, (cause) => Layer.effectDiscard(Effect.fail(new PluginError({\n                code: \"layer_failed\",\n                message: `plugin \"${plugin.name}\" failed to build its layer`,\n                plugin: plugin.name,\n                cause,\n            })))),\n        ]\n        : []);\n    const merged = (layers.length === 0\n        ? Layer.empty\n        : layers.reduce((accumulated, next) => Layer.provideMerge(next, accumulated)));\n    // The sealed environment is provided beneath the plugin layers so they can\n    // read it, then merged last so it overrides any plugin output. An absent\n    // declaration is sealed as `undefined`, so no plugin layer can declare or\n    // replace the composition's cache identity.\n    const environment = Layer.succeed(Action.CurrentCacheEnvironment)(cacheEnvironment);\n    return Layer.merge(Layer.provideMerge(merged, environment), environment);\n};\n",
+    "code": "/**\n * Effect layer composition for a resolved plugin list.\n *\n * @private\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { Action } from \"@smthrs/flow\";\nimport * as Layer from \"effect/Layer\";\nimport { PluginError } from \"../PluginError.js\";\n/**\n * Merges plugin layers left-to-right, wrapping each build failure as\n * `layer_failed`, then seals the cache environment: it is supplied beneath\n * the plugin layers and overrides anything they output, and an absent\n * declaration stays absent.\n *\n * @private\n * @since 1.0.0-rc.0\n */\nexport const mergePluginLayers = (plugins, cacheEnvironment) => {\n    const layers = plugins.flatMap((plugin) => plugin.layer\n        ? [\n            Layer.catchCause(plugin.layer, (cause) => Layer.effectDiscard(Effect.fail(new PluginError({\n                code: \"layer_failed\",\n                message: `plugin \"${plugin.name}\" failed to build its layer`,\n                plugin: plugin.name,\n                cause\n            }))))\n        ]\n        : []);\n    const merged = (layers.length === 0\n        ? Layer.empty\n        : layers.reduce((accumulated, next) => Layer.provideMerge(next, accumulated)));\n    // The sealed environment is provided beneath the plugin layers so they can\n    // read it, then merged last so it overrides any plugin output. An absent\n    // declaration is sealed as `undefined`, so no plugin layer can declare or\n    // replace the composition's cache identity.\n    const environment = Layer.succeed(Action.CurrentCacheEnvironment)(cacheEnvironment);\n    return Layer.merge(Layer.provideMerge(merged, environment), environment);\n};\n",
     "map": {
      "version": 3,
      "file": "mergePluginLayers.js",

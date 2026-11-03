@@ -10,84 +10,84 @@
   "root": {
    "relative": "packages/smithers/agent/integrations"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/agent/integrations/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/tsconfig.json"
     },
-    "size": 1454,
-    "hash": "Qi3miZE-DWxLH1zIyMGLuVTTSRHrvEfzFb2ynnEutmI"
+    "size": 1415,
+    "hash": "CQGGkEBWRZqHYtj0LlTgLdLgsLcO6SkyNgBS9k0d9Hs"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "kX8q1iNWIj4BmVzY_IUz7VZgBYmXEViKvqcjm5q_7aM"
+    "size": 1328,
+    "hash": "ma5DHvQE48VgxNilZCWgqR7uME4BIWXbdVjvlXaBW2o"
    },
    {
     "path": {
      "relative": "packages/smithers/control/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    }
   ],
   "directories": [
@@ -265,7 +265,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -290,7 +290,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -305,7 +305,7 @@
      "relative": "packages/smithers/agent/integrations/package.json"
     },
     "size": 21070,
-    "hash": "iVaObhyzNz1KdcB_heaQkTpea77Avkd2SBmfAdPFKSU"
+    "hash": "MzrLKW-72DM2cLdXFtBGP67H2X7HfD_nGPi5ol7oe9A"
    },
    {
     "path": {
@@ -326,70 +326,70 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
-    "size": 10177,
-    "hash": "c8DDzn-eAe02bg8GdRdgBqFoqDXPcSGjkqjKHuZ2gNQ"
+    "size": 10315,
+    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
+    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
+    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 11122,
-    "hash": "HkpKCUONLNsHGL65Ns5SOQCPYagw-2Fni4T8uxQPrII"
+    "size": 11258,
+    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8845,
-    "hash": "VrF-0613k3AeimFa9sPtlXyjtkJo6YczusrpNEAdImo"
+    "size": 8983,
+    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/package.json"
     },
     "size": 8141,
-    "hash": "Q3EwCJGuGWWUzIoXyNqaEnYRl5mtDjBK9jLf-5q7QiU"
+    "hash": "O-3M6m6J761jj3XuevgCMWkZ0TCgCy_P5F6i9Z8fX9g"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "O9iDHySpA30BJ4H48_xLoYKtd_38nfhgRWUlLwL8hII"
+    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
    },
    {
     "path": {
@@ -403,21 +403,21 @@
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "UCLgpI-A-WxW-qbLTBrkIVPiG78MZVE_4OtUN_SdOtE"
+    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
    },
    {
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
-    "size": 17494,
-    "hash": "QUGw3b5FTHNxX5R9MHqZWgCSHqY_nnU6NFQl6T5YepM"
+    "size": 17630,
+    "hash": "bxheo6D0sDenep1VXnaAozWM3cs6TXN3tfj6Cfc1obM"
    },
    {
     "path": {
      "relative": "packages/errors/package.json"
     },
     "size": 3852,
-    "hash": "-R4MJuVlmw5wvHyZnzPyEMdLjFTQe0jHCdguhTro_gM"
+    "hash": "DKpA3_l9DGWJ2-QL6bpxK4nRWUK0x-SlLofCIjiObWA"
    },
    {
     "path": {
@@ -1986,8 +1986,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -2175,15 +2175,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -2483,8 +2483,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -2560,8 +2560,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -2728,8 +2728,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -3281,8 +3281,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
@@ -3309,8 +3309,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/StepFact.vibe"
     },
-    "size": 2106,
-    "hash": "4p5BwxZdwwqDTkEe6XaRTdBpC9svUS3xGkJGFphRfmo"
+    "size": 2103,
+    "hash": "b3kkgDyilW3C-FW4fdO4ounbiKeP_KuJRi79-7KoC5s"
    },
    {
     "path": {
@@ -3358,8 +3358,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -3407,15 +3407,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/EventTally.vibe"
     },
-    "size": 801,
-    "hash": "jqNAp8SGRoVgR2UGFcQbDqD4VnG7fA7oCOkc8hwA_Nw"
+    "size": 800,
+    "hash": "_DXFihbOGu_VKm5BvOTjgOjn52C9LseZwxmqEucrkvQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
     },
-    "size": 963,
-    "hash": "h558rP8T8bGGWY1J39KkFj2H_C3ZwzleEC_jdLro1WY"
+    "size": 962,
+    "hash": "MWPlQMr_t56pVGgwDW0MWW24aMFIVC-RYfA3thfgK7w"
    },
    {
     "path": {
@@ -3428,8 +3428,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
     },
-    "size": 4805,
-    "hash": "TV_P427Tpq3T5TcSdUJ13uwDMQgjY6FQgBXaWOQ7ORA"
+    "size": 4800,
+    "hash": "0MAnTLasHh_cI-vlZtI_0FpjmdWsh6Itt25uXOU7e9c"
    },
    {
     "path": {
@@ -3680,15 +3680,15 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Limits.vibe"
     },
-    "size": 3219,
-    "hash": "CIj4MRtMTMc11jEn1pXnOLibMR1El2LxLzoNrRnOQVI"
+    "size": 3214,
+    "hash": "OFcLpAJzZWsJJ0cybMQ-Srkp_OgQcrWBGg4_w0VT_Lo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Signature.vibe"
     },
-    "size": 16471,
-    "hash": "HNeTROivOMqBJzQGXqsGcTenpxegL4XxK8key3d-2K4"
+    "size": 16444,
+    "hash": "_n53tKqUgjWnQj9oNaOLwRVpIwXRvKOknhBGcnaPi-c"
    },
    {
     "path": {
@@ -3988,8 +3988,8 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/skillFrontmatter.vibe"
     },
-    "size": 5100,
-    "hash": "JkPsJqXZHDDpRQDbS0e8Zm7nhuNp5OPkbZP_qWhNadA"
+    "size": 5097,
+    "hash": "POYj7x08XrCO954XGJiLpfLZ2Y-_Cxm3zeoxm8ExRM0"
    },
    {
     "path": {
@@ -4058,8 +4058,8 @@
     "path": {
      "relative": "packages/smithers/agent/integrations/src/core/AccessToken.vibe"
     },
-    "size": 1304,
-    "hash": "-kaINqSH7bO31jRHK2zfsoDEpaE3pcpMSCHvQtgkxqY"
+    "size": 1303,
+    "hash": "z_2E5-zekfrg6EVVF2XQME9_3tCso5dvuhIVFgxo_98"
    },
    {
     "path": {
@@ -4345,8 +4345,8 @@
     "path": {
      "relative": "packages/smithers/agent/integrations/src/core/ExternalEvent.vibe"
     },
-    "size": 1968,
-    "hash": "RQpFqSg-tCRjadIXL0gZIpG6enAIdJw-jCnobB6J3cA"
+    "size": 1966,
+    "hash": "QquFB2KQucXI5Q4vzN_ffE70FXRoINEwfvEpmCKB_o4"
    },
    {
     "path": {
@@ -4450,15 +4450,15 @@
     "path": {
      "relative": "packages/smithers/agent/integrations/src/core/SourceRecord.vibe"
     },
-    "size": 10974,
-    "hash": "u9rgoWW6Rv7o3MgosamTRfcmxFP1q8dXJclSXsr0kcw"
+    "size": 10967,
+    "hash": "vn5ZT8ZZfvxo4WbOvF3UJESStOlOFhwFvmkqWYoH-XA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/integrations/src/core/Sync.vibe"
     },
-    "size": 6970,
-    "hash": "egjH4Ilwjg1ilJ3xNYAJekTwN-H8d0uAyP3EXIF4BoA"
+    "size": 6963,
+    "hash": "dNXrdkiUoGdAKyWvoe1Lw2VBhfyFfW5dhZ9Fa_Y_19s"
    },
    {
     "path": {
@@ -4478,8 +4478,8 @@
     "path": {
      "relative": "packages/smithers/agent/integrations/src/github/Config.vibe"
     },
-    "size": 3768,
-    "hash": "SVLDIIi2J4ZnAZ2U8deF3uh_syvfN2TzRlLsoxbzsvw"
+    "size": 3766,
+    "hash": "pQJLG875NrGEyKUMG378p8dcIxRwfpelw6We1XNl9MU"
    },
    {
     "path": {
@@ -4534,8 +4534,8 @@
     "path": {
      "relative": "packages/smithers/agent/integrations/src/github/Commits.vibe"
     },
-    "size": 13973,
-    "hash": "dZsMjFP-bXAEA9DUvMMGp9yjJD-iJDN0kFKi7Y0jiAA"
+    "size": 13947,
+    "hash": "P8_gbC72OJYasljn7sS8Nkb8lsf_7MUk1sELAeuVDsg"
    },
    {
     "path": {
@@ -4569,8 +4569,8 @@
     "path": {
      "relative": "packages/smithers/agent/integrations/src/github/Payload.vibe"
     },
-    "size": 4119,
-    "hash": "hGRAay1dm15khAoOEvOo-cV5cZ5GStjtRnMyVHtQvM4"
+    "size": 4109,
+    "hash": "1AVins_fNGgsAZzYn2iz2IpCIpG1mYhQwQw7IVm1YP4"
    },
    {
     "path": {
@@ -4597,8 +4597,8 @@
     "path": {
      "relative": "packages/smithers/agent/integrations/src/github/Statuses.vibe"
     },
-    "size": 5448,
-    "hash": "rP8y4hJwv53WcEAKWuEb21K5Kj83T51o6nhcT0vGXy0"
+    "size": 5442,
+    "hash": "TJAA9P0w4RAPFV8Ihci54QxAFcISgRvnU5CaeMI7oCo"
    },
    {
     "path": {
@@ -6529,7 +6529,7 @@
       "relative": "packages/smithers/agent/integrations/src/core/AccessToken.vibe"
      }
     ],
-    "code": "/**\n * Where a provider client gets its bearer token.\n *\n * A static API token and a short-lived OAuth access token minted from a stored\n * refresh token reach the client the same way: through a source it asks each\n * time it needs one. The client never learns which, and never holds the\n * refresh token. A source that cannot produce a token fails with\n * `credentials-missing` (nothing configured) or `permission-denied` (the grant\n * was revoked), so a client can report the difference.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport {} from \"effect\";\n/**\n * A source that always answers the same token.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const fixed = (token) => ({\n    token: Effect.succeed(token),\n    invalidate: Effect.void,\n});\n",
+    "code": "/**\n * Where a provider client gets its bearer token.\n *\n * A static API token and a short-lived OAuth access token minted from a stored\n * refresh token reach the client the same way: through a source it asks each\n * time it needs one. The client never learns which, and never holds the\n * refresh token. A source that cannot produce a token fails with\n * `credentials-missing` (nothing configured) or `permission-denied` (the grant\n * was revoked), so a client can report the difference.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport {} from \"effect\";\n/**\n * A source that always answers the same token.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const fixed = (token) => ({\n    token: Effect.succeed(token),\n    invalidate: Effect.void\n});\n",
     "map": {
      "version": 3,
      "file": "AccessToken.js",
@@ -6569,7 +6569,7 @@
       "relative": "packages/smithers/agent/integrations/src/core/ExternalEvent.vibe"
      }
     ],
-    "code": "/**\n * The normalized event every integration source produces.\n *\n * A webhook delivery and a long-poll update arrive in different shapes from\n * different providers. Both are decoded into one `ExternalEvent` before\n * anything downstream sees them, so the control-plane binding is written once\n * rather than once per provider.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { isEventName } from \"./SignalName.js\";\n/**\n * A decoded external event.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const ExternalEvent = Schema.Struct({\n    /** The source that produced it: `github`. */\n    source: Schema.NonEmptyString,\n    /**\n     * The signal name, `integration:<service>:<event>`.\n     *\n     * The same refinement `SignalName.eventName` builds against, so a name that\n     * module could not have produced, such as one whose event segment carries a\n     * second colon, cannot enter persistence and become a routing identity\n     * nothing can rebuild.\n     */\n    eventName: Schema.String.pipe(Schema.refine(isEventName, { expected: \"an integration signal name SignalName.eventName could build\" })),\n    /** What the event is about, or `null` when it addresses nothing narrower. */\n    correlationId: Schema.NullOr(Schema.String),\n    /** The provider payload, as delivered. */\n    payload: Schema.Json,\n    /** The provider's stable delivery identity, used to drop redeliveries. */\n    dedupeKey: Schema.NonEmptyString,\n    /** When the event was received, in Unix milliseconds. */\n    receivedAtMs: Schema.Number,\n});\n/**\n * Decodes an unknown value as an {@link ExternalEvent}.\n *\n * Sources decode their own output through this at the ingress boundary, so a\n * decoder bug fails loudly there instead of surfacing as a malformed signal\n * three hops later.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const decode = Schema.decodeUnknownEffect(ExternalEvent);\n",
+    "code": "/**\n * The normalized event every integration source produces.\n *\n * A webhook delivery and a long-poll update arrive in different shapes from\n * different providers. Both are decoded into one `ExternalEvent` before\n * anything downstream sees them, so the control-plane binding is written once\n * rather than once per provider.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { isEventName } from \"./SignalName.js\";\n/**\n * A decoded external event.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const ExternalEvent = Schema.Struct({\n    /** The source that produced it: `github`. */\n    source: Schema.NonEmptyString,\n    /**\n     * The signal name, `integration:<service>:<event>`.\n     *\n     * The same refinement `SignalName.eventName` builds against, so a name that\n     * module could not have produced, such as one whose event segment carries a\n     * second colon, cannot enter persistence and become a routing identity\n     * nothing can rebuild.\n     */\n    eventName: Schema.String.pipe(Schema.refine(isEventName, { expected: \"an integration signal name SignalName.eventName could build\" })),\n    /** What the event is about, or `null` when it addresses nothing narrower. */\n    correlationId: Schema.NullOr(Schema.String),\n    /** The provider payload, as delivered. */\n    payload: Schema.Json,\n    /** The provider's stable delivery identity, used to drop redeliveries. */\n    dedupeKey: Schema.NonEmptyString,\n    /** When the event was received, in Unix milliseconds. */\n    receivedAtMs: Schema.Number\n});\n/**\n * Decodes an unknown value as an {@link ExternalEvent}.\n *\n * Sources decode their own output through this at the ingress boundary, so a\n * decoder bug fails loudly there instead of surfacing as a malformed signal\n * three hops later.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const decode = Schema.decodeUnknownEffect(ExternalEvent);\n",
     "map": {
      "version": 3,
      "file": "ExternalEvent.js",
@@ -6649,7 +6649,7 @@
       "relative": "packages/smithers/agent/integrations/src/core/SourceRecord.vibe"
      }
     ],
-    "code": "/**\n * The provenance envelope for anything an integration retrieves.\n *\n * A message, a GitHub issue comment and an external event are different\n * documents, and this package keeps their provider payload exactly as it\n * arrived. What every one of them also needs, before it can be stored,\n * retrieved or placed in a prompt, is the same set of facts: which provider\n * and connection it came from, its stable external identity and link, who\n * wrote it and when, which version this is, when it was retrieved, who may\n * read it, and which thread it belongs to. `SourceRecord` is that set.\n *\n * `text` is the provider adapter's searchable rendering of the payload; it is\n * data, never instructions. `deleted` marks a tombstone: the provider removed\n * the object, so its payload and text are empty and retrieval never returns it.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Who may read a record, as the provider scoped it.\n *\n * `private` is one person's data (a direct message, a personal calendar),\n * `container` is visible to members of `access.containerId` (a channel, a\n * repository), `workspace` to every member of the connected workspace, and\n * `public` to anyone.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const AccessScope = Schema.Literals([\"private\", \"container\", \"workspace\", \"public\"]);\n/**\n * The provider's author identity for a record.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Author = Schema.Struct({\n    /** The provider's stable user or bot id. */\n    id: Schema.NonEmptyString,\n    /** A display label, when the provider supplied one. Never an identity. */\n    label: Schema.NullOr(Schema.String),\n});\n/**\n * The provider's access scope for a record.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Access = Schema.Struct({\n    scope: AccessScope,\n    /** The container the scope is relative to, or `null` when it names none. */\n    containerId: Schema.NullOr(Schema.NonEmptyString),\n});\n/**\n * Where a record sits in its conversation or hierarchy.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Thread = Schema.Struct({\n    /** The channel, repository or calendar holding the record. */\n    containerId: Schema.NullOr(Schema.NonEmptyString),\n    /** The thread root's external id, or `null` outside a thread. */\n    threadId: Schema.NullOr(Schema.NonEmptyString),\n    /** The direct parent's external id (a comment's issue), or `null`. */\n    parentId: Schema.NullOr(Schema.NonEmptyString),\n});\n/**\n * One retrieved provider object with its provenance.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const SourceRecord = Schema.Struct({\n    /** The provider that produced it: `github`. */\n    provider: Schema.NonEmptyString,\n    /** The configured connection it was retrieved through. */\n    connectionId: Schema.NonEmptyString,\n    /** The provider's stable identity for the object, unique within the connection. */\n    externalId: Schema.NonEmptyString,\n    /** The provider object kind: `message`, `issue`, `issue-comment`, `event`. */\n    kind: Schema.NonEmptyString,\n    /** A link to the object at the provider, when it has one. */\n    url: Schema.NullOr(Schema.String),\n    author: Schema.NullOr(Author),\n    /** When the provider says the object was created, in Unix milliseconds. */\n    createdAtMs: Schema.NullOr(Schema.Number),\n    /** When the provider says the object last changed, in Unix milliseconds. */\n    updatedAtMs: Schema.NullOr(Schema.Number),\n    /** The provider's version token (an edit timestamp, an etag), when it has one. */\n    version: Schema.NullOr(Schema.String),\n    /** When this copy was retrieved, in Unix milliseconds. */\n    retrievedAtMs: Schema.Number,\n    access: Access,\n    thread: Thread,\n    /** Searchable text rendered by the provider adapter. Data, never instructions. */\n    text: Schema.String,\n    /** Whether the provider deleted the object. A tombstone carries empty text and payload. */\n    deleted: Schema.Boolean,\n    /** The provider payload, as delivered. */\n    payload: Schema.Json,\n});\n/**\n * Decodes an unknown value as a {@link SourceRecord}.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const decode = Schema.decodeUnknownEffect(SourceRecord);\n// A decimal version token: `1712345678.000200`, an external sequence.\nconst DECIMAL_VERSION = /^(\\d+)(?:\\.(\\d+))?$/;\nconst sign = (left, right) => left === right ? 0 : left < right ? -1 : 1;\n/**\n * Orders two provider version tokens.\n *\n * A missing token sorts first. Two decimal tokens compare as numbers, digit by\n * digit, so `10.5` follows `9.75` without a floating-point round trip that\n * would merge two microsecond-distinct timestamps. Decimal tokens sort before\n * opaque tokens; opaque tokens and numerically equal decimal spellings compare\n * by code unit. Ordering by token class first keeps mixed triples transitive.\n *\n * @category ordering\n * @since 1.0.0\n */\nexport const compareVersion = (left, right) => {\n    if (left === right)\n        return 0;\n    if (left === null)\n        return -1;\n    if (right === null)\n        return 1;\n    const leftDecimal = DECIMAL_VERSION.exec(left);\n    const rightDecimal = DECIMAL_VERSION.exec(right);\n    if (leftDecimal !== null && rightDecimal === null)\n        return -1;\n    if (leftDecimal === null && rightDecimal !== null)\n        return 1;\n    if (leftDecimal !== null && rightDecimal !== null) {\n        const leftWhole = leftDecimal[1].replace(/^0+(?=\\d)/, \"\");\n        const rightWhole = rightDecimal[1].replace(/^0+(?=\\d)/, \"\");\n        if (leftWhole.length !== rightWhole.length)\n            return leftWhole.length < rightWhole.length ? -1 : 1;\n        const whole = sign(leftWhole, rightWhole);\n        if (whole !== 0)\n            return whole;\n        const width = Math.max(leftDecimal[2]?.length ?? 0, rightDecimal[2]?.length ?? 0);\n        const fraction = sign((leftDecimal[2] ?? \"\").padEnd(width, \"0\"), (rightDecimal[2] ?? \"\").padEnd(width, \"0\"));\n        if (fraction !== 0)\n            return fraction;\n    }\n    return sign(left, right);\n};\n/**\n * Orders two copies of one record: negative when `candidate` is older than\n * `current`, zero when neither is newer, positive when `candidate` is newer.\n *\n * The provider's change time decides first, and a copy with no change time is\n * older than any copy that has one. At the same time a deletion follows the\n * live copy, because a provider stamps a delete with the time of the version it\n * removed. Then the version token decides. Between two copies with no change\n * time, the version is the only change order, so it decides before deletion:\n * a provider without change times versions every copy, deletions and\n * restorations included, from one sequence. Each time class is ordered\n * lexicographically, so this is a total order and applying copies in any\n * order converges on the same winner.\n *\n * @category ordering\n * @since 1.0.0\n */\nexport const compare = (current, candidate) => {\n    if (current.updatedAtMs !== candidate.updatedAtMs) {\n        if (current.updatedAtMs === null)\n            return 1;\n        if (candidate.updatedAtMs === null)\n            return -1;\n        return candidate.updatedAtMs > current.updatedAtMs ? 1 : -1;\n    }\n    if (current.updatedAtMs === null) {\n        const version = compareVersion(candidate.version, current.version);\n        if (version !== 0)\n            return version;\n    }\n    if (current.deleted !== candidate.deleted)\n        return candidate.deleted ? 1 : -1;\n    return compareVersion(candidate.version, current.version);\n};\n/**\n * Whether `candidate` is strictly newer than `current`.\n *\n * Ordered by `updatedAtMs`, then deletion, then `version`; see {@link compare}.\n * A copy equal on all three does not supersede, which is what makes applying\n * the same record twice a no-op.\n *\n * @category ordering\n * @since 1.0.0\n */\nexport const supersedes = (current, candidate) => compare(current, candidate) > 0;\n/**\n * A tombstone: the provider deleted the object.\n *\n * It keeps identity, placement, times and version, and nothing else: text,\n * payload, author and link are empty, so a deleted object's content cannot be\n * retrieved from the tombstone. Its change time is the later of the removed\n * version's and `deletedAtMs`, so it supersedes the copy it removes and loses\n * to any later edit, which is how an object the provider restores comes back.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const tombstone = (of, deletedAtMs, retrievedAtMs = deletedAtMs) => ({\n    provider: of.provider,\n    connectionId: of.connectionId,\n    externalId: of.externalId,\n    kind: of.kind,\n    url: null,\n    author: null,\n    createdAtMs: of.createdAtMs ?? null,\n    updatedAtMs: Math.max(of.updatedAtMs ?? deletedAtMs, deletedAtMs),\n    version: of.version ?? null,\n    retrievedAtMs,\n    access: of.access,\n    thread: of.thread,\n    text: \"\",\n    deleted: true,\n    payload: null,\n});\n/**\n * The containers a record lives in: its access container and its thread\n * container, without duplicates. A record in none is readable only through a\n * grant that covers the whole connection.\n *\n * @category getters\n * @since 1.0.0\n */\nexport const containers = (record) => {\n    const ids = [];\n    for (const id of [record.access.containerId, record.thread.containerId]) {\n        if (id !== null && !ids.includes(id))\n            ids.push(id);\n    }\n    return ids;\n};\n/**\n * A pointer to one retrieved copy of a record, as a prompt or a run keeps it.\n *\n * A resumed run holds references, not text, and asks the store whether each\n * one is still readable and still the copy it used.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Reference = Schema.Struct({\n    connectionId: Schema.NonEmptyString,\n    externalId: Schema.NonEmptyString,\n    updatedAtMs: Schema.NullOr(Schema.Number),\n    version: Schema.NullOr(Schema.String),\n    retrievedAtMs: Schema.Number,\n});\n/**\n * The reference to `record` as retrieved.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const reference = (record) => ({\n    connectionId: record.connectionId,\n    externalId: record.externalId,\n    updatedAtMs: record.updatedAtMs,\n    version: record.version,\n    retrievedAtMs: record.retrievedAtMs,\n});\n",
+    "code": "/**\n * The provenance envelope for anything an integration retrieves.\n *\n * A message, a GitHub issue comment and an external event are different\n * documents, and this package keeps their provider payload exactly as it\n * arrived. What every one of them also needs, before it can be stored,\n * retrieved or placed in a prompt, is the same set of facts: which provider\n * and connection it came from, its stable external identity and link, who\n * wrote it and when, which version this is, when it was retrieved, who may\n * read it, and which thread it belongs to. `SourceRecord` is that set.\n *\n * `text` is the provider adapter's searchable rendering of the payload; it is\n * data, never instructions. `deleted` marks a tombstone: the provider removed\n * the object, so its payload and text are empty and retrieval never returns it.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Who may read a record, as the provider scoped it.\n *\n * `private` is one person's data (a direct message, a personal calendar),\n * `container` is visible to members of `access.containerId` (a channel, a\n * repository), `workspace` to every member of the connected workspace, and\n * `public` to anyone.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const AccessScope = Schema.Literals([\"private\", \"container\", \"workspace\", \"public\"]);\n/**\n * The provider's author identity for a record.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Author = Schema.Struct({\n    /** The provider's stable user or bot id. */\n    id: Schema.NonEmptyString,\n    /** A display label, when the provider supplied one. Never an identity. */\n    label: Schema.NullOr(Schema.String)\n});\n/**\n * The provider's access scope for a record.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Access = Schema.Struct({\n    scope: AccessScope,\n    /** The container the scope is relative to, or `null` when it names none. */\n    containerId: Schema.NullOr(Schema.NonEmptyString)\n});\n/**\n * Where a record sits in its conversation or hierarchy.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Thread = Schema.Struct({\n    /** The channel, repository or calendar holding the record. */\n    containerId: Schema.NullOr(Schema.NonEmptyString),\n    /** The thread root's external id, or `null` outside a thread. */\n    threadId: Schema.NullOr(Schema.NonEmptyString),\n    /** The direct parent's external id (a comment's issue), or `null`. */\n    parentId: Schema.NullOr(Schema.NonEmptyString)\n});\n/**\n * One retrieved provider object with its provenance.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const SourceRecord = Schema.Struct({\n    /** The provider that produced it: `github`. */\n    provider: Schema.NonEmptyString,\n    /** The configured connection it was retrieved through. */\n    connectionId: Schema.NonEmptyString,\n    /** The provider's stable identity for the object, unique within the connection. */\n    externalId: Schema.NonEmptyString,\n    /** The provider object kind: `message`, `issue`, `issue-comment`, `event`. */\n    kind: Schema.NonEmptyString,\n    /** A link to the object at the provider, when it has one. */\n    url: Schema.NullOr(Schema.String),\n    author: Schema.NullOr(Author),\n    /** When the provider says the object was created, in Unix milliseconds. */\n    createdAtMs: Schema.NullOr(Schema.Number),\n    /** When the provider says the object last changed, in Unix milliseconds. */\n    updatedAtMs: Schema.NullOr(Schema.Number),\n    /** The provider's version token (an edit timestamp, an etag), when it has one. */\n    version: Schema.NullOr(Schema.String),\n    /** When this copy was retrieved, in Unix milliseconds. */\n    retrievedAtMs: Schema.Number,\n    access: Access,\n    thread: Thread,\n    /** Searchable text rendered by the provider adapter. Data, never instructions. */\n    text: Schema.String,\n    /** Whether the provider deleted the object. A tombstone carries empty text and payload. */\n    deleted: Schema.Boolean,\n    /** The provider payload, as delivered. */\n    payload: Schema.Json\n});\n/**\n * Decodes an unknown value as a {@link SourceRecord}.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const decode = Schema.decodeUnknownEffect(SourceRecord);\n// A decimal version token: `1712345678.000200`, an external sequence.\nconst DECIMAL_VERSION = /^(\\d+)(?:\\.(\\d+))?$/;\nconst sign = (left, right) => left === right ? 0 : left < right ? -1 : 1;\n/**\n * Orders two provider version tokens.\n *\n * A missing token sorts first. Two decimal tokens compare as numbers, digit by\n * digit, so `10.5` follows `9.75` without a floating-point round trip that\n * would merge two microsecond-distinct timestamps. Decimal tokens sort before\n * opaque tokens; opaque tokens and numerically equal decimal spellings compare\n * by code unit. Ordering by token class first keeps mixed triples transitive.\n *\n * @category ordering\n * @since 1.0.0\n */\nexport const compareVersion = (left, right) => {\n    if (left === right)\n        return 0;\n    if (left === null)\n        return -1;\n    if (right === null)\n        return 1;\n    const leftDecimal = DECIMAL_VERSION.exec(left);\n    const rightDecimal = DECIMAL_VERSION.exec(right);\n    if (leftDecimal !== null && rightDecimal === null)\n        return -1;\n    if (leftDecimal === null && rightDecimal !== null)\n        return 1;\n    if (leftDecimal !== null && rightDecimal !== null) {\n        const leftWhole = leftDecimal[1].replace(/^0+(?=\\d)/, \"\");\n        const rightWhole = rightDecimal[1].replace(/^0+(?=\\d)/, \"\");\n        if (leftWhole.length !== rightWhole.length)\n            return leftWhole.length < rightWhole.length ? -1 : 1;\n        const whole = sign(leftWhole, rightWhole);\n        if (whole !== 0)\n            return whole;\n        const width = Math.max(leftDecimal[2]?.length ?? 0, rightDecimal[2]?.length ?? 0);\n        const fraction = sign((leftDecimal[2] ?? \"\").padEnd(width, \"0\"), (rightDecimal[2] ?? \"\").padEnd(width, \"0\"));\n        if (fraction !== 0)\n            return fraction;\n    }\n    return sign(left, right);\n};\n/**\n * Orders two copies of one record: negative when `candidate` is older than\n * `current`, zero when neither is newer, positive when `candidate` is newer.\n *\n * The provider's change time decides first, and a copy with no change time is\n * older than any copy that has one. At the same time a deletion follows the\n * live copy, because a provider stamps a delete with the time of the version it\n * removed. Then the version token decides. Between two copies with no change\n * time, the version is the only change order, so it decides before deletion:\n * a provider without change times versions every copy, deletions and\n * restorations included, from one sequence. Each time class is ordered\n * lexicographically, so this is a total order and applying copies in any\n * order converges on the same winner.\n *\n * @category ordering\n * @since 1.0.0\n */\nexport const compare = (current, candidate) => {\n    if (current.updatedAtMs !== candidate.updatedAtMs) {\n        if (current.updatedAtMs === null)\n            return 1;\n        if (candidate.updatedAtMs === null)\n            return -1;\n        return candidate.updatedAtMs > current.updatedAtMs ? 1 : -1;\n    }\n    if (current.updatedAtMs === null) {\n        const version = compareVersion(candidate.version, current.version);\n        if (version !== 0)\n            return version;\n    }\n    if (current.deleted !== candidate.deleted)\n        return candidate.deleted ? 1 : -1;\n    return compareVersion(candidate.version, current.version);\n};\n/**\n * Whether `candidate` is strictly newer than `current`.\n *\n * Ordered by `updatedAtMs`, then deletion, then `version`; see {@link compare}.\n * A copy equal on all three does not supersede, which is what makes applying\n * the same record twice a no-op.\n *\n * @category ordering\n * @since 1.0.0\n */\nexport const supersedes = (current, candidate) => compare(current, candidate) > 0;\n/**\n * A tombstone: the provider deleted the object.\n *\n * It keeps identity, placement, times and version, and nothing else: text,\n * payload, author and link are empty, so a deleted object's content cannot be\n * retrieved from the tombstone. Its change time is the later of the removed\n * version's and `deletedAtMs`, so it supersedes the copy it removes and loses\n * to any later edit, which is how an object the provider restores comes back.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const tombstone = (of, deletedAtMs, retrievedAtMs = deletedAtMs) => ({\n    provider: of.provider,\n    connectionId: of.connectionId,\n    externalId: of.externalId,\n    kind: of.kind,\n    url: null,\n    author: null,\n    createdAtMs: of.createdAtMs ?? null,\n    updatedAtMs: Math.max(of.updatedAtMs ?? deletedAtMs, deletedAtMs),\n    version: of.version ?? null,\n    retrievedAtMs,\n    access: of.access,\n    thread: of.thread,\n    text: \"\",\n    deleted: true,\n    payload: null\n});\n/**\n * The containers a record lives in: its access container and its thread\n * container, without duplicates. A record in none is readable only through a\n * grant that covers the whole connection.\n *\n * @category getters\n * @since 1.0.0\n */\nexport const containers = (record) => {\n    const ids = [];\n    for (const id of [record.access.containerId, record.thread.containerId]) {\n        if (id !== null && !ids.includes(id))\n            ids.push(id);\n    }\n    return ids;\n};\n/**\n * A pointer to one retrieved copy of a record, as a prompt or a run keeps it.\n *\n * A resumed run holds references, not text, and asks the store whether each\n * one is still readable and still the copy it used.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Reference = Schema.Struct({\n    connectionId: Schema.NonEmptyString,\n    externalId: Schema.NonEmptyString,\n    updatedAtMs: Schema.NullOr(Schema.Number),\n    version: Schema.NullOr(Schema.String),\n    retrievedAtMs: Schema.Number\n});\n/**\n * The reference to `record` as retrieved.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const reference = (record) => ({\n    connectionId: record.connectionId,\n    externalId: record.externalId,\n    updatedAtMs: record.updatedAtMs,\n    version: record.version,\n    retrievedAtMs: record.retrievedAtMs\n});\n",
     "map": {
      "version": 3,
      "file": "SourceRecord.js",
@@ -6669,7 +6669,7 @@
       "relative": "packages/smithers/agent/integrations/src/core/Sync.vibe"
      }
     ],
-    "code": "/**\n * The provider half of source synchronization.\n *\n * A provider adapter answers one question: what changed after this cursor.\n * The first call passes `null` and receives the initial pages; later calls\n * pass the cursor the previous batch returned. A provider that invalidates a\n * cursor (Google's `410 Gone` on a stale sync token) answers `reset: true`,\n * which tells the driver that the batch is a fresh full listing and anything\n * it does not contain is gone.\n *\n * The driver owns durability: it applies a batch and advances the stored\n * cursor in one transaction, so a crash between them re-reads the batch\n * rather than skipping it, and applying the same batch twice is a no-op.\n *\n * `runSync` is that driver. It reads the stream's committed cursor from the\n * `SourceStore`, asks the adapter for the next page, and hands the page to\n * `SourceStore.commit`, which applies the records, advances the cursor under\n * the key `connectionId:stream`, and, when a `reset` listing completes,\n * tombstones every record of the stream the listing did not contain. It stops\n * when the adapter reports `done` or the page budget runs out; the next run\n * resumes from the committed cursor, including a full listing still in\n * progress. A revoked connection is refused before the adapter is called.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { IntegrationError } from \"./IntegrationError.js\";\nimport { SourceStore } from \"./SourceStore.js\";\n/**\n * The default number of pages one `runSync` commits.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const DEFAULT_MAX_PAGES = 10;\n/**\n * The largest page budget `runSync` accepts.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const MAX_PAGES_LIMIT = 1000;\n/**\n * Pulls an adapter's changes into the `SourceStore`, one committed page at a\n * time.\n *\n * Every page is applied and its cursor advanced in one transaction, so a\n * failure, in the adapter or in the store, leaves the stream at its last\n * committed page and the next run repeats only the page that failed. Records\n * must belong to the adapter's connection and provider; a page carrying\n * anything else is refused before it is written.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const runSync = (options) => Effect.withSpan((Effect_1.gen(function* () {\n    const { adapter } = options;\n    const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;\n    const scope = { provider: adapter.provider, connectionId: adapter.connectionId, stream: adapter.stream };\n    if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > MAX_PAGES_LIMIT) {\n        return yield* Effect_1.fail(new IntegrationError(\"invalid-config\", `Sync maxPages must be an integer between 1 and ${MAX_PAGES_LIMIT}.`, { ...scope, maxPages, retryable: false }));\n    }\n    const store = yield* SourceStore;\n    if (yield* store.isRevoked(adapter.connectionId)) {\n        return yield* Effect_1.fail(new IntegrationError(\"permission-denied\", `Connection \"${adapter.connectionId}\" is revoked, so it is not synchronized.`, { ...scope, retryable: false }));\n    }\n    let cursor = yield* store.cursor(adapter.connectionId, adapter.stream);\n    let report = {\n        ...scope,\n        pages: 0,\n        inserted: 0,\n        updated: 0,\n        unchanged: 0,\n        tombstoned: 0,\n        swept: 0,\n        cursor,\n        reset: false,\n        done: false,\n    };\n    while (report.pages < maxPages && !report.done) {\n        const changes = yield* adapter.changes(cursor);\n        // A page that promises more but names no position would be asked for\n        // again forever. Refused before anything is written.\n        if (!changes.done && changes.cursor === null) {\n            return yield* Effect_1.fail(new IntegrationError(\"decode-failed\", `Sync adapter for \"${adapter.connectionId}:${adapter.stream}\" reported more pages without a cursor.`, { ...scope, retryable: false }));\n        }\n        const committed = yield* store.commit({ ...scope, changes });\n        if (changes.cursor !== null)\n            cursor = changes.cursor;\n        report = {\n            ...report,\n            pages: report.pages + 1,\n            inserted: report.inserted + committed.inserted,\n            updated: report.updated + committed.updated,\n            unchanged: report.unchanged + committed.unchanged,\n            tombstoned: report.tombstoned + committed.tombstoned,\n            swept: report.swept + committed.swept,\n            cursor,\n            reset: report.reset || changes.reset,\n            done: changes.done,\n        };\n    }\n    return report;\n})), \"Sync.runSync\", {\n    attributes: {\n        \"integration.provider\": options.adapter.provider,\n        \"integration.connection\": options.adapter.connectionId,\n        \"integration.stream\": options.adapter.stream,\n    },\n});\n",
+    "code": "/**\n * The provider half of source synchronization.\n *\n * A provider adapter answers one question: what changed after this cursor.\n * The first call passes `null` and receives the initial pages; later calls\n * pass the cursor the previous batch returned. A provider that invalidates a\n * cursor (Google's `410 Gone` on a stale sync token) answers `reset: true`,\n * which tells the driver that the batch is a fresh full listing and anything\n * it does not contain is gone.\n *\n * The driver owns durability: it applies a batch and advances the stored\n * cursor in one transaction, so a crash between them re-reads the batch\n * rather than skipping it, and applying the same batch twice is a no-op.\n *\n * `runSync` is that driver. It reads the stream's committed cursor from the\n * `SourceStore`, asks the adapter for the next page, and hands the page to\n * `SourceStore.commit`, which applies the records, advances the cursor under\n * the key `connectionId:stream`, and, when a `reset` listing completes,\n * tombstones every record of the stream the listing did not contain. It stops\n * when the adapter reports `done` or the page budget runs out; the next run\n * resumes from the committed cursor, including a full listing still in\n * progress. A revoked connection is refused before the adapter is called.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { IntegrationError } from \"./IntegrationError.js\";\nimport { SourceStore } from \"./SourceStore.js\";\n/**\n * The default number of pages one `runSync` commits.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const DEFAULT_MAX_PAGES = 10;\n/**\n * The largest page budget `runSync` accepts.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const MAX_PAGES_LIMIT = 1000;\n/**\n * Pulls an adapter's changes into the `SourceStore`, one committed page at a\n * time.\n *\n * Every page is applied and its cursor advanced in one transaction, so a\n * failure, in the adapter or in the store, leaves the stream at its last\n * committed page and the next run repeats only the page that failed. Records\n * must belong to the adapter's connection and provider; a page carrying\n * anything else is refused before it is written.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const runSync = (options) => Effect.withSpan((Effect_1.gen(function* () {\n    const { adapter } = options;\n    const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;\n    const scope = { provider: adapter.provider, connectionId: adapter.connectionId, stream: adapter.stream };\n    if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > MAX_PAGES_LIMIT) {\n        return yield* Effect_1.fail(new IntegrationError(\"invalid-config\", `Sync maxPages must be an integer between 1 and ${MAX_PAGES_LIMIT}.`, { ...scope, maxPages, retryable: false }));\n    }\n    const store = yield* SourceStore;\n    if (yield* store.isRevoked(adapter.connectionId)) {\n        return yield* Effect_1.fail(new IntegrationError(\"permission-denied\", `Connection \"${adapter.connectionId}\" is revoked, so it is not synchronized.`, { ...scope, retryable: false }));\n    }\n    let cursor = yield* store.cursor(adapter.connectionId, adapter.stream);\n    let report = {\n        ...scope,\n        pages: 0,\n        inserted: 0,\n        updated: 0,\n        unchanged: 0,\n        tombstoned: 0,\n        swept: 0,\n        cursor,\n        reset: false,\n        done: false\n    };\n    while (report.pages < maxPages && !report.done) {\n        const changes = yield* adapter.changes(cursor);\n        // A page that promises more but names no position would be asked for\n        // again forever. Refused before anything is written.\n        if (!changes.done && changes.cursor === null) {\n            return yield* Effect_1.fail(new IntegrationError(\"decode-failed\", `Sync adapter for \"${adapter.connectionId}:${adapter.stream}\" reported more pages without a cursor.`, { ...scope, retryable: false }));\n        }\n        const committed = yield* store.commit({ ...scope, changes });\n        if (changes.cursor !== null)\n            cursor = changes.cursor;\n        report = {\n            ...report,\n            pages: report.pages + 1,\n            inserted: report.inserted + committed.inserted,\n            updated: report.updated + committed.updated,\n            unchanged: report.unchanged + committed.unchanged,\n            tombstoned: report.tombstoned + committed.tombstoned,\n            swept: report.swept + committed.swept,\n            cursor,\n            reset: report.reset || changes.reset,\n            done: changes.done\n        };\n    }\n    return report;\n})), \"Sync.runSync\", {\n    attributes: {\n        \"integration.provider\": options.adapter.provider,\n        \"integration.connection\": options.adapter.connectionId,\n        \"integration.stream\": options.adapter.stream\n    }\n});\n",
     "map": {
      "version": 3,
      "file": "Sync.js",
@@ -6689,7 +6689,7 @@
       "relative": "packages/smithers/agent/integrations/src/github/Config.vibe"
      }
     ],
-    "code": "/**\n * GitHub credential and endpoint resolution.\n *\n * Explicit configuration wins over the environment. Smithers 0.x also carried\n * a process-wide `configureGitHub` registry so JSX components could find\n * credentials without being passed any; that registry is gone with the\n * components, because a mutable module global is the wrong way to hand a\n * credential to a service you construct yourself.\n *\n * @since 1.0.0\n */\nimport * as Duration from \"effect/Duration\";\nimport {} from \"effect\";\nimport * as Environment from \"../Environment.js\";\n/**\n * The public REST endpoint.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const DEFAULT_API_BASE_URL = \"https://api.github.com\";\n/**\n * The default deadline for one request, covering the response headers and the\n * body read.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const DEFAULT_REQUEST_TIMEOUT = Duration.seconds(30);\nconst firstNonEmpty = (candidates) => {\n    for (const candidate of candidates) {\n        if (typeof candidate === \"string\" && candidate.trim().length > 0)\n            return candidate.trim();\n    }\n    return undefined;\n};\n/**\n * Resolves configuration: explicit values, then `env`.\n *\n * `env` replaces the ambient environment rather than layering over it, so a\n * caller that passes one cannot be surprised by an ambient `GITHUB_TOKEN`\n * choosing which account a call runs as.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const resolve = (config = {}, env = Environment.ambientEnvironment()) => ({\n    token: config.token === undefined\n        ? firstNonEmpty([env[\"SMITHERS_GITHUB_TOKEN\"], env[\"GITHUB_TOKEN\"]])\n        : firstNonEmpty([config.token]),\n    apiBaseUrl: firstNonEmpty([config.apiBaseUrl, env[\"SMITHERS_GITHUB_API_BASE_URL\"]]) ?? DEFAULT_API_BASE_URL,\n    requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT,\n});\n",
+    "code": "/**\n * GitHub credential and endpoint resolution.\n *\n * Explicit configuration wins over the environment. Smithers 0.x also carried\n * a process-wide `configureGitHub` registry so JSX components could find\n * credentials without being passed any; that registry is gone with the\n * components, because a mutable module global is the wrong way to hand a\n * credential to a service you construct yourself.\n *\n * @since 1.0.0\n */\nimport * as Duration from \"effect/Duration\";\nimport {} from \"effect\";\nimport * as Environment from \"../Environment.js\";\n/**\n * The public REST endpoint.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const DEFAULT_API_BASE_URL = \"https://api.github.com\";\n/**\n * The default deadline for one request, covering the response headers and the\n * body read.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const DEFAULT_REQUEST_TIMEOUT = Duration.seconds(30);\nconst firstNonEmpty = (candidates) => {\n    for (const candidate of candidates) {\n        if (typeof candidate === \"string\" && candidate.trim().length > 0)\n            return candidate.trim();\n    }\n    return undefined;\n};\n/**\n * Resolves configuration: explicit values, then `env`.\n *\n * `env` replaces the ambient environment rather than layering over it, so a\n * caller that passes one cannot be surprised by an ambient `GITHUB_TOKEN`\n * choosing which account a call runs as.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const resolve = (config = {}, env = Environment.ambientEnvironment()) => ({\n    token: config.token === undefined\n        ? firstNonEmpty([env[\"SMITHERS_GITHUB_TOKEN\"], env[\"GITHUB_TOKEN\"]])\n        : firstNonEmpty([config.token]),\n    apiBaseUrl: firstNonEmpty([config.apiBaseUrl, env[\"SMITHERS_GITHUB_API_BASE_URL\"]]) ?? DEFAULT_API_BASE_URL,\n    requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT\n});\n",
     "map": {
      "version": 3,
      "file": "Config.js",
@@ -6729,7 +6729,7 @@
       "relative": "packages/smithers/agent/integrations/src/github/Commits.vibe"
      }
     ],
-    "code": "/**\n * Commits over the {@link GitHubClient} in context: append one commit to a\n * branch with GraphQL `createCommitOnBranch`, read a commit, and compare two.\n *\n * A plain operation, not a durable action: the flow step that calls it\n * chooses the token by providing the client.\n *\n * **Fenced, never forced.** {@link createOnBranch} sends the head it expects\n * the branch to have (`expectedHeadOid`), so GitHub refuses the commit when\n * the branch moved since, failing with `status: 409` and `stale: true`. GitHub\n * signs the commit and attributes it to the token's account. The whole files\n * it adds replace what the branch had at those paths, so build them from the\n * branch's own head.\n *\n * **Writing once.** A lost answer fails `outcomeUnknown`. Never adopt a head\n * because its parent and message look like yours: another attempt's or a\n * person's commit can match both. Write through `GitHub.Once.commitOnBranch`\n * and `Action.once` from `@smthrs/flow`, which put the step's key in a\n * `Smithers-Write` trailer and adopt only the commit that carries it.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { IntegrationError } from \"../core/IntegrationError.js\";\nimport { GitHubClient } from \"./GitHubClient.js\";\nimport { requireBranch } from \"./Refs.js\";\nimport { requireRepositoryPath } from \"./Repository.js\";\n/**\n * A commit as `GET /repos/{owner}/{repo}/git/commits/{sha}` returns it,\n * narrowed to its tree, parents and message.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const GitCommit = Schema.Struct({\n    sha: Schema.String,\n    message: Schema.String,\n    tree: Schema.Struct({ sha: Schema.String }),\n    parents: Schema.Array(Schema.Struct({ sha: Schema.String })),\n});\n/**\n * One changed file of a comparison. `patch` is absent for a binary file and\n * for one GitHub found too large to show.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const ChangedFile = Schema.Struct({\n    filename: Schema.String,\n    status: Schema.String,\n    additions: Schema.Number,\n    deletions: Schema.Number,\n    patch: Schema.optionalKey(Schema.String),\n    previous_filename: Schema.optionalKey(Schema.String),\n});\n/**\n * The most files GitHub lists in one comparison.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const MAX_COMPARE_FILES = 300;\nconst CompareCommitAnswer = Schema.Struct({\n    sha: Schema.String,\n    commit: Schema.Struct({\n        message: Schema.String,\n        author: Schema.NullOr(Schema.Struct({ date: Schema.optionalKey(Schema.String) })).pipe(Schema.withDecodingDefault(Effect.succeed(null))),\n    }),\n    author: Schema.NullOr(Schema.Struct({ login: Schema.String })).pipe(Schema.withDecodingDefault(Effect.succeed(null))),\n});\nconst CompareAnswer = Schema.Struct({\n    ahead_by: Schema.Number,\n    behind_by: Schema.Number,\n    total_commits: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),\n    commits: Schema.Array(CompareCommitAnswer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),\n    files: Schema.Array(ChangedFile).pipe(Schema.withDecodingDefault(Effect.succeed([]))),\n});\n// A message's first line: everything before its first line break.\nconst headlineOf = (message) => /^[^\\r\\n]*/.exec(message)[0];\nconst GraphQLAnswer = Schema.Struct({\n    data: Schema.optionalKey(Schema.NullOr(Schema.Struct({\n        createCommitOnBranch: Schema.NullOr(Schema.Struct({ commit: Schema.Struct({ oid: Schema.String }) })),\n    }))),\n    errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) }))),\n});\nconst SHA = /^[0-9a-f]{40}$/;\n/** The most files one commit may add or delete. */\nconst MAX_CHANGES = 1000;\nconst invalid = (field, message) => new IntegrationError(\"invalid-config\", message, { field, retryable: false });\nconst requireSha = (field, sha) => Effect_1.suspend({ requireSha: () => { return typeof sha === \"string\" && SHA.test(sha)\n        ? Effect_1.succeed(sha)\n        : (() => Effect_1.suspend(() => Effect_1.fail(invalid(field, \"A commit SHA must be 40 lowercase hex digits.\")\n        // A repository-relative path: segments that are not empty, `.` or `..`, with\n        // no control character or backslash.\n        )))(\n        // A repository-relative path: segments that are not empty, `.` or `..`, with\n        // no control character or backslash.\n        ); } }.requireSha);\n// A repository-relative path: segments that are not empty, `.` or `..`, with\n// no control character or backslash.\nconst isFilePath = (path) => typeof path === \"string\" && path.length <= 4096\n    && ![...path].some((char) => char === \"\\\\\" || char.charCodeAt(0) <= 0x1F || char.charCodeAt(0) === 0x7F)\n    && path.split(\"/\").every((segment) => segment.length > 0 && segment !== \".\" && segment !== \"..\");\nconst isBase64 = (value) => typeof value === \"string\" && /^[A-Za-z0-9+/]*={0,2}$/.test(value) && value.length % 4 === 0;\nconst spanAttributes = (owner, repo) => ({\n    \"github.owner\": owner,\n    \"github.repo\": repo,\n});\n// A GraphQL error's type or message saying the branch moved since the\n// expected head: the fence refused the commit.\nconst isStale = (error) => error.type === \"STALE_DATA\" || /expected branch to point to/i.test(error.message);\n/**\n * Appends one commit to branch `branch` whose head is `expectedHeadOid`, as\n * the token's account, through GraphQL `createCommitOnBranch`: `POST /graphql`.\n * Answers the new commit's SHA.\n *\n * `headline` is the message's first line and `body` the rest. Each addition\n * is a whole file, base64; each deletion a path. At least one change, at most\n * 1,000.\n *\n * Fails `status: 409, stale: true` when the branch's head is not\n * `expectedHeadOid`, and `status: 422` for any other GraphQL error, neither\n * retryable. A lost answer fails `outcomeUnknown`; see the module notes.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const createOnBranch = (owner, repo, input) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    yield* requireRepositoryPath(owner, repo);\n    const branch = yield* requireBranch(input.branch);\n    const expectedHeadOid = yield* requireSha(\"expectedHeadOid\", input.expectedHeadOid);\n    if (typeof input.headline !== \"string\" || input.headline.trim().length === 0 || input.headline.includes(\"\\n\")) {\n        return yield* Effect_1.fail(invalid(\"headline\", \"A commit headline is one line, not blank.\"));\n    }\n    const changes = input.additions.length + input.deletions.length;\n    if (changes === 0 || changes > MAX_CHANGES) {\n        return yield* Effect_1.fail(invalid(\"fileChanges\", `A commit changes 1 to ${MAX_CHANGES} files.`));\n    }\n    if (!input.additions.every((file) => isFilePath(file.path) && isBase64(file.contents))) {\n        return yield* Effect_1.fail(invalid(\"additions\", \"An addition is a repository path and base64 contents.\"));\n    }\n    if (!input.deletions.every(isFilePath)) {\n        return yield* Effect_1.fail(invalid(\"deletions\", \"A deletion is a repository path.\"));\n    }\n    const answer = yield* client.request(\"POST\", \"/graphql\", {\n        query: \"mutation($input: CreateCommitOnBranchInput!) \"\n            + \"{ createCommitOnBranch(input: $input) { commit { oid } } }\",\n        variables: {\n            input: {\n                branch: { repositoryNameWithOwner: `${owner}/${repo}`, branchName: branch },\n                expectedHeadOid,\n                message: { headline: input.headline, ...(input.body === undefined ? {} : { body: input.body }) },\n                fileChanges: {\n                    additions: input.additions.map((file) => ({ path: file.path, contents: file.contents })),\n                    deletions: input.deletions.map((path) => ({ path })),\n                },\n            },\n        },\n    }, { schema: GraphQLAnswer });\n    const commit = answer.data?.createCommitOnBranch?.commit;\n    if (answer.errors !== undefined && answer.errors.length > 0 || commit === undefined) {\n        const stale = (answer.errors ?? []).some(isStale);\n        return yield* Effect_1.fail(new IntegrationError(\"delivery-failed\", stale\n            ? \"GitHub refused the commit: the branch moved since the expected head.\"\n            : \"GitHub refused the commit.\", { status: stale ? 409 : 422, stale, graphql: true, retryable: false, outcomeUnknown: false }));\n    }\n    return commit.oid;\n})), \"GitHub.Commits.createOnBranch\", { attributes: spanAttributes(owner, repo) });\nconst MergeIntoAnswer = Schema.NullOr(Schema.Struct({ sha: Schema.String }));\n/**\n * Merges `head` (a branch or a commit SHA) into branch `base`, as the token's\n * account: `POST /repos/{owner}/{repo}/merges`. A stacked branch takes in what\n * the branch below it merged this way, never by a rebase, so nothing is\n * forced and a person's pushed commit survives.\n *\n * Answers `merged` with the merge commit, or `upToDate` when `base` already\n * holds `head` (GitHub's 204). Merging again what was merged is `upToDate`,\n * so a lost answer fails `retryable`. GitHub answers 409 for a conflict and\n * 404 when `base` or `head` doesn't exist: neither retryable.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const mergeInto = (owner, repo, input) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    const repository = yield* requireRepositoryPath(owner, repo);\n    const base = yield* requireBranch(input.base);\n    const head = typeof input.head === \"string\" && SHA.test(input.head) ? input.head : yield* requireBranch(input.head);\n    const answer = yield* client.request(\"POST\", `/repos/${repository}/merges`, {\n        base,\n        head,\n        ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage }),\n    }, { schema: MergeIntoAnswer, retryUnsafeWrites: true });\n    return answer === null ? { kind: \"upToDate\" } : { kind: \"merged\", sha: answer.sha };\n})), \"GitHub.Commits.mergeInto\", { attributes: spanAttributes(owner, repo) });\n/**\n * Commit `sha`'s tree, parents and message:\n * `GET /repos/{owner}/{repo}/git/commits/{sha}`.\n *\n * @category getters\n * @since 1.0.0\n */\nexport const getCommit = (owner, repo, sha) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    const repository = yield* requireRepositoryPath(owner, repo);\n    const commit = yield* requireSha(\"sha\", sha);\n    return yield* client.request(\"GET\", `/repos/${repository}/git/commits/${commit}`, undefined, { schema: GitCommit });\n})), \"GitHub.Commits.getCommit\", { attributes: spanAttributes(owner, repo) });\n/**\n * Compares commit `base` with commit `head`:\n * `GET /repos/{owner}/{repo}/compare/{base}...{head}`. Two SHAs never change\n * what they compare, so a caller may keep the answer forever.\n *\n * Answers the commits `head` has that `base` lacks in GitHub's order, oldest\n * first, each with its headline, author login and author time. GitHub lists\n * at most 250; `commitsTruncated` says it counted more.\n *\n * @category getters\n * @since 1.0.0\n */\nexport const compare = (owner, repo, base, head) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    const repository = yield* requireRepositoryPath(owner, repo);\n    const from = yield* requireSha(\"base\", base);\n    const to = yield* requireSha(\"head\", head);\n    const answer = yield* client.request(\"GET\", `/repos/${repository}/compare/${from}...${to}`, undefined, {\n        schema: CompareAnswer,\n    });\n    const commits = answer.commits.map((commit) => ({\n        sha: commit.sha,\n        headline: headlineOf(commit.commit.message),\n        authorLogin: commit.author?.login ?? null,\n        authoredAt: commit.commit.author?.date ?? null,\n    }));\n    return {\n        aheadBy: answer.ahead_by,\n        behindBy: answer.behind_by,\n        files: answer.files,\n        truncated: answer.files.length >= MAX_COMPARE_FILES,\n        commits,\n        commitsTruncated: answer.total_commits > commits.length,\n    };\n})), \"GitHub.Commits.compare\", { attributes: spanAttributes(owner, repo) });\n",
+    "code": "/**\n * Commits over the {@link GitHubClient} in context: append one commit to a\n * branch with GraphQL `createCommitOnBranch`, read a commit, and compare two.\n *\n * A plain operation, not a durable action: the flow step that calls it\n * chooses the token by providing the client.\n *\n * **Fenced, never forced.** {@link createOnBranch} sends the head it expects\n * the branch to have (`expectedHeadOid`), so GitHub refuses the commit when\n * the branch moved since, failing with `status: 409` and `stale: true`. GitHub\n * signs the commit and attributes it to the token's account. The whole files\n * it adds replace what the branch had at those paths, so build them from the\n * branch's own head.\n *\n * **Writing once.** A lost answer fails `outcomeUnknown`. Never adopt a head\n * because its parent and message look like yours: another attempt's or a\n * person's commit can match both. Write through `GitHub.Once.commitOnBranch`\n * and `Action.once` from `@smthrs/flow`, which put the step's key in a\n * `Smithers-Write` trailer and adopt only the commit that carries it.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { IntegrationError } from \"../core/IntegrationError.js\";\nimport { GitHubClient } from \"./GitHubClient.js\";\nimport { requireBranch } from \"./Refs.js\";\nimport { requireRepositoryPath } from \"./Repository.js\";\n/**\n * A commit as `GET /repos/{owner}/{repo}/git/commits/{sha}` returns it,\n * narrowed to its tree, parents and message.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const GitCommit = Schema.Struct({\n    sha: Schema.String,\n    message: Schema.String,\n    tree: Schema.Struct({ sha: Schema.String }),\n    parents: Schema.Array(Schema.Struct({ sha: Schema.String }))\n});\n/**\n * One changed file of a comparison. `patch` is absent for a binary file and\n * for one GitHub found too large to show.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const ChangedFile = Schema.Struct({\n    filename: Schema.String,\n    status: Schema.String,\n    additions: Schema.Number,\n    deletions: Schema.Number,\n    patch: Schema.optionalKey(Schema.String),\n    previous_filename: Schema.optionalKey(Schema.String)\n});\n/**\n * The most files GitHub lists in one comparison.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const MAX_COMPARE_FILES = 300;\nconst CompareCommitAnswer = Schema.Struct({\n    sha: Schema.String,\n    commit: Schema.Struct({\n        message: Schema.String,\n        author: Schema.NullOr(Schema.Struct({ date: Schema.optionalKey(Schema.String) })).pipe(Schema.withDecodingDefault(Effect.succeed(null)))\n    }),\n    author: Schema.NullOr(Schema.Struct({ login: Schema.String })).pipe(Schema.withDecodingDefault(Effect.succeed(null)))\n});\nconst CompareAnswer = Schema.Struct({\n    ahead_by: Schema.Number,\n    behind_by: Schema.Number,\n    total_commits: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),\n    commits: Schema.Array(CompareCommitAnswer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),\n    files: Schema.Array(ChangedFile).pipe(Schema.withDecodingDefault(Effect.succeed([])))\n});\n// A message's first line: everything before its first line break.\nconst headlineOf = (message) => /^[^\\r\\n]*/.exec(message)[0];\nconst GraphQLAnswer = Schema.Struct({\n    data: Schema.optionalKey(Schema.NullOr(Schema.Struct({\n        createCommitOnBranch: Schema.NullOr(Schema.Struct({ commit: Schema.Struct({ oid: Schema.String }) }))\n    }))),\n    errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) })))\n});\nconst SHA = /^[0-9a-f]{40}$/;\n/** The most files one commit may add or delete. */\nconst MAX_CHANGES = 1000;\nconst invalid = (field, message) => new IntegrationError(\"invalid-config\", message, { field, retryable: false });\nconst requireSha = (field, sha) => Effect_1.suspend({ requireSha: () => { return typeof sha === \"string\" && SHA.test(sha)\n        ? Effect_1.succeed(sha)\n        : (() => Effect_1.suspend(() => Effect_1.fail(invalid(field, \"A commit SHA must be 40 lowercase hex digits.\")\n        // A repository-relative path: segments that are not empty, `.` or `..`, with\n        // no control character or backslash.\n        )))(\n        // A repository-relative path: segments that are not empty, `.` or `..`, with\n        // no control character or backslash.\n        ); } }.requireSha);\n// A repository-relative path: segments that are not empty, `.` or `..`, with\n// no control character or backslash.\nconst isFilePath = (path) => typeof path === \"string\" && path.length <= 4096\n    && ![...path].some((char) => char === \"\\\\\" || char.charCodeAt(0) <= 0x1F || char.charCodeAt(0) === 0x7F)\n    && path.split(\"/\").every((segment) => segment.length > 0 && segment !== \".\" && segment !== \"..\");\nconst isBase64 = (value) => typeof value === \"string\" && /^[A-Za-z0-9+/]*={0,2}$/.test(value) && value.length % 4 === 0;\nconst spanAttributes = (owner, repo) => ({\n    \"github.owner\": owner,\n    \"github.repo\": repo\n});\n// A GraphQL error's type or message saying the branch moved since the\n// expected head: the fence refused the commit.\nconst isStale = (error) => error.type === \"STALE_DATA\" || /expected branch to point to/i.test(error.message);\n/**\n * Appends one commit to branch `branch` whose head is `expectedHeadOid`, as\n * the token's account, through GraphQL `createCommitOnBranch`: `POST /graphql`.\n * Answers the new commit's SHA.\n *\n * `headline` is the message's first line and `body` the rest. Each addition\n * is a whole file, base64; each deletion a path. At least one change, at most\n * 1,000.\n *\n * Fails `status: 409, stale: true` when the branch's head is not\n * `expectedHeadOid`, and `status: 422` for any other GraphQL error, neither\n * retryable. A lost answer fails `outcomeUnknown`; see the module notes.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const createOnBranch = (owner, repo, input) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    yield* requireRepositoryPath(owner, repo);\n    const branch = yield* requireBranch(input.branch);\n    const expectedHeadOid = yield* requireSha(\"expectedHeadOid\", input.expectedHeadOid);\n    if (typeof input.headline !== \"string\" || input.headline.trim().length === 0 || input.headline.includes(\"\\n\")) {\n        return yield* Effect_1.fail(invalid(\"headline\", \"A commit headline is one line, not blank.\"));\n    }\n    const changes = input.additions.length + input.deletions.length;\n    if (changes === 0 || changes > MAX_CHANGES) {\n        return yield* Effect_1.fail(invalid(\"fileChanges\", `A commit changes 1 to ${MAX_CHANGES} files.`));\n    }\n    if (!input.additions.every((file) => isFilePath(file.path) && isBase64(file.contents))) {\n        return yield* Effect_1.fail(invalid(\"additions\", \"An addition is a repository path and base64 contents.\"));\n    }\n    if (!input.deletions.every(isFilePath)) {\n        return yield* Effect_1.fail(invalid(\"deletions\", \"A deletion is a repository path.\"));\n    }\n    const answer = yield* client.request(\"POST\", \"/graphql\", {\n        query: \"mutation($input: CreateCommitOnBranchInput!) \"\n            + \"{ createCommitOnBranch(input: $input) { commit { oid } } }\",\n        variables: {\n            input: {\n                branch: { repositoryNameWithOwner: `${owner}/${repo}`, branchName: branch },\n                expectedHeadOid,\n                message: { headline: input.headline, ...(input.body === undefined ? {} : { body: input.body }) },\n                fileChanges: {\n                    additions: input.additions.map((file) => ({ path: file.path, contents: file.contents })),\n                    deletions: input.deletions.map((path) => ({ path }))\n                }\n            }\n        }\n    }, { schema: GraphQLAnswer });\n    const commit = answer.data?.createCommitOnBranch?.commit;\n    if (answer.errors !== undefined && answer.errors.length > 0 || commit === undefined) {\n        const stale = (answer.errors ?? []).some(isStale);\n        return yield* Effect_1.fail(new IntegrationError(\"delivery-failed\", stale\n            ? \"GitHub refused the commit: the branch moved since the expected head.\"\n            : \"GitHub refused the commit.\", { status: stale ? 409 : 422, stale, graphql: true, retryable: false, outcomeUnknown: false }));\n    }\n    return commit.oid;\n})), \"GitHub.Commits.createOnBranch\", { attributes: spanAttributes(owner, repo) });\nconst MergeIntoAnswer = Schema.NullOr(Schema.Struct({ sha: Schema.String }));\n/**\n * Merges `head` (a branch or a commit SHA) into branch `base`, as the token's\n * account: `POST /repos/{owner}/{repo}/merges`. A stacked branch takes in what\n * the branch below it merged this way, never by a rebase, so nothing is\n * forced and a person's pushed commit survives.\n *\n * Answers `merged` with the merge commit, or `upToDate` when `base` already\n * holds `head` (GitHub's 204). Merging again what was merged is `upToDate`,\n * so a lost answer fails `retryable`. GitHub answers 409 for a conflict and\n * 404 when `base` or `head` doesn't exist: neither retryable.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const mergeInto = (owner, repo, input) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    const repository = yield* requireRepositoryPath(owner, repo);\n    const base = yield* requireBranch(input.base);\n    const head = typeof input.head === \"string\" && SHA.test(input.head) ? input.head : yield* requireBranch(input.head);\n    const answer = yield* client.request(\"POST\", `/repos/${repository}/merges`, {\n        base,\n        head,\n        ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage })\n    }, { schema: MergeIntoAnswer, retryUnsafeWrites: true });\n    return answer === null ? { kind: \"upToDate\" } : { kind: \"merged\", sha: answer.sha };\n})), \"GitHub.Commits.mergeInto\", { attributes: spanAttributes(owner, repo) });\n/**\n * Commit `sha`'s tree, parents and message:\n * `GET /repos/{owner}/{repo}/git/commits/{sha}`.\n *\n * @category getters\n * @since 1.0.0\n */\nexport const getCommit = (owner, repo, sha) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    const repository = yield* requireRepositoryPath(owner, repo);\n    const commit = yield* requireSha(\"sha\", sha);\n    return yield* client.request(\"GET\", `/repos/${repository}/git/commits/${commit}`, undefined, { schema: GitCommit });\n})), \"GitHub.Commits.getCommit\", { attributes: spanAttributes(owner, repo) });\n/**\n * Compares commit `base` with commit `head`:\n * `GET /repos/{owner}/{repo}/compare/{base}...{head}`. Two SHAs never change\n * what they compare, so a caller may keep the answer forever.\n *\n * Answers the commits `head` has that `base` lacks in GitHub's order, oldest\n * first, each with its headline, author login and author time. GitHub lists\n * at most 250; `commitsTruncated` says it counted more.\n *\n * @category getters\n * @since 1.0.0\n */\nexport const compare = (owner, repo, base, head) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    const repository = yield* requireRepositoryPath(owner, repo);\n    const from = yield* requireSha(\"base\", base);\n    const to = yield* requireSha(\"head\", head);\n    const answer = yield* client.request(\"GET\", `/repos/${repository}/compare/${from}...${to}`, undefined, {\n        schema: CompareAnswer\n    });\n    const commits = answer.commits.map((commit) => ({\n        sha: commit.sha,\n        headline: headlineOf(commit.commit.message),\n        authorLogin: commit.author?.login ?? null,\n        authoredAt: commit.commit.author?.date ?? null\n    }));\n    return {\n        aheadBy: answer.ahead_by,\n        behindBy: answer.behind_by,\n        files: answer.files,\n        truncated: answer.files.length >= MAX_COMPARE_FILES,\n        commits,\n        commitsTruncated: answer.total_commits > commits.length\n    };\n})), \"GitHub.Commits.compare\", { attributes: spanAttributes(owner, repo) });\n",
     "map": {
      "version": 3,
      "file": "Commits.js",
@@ -6809,7 +6809,7 @@
       "relative": "packages/smithers/agent/integrations/src/github/Payload.vibe"
      }
     ],
-    "code": "/**\n * Schemas for the GitHub webhook payloads this package types.\n *\n * GitHub payloads are large and evolve without notice, so every schema here\n * validates the fields a caller is likely to read and passes everything else\n * through untouched. A real delivery is never rejected for carrying a field\n * this package has not heard of.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nconst rest = [Schema.Record(Schema.String, Schema.Unknown)];\nconst open = (fields) => Schema.StructWithRest(Schema.Struct(fields), rest);\n/**\n * A GitHub account.\n *\n * `type` distinguishes a person from a GitHub App, so the field is modelled\n * rather than left to the open rest.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const User = open({\n    login: Schema.String,\n    id: Schema.optional(Schema.Number),\n    type: Schema.optional(Schema.String),\n});\n/**\n * How the author of a comment, issue, or pull request relates to the\n * repository, as GitHub sends it on every author-attributed delivery. It names\n * the author's standing, not who last edited the text, so it is not an\n * authorization signal.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const AuthorAssociation = Schema.String;\n/**\n * A repository, as embedded in a webhook payload.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Repository = open({\n    full_name: Schema.String,\n    name: Schema.optional(Schema.String),\n    owner: Schema.optional(User),\n    default_branch: Schema.optional(Schema.String),\n});\n/**\n * A pull request.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const PullRequest = open({\n    number: Schema.Number,\n    author_association: Schema.optional(AuthorAssociation),\n    title: Schema.optional(Schema.String),\n    state: Schema.optional(Schema.String),\n    html_url: Schema.optional(Schema.String),\n    body: Schema.optional(Schema.NullOr(Schema.String)),\n    draft: Schema.optional(Schema.Boolean),\n    merged: Schema.optional(Schema.Boolean),\n    user: Schema.optional(User),\n    head: Schema.optional(open({ ref: Schema.String, sha: Schema.String })),\n    base: Schema.optional(open({ ref: Schema.String, sha: Schema.optional(Schema.String) })),\n});\n/**\n * An issue.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Issue = open({\n    number: Schema.Number,\n    author_association: Schema.optional(AuthorAssociation),\n    title: Schema.optional(Schema.String),\n    state: Schema.optional(Schema.String),\n    html_url: Schema.optional(Schema.String),\n    body: Schema.optional(Schema.NullOr(Schema.String)),\n    user: Schema.optional(User),\n    labels: Schema.optional(Schema.Array(Schema.Unknown)),\n});\n/**\n * An issue or pull-request comment.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Comment = open({\n    id: Schema.optional(Schema.Number),\n    author_association: Schema.optional(AuthorAssociation),\n    body: Schema.optional(Schema.String),\n    html_url: Schema.optional(Schema.String),\n    user: Schema.optional(User),\n});\n/**\n * A `pull_request` delivery.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const PullRequestEvent = open({\n    action: Schema.String,\n    number: Schema.optional(Schema.Number),\n    pull_request: PullRequest,\n    repository: Repository,\n    sender: Schema.optional(User),\n});\n/**\n * An `issues` delivery.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const IssuesEvent = open({\n    action: Schema.String,\n    issue: Issue,\n    repository: Repository,\n    sender: Schema.optional(User),\n});\n/**\n * An `issue_comment` delivery.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const IssueCommentEvent = open({\n    action: Schema.String,\n    issue: Issue,\n    comment: Comment,\n    repository: Repository,\n    sender: Schema.optional(User),\n});\n/**\n * A `push` delivery.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const PushEvent = open({\n    ref: Schema.String,\n    before: Schema.optional(Schema.String),\n    after: Schema.optional(Schema.String),\n    repository: Repository,\n    commits: Schema.optional(Schema.Array(open({ id: Schema.optional(Schema.String), message: Schema.optional(Schema.String) }))),\n    pusher: Schema.optional(open({ name: Schema.optional(Schema.String) })),\n});\n",
+    "code": "/**\n * Schemas for the GitHub webhook payloads this package types.\n *\n * GitHub payloads are large and evolve without notice, so every schema here\n * validates the fields a caller is likely to read and passes everything else\n * through untouched. A real delivery is never rejected for carrying a field\n * this package has not heard of.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nconst rest = [Schema.Record(Schema.String, Schema.Unknown)];\nconst open = (fields) => Schema.StructWithRest(Schema.Struct(fields), rest);\n/**\n * A GitHub account.\n *\n * `type` distinguishes a person from a GitHub App, so the field is modelled\n * rather than left to the open rest.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const User = open({\n    login: Schema.String,\n    id: Schema.optional(Schema.Number),\n    type: Schema.optional(Schema.String)\n});\n/**\n * How the author of a comment, issue, or pull request relates to the\n * repository, as GitHub sends it on every author-attributed delivery. It names\n * the author's standing, not who last edited the text, so it is not an\n * authorization signal.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const AuthorAssociation = Schema.String;\n/**\n * A repository, as embedded in a webhook payload.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Repository = open({\n    full_name: Schema.String,\n    name: Schema.optional(Schema.String),\n    owner: Schema.optional(User),\n    default_branch: Schema.optional(Schema.String)\n});\n/**\n * A pull request.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const PullRequest = open({\n    number: Schema.Number,\n    author_association: Schema.optional(AuthorAssociation),\n    title: Schema.optional(Schema.String),\n    state: Schema.optional(Schema.String),\n    html_url: Schema.optional(Schema.String),\n    body: Schema.optional(Schema.NullOr(Schema.String)),\n    draft: Schema.optional(Schema.Boolean),\n    merged: Schema.optional(Schema.Boolean),\n    user: Schema.optional(User),\n    head: Schema.optional(open({ ref: Schema.String, sha: Schema.String })),\n    base: Schema.optional(open({ ref: Schema.String, sha: Schema.optional(Schema.String) }))\n});\n/**\n * An issue.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Issue = open({\n    number: Schema.Number,\n    author_association: Schema.optional(AuthorAssociation),\n    title: Schema.optional(Schema.String),\n    state: Schema.optional(Schema.String),\n    html_url: Schema.optional(Schema.String),\n    body: Schema.optional(Schema.NullOr(Schema.String)),\n    user: Schema.optional(User),\n    labels: Schema.optional(Schema.Array(Schema.Unknown))\n});\n/**\n * An issue or pull-request comment.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Comment = open({\n    id: Schema.optional(Schema.Number),\n    author_association: Schema.optional(AuthorAssociation),\n    body: Schema.optional(Schema.String),\n    html_url: Schema.optional(Schema.String),\n    user: Schema.optional(User)\n});\n/**\n * A `pull_request` delivery.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const PullRequestEvent = open({\n    action: Schema.String,\n    number: Schema.optional(Schema.Number),\n    pull_request: PullRequest,\n    repository: Repository,\n    sender: Schema.optional(User)\n});\n/**\n * An `issues` delivery.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const IssuesEvent = open({\n    action: Schema.String,\n    issue: Issue,\n    repository: Repository,\n    sender: Schema.optional(User)\n});\n/**\n * An `issue_comment` delivery.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const IssueCommentEvent = open({\n    action: Schema.String,\n    issue: Issue,\n    comment: Comment,\n    repository: Repository,\n    sender: Schema.optional(User)\n});\n/**\n * A `push` delivery.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const PushEvent = open({\n    ref: Schema.String,\n    before: Schema.optional(Schema.String),\n    after: Schema.optional(Schema.String),\n    repository: Repository,\n    commits: Schema.optional(Schema.Array(open({ id: Schema.optional(Schema.String), message: Schema.optional(Schema.String) }))),\n    pusher: Schema.optional(open({ name: Schema.optional(Schema.String) }))\n});\n",
     "map": {
      "version": 3,
      "file": "Payload.js",
@@ -6829,7 +6829,7 @@
       "relative": "packages/smithers/agent/integrations/src/github/Statuses.vibe"
      }
     ],
-    "code": "/**\n * Commit statuses over the {@link GitHubClient} in context: report one\n * check's state on one commit, write-only.\n *\n * A plain operation, not a durable action: the flow step that calls it\n * chooses the token by providing the client. An App's installation token\n * needs the `statuses: write` permission.\n *\n * **Safe to repeat.** A status is a fact about a commit: GitHub keeps every\n * one it is sent and shows the latest per context. Sending the same state\n * again changes nothing anyone reads, so {@link create} asks the client to\n * retry a write whose answer was lost (`retryUnsafeWrites`) while retaining\n * `outcomeUnknown` in the failure report.\n *\n * **Per commit.** A status names the exact SHA it describes, never a branch:\n * a newer head starts with no statuses, so a result for an older head can't\n * stand in for it. Branch protection that requires a context waits until that\n * context reports `success` on the head.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { IntegrationError } from \"../core/IntegrationError.js\";\nimport { GitHubClient } from \"./GitHubClient.js\";\nimport { requireRepositoryPath } from \"./Repository.js\";\n/**\n * The states GitHub takes: running (`pending`), passed (`success`), failed\n * (`failure`), or could not run (`error`).\n *\n * @category constants\n * @since 1.0.0\n */\nexport const STATES = [\"pending\", \"success\", \"failure\", \"error\"];\n/**\n * The longest description GitHub stores; {@link create} cuts a longer one to\n * fit rather than have GitHub refuse it.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const MAX_DESCRIPTION = 140;\n/**\n * What a context may be: 1 to 255 printable characters, such as\n * `smithers/lint`. It names the check across commits, and branch protection\n * requires it by this name.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const CONTEXT_PATTERN = /^[\\x21-\\x7e](?:[\\x20-\\x7e]{0,253}[\\x21-\\x7e])?$/;\n/**\n * A status as `POST /repos/{owner}/{repo}/statuses/{sha}` answers it.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Status = Schema.Struct({\n    id: Schema.Number,\n    state: Schema.Literals(STATES),\n    context: Schema.String,\n    description: Schema.NullOr(Schema.String),\n    target_url: Schema.NullOr(Schema.String),\n    created_at: Schema.String,\n});\nconst SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;\nconst invalid = (field, message, value) => new IntegrationError(\"invalid-config\", message, {\n    field,\n    value: typeof value === \"string\" ? value.slice(0, 64) : typeof value,\n    retryable: false,\n});\nconst requireInput = Effect_1.fnUntraced(function* requireInput(sha, input) {\n    if (typeof sha !== \"string\" || !SHA.test(sha)) {\n        return yield* Effect_1.fail(invalid(\"sha\", \"A commit SHA must be 40 or 64 lowercase hex digits.\", sha));\n    }\n    if (!STATES.includes(input.state)) {\n        return yield* Effect_1.fail(invalid(\"state\", \"A status's state must be pending, success, failure or error.\", input.state));\n    }\n    if (typeof input.context !== \"string\" || !CONTEXT_PATTERN.test(input.context)) {\n        return yield* Effect_1.fail(invalid(\"context\", \"A status's context must be 1 to 255 printable characters.\", input.context));\n    }\n    if (input.targetUrl !== undefined && !isHttps(input.targetUrl)) {\n        return yield* Effect_1.fail(invalid(\"targetUrl\", \"A status's target URL must be an absolute https URL.\", input.targetUrl));\n    }\n    return {\n        state: input.state,\n        context: input.context,\n        ...(input.description === undefined ? {} : { description: cut(input.description) }),\n        ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl }),\n    };\n});\nconst isHttps = (url) => {\n    try {\n        return new URL(url).protocol === \"https:\";\n    }\n    catch {\n        return false;\n    }\n};\nconst cut = (description) => description.length <= MAX_DESCRIPTION ? description : `${description.slice(0, MAX_DESCRIPTION - 1)}…`;\n/**\n * Reports `input` on commit `sha`:\n * `POST /repos/{owner}/{repo}/statuses/{sha}`. GitHub's `422` (a commit it\n * doesn't have, or a commit with too many statuses) and `403` or `404` (a\n * token without `statuses: write`, or a repository it can't see) fail with\n * the client's classification, never retried.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const create = (owner, repo, sha, input) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    const repository = yield* requireRepositoryPath(owner, repo);\n    const body = yield* requireInput(sha, input);\n    return yield* client.request(\"POST\", `/repos/${repository}/statuses/${sha}`, body, {\n        schema: Status,\n        retryUnsafeWrites: true,\n    });\n})), \"GitHub.Statuses.create\", {\n    attributes: { \"github.owner\": owner, \"github.repo\": repo, \"github.status.state\": input.state },\n});\n",
+    "code": "/**\n * Commit statuses over the {@link GitHubClient} in context: report one\n * check's state on one commit, write-only.\n *\n * A plain operation, not a durable action: the flow step that calls it\n * chooses the token by providing the client. An App's installation token\n * needs the `statuses: write` permission.\n *\n * **Safe to repeat.** A status is a fact about a commit: GitHub keeps every\n * one it is sent and shows the latest per context. Sending the same state\n * again changes nothing anyone reads, so {@link create} asks the client to\n * retry a write whose answer was lost (`retryUnsafeWrites`) while retaining\n * `outcomeUnknown` in the failure report.\n *\n * **Per commit.** A status names the exact SHA it describes, never a branch:\n * a newer head starts with no statuses, so a result for an older head can't\n * stand in for it. Branch protection that requires a context waits until that\n * context reports `success` on the head.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { IntegrationError } from \"../core/IntegrationError.js\";\nimport { GitHubClient } from \"./GitHubClient.js\";\nimport { requireRepositoryPath } from \"./Repository.js\";\n/**\n * The states GitHub takes: running (`pending`), passed (`success`), failed\n * (`failure`), or could not run (`error`).\n *\n * @category constants\n * @since 1.0.0\n */\nexport const STATES = [\"pending\", \"success\", \"failure\", \"error\"];\n/**\n * The longest description GitHub stores; {@link create} cuts a longer one to\n * fit rather than have GitHub refuse it.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const MAX_DESCRIPTION = 140;\n/**\n * What a context may be: 1 to 255 printable characters, such as\n * `smithers/lint`. It names the check across commits, and branch protection\n * requires it by this name.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const CONTEXT_PATTERN = /^[\\x21-\\x7e](?:[\\x20-\\x7e]{0,253}[\\x21-\\x7e])?$/;\n/**\n * A status as `POST /repos/{owner}/{repo}/statuses/{sha}` answers it.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Status = Schema.Struct({\n    id: Schema.Number,\n    state: Schema.Literals(STATES),\n    context: Schema.String,\n    description: Schema.NullOr(Schema.String),\n    target_url: Schema.NullOr(Schema.String),\n    created_at: Schema.String\n});\nconst SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;\nconst invalid = (field, message, value) => new IntegrationError(\"invalid-config\", message, {\n    field,\n    value: typeof value === \"string\" ? value.slice(0, 64) : typeof value,\n    retryable: false\n});\nconst requireInput = Effect_1.fnUntraced(function* requireInput(sha, input) {\n    if (typeof sha !== \"string\" || !SHA.test(sha)) {\n        return yield* Effect_1.fail(invalid(\"sha\", \"A commit SHA must be 40 or 64 lowercase hex digits.\", sha));\n    }\n    if (!STATES.includes(input.state)) {\n        return yield* Effect_1.fail(invalid(\"state\", \"A status's state must be pending, success, failure or error.\", input.state));\n    }\n    if (typeof input.context !== \"string\" || !CONTEXT_PATTERN.test(input.context)) {\n        return yield* Effect_1.fail(invalid(\"context\", \"A status's context must be 1 to 255 printable characters.\", input.context));\n    }\n    if (input.targetUrl !== undefined && !isHttps(input.targetUrl)) {\n        return yield* Effect_1.fail(invalid(\"targetUrl\", \"A status's target URL must be an absolute https URL.\", input.targetUrl));\n    }\n    return {\n        state: input.state,\n        context: input.context,\n        ...(input.description === undefined ? {} : { description: cut(input.description) }),\n        ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl })\n    };\n});\nconst isHttps = (url) => {\n    try {\n        return new URL(url).protocol === \"https:\";\n    }\n    catch {\n        return false;\n    }\n};\nconst cut = (description) => description.length <= MAX_DESCRIPTION ? description : `${description.slice(0, MAX_DESCRIPTION - 1)}…`;\n/**\n * Reports `input` on commit `sha`:\n * `POST /repos/{owner}/{repo}/statuses/{sha}`. GitHub's `422` (a commit it\n * doesn't have, or a commit with too many statuses) and `403` or `404` (a\n * token without `statuses: write`, or a repository it can't see) fail with\n * the client's classification, never retried.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const create = (owner, repo, sha, input) => Effect.withSpan((Effect_1.gen(function* () {\n    const client = yield* GitHubClient;\n    const repository = yield* requireRepositoryPath(owner, repo);\n    const body = yield* requireInput(sha, input);\n    return yield* client.request(\"POST\", `/repos/${repository}/statuses/${sha}`, body, {\n        schema: Status,\n        retryUnsafeWrites: true\n    });\n})), \"GitHub.Statuses.create\", {\n    attributes: { \"github.owner\": owner, \"github.repo\": repo, \"github.status.state\": input.state }\n});\n",
     "map": {
      "version": 3,
      "file": "Statuses.js",

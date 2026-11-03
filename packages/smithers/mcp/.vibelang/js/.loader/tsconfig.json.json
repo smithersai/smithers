@@ -10,98 +10,98 @@
   "root": {
    "relative": "packages/smithers/mcp"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/mcp/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "kX8q1iNWIj4BmVzY_IUz7VZgBYmXEViKvqcjm5q_7aM"
+    "size": 1328,
+    "hash": "ma5DHvQE48VgxNilZCWgqR7uME4BIWXbdVjvlXaBW2o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/harness/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/tsconfig.json"
     },
-    "size": 1454,
-    "hash": "Qi3miZE-DWxLH1zIyMGLuVTTSRHrvEfzFb2ynnEutmI"
+    "size": 1415,
+    "hash": "CQGGkEBWRZqHYtj0LlTgLdLgsLcO6SkyNgBS9k0d9Hs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    }
   ],
   "directories": [
@@ -243,7 +243,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -268,7 +268,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -297,70 +297,70 @@
      "relative": "packages/smithers/mcp/package.json"
     },
     "size": 5882,
-    "hash": "B1RkR0hi3q1qX0WVASYLKAfgwWLoUjUGFz0SvnrKfEc"
+    "hash": "AJZPHp9_oJdV-NCaBveMJ3B1eSkwtfc5VFh14crEhNg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "fK0vdi3dDFOTMob0LKiDB1WNp5SxbwEp_tzeMqevZQc"
+    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "kTwGKJsTp4FVGxmKUOPZg3c06ZLfQDJah4Eo8ALa1HE"
+    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
+    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "O9iDHySpA30BJ4H48_xLoYKtd_38nfhgRWUlLwL8hII"
+    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
+    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
+    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
    },
    {
     "path": {
@@ -374,7 +374,7 @@
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "UCLgpI-A-WxW-qbLTBrkIVPiG78MZVE_4OtUN_SdOtE"
+    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
    },
    {
     "path": {
@@ -549,14 +549,14 @@
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "ChhNRC9WpUe0JlBdu_RF9QYJMOG0J9A3o5IgLYQETzo"
+    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
-    "size": 15062,
-    "hash": "Ehoav5n_0WiCoUYF2geBfe9CWBxFJmFFbZd4MnMPjks"
+    "size": 15090,
+    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
    },
    {
     "path": {
@@ -577,21 +577,21 @@
      "relative": "packages/smithers/agent/harness/package.json"
     },
     "size": 20352,
-    "hash": "nrt7xT9VLByhTqWYw_IL5Pb0VUTeRvz2p3S1lGUc6i0"
+    "hash": "WdHH54Psx7LmsVGgdyKbD73Ry0-Pj8AAyBFlZNBFSIQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "HkEsBZn5oE73FkMHp1IVWloRAQivyKChWC6xDwTCWqA"
+    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "BdDRbIPt5QY59jYpdII9ws0c-Hr64YvA6FvaiRCvZII"
+    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
    },
    {
     "path": {
@@ -2503,8 +2503,8 @@
     "path": {
      "relative": "packages/smithers/mcp/src/internal/DiagnosticReporter.vibe"
     },
-    "size": 1917,
-    "hash": "9ClZY5V79xR81VlC_SqHdd_c0bJ97PbAjw5zxQ9gYzg"
+    "size": 1915,
+    "hash": "tdldyHPo2DIIeu6ALSr7DpHrizLkNgwW2uHKJCOvMos"
    },
    {
     "path": {
@@ -2972,8 +2972,8 @@
     "path": {
      "relative": "packages/smithers/mcp/src/McpError.vibe"
     },
-    "size": 1292,
-    "hash": "vmH-HTaQ_aNyVDG-CnA6JrlEL31TCn5EILqvaXyZhwA"
+    "size": 1290,
+    "hash": "f8OiGK1EAU_u7qQqMyv7FAGyzeEkuB3nJs1iwpRR9eQ"
    },
    {
     "path": {
@@ -3483,8 +3483,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -3637,15 +3637,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -3791,8 +3791,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -3833,8 +3833,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -4253,8 +4253,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -4344,15 +4344,15 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Limits.vibe"
     },
-    "size": 3219,
-    "hash": "CIj4MRtMTMc11jEn1pXnOLibMR1El2LxLzoNrRnOQVI"
+    "size": 3214,
+    "hash": "OFcLpAJzZWsJJ0cybMQ-Srkp_OgQcrWBGg4_w0VT_Lo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Signature.vibe"
     },
-    "size": 16471,
-    "hash": "HNeTROivOMqBJzQGXqsGcTenpxegL4XxK8key3d-2K4"
+    "size": 16444,
+    "hash": "_n53tKqUgjWnQj9oNaOLwRVpIwXRvKOknhBGcnaPi-c"
    },
    {
     "path": {
@@ -4652,8 +4652,8 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/skillFrontmatter.vibe"
     },
-    "size": 5100,
-    "hash": "JkPsJqXZHDDpRQDbS0e8Zm7nhuNp5OPkbZP_qWhNadA"
+    "size": 5097,
+    "hash": "POYj7x08XrCO954XGJiLpfLZ2Y-_Cxm3zeoxm8ExRM0"
    },
    {
     "path": {
@@ -5457,15 +5457,15 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Declared.vibe"
     },
-    "size": 1751,
-    "hash": "34cgDS6_EH_1EkMOHnE6_nJaisImMuCHzllFZWXB6AQ"
+    "size": 1747,
+    "hash": "uKJa4EmBRtlCx_DtDQNIrZrBMyxbWBXXLM6fDQQG2bA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/ModuleMetadata.vibe"
     },
-    "size": 43378,
-    "hash": "21-WakM0o_CV6QicRw2FleF7BdnfxP5qL0-B2Xj_QOQ"
+    "size": 43354,
+    "hash": "-j1rwxLHLFlz-TKpMYUfS1q49e8lTUmmmgkjUVdRLfw"
    },
    {
     "path": {
@@ -5478,29 +5478,29 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Names.vibe"
     },
-    "size": 2285,
-    "hash": "S-VM0xuTkTTvmKRwC0zZfSpaWgNpPkxSVjVWpwWVhyo"
+    "size": 2278,
+    "hash": "N58QLlT5ecYmsWcVOc9S3Qa9LdLrL5vqa84GBazkHqI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/MarkdownFlow.vibe"
     },
-    "size": 27635,
-    "hash": "LmH-9zS2mqqLUOThJ_a8fwbaCVjNxXW6dsK0cOoUrw0"
+    "size": 27581,
+    "hash": "6GqoFcuVy41_AYi_c5y3ujBTHiXEgWTDDq2dOSXTScQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/ModuleFlow.vibe"
     },
-    "size": 6463,
-    "hash": "lLr6mCi40WxUocDU8qK-wqGQccYQQW9TLfKOSy14aa8"
+    "size": 6451,
+    "hash": "2djBZIpwBzyexhd-7cfSz2DVkQKEwTP03Gk9_5YNttA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/RegistryError.vibe"
     },
-    "size": 4329,
-    "hash": "7_18snT3dvkHYGAZBjHFbB5rEgaj1dvf1_ARWw64aYI"
+    "size": 4324,
+    "hash": "cVjx0oNYrfXf6huK-m3fBHVVUdBaFL7t4hvNLDogJBw"
    },
    {
     "path": {
@@ -5513,15 +5513,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -5555,15 +5555,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -5702,8 +5702,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/CallLedger.vibe"
     },
-    "size": 25247,
-    "hash": "H-0T0hZ9QqDSMIgQb3gzxgXpxTpL5nkkhWqVlrVdbOU"
+    "size": 25240,
+    "hash": "3ugD1cpzRsXW_fODldJ2pP4LNItW61IUin3Z5tWLtJI"
    },
    {
     "path": {
@@ -5716,8 +5716,8 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
     },
-    "size": 1367,
-    "hash": "KMRUmP-9Pq4fef97WjRMVwdSdKCtuF_hiS_zyvdpojA"
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
    },
    {
     "path": {
@@ -5793,15 +5793,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -5919,15 +5919,15 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelEvent.vibe"
     },
-    "size": 18314,
-    "hash": "eOL13_VciDeTo0iNlkIXAmFUugbKekeib4ci8BPEZPs"
+    "size": 18290,
+    "hash": "EM2Wgs3n09Qq5zx2VFOfkjl-HAEFcuMUcUT86SIXfmM"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelError.vibe"
     },
-    "size": 8728,
-    "hash": "wSPjMwN0Cbn18xiMUEWl6WVNKsvJ8I_-NwW9RnxkzAM"
+    "size": 8723,
+    "hash": "zGcY8dlcbHfrNn7DKU23zk9XRa_KITDZljq1K_pXAL8"
    },
    {
     "path": {
@@ -5968,8 +5968,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/StepFact.vibe"
     },
-    "size": 2106,
-    "hash": "4p5BwxZdwwqDTkEe6XaRTdBpC9svUS3xGkJGFphRfmo"
+    "size": 2103,
+    "hash": "b3kkgDyilW3C-FW4fdO4ounbiKeP_KuJRi79-7KoC5s"
    },
    {
     "path": {
@@ -6003,15 +6003,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/EventTally.vibe"
     },
-    "size": 801,
-    "hash": "jqNAp8SGRoVgR2UGFcQbDqD4VnG7fA7oCOkc8hwA_Nw"
+    "size": 800,
+    "hash": "_DXFihbOGu_VKm5BvOTjgOjn52C9LseZwxmqEucrkvQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
     },
-    "size": 963,
-    "hash": "h558rP8T8bGGWY1J39KkFj2H_C3ZwzleEC_jdLro1WY"
+    "size": 962,
+    "hash": "MWPlQMr_t56pVGgwDW0MWW24aMFIVC-RYfA3thfgK7w"
    },
    {
     "path": {
@@ -6024,8 +6024,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
     },
-    "size": 4805,
-    "hash": "TV_P427Tpq3T5TcSdUJ13uwDMQgjY6FQgBXaWOQ7ORA"
+    "size": 4800,
+    "hash": "0MAnTLasHh_cI-vlZtI_0FpjmdWsh6Itt25uXOU7e9c"
    },
    {
     "path": {
@@ -6136,8 +6136,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/internal/CallTiming.vibe"
     },
-    "size": 5055,
-    "hash": "03zZJDLpkCipolLqyh6_vw7-bJ8pM76ZL9U24RRJUBg"
+    "size": 5049,
+    "hash": "m7MdltMdCMjfgMT7s3m6iODwAVH17BcK75IT8cq16PM"
    },
    {
     "path": {
@@ -6150,8 +6150,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Pricing.vibe"
     },
-    "size": 6515,
-    "hash": "Q7ywCOCqjPaB7HvdXI_frhgUjKgiMAT098WeAbn0YZw"
+    "size": 6514,
+    "hash": "a4_mNhjGrGplAxO9L7QXxCq7NHo2aBrYmLsTcsJf49s"
    },
    {
     "path": {
@@ -8103,7 +8103,7 @@
       "relative": "packages/smithers/mcp/src/internal/DiagnosticReporter.vibe"
      }
     ],
-    "code": "/**\n * Internal optional-observer capture. Every detail is redacted with\n * `Redaction.redactDiagnostic` and then wrapped in `Redacted`. Stderr is redacted by the\n * transport, one whole line at a time, before its byte cap.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Option from \"effect/Option\";\nimport * as Redacted from \"effect/Redacted\";\nimport * as Redaction from \"@smthrs/journal/Redaction\";\nimport * as Diagnostics from \"../Diagnostics.js\";\n/**\n * Captures the optional host observer without introducing a required service.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const make = (server) => Effect.map(Effect.serviceOption(Diagnostics.Diagnostics), (observer) => (source, detail) => {\n    if (Option.isNone(observer))\n        return;\n    try {\n        // A remote error can echo a credential and an argument snapshot can\n        // carry one under a secret key, so every source is redacted here.\n        // StdioTransport redacts stderr line by line as it arrives, holding a\n        // value that spans lines until it closes, and caps only the redacted\n        // text to `maxStderrBytes`, so the cap cannot cut a credential's\n        // recognizable prefix. Redacting that capped tail again would regrow\n        // it past the cap.\n        const redacted = source === \"stderr\" ? detail : Redaction.redactDiagnostic(detail);\n        const text = typeof redacted === \"string\" ? redacted : JSON.stringify(redacted);\n        const bytes = new TextEncoder().encode(text);\n        const truncated = bytes.byteLength > 16_384;\n        observer.value.report({\n            server,\n            source,\n            detail: Redacted.make(new TextDecoder().decode(bytes.subarray(0, 16_384), { stream: truncated })),\n            truncated,\n        });\n    }\n    catch {\n        // Observer failures are not MCP failures. Their messages can themselves\n        // contain the diagnostic, so neither attach nor log the thrown value.\n    }\n});\n",
+    "code": "/**\n * Internal optional-observer capture. Every detail is redacted with\n * `Redaction.redactDiagnostic` and then wrapped in `Redacted`. Stderr is redacted by the\n * transport, one whole line at a time, before its byte cap.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Option from \"effect/Option\";\nimport * as Redacted from \"effect/Redacted\";\nimport * as Redaction from \"@smthrs/journal/Redaction\";\nimport * as Diagnostics from \"../Diagnostics.js\";\n/**\n * Captures the optional host observer without introducing a required service.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const make = (server) => Effect.map(Effect.serviceOption(Diagnostics.Diagnostics), (observer) => (source, detail) => {\n    if (Option.isNone(observer))\n        return;\n    try {\n        // A remote error can echo a credential and an argument snapshot can\n        // carry one under a secret key, so every source is redacted here.\n        // StdioTransport redacts stderr line by line as it arrives, holding a\n        // value that spans lines until it closes, and caps only the redacted\n        // text to `maxStderrBytes`, so the cap cannot cut a credential's\n        // recognizable prefix. Redacting that capped tail again would regrow\n        // it past the cap.\n        const redacted = source === \"stderr\" ? detail : Redaction.redactDiagnostic(detail);\n        const text = typeof redacted === \"string\" ? redacted : JSON.stringify(redacted);\n        const bytes = new TextEncoder().encode(text);\n        const truncated = bytes.byteLength > 16_384;\n        observer.value.report({\n            server,\n            source,\n            detail: Redacted.make(new TextDecoder().decode(bytes.subarray(0, 16_384), { stream: truncated })),\n            truncated\n        });\n    }\n    catch {\n        // Observer failures are not MCP failures. Their messages can themselves\n        // contain the diagnostic, so neither attach nor log the thrown value.\n    }\n});\n",
     "map": {
      "version": 3,
      "file": "DiagnosticReporter.js",
@@ -8123,7 +8123,7 @@
       "relative": "packages/smithers/mcp/src/McpError.vibe"
      }
     ],
-    "code": "/**\n * The single typed error returned by the MCP client and flow adapter.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable, model-facing failure codes for MCP operations.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const Code = Schema.Literals([\n    \"spawn_failed\",\n    \"connection_closed\",\n    \"timeout\",\n    \"protocol_error\",\n    \"tool_not_found\",\n    \"tool_failed\",\n    \"invalid_response\",\n]);\n/**\n * A recoverable MCP client or flow-adapter failure.\n *\n * Handlers keep ordinary tool outcomes (the remote tool's own `isError`\n * result) in the success channel; this error is reserved for failures of the\n * MCP session itself: the server would not exist, the pipe closed, a\n * response could not be parsed.\n *\n * Client-created messages withhold raw process/remote diagnostics and\n * user-controlled property paths. Trusted hosts can opt into Diagnostics for\n * bounded Redacted details. Successful tool output is not scrubbed.\n *\n * @category errors\n * @since 1.0.0-rc.0\n */\nexport class McpError extends Schema.TaggedError()(\"flows/mcp/McpError\", {\n    code: Code,\n    message: Schema.String,\n    server: Schema.optional(Schema.String),\n}) {\n}\n",
+    "code": "/**\n * The single typed error returned by the MCP client and flow adapter.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable, model-facing failure codes for MCP operations.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const Code = Schema.Literals([\n    \"spawn_failed\",\n    \"connection_closed\",\n    \"timeout\",\n    \"protocol_error\",\n    \"tool_not_found\",\n    \"tool_failed\",\n    \"invalid_response\"\n]);\n/**\n * A recoverable MCP client or flow-adapter failure.\n *\n * Handlers keep ordinary tool outcomes (the remote tool's own `isError`\n * result) in the success channel; this error is reserved for failures of the\n * MCP session itself: the server would not exist, the pipe closed, a\n * response could not be parsed.\n *\n * Client-created messages withhold raw process/remote diagnostics and\n * user-controlled property paths. Trusted hosts can opt into Diagnostics for\n * bounded Redacted details. Successful tool output is not scrubbed.\n *\n * @category errors\n * @since 1.0.0-rc.0\n */\nexport class McpError extends Schema.TaggedError()(\"flows/mcp/McpError\", {\n    code: Code,\n    message: Schema.String,\n    server: Schema.optional(Schema.String)\n}) {\n}\n",
     "map": {
      "version": 3,
      "file": "McpError.js",

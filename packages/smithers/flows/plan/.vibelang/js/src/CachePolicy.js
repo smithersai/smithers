@@ -37,7 +37,7 @@ const CurrentScope = Schema.Literals(["run", "flow", "shared"]);
  */
 export const CacheScope = Object.assign(Schema.Literals(["run", "flow", "shared", "workflow", "global"]).pipe(Schema.decodeTo(CurrentScope, {
     decode: SchemaGetter.transform((scope) => scope === "workflow" ? "flow" : scope === "global" ? "shared" : scope),
-    encode: SchemaGetter.transform((scope) => scope),
+    encode: SchemaGetter.transform((scope) => scope)
 })), { literals: CurrentScope.literals });
 /**
  * A positive whole number of milliseconds.
@@ -63,7 +63,7 @@ const PositiveMillis = Schema.Int.check(Schema.isGreaterThan(0));
  */
 export const CachePolicy = Schema.Struct({
     ttlMs: Schema.optionalKey(PositiveMillis),
-    scope: Schema.optionalKey(CacheScope),
+    scope: Schema.optionalKey(CacheScope)
 });
 /**
  * Annotation key carrying a declaration's {@link CachePolicy}.

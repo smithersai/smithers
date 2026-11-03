@@ -44,7 +44,7 @@ const routeReferences = (input) => Effect_1.suspend({ routeReferences: () => { r
                 throw new FsError({
                     code: "invalid_route",
                     method: "CommandTree.make",
-                    description: "Routes must be supplied as an ordinary dense array",
+                    description: "Routes must be supplied as an ordinary dense array"
                 });
             }
             if (input.length > maximumRoutes) {
@@ -54,7 +54,7 @@ const routeReferences = (input) => Effect_1.suspend({ routeReferences: () => { r
                 throw new FsError({
                     code: "invalid_route",
                     method: "CommandTree.make",
-                    description: "Routes must be supplied as an ordinary dense array",
+                    description: "Routes must be supplied as an ordinary dense array"
                 });
             }
             const output = [];
@@ -65,7 +65,7 @@ const routeReferences = (input) => Effect_1.suspend({ routeReferences: () => { r
                         code: "invalid_route",
                         method: "CommandTree.make",
                         description: "Routes must be supplied as enumerable data properties",
-                        path: `$[${index}]`,
+                        path: `$[${index}]`
                     });
                 }
                 output.push(descriptor.value);
@@ -75,8 +75,8 @@ const routeReferences = (input) => Effect_1.suspend({ routeReferences: () => { r
         catch: (cause) => cause instanceof FsError ? cause : new FsError({
             code: "invalid_route",
             method: "CommandTree.make",
-            description: "Routes could not be inspected without executing user code",
-        }),
+            description: "Routes could not be inspected without executing user code"
+        })
     }); } }.routeReferences);
 const freezeTree = (root) => {
     const frozen = new Map();
@@ -92,7 +92,7 @@ const freezeTree = (root) => {
         const entries = Array.from(frame.node.children, ([segment, child]) => [segment, frozen.get(child)]);
         frozen.set(frame.node, Object.freeze({
             route: Option.isSome(frame.node.route) ? Object.freeze(Option.some(frame.node.route.value)) : Option.none(),
-            children: ReadonlyMap.make(entries),
+            children: ReadonlyMap.make(entries)
         }));
     }
     return frozen.get(root);
@@ -153,7 +153,7 @@ export function make(arg_1) {
                                     code: "duplicate_route",
                                     method: "CommandTree.make",
                                     description: "Two routes claim the same command name",
-                                    path: route.name,
+                                    path: route.name
                                 }));
                             }
                             node.route = Option.some(route);
@@ -179,7 +179,7 @@ function resolutionTokens(arg_2) {
         const captured = Boundary.stringArray(input, {
             maxItems: maximumResolutionTokens,
             maxLength: CommandLine.maximumTokenLength,
-            allowEmpty: true,
+            allowEmpty: true
         });
         if (!captured.ok) {
             if (captured.kind === "invalid_text") {
@@ -187,7 +187,7 @@ function resolutionTokens(arg_2) {
                     code: "parse_failed",
                     method: "CommandTree.resolve",
                     description: "The command arguments must be well-formed text without NUL",
-                    path: captured.path,
+                    path: captured.path
                 }));
             }
             return yield* Effect_1.fail(resourceLimit("CommandTree.resolve", "The command arguments exceed their resource bounds"));
@@ -230,7 +230,7 @@ export function resolve(arg_3, arg_4) {
             return yield* Effect_1.fail(new FsError({
                 code: "unknown_command",
                 method: "CommandTree.resolve",
-                description: "No command matches the supplied name",
+                description: "No command matches the supplied name"
             }));
         }
         return Object.freeze({ route: matched.route, rest: Object.freeze(argv.slice(matched.consumed)) });
@@ -249,7 +249,7 @@ export function resolveExact(arg_5, arg_6) {
             return yield* Effect_1.fail(new FsError({
                 code: "unknown_command",
                 method: "CommandTree.resolveExact",
-                description: "No command exactly matches the supplied name",
+                description: "No command exactly matches the supplied name"
             }));
         }
         return route;

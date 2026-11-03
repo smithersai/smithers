@@ -21,5 +21,5 @@ import {} from "effect";
  */
 export const fixed = (token) => ({
     token: Effect.succeed(token),
-    invalidate: Effect.void,
+    invalidate: Effect.void
 });

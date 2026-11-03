@@ -58,7 +58,7 @@ export const factoryBindings = [
     "outputs",
     "smithers",
     "tables",
-    "useCtx",
+    "useCtx"
 ];
 const runtimeCalls = new Set(Constructs.byKind("runtime").map((entry) => entry.name).concat(Constructs.byKind("store").map((entry) => entry.name), Constructs.byKind("server").map((entry) => entry.name), ["defineTool", "createHttpTool", "createOpenApiTools"]));
 const agentNames = new Set(Constructs.byKind("agent").map((entry) => entry.name));
@@ -110,7 +110,7 @@ const attributeDetail = (node, props) => {
 const memberConstructs = {
     outputs: "outputs.<key>",
     tables: "tables.<key>",
-    db: "db.<member>",
+    db: "db.<member>"
 };
 /** The factory bindings that are called rather than read. */
 const factoryCalls = new Set(["smithers", "close", "useCtx", "continueAsNew"]);
@@ -460,7 +460,7 @@ export const scanFile = (file, text, options) => {
                         construct,
                         id,
                         opening,
-                        children: ts.isJsxElement(node) ? node.children : [],
+                        children: ts.isJsxElement(node) ? node.children : []
                     });
                     return;
                 }
@@ -763,7 +763,7 @@ export const scan = (detection, parse = Ts.parse) => Effect.sync(() => {
         ...detection.components,
         ...detection.libs,
         ...detection.tests,
-        ...detection.uis.filter((ui) => ui.resolved).map((ui) => ui.path),
+        ...detection.uis.filter((ui) => ui.resolved).map((ui) => ui.path)
     ];
     const headers = new Map(detection.workflowFiles.map((workflow) => [workflow.path, workflow.headers]));
     const seen = new Set();
@@ -781,7 +781,7 @@ export const scan = (detection, parse = Ts.parse) => Effect.sync(() => {
             parse,
             prompt: (specifier) => detection.sources.get(resolveRelative(file, specifier)),
             reexports: (specifier) => specifier.startsWith(".") ? reexports.get(withoutExtension(resolveRelative(file, specifier))) : undefined,
-            ...(carried === undefined ? {} : { headers: carried }),
+            ...(carried === undefined ? {} : { headers: carried })
         }));
     }
     return hits.sort((left, right) => Sort.byText(left.file, right.file) || left.line - right.line || left.column - right.column);

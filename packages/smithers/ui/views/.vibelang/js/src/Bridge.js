@@ -106,7 +106,7 @@ export const Initialize = Schema.Struct({
     jsonrpc: Schema.Literal("2.0"),
     id: Id,
     method: Schema.Literal("ui/initialize"),
-    params: Schema.Struct({ nonce: Nonce }),
+    params: Schema.Struct({ nonce: Nonce })
 });
 /**
  * What the frame needs to show the view: the sanitized-on-arrival HTML, the
@@ -118,7 +118,7 @@ export const Initialize = Schema.Struct({
 export const HostContext = Schema.Struct({
     html: Schema.String,
     theme: Theme,
-    size: Size,
+    size: Size
 });
 /**
  * The page's answer to `ui/initialize`, posted with the port it transfers.
@@ -129,7 +129,7 @@ export const HostContext = Schema.Struct({
 export const InitializeResult = Schema.Struct({
     jsonrpc: Schema.Literal("2.0"),
     id: Id,
-    result: HostContext,
+    result: HostContext
 });
 /**
  * `ui/notifications/host-context-changed`: new HTML, a new theme, or both.
@@ -140,7 +140,7 @@ export const InitializeResult = Schema.Struct({
 export const HostContextChanged = Schema.Struct({
     jsonrpc: Schema.Literal("2.0"),
     method: Schema.Literal("ui/notifications/host-context-changed"),
-    params: Schema.Struct({ html: Schema.optionalKey(Schema.String), theme: Schema.optionalKey(Theme) }),
+    params: Schema.Struct({ html: Schema.optionalKey(Schema.String), theme: Schema.optionalKey(Theme) })
 });
 /**
  * `ui/notifications/size-changed`: the content's height in CSS pixels.
@@ -152,8 +152,8 @@ export const SizeChanged = Schema.Struct({
     jsonrpc: Schema.Literal("2.0"),
     method: Schema.Literal("ui/notifications/size-changed"),
     params: Schema.Struct({
-        height: Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: maxReportedHeight })),
-    }),
+        height: Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: maxReportedHeight }))
+    })
 });
 /**
  * One form value an interaction carries.
@@ -181,8 +181,8 @@ export const Interaction = Schema.Struct({
     params: Schema.Struct({
         event: Interactions.Name,
         arg: Schema.optionalKey(Interactions.Arg),
-        values: Schema.optionalKey(Values),
-    }),
+        values: Schema.optionalKey(Values)
+    })
 });
 /**
  * Every message the frame sends over its port.
@@ -262,7 +262,7 @@ export const acceptInitialize = (message, nonce) => Option.filter(decodeInitiali
 export const initializeResult = (initialize, context) => ({
     jsonrpc: "2.0",
     id: initialize.id,
-    result: context,
+    result: context
 });
 /**
  * A `ui/notifications/host-context-changed` notification.
@@ -273,7 +273,7 @@ export const initializeResult = (initialize, context) => ({
 export const hostContextChanged = (params) => ({
     jsonrpc: "2.0",
     method: "ui/notifications/host-context-changed",
-    params,
+    params
 });
 /**
  * The height an `inline` frame takes for a reported content height: clamped

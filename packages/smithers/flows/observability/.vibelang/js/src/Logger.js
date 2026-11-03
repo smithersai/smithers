@@ -20,7 +20,7 @@ const withMinimumLogLevel = (layer, minimumLogLevel) => minimumLogLevel === unde
     : Layer.merge(layer, Layer.succeed(References.MinimumLogLevel, minimumLogLevel));
 const optionsWithDefaults = (options) => ({
     minimumLogLevel: options?.minimumLogLevel,
-    mergeWithExisting: options?.mergeWithExisting ?? false,
+    mergeWithExisting: options?.mergeWithExisting ?? false
 });
 /**
  * Provides a human-readable development logger.
@@ -31,7 +31,7 @@ const optionsWithDefaults = (options) => ({
 export const layerPrettyDev = (options) => {
     const resolved = optionsWithDefaults(options);
     return withMinimumLogLevel(Logger.layer([Logger.consolePretty({ colors: "auto", mode: "auto" })], {
-        mergeWithExisting: resolved.mergeWithExisting,
+        mergeWithExisting: resolved.mergeWithExisting
     }), resolved.minimumLogLevel);
 };
 /**
@@ -61,7 +61,7 @@ export const formatStructured = Logger.make((options) => {
 export const layerStructuredJson = (options) => {
     const resolved = optionsWithDefaults(options);
     return withMinimumLogLevel(Logger.layer([Logger.withConsoleLog(Logger.map(formatStructured, Formatter.formatJson))], {
-        mergeWithExisting: resolved.mergeWithExisting,
+        mergeWithExisting: resolved.mergeWithExisting
     }), resolved.minimumLogLevel);
 };
 /**
