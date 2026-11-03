@@ -1,8 +1,12 @@
 import { Data, Duration, Effect, Metric, Stream } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 
-/** Fixed from dispatch, never renewed by a chunk. Authority is resolved only after EOF. */
-export const BODY_READ_MILLIS = 10_000
+/**
+ * Fixed from dispatch, never renewed by a chunk. A 1 MiB coedit seed is ~1.33 MiB as base64 JSON and takes
+ * over 10 s at 1 Mbit/s; long issue bodies also need time on slow phones. Authority is resolved after EOF,
+ * so allowing 60 s retains no earlier authorization. Route byte caps still bound memory.
+ */
+export const BODY_READ_MILLIS = 60_000
 /** Aggregate buffering cap; handlers retain their smaller, route-specific limits. */
 export const MAX_BODY_BYTES = 8 * 1024 * 1024
 const methods = new Set(["POST", "PUT", "PATCH", "DELETE"])

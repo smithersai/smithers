@@ -286,7 +286,7 @@ Each model tier has one purpose label and one unique description id: Fast is
 **Chat**, Implement is **Coding**, Hard is **Plans and reviews**. The same text
 visibly labels its model and supplies that input's accessible description.
 
-Writes resolve the session after the complete request body, with a fixed 10-second read deadline.
+Writes resolve the session after the complete request body, with a fixed 60-second read deadline.
 `model/Put`, `model/Delete` and `model/CodexLink` retain that session and alias for their final transaction;
 revocation refuses a delayed write as `stale`. Missing legacy admission is refused; local development explicitly
 carries no session. Connection writes have 1-second lock, 2-second statement and 5-second transaction limits.

@@ -1,3 +1,5 @@
+import { SharedText } from "@smthrs/sync"
+import { Base64 } from "effect/encoding"
 import { Clock, Effect, Option } from "effect"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -61,3 +63,32 @@ test("GET does not read a body or wait on the write deadline", async () => {
   const handler = HttpEffect.toWebHandler(afterBody(Effect.succeed(HttpServerResponse.empty({ status: 204 }))))
   expect((await handler(new Request("http://smithers.test/api/read"))).status).toBe(204)
 })
+
+
+test.each(["coedit seed", "issue"])("a valid paced %s upload lasting over ten seconds is admitted", async (kind) => {
+  const text = kind === "coedit seed"
+    ? JSON.stringify({ scope: { conversation: "home" }, id: crypto.randomUUID(), update: Base64.encode(SharedText.seed("x".repeat(1024 * 1024))), seed: true })
+    : JSON.stringify({ writeId: crypto.randomUUID(), op: "issue/create", title: "Slow phone", body: "x".repeat(65_000) })
+  const bytes = new TextEncoder().encode(text)
+  let offset = 0
+  let resolved = 0
+  const handler = HttpEffect.toWebHandler(afterBody(Effect.gen(function* () {
+    resolved++
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const body = yield* readBounded(request, 2 * 1024 * 1024).pipe(Effect.orDie)
+    return HttpServerResponse.jsonUnsafe({ body })
+  })))
+  const start = performance.now()
+  const response = await handler(new Request(kind === "coedit seed" ? "http://smithers.test/api/texts/file" : "http://smithers.test/api/repos/octo/hello/writes", {
+    method: "POST", duplex: "half", body: new ReadableStream<Uint8Array>({ async pull(controller) {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      const end = Math.min(bytes.length, offset + Math.ceil(bytes.length / 16))
+      controller.enqueue(bytes.slice(offset, end))
+      offset = end
+      if (offset === bytes.length) controller.close()
+    } }, { highWaterMark: 0 }),
+  } as RequestInit))
+  expect([response.status, resolved]).toEqual([200, 1])
+  expect(await response.json()).toEqual({ body: text })
+  expect(performance.now() - start).toBeGreaterThan(10_000)
+}, 20_000)

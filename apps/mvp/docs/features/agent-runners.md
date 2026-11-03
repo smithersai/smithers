@@ -32,7 +32,7 @@ judged), then checks that authority, the
 fence's own expiry (5 minutes) by the clock as it stands then, and the generations it was admitted against: the
 runner's or agent's, which a removal doesn't reset, and for an agent, the repository's coding selection's. An action
 refused there writes nothing. Repository fences missing their admitting session identity are refused; local authority
-explicitly has none. The dispatcher reads each write's whole body before resolving its session, within 10 seconds.
+explicitly has none. The dispatcher reads each write's whole body before resolving its session, within 60 seconds.
 Delayed Admin actions retain and check their admitting session and alias in the final transaction.
 Every runner/agent/overflow writing transaction installs `lock_timeout = 1s`, `statement_timeout = 2s` and
 `transaction_timeout = 5s` before its first lock. Nested writes inherit the running transaction timer.

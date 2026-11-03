@@ -247,3 +247,12 @@ at DurableAuthority.test.ts:72; deployment and repository triage expected `refus
 Green: `/tmp/retro-repair-2-green-final.log`, DurableAuthority, Triage and Secrets 135 passed, 0 skipped.
 The first broad run exposed a fixture that claimed Maintainer in the actor but stored Member in its session;
 the fixture now records the same role in both. The final run exercises the real retained privilege.
+
+### Astra repair 3 — slow uploads
+
+The fixed body deadline is 60 seconds, never renewed per chunk. A 1 MiB file seed expands to roughly 1.33 MiB
+in base64 JSON and exceeds 10 seconds at 1 Mbit/s; a 65,000-character issue can exceed it on a slower phone.
+Authority is checked only after EOF, so this longer upload budget retains no old authorization. Memory stays capped.
+Red: `/tmp/retro-repair-3-red-valid.log`, 2 failed, 6 filtered skips: expected `[200, 1]`, received `[408, 0]`
+at WriteAdmission.test.ts:91. The valid CRDT seed and issue each arrive in 16 paced chunks over 11.2 seconds.
+Green: `/tmp/retro-repair-3-green.log`, 8 passed, 5 filtered skips (item 4 regressions not selected).
