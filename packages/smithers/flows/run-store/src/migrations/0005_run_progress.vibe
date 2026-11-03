@@ -13,14 +13,14 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const runProgress: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`ALTER TABLE flows_runs ADD COLUMN progress_at_ms ${Dialect.integer(sql)}`
+export const runProgress: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`ALTER TABLE flows_runs ADD COLUMN progress_at_ms ${Dialect.integer(sql)}`
   // Statement time stays fixed across both expressions and ignores event time.
   const now = Dialect.isPostgres(sql)
     ? "CAST(floor(extract(epoch FROM statement_timestamp()) * 1000) AS BIGINT)"
     : "CAST(unixepoch('subsec') * 1000 AS INTEGER)"
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: "flows_journal_run_progress",
     table: "flows_journal_events",
     event: "AFTER INSERT",
@@ -28,4 +28,4 @@ export const runProgress: Effect.Effect<void, unknown, SqlClient.SqlClient> = Ef
       WHERE run_id = NEW.run_id
         AND (progress_at_ms IS NULL OR progress_at_ms <= ${now} - 2000);`
   })
-})
+}

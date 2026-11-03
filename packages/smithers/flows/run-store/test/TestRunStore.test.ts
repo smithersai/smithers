@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option } from "effect"
-import { AttemptStore } from "../src/AttemptStore.ts"
+import { AttemptStore } from "../src/AttemptStore.vibe"
 import { RunStore } from "../src/RunStore.ts"
 import * as TestRunStore from "../src/test/TestRunStore.ts"
 

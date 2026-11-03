@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import * as Migrations from "../src/Migrations.ts"
-import * as Initial from "../src/migrations/0001_initial.ts"
-import * as Lineage from "../src/migrations/0002_lineage.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import * as Initial from "../src/migrations/0001_initial.vibe"
+import * as Lineage from "../src/migrations/0002_lineage.vibe"
 
 // The CommonJS build converts every source module with esbuild's Node interop,
 // where a default import of a sibling resolves to that module's whole exports

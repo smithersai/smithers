@@ -14,10 +14,10 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 0.1.0
  */
-export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const initial: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
 
-  yield* sql`CREATE TABLE flows_runs (
+  try sql`CREATE TABLE flows_runs (
     ${Dialect.rowId(sql)}
     run_id TEXT PRIMARY KEY CHECK (length(run_id) > 0),
     status TEXT NOT NULL,
@@ -84,11 +84,11 @@ export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect
     FOREIGN KEY (parent_run_id) REFERENCES flows_runs (run_id)
   )`
 
-  yield* sql`CREATE INDEX flows_runs_parent_run_id_idx ON flows_runs (parent_run_id)`
-  yield* sql`CREATE INDEX flows_runs_cancel_requested_idx ON flows_runs (cancel_requested_at_ms) WHERE cancel_requested_at_ms IS NOT NULL`
-  yield* sql`CREATE INDEX flows_runs_waiting_reason_wake_at_idx ON flows_runs (waiting_reason, waiting_wake_at_ms) WHERE waiting_reason IS NOT NULL`
+  try sql`CREATE INDEX flows_runs_parent_run_id_idx ON flows_runs (parent_run_id)`
+  try sql`CREATE INDEX flows_runs_cancel_requested_idx ON flows_runs (cancel_requested_at_ms) WHERE cancel_requested_at_ms IS NOT NULL`
+  try sql`CREATE INDEX flows_runs_waiting_reason_wake_at_idx ON flows_runs (waiting_reason, waiting_wake_at_ms) WHERE waiting_reason IS NOT NULL`
 
-  yield* sql`CREATE TABLE flows_attempts (
+  try sql`CREATE TABLE flows_attempts (
     run_id TEXT NOT NULL CHECK (length(run_id) > 0),
     step_key_digest TEXT NOT NULL CHECK (length(step_key_digest) > 0),
     attempt ${Dialect.integer(sql)} NOT NULL CHECK (${
@@ -111,4 +111,4 @@ export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect
     PRIMARY KEY (run_id, step_key_digest, attempt),
     FOREIGN KEY (run_id) REFERENCES flows_runs (run_id)
   )`
-})
+}

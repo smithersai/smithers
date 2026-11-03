@@ -67,7 +67,7 @@ const securityReview = Smithers.SecurityReview({
         "A write whose owner values are read from the caller's object more than once instead of from the frozen snapshotOwner copy.",
         "A patch or finish path that succeeds after the run left status 'running' or its owner columns were cleared."
       ],
-      paths: ["src/RunStore.ts", "src/AttemptStore.ts"]
+      paths: ["src/RunStore.ts", "src/AttemptStore.vibe"]
     },
     {
       id: "steal-evidence-binding",
@@ -114,7 +114,7 @@ const securityReview = Smithers.SecurityReview({
         "A limits object built without maxBytes or maxDepth for state, checkpoint, outcome, or metadata columns.",
         "Identifiers accepted without Boundary.isDurableText (length, NUL, lone surrogate checks)."
       ],
-      paths: ["src/internal/Boundary.ts", "src/RunStore.ts", "src/AttemptStore.ts"]
+      paths: ["src/internal/Boundary.ts", "src/RunStore.ts", "src/AttemptStore.vibe"]
     },
     {
       id: "sql-parameterization",
@@ -125,7 +125,7 @@ const securityReview = Smithers.SecurityReview({
         "sql.unsafe, sql.literal, or string concatenation into a query in store code or migrations.",
         "A lineage or list query without a bound on rows returned for an attacker-chosen lineage id."
       ],
-      paths: ["src/RunStore.ts", "src/AttemptStore.ts", "src/migrations/**"]
+      paths: ["src/RunStore.ts", "src/AttemptStore.vibe", "src/migrations/**"]
     },
     {
       id: "lineage-cancel-scope",
@@ -148,7 +148,7 @@ const securityReview = Smithers.SecurityReview({
         "Effect.annotateCurrentSpan, log, or metric attributes that include state_json, checkpoint, outcome, or metadata values rather than ids.",
         "Error messages or RunStoreError causes that embed the rejected JSON payload text."
       ],
-      paths: ["src/RunStore.ts", "src/AttemptStore.ts", "src/RunStoreMetrics.vibe", "src/internal/SpanOutcome.ts"]
+      paths: ["src/RunStore.ts", "src/AttemptStore.vibe", "src/RunStoreMetrics.vibe", "src/internal/SpanOutcome.ts"]
     }
   ]
 })

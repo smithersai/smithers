@@ -5,7 +5,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Duration, Effect, Exit, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import type { OwnerId } from "../src/Ownership.ts"
 import * as RunStore from "../src/RunStore.ts"
 

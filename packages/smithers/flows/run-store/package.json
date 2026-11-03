@@ -38,9 +38,17 @@
     "./internal/*": null,
     "./migrations/*": null,
     "./*/index": null,
-    "./AttemptStore": "./src/AttemptStore.ts",
+    "./AttemptStore": {
+      "types": "./.vibe/declarations/src/AttemptStore.d.vibe.ts",
+      "vibelang-source": "./src/AttemptStore.vibe",
+      "default": "./.vibelang/js/src/AttemptStore.js"
+    },
     "./Heartbeat": "./src/Heartbeat.ts",
-    "./Migrations": "./src/Migrations.ts",
+    "./Migrations": {
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
     "./Ownership": "./src/Ownership.ts",
     "./RunStore": "./src/RunStore.ts",
     "./RunStoreMetrics": "./src/RunStoreMetrics.vibe",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option } from "effect"
-import * as AttemptStore from "../src/AttemptStore.ts"
+import * as AttemptStore from "../src/AttemptStore.vibe"
 import * as RunStore from "../src/RunStore.ts"
 
 const owner = { hostId: "host", pid: 1, nonce: "nonce" }
