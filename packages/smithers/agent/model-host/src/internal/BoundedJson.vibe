@@ -2,7 +2,6 @@
  * @since 1.0.0
  */
 
-import { Effect, Stream } from "effect"
 import type { HttpIncomingMessage } from "effect/http"
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -19,21 +18,19 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024
  */
 export const boundedJson = <E>(
   message: HttpIncomingMessage.HttpIncomingMessage<E>
-): Effect.Effect<unknown | undefined> => {
+): unknown | undefined!! => {
   const length = Number(message.headers["content-length"] ?? "0")
   if (!Number.isFinite(length) || length < 0 || length > MAX_BODY_BYTES) return Effect.succeed(undefined)
   const chunks: Array<Uint8Array> = []
   let size = 0
-  return message.stream.pipe(
-    Stream.runForEachWhile((chunk) =>
-      Effect.sync(() => {
-        size += chunk.byteLength
-        if (size > MAX_BODY_BYTES) return false
-        chunks.push(chunk)
-        return true
-      })
-    ),
-    Effect.flatMap(() => {
+  return message.stream
+    |> Stream.runForEachWhile(%, effect (chunk) => {
+      size += chunk.byteLength
+      if (size > MAX_BODY_BYTES) return false
+      chunks.push(chunk)
+      return true
+    })
+    |> Effect.flatMap(%, () => {
       if (size === 0 || size > MAX_BODY_BYTES) return Effect.succeed(undefined)
       const bytes = new Uint8Array(size)
       let offset = 0
@@ -44,12 +41,11 @@ export const boundedJson = <E>(
       return Effect.try(() =>
         JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes)) as unknown
       )
-    }),
+    })
     // Bytes that are not UTF-8 JSON, or a body the platform cannot read (a
     // used body is a defect there), are no request. Interruption is neither a
     // failure nor a defect, so a caller who went away while the body was read
     // stays interrupted and is never answered as a bad request.
-    Effect.catch(() => Effect.succeed(undefined)),
-    Effect.catchDefect(() => Effect.succeed(undefined))
-  )
+    |> Effect.catch(%, () => Effect.succeed(undefined))
+    |> Effect.catchDefect(%, () => Effect.succeed(undefined))
 }

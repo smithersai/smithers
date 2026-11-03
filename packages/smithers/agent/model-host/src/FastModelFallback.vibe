@@ -25,7 +25,7 @@ export const fastModelFallback = (
   sources: ReadonlyArray<
     { readonly model: Model.Model; readonly modelId: string; readonly outputTokenLimitSupported?: boolean }
   >,
-  onFallback?: (index: number) => Effect.Effect<void>
+  onFallback?: (index: number) => void!!
 ): Model.Model => ({
   stream: (request) =>
     Stream.suspend(() => {
@@ -45,28 +45,25 @@ export const fastModelFallback = (
             params: source.outputTokenLimitSupported === false ? unlimited : request.params
           })
         ).pipe(
-          Stream.tap(() =>
-            Effect.sync(() => {
-              emitted = true
-            })
-          ),
+          Stream.tap(effect () => {
+            emitted = true
+          }),
           Stream.catch((error) => {
             const unavailable = error._tag === "flows/model/ModelError" &&
               ["authentication", "rate_limited", "quota_exceeded", "transport", "call_timeout", "provider_internal"]
                 .includes(error.code)
             return !emitted && unavailable && index + 1 < sources.length
               ? Stream.unwrap(Effect.as(
-                (onFallback?.(index + 1) ?? Effect.void).pipe(
-                  Effect.timeoutOrElse({
+                (onFallback?.(index + 1) ?? Effect.void)
+                  |> Effect.timeoutOrElse(%, {
                     duration: 1000,
                     orElse: () =>
                       Effect.andThen(
                         Metric.update(notificationTimeouts, 1),
                         Effect.logWarning("Model fallback notification timed out")
                       )
-                  }),
-                  Effect.withSpan("model_host.fallback_notification")
-                ),
+                  })
+                  |> withSpan(%, "model_host.fallback_notification"),
                 attempt(index + 1)
               ))
               : Stream.fail(error)
