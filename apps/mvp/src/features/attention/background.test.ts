@@ -41,11 +41,12 @@ afterEach(async () => {
 })
 
 /** Maya, a Member who may write the test repository's issues. */
-const maya: Actor = { subject: { kind: "person", id: "person-maya" }, role: "member", login: "maya", session: "6f1d7c1e-0b7a-4f1c-9d55-2a1c0b8e3f10" }
+const maya: Actor = { subject: { kind: "person", id: "0d9a3c52-6a8e-4f0b-8d1e-3b7c2a9f4e61" }, role: "member", login: "maya", session: "6f1d7c1e-0b7a-4f1c-9d55-2a1c0b8e3f10" }
 
 /** A ChatApi, as Maya unless `actor` is the test API's own Member. `/new` needs a forge to make branches on. */
 const openApi = async (actor: Actor | undefined = maya) => {
-  const server = openTestApi({ ...(actor === undefined ? {} : { actor }), forge: "code-storage" })
+  // Maya's session confirmed as sign-in records it: the deployment repository's role is that receipt.
+  const server = openTestApi({ ...(actor === undefined ? {} : { actor, confirmedSessions: [actor] }), forge: "code-storage" })
   closing.push(server)
   return server.runPromise(Effect.service(TestChatApi))
 }

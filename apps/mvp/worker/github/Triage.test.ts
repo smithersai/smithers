@@ -6,6 +6,7 @@
 import { FlowRuntime } from "@smthrs/flow"
 import { ModelError } from "@smthrs/model"
 import { Cause, Effect, Exit, Redacted, Stream } from "effect"
+import * as SessionStore from "../SessionStore.ts"
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import {
@@ -953,6 +954,9 @@ describe("a person's triage", () => {
     const person = await maya(github)
     const h = await githubHarness(runtime, { actor: person.actor, run: true, github })
     expect((await h.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post({ writeId: crypto.randomUUID(), op: "issue/commitment", number: 1, commitment: "now" }))).status).toBe(403)
+    // Sign-in confirms her promotion: the deployment's role is her session's confirmed receipt.
+    await runtime.runPromise(Effect.flatMap(SessionStore.roleObservation, (generation) =>
+      SessionStore.setRole(person.sessionId, "maintainer", generation)))
     const writer = await githubHarness(runtime, { actor: { ...person.actor, role: "maintainer" }, run: true, github })
     for (const accepted of [false, true]) {
       github.relabel(1, accepted ? [ACCEPTED_LABEL] : [])

@@ -119,8 +119,10 @@ describe("work links", () => {
       expect((await h.fetch(`${list}?state=all`)).status).toBe(200)
       reads.push(clients() - before)
     }
-    expect(counts.map((count) => count - counts[0]!)).toEqual([0, 0, 0])
-    expect(reads).toEqual([reads[0], reads[0], reads[0]])
+    // A session's write and read each read its confirmed deployment role once (`SessionStore.freshRole`, the role
+    // check itself); the dispatcher adds no recheck beside it, and an alias costs nothing more than its home session.
+    expect(counts.map((count) => count - counts[0]!)).toEqual([0, 1, 1])
+    expect(reads.map((count) => count - reads[0]!)).toEqual([0, 1, 1])
   })
 
   test("a runner registered on the repository posts and reads with its token; any other token is nobody", async () => {

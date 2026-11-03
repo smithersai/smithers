@@ -1,11 +1,28 @@
+import { testChatDatabase } from "./chatApi"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { DatabaseSync } from "node:sqlite"
 import { Clock, Context, Effect, Layer, ManagedRuntime, Option } from "effect"
 import { expect, test, vi } from "vitest"
-import * as TestDatabase from "../../db/TestDatabase"
 import { Chat } from "../features/chat/chat"
 import { asPerson, member, nodeDevice, openTab, openTestApi, TestChatApi } from "./chatApi"
 import { FlowDispatch } from "../flows/dispatch"
+import { SqlClient } from "effect/sql"
+import { TEST_REPOSITORY } from "./chatApi"
+import * as Conversations from "../../worker/branch/Conversations"
+
+test("the shared deployment fixture seeds and routes its home on the scripted GitHub repository", async () => {
+  const server = openTestApi()
+  try {
+    const api = await server.runPromise(Effect.service(TestChatApi))
+    expect(await server.runPromise(Conversations.homeRepository)).toBe(`github/${TEST_REPOSITORY}`)
+    const rows = await server.runPromise(Effect.flatMap(SqlClient.SqlClient, sql =>
+      sql`SELECT repo_id FROM conversations`))
+    expect(rows).toEqual([{ repo_id: `github/${TEST_REPOSITORY}` }])
+    expect(api.github.scripted.owner + "/" + api.github.scripted.name).toBe(TEST_REPOSITORY)
+    await server.runPromise(api.askElsewhere("A home conversation question"))
+    expect(await server.runPromise(api.rows)).toContainEqual(expect.objectContaining({ text: "A home conversation question" }))
+  } finally { await server.dispose() }
+})
 
 test("a server fixture opens no unused browser app", async () => {
   const server = openTestApi()
@@ -47,7 +64,7 @@ test("a tab's injected display clock leaves its real server available", async ()
 })
 
 test("a device keeps its durable engine in real local SQLite and replays after a tab reload", async () => {
-  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("local_engine"))))
+  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(testChatDatabase("local_engine"))))
   let tab: ReturnType<typeof openTab> | undefined
   try {
     const api = await server.runPromise(Effect.service(TestChatApi))
@@ -80,7 +97,7 @@ test("a device keeps its durable engine in real local SQLite and replays after a
 // tabs have separate JavaScript realms; no fixture or tab may inherit another realm's cursor or handle.
 test("independent ChatApis and tabs sync independently, including a reopened API", async () => {
   const servers = [0, 1].map(() => ManagedRuntime.make(
-    TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_shape_isolation"))),
+    TestChatApi.layer.pipe(Layer.provideMerge(testChatDatabase("test_shape_isolation"))),
   ))
   const tabs: Array<{ dispose: () => Promise<void> }> = []
   const origins: Array<Set<string>> = []
@@ -128,7 +145,7 @@ test("independent ChatApis and tabs sync independently, including a reopened API
 test("session reads follow a person's changed role without changing identity", async () => {
   const people = { reader: { ...member, role: "admin" as const } as typeof member }
   const server = ManagedRuntime.make(TestChatApi.layerWith({ people }).pipe(
-    Layer.provideMerge(TestDatabase.layer("test_session_authority")),
+    Layer.provideMerge(testChatDatabase("test_session_authority")),
   ))
   try {
     const api = asPerson(await server.runPromise(Effect.service(TestChatApi)), "reader")

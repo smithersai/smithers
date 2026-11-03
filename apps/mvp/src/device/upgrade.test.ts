@@ -1,6 +1,6 @@
+import { testChatDatabase } from "../test/chatApi"
 import { Effect, Layer, ManagedRuntime, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import * as TestDatabase from "../../db/TestDatabase.ts"
 import { Chat } from "../features/chat/chat"
 import { ChatStore } from "../features/chat/store"
 import { IssueWrites } from "../features/issues/writes"
@@ -35,7 +35,7 @@ test.each([deployed, currentDeployed])(
     // The person the old build confirmed comes back: ChatApi says they are signed in, under the login the device kept.
     const person = { ...member, login: "codeplanesmithers" }
     const server = ManagedRuntime.make(
-      TestChatApi.layerWith({ actor: person }).pipe(Layer.provideMerge(TestDatabase.layer("test_device"))),
+      TestChatApi.layerWith({ actor: person }).pipe(Layer.provideMerge(testChatDatabase("test_device"))),
     )
     runtimes.push(server)
     const api = await server.runPromise(Effect.service(TestChatApi))
@@ -81,7 +81,7 @@ test.each([deployed, currentDeployed])(
 )
 
 test("a follower restores a newer payload as Not sent while another tab holds the outbox", async () => {
-  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_device_future"))))
+  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(testChatDatabase("test_device_future"))))
   runtimes.push(server)
   const api = await server.runPromise(Effect.service(TestChatApi))
   const future = structuredClone(currentDeployed as Fixture)
@@ -103,7 +103,7 @@ test("a follower restores a newer payload as Not sent while another tab holds th
 
 test("build 7df7c2ecb983's stack changes open in this build: its queued commit is sent once, its Requested and Not sent rows stay", async () => {
   const fixture = todoDeployed as Fixture
-  const server = ManagedRuntime.make(TestChatApi.layerWith({ actor: member }).pipe(Layer.provideMerge(TestDatabase.layer("test_device_todos"))))
+  const server = ManagedRuntime.make(TestChatApi.layerWith({ actor: member }).pipe(Layer.provideMerge(testChatDatabase("test_device_todos"))))
   runtimes.push(server)
   const api = await server.runPromise(Effect.service(TestChatApi))
   const { outbox, path } = await deviceFrom(fixture)

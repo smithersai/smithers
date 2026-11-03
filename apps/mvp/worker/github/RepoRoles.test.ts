@@ -344,14 +344,48 @@ test.each(["member", "admin"] as const)("a stale deployment %s receipt never aut
   const made = await roles(github)
   const actor = { ...maya, session, role }
   expect(refusal(await resolve(made, actor, OWN))?.code).toBe("unavailable")
+  expect(await Effect.runPromise(Effect.result(RepoRoles.workUninstalled(made, actor, OWN))))
+    .toMatchObject({ _tag: "Failure", failure: { code: "unavailable", retryAfterSeconds: expect.any(Number) } })
   await sql(runtime, `UPDATE sessions SET role_verified_at = now() WHERE id = '${session}'`)
   expect(roleOf(await resolve(made, actor, OWN))).toBe(role)
+  expect(await Effect.runPromise(RepoRoles.workUninstalled(made, actor, OWN))).toBe(role)
   for (const timestamp of ["NULL", "now() - interval '60 minutes'", "now() + interval '1 minute'"]) {
     await sql(runtime, `UPDATE sessions SET role_verified_at = ${timestamp} WHERE id = '${session}'`)
     expect(refusal(await resolve(made, actor, OWN))?.code).toBe("unavailable")
   }
   await sql(runtime, `UPDATE sessions SET role_verified_at = now(), revoked_at = now() WHERE id = '${session}'`)
   expect(roleOf(await resolve(made, actor, OWN))).toBeNull()
+  expect(await Effect.runPromise(RepoRoles.workUninstalled(made, actor, OWN))).toBeNull()
+})
+
+test.each([false, true] as const)("deployment work uses session authority even when metadata says private (%s), is missing or fails", async (privateRepo) => {
+  const github = scriptedGitHub("acme", "home")
+  github.private = privateRepo
+  github.installed = false
+  github.faults.push({ match: () => true, status: 404 }, { match: () => true, status: 502 })
+  await sql(runtime, `INSERT INTO github_repositories (repo_id, private, visibility_verified_at)
+    VALUES ('${OWN.id}', ${privateRepo}, now())`)
+  const made = await roles(github)
+  for (const installed of [false, true]) expect(made.workBasis!(OWN, installed)).toBe("deployment")
+  for (const role of ["member", "admin", null] as const) {
+    expect(await Effect.runPromise(RepoRoles.workUninstalled(made, { ...maya, role }, OWN))).toBe(role)
+  }
+  expect(github.calls).toHaveLength(0)
+})
+
+test.each([404, 410])("uninstalled metadata %s is retryable unavailable, never a private receipt", async (status) => {
+  const github = scriptedGitHub("acme", "widgets")
+  github.faults.push({ match: (_, path) => path === "/repos/acme/widgets", status })
+  const made = await roles(github)
+  const answer = await Effect.runPromise(Effect.result(RepoRoles.workUninstalled(made, maya, OTHER)))
+  expect(answer).toMatchObject({ _tag: "Failure", failure: { code: "unavailable", retryAfterSeconds: expect.any(Number) } })
+  expect(RepoRoles.REFUSALS.unavailable).toBe(503)
+  const [row] = await sql(runtime, `SELECT private, visibility_verified_at IS NULL AS unverified
+    FROM github_repositories WHERE repo_id = '${OTHER.id}'`)
+  expect(row).toMatchObject({ private: null, unverified: true })
+  await sql(runtime, `UPDATE github_repositories SET visibility_read_until = now() - interval '1 second' WHERE repo_id = '${OTHER.id}'`)
+  expect(await Effect.runPromise(RepoRoles.workUninstalled(made, maya, OTHER))).toBe("admin")
+  expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(2)
 })
 
 describe("workRole: the role a person works with on Smithers' own copy of a repository", () => {

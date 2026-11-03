@@ -20,7 +20,8 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 // The role every check decides with is the person's on the branch's own repository (decision 0079), from
 // `BranchRoles`: on a repository the App is installed on (as Smithers recorded it), the role `RepoRoles` gives there,
 // so a Member of the deployment's repository is only a Guest on another where GitHub says read. Without an
-// installation, only a recorded public repository admits the deployment's role; private or unknown visibility denies.
+// installation, the deployment's own repository still uses its fresh session role. Elsewhere only confirmed public
+// visibility admits that role; confirmed private visibility denies, and unavailable metadata remains retryable.
 //
 // Seams for the features beside this one (no tables of their own):
 // - Notifications (worker/Notifications.ts) route a run on a branch to the people watching it: a watcher whose
@@ -107,7 +108,7 @@ export class BranchRoles extends Context.Service<
      * Absent, the session's.
      */
     readonly uninstalled?: (actor: Actor, repoId: string) => Role | null
-    /** Fail-closed access to a copy without the App, checked against its recorded visibility. */
+    /** Deployment session authority on its own repository; elsewhere a confirmed public copy without the App. */
     readonly workUninstalled?: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused>
     /**
      * The role GitHub gives `actor` on `repoId` (`RepoRoles.resolve`), with no fallback: none where the deployment can't
@@ -143,7 +144,7 @@ export class BranchRoles extends Context.Service<
 
 /**
  * The role `actor` works with on repository `repoId` (`installed`: whether Smithers recorded the App's installation on
- * it): `BranchRoles`' where the App is installed; otherwise its fail-closed public-copy check, asking GitHub nothing.
+ * it): `BranchRoles`' where the App is installed; otherwise its deployment-session or public-copy check.
  */
 export const roleOn = (
   actor: Actor,

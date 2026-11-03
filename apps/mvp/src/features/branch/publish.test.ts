@@ -45,7 +45,7 @@ const REPO_ID = repoId("octo", "hello")
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** Maya, a Member signed in with GitHub: her own writes run with her session's token. */
-const maya: Actor = { ...member, login: "member", session: crypto.randomUUID() }
+const maya: Actor = { ...member, subject: { kind: "person", id: crypto.randomUUID() }, login: "member", session: crypto.randomUUID() }
 
 /** A faulty `PullsClient`: the real one, its next comparisons failing with the statuses queued in `compare`. */
 const faultyPulls = () => {
@@ -168,7 +168,7 @@ const pullIssue = (title: string): GitHub.Issues.Issue => ({
 })
 
 const open = (options: TabOptions = {}, actor: Actor = maya) =>
-  device(openTestApp(options, { actor, forge: "code-storage" }))
+  device(openTestApp(options, { actor, confirmedSessions: [actor], forge: "code-storage" }))
 
 describe("Publish", () => {
   test("Maya publishes: Publishing… while her write is on its way, then the pull request's link, Compare and Update branch", async () => {
@@ -341,7 +341,7 @@ describe("Publish", () => {
   }, WITHIN)
 
   test("a press while this tab's last one runs presses nothing; one its engine can't run says Couldn't publish or update", async () => {
-    const runtime = openFaultyApp({}, undefined, { actor: maya, forge: "code-storage" })
+    const runtime = openFaultyApp({}, undefined, { actor: maya, confirmedSessions: [maya], forge: "code-storage" })
     const tab = await device(runtime)
     const engine = await runtime.runPromise(Effect.service(EngineFaults))
     // No branch shown yet: nothing to resync.

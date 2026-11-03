@@ -170,7 +170,7 @@ test("the person's durable pin follows two devices, stays outside the window, an
   await until(() => expect(b.pin()).toEqual([]))
   expect(c.pin()).toEqual([])
   const Conversations = await import("../../../worker/branch/Conversations")
-  const { branch } = await root.runPromise(api.branches.run(Conversations.track("github/octocat/spoon-knife", "pin-branch", "open", "a".repeat(40))))
+  const { branch } = await root.runPromise(api.branches.run(Conversations.track("github/octo/hello", "pin-branch", "open", "a".repeat(40))))
   await reload.actions.show(branch.conversationId)
   const messageId = crypto.randomUUID()
   await root.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`INSERT INTO messages (id, role, text, status, conversation_id)

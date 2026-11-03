@@ -40,8 +40,9 @@ export const readDetailed = (target: Repository, apiBaseUrl: string, readToken: 
     const result = yield* client.request("GET", `/repos/${GitHub.Repository.repositoryPath(target.owner, target.name)}`,
       undefined, { schema: Schema.Struct({ private: Schema.Boolean }) }).pipe(Effect.result)
     const failed = result._tag === "Failure"
-    const status = failed ? result.failure.details?.["status"] : 200
-    const visible = failed ? status === 404 || status === 410 ? Option.some(false) : Option.none<boolean>()
+    // Missing metadata cannot distinguish a private repository from an unavailable one. Only a decoded answer
+    // confirms visibility; a failed read never installs a denial receipt.
+    const visible = failed ? Option.none<boolean>()
       : Option.some(!result.success.private)
     const outcome = Option.isNone(visible) ? "unavailable" : visible.value ? "public" : "private"
     const attributes = { outcome, statusClass, rateLimited: String(headerLimited || (failed && isRateLimited(result.failure))),

@@ -115,6 +115,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const resolved = yield* options.roles.resolve(signed, repo).pipe(Effect.result)
       if (resolved._tag === "Failure") {
         const { code, retryAfterSeconds } = resolved.failure
+        // Where the role read failed, as `github.repo_role` logs it: Postgres down on the session receipt says database.
+        fields.errorCode = RepoRoles.refusalFields(resolved.failure).stage
         return refused(RepoRoles.REFUSALS[code], code, retryAfterSeconds)
       }
       // A Maintainer's or Admin's act on that repository (decision 0007 `repo:merge`'s tier): the review spends a model.

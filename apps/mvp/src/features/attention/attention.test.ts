@@ -4,6 +4,8 @@
 // is scripted. Proves decision 0009's first slice: a tab follows the conversation it shows; Ann's run reaches her feed
 // on both her devices and Ben's as a quiet toast, because he is on its branch; Read, Hide and Dismiss on one of Ann's
 // devices reach the other; a finished toast hides by itself.
+// Its branches and clones are on the deployment's own repository (`octo/hello`), where the session's role holds; another
+// repository without the App would need confirmed public visibility (decision 0156).
 import { type Clock, Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { FetchHttpClient } from "effect/http"
@@ -269,8 +271,8 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     const conversationId = crypto.randomUUID()
     await Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       Effect.all([
-        sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, 'github/acme/widgets', 'feature', 'open')`,
-        sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, 'github/acme/widgets', ${branchId})`,
+        sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, 'github/octo/hello', 'feature', 'open')`,
+        sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, 'github/octo/hello', ${branchId})`,
         sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`,
       ], { discard: true }))))
     await benDevice.run(show(conversationId))
@@ -438,8 +440,8 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     const conversationId = crypto.randomUUID()
     await Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       Effect.all([
-        sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, 'github/acme/widgets', 'feature', 'open')`,
-        sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, 'github/acme/widgets', ${branchId})`,
+        sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, 'github/octo/hello', 'feature', 'open')`,
+        sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, 'github/octo/hello', ${branchId})`,
         sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`,
       ], { discard: true }))))
     await ann.run(show(conversationId))
@@ -459,7 +461,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     // Open from another page or conversation navigates to the branch before focusing its question.
     for (const surface of ["page", "conversation"] as const) {
       ann.attention.actions.open(subject, surface)
-      expect(ann.host.navigated.at(-1)).toBe(`/acme/widgets/tree/feature#${answerId}`)
+      expect(ann.host.navigated.at(-1)).toBe(`/octo/hello/tree/feature#${answerId}`)
       ann.attention.actions.openPanel("more", subject)
     }
     ann.status.actions.answer(answerId, true)
@@ -468,7 +470,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done" }))
     // Open takes the person to the branch, at the answer.
     ann.attention.actions.open(subject, "conversation")
-    expect(ann.host.navigated).toEqual(Array(3).fill(`/acme/widgets/tree/feature#${answerId}`))
+    expect(ann.host.navigated).toEqual(Array(3).fill(`/octo/hello/tree/feature#${answerId}`))
     // Answering what isn't open, or a run this device has no row of, does nothing.
     ann.status.actions.answer(answerId, false)
     ann.status.actions.setDraft(crypto.randomUUID(), "x")
@@ -487,20 +489,20 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       Effect.all([
         sql`INSERT INTO notifications (recipient, subject, kind, state, repo_id, actor, title, ref, href)
-          VALUES ('person-member', 'main:github/acme/widgets', 'main', 'update', 'github/acme/widgets', 'dana', 'Ship it',
-            ${"a".repeat(40)}, '/acme/widgets')`,
+          VALUES ('person-member', 'main:github/octo/hello', 'main', 'update', 'github/octo/hello', 'dana', 'Ship it',
+            ${"a".repeat(40)}, '/octo/hello')`,
         sql`INSERT INTO notifications (recipient, subject, kind, state, mine, run_id, href)
           VALUES ('person-member', ${`run:${orphan}`}, 'run', 'done', true, ${orphan}, '/app')`,
       ], { discard: true }))))
-    await until(() => expect(tablet.entry("main:github/acme/widgets")).toMatchObject({ listed: true }))
-    tablet.attention.actions.expand("main:github/acme/widgets")
-    await until(() => expect(tablet.detail()).toMatchObject({ id: "main:github/acme/widgets", meta: "dana", steps: [] }))
+    await until(() => expect(tablet.entry("main:github/octo/hello")).toMatchObject({ listed: true }))
+    tablet.attention.actions.expand("main:github/octo/hello")
+    await until(() => expect(tablet.detail()).toMatchObject({ id: "main:github/octo/hello", meta: "dana", steps: [] }))
     await until(() => expect(tablet.entry(`run:${orphan}`)).toMatchObject({ conversationId: null }))
     tablet.attention.actions.expand(`run:${orphan}`)
     await until(() => expect(tablet.detail()).toMatchObject({ id: `run:${orphan}`, steps: [], note: null }))
     // Open on main goes to its recorded commit, with no answer to scroll to.
-    tablet.attention.actions.open("main:github/acme/widgets", "page")
-    expect(tablet.host.navigated).toEqual([`/acme/widgets/tree/${"a".repeat(40)}`])
+    tablet.attention.actions.open("main:github/octo/hello", "page")
+    expect(tablet.host.navigated).toEqual([`/octo/hello/tree/${"a".repeat(40)}`])
   })
 })
 
@@ -508,30 +510,30 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
   test("Ann's clone shows its stage; once it fails, Try again runs repo/clone for its repository again", async () => {
     const api = await openApi()
     const ann = await openDevice(api)
-    const subject = "clone:github/acme/widgets"
+    const subject = "clone:github/octo/hello"
     const write = (state: string, ref: string, version: number) =>
       Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
         sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href, version)
-          VALUES ('person-member', ${subject}, 'clone', ${state}, true, 'github/acme/widgets', 'acme/widgets', ${ref},
-            '/acme/widgets', ${version})
+          VALUES ('person-member', ${subject}, 'clone', ${state}, true, 'github/octo/hello', 'octo/hello', ${ref},
+            '/octo/hello', ${version})
           ON CONFLICT (recipient, subject) DO UPDATE SET state = EXCLUDED.state, ref = EXCLUDED.ref,
             version = EXCLUDED.version, updated_at = now()`)))
-    // Ann may clone acme/widgets: a role read that denied her would delete the repository from her feed, clone and all.
+    // Ann may clone octo/hello: a role read that denied her would delete the repository from her feed, clone and all.
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/widgets', 'person-member', 'member')`)))
+      sql`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/octo/hello', 'person-member', 'member')`)))
     await write("working", `fetching:${2 * 1024 * 1024}`, 1)
     await until(() =>
       expect(ann.entry(subject)).toMatchObject({
         kind: "clone",
         word: "Clone",
-        detail: "acme/widgets · Fetching 2.0 MB",
+        detail: "octo/hello · Fetching 2.0 MB",
         action: "open",
         stack: true,
       })
     )
     await write("failed", "failed:not_found", 2)
     await until(() =>
-      expect(ann.entry(subject)).toMatchObject({ state: "failed", detail: "acme/widgets · Not found", action: "retry" })
+      expect(ann.entry(subject)).toMatchObject({ state: "failed", detail: "octo/hello · Not found", action: "retry" })
     )
     ann.attention.actions.expand(subject)
     await until(() => expect(ann.detail()).toMatchObject({ id: subject, retry: true }))
@@ -550,11 +552,11 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
   test("a Hide the engine can't take shows the toast again, and Hide again sends it again", async () => {
     const api = await openApi()
     const ann = await openDevice(api, { faulty: true })
-    const subject = "clone:github/acme/hide-refused"
+    const subject = "clone:github/octo/hello"
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href, version)
-        VALUES ('person-member', ${subject}, 'clone', 'working', true, 'github/acme/hide-refused', 'acme/hide-refused',
-          ${`fetching:${1024}`}, '/acme/hide-refused', 1)`)))
+        VALUES ('person-member', ${subject}, 'clone', 'working', true, 'github/octo/hello', 'octo/hello',
+          ${`fetching:${1024}`}, '/octo/hello', 1)`)))
     await until(() => expect(ann.entry(subject)).toMatchObject({ stack: true }))
     await Effect.runPromise((await ann.faults()).refuseStarts("notification/ack"))
     const refused = Metric.withAttributes(dispatches, { flow: "notification/ack", door: "button", outcome: "error" })
@@ -630,11 +632,11 @@ describe("clone retry admission", { timeout: ENGINE_WITHIN }, () => {
   test.each(["started", "failed"] as const)("returns before admission and records %s only after its receipt", async (outcome) => {
     const api = await openApi()
     const ann = await openDevice(api, { answers: false })
-    const subject = "clone:github/acme/widgets"
+    const subject = "clone:github/octo/hello"
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href)
-        VALUES ('person-member', ${subject}, 'clone', 'failed', true, 'github/acme/widgets', 'private title',
-          'failed:not_found', '/acme/widgets')`)))
+        VALUES ('person-member', ${subject}, 'clone', 'failed', true, 'github/octo/hello', 'private title',
+          'failed:not_found', '/octo/hello')`)))
     await until(() => expect(ann.entry(subject)).toMatchObject({ action: "retry" }))
     const admission = Effect.runSync(Deferred.make<void, DispatchFailed>())
     const entered = Effect.runSync(Deferred.make<void>())
@@ -680,8 +682,8 @@ describe("expanded branch detail", { timeout: ENGINE_WITHIN }, () => {
     const answerId = crypto.randomUUID()
     const subject = `run:${answerId}`
     await Effect.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
-      yield* sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, 'github/acme/widgets', 'details', 'open')`
-      yield* sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, 'github/acme/widgets', ${branchId})`
+      yield* sql`INSERT INTO branches (id, repo_id, name, mode) VALUES (${branchId}, 'github/octo/hello', 'details', 'open')`
+      yield* sql`INSERT INTO conversations (id, repo_id, branch_id) VALUES (${conversationId}, 'github/octo/hello', ${branchId})`
       yield* sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`
       yield* sql`INSERT INTO messages (id, role, text, status, conversation_id)
         VALUES (${questionId}, 'user', 'Summarize the branch', 'done', ${conversationId})`
@@ -689,8 +691,8 @@ describe("expanded branch detail", { timeout: ENGINE_WITHIN }, () => {
         VALUES (${answerId}, 'assistant', 'First answer.', 'done', ${questionId}, ${conversationId})`
       // Already past the toast deadline, so its timer cannot accidentally refresh the detail on the old code.
       yield* sql`INSERT INTO notifications (recipient, subject, kind, state, mine, run_id, repo_id, conversation_id, href, updated_at, occurred_at)
-        VALUES ('person-member', ${subject}, 'run', 'done', true, ${answerId}, 'github/acme/widgets', ${conversationId},
-          '/acme/widgets/tree/details', now() - interval '10 seconds', now() - interval '10 seconds')`
+        VALUES ('person-member', ${subject}, 'run', 'done', true, ${answerId}, 'github/octo/hello', ${conversationId},
+          '/octo/hello/tree/details', now() - interval '10 seconds', now() - interval '10 seconds')`
     }))))
     await ann.run(show(conversationId))
     const text = () => ann.run(Effect.flatMap(ChatStore, (chat) => Effect.map(chat.opened(conversationId)!.messages.toArray,
@@ -714,10 +716,10 @@ describe("expanded branch detail", { timeout: ENGINE_WITHIN }, () => {
 test("a launched acknowledgement that fails restores its toast and records the refusal", async () => {
   const api = await openApi()
   const ann = await openDevice(api, { answers: false })
-  const subject = "clone:github/acme/failed-ack"
+  const subject = "clone:github/octo/hello"
   await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href, version)
-      VALUES ('person-member', ${subject}, 'clone', 'working', true, 'github/acme/failed-ack', 'Clone', 'fetching:1', '/acme/failed-ack', 1)`)))
+      VALUES ('person-member', ${subject}, 'clone', 'working', true, 'github/octo/hello', 'Clone', 'fetching:1', '/octo/hello', 1)`)))
   await until(() => expect(ann.entry(subject)).toMatchObject({ stack: true }))
   const fault = FlowDispatch.of({ dispatch: (() => Effect.succeed({ _tag: "Failed", error: new ActRefused({ status: 403 }) })) as FlowDispatch["Service"]["dispatch"] })
   await ann.run(hide(subject).pipe(Effect.provideService(FlowDispatch, fault)))

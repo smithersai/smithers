@@ -1,6 +1,6 @@
+import { testChatDatabase } from "./chatApi"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { ChatView } from "../features/chat/chat"
 import { nodeDevice, TestChatApi } from "./chatApi"
 import { AuthClient, AuthUnreachable } from "../features/auth/api"
@@ -47,7 +47,7 @@ test("?faults=session-503 refuses every session read, the engine worker's too, u
 
 // The faulty services' window switches, on the app as `?faults` opens it: healthy until a test throws one.
 const openOnWindow = async (search: string, name: string) => {
-  const host = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer(name))))
+  const host = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(testChatDatabase(name))))
   runtimes.push(host)
   const api = await host.runPromise(Effect.service(TestChatApi))
   const rendered: Array<ChatView> = []
@@ -98,7 +98,7 @@ test.each([
   ["?faults=refuse-502", { status: "offline", retry: true }],
   ["?faults=refuse", { status: "failed", retry: true }],
 ])("%s opens the app with its sync failing, and the window's switches heal it", async (search, failed) => {
-  const host = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_e2e"))))
+  const host = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(testChatDatabase("test_e2e"))))
   runtimes.push(host)
   const api = await host.runPromise(Effect.service(TestChatApi))
   const rendered: Array<ChatView> = []
@@ -137,7 +137,7 @@ test.each([
 
 test("a closed ChatApi refuses new requests before its database is dropped", async () => {
   const host = ManagedRuntime.make(TestChatApi.layer.pipe(
-    Layer.provideMerge(TestDatabase.layer("test_closed_chat_api")),
+    Layer.provideMerge(testChatDatabase("test_closed_chat_api")),
   ))
   runtimes.push(host)
   const api = await host.runPromise(Effect.service(TestChatApi))
@@ -152,7 +152,7 @@ test("a closed ChatApi refuses new requests before its database is dropped", asy
 
 test("closing ChatApi aborts an unread real Electric response before dropping its schema", async () => {
   const host = ManagedRuntime.make(TestChatApi.layer.pipe(
-    Layer.provideMerge(TestDatabase.layer("test_streaming_chat_api_close")),
+    Layer.provideMerge(testChatDatabase("test_streaming_chat_api_close")),
   ))
   runtimes.push(host)
   const api = await host.runPromise(Effect.service(TestChatApi))

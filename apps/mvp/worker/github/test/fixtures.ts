@@ -9,7 +9,7 @@ import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { digestSync } from "@smthrs/crypto"
 import * as SessionKeys from "../../SessionKeys.ts"
 import * as SessionStore from "../../SessionStore.ts"
-import type { Role } from "../../Actor.ts"
+import type { Actor, Role } from "../../Actor.ts"
 import type { testFile } from "../../test/harness.ts"
 import { SECRET } from "../../test/signIn.ts"
 import type * as Apply from "../Apply.ts"
@@ -83,6 +83,40 @@ export const signedIn = async (
     return personId
   }))
   return { personId, sessionId }
+}
+
+/**
+ * `actor`'s session as sign-in records it, confirmed now with `actor.role`, unless its row is already recorded: the
+ * deployment repository's role is that confirmed receipt (`SessionStore.freshRole`), so a request signed in as an
+ * unrecorded session has no role there. An actor without a session needs no row.
+ */
+export const confirmedSession = async (runtime: Runtime, actor: Actor) => {
+  const session = actor.session
+  if (session === undefined) return
+  const sessionKeys = await keys()
+  const access = await Effect.runPromise(
+    sessionKeys.seal(Redacted.make("harness-person-access"), { id: session, name: "github_access", version: 1 }),
+  )
+  await runtime.runPromise(Effect.gen(function* () {
+    const client = yield* SqlClient.SqlClient
+    const [recorded] = yield* client`SELECT 1 FROM sessions WHERE id = ${session}`
+    if (recorded !== undefined) return
+    yield* client`INSERT INTO people (id, github_id, github_login)
+      VALUES (${actor.subject.id}, ${Math.floor(Math.random() * 2_000_000_000)}, ${actor.login ?? `person-${actor.subject.id}`})
+      ON CONFLICT (id) DO NOTHING`
+    yield* SessionStore.createSession({
+      id: session,
+      tokenDigest: digestSync(session),
+      personId: actor.subject.id,
+      role: actor.role,
+      roleGeneration: yield* SessionStore.roleObservation,
+      access,
+      accessExpiresAt: null,
+      refresh: null,
+      refreshDigest: null,
+      maxAgeSeconds: 3600,
+    })
+  }).pipe(Effect.orDie))
 }
 
 /** Admits a write as the route does, and returns its id. */

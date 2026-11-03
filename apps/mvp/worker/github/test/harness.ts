@@ -47,7 +47,7 @@ import type { GitHubApp, Repository } from "../Config.ts"
 import * as RepoRoles from "../RepoRoles.ts"
 import * as Host from "../Host.ts"
 import type { Seat } from "../../ModelEndpoint.ts"
-import { REPOSITORY, services as flowServices } from "./fixtures.ts"
+import { confirmedSession, REPOSITORY, services as flowServices } from "./fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "./scriptedGitHub.ts"
 
 type Runtime = ReturnType<typeof testFile>
@@ -192,6 +192,9 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   })
 
   const own = options.own ?? REPOSITORY
+  // Who is asking, once for every route; their session recorded as sign-in confirms it (`confirmedSession`).
+  const actor = options.actor === null ? null : options.actor ?? member()
+  if (options.sessions === undefined && actor !== null) await confirmedSession(runtime, actor)
   // A real key, made once per file: a role on another repository is read with the App (decision 0079 §3).
   const configured = options.app === null
     ? Option.none<GitHubApp>()
@@ -231,7 +234,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     observed(
       afterBody(routes.fetch).pipe(
         Effect.provide(
-          options.sessions ?? (options.actor === null ? Actor.signedOut : signedInAs(options.actor ?? member())),
+          options.sessions ?? (actor === null ? Actor.signedOut : signedInAs(actor)),
         ),
         // Branch routes the GitHub routes reach (Publish, Compare) ask the person's role through BranchRoles.
         Effect.provide(BranchRoles.layer(roles)),
@@ -259,7 +262,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     /** Whether the request may read a repository's content, as the role route's `readable` answers it. */
     mayRead: (target: Repository, headers: Record<string, string> = {}) =>
       runtime.runPromise(observed(routes.mayRead(target).pipe(
-        Effect.provide(options.sessions ?? (options.actor === null ? Actor.signedOut : signedInAs(options.actor ?? member()))),
+        Effect.provide(options.sessions ?? (actor === null ? Actor.signedOut : signedInAs(actor))),
         Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://github.test/", { headers }))),
       ))),
     github,

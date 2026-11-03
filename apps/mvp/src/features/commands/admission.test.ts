@@ -20,9 +20,9 @@ const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose() })
 const until = (assertion: () => void | Promise<void>) => vi.waitFor(assertion, { timeout: 30_000, interval: 25 })
 const open = async (refusing = false, engine = false) => {
-  const app = openTestApi({ actor: {
-    subject: { kind: "person", id: "person-member" }, role: "admin", session: crypto.randomUUID(),
-  } })
+  const actor = { subject: { kind: "person" as const, id: crypto.randomUUID() }, role: "admin" as const, session: crypto.randomUUID() }
+  // Its session confirmed as sign-in records it: the deployment repository's role is that receipt.
+  const app = openTestApi({ actor, confirmedSessions: [actor] })
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const base = nodeDevice(engine ? { agent: api } : {})

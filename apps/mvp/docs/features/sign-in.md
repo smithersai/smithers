@@ -384,3 +384,10 @@ Active cookie and bearer sessions admit the existing durable role recheck five m
 A signed-in answer with `roleConfirmed:false` keeps identity visible and starts or continues the existing durable `auth/refresh` flow. The transient check outcome is `unconfirmed`; the displayed session stays signed in. Both startup/connectivity checks and an explicit reload admit recovery. Repeated unconfirmed answers retry under the existing durable policy until authority is confirmed or the tab is gone, without another reload or online event.
 
 The execution host serializes immediate renewal drives and scheduled alarms within an object incarnation. A concurrent caller waits for the active drive and reuses its durable result; it never takes over its healthy permission request or rotating-token redemption. The host regression holds each network step open while a second drive races it.
+
+The deployment repository's fresh session role also authorizes its conversations
+and feed when no App installation row has been recorded. A GitHub metadata hiccup
+does not demote a Member. Elsewhere, the uninstalled public-copy fallback needs a
+successful public metadata answer; 404/410 are retryable `503 unavailable`, never
+private receipts. Confirmed private visibility, revoked sessions and confirmed
+role loss still deny. See [decision 0156](../decisions/0156-deployment-authority-without-installation-row.md).

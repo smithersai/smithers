@@ -550,7 +550,7 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
     expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
     // A person sign-in recorded no account for has nobody to ask GitHub about, whatever login the request carries.
-    const nameless = await githubHarness(runtime, { own: OWN, actor: { ...member(), role: "admin", login: "maya" } })
+    const nameless = await githubHarness(runtime, { own: OWN, actor: { ...member(undefined, null), role: "admin", login: "maya" } })
     expect((await nameless.fetch(route, post(createWrite()))).status).toBe(403)
     expect(nameless.github.seen("GET", /\/permission$/)).toEqual([])
   })
@@ -785,7 +785,8 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     // The deployment's own repository, where Maya's session makes her a Member: the id is acme/widgets' write.
     const own = await h.fetch(writesRoute("acme", "home"), post(write))
     expect([own.status, await own.json()]).toEqual([409, { code: "conflict" }])
-    const other = await githubHarness(runtime, { own: OWN, actor: { ...actor, subject: { kind: "person", id: crypto.randomUUID() } }, github })
+    // Another person, signed in with their own session.
+    const other = await githubHarness(runtime, { own: OWN, actor: member(), github })
     expect((await other.fetch(writesRoute("acme", "home"), post(write))).status).toBe(409)
     expect(h.starts).toHaveLength(1)
   })
@@ -1123,10 +1124,11 @@ describe("the shapes", () => {
       h.github.installed = false
       const listed = await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")
       expect([listed.status, values(listed.rows).map((row) => row.title)]).toEqual([200, ["Gadget"]])
-      // A private one is refused, as to anyone with no role.
+      // The role read found the App absent and remembered it: every later read is refused before anyone's role or
+      // the repository's visibility is asked, a private one included.
       await sql(runtime, `UPDATE github_repositories SET private = true`)
       h.github.private = true
-      expect((await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")).status).toBe(403)
+      expect((await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")).status).toBe(404)
     })
 
     test("where an About read found the App absent, the shapes say app_not_installed, to anyone, asking GitHub nothing", async () => {
@@ -1220,16 +1222,19 @@ test("an item read whose Reconcile start never resolves answers at the timeout, 
   expect(h.count(Metrics.reconcileStarts, { outcome: "timed_out" })).toBe(1)
 })
 
-test("a private metadata answer refuses every shape and is shared across requests", async () => {
+test("GitHub's 404 to an anonymous metadata read is unavailable to every shape, never a cached private answer", async () => {
   await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.private = true
   const h = await githubHarness(runtime, { actor: null, github, app: app({ privateKey: await import("./test/scriptedGitHub.ts").then((m) => m.appKey()) }) })
-  for (const route of [ITEM_SUMMARIES_SHAPE_ROUTE, ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
-    expect((await h.fetch(`${route}?offset=-1`)).status).toBe(401)
+  const routes = [ITEM_SUMMARIES_SHAPE_ROUTE, ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]
+  for (const route of routes) {
+    expect((await h.fetch(`${route}?offset=-1`)).status).toBe(503)
   }
-  expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(1)
-  expect(h.line("github.visibility")).toHaveLength(1)
+  // A 404 cannot tell a private repository from one GitHub can't show now: each request asks again.
+  expect(h.count(Metrics.visibilityReads, { outcome: "unavailable", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(routes.length)
+  expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(0)
+  expect(h.line("github.visibility")).toHaveLength(routes.length)
 })
 
 

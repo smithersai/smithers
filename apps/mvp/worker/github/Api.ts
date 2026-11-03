@@ -78,7 +78,7 @@ import {
   UPDATE_METHODS,
   updateExecutionId,
 } from "../../src/features/branch/contract.ts"
-import { branchAccess, canEdit } from "../branch/Access.ts"
+import { branchAccess, branchAccessAs, canEdit } from "../branch/Access.ts"
 import { Publish, publishBlocked, Resync, Update } from "../branch/Publish.ts"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
@@ -733,6 +733,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             if (!canAsk(signed)) return refused(403, "forbidden")
             const branchId = write.branchId.toLowerCase()
             fields.branchId = branchId
+            // A branch of another repository is not found here before anyone's role there is asked: its repository's
+            // GitHub metadata never decides this route's answer.
+            const located = yield* branchAccessAs(Option.none(), branchId).pipe(Effect.provide(database))
+            if (located === undefined || located.repoId !== repo.id) return refused(404, "not_found")
             const branch = yield* branchAccess(Option.some(who), branchId).pipe(Effect.provide(database))
             if (branch === undefined || branch.repoId !== repo.id) return refused(404, "not_found")
             if (!canEdit(branch.access)) return refused(403, "forbidden")

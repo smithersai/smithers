@@ -575,8 +575,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       repository: options.repository,
       freshSeconds,
       workBasis: (repository, installed): WorkBasis => {
-        if (!installed) return options.local === true ? "local" : "public"
         if (repository.id === options.repository.id) return "deployment"
+        if (!installed) return options.local === true ? "local" : "public"
         if (Option.isNone(app)) return options.local === true ? "local" : "public"
         if (Option.isSome(allowedIds) && !allowedIds.value.has(repository.id)) return options.local === true ? "local" : "public"
         return "repository"
@@ -584,7 +584,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       resolve: (actor, repository) => resolve(actor, repository),
       refresh: (actor, repository, read) => resolve(actor, repository, read),
       uninstalled,
-      workUninstalled: (actor, repository) => options.local === true
+      // Installation discovery and public metadata cannot demote the deployment's confirmed session role.
+      workUninstalled: (actor, repository) => repository.id === options.repository.id
+        ? Effect.map(resolve(actor, repository), (resolved) => resolved.role)
+        : options.local === true
         ? Effect.succeed(uninstalled(actor, repository))
         : Effect.gen(function* () {
           const publicNow = yield* visibility(repository)
@@ -597,7 +600,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
 /**
  * The role `actor` works with on Smithers' own copy of `repository`: a branch's workspace, its conversation, its
  * terminals, a new branch, a run's page. Where the deployment may act on the repository, the role `resolve` gives
- * there. Where it can't (`CANT_ACT`), only recorded public visibility admits the deployment's role
+ * there, including the deployment's own repository without an installation row. Elsewhere it can't (`CANT_ACT`), only recorded public visibility admits the deployment's role
  * (`workUninstalled`); private visibility denies; unknown or expired visibility is unavailable. A public repository without the App
  * is cloned and worked on as Smithers' copy by the deployment's own Members (GH-4, GH-5), and by nobody else (ruling
  * AUTH-8). GitHub or Postgres not answering passes on as the refusal, never a guess.

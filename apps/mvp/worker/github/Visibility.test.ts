@@ -10,8 +10,8 @@ const repository = { id: "acme/widgets", owner: "acme", name: "widgets" }
 test.each([
   [200, { private: false }, {}, "public", false, "unknown"],
   [200, { private: true }, { "x-ratelimit-remaining": "500" }, "private", false, "100+"],
-  [404, {}, {}, "private", false, "unknown"],
-  [410, {}, {}, "private", false, "unknown"],
+  [404, {}, {}, "unavailable", false, "unknown"],
+  [410, {}, {}, "unavailable", false, "unknown"],
   [403, {}, {}, "unavailable", false, "unknown"],
   [403, {}, { "x-ratelimit-remaining": "0" }, "unavailable", true, "0"],
   [429, {}, { "retry-after": "1" }, "unavailable", true, "unknown"],
@@ -103,16 +103,16 @@ test("unavailable answers are never cached, including after a public answer expi
   }).pipe(Effect.provide(TestClock.layer())))
 })
 
-test.each([404, 410])("a gone answer (%s) is cached as private", async (status) => {
+test.each([404, 410])("missing metadata (%s) stays unavailable and is never cached as private", async (status) => {
   let calls = 0
   const http = HttpClient.make((request) => Effect.sync(() => {
     calls++
     return HttpClientResponse.fromWeb(request, new Response("{}", { status }))
   }))
   const visibility = Visibility.make("https://github.test", Effect.succeed(Option.none()), http)
-  expect(await Effect.runPromise(visibility(repository))).toEqual(Option.some(false))
-  expect(await Effect.runPromise(visibility(repository))).toEqual(Option.some(false))
-  expect(calls).toBe(1)
+  expect(await Effect.runPromise(visibility(repository))).toEqual(Option.none())
+  expect(await Effect.runPromise(visibility(repository))).toEqual(Option.none())
+  expect(calls).toBe(2)
 })
 
 test("concurrent misses each read GitHub without sharing in-flight work", async () => {

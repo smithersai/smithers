@@ -47,6 +47,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../../worker/Actor.ts"
 import * as BranchApi from "../../worker/branch/BranchApi.ts"
+import * as Conversations from "../../worker/branch/Conversations.ts"
 import { Forge } from "../../worker/branch/Forge.ts"
 import { Directory } from "../../worker/branch/People.ts"
 import { Rooms } from "../../worker/branch/Rooms.ts"
@@ -194,6 +195,13 @@ export const member: Actor.Actor = { subject: { kind: "person", id: "person-memb
 
 /** The repository a test ChatApi's git loop syncs and writes to (`GITHUB_REPOSITORY`). */
 export const TEST_REPOSITORY = "octo/hello"
+
+/** One deployment repository for the migrated home, handlers and scripted GitHub, including server-only fixtures. */
+export const testChatDatabase = (prefix: string) => TestDatabase.layer(prefix).pipe(
+  Layer.provide(Layer.effect(ConfigProvider.ConfigProvider, Effect.map(TestDatabase.fixtureConfig,
+    (config) => ConfigProvider.fromUnknown({ ...config, GITHUB_REPOSITORY: TEST_REPOSITORY })))),
+  Layer.provideMerge(Layer.succeed(Conversations.homeRepositoryNames, repositoryOf(TEST_REPOSITORY))),
+)
 
 /**
  * How a test ChatApi is opened: who every request is signed in as, `member` unless set, or nobody (`null`); and the
@@ -514,6 +522,7 @@ export class TestChatApi extends Context.Service<
         })
         const config = ConfigProvider.fromUnknown({
           ...(yield* TestDatabase.fixtureConfig),
+          GITHUB_REPOSITORY: TEST_REPOSITORY,
           // The deployment's own model answers here, as under `alchemy dev` (decision 0099), so the scripted model does.
           HOSTED_MODEL_ENABLED: "true",
           ALERT_APP_URL: "http://chat.test/app",
@@ -556,6 +565,9 @@ export class TestChatApi extends Context.Service<
         // recorded in `starts`, never run. A test writes their rows itself, through `github.run`. The routes' own reads
         // (a comparison's files) reach the scripted GitHub as the App.
         const repository = repositoryOf(TEST_REPOSITORY)
+        const homeRepository = yield* Conversations.configuredHomeRepositoryNames.pipe(
+          Effect.provideService(ConfigProvider.ConfigProvider, config), Effect.orDie,
+        )
         const scripted = scriptedGitHub(repository.owner, repository.name)
         const app = Option.some({
           appId: APP_ID,
@@ -884,6 +896,9 @@ export class TestChatApi extends Context.Service<
             })
           ),
           Effect.provide(sessions),
+          // The home conversation is the deployment repository's `main`, captured as ChatApi captures it
+          // (worker/ChatApiProgram.ts): the repository the migrations seeded and the scripted GitHub answers.
+          Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
           // Who has which role on a branch's repository, as ChatApi provides it (decision 0079).
           Effect.provide(BranchRoles.layer(roles)),
           Effect.provide(FetchHttpClient.layer),
@@ -1663,7 +1678,7 @@ const withTabClock = <A, E, R>(layer: Layer.Layer<A, E, R>, clock?: Clock.Clock)
 const withChatApi = <A, E>(tab: (api: TestChatApi["Service"]) => Layer.Layer<A, E>, chatApi: ChatApiOptions) =>
   Layer.unwrap(Effect.map(TestChatApi, tab)).pipe(
     Layer.provideMerge(TestChatApi.layerWith(chatApi)),
-    Layer.provideMerge(TestDatabase.layer("test_chat")),
+    Layer.provideMerge(testChatDatabase("test_chat")),
     Layer.provideMerge(ownMetrics())
   )
 
