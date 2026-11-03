@@ -470,7 +470,7 @@
       "document": ".smithers/wiki/pages/health-contract.md",
       "inputs": [
         "docs/design/agent-flow-health.md",
-        "packages/smithers/control/src/Health.ts",
+        "packages/smithers/control/src/Health.vibe",
         "packages/smithers/control/src/Monitor.ts"
       ],
       "excerpts": {
@@ -480,7 +480,7 @@
             "end": 49
           }
         ],
-        "packages/smithers/control/src/Health.ts": [
+        "packages/smithers/control/src/Health.vibe": [
           {
             "start": 1,
             "end": 110

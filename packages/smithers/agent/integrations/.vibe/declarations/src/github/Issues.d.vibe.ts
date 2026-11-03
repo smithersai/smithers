@@ -249,8 +249,9 @@ export declare const createComment: (owner: string, repo: string, number: number
  * `GET /repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&since=…`.
  * Pull requests are skipped.
  *
- * With more than one match, the earliest created wins. A search that runs out
- * of pages fails `poll-failed` with `incomplete: true`, even with a match:
+ * With more than one match, the earliest created wins. With `author`, only
+ * items that login wrote match, so a copied marker never does. A search that
+ * runs out of pages fails `poll-failed` with `incomplete: true`, even with a match:
  * an older original may lie beyond the page budget.
  *
  * @category getters
@@ -259,6 +260,7 @@ export declare const createComment: (owner: string, repo: string, number: number
 export declare const findIssueByWrite: (owner: string, repo: string, options: {
     readonly writeId: string;
     readonly since: string;
+    readonly author?: string | undefined;
 }) => Effect.Effect<Option.Option<Issue>, IntegrationError, GitHubClient>;
 /**
  * The comment on issue `number` whose body carries `writeId`'s marker, among
@@ -274,6 +276,7 @@ export declare const findIssueByWrite: (owner: string, repo: string, options: {
 export declare const findCommentByWrite: (owner: string, repo: string, number: number, options: {
     readonly writeId: string;
     readonly since?: string | undefined;
+    readonly author?: string | undefined;
 }) => Effect.Effect<Option.Option<IssueComment>, IntegrationError, GitHubClient>;
 /**
  * Adds labels to issue or pull request `number`, keeping the ones it has:
