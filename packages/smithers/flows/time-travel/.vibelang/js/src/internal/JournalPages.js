@@ -48,7 +48,7 @@ export const forEachPage = Effect_1.fnUntraced(function* forEachPage(journal, op
             runId: options.runId,
             ...(after === undefined ? {} : { after: after }),
             ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
-            limit: options.pageSize,
+            limit: options.pageSize
         }), (cause) => Effect_1.suspend(() => { return Effect_1.fail(error("unknown", options.readFailure, cause)); }));
         if ((yield* onPage(page.entries)) === Stop)
             return;

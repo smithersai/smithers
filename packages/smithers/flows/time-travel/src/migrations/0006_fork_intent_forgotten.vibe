@@ -16,11 +16,11 @@ import { step } from "../internal/MigrationStep.vibe"
  * @since 1.0.0
  * @private
  */
-export const forkIntentForgotten = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  const columns = yield* Dialect.columns(sql, "flows_time_travel_fork_intents")
+export const forkIntentForgotten = effect {
+  const sql = try SqlClient.SqlClient
+  const columns = try Dialect.columns(sql, "flows_time_travel_fork_intents")
   if (columns.some((column) => column.name === "forgotten_at_ms")) return
-  yield* step(
+  try step(
     "the flows_time_travel_fork_intents forgotten_at_ms column",
     sql`ALTER TABLE flows_time_travel_fork_intents ADD COLUMN forgotten_at_ms ${Dialect.integer(sql)} CHECK (
       forgotten_at_ms IS NULL OR (${
@@ -28,4 +28,4 @@ export const forkIntentForgotten = Effect.gen(function*() {
     } AND forgotten_at_ms >= 0 AND forgotten_at_ms <= 9007199254740991)
     )`
   )
-})
+}

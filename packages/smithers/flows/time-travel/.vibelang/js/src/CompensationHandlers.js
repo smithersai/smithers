@@ -62,7 +62,7 @@ export const Classification = Schema.Literals(["revertible", "warning", "blockin
 export const Assessment = Schema.Struct({
     classification: Classification,
     reason: Schema.String,
-    residue: Schema.String,
+    residue: Schema.String
 });
 /**
  * The handlers a composition contributes to time travel.

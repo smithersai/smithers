@@ -32,7 +32,7 @@ import * as Schema from "effect/Schema";
  */
 export const Frame = Schema.Struct({
     lineageId: Schema.NonEmptyString,
-    seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 });
 /**
  * Why a child lineage exists, and therefore what its parent may still assume
@@ -67,7 +67,7 @@ export const LineageEdge = Schema.Struct({
     parentSeq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
     childRunId: Schema.NonEmptyString,
     kind: LineageEdgeKind,
-    attached: Schema.Boolean,
+    attached: Schema.Boolean
 });
 /**
  * The journal event type marking a run as fork-created.
@@ -95,5 +95,5 @@ export const forkCreatedEventType = "flows.time-travel.fork-created";
 export const ForkCreated = Schema.Struct({
     parentRunId: Schema.NonEmptyString,
     forkJournalOffset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-    childRunId: Schema.NonEmptyString,
+    childRunId: Schema.NonEmptyString
 });
