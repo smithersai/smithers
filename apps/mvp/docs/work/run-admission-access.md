@@ -1,6 +1,6 @@
 ---
 title: Run admission ownership and authority
-status: in-progress
+status: done
 area: access
 owner: Codex retro-runs follow-up
 updated: 2026-11-02
@@ -56,4 +56,22 @@ Remote run access now retains the resolved repository receipt. The stop write lo
 
 The corrected real-session regression, `delayed $kind cancel rechecks $authority after $gate read`, ran against RemoteRuns from `916fc36b38fc`. Session revocation returned 202 instead of 401 for both repository and TODO stops; TODO role revocation returned 202 instead of 403. Red lines: `AssertionError: delayed cancel must revalidate session: expected [ 202, { outcome: 'requested' } ] to deeply equal [ 401, { code: 'authentication' } ]` and the corresponding role line expecting 403. Raw red totals: 5 failed, 1 passed, 0 skipped; three are the reproduced defects, and two are farm PostgreSQL disk errors, not defect proof. A previous fixture omitted the required device principal header and failed before the gate; it was corrected, and those failures are not proof. The test also checks that revoked requests neither hand off cancellation nor mutate a queued agent job.
 
-All four app typechecks and production-file lint pass on the farm. Final behavioral validation is pending. Existing Effect SQL, RepoRoles.holds and SessionStore.latestRole are retained.
+All four app typechecks and production-file lint pass on the farm. The fixed five-file worker run passed 123 tests with 0 failures and 0 skips, including all six cancellation cases. Existing Effect SQL, RepoRoles.holds and SessionStore.latestRole are retained.
+
+## Follow-up finding 4: revocation regression coverage
+
+Added `delayed retry failed=$failed rechecks $authority` for whole-run and failed-job retries, through the real HTTP handler, sign-in/session store, repository receipt and engine inspection. A request-body gate admits the original authority, then revokes the session, repository role, alias or deployment role before releasing the body. Both retry modes must refuse, hand off no start, preserve the original run and record no new ownership. Unchanged-authority controls verify the complete retry payload and failed-job selection.
+
+Red farm run used the exact pre-revalidation RunsApi source from `3f899b87d8d5`: 8 failed, 2 passed, 36 filtered skips. Red lines: `AssertionError: delayed retry must revalidate session: expected [ 202, …(1) ] to deeply equal [ 401, { code: 'authentication' } ]` and the corresponding role line expecting 403. Fixed RunsApi suite: 46 passed, 0 failed, 0 skipped. Delayed cancellation and triggered-conflict tests are committed with findings 2 and 3.
+
+The broader app suite initially passed 29 cases and failed its second-repository stop fixture: it changed only the runs projection, creating the very ownership mismatch now refused. Probe executions now declare their repository at creation, independently of the projection. All three second-repository fixture cases use that API. The corrected app suite passed all 30 cases, with 0 failures and 0 skips. No production behavior was weakened for the fixture.
+
+## Final farm receipts
+
+- Worker suites: RunsApi 46, Dispatch 23, RemoteRunAuthority 6, RemoteRuns 44, RepoRuns 4; **123 passed, 0 failed, 0 skipped**.
+- App remote-run suite after correcting its fixture: **30 passed, 0 failed, 0 skipped**.
+- All four app typechecks pass on the final source; production-file lint passes.
+- Earlier setup-only failures and two PostgreSQL disk errors are infrastructure receipts, not reproduced product failures. The initial app fixture failure is explained and corrected above.
+- Focused runs disabled coverage measurement; no full coverage result, production execution, production count, deployment, landing, push or review is claimed. The standalone count-only query remains unexecuted for the operator. Four public-safe issue drafts accompany these findings outside the repository.
+
+No sleeps, test retry wrappers or longer timeouts were added. The unchanged coverage configuration now includes RunAuthority. All changes remain on this workspace's private commit stack above the two supplied revisions; main is untouched.

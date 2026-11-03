@@ -651,6 +651,80 @@ describe("POST /api/repos/<owner>/<name>/runs: a run again", { timeout: 120_000 
     })) as Effect.Effect<void>)
   }
 
+  test.each([false, true].flatMap((failed) =>
+    (["session", "role", "alias", "home-role", "unchanged"] as const).map((authority) => ({ failed, authority })),
+  ))("delayed retry failed=$failed rechecks $authority", async ({ failed, authority }) => {
+    await afterRun({ "pnpm lint": 1 }, async (previous, request) => {
+      const auth = await signInHarness(runtime, {
+        config: { ...configured, APP_DOMAIN: "smithers.test", APP_ALIASES: "chat.test=/acme/widgets" },
+      })
+      auth.github.person = { id: accountIdOf("maya"), login: "maya" }
+      const signed = await auth.signInAs()
+      expect(signed.response.status).toBe(303)
+      let cookies = signed.cookies
+      if (authority === "alias") {
+        const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
+        const token = await Effect.runPromise(keys.token)
+        const [session] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql<{ id: string }>`SELECT id::text FROM sessions WHERE person_id = ${MAYA}`))
+        expect(await runtime.runPromise(SessionStore.createHostSession({ id: uuid(), parentId: session!.id,
+          host: "chat.test", tokenDigest: SessionKeys.digest(token),
+        }))).toBe(true)
+        cookies = { smithers_session: await Effect.runPromise(keys.sign("session", token)) }
+      }
+      const { github } = repository()
+      const h = await routes(github, { sessions: auth.sessions, engineSchema: previous.engineSchema,
+        ...(authority === "home-role" ? { roleRepository: "acme/widgets" } : {}),
+      })
+      let entered!: () => void
+      let release!: () => void
+      const waiting = new Promise<void>((resolve) => { entered = resolve })
+      const proceed = new Promise<void>((resolve) => { release = resolve })
+      const id = uuid()
+      const runId = manualExecutionId("ci", id)
+      const stream = new ReadableStream<Uint8Array>({ async pull(controller) {
+        entered()
+        await proceed
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ id, retryOf: request.run, failed })))
+        controller.close()
+      } }, { highWaterMark: 0 })
+      const pending = h.fetch(repoRunsRoute(REPOSITORY.owner, REPOSITORY.name), {
+        method: "POST", headers: { cookie: cookie(cookies), "x-smithers-device-person": MAYA }, body: stream, duplex: "half",
+      } as RequestInit)
+      await Promise.race([waiting, pending.then((response) => { throw new Error(`retry ended before body gate: ${response.status}`) })])
+      try {
+        await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => {
+          switch (authority) {
+            case "session": return sql`UPDATE sessions SET revoked_at = clock_timestamp(), revoked_reason = 'sign_out' WHERE person_id = ${MAYA}`
+            case "role": return sql`UPDATE github_repo_roles SET role = 'guest' WHERE repo_id = ${REPOSITORY.id} AND person_id = ${MAYA}`
+            case "alias": return sql`UPDATE host_sessions SET revoked_at = clock_timestamp() WHERE host = 'chat.test'`
+            case "home-role": return sql`
+              INSERT INTO sessions (id, token_digest, person_id, role, role_generation, role_checked_at, expires_at, revoked_at)
+              VALUES (${uuid()}, ${uuid()}, ${MAYA}, 'guest', nextval('role_observations'), clock_timestamp(),
+                clock_timestamp() + interval '1 hour', clock_timestamp())`
+            case "unchanged": return Effect.void
+          }
+        }))
+      } finally { release() }
+      const response = await answer(await pending)
+      if (authority === "unchanged") {
+        expect(response).toEqual([202, { runId }])
+        expect(h.starts).toHaveLength(1)
+        const payload = h.starts[0]!.payload as RepoFlow.RunRequest
+        expect(payload).toMatchObject({ ...request, run: runId, ...(failed ? { only: ["lint"] } : {}) })
+        expect(payload.only).toEqual(failed ? ["lint"] : undefined)
+      } else {
+        expect(response, `delayed retry must revalidate ${authority}`).toEqual(
+          authority === "session" || authority === "alias" ? [401, { code: "authentication" }] : [403, { code: "forbidden" }],
+        )
+        expect(h.starts).toEqual([])
+      }
+      const kept = await rows()
+      expect(kept.some((row) => row.execution === request.run)).toBe(true)
+      expect(kept.some((row) => row.execution === runId)).toBe(authority === "unchanged")
+    })
+  })
+
   test("Retry runs the flow again at its commit; Retry failed only its jobs that didn't pass", async () => {
     await afterRun({ "pnpm lint": 1 }, async (h, request) => {
       const path = repoRunsRoute(REPOSITORY.owner, REPOSITORY.name)
