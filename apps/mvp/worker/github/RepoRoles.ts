@@ -258,15 +258,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     }
 
     /** The person's permission on `repository`, read with the App; `None` when GitHub knows no such person there. */
-    const fromGitHub = (configured: NonNullable<Option.Option.Value<typeof app>>, repository: Repository, login: string) =>
+    const fromGitHub = (configured: NonNullable<Option.Option.Value<typeof app>>, repository: Repository, login: string, stages: Stages) =>
       Effect.gen(function* () {
+        const auth = yield* timed(stages, "authMs", configured.auth.pipe(Effect.mapError((error) => refusedFor(error, "app_auth"))))
         const tokens = Tokens.make({
-          app: yield* configured.auth.pipe(Effect.mapError((error) => refusedFor(error, "app_auth"))),
+          app: { ...auth, installationToken: (request) => timed(stages, "mintMs", auth.installationToken(request)) },
           // Installation tokens only: no session's token to refresh.
           keys: Option.none(),
           refresh: Function.constant(Effect.void),
         })
-        const token = yield* tokens.forInstallation(repository, "metadata").pipe(
+        const token = yield* timed(stages, "tokenMs", tokens.forInstallation(repository, "metadata")).pipe(
           Effect.mapError((error) =>
             error.reason === "app_not_installed"
               ? new RoleRefused({ code: "app_not_installed", stage: "installation_token", upstreamStatus: error.upstreamStatus })
@@ -278,10 +279,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               })
           ),
         )
-        return yield* GitHub.Collaborators.permission(repository.owner, repository.name, login).pipe(
+        return yield* timed(stages, "permissionMs", GitHub.Collaborators.permission(repository.owner, repository.name, login).pipe(
           withToken(token, configured.config.apiBaseUrl),
           Effect.mapError((error) => refusedFor(error, "permission")),
-        )
+        ))
       }).pipe(client)
 
     /** A query of `fromRow`'s: Postgres failing is `unavailable`. */
@@ -430,16 +431,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       actor: Actor,
       repository: Repository,
       configured: NonNullable<Option.Option.Value<typeof app>>,
-    ) =>
-      Effect.gen(function* () {
+    ) => {
+      const stages: Stages = {}
+      return Effect.gen(function* () {
         const personId = actor.subject.id
         // Who the person is on GitHub is sign-in's `people` row to say, never a request: their login to ask about and
         // their account's id, which the answer must name, because a login can change hands after a rename. `asOf` is
         // when this read began: an older read never overwrites a newer one.
-        const { asOf, account } = yield* inDatabase(observe(personId), "account_read")
+        const { asOf, account } = yield* timed(stages, "accountMs", inDatabase(observe(personId), "account_read"))
         const answer = Option.isNone(account)
           ? Option.none<GitHub.Collaborators.Permission>()
-          : yield* fromGitHub(configured, repository, account.value.login)
+          : yield* fromGitHub(configured, repository, account.value.login, stages)
         const sameAccount = Option.isSome(account) && Option.isSome(answer) &&
           answer.value.userId === account.value.githubId
         if (Option.isSome(answer) && !sameAccount) {
@@ -448,15 +450,19 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           )
         }
         // What decides is the row as it stands after this read: a later read's, when one already landed.
-        const kept = yield* inDatabase(
+        const kept = yield* timed(stages, "recordMs", inDatabase(
           remember(repository.id, personId, sameAccount ? roleOf(permissionOf(answer.value)) : null, asOf),
           "role_record",
-        )
+        ))
         // A read slow enough that its row expired before it returned decides nothing: decision 0079's five minutes run
         // from when the read began.
         if (!kept.fresh) return yield* new RoleRefused({ code: "unavailable", stage: "role_record" })
         return heldBy(repository, actor, kept)
-      })
+      }).pipe(Effect.onExit(() =>
+        Effect.flatMap(requestRay, (ray) =>
+          Effect.logInfo("github.repo_role.stages").pipe(Effect.annotateLogs({ repoId: repository.id, ray: ray ?? "none", ...stages })))
+      ))
+    }
 
     /** `decide`, logged (`github.repo_role`: source, outcome, duration; never a login) and counted. */
     const resolve = (actor: Actor, repository: Repository, read?: Held): Effect.Effect<Resolved, RoleRefused, R> =>
@@ -506,6 +512,21 @@ export const workRole = <R>(roles: RepoRoles<R>, actor: Actor, repository: Repos
 /** `roles.uninstalled`, else the session's role: the role on a repository the App isn't on (decision 0079). */
 export const uninstalledRole = <R>(roles: RepoRoles<R>, actor: Actor, repository: Repository): Role | null =>
   roles.uninstalled === undefined ? actor.role : roles.uninstalled(actor, repository)
+
+/**
+ * How long each stage of a read from GitHub took (`github.repo_role.stages`). A Worker's clock moves only across I/O, so
+ * a stage's own CPU, such as signing the App's JWT, shows in the next stage that waits on something.
+ */
+type Stages = Partial<Record<"accountMs" | "authMs" | "tokenMs" | "mintMs" | "permissionMs" | "recordMs", number>>
+
+/** `effect`, with its time in `stages`, however it ends. */
+const timed = <A, E, R>(stages: Stages, stage: keyof Stages, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
+    effect.pipe(Effect.onExit(() =>
+      Effect.map(Clock.currentTimeMillis, (now) => {
+        stages[stage] = now - startedAt
+      })
+    )))
 
 /** `millis` as a `retryAfterSeconds` field, when GitHub said a wait. */
 const waitOf = (millis: number | undefined) =>

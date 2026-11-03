@@ -3,7 +3,8 @@
 // deployment's own repository, GitHub's, read with the App and kept for 5 minutes, on any other; every refusal; and the
 // row a write's transaction locks. Unhappy paths give it a faulty GitHub or an unreachable Postgres; nothing intercepts
 // a request.
-import { Clock, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted, Tracer } from "effect"
+import { Logger as StructuredLogger } from "@smthrs/observability"
+import { Clock, ConfigProvider, Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Redacted, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -53,6 +54,24 @@ const refusal = (result: Awaited<ReturnType<typeof resolve>>) =>
   result._tag === "Failure" ? { code: result.failure.code, retryAfterSeconds: result.failure.retryAfterSeconds } : undefined
 
 const roleOf = (result: Awaited<ReturnType<typeof resolve>>) => (result._tag === "Success" ? result.success.role : "refused")
+
+test("a read from GitHub logs how long each stage took, one line, and never a login or a token", async () => {
+  const github = scriptedGitHub("acme", "widgets")
+  const made = await roles(github)
+  const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+  const logged = Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))]))
+  await Effect.runPromise(Effect.result(made.resolve(maya, OTHER)).pipe(logged))
+  const lines = logs.filter((log) => log.message === "github.repo_role.stages")
+  expect(lines).toHaveLength(1)
+  const { accountMs, authMs, tokenMs, mintMs, permissionMs, recordMs, repoId, ray } = lines[0]!.annotations as Record<string, unknown>
+  for (const stage of [accountMs, authMs, tokenMs, mintMs, permissionMs, recordMs]) expect(stage).toEqual(expect.any(Number))
+  expect([repoId, ray]).toEqual([OTHER.id, "none"])
+  expect(JSON.stringify(lines[0])).not.toMatch(/maya|ghs_|token_/i)
+  // A row still fresh asks GitHub nothing, so it times nothing.
+  logs.length = 0
+  await Effect.runPromise(Effect.result(made.resolve(maya, OTHER)).pipe(logged))
+  expect(logs.filter((log) => log.message === "github.repo_role.stages")).toEqual([])
+})
 
 describe("permissionOf: GitHub's answer, never with more power than it gives", () => {
   test.each([
