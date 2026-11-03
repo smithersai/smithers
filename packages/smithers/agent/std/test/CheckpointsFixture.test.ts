@@ -40,7 +40,7 @@ import { basename, dirname, join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Bash from "../src/Bash.ts"
 import * as Checkpoints from "../src/Checkpoints.ts"
-import * as Container from "../src/Container.ts"
+import * as Container from "../src/Container.vibe"
 import * as TestRunner from "../src/TestRunner.ts"
 
 // Effect 4.1 types a command's arguments and environment values as Word, text or
