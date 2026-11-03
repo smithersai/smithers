@@ -174,23 +174,24 @@ export interface Rebuilt {
 const pageSize = 512
 
 /** Folds one run's cache provenance entries into `state`, in sequence order. */
-const foldRun = effect (journal: Journal.Service, runId: string, start: State) => {
-  let state = start
-  let after: JournalEvent.Seq | undefined
-  while (true) {
-    const page = try journal.entries({
-      runId: runId as JournalEvent.RunId,
-      eventTypes: [eventType],
-      limit: pageSize,
-      ...(after === undefined ? {} : { after })
-    })
-    for (const entry of page.entries) {
-      state = reduce(state, entry)
-      after = entry.seq
+const foldRun = (journal: Journal.Service, runId: string, start: State) =>
+  Effect.gen(function*() {
+    let state = start
+    let after: JournalEvent.Seq | undefined
+    while (true) {
+      const page = yield* journal.entries({
+        runId: runId as JournalEvent.RunId,
+        eventTypes: [eventType],
+        limit: pageSize,
+        ...(after === undefined ? {} : { after })
+      })
+      for (const entry of page.entries) {
+        state = reduce(state, entry)
+        after = entry.seq
+      }
+      if (!page.hasMore) return state
     }
-    if (!page.hasMore) return state
-  }
-}
+  })
 
 /**
  * Rebuilds every `flows_step_cache` head from the journal.
@@ -208,40 +209,36 @@ const foldRun = effect (journal: Journal.Service, runId: string, start: State) =
  * @category operations
  * @since 1.0.0
  */
-export const rebuild = effect () =>
-  try withSpan(
-    effect {
-      const journal = try Journal.Journal
-      const sql = try SqlClient.SqlClient
-      const floors = try sql<{ readonly compacted: number | string }>`
+export const rebuild = Effect.fn("StepCacheFold.rebuild")(function*() {
+  const journal = yield* Journal.Journal
+  const sql = yield* SqlClient.SqlClient
+  const floors = yield* sql<{ readonly compacted: number | string }>`
     SELECT COUNT(DISTINCT run_id) AS compacted FROM flows_journal_checkpoints
     WHERE compacted_at_ms IS NOT NULL
   `
-      const compacted = Number(floors[0]!.compacted)
-      const generations = try sql<{ readonly rewound: number | string }>`
+  const compacted = Number(floors[0]!.compacted)
+  const generations = yield* sql<{ readonly rewound: number | string }>`
     SELECT COUNT(*) AS rewound FROM flows_journal_generations
   `
-      const rewound = Number(generations[0]!.rewound)
-      const runs = try sql<{ readonly run_id: string }>`
+  const rewound = Number(generations[0]!.rewound)
+  const runs = yield* sql<{ readonly run_id: string }>`
     SELECT DISTINCT run_id FROM flows_journal_events
     WHERE event_type = ${eventType}
     ORDER BY run_id
   `
-      let state = initial
-      if (compacted === 0 && rewound === 0) {
-        for (const { run_id } of runs) {
-          state = try foldRun(journal, run_id, state)
-        }
-      }
-      const heads = try CacheStore.rebuildHeads(candidates(state))
-      return {
-        runs: runs.length,
-        compacted,
-        rewound,
-        admitted: HashMap.size(state.admitted),
-        retired: HashSet.size(state.retired),
-        heads
-      } satisfies Rebuilt
-    },
-    "StepCacheFold.rebuild"
-  )
+  let state = initial
+  if (compacted === 0 && rewound === 0) {
+    for (const { run_id } of runs) {
+      state = yield* foldRun(journal, run_id, state)
+    }
+  }
+  const heads = yield* CacheStore.rebuildHeads(candidates(state))
+  return {
+    runs: runs.length,
+    compacted,
+    rewound,
+    admitted: HashMap.size(state.admitted),
+    retired: HashSet.size(state.retired),
+    heads
+  } satisfies Rebuilt
+})

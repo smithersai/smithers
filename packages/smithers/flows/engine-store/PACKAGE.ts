@@ -156,7 +156,7 @@ const securityReview = Smithers.SecurityReview({
         "reservedAt comparing `.flows` and `.smithers-workspace-lock` case-sensitively, so `.FLOWS/...` reaches the engine state on a case-insensitive filesystem.",
         "The lease heartbeat's path-based `utimes` being reachable before the confined read proved the lock holds this call's token."
       ],
-      paths: ["src/WorkspaceSandbox.vibe", "src/StepSandbox.ts", "src/internal/SandboxedExecution.ts"]
+      paths: ["src/WorkspaceSandbox.ts", "src/StepSandbox.ts", "src/internal/SandboxedExecution.ts"]
     },
     {
       id: "hermetic-read-enforcement",
@@ -169,7 +169,7 @@ const securityReview = Smithers.SecurityReview({
         "Glob coverage in the write-set matcher treating `*` as crossing `/` or `**` as matching outside its prefix."
       ],
       paths: [
-        "src/WorkspaceSandbox.vibe",
+        "src/WorkspaceSandbox.ts",
         "src/StepSandbox.ts",
         "src/StepBoundary.ts",
         "src/internal/SandboxedExecution.ts",
@@ -189,9 +189,9 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/CacheAdmission.ts",
         "src/internal/CachePublication.ts",
-        "src/internal/CacheOutputPolicy.vibe",
-        "src/CacheSync.vibe",
-        "src/ArtifactSync.vibe",
+        "src/internal/CacheOutputPolicy.ts",
+        "src/CacheSync.ts",
+        "src/ArtifactSync.ts",
         "src/internal/ActionPersistence.ts"
       ]
     },
@@ -240,7 +240,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/EngineStateSchema.ts",
         "src/internal/RunListing.ts",
         "src/Selection.ts",
-        "src/SelectionStore.vibe",
+        "src/SelectionStore.ts",
         "src/internal/RetentionOps.ts",
         "src/PlanInputStore.ts",
         "src/PlanMergeStore.ts"
@@ -293,7 +293,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/ExecutionSnapshotRead.ts",
         "src/DurableEngineState.ts",
         "src/RunCatalogRead.ts",
-        "src/RunChangeFeed.vibe",
+        "src/RunChangeFeed.ts",
         "src/internal/TypedEvents.ts",
         "src/EngineStore.ts"
       ]
@@ -308,7 +308,7 @@ const securityReview = Smithers.SecurityReview({
         "HostReflection or a test store helper in src exposing host services to action context."
       ],
       paths: [
-        "src/internal/EngineJj.vibe",
+        "src/internal/EngineJj.ts",
         "src/internal/HostReflection.ts",
         "src/internal/RunDriver.ts",
         "src/test/TestStores.ts"

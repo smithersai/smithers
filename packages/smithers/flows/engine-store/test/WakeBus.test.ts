@@ -8,7 +8,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import { TestClock } from "effect/testing"
-import * as WakeBus from "../src/WakeBus.vibe"
+import * as WakeBus from "../src/WakeBus.ts"
 
 /** Yields until the bus reports `count` waiters parked on `executionId`. */
 const untilWaiters = (

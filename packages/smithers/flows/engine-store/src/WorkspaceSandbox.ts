@@ -48,11 +48,19 @@ import * as FileSet from "@smthrs/plan/FileSet"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Path from "effect/Path"
+import * as PlatformError from "effect/PlatformError"
+import * as RcMap from "effect/RcMap"
+import * as Ref from "effect/Ref"
+import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
-import * as EngineStoreMetrics from "./EngineStoreMetrics.vibe"
+import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
+import * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
 import * as FileBoundarySnapshot from "./internal/FileBoundarySnapshot.ts"
 import * as FileEnumeration from "./internal/FileEnumeration.ts"
 import { compareText } from "./internal/Ordering.ts"
@@ -175,10 +183,10 @@ export interface WorkflowResult<out Output = unknown> {
  * @since 0.1.0
  */
 export interface Workspace {
-  readonly readFile: (path: string) => Uint8Array!WorkspaceError
-  readonly writeFile: (path: string, content: Uint8Array) => void!WorkspaceError
-  readonly removeFile: (path: string) => void!WorkspaceError
-  readonly queueEffect: (effect: QueuedEffect) => void!!
+  readonly readFile: (path: string) => Effect.Effect<Uint8Array, WorkspaceError>
+  readonly writeFile: (path: string, content: Uint8Array) => Effect.Effect<void, WorkspaceError>
+  readonly removeFile: (path: string) => Effect.Effect<void, WorkspaceError>
+  readonly queueEffect: (effect: QueuedEffect) => Effect.Effect<void>
 }
 
 /**
@@ -207,7 +215,7 @@ export const Workspace: Context.Service<Workspace, Workspace> = Context.Service<
 export interface Execution<out Output, out Error> {
   readonly descriptor: FileBoundary
   readonly cacheKey?: string | undefined
-  readonly workflow: Output!Error!Workspace | FileSystem.FileSystem
+  readonly workflow: Effect.Effect<Output, Error, Workspace | FileSystem.FileSystem>
 }
 
 /**
@@ -422,7 +430,7 @@ export const isMaterializationConflict = (error: unknown): boolean => {
 export interface Service {
   readonly execute: <Output, Error>(
     execution: Execution<Output, Error>
-  ) => ExecutionResult<Output>!Error | WorkspaceError!Crypto.Crypto
+  ) => Effect.Effect<ExecutionResult<Output>, Error | WorkspaceError, Crypto.Crypto>
   /**
    * Checks all copy-back preconditions before applying any file change.
    * The filesystem host serializes cooperating commits through confinement,
@@ -442,7 +450,7 @@ export interface Service {
    */
   readonly materialize: <Output>(
     accepted: Accepted<Output>
-  ) => void!MaterializationConflict | WorkspaceError!Crypto.Crypto
+  ) => Effect.Effect<void, MaterializationConflict | WorkspaceError, Crypto.Crypto>
 }
 
 /**
@@ -508,7 +516,7 @@ export const layerUnsupported: Layer.Layer<Service> = layer({
  * @since 0.1.0
  */
 export interface Dispatcher {
-  readonly dispatch: (effect: QueuedEffect) => void!!
+  readonly dispatch: (effect: QueuedEffect) => Effect.Effect<void>
 }
 
 /**
@@ -553,7 +561,7 @@ const invalidPath = (path: string): WorkspaceError =>
  * other absolute path, and anything traversing upward, is refused rather than
  * silently confined.
  */
-const normalizePath = (root: string, path: string, allowRoot = false): Result<string, WorkspaceError> => {
+const normalizePath = (root: string, path: string, allowRoot = false): Result.Result<string, WorkspaceError> => {
   const slashed = path.replaceAll("\\", "/")
   const slashedRoot = root.replaceAll("\\", "/")
   const rooted = slashed === slashedRoot
@@ -625,8 +633,8 @@ const workspaceRelative = (root: string, descriptor: FileBoundary): FileBoundary
   }
 }
 
-const digestOf = (bytes: Uint8Array): string!!Crypto.Crypto =>
-  Schema.decodeUnknownEffect(Sha256)(bytes) |> Effect.orDie(%)
+const digestOf = (bytes: Uint8Array): Effect.Effect<string, never, Crypto.Crypto> =>
+  Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
 
 const parentDirectory = (path: string): string | undefined => {
   const index = path.lastIndexOf("/")
@@ -659,7 +667,7 @@ export interface Host {
    */
   readonly snapshot: (
     descriptor: FileBoundary
-  ) => ReadonlyMap<string, Uint8Array>!WorkspaceError!Crypto.Crypto
+  ) => Effect.Effect<ReadonlyMap<string, Uint8Array>, WorkspaceError, Crypto.Crypto>
   /**
    * The host's current digest for a path the transaction never observed, or
    * `undefined` when the host holds nothing there.
@@ -680,7 +688,7 @@ export interface Host {
    */
   readonly baseline: (
     path: string
-  ) => string | undefined!WorkspaceError!Crypto.Crypto
+  ) => Effect.Effect<string | undefined, WorkspaceError, Crypto.Crypto>
   /**
    * Decides whether a produced file's bytes travel inline in its
    * {@link FileChange} or by content address. Returning `undefined` means the
@@ -689,7 +697,7 @@ export interface Host {
    */
   readonly retain: (
     bytes: Uint8Array
-  ) => Uint8Array | undefined!WorkspaceError!Crypto.Crypto
+  ) => Effect.Effect<Uint8Array | undefined, WorkspaceError, Crypto.Crypto>
   /**
    * Applies the diff as a compare-and-set on every `beforeDigest`. Hosts must
    * serialize preflight through apply and rollback with competing commits.
@@ -699,7 +707,7 @@ export interface Host {
    */
   readonly commit: (
     changes: ReadonlyArray<FileChange>
-  ) => void!MaterializationConflict | WorkspaceError!Crypto.Crypto
+  ) => Effect.Effect<void, MaterializationConflict | WorkspaceError, Crypto.Crypto>
   /** The absolute root absolute host paths are interpreted against. */
   readonly root: string
 }
@@ -735,45 +743,33 @@ const notFound = (path: string): WorkspaceError =>
 const transaction = (base: ReadonlyMap<string, Uint8Array>, trace: Trace, root: string) => {
   const files = new Map(base)
   const produced = new Set<string>()
-  const resolvePath = (path: string, allowRoot = false): string!WorkspaceError => {
+  const resolvePath = (path: string, allowRoot = false): Effect.Effect<string, WorkspaceError> => {
     const normalized = normalizePath(root, path, allowRoot)
     return Result.isFailure(normalized) ? Effect.fail(normalized.failure) : Effect.succeed(normalized.success)
   }
-  const readBytes = effect (path: string) =>
-    try withSpan(
-      effect {
-        const key = try resolvePath(path)
-        trace.attemptedReads.push({ path: key, produced: produced.has(key) })
-        const content = files.get(key)
-        if (content === undefined) throw notFound(key)
-        trace.inputs.push({ path: key, content })
-        return content.slice()
-      },
-      "WorkspaceSandbox.read"
-    )
-  const writeBytes = effect (path: string, content: Uint8Array<ArrayBufferLike>) =>
-    try withSpan(
-      effect {
-        const key = try resolvePath(path)
-        produced.add(key)
-        files.set(key, content.slice())
-      },
-      "WorkspaceSandbox.write"
-    )
-  const removePath = effect (path: string) =>
-    try withSpan(
-      effect {
-        const key = try resolvePath(path)
-        produced.add(key)
-        files.delete(key)
-      },
-      "WorkspaceSandbox.remove"
-    )
+  const readBytes = Effect.fn("WorkspaceSandbox.read")(function*(path: string) {
+    const key = yield* resolvePath(path)
+    trace.attemptedReads.push({ path: key, produced: produced.has(key) })
+    const content = files.get(key)
+    if (content === undefined) return yield* Effect.fail(notFound(key))
+    trace.inputs.push({ path: key, content })
+    return content.slice()
+  })
+  const writeBytes = Effect.fn("WorkspaceSandbox.write")(function*(path: string, content: Uint8Array) {
+    const key = yield* resolvePath(path)
+    produced.add(key)
+    files.set(key, content.slice())
+  })
+  const removePath = Effect.fn("WorkspaceSandbox.remove")(function*(path: string) {
+    const key = yield* resolvePath(path)
+    produced.add(key)
+    files.delete(key)
+  })
   const workspace = Workspace.of({
     readFile: (path) => readBytes(path),
     writeFile: (path, content) => writeBytes(path, content),
     removeFile: (path) => removePath(path),
-    queueEffect: effect (effect) => trace.effects.push(effect)
+    queueEffect: (effect) => Effect.sync(() => trace.effects.push(effect))
   })
   const refuse = (method: string, path: string) => (error: WorkspaceError) =>
     error.code === "not_found"
@@ -792,84 +788,83 @@ const transaction = (base: ReadonlyMap<string, Uint8Array>, trace: Trace, root: 
     // untraced — under the declared-set host an undeclared path is absent by
     // construction, the Bazel forest's own deterministic answer.
     exists: (path) =>
-      resolvePath(path, true)
-      |> Effect.map(%, (key) => {
-        if (key === "") return true
-        if (files.has(key)) {
-          trace.attemptedReads.push({ path: key, produced: produced.has(key) })
-          return true
-        }
-        const prefix = `${key}/`
-        let present = false
-        for (const candidate of files.keys()) {
-          if (!candidate.startsWith(prefix)) continue
-          trace.attemptedReads.push({ path: candidate, produced: produced.has(candidate) })
-          present = true
-        }
-        return present
-      })
-      // A path the transaction cannot even name does not exist in it; that
-      // is an answer, not a host failure.
-      |> Effect.catch(%, () => Effect.succeed(false)),
-    readFile: (path) => readBytes(path) |> Effect.mapError(%, refuse("readFile", path)),
+      resolvePath(path, true).pipe(
+        Effect.map((key) => {
+          if (key === "") return true
+          if (files.has(key)) {
+            trace.attemptedReads.push({ path: key, produced: produced.has(key) })
+            return true
+          }
+          const prefix = `${key}/`
+          let present = false
+          for (const candidate of files.keys()) {
+            if (!candidate.startsWith(prefix)) continue
+            trace.attemptedReads.push({ path: candidate, produced: produced.has(candidate) })
+            present = true
+          }
+          return present
+        }),
+        // A path the transaction cannot even name does not exist in it; that
+        // is an answer, not a host failure.
+        Effect.catch(() => Effect.succeed(false))
+      ),
+    readFile: (path) => readBytes(path).pipe(Effect.mapError(refuse("readFile", path))),
     readFileString: (path) =>
-      readBytes(path)
-      |> Effect.map(%, (bytes) => decoder.decode(bytes))
-      |> Effect.mapError(%, refuse("readFileString", path)),
-    writeFile: (path, data) => writeBytes(path, data) |> Effect.mapError(%, refuse("writeFile", path)),
+      readBytes(path).pipe(
+        Effect.map((bytes) => decoder.decode(bytes)),
+        Effect.mapError(refuse("readFileString", path))
+      ),
+    writeFile: (path, data) => writeBytes(path, data).pipe(Effect.mapError(refuse("writeFile", path))),
     writeFileString: (path, data) =>
-      writeBytes(path, encoder.encode(data)) |> Effect.mapError(%, refuse("writeFileString", path)),
-    remove: (path) => removePath(path) |> Effect.mapError(%, refuse("remove", path)),
+      writeBytes(path, encoder.encode(data)).pipe(Effect.mapError(refuse("writeFileString", path))),
+    remove: (path) => removePath(path).pipe(Effect.mapError(refuse("remove", path))),
     // Directories are implicit in a path-keyed map: creating one is a
     // successful no-op so a body that mirrors ordinary filesystem discipline
     // works unchanged, and listing one is a prefix scan.
     makeDirectory: () => Effect.void,
     readDirectory: (path) =>
-      resolvePath(path, true)
-      |> Effect.map(%, (key) => {
-        const prefix = key === "" ? "" : `${key}/`
-        const entries = new Set<string>()
-        for (const candidate of files.keys()) {
-          if (!candidate.startsWith(prefix)) continue
-          // A listing reveals each file it names, so each is a traced read.
-          trace.attemptedReads.push({ path: candidate, produced: produced.has(candidate) })
-          entries.add(candidate.slice(prefix.length).split("/")[0]!)
-        }
-        return [...entries].sort(compareText)
-      })
-      |> Effect.mapError(%, refuse("readDirectory", path))
+      resolvePath(path, true).pipe(
+        Effect.map((key) => {
+          const prefix = key === "" ? "" : `${key}/`
+          const entries = new Set<string>()
+          for (const candidate of files.keys()) {
+            if (!candidate.startsWith(prefix)) continue
+            // A listing reveals each file it names, so each is a traced read.
+            trace.attemptedReads.push({ path: candidate, produced: produced.has(candidate) })
+            entries.add(candidate.slice(prefix.length).split("/")[0]!)
+          }
+          return [...entries].sort(compareText)
+        }),
+        Effect.mapError(refuse("readDirectory", path))
+      )
   })
   return { files, workspace, fileSystem }
 }
 
-const changes = effect (
-  base: ReadonlyMap<string, Uint8Array<ArrayBufferLike>>,
-  current: ReadonlyMap<string, Uint8Array<ArrayBufferLike>>,
+const changes = Effect.fn("WorkspaceSandbox.changes")(function*(
+  base: ReadonlyMap<string, Uint8Array>,
+  current: ReadonlyMap<string, Uint8Array>,
   host: Host
-) =>
-  try withSpan(
-    effect {
-      const paths = [...new Set([...base.keys(), ...current.keys()])].sort(compareText)
-      const result: Array<FileChange> = []
-      for (const path of paths) {
-        const before = base.get(path)
-        const after = current.get(path)
-        // A path the transaction never observed is not a path the host lacks: ask
-        // the host what is there before claiming the change creates it.
-        const beforeDigest = before === undefined ? try host.baseline(path) : try digestOf(before)
-        const afterDigest = after === undefined ? undefined : try digestOf(after)
-        if (beforeDigest === afterDigest) continue
-        result.push({
-          path,
-          beforeDigest,
-          afterDigest,
-          ...(after === undefined ? {} : { after: try host.retain(after) })
-        })
-      }
-      return result
-    },
-    "WorkspaceSandbox.changes"
-  )
+) {
+  const paths = [...new Set([...base.keys(), ...current.keys()])].sort(compareText)
+  const result: Array<FileChange> = []
+  for (const path of paths) {
+    const before = base.get(path)
+    const after = current.get(path)
+    // A path the transaction never observed is not a path the host lacks: ask
+    // the host what is there before claiming the change creates it.
+    const beforeDigest = before === undefined ? yield* host.baseline(path) : yield* digestOf(before)
+    const afterDigest = after === undefined ? undefined : yield* digestOf(after)
+    if (beforeDigest === afterDigest) continue
+    result.push({
+      path,
+      beforeDigest,
+      afterDigest,
+      ...(after === undefined ? {} : { after: yield* host.retain(after) })
+    })
+  }
+  return result
+})
 
 /**
  * The compare-and-set every copy-back runs before it writes a single byte,
@@ -881,41 +876,32 @@ const changes = effect (
  * pre-images are the rollback journal the filesystem host restores from when a
  * mid-apply refusal would otherwise strand a half-written tree.
  */
-const preflight = effect (
-  changes: readonly FileChange[],
-  current: (path: string) => Uint8Array | undefined!WorkspaceError!Crypto.Crypto
-) =>
-  try withSpan(
-    effect {
-      const conflicting: Array<string> = []
-      const before = new Map<string, Uint8Array | undefined>()
-      for (const change of changes) {
-        const content = try current(change.path)
-        before.set(change.path, content)
-        const digest = content === undefined ? undefined : try digestOf(content)
-        conflicting.push(...(digest === change.beforeDigest ? [] : [change.path]))
-      }
-      const conflict = conflicting.length === 0 ? undefined : new MaterializationConflict({
-        paths: conflicting,
-        message: "Workspace state changed after the transaction's base snapshot was taken"
-      })
-      return { conflict, before }
-    },
-    "WorkspaceSandbox.preflight"
-  )
+const preflight = Effect.fn("WorkspaceSandbox.preflight")(function*(
+  changes: ReadonlyArray<FileChange>,
+  current: (path: string) => Effect.Effect<Uint8Array | undefined, WorkspaceError, Crypto.Crypto>
+) {
+  const conflicting: Array<string> = []
+  const before = new Map<string, Uint8Array | undefined>()
+  for (const change of changes) {
+    const content = yield* current(change.path)
+    before.set(change.path, content)
+    const digest = content === undefined ? undefined : yield* digestOf(content)
+    conflicting.push(...(digest === change.beforeDigest ? [] : [change.path]))
+  }
+  const conflict = conflicting.length === 0 ? undefined : new MaterializationConflict({
+    paths: conflicting,
+    message: "Workspace state changed after the transaction's base snapshot was taken"
+  })
+  return { conflict, before }
+})
 
-const revisionOf = effect (base: ReadonlyMap<string, Uint8Array<ArrayBufferLike>>) =>
-  try withSpan(
-    effect {
-      const entries: Array<{ readonly path: string; readonly digest: string }> = []
-      for (const [path, content] of [...base].sort((left, right) => compareText(left[0], right[0]))) {
-        entries.push({ path, digest: try digestOf(content) })
-      }
-      return try (Schema.decodeUnknownEffect(DerivedKey)({ kind: "workspace-revision", entries }) |>
-        Effect.orDie(%))
-    },
-    "WorkspaceSandbox.revision"
-  )
+const revisionOf = Effect.fn("WorkspaceSandbox.revision")(function*(base: ReadonlyMap<string, Uint8Array>) {
+  const entries: Array<{ readonly path: string; readonly digest: string }> = []
+  for (const [path, content] of [...base].sort((left, right) => compareText(left[0], right[0]))) {
+    entries.push({ path, digest: yield* digestOf(content) })
+  }
+  return yield* Schema.decodeUnknownEffect(DerivedKey)({ kind: "workspace-revision", entries }).pipe(Effect.orDie)
+})
 
 /**
  * Everything the declaration failed to predict, deduplicated.
@@ -968,12 +954,10 @@ export const makeHosted = (host: Host): Service => {
    * The speculative half, untraced: the `execute` span below wraps it, so
    * the transaction body reports under one span with its metrics.
    */
-  const executeBody = effect <Output, Error>(
+  const executeBody = Effect.fnUntraced(function*<Output, Error>(
     execution: Execution<Output, Error>
-  ) => {
-    const boundary = try Effect.orDie(
-      Effect.try({ try: () => FileBoundarySnapshot.make(execution.descriptor), catch: (error) => error })
-    )
+  ) {
+    const boundary = FileBoundarySnapshot.make(execution.descriptor)
     const key = execution.cacheKey
     if (key !== undefined) {
       const hit = memo.get(key)
@@ -986,20 +970,21 @@ export const makeHosted = (host: Host): Service => {
         }
       }
     }
-    const captured = try host.snapshot(boundary)
+    const captured = yield* host.snapshot(boundary)
     // The host owns its returned buffers. Preserve the instant represented by
     // snapshot() even if that host or another fiber mutates them while the
     // workflow is suspended.
     const base = new Map([...captured].map(([path, content]) => [path, content.slice()]))
     const trace: Trace = { inputs: [], attemptedReads: [], effects: [] }
     const isolated = transaction(base, trace, host.root)
-    const outcome = try (execution.workflow
-      |> Effect.provideService(%, Workspace, isolated.workspace)
-      |> Effect.provideService(%, FileSystem.FileSystem, isolated.fileSystem)
-      |> Effect.exit(%))
+    const outcome = yield* execution.workflow.pipe(
+      Effect.provideService(Workspace, isolated.workspace),
+      Effect.provideService(FileSystem.FileSystem, isolated.fileSystem),
+      Effect.exit
+    )
     const inputs: Array<InputObservation> = []
     for (const input of trace.inputs) {
-      inputs.push({ resource: resource(input.path), digest: try digestOf(input.content) })
+      inputs.push({ resource: resource(input.path), digest: yield* digestOf(input.content) })
     }
     const descriptor = workspaceRelative(host.root, boundary)
     const undeclaredReads = trace.attemptedReads.filter((attempt) =>
@@ -1018,7 +1003,7 @@ export const makeHosted = (host: Host): Service => {
         return {
           _tag: "Invalidated" as const,
           provenance: {
-            baseRevision: try revisionOf(base),
+            baseRevision: yield* revisionOf(base),
             inputs,
             outputs: []
           },
@@ -1030,12 +1015,12 @@ export const makeHosted = (host: Host): Service => {
           ]
         }
       }
-      return try Effect.failCause(outcome.cause)
+      return yield* Effect.failCause(outcome.cause)
     }
     const output = outcome.value
-    const files = try changes(base, isolated.files, host)
+    const files = yield* changes(base, isolated.files, host)
     const provenance: Provenance = {
-      baseRevision: try revisionOf(base),
+      baseRevision: yield* revisionOf(base),
       inputs,
       outputs: files.map((change) => ({
         resource: resource(change.path),
@@ -1069,37 +1054,35 @@ export const makeHosted = (host: Host): Service => {
       violations: invalid,
       cache: key === undefined ? { status: "disabled" as const } : { status: "miss" as const, key }
     }
-  }
+  })
   return make({
-    execute: effect <Output, Error>(
-      execution: Execution<Output, Error>
-    ) =>
-      try withSpan(
-        effect {
-          try Effect.annotateCurrentSpan({ boundaryMode: execution.descriptor.boundaryMode })
-          return try executeBody(execution)
-        } |> ((effect) =>
-          EngineStoreMetrics.observe({
-            timer: EngineStoreMetrics.sandboxExecutionDuration,
-            counter: EngineStoreMetrics.sandboxExecution
-          })(effect))(%),
-        "WorkspaceSandbox.execute"
-      ),
-    materialize: effect <Output>(accepted: Accepted<Output>) =>
-      try withSpan(
-        effect {
-          try Effect.annotateCurrentSpan({ changes: accepted.result.files.length })
-          // Nothing to copy back needs no commit: a body that changed nothing
-          // (a sealed read) must not need write authority over the root.
-          if (accepted.result.files.length === 0) return
-          try host.commit(accepted.result.files)
-        } |> ((effect) =>
-          EngineStoreMetrics.observe({
-            timer: EngineStoreMetrics.materializationDuration,
-            counter: EngineStoreMetrics.materialization
-          })(effect))(%),
-        "WorkspaceSandbox.materialize"
-      )
+    execute: Effect.fn("WorkspaceSandbox.execute")(
+      function*<Output, Error>(
+        execution: Execution<Output, Error>
+      ) {
+        yield* Effect.annotateCurrentSpan({ boundaryMode: execution.descriptor.boundaryMode })
+        return yield* executeBody(execution)
+      },
+      (effect) =>
+        EngineStoreMetrics.observe({
+          timer: EngineStoreMetrics.sandboxExecutionDuration,
+          counter: EngineStoreMetrics.sandboxExecution
+        })(effect)
+    ),
+    materialize: Effect.fn("WorkspaceSandbox.materialize")(
+      function*<Output>(accepted: Accepted<Output>) {
+        yield* Effect.annotateCurrentSpan({ changes: accepted.result.files.length })
+        // Nothing to copy back needs no commit: a body that changed nothing
+        // (a sealed read) must not need write authority over the root.
+        if (accepted.result.files.length === 0) return
+        yield* host.commit(accepted.result.files)
+      },
+      (effect) =>
+        EngineStoreMetrics.observe({
+          timer: EngineStoreMetrics.materializationDuration,
+          counter: EngineStoreMetrics.materialization
+        })(effect)
+    )
   })
 }
 
@@ -1134,7 +1117,7 @@ export interface HostFile {
  */
 export interface MemorySandbox {
   readonly service: Service
-  readonly files: ReadonlyArray<HostFile>!!
+  readonly files: Effect.Effect<ReadonlyArray<HostFile>>
 }
 
 /**
@@ -1151,15 +1134,15 @@ export interface MemorySandbox {
  */
 export const makeMemory = (
   initialFiles: InitialFiles = {}
-): MemorySandbox!WorkspaceError!Crypto.Crypto =>
-  effect {
+): Effect.Effect<MemorySandbox, WorkspaceError, Crypto.Crypto> =>
+  Effect.gen(function*() {
     const entries: Array<readonly [string, Uint8Array]> = []
     for (const [path, content] of Object.entries(initialFiles)) {
       const normalized = normalizePath("", path)
-      if (Result.isFailure(normalized)) throw normalized.failure
+      if (Result.isFailure(normalized)) return yield* Effect.fail(normalized.failure)
       entries.push([normalized.success, typeof content === "string" ? encoder.encode(content) : content.slice()])
     }
-    const host = try Ref.make<ReadonlyMap<string, Uint8Array>>(new Map(entries))
+    const host = yield* Ref.make<ReadonlyMap<string, Uint8Array>>(new Map(entries))
     const service = makeHosted({
       root: "",
       snapshot: () => Ref.get(host),
@@ -1170,35 +1153,33 @@ export const makeMemory = (
       // compare-and-set rather than clobbered.
       baseline: () => Effect.succeed(undefined),
       retain: (bytes) => Effect.succeed(bytes.slice()),
-      commit: effect (changes) =>
-        try withSpan(
-          effect {
-            try Effect.annotateCurrentSpan({ changes: changes.length })
-            const current = try Ref.get(host)
-            const { conflict } = try preflight(changes, (path) => Effect.succeed(current.get(path)))
-            if (conflict !== undefined) {
-              try Metric.update(EngineStoreMetrics.materializationConflicts, 1)
-              throw conflict
-            }
-            const next = new Map(current)
-            for (const change of changes) {
-              if (change.afterDigest === undefined) next.delete(change.path)
-              else next.set(change.path, change.after!.slice())
-            }
-            try Ref.set(host, next)
-          },
-          "WorkspaceSandbox.commit"
-        )
+      commit: Effect.fn("WorkspaceSandbox.commit")(function*(changes) {
+        yield* Effect.annotateCurrentSpan({ changes: changes.length })
+        const current = yield* Ref.get(host)
+        const { conflict } = yield* preflight(changes, (path) => Effect.succeed(current.get(path)))
+        if (conflict !== undefined) {
+          yield* Metric.update(EngineStoreMetrics.materializationConflicts, 1)
+          return yield* Effect.fail(conflict)
+        }
+        const next = new Map(current)
+        for (const change of changes) {
+          if (change.afterDigest === undefined) next.delete(change.path)
+          else next.set(change.path, change.after!.slice())
+        }
+        yield* Ref.set(host, next)
+      })
     })
     return {
       service,
-      files: Ref.get(host)
-        |> Effect.map(%, (current) =>
+      files: Ref.get(host).pipe(
+        Effect.map((current) =>
           [...current]
             .map(([path, content]) => ({ path, content }))
-            .sort((left, right) => compareText(left.path, right.path)))
+            .sort((left, right) => compareText(left.path, right.path))
+        )
+      )
     }
-  }
+  })
 
 // -----------------------------------------------------------------------------
 // the filesystem host
@@ -1230,7 +1211,7 @@ export interface FileSystemOptions {
 
 // Shared across separately constructed sandboxes. Entries live only while a
 // commit is running or waiting, so short-lived workspace roots do not leak.
-const CommitLocks = Context.Service<RcMap<string, Semaphore>>(
+const CommitLocks = Context.Service<RcMap.RcMap<string, Semaphore.Semaphore>>(
   "@smthrs/engine-store/WorkspaceSandbox/CommitLocks"
 )
 const locksLayer = Layer.effect(CommitLocks, RcMap.make({ lookup: (_root: string) => Semaphore.make(1) }))
@@ -1238,12 +1219,12 @@ const locksLayer = Layer.effect(CommitLocks, RcMap.make({ lookup: (_root: string
 // from different store instances. Their scopes release the final owner.
 const lockOwners = Layer.makeMemoMapUnsafe()
 
-const coordinateCommit = <A, E, R>(root: string, write: A!E!R): A!E!R =>
-  Effect.scoped(effect {
-    const services = try Layer.buildWithMemoMap(locksLayer, lockOwners, try Scope.Scope)
-    const lock = try RcMap.get(Context.get(services, CommitLocks), root)
-    return try lock.withPermit(write)
-  })
+const coordinateCommit = <A, E, R>(root: string, write: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.scoped(Effect.gen(function*() {
+    const services = yield* Layer.buildWithMemoMap(locksLayer, lockOwners, yield* Scope.Scope)
+    const lock = yield* RcMap.get(Context.get(services, CommitLocks), root)
+    return yield* lock.withPermit(write)
+  }))
 
 const commitLockName = ".smithers-workspace-lock"
 // The conventional engine state directory: the SQLite store, its WAL/SHM
@@ -1277,13 +1258,13 @@ const artifactFailure = (cause: { readonly message: string }): WorkspaceError =>
  */
 const confinementCodes: ReadonlySet<unknown> = new Set(["ELOOP", "ENOTDIR", "EPERM"])
 
-const refusedByConfinement = (error: PlatformError): boolean =>
+const refusedByConfinement = (error: PlatformError.PlatformError): boolean =>
   error.reason._tag !== "BadArgument" &&
   typeof error.reason.cause === "object" && error.reason.cause !== null &&
   confinementCodes.has((error.reason.cause as { readonly code?: unknown }).code)
 
 /** Maps one copy-back host failure onto the sandbox's typed error codes. */
-const copyBackFailure = (path: string) => (error: PlatformError): WorkspaceError =>
+const copyBackFailure = (path: string) => (error: PlatformError.PlatformError): WorkspaceError =>
   refusedByConfinement(error)
     ? new WorkspaceError({
       code: "path_escapes_workspace",
@@ -1307,7 +1288,7 @@ const lockFailure = (cause: unknown): WorkspaceError =>
       cause
     })
     // `FileLease` hands every other refusal over as the host's `PlatformError`.
-    : copyBackFailure(commitLockName)(cause as PlatformError)
+    : copyBackFailure(commitLockName)(cause as PlatformError.PlatformError)
 
 // Over-approximates the spellings a case-insensitive, normalization-insensitive
 // volume equates: `.FLOWS`, `.flow\u017f`, and `.\ufb02ows` all open `.flows` on
@@ -1412,206 +1393,196 @@ export const makeFileSystem = (
   const readFrom = (
     host: FileSystem.FileSystem,
     path: string,
-    onError: (error: PlatformError) => WorkspaceError
+    onError: (error: PlatformError.PlatformError) => WorkspaceError
   ) =>
-    host.readFile(path)
-    |> Effect.catchReason(%, "PlatformError", "NotFound", () => Effect.succeed(undefined))
-    |> Effect.mapError(%, onError)
-  const readIfPresent = effect (path: string) =>
-    try withSpan(
-      effect {
-        return try readFrom(fs, path, hostFailure)
-      },
-      "WorkspaceSandbox.readIfPresent"
+    host.readFile(path).pipe(
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
+      Effect.mapError(onError)
     )
-  const canonicalRoot = fs.realPath(root === "" ? "." : root)
-    |> Effect.catchReason(%, "PlatformError", "NotFound", () => Effect.succeed(undefined))
-    |> Effect.mapError(%, hostFailure)
-  const withCommitLock = effect <E, R>(
+  const readIfPresent = Effect.fn("WorkspaceSandbox.readIfPresent")(function*(path: string) {
+    return yield* readFrom(fs, path, hostFailure)
+  })
+  const canonicalRoot = fs.realPath(root === "" ? "." : root).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
+    Effect.mapError(hostFailure)
+  )
+  const withCommitLock = <E, R>(
     changes: ReadonlyArray<FileChange>,
-    effect: (host: FileSystem.FileSystem) => void!E!R
-  ) => {
-    for (const change of changes) {
-      const hit = reservedAt(change.path)
-      if (hit !== undefined) throw hostFailure(hit)
-    }
-    fs.makeDirectory(root === "" ? "." : root, { recursive: true }) catch effect (e) => {
-      throw hostFailure(e)
-    }
-    // Pinned once per commit, after the root exists: every lock, preflight,
-    // apply, and rollback call below resolves against this root identity.
-    const host = (KernelFileSystem.confined(fs, root)
-      |> Effect.provideService(%, Path.Path, platformPath)) catch effect (e) => {
-        throw hostFailure(e)
-      }
-    const canonical = try canonicalRoot
-    // The confined view refuses `utimes`, which the lease heartbeat needs.
-    // The heartbeat touches the lock only after a confined, no-follow read
-    // found this call's own token there, so the one path-based call it
-    // makes can at worst refresh an mtime.
-    const leaseHost: FileSystem.FileSystem = { ...host, utimes: fs.utimes }
-    return try coordinateCommit(
-      canonical ?? root,
-      FileLease.withLease(leaseHost, hostPath(commitLockName), effect(host), lockFailure, {
-        label: "Workspace commit lock",
-        annotations: { root: canonical ?? root }
-      })
-    )
-  }
-  const commitWith = effect (
-    host: FileSystem.FileSystem,
-    changes: readonly FileChange[]
+    effect: (host: FileSystem.FileSystem) => Effect.Effect<void, E, R>
   ) =>
-    try withSpan(
-      effect {
-        try Effect.annotateCurrentSpan({ changes: changes.length })
-        // The advisory lock and process semaphore cover preflight, apply, and
-        // rollback. Preconditions run only after both are acquired.
-        const { before, conflict } = try preflight(
-          changes,
-          (path) => readFrom(host, hostPath(path), copyBackFailure(path))
+    Effect.gen(function*() {
+      for (const change of changes) {
+        const hit = reservedAt(change.path)
+        if (hit !== undefined) return yield* Effect.fail(hostFailure(hit))
+      }
+      yield* fs.makeDirectory(root === "" ? "." : root, { recursive: true }).pipe(Effect.mapError(hostFailure))
+      // Pinned once per commit, after the root exists: every lock, preflight,
+      // apply, and rollback call below resolves against this root identity.
+      const host = yield* KernelFileSystem.confined(fs, root).pipe(
+        Effect.provideService(Path.Path, platformPath),
+        Effect.mapError(hostFailure)
+      )
+      const canonical = yield* canonicalRoot
+      // The confined view refuses `utimes`, which the lease heartbeat needs.
+      // The heartbeat touches the lock only after a confined, no-follow read
+      // found this call's own token there, so the one path-based call it
+      // makes can at worst refresh an mtime.
+      const leaseHost: FileSystem.FileSystem = { ...host, utimes: fs.utimes }
+      return yield* coordinateCommit(
+        canonical ?? root,
+        FileLease.withLease(leaseHost, hostPath(commitLockName), effect(host), lockFailure, {
+          label: "Workspace commit lock",
+          annotations: { root: canonical ?? root }
+        })
+      )
+    })
+  const commitWith = Effect.fn("WorkspaceSandbox.commit")(function*(
+    host: FileSystem.FileSystem,
+    changes: ReadonlyArray<FileChange>
+  ) {
+    yield* Effect.annotateCurrentSpan({ changes: changes.length })
+    // The advisory lock and process semaphore cover preflight, apply, and
+    // rollback. Preconditions run only after both are acquired.
+    const { before, conflict } = yield* preflight(
+      changes,
+      (path) => readFrom(host, hostPath(path), copyBackFailure(path))
+    )
+    if (conflict !== undefined) {
+      yield* Metric.update(EngineStoreMetrics.materializationConflicts, 1)
+      return yield* Effect.fail(conflict)
+    }
+    const resolved = new Map<string, Uint8Array>()
+    for (const change of changes) {
+      if (change.afterDigest === undefined) continue
+      const bytes = change.after ?? (yield* artifacts.get(`${change.afterDigest}`).pipe(
+        Effect.mapError((error) =>
+          error._tag === "@smthrs/artifacts/ArtifactStoreError"
+            ? artifactFailure(error)
+            : new WorkspaceError({
+              code: "not_found",
+              message: `the retained bytes for ${change.path} are unavailable: ${error.message}`,
+              cause: error
+            })
         )
-        if (conflict !== undefined) {
-          try Metric.update(EngineStoreMetrics.materializationConflicts, 1)
-          throw conflict
+      ))
+      resolved.set(change.path, bytes)
+    }
+    const applied: Array<FileChange> = []
+    const apply = Effect.gen(function*() {
+      for (const change of changes) {
+        // Journal the change before touching its target: a write that
+        // fails halfway may still have mutated the file it was writing.
+        applied.push(change)
+        const target = hostPath(change.path)
+        if (change.afterDigest === undefined) {
+          yield* host.remove(target).pipe(Effect.mapError(copyBackFailure(change.path)))
+          continue
         }
-        const resolved = new Map<string, Uint8Array>()
-        for (const change of changes) {
-          if (change.afterDigest === undefined) continue
-          const bytes = change.after ?? (artifacts.get(`${change.afterDigest}`) catch effect (error) => {
-            throw error._tag === "@smthrs/artifacts/ArtifactStoreError"
-              ? artifactFailure(error)
-              : new WorkspaceError({
-                code: "not_found",
-                message: `the retained bytes for ${change.path} are unavailable: ${error.message}`,
-                cause: error
-              })
-          })
-          resolved.set(change.path, bytes)
+        const parent = parentDirectory(target)
+        if (parent !== undefined) {
+          yield* host.makeDirectory(parent, { recursive: true }).pipe(
+            Effect.mapError(copyBackFailure(change.path))
+          )
         }
-        const applied: Array<FileChange> = []
-        const apply = effect {
-          for (const change of changes) {
-            // Journal the change before touching its target: a write that
-            // fails halfway may still have mutated the file it was writing.
-            applied.push(change)
-            const target = hostPath(change.path)
-            if (change.afterDigest === undefined) {
-              try (host.remove(target) |> Effect.mapError(%, copyBackFailure(change.path)))
-              continue
-            }
-            const parent = parentDirectory(target)
-            if (parent !== undefined) {
-              try (host.makeDirectory(parent, { recursive: true })
-                |> Effect.mapError(%, copyBackFailure(change.path)))
-            }
-            try (host.writeFile(target, resolved.get(change.path)!)
-              |> Effect.mapError(%, copyBackFailure(change.path)))
-          }
+        yield* host.writeFile(target, resolved.get(change.path)!).pipe(
+          Effect.mapError(copyBackFailure(change.path))
+        )
+      }
+    })
+    const rollback = Effect.gen(function*() {
+      for (const change of [...applied].reverse()) {
+        const target = hostPath(change.path)
+        const previous = before.get(change.path)
+        if (previous === undefined) {
+          yield* host.remove(target, { force: true }).pipe(Effect.mapError(copyBackFailure(change.path)))
+        } else {
+          yield* host.writeFile(target, previous).pipe(Effect.mapError(copyBackFailure(change.path)))
         }
-        const rollback = effect {
-          for (const change of [...applied].reverse()) {
-            const target = hostPath(change.path)
-            const previous = before.get(change.path)
-            if (previous === undefined) {
-              try (host.remove(target, { force: true }) |> Effect.mapError(%, copyBackFailure(change.path)))
-            } else {
-              try (host.writeFile(target, previous) |> Effect.mapError(%, copyBackFailure(change.path)))
-            }
-          }
-          // Keep empty parent directories. Effect's portable FileSystem has no
-          // atomic, non-recursive rmdir; recursively deleting a directory after
-          // a separate emptiness check could erase a concurrent writer's file.
-        }
-        try (apply
-          |> Effect.catchCause(%, effect (cause) => {
-            const restored = try Effect.exit(rollback)
-            if (Exit.isSuccess(restored)) return try Effect.failCause(cause)
-            const reasons = restored.cause.reasons
-              .filter(Cause.isFailReason)
-              .map((reason) => reason.error.message)
-            // Both failures travel: the apply cause that opened the window and
-            // the rollback cause that could not close it, composed the way
-            // `acquireUseRelease` composes a failed use with a failed release.
-            return try Effect.failCause(
-              Cause.combine(
-                cause,
-                Cause.fail(
-                  new WorkspaceError({
-                    code: "host_unavailable",
-                    message: `copy-back failed mid-apply and rollback could not restore the workspace: ${
-                      reasons.join("; ")
-                    }`,
-                    cause: restored.cause
-                  })
-                )
+      }
+      // Keep empty parent directories. Effect's portable FileSystem has no
+      // atomic, non-recursive rmdir; recursively deleting a directory after
+      // a separate emptiness check could erase a concurrent writer's file.
+    })
+    yield* apply.pipe(
+      Effect.catchCause((cause) =>
+        Effect.gen(function*() {
+          const restored = yield* Effect.exit(rollback)
+          if (Exit.isSuccess(restored)) return yield* Effect.failCause(cause)
+          const reasons = restored.cause.reasons
+            .filter(Cause.isFailReason)
+            .map((reason) => reason.error.message)
+          // Both failures travel: the apply cause that opened the window and
+          // the rollback cause that could not close it, composed the way
+          // `acquireUseRelease` composes a failed use with a failed release.
+          return yield* Effect.failCause(
+            Cause.combine(
+              cause,
+              Cause.fail(
+                new WorkspaceError({
+                  code: "host_unavailable",
+                  message: `copy-back failed mid-apply and rollback could not restore the workspace: ${
+                    reasons.join("; ")
+                  }`,
+                  cause: restored.cause
+                })
               )
             )
-          })
-          // Interruption inside the apply window is a mid-sequence abort the
-          // journal exists to prevent; the window is bounded local work, so it
-          // closes before the fiber answers the interrupt.
-          |> Effect.uninterruptible(%))
-      },
-      "WorkspaceSandbox.commit"
+          )
+        })
+      ),
+      // Interruption inside the apply window is a mid-sequence abort the
+      // journal exists to prevent; the window is bounded local work, so it
+      // closes before the fiber answers the interrupt.
+      Effect.uninterruptible
     )
+  })
   return makeHosted({
     root,
-    snapshot: effect (descriptor) =>
-      try withSpan(
-        effect {
-          try Effect.annotateCurrentSpan({
-            reads: descriptor.readSet.length,
-            boundaryMode: descriptor.boundaryMode
-          })
-          const base = new Map<string, Uint8Array>()
-          for (const entry of descriptor.readSet) {
-            // Through `FileEnumeration`, never the host `glob`: host results skip
-            // dotfiles, so a declared read glob covering one would seed a sandbox
-            // that silently hides it from the body.
-            const paths = FileSet.isGlob(entry)
-              ? (FileEnumeration.expandGlob(fs, entry, {
-                resolve: (path) => path === "" ? (root === "" ? "." : root) : hostPath(path)
-              }) catch effect (e) => {
-                throw hostFailure(e)
-              })
-              : [entry.path]
-            for (const path of paths) {
-              const normalized = normalizePath(root, path)
-              if (Result.isFailure(normalized)) throw normalized.failure
-              const content = try readIfPresent(hostPath(normalized.success))
-              // A declared read that does not exist is seeded as absent, not as an
-              // error: `StepBoundary.prepare` already records the mismatch as the
-              // evidence that refuses the cache hit.
-              if (content !== undefined) base.set(normalized.success, content)
-            }
-          }
-          for (const path of descriptor.removes ?? []) {
-            const normalized = normalizePath(root, path)
-            /* v8 ignore next -- `FileBoundary.removes` is `FileSet.Pattern`-checked, so a decoded boundary cannot carry an upward or absolute removal; the branch guards hand-built descriptors */
-            if (Result.isFailure(normalized)) throw normalized.failure
-            const content = try readIfPresent(hostPath(normalized.success))
-            if (content !== undefined) base.set(normalized.success, content)
-          }
-          return base
-        },
-        "WorkspaceSandbox.snapshot"
-      ),
-    baseline: effect (path) =>
-      try withSpan(
-        effect {
-          const content = try readIfPresent(hostPath(path))
-          return content === undefined ? undefined : try digestOf(content)
-        },
-        "WorkspaceSandbox.baseline"
-      ),
+    snapshot: Effect.fn("WorkspaceSandbox.snapshot")(function*(descriptor) {
+      yield* Effect.annotateCurrentSpan({
+        reads: descriptor.readSet.length,
+        boundaryMode: descriptor.boundaryMode
+      })
+      const base = new Map<string, Uint8Array>()
+      for (const entry of descriptor.readSet) {
+        // Through `FileEnumeration`, never the host `glob`: host results skip
+        // dotfiles, so a declared read glob covering one would seed a sandbox
+        // that silently hides it from the body.
+        const paths = FileSet.isGlob(entry)
+          ? yield* FileEnumeration.expandGlob(fs, entry, {
+            resolve: (path) => path === "" ? (root === "" ? "." : root) : hostPath(path)
+          }).pipe(Effect.mapError(hostFailure))
+          : [entry.path]
+        for (const path of paths) {
+          const normalized = normalizePath(root, path)
+          if (Result.isFailure(normalized)) return yield* Effect.fail(normalized.failure)
+          const content = yield* readIfPresent(hostPath(normalized.success))
+          // A declared read that does not exist is seeded as absent, not as an
+          // error: `StepBoundary.prepare` already records the mismatch as the
+          // evidence that refuses the cache hit.
+          if (content !== undefined) base.set(normalized.success, content)
+        }
+      }
+      for (const path of descriptor.removes ?? []) {
+        const normalized = normalizePath(root, path)
+        /* v8 ignore next -- `FileBoundary.removes` is `FileSet.Pattern`-checked, so a decoded boundary cannot carry an upward or absolute removal; the branch guards hand-built descriptors */
+        if (Result.isFailure(normalized)) return yield* Effect.fail(normalized.failure)
+        const content = yield* readIfPresent(hostPath(normalized.success))
+        if (content !== undefined) base.set(normalized.success, content)
+      }
+      return base
+    }),
+    baseline: Effect.fn("WorkspaceSandbox.baseline")(function*(path) {
+      const content = yield* readIfPresent(hostPath(path))
+      return content === undefined ? undefined : yield* digestOf(content)
+    }),
     // The bytes now live at the change's `afterDigest`; the change itself
     // carries only the reference, exactly as oversized `StepBoundary`
     // evidence does.
     retain: (bytes) =>
       bytes.length <= maxInlineBytes
         ? Effect.succeed(bytes)
-        : (artifacts.put(bytes) |> Effect.mapError(%, artifactFailure) |> Effect.as(%, undefined)),
+        : artifacts.put(bytes).pipe(Effect.mapError(artifactFailure), Effect.as(undefined)),
     commit: (changes) => withCommitLock(changes, (host) => commitWith(host, changes))
   })
 }
@@ -1643,14 +1614,12 @@ export const layerFileSystem = (
 > =>
   Layer.effect(
     WorkspaceSandbox,
-    effect {
-      const fs = try FileSystem.FileSystem
-      const platformPath = try Path.Path
-      const artifacts = try ArtifactStore.ArtifactStore
-      const workspace = try KernelWorkspace
-      KernelFileSystem.requireConfinable(fs, workspace.root) catch effect (e) => {
-        throw hostFailure(e)
-      }
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const platformPath = yield* Path.Path
+      const artifacts = yield* ArtifactStore.ArtifactStore
+      const workspace = yield* KernelWorkspace
+      yield* KernelFileSystem.requireConfinable(fs, workspace.root).pipe(Effect.mapError(hostFailure))
       return makeFileSystem(fs, platformPath, artifacts, workspace.root, options)
-    }
+    })
   )

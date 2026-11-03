@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import type * as Selection from "../src/Selection.ts"
-import * as SelectionStore from "../src/SelectionStore.vibe"
+import * as SelectionStore from "../src/SelectionStore.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

@@ -31,11 +31,13 @@
  *
  * @since 0.1.0
  */
-import type { CacheStore } from "@smthrs/step-cache";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
+
+import type { CacheStore } from "@smthrs/step-cache"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+
 /**
  * The one operation the shared-cache publication seam exposes.
  *
@@ -48,26 +50,28 @@ import * as Option from "effect/Option";
  * @category services
  */
 export interface Service {
-    /**
-     * Publishes a cache entry to the shared tier, reporting the refusal rather
-     * than failing: `Option.none()` means the entry is now shared, and
-     * `Option.some(error)` means it is not and why.
-     *
-     * Callers must only reach here once every artifact the entry references is
-     * durable in the shared artifact tier — that is `ArtifactSync.publish`'s job,
-     * and it runs first.
-     */
-    readonly publishEntry: (entry: CacheStore.CacheEntry) => Effect.Effect<Option.Option<CacheStore.CacheStoreError>>;
+  /**
+   * Publishes a cache entry to the shared tier, reporting the refusal rather
+   * than failing: `Option.none()` means the entry is now shared, and
+   * `Option.some(error)` means it is not and why.
+   *
+   * Callers must only reach here once every artifact the entry references is
+   * durable in the shared artifact tier — that is `ArtifactSync.publish`'s job,
+   * and it runs first.
+   */
+  readonly publishEntry: (
+    entry: CacheStore.CacheEntry
+  ) => Effect.Effect<Option.Option<CacheStore.CacheStoreError>>
 }
-declare const CacheSync_base: Context.ServiceClass<CacheSync, "@smthrs/engine-store/CacheSync", Service>;
+
 /**
  * Service tag for the shared step-result publication seam.
  *
  * @since 0.1.0
  * @category services
  */
-export declare class CacheSync extends CacheSync_base {
-}
+export class CacheSync extends Context.Service<CacheSync, Service>()("@smthrs/engine-store/CacheSync") {}
+
 /**
  * The single-tier implementation: there is no shared step-result tier, so a
  * recorded entry is already everywhere it will ever be.
@@ -79,14 +83,18 @@ export declare class CacheSync extends CacheSync_base {
  * @since 0.1.0
  * @category constructors
  */
-export declare const makeLocal: () => Service;
+export const makeLocal = (): Service => ({
+  publishEntry: Effect.fn("CacheSync.publishEntry")(() => Effect.succeed(Option.none()))
+})
+
 /**
  * Provides the single-tier (no shared step-result store) publication seam.
  *
  * @since 0.1.0
  * @category layers
  */
-export declare const layerLocal: Layer.Layer<CacheSync>;
+export const layerLocal: Layer.Layer<CacheSync> = Layer.succeed(CacheSync)(makeLocal())
+
 /**
  * Builds the publication seam over a shared step-result store — typically
  * `RemoteCacheStore`.
@@ -94,9 +102,20 @@ export declare const layerLocal: Layer.Layer<CacheSync>;
  * @since 0.1.0
  * @category constructors
  */
-export declare const make: (options: {
-    readonly remote: CacheStore.Service;
-}) => Service;
+export const make = (options: { readonly remote: CacheStore.Service }): Service => ({
+  publishEntry: Effect.fn("CacheSync.publishEntry")((entry: CacheStore.CacheEntry) =>
+    // A `Conflict` from the shared tier is not a refusal to report: it means
+    // another machine recorded the key first, which is exactly the
+    // first-writer-wins outcome the shared tier exists to arbitrate. Only a
+    // genuine failure — the tier is down, refused the body, answered with a
+    // status this client cannot classify — is worth journaling.
+    options.remote.put(entry).pipe(
+      Effect.as(Option.none<CacheStore.CacheStoreError>()),
+      Effect.catch((error) => Effect.succeed(Option.some(error)))
+    )
+  )
+})
+
 /**
  * Provides the publication seam over the supplied shared store.
  *
@@ -107,5 +126,6 @@ export declare const make: (options: {
  * @since 0.1.0
  * @category layers
  */
-export declare const layer: <E, R>(remote: Effect.Effect<CacheStore.Service, E, R>) => Layer.Layer<CacheSync, E, R>;
-export {};
+export const layer = <E, R>(
+  remote: Effect.Effect<CacheStore.Service, E, R>
+): Layer.Layer<CacheSync, E, R> => Layer.effect(CacheSync)(Effect.map(remote, (shared) => make({ remote: shared })))

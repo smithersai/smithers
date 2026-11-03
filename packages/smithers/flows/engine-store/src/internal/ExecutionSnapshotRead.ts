@@ -10,7 +10,7 @@ import { RunStatus, RunStoreError } from "@smthrs/run-store/RunStore"
 import { Cause, Effect, Schema } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type { Batch } from "../ExecutionSnapshot.ts"
-import { RunState } from "../RunState.vibe"
+import { RunState } from "../RunState.ts"
 
 /**
  * Non-negative safe integer for timestamps and revisions.

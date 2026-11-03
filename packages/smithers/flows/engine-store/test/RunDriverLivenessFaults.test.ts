@@ -10,7 +10,7 @@ import { Clock, Deferred, Effect, Layer, Logger, Metric, Option, References, Sch
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
-import * as EngineStoreMetrics from "../src/EngineStoreMetrics.vibe"
+import * as EngineStoreMetrics from "../src/EngineStoreMetrics.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
