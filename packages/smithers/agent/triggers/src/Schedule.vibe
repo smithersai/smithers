@@ -8,7 +8,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Cron from "./Cron.ts"
+import * as Cron from "./Cron.vibe"
 import { fromSchemaError, type TriggerError } from "./TriggerError.vibe"
 
 /**

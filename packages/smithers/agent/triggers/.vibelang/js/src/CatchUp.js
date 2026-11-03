@@ -5,6 +5,7 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime";
 import * as Effect from "effect/Effect";
 import * as CronSchedule from "./Cron.js";
 import { TriggerError } from "./TriggerError.js";
@@ -22,7 +23,7 @@ import { TriggerError } from "./TriggerError.js";
  * @category computation
  * @since 0.1.0
  */
-export const occurrences = Effect_1.fnUntraced(function* occurrences(policy, maxCatchUp, lastFiredAt, now, cron) {
+export const occurrences = Effect_1.fnUntraced(runtime.$joinedFrame(function* occurrences(policy, maxCatchUp, lastFiredAt, now, cron) {
     if (!Number.isSafeInteger(maxCatchUp) || maxCatchUp < 0) {
         return yield* Effect_1.fail(new TriggerError({
             code: "catch_up_bound_exceeded",
@@ -50,4 +51,4 @@ export const occurrences = Effect_1.fnUntraced(function* occurrences(policy, max
             message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`
         }))))()
         : Effect_1.succeed(missed); }));
-});
+}));

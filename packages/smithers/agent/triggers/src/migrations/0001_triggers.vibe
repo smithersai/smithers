@@ -14,9 +14,9 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 0.1.0
  */
-export const triggers: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE TABLE IF NOT EXISTS flows_triggers (
+export const triggers: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE TABLE IF NOT EXISTS flows_triggers (
     trigger_id TEXT PRIMARY KEY,
     flow_id TEXT NOT NULL,
     input_json TEXT NOT NULL,
@@ -31,7 +31,7 @@ export const triggers: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effec
     pending_at_ms ${Dialect.integer(sql)},
     active_run_id TEXT
   )`
-  yield* sql`CREATE TABLE IF NOT EXISTS flows_trigger_fires (
+  try sql`CREATE TABLE IF NOT EXISTS flows_trigger_fires (
     trigger_id TEXT NOT NULL,
     occurrence_at_ms ${Dialect.integer(sql)} NOT NULL,
     outcome TEXT,
@@ -40,4 +40,4 @@ export const triggers: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effec
     PRIMARY KEY (trigger_id, occurrence_at_ms),
     FOREIGN KEY (trigger_id) REFERENCES flows_triggers (trigger_id)
   )`
-})
+}

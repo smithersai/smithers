@@ -13,7 +13,6 @@ import type { CredentialRef } from "@smthrs/control/Credential"
 import * as ControlWebhook from "@smthrs/control/WebhookChannel"
 import * as Effect from "effect/Effect"
 import type * as Redacted from "effect/Redacted"
-import * as Schema from "effect/Schema"
 import type * as Channel from "./Channel.vibe"
 import { TriggerError } from "./TriggerError.vibe"
 
@@ -58,7 +57,7 @@ export interface SignatureConfig {
   readonly expected: (
     body: Uint8Array,
     credential: Redacted.Redacted<CredentialRef>
-  ) => Effect.Effect<Uint8Array, TriggerError>
+  ) => Uint8Array!TriggerError
 }
 
 /**
@@ -131,15 +130,14 @@ export const makeSignatureVerifier = (config: SignatureConfig): Channel.Verify =
     const actual = new TextEncoder().encode(supplied)
     // The verifier gets its own copy: nothing it does to these bytes can reach
     // the buffer that is about to be fingerprinted and decoded.
-    return config.expected(ownedCopy(raw.body), credential).pipe(
-      Effect.matchEffect({
+    return config.expected(ownedCopy(raw.body), credential)
+      |> Effect.matchEffect(%, {
         onFailure: (error) => refuse(error),
         onSuccess: (expected) =>
           expected.length > 0 && constantTimeEqual(expected, actual)
             ? Effect.void
             : refuse()
       })
-    )
   })
 }
 
@@ -166,10 +164,10 @@ export interface Config<Payload, Outbound = never> extends Channel.Config<Payloa
  */
 export interface Webhook {
   readonly name: string
-  readonly register: Effect.Effect<void, never, ControlChannels.Channels>
+  readonly register: void!never!ControlChannels.Channels
   readonly ingest: (
     raw: Channel.RawInbound
-  ) => Effect.Effect<Receipt, ControlError | TriggerError, ControlChannels.Channels>
+  ) => Receipt!ControlError | TriggerError!ControlChannels.Channels
 }
 
 const invalidInput = (issue: string): InvalidInput => new InvalidInput({ issue })
@@ -187,9 +185,8 @@ const toControlChannel = <Payload, Outbound>(
     // signature. `Unauthorized` carries no cause, so nothing else survives
     // the crossing.
     verify: (raw, credential) =>
-      config.verify(raw, credential).pipe(
-        Effect.mapError(() => new Unauthorized({ message: `webhook ${config.name} did not verify the request` }))
-      ),
+      config.verify(raw, credential)
+      |> Effect.mapError(%, () => new Unauthorized({ message: `webhook ${config.name} did not verify the request` })),
     map: (payload) => {
       const inbound = config.inbound(payload)
       if ("start" in inbound) {
@@ -199,8 +196,9 @@ const toControlChannel = <Payload, Outbound>(
           input: inbound.start.input
         })
       }
-      return Schema.decodeUnknownEffect(Schema.Json)(inbound.signal.value).pipe(
-        Effect.map(
+      return Schema.decodeUnknownEffect(Schema.Json)(inbound.signal.value)
+        |> Effect.map(
+          %,
           (value) => ({
             _tag: "Signal" as const,
             runId: inbound.signal.runId,
@@ -209,9 +207,8 @@ const toControlChannel = <Payload, Outbound>(
               payload: value
             }
           })
-        ),
-        Effect.mapError((error) => invalidInput(String(error)))
-      )
+        )
+        |> Effect.mapError(%, (error) => invalidInput(String(error)))
     },
     project: (run) => {
       if (config.outbound === undefined) {
@@ -272,20 +269,18 @@ export const make = <Payload, Outbound = never>(
         headers: { ...raw.headers },
         idempotencyKey: raw.idempotencyKey
       }
-      return Effect.gen(function*() {
-        const channels = yield* ControlChannels.Channels
-        return yield* channels.ingest({ channel: config.name, raw: snapshot })
-      }).pipe(
-        Effect.mapError((error) =>
+      return (effect {
+        const channels = try ControlChannels.Channels
+        return try channels.ingest({ channel: config.name, raw: snapshot })
+      })
+        |> Effect.mapError(%, (error) =>
           error instanceof Unauthorized
             ? new TriggerError({
               code: "verification_failed",
               message: `webhook ${config.name} did not verify the request`,
               cause: error
             })
-            : error
-        )
-      )
+            : error)
     }
   }
 }

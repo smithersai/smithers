@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as Initial from "../src/migrations/0001_triggers.ts"
-import * as ReservationLease from "../src/migrations/0002_reservation_lease.ts"
-import * as Heartbeat from "../src/migrations/0003_heartbeat.ts"
+import * as Initial from "../src/migrations/0001_triggers.vibe"
+import * as ReservationLease from "../src/migrations/0002_reservation_lease.vibe"
+import * as Heartbeat from "../src/migrations/0003_heartbeat.vibe"
 import * as FireRunIndex from "../src/migrations/0004_fire_run_index.vibe"
-import * as Migrations from "../src/migrations/index.ts"
+import * as Migrations from "../src/migrations/index.vibe"
 
 // The CommonJS build reads a default import of a sibling module as the whole
 // exports object (`{ default }`), not the Effect, so the migrator received a

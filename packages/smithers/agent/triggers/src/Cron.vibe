@@ -26,10 +26,8 @@
  * @since 0.1.0
  */
 
-import * as Clock from "effect/Clock"
 import * as EffectCron from "effect/Cron"
 import * as Effect from "effect/Effect"
-import * as Result from "effect/Result"
 import * as WallClock from "./internal/WallClock.vibe"
 import { TriggerError } from "./TriggerError.vibe"
 
@@ -53,7 +51,7 @@ const exhausted = (cron: Cron, search: string, cause: unknown): TriggerError =>
     cause
   })
 
-const attempt = <A>(cron: Cron, search: string, find: () => A): Effect.Effect<A, TriggerError> =>
+const attempt = <A>(cron: Cron, search: string, find: () => A): A!TriggerError =>
   Effect.try({ try: find, catch: (cause) => exhausted(cron, search, cause) })
 
 const invalidDate = (date: Date, path: string): TriggerError | undefined =>
@@ -69,7 +67,7 @@ const invalidDate = (date: Date, path: string): TriggerError | undefined =>
  * @category getters
  * @since 0.1.0
  */
-export const next = (cron: Cron, from: Date): Effect.Effect<Date, TriggerError> =>
+export const next = (cron: Cron, from: Date): Date!TriggerError =>
   Effect.suspend(() => {
     const error = invalidDate(from, "from")
     return error === undefined
@@ -83,7 +81,7 @@ export const next = (cron: Cron, from: Date): Effect.Effect<Date, TriggerError> 
  * @category getters
  * @since 0.1.0
  */
-export const previousAtOrBefore = (cron: Cron, at: Date): Effect.Effect<Date, TriggerError> =>
+export const previousAtOrBefore = (cron: Cron, at: Date): Date!TriggerError =>
   Effect.suspend(() => {
     const error = invalidDate(at, "at")
     return error === undefined
@@ -121,7 +119,7 @@ export const occurrencesBetween = (
   from: Date,
   to: Date,
   limit?: number | undefined
-): Effect.Effect<ReadonlyArray<Date>, TriggerError> =>
+): ReadonlyArray<Date>!TriggerError =>
   Effect.suspend(() => {
     const dateError = invalidDate(from, "from") ?? invalidDate(to, "to")
     if (dateError !== undefined) return Effect.fail(dateError)
@@ -148,8 +146,8 @@ export const occurrencesBetween = (
       return occurrences
     })
     if (limit !== undefined) return search
-    return search.pipe(
-      Effect.flatMap((occurrences) =>
+    return search
+      |> Effect.flatMap(%, (occurrences) =>
         occurrences.length > maxOccurrences
           ? Effect.fail(
             new TriggerError({
@@ -157,9 +155,7 @@ export const occurrencesBetween = (
               message: `interval contains more than ${maxOccurrences} occurrences; maxOccurrences is ${maxOccurrences}`
             })
           )
-          : Effect.succeed(occurrences)
-      )
-    )
+          : Effect.succeed(occurrences))
   })
 
 /**
@@ -174,20 +170,17 @@ export const occurrencesBetween = (
  * @category constructors
  * @since 0.1.0
  */
-export const parse = (expression: string, timezone?: string): Effect.Effect<Cron, TriggerError> =>
-  Effect.gen(function*() {
-    const parsed = EffectCron.parse(expression, timezone)
-    if (Result.isFailure(parsed)) {
-      return yield* Effect.fail(
-        new TriggerError({ code: "invalid_cron", message: parsed.failure.message, cause: parsed.failure })
-      )
-    }
-    const cron: Cron = {
-      expression,
-      ...(timezone === undefined ? {} : { timezone }),
-      value: parsed.success
-    }
-    const now = yield* Clock.currentTimeMillis
-    yield* next(cron, new Date(now))
-    return cron
-  })
+export const parse = effect (expression: string, timezone?: string): Cron!TriggerError => {
+  const parsed = EffectCron.parse(expression, timezone)
+  if (Result.isFailure(parsed)) {
+    throw new TriggerError({ code: "invalid_cron", message: parsed.failure.message, cause: parsed.failure })
+  }
+  const cron: Cron = {
+    expression,
+    ...(timezone === undefined ? {} : { timezone }),
+    value: parsed.success
+  }
+  const now = try Clock.currentTimeMillis
+  try next(cron, new Date(now))
+  return cron
+}

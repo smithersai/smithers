@@ -5,8 +5,8 @@
  */
 
 import * as Effect from "effect/Effect"
-import type { Cron } from "./Cron.ts"
-import * as CronSchedule from "./Cron.ts"
+import type { Cron } from "./Cron.vibe"
+import * as CronSchedule from "./Cron.vibe"
 import type { CatchUp as Policy } from "./Schedule.vibe"
 import { TriggerError } from "./TriggerError.vibe"
 

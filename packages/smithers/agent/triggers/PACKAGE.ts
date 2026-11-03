@@ -26,7 +26,7 @@ const securityReview = Smithers.SecurityReview({
         "A verifier or ingest path that reads raw.body or headers after the snapshot is taken, so verified and decoded bytes can differ.",
         "Webhook.ingest reaching Channels.ingest without verify running first, or self-registering an unregistered channel."
       ],
-      paths: ["src/Webhook.ts", "src/Channel.vibe"]
+      paths: ["src/Webhook.vibe", "src/Channel.vibe"]
     },
     {
       id: "webhook-refusal-leak",
@@ -37,7 +37,7 @@ const securityReview = Smithers.SecurityReview({
         "A refusal message that forwards a custom verify or expected() error text instead of the fixed 'did not verify' message.",
         "An Unauthorized or TriggerError returned to the caller whose message or cause includes the CredentialRef or the resolved secret."
       ],
-      paths: ["src/Webhook.ts", "src/TriggerError.vibe"]
+      paths: ["src/Webhook.vibe", "src/TriggerError.vibe"]
     },
     {
       id: "channel-no-authority",
@@ -48,7 +48,7 @@ const securityReview = Smithers.SecurityReview({
         "Inbound or Start/Signal shapes, or the map in toControlChannel, carrying capabilities, envelope, grants, or approval fields into Control.",
         "Signal payload values forwarded to Control without Schema.Json decoding."
       ],
-      paths: ["src/Webhook.ts", "src/Channel.vibe"]
+      paths: ["src/Webhook.vibe", "src/Channel.vibe"]
     },
     {
       id: "scheduler-no-self-approval",
@@ -92,7 +92,7 @@ const securityReview = Smithers.SecurityReview({
         "An unsatisfiable cron that throws a defect instead of unsatisfiable_cron.",
         "A fires page size or cursor from Control that is not range-checked before the store read."
       ],
-      paths: ["src/Cron.ts", "src/CatchUp.vibe", "src/internal/**", "src/DispatchReader.ts"]
+      paths: ["src/Cron.vibe", "src/CatchUp.vibe", "src/internal/**", "src/DispatchReader.vibe"]
     },
     {
       id: "fire-claim-exactly-once",
