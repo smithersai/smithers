@@ -1,3 +1,4 @@
+import * as ProtectedAuthority from "../ProtectedAuthority.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { COMMITMENTS, commitmentLabel } from "../../src/features/issues/lifecycle.ts"
 import { triageOf } from "../../src/features/issues/contract.ts"
@@ -203,7 +204,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         const sql = yield* SqlClient.SqlClient
         return yield* sql.withTransaction(Effect.gen(function* () {
           yield* WriteAuthority.bound
-          if (!(yield* WriteAuthority.admitted(payload.authority))) {
+          if (!(yield* ProtectedAuthority.holds(payload.authority, ["admin", "maintainer"]))) {
             return yield* settled(write, "none", { status: "refused", failure: "sign_in_required" })
           }
           return yield* settled(write, "none", { status: "done", itemNumber: null, githubId: null },

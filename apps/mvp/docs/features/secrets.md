@@ -108,3 +108,7 @@ SECRETS_KEY is a Worker secret Alchemy generates once (`infra/Secrets.ts`, 32 ra
 
 An empty read-only list says **No secrets · Admins add secrets**; an Admin's empty list says **No secrets** beside
 the existing add form. The hint grants no new permission and exposes no values.
+
+Delayed Put/Delete retain deployment-role scope as well as the admitting session and alias. Their final transaction
+locks the person's role-observation row, session and alias, then requires the latest recorded role to remain Admin.
+A live session after demotion writes nothing (`stale`); replay never restores a deleted or replaced value.

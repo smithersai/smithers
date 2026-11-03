@@ -58,7 +58,7 @@ beforeEach(() => reset(runtime))
 test.each(["triage/enable", "triage/pause"] as const)("delayed %s refuses revoked admission and replay", async (op) => {
   const who = await signedIn(runtime, { login: "delayed-maintainer", token: Redacted.make("test-token") })
   await enable()
-  const authority = { personId: who.personId, sessionId: who.sessionId }
+  const authority = { personId: who.personId, sessionId: who.sessionId, scope: { _tag: "Deployment" as const } }
   const payload = op === "triage/enable" ? { op, dailyTokens: 12345, authority } : { op, authority }
   const id = await admit(runtime, { actorId: who.personId, sessionId: who.sessionId, via: "person", payload })
   const before = await settings()
@@ -69,6 +69,30 @@ test.each(["triage/enable", "triage/pause"] as const)("delayed %s refuses revoke
   expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
   expect(await settings()).toEqual(before)
 })
+
+test.each(["triage/enable", "triage/pause"].flatMap((op) => ["deployment", "repository"].map((scope) => [op, scope] as const)))(
+  "queued %s refuses live-session %s demotion", async (op, scope) => {
+    const who = await signedIn(runtime, { login: "demoted-maintainer", token: Redacted.make("test-token") })
+    await sql(runtime, `UPDATE sessions SET role = 'maintainer', role_checked_at = clock_timestamp() WHERE id = '${who.sessionId}'`)
+    await enable()
+    const held = { repoId: REPOSITORY.id, personId: who.personId, role: "maintainer" as const }
+    if (scope === "repository") await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${REPOSITORY.id}', '${who.personId}', 'maintainer', now())`)
+    const authority = { personId: who.personId, sessionId: who.sessionId,
+      scope: scope === "deployment" ? { _tag: "Deployment" as const } : { _tag: "Repo" as const, held } }
+    const payload = op === "triage/enable" ? { op: "triage/enable" as const, dailyTokens: 12345, authority } : { op: "triage/pause" as const, authority }
+    const id = await admit(runtime, { actorId: who.personId, sessionId: who.sessionId, via: "person", payload })
+    const before = await settings()
+    await sql(runtime, scope === "deployment"
+      ? `UPDATE sessions SET role = 'member', role_checked_at = clock_timestamp() WHERE id = '${who.sessionId}'`
+      : `UPDATE github_repo_roles SET role = 'member', checked_at = clock_timestamp() WHERE person_id = '${who.personId}'`)
+    const host = await services(runtime, repository())
+    const send = Write.steps(host.services).send({ writeId: id })
+    expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
+    expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
+    expect(await settings()).toEqual(before)
+  },
+)
 
 const REPO = `${REPOSITORY.owner}/${REPOSITORY.name}`
 
@@ -901,7 +925,7 @@ describe("a person's triage", () => {
   /** Maya, signed in as `role` with a GitHub token the scripted GitHub takes. */
   const maya = async (github: ReturnType<typeof repository>, role: Actor.Actor["role"] = "member") => {
     const token = github.userToken("maya")
-    const person = await signedIn(runtime, { login: "maya", token })
+    const person = await signedIn(runtime, { login: "maya", token, role })
     return { ...person, actor: { ...member(person.personId, person.sessionId), role, login: "maya" } satisfies Actor.Actor }
   }
 

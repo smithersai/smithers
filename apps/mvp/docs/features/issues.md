@@ -397,3 +397,8 @@ Failed authority reads persist their content-free refusal; the list shows the Gi
 A reload can restore both the pre-admission recovery row and its admitted outbox row.
 The outbox receipt keeps that write Requested; a real server refusal or failure still
 shows Not sent. See [write input receipts](../decisions/0123-write-input-receipts.md).
+
+Delayed triage Enable/Pause retain the admitting session/alias and the role's scope: deployment role or repository
+role row. The final settings transaction locks and checks that role and sign-in identity, requiring Maintainer or
+Admin there. A live session after recorded demotion is refused without changing settings. Legacy protected payloads
+with no role scope fail closed. GitHub writes that use a token keep their existing token and provider checks.

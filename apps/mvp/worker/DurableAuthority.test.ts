@@ -16,7 +16,7 @@ test.each(["put", "delete", "link", "secret put", "secret delete"].flatMap((op) 
     VALUES ('${sessionId}', '${personId}', '${sessionId}', 'admin', now(), now() + interval '1 day')`)
   const alias = crypto.randomUUID()
   await sql(`INSERT INTO host_sessions (id, token_digest, parent_id, host) VALUES ('${alias}', '${alias}', '${sessionId}', 'alias.example.test')`)
-  const authority = { personId, sessionId, alias }
+  const authority = { personId, sessionId, alias, scope: { _tag: "Deployment" as const } }
   const kept = crypto.randomUUID()
   const late = crypto.randomUUID()
   const invocationKey = crypto.randomUUID()
@@ -44,4 +44,23 @@ test.each(["put", "delete", "link", "secret put", "secret delete"].flatMap((op) 
   expect(await runtime.runPromise(effect)).toBe("stale")
   expect(await sql(`SELECT id FROM personal_models WHERE person_id = '${personId}'`)).toEqual([{ id: kept }])
   expect(await sql(`SELECT name FROM secrets WHERE repo_id = '${personId}'`)).toEqual([{ name: "KEY" }])
+})
+
+
+test.each(["put", "delete"] as const)("secret %s queued before live-session demotion is refused", async (op) => {
+  const personId = crypto.randomUUID()
+  const sessionId = crypto.randomUUID()
+  await sql(`INSERT INTO people (id, github_id, github_login) VALUES ('${personId}', ${Math.floor(Math.random() * 1e12)}, 'demoted')`)
+  await sql(`INSERT INTO sessions (id, person_id, token_digest, role, role_checked_at, expires_at)
+    VALUES ('${sessionId}', '${personId}', '${sessionId}', 'admin', now(), now() + interval '1 day')`)
+  const authority = { personId, sessionId, scope: { _tag: "Deployment" as const } }
+  const sealed = { ciphertext: "before", nonce: "nonce", keyVersion: 1 }
+  await runtime.runPromise(Secrets.put({ repoId: personId, name: "KEY", ...sealed, hosts: ["example.test"], methods: undefined,
+    actorId: personId, invocationKey: crypto.randomUUID() }))
+  const write = { repoId: personId, name: "KEY", actorId: personId, invocationKey: crypto.randomUUID(), authority }
+  const queued = op === "put" ? Secrets.put({ ...write, ...sealed, ciphertext: "after", hosts: ["example.test"], methods: undefined }) : Secrets.remove(write)
+  await sql(`UPDATE sessions SET role = 'member', role_checked_at = clock_timestamp() WHERE id = '${sessionId}'`)
+  expect(await runtime.runPromise(queued)).toBe("stale")
+  expect(await runtime.runPromise(queued)).toBe("stale")
+  expect(await sql(`SELECT ciphertext FROM secrets WHERE repo_id = '${personId}'`)).toEqual([{ ciphertext: "before" }])
 })

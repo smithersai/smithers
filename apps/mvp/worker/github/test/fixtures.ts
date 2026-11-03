@@ -53,7 +53,7 @@ export const keys = () => Effect.runPromise(SessionKeys.make(Redacted.make(SECRE
 /** A person signed in with a live session whose sealed GitHub token is `token`, expiring `expiresInMs` from now. */
 export const signedIn = async (
   runtime: Runtime,
-  options: { readonly login: string; readonly token: Redacted.Redacted<string>; readonly expiresInMs?: number | null },
+  options: { readonly login: string; readonly token: Redacted.Redacted<string>; readonly expiresInMs?: number | null; readonly role?: Role | null },
 ) => {
   const sessionKeys = await keys()
   const sessionId = crypto.randomUUID()
@@ -70,7 +70,7 @@ export const signedIn = async (
       id: sessionId,
       tokenDigest: digestSync(sessionId),
       personId,
-      role: "member",
+      role: options.role === undefined ? "member" : options.role,
       roleGeneration: yield* SessionStore.roleObservation,
       access,
       accessExpiresAt: options.expiresInMs === null
@@ -105,7 +105,7 @@ export const admit = (
       sessionId: write.sessionId,
       via: write.via,
       payload: write.payload.op === "triage/enable" || write.payload.op === "triage/pause"
-        ? { authority: write.sessionId === null ? null : { personId: write.actorId, sessionId: write.sessionId }, ...write.payload }
+        ? { authority: write.sessionId === null ? null : { personId: write.actorId, sessionId: write.sessionId, scope: { _tag: "Deployment" } }, ...write.payload }
         : write.payload,
       payloadHash: digestSync(JSON.stringify(write.payload)),
     })

@@ -652,8 +652,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             }
           }
           const plain = payloadOf(write)
-          const payload = plain.op === "triage/enable" || plain.op === "triage/pause"
-            ? { ...plain, authority: WriteAuthority.sessionOf(who) ?? null } : plain
           const payloadHash = digestSync(JSON.stringify({ via, ...plain }))
           const insert = (held: Option.Option<RepoRoles.Held>) =>
             Store.insertWrite({
@@ -662,7 +660,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               actorId: who.subject.id,
               sessionId: via === "person" ? who.session ?? null : null,
               via,
-              payload,
+              payload: plain.op === "triage/enable" || plain.op === "triage/pause"
+                ? { ...plain, authority: WriteAuthority.protectedOf(who, held) } : plain,
               payloadHash,
             }, Option.isSome(held) ? RepoRoles.holds(held.value) : undefined).pipe(Effect.provide(database))
           let inserted = yield* insert(resolved.success.held)

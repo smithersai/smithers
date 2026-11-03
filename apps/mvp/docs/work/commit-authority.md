@@ -234,3 +234,16 @@ Red: `/tmp/retro-repair-1-red-mini.log`, 2 failed, 60 filtered skips. Both exact
 `outcome: superseded` and received `outcome: set`, at Runners.test.ts:690.
 
 Green: `/tmp/retro-repair-1-green.log`, Runners 62 passed, 0 skipped, farm command exit 0.
+
+### Astra repair 2 — delayed privileges
+
+Secrets retain deployment scope and require Admin at the final transaction. Triage retains the repository role row
+(or explicit deployment scope) and requires Maintainer or Admin there. Checks lock the person's role-observation
+serialization row or repository role row, and the admitting session/alias; replay returns its existing receipt.
+Missing protected scope fails closed. Library entry: existing Effect SQL, SessionStore.latestRole and RepoRoles.holds.
+Red: `/tmp/retro-repair-2-red.log`, 6 failed, 93 filtered skips. Secrets expected `stale`, received `replace`/`deleted`
+at DurableAuthority.test.ts:72; deployment and repository triage expected `refused`, received `done` at Triage.test.ts:91.
+
+Green: `/tmp/retro-repair-2-green-final.log`, DurableAuthority, Triage and Secrets 135 passed, 0 skipped.
+The first broad run exposed a fixture that claimed Maintainer in the actor but stored Member in its session;
+the fixture now records the same role in both. The final run exercises the real retained privilege.

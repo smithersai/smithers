@@ -1,3 +1,4 @@
+import * as ProtectedAuthority from "../ProtectedAuthority.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { Data, Effect } from "effect"
 import { SqlClient } from "effect/sql"
@@ -45,7 +46,7 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* WriteAuthority.bound
       if (yield* repeated(write.invocationKey)) return "repeat" as const
-      if (write.authority !== undefined && !(yield* WriteAuthority.admitted(write.authority))) return "stale" as const
+      if (write.authority !== undefined && !(yield* ProtectedAuthority.holds(write.authority, ["admin"]))) return "stale" as const
       const [row] = yield* sql<{ readonly inserted: boolean }>`
         INSERT INTO secrets (repo_id, name, ciphertext, nonce, key_version, hosts, methods, updated_by, updated_at)
         VALUES (${write.repoId}, ${write.name}, ${write.ciphertext}, ${write.nonce}, ${write.keyVersion},
@@ -78,7 +79,7 @@ export const remove = (write: {
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* WriteAuthority.bound
       if (yield* repeated(write.invocationKey)) return "repeat" as const
-      if (write.authority !== undefined && !(yield* WriteAuthority.admitted(write.authority))) return "stale" as const
+      if (write.authority !== undefined && !(yield* ProtectedAuthority.holds(write.authority, ["admin"]))) return "stale" as const
       const deleted = yield* sql`
         DELETE FROM secrets WHERE repo_id = ${write.repoId} AND name = ${write.name} RETURNING name`
       yield* sql`

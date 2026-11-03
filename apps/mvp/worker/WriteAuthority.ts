@@ -1,12 +1,20 @@
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Actor } from "./Actor.ts"
+import { ROLES } from "../src/features/auth/contract.ts"
+import type * as RepoRoles from "./github/RepoRoles.ts"
 
 /** The sign-in authority retained by a write, including an alias when it came through one. */
 export const Session = Schema.Struct({
   personId: Schema.String,
   sessionId: Schema.String,
   alias: Schema.optional(Schema.String),
+  // Missing on legacy protected payloads: those fail closed rather than guessing the role's scope.
+  scope: Schema.optional(Schema.Union([
+    Schema.TaggedStruct("Deployment", {}),
+    Schema.TaggedStruct("Repo", { held: Schema.Struct({ repoId: Schema.String, personId: Schema.String,
+      role: Schema.NullOr(Schema.Literals(ROLES)), checkedAt: Schema.optional(Schema.String) }) }),
+  ])),
 })
 export type Session = typeof Session.Type
 
@@ -52,3 +60,11 @@ export const bound = Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
 export const Admission = Schema.optional(Schema.NullOr(Session))
 export const admitted = (authority: Session | null | undefined) =>
   authority === undefined ? Effect.succeed(false) : holds(authority ?? undefined)
+
+/** Retain the scope that supplied a protected write's role, alongside its sign-in identity. */
+export const protectedOf = (actor: Actor, held: Option.Option<RepoRoles.Held> = Option.none()): Session | null => {
+  const session = sessionOf(actor)
+  return session === undefined ? null : { ...session,
+    scope: Option.isSome(held) ? { _tag: "Repo", held: held.value } : { _tag: "Deployment" } }
+}
+
