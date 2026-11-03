@@ -19,6 +19,12 @@ if (!(process.env.NODE_OPTIONS ?? "").includes(VIBELANG_LOADER)) {
 // The dev server on this machine, on whatever port: its certificate may be self-signed (dev/https.ts).
 const devCertificate = onThisMachine(baseURL)
 
+// Node's switch for skipping TLS checks reaches every request of every worker, so a run off this machine refuses it.
+if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0") {
+  if (!devCertificate) throw new Error("NODE_TLS_REJECT_UNAUTHORIZED=0 turns off TLS checks: refusing to run against a deployment")
+  delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+}
+
 // Every test records its page at the size it renders, a laptop's window, 1:1: `pnpm e2e:gifs` never zooms or crops it
 // (Will, 2026-10-20: "video is too zoomed in"). e2e/devices.ts opens each device at the same size.
 const viewport = { width: 1280, height: 800 }
@@ -69,7 +75,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     // A machine whose browsers don't trust its dev certificate, such as one without mkcert, made a self-signed one
     // (docs/infrastructure.md#https-and-http2). The flag, not only `ignoreHTTPSErrors`, lets the service worker
-    // register over it. A deployment's certificate is always checked.
+    // register over it. Off this machine, the project checks every certificate.
     ignoreHTTPSErrors: devCertificate,
     launchOptions: { args: devCertificate ? ["--ignore-certificate-errors"] : [] },
   },
@@ -89,5 +95,5 @@ export default defineConfig({
     }),
   webServer: process.env.BASE_URL
     ? undefined
-    : { command: "pnpm dev", url: baseURL, ignoreHTTPSErrors: true, reuseExistingServer: true, timeout: 120_000 },
+    : { command: "pnpm dev", url: baseURL, ignoreHTTPSErrors: devCertificate, reuseExistingServer: true, timeout: 120_000 },
 })

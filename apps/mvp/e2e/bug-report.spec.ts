@@ -3,7 +3,7 @@ import { BUG_REPORTS_ROUTE } from "../src/features/bugs/contract"
 import type { BugReport } from "../src/features/bugs/schema"
 import { expect, test } from "./fixtures"
 import { openComposer } from "./composer"
-import { baseURL, me, onThisMachine, partly, requires, target } from "./target"
+import { baseURL, me, partly, requires, target } from "./target"
 
 // Bug reports, end to end (docs/features/bugs.md): the real app, its engine worker, the bug plugin, ChatApi, Postgres
 // and Electric. The person types `/bug`, writes what happened in the form and sends it; the report is Sent once its
@@ -76,7 +76,7 @@ test("bug report: /bug opens the form, Send files it with the page and the tab's
         ? page.request
         : await playwright.request.newContext({
           baseURL,
-          ignoreHTTPSErrors: onThisMachine(baseURL),
+          ignoreHTTPSErrors: false,
           storageState: { cookies: [], origins: [] },
           extraHTTPHeaders: { authorization: `Bearer ${process.env.E2E_BUG_READ_TOKEN}` },
         })

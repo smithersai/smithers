@@ -32,6 +32,16 @@ test("runs every spec whatever the last did, a line each, and fails on any failu
   expect(lines.at(-1)).toBe(`deploy smoke passed: ${PROJECTS.length} runs`)
 })
 
+test("the command refuses TLS checks turned off before any request with the Neon key", async () => {
+  const errors: Array<string> = []
+  let asked = 0
+  const fetch = (async () => { asked++; return new Response("{}") }) as unknown as typeof globalThis.fetch
+  const code = await run({ NODE_TLS_REJECT_UNAUTHORIZED: "0", APP_DOMAIN: "x.test", NEON_API_KEY: "k", NEON_ORG_ID: "o" }, () => {}, (line) => errors.push(line), fetch)
+  expect(code).toBe(2)
+  expect(asked).toBe(0)
+  expect(errors.join()).toContain("TLS checks are turned off")
+})
+
 test("the command needs production's environment, finds the project, and hands both to each spec", async () => {
   const errors: Array<string> = []
   const err = (line: string) => void errors.push(line)

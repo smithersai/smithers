@@ -2,6 +2,7 @@ import { expect } from "@playwright/test"
 import { open, readdir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { refuseUncheckedTls } from "../ops/tls.mjs"
 import { baseURL, guard, target } from "./target"
 
 // ChatApi's records, for the e2e tests that read what it recorded (docs/observability.md): its own, the remote flows'
@@ -129,6 +130,8 @@ export class CloudflareTail {
     if (token === "" || account === "") throw new Error("A deployment's logs need CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID")
     const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" }
     const scripts = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts`
+    // This also runs under Vitest (e2e/logs.test.ts), which the Playwright config's refusal doesn't reach.
+    refuseUncheckedTls(process.env)
     const script = env.E2E_CHATAPI_SCRIPT ?? await CloudflareTail.script(scripts, headers, env.E2E_STAGE ?? "prod")
     const api = `${scripts}/${script}/tails`
     // Filters are a create-tail HTTP parameter. The WebSocket accepts the debug control message, not filters.

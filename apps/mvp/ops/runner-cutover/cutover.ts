@@ -29,6 +29,7 @@ import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../../db/Database.ts"
 import { deployedBuild, neonUri, scrub, secretsOf } from "../feed-barrier/confirm.ts"
+import { refuseUncheckedTls } from "../tls.mjs"
 
 /** The schema the flow engine keeps its runs in: `ExecutionHost.ENGINE_SCHEMA`, whose module needs a Worker to load. */
 export const ENGINE_SCHEMA = "smithers_flows"
@@ -103,6 +104,7 @@ export const run = async (
   let url: Redacted.Redacted<string> | undefined
   const secrets = () => [...secretsOf(env, url), ...(env.CLOUDFLARE_API_TOKEN === undefined ? [] : [env.CLOUDFLARE_API_TOKEN])]
   try {
+    refuseUncheckedTls(env)
     const { values } = parseArgs({
       args: [...argv],
       options: {

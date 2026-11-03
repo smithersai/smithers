@@ -42,6 +42,7 @@ import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { parseArgs } from "node:util"
 import { cleanRecord } from "./scrub.mjs"
+import { refuseUncheckedTls } from "../tls.mjs"
 
 /** People, never an author: Will's GitHub login. */
 export const PEOPLE = ["roninjin10"]
@@ -237,6 +238,7 @@ export const clientOf = ({
       requests.push({ method, url: full, headers: shown, ...(body === undefined ? {} : { body }) })
       return { status: 0, answer: dryAnswer, headers: new Headers() }
     }
+    refuseUncheckedTls(process.env)
     const pacer = method === "GET" ? undefined : pacers[pace ?? (use === "github" ? "github" : "smithers")]
     let backoff = 60_000
     for (let attempt = 1; ; attempt++) {
@@ -455,6 +457,7 @@ export const privateReposOf = (path) =>
   path !== undefined && existsSync(path) ? readFileSync(path, "utf8").split("\n").map((line) => line.trim()).filter(Boolean) : []
 
 const main = async () => {
+  refuseUncheckedTls(process.env)
   const [command, ...rest] = process.argv.slice(2)
   const { values } = parseArgs({
     args: rest,

@@ -179,7 +179,7 @@ test("agent runner: an external agent's TODO publishes a pull request, watched l
 
     await step("Another browser opens the run afresh and replays the same transcript, with the run's digest", async () => {
       const count = await panel.getAttribute("data-events")
-      const second = await browser.newContext({ storageState: await page.context().storageState(), ignoreHTTPSErrors: true })
+      const second = await browser.newContext({ storageState: await page.context().storageState(), ignoreHTTPSErrors: test.info().project.use.ignoreHTTPSErrors })
       try {
         const other = await second.newPage()
         await other.goto(page.url())

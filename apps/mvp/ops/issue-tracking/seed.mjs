@@ -13,7 +13,9 @@ import { createHash } from "node:crypto"
 import { appendFileSync, existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { parseArgs } from "node:util"
+import { refuseUncheckedTls } from "../tls.mjs"
 
+refuseUncheckedTls(process.env)
 const { values } = parseArgs({
   options: {
     repo: { type: "string" },

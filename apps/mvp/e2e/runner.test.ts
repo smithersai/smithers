@@ -26,4 +26,8 @@ describe("a spec's runner", () => {
     expect(env).not.toHaveProperty("NODE_PATH")
     expect(env).not.toHaveProperty("PLAYWRIGHT_TEST")
   })
+
+  it("off this machine, never hands on the switch that skips TLS checks", () => {
+    expect(runnerEnv({ NODE_TLS_REJECT_UNAUTHORIZED: "0" }, "https://smithers.sh").NODE_TLS_REJECT_UNAUTHORIZED).toBe("1")
+  })
 })

@@ -10,6 +10,7 @@ import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { projectNamePattern, scrub, secretsOf } from "../feed-barrier/confirm.ts"
+import { refuseUncheckedTls } from "../tls.mjs"
 
 /** What the smoke runs, in order. Short and fast: each proves a failure that reached production once. */
 export const SPECS: ReadonlyArray<string> = [
@@ -97,6 +98,7 @@ export const run = async (
   specRunner: (env: NodeJS.ProcessEnv, directory: string) => (spec: string, project: string) => ReturnType<ReturnType<typeof viaProd>> = viaProd,
 ): Promise<number> => {
   try {
+    refuseUncheckedTls(env)
     if (env.APP_DOMAIN === undefined || env.APP_DOMAIN === "") throw new Error("APP_DOMAIN is not set: run under mvp-prod-env")
     if (env.NEON_API_KEY === undefined || env.NEON_API_KEY === "") throw new Error("NEON_API_KEY is not set: run under mvp-prod-env")
     if (env.NEON_ORG_ID === undefined || env.NEON_ORG_ID === "") throw new Error("NEON_ORG_ID is not set: run under mvp-prod-env")

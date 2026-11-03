@@ -18,6 +18,7 @@ import { parseArgs } from "node:util"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../../db/Database.ts"
+import { refuseUncheckedTls } from "../tls.mjs"
 
 /** A barrier's id: the release's first 12 characters unless named. */
 export const idOf = (release: string, id?: string) => (id ?? `r-${release.slice(0, 12)}`).toLowerCase()
@@ -154,6 +155,7 @@ export const run = async (
 ): Promise<number> => {
   let url: Redacted.Redacted<string> | undefined
   try {
+    refuseUncheckedTls(env)
     const { values } = parseArgs({
       args: [...argv],
       options: {

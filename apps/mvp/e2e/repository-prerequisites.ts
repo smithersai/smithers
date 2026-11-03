@@ -1,4 +1,4 @@
-import { expect, request as requests, type APIRequestContext } from "@playwright/test"
+import { expect, request as requests, test, type APIRequestContext } from "@playwright/test"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
 import { baseURL, guard, sessionFiles, target } from "./target"
 
@@ -7,7 +7,7 @@ import { baseURL, guard, sessionFiles, target } from "./target"
 export const repositoryAbout = async (kind: "absentRepository" | "unsyncedRepository") => {
   guard(kind)
   const repository = process.env[kind === "absentRepository" ? "E2E_ABSENT_REPOSITORY" : "E2E_UNSYNCED_REPOSITORY"]!
-  const authenticated = await requests.newContext({ baseURL, ignoreHTTPSErrors: target === "local",
+  const authenticated = await requests.newContext({ baseURL, ignoreHTTPSErrors: test.info().project.use.ignoreHTTPSErrors,
     ...(target === "deployment" ? { storageState: sessionFiles(baseURL).session } : {}) })
   try {
     const session = await authenticated.get("/api/auth/session")
@@ -23,7 +23,7 @@ export const repositoryAbout = async (kind: "absentRepository" | "unsyncedReposi
 
 /** Complete a real clone before testing tree-to-file redirects, including the signed-out variant. */
 export const mirroredFile = async (repository: string, path: string) => {
-  const authenticated = await requests.newContext({ baseURL, ignoreHTTPSErrors: target === "local",
+  const authenticated = await requests.newContext({ baseURL, ignoreHTTPSErrors: test.info().project.use.ignoreHTTPSErrors,
     ...(target === "deployment" ? { storageState: sessionFiles(baseURL).session } : {}) })
   try {
     const [owner, name] = repository.split("/")

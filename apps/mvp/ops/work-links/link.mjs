@@ -15,6 +15,11 @@ import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { parseArgs } from "node:util"
 
+/** Throws if TLS checks are off. Inlined from ops/tls.mjs: this file has no dependencies. */
+const refuseUncheckedTls = (env) => {
+  if (env.NODE_TLS_REJECT_UNAUTHORIZED === "0") throw new Error("TLS checks are turned off in this environment: refusing to run")
+}
+
 /** The request body for the options, or an error naming what's missing. */
 export const bodyOf = (values, read = (path) => readFileSync(path, "utf8"), now = () => new Date().toISOString()) => {
   if (values.json !== undefined) return JSON.parse(read(values.json))
@@ -28,6 +33,7 @@ export const bodyOf = (values, read = (path) => readFileSync(path, "utf8"), now 
 
 /** Posts `body` to issue `issue` of `repo` at `origin` with `token`; resolves `{ status, answer }`. */
 export const post = async ({ origin, repo, issue, token, body, fetch = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) => {
+  refuseUncheckedTls(process.env)
   const [owner, name] = repo.split("/")
   const url = `${origin}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues/${Number(issue)}/links`
   let wait = 5000
@@ -46,6 +52,7 @@ export const post = async ({ origin, repo, issue, token, body, fetch = globalThi
 }
 
 const main = async () => {
+  refuseUncheckedTls(process.env)
   const { values } = parseArgs({
     options: {
       origin: { type: "string", default: "https://smithers.sh" },

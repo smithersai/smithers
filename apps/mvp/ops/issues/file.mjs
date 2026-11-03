@@ -12,6 +12,7 @@
 // file is lost. Pacing, rate limits, the scrub and the identity checks are track.mjs's.
 import { appendFileSync, existsSync, readFileSync } from "node:fs"
 import { parseArgs } from "node:util"
+import { refuseUncheckedTls } from "../tls.mjs"
 import { applyLabels, attach, bodyWithMarker, clientOf, ensureIssue, identityOf, markerOf, postLinks, privateReposOf, Refused, repoOf, scrubbed, shapeReaderOf, verifyIdentity } from "./track.mjs"
 
 /** The state file's stages per key: `{ number, stages: Set }`. */
@@ -110,6 +111,7 @@ export const fileAll = async (client, rows, { state, record, limit = Infinity, o
 }
 
 const main = async () => {
+  refuseUncheckedTls(process.env)
   const { values } = parseArgs({
     options: {
       plan: { type: "string" },

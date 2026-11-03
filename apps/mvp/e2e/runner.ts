@@ -32,9 +32,9 @@ const adminWrite = async (api: APIRequestContext, repo: string, path: string, me
  * NODE_OPTIONS registers VibeLang's loader (playwright.config.ts), which every node the runner starts, its agents
  * included, would then load from their checkout and fail on ("Cannot find package 'vibelang'").
  */
-export const runnerEnv = (env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => {
+export const runnerEnv = (env: NodeJS.ProcessEnv = process.env, url = baseURL): NodeJS.ProcessEnv => {
   const { NODE_OPTIONS: _options, NODE_PATH: _path, PLAYWRIGHT_TEST: _test, TEST_WORKER_INDEX: _worker, TEST_PARALLEL_INDEX: _parallel, ...rest } = env
-  return { ...rest, NODE_TLS_REJECT_UNAUTHORIZED: new URL(baseURL).hostname === "localhost" ? "0" : "1" }
+  return { ...rest, NODE_TLS_REJECT_UNAUTHORIZED: new URL(url).hostname === "localhost" ? "0" : "1" }
 }
 
 /** A runner this spec started for `repo`, and the coding agent it serves. */
@@ -78,7 +78,7 @@ export const startRunner = async (
   const name = `e2e-${word}`
   const output: Array<Buffer> = []
   const agentErrors = join(state, "agent.stderr")
-  const api = await requests.newContext({ baseURL, storageState: await page.context().storageState(), ignoreHTTPSErrors: true })
+  const api = await requests.newContext({ baseURL, storageState: await page.context().storageState(), ignoreHTTPSErrors: test.info().project.use.ignoreHTTPSErrors })
   let runner: ChildProcess | undefined
   // Whatever ends this worker, the runner ends with it: alive with no one reading it, it would claim another test's job
   // and die on its first log line, holding that job for the agent's hours.

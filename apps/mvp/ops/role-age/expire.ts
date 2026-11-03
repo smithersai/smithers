@@ -13,6 +13,7 @@ import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../../db/Database.ts"
 import { neonUri, scrub, secretsOf } from "../feed-barrier/confirm.ts"
+import { refuseUncheckedTls } from "../tls.mjs"
 
 /**
  * How old the row becomes: past worker/github/RepoRoles.ts's five minute life. Its number is written out because importing
@@ -50,6 +51,7 @@ export const run = async (
 ): Promise<number> => {
   let url: Redacted.Redacted<string> | undefined
   try {
+    refuseUncheckedTls(env)
     const { values } = parseArgs({
       args: [...argv],
       options: {
