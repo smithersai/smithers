@@ -6,7 +6,7 @@
 
 import { ContextPreflight } from "@smthrs/rpc"
 import { z } from "zod"
-import { ResolveFailed } from "../ModelHostError.ts"
+import { ResolveFailed } from "../ModelHostError.vibe"
 
 const MAX_RECORD_BYTES = 2 * 1024 * 1024
 const HeaderSchema = ContextPreflight.ContextPreflightInputSchema.omit({ recent: true, candidates: true })

@@ -5,8 +5,8 @@ import { describe, expect, test, vi } from "vitest"
 import { inertCallbackTransport } from "../src/CallbackTransport.ts"
 import type { CallbackTransportObserver } from "../src/CallbackTransport.ts"
 import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
-import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
-import { runModelTurn } from "../src/ModelTurnHost.ts"
+import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.vibe"
+import { runModelTurn } from "../src/ModelTurnHost.vibe"
 import { createHostDiagnostics } from "./diagnostics.ts"
 
 /** Collects the record lines one recorder writes. */

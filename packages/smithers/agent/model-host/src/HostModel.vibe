@@ -12,8 +12,8 @@
 
 import type { Model } from "@smthrs/model"
 import { ConfiguredModel } from "@smthrs/rpc"
-import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { type HostModelRoute, toModel } from "./ConfiguredModelRoute.ts"
+import { Config, Context, Effect, Layer, Redacted, Schema } from "effect"
+import { type HostModelRoute, toModel } from "./ConfiguredModelRoute.vibe"
 
 /**
  * A configured-model record without its name: what `layerConfig` reads.
@@ -118,28 +118,33 @@ export class HostModel extends Context.Service<HostModel, {
   static readonly make = (
     record: HostModelRecord,
     options: HostModelOptions = {}
-  ): Effect.Effect<HostModel["Service"], HostModelUnusable> =>
-    Effect.gen(function*() {
-      const keyName = ConfiguredModel.modelCredentialEnvName(record.credential)
-      const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`
-      const apiKey = yield* Config.option(Config.Redacted(keyName))
-      const origin = yield* Config.option(Config.String(originName))
-      const planned = ConfiguredModel.planModelBinding(
-        record,
-        ConfiguredModel.hostModelCredentials({
-          [keyName]: Option.match(apiKey, { onNone: () => undefined, onSome: Redacted.value }),
-          [originName]: Option.getOrUndefined(origin)
-        }),
-        { kind: "generation" }
+  ): HostModel["Service"]!HostModelUnusable =>
+    (effect {
+      const keyName = try Effect.orDie(
+        Effect.try({ try: () => ConfiguredModel.modelCredentialEnvName(record.credential), catch: (error) => error })
       )
-      if (!planned.ok) return yield* new HostModelUnusable({ reason: planned.failure.code })
+      const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`
+      const apiKey = try Config.option(Config.Redacted(keyName))
+      const origin = try Config.option(Config.String(originName))
+      const planned = try Effect.orDie(Effect.try({
+        try: () =>
+          ConfiguredModel.planModelBinding(
+            record,
+            ConfiguredModel.hostModelCredentials({
+              [keyName]: Option.match(apiKey, { onNone: () => undefined, onSome: Redacted.value }),
+              [originName]: Option.getOrUndefined(origin)
+            }),
+            { kind: "generation" }
+          ),
+        catch: (error) => error
+      }))
+      if (!planned.ok) throw new HostModelUnusable({ reason: planned.failure.code })
       // The planner refuses a record whose key is missing, so a usable plan has one.
       const key = Option.getOrThrow(apiKey)
-      const { model, route } = yield* Effect.orDie(toModel(planned.plan, key, { fetch: options.fetch }))
+      const { model, route } = try Effect.orDie(toModel(planned.plan, key, { fetch: options.fetch }))
       return HostModel.of({ modelId: planned.plan.modelId, model, route })
-    }).pipe(
-      Effect.catchTag("ConfigError", () => Effect.fail(new HostModelUnusable({ reason: "config" })))
-    )
+    })
+    |> Effect.catchTag(%, "ConfigError", () => Effect.fail(new HostModelUnusable({ reason: "config" })))
 
   /**
    * Provides the model a configured-model record names. The record is JSON
@@ -156,22 +161,28 @@ export class HostModel extends Context.Service<HostModel, {
     fallback?: HostModelRecord,
     options: HostModelOptions = {}
   ): Layer.Layer<HostModel, Config.ConfigError> =>
-    Layer.unwrap(Effect.gen(function*() {
+    Layer.unwrap(effect {
       const configured = Config.schema(RecordJson, name)
-      const record = yield* (fallback === undefined ? configured : configured.pipe(Config.withDefault(fallback)))
-      const keyName = ConfiguredModel.modelCredentialEnvName(record.credential)
-      const apiKey = yield* Config.Redacted(keyName)
-      const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`
-      const origin = yield* Config.option(Config.String(originName))
-      const planned = ConfiguredModel.planModelBinding(
-        record,
-        ConfiguredModel.hostModelCredentials({
-          [keyName]: Redacted.value(apiKey),
-          [originName]: Option.getOrUndefined(origin)
-        }),
-        { kind: "generation" }
+      const record = try (fallback === undefined ? configured : configured.pipe(Config.withDefault(fallback)))
+      const keyName = try Effect.orDie(
+        Effect.try({ try: () => ConfiguredModel.modelCredentialEnvName(record.credential), catch: (error) => error })
       )
-      if (!planned.ok) return yield* Effect.die(new Error(`${name} is not usable: ${JSON.stringify(planned.failure)}`))
+      const apiKey = try Config.Redacted(keyName)
+      const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`
+      const origin = try Config.option(Config.String(originName))
+      const planned = try Effect.orDie(Effect.try({
+        try: () =>
+          ConfiguredModel.planModelBinding(
+            record,
+            ConfiguredModel.hostModelCredentials({
+              [keyName]: Redacted.value(apiKey),
+              [originName]: Option.getOrUndefined(origin)
+            }),
+            { kind: "generation" }
+          ),
+        catch: (error) => error
+      }))
+      if (!planned.ok) return try Effect.die(new Error(`${name} is not usable: ${JSON.stringify(planned.failure)}`))
       return HostModel.layer(planned.plan, apiKey, options)
-    }))
+    })
 }

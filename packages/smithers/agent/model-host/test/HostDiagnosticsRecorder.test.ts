@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
-import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
+import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.vibe"
 import { createHostDiagnostics } from "./diagnostics.ts"
 
 const collector = () => {

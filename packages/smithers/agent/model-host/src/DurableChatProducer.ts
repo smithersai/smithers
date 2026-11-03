@@ -15,12 +15,12 @@ import type {
   ObservedCallbackTransport
 } from "./CallbackTransport.ts"
 import { runContextPreflight } from "./ContextPreflight.ts"
-import { createHostDiagnostics } from "./HostDiagnostics.ts"
-import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.ts"
+import { createHostDiagnostics } from "./HostDiagnostics.vibe"
+import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.vibe"
 import { apiCaller, runHostTurn, sourceLister, sourceReader } from "./HostTools.ts"
-import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismatch } from "./ModelHostError.ts"
-import type { ProducerError } from "./ModelHostError.ts"
-import type { ModelTurnOptions } from "./ModelTurnHost.ts"
+import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismatch } from "./ModelHostError.vibe"
+import type { ProducerError } from "./ModelHostError.vibe"
+import type { ModelTurnOptions } from "./ModelTurnHost.vibe"
 
 // performance.now() belongs to this host process. A distinct identity prevents
 // comparing receipts from a producer restart as though they shared a clock.

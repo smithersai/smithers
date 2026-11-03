@@ -6,9 +6,9 @@
 
 import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
 import { AgentContext, ConfiguredModel, type NativeAgent } from "@smthrs/rpc"
-import { Effect, Stream } from "effect"
-import { createHostDiagnostics } from "./HostDiagnostics.ts"
-import type { HostDiagnostics } from "./HostDiagnostics.ts"
+import { Effect } from "effect"
+import { createHostDiagnostics } from "./HostDiagnostics.vibe"
+import type { HostDiagnostics } from "./HostDiagnostics.vibe"
 
 /**
  * Provider route and output controls for one model turn.
@@ -30,7 +30,7 @@ export interface ModelTurnOptions {
  * @category models
  * @since 1.0.0-rc.0
  */
-export type FrameWriter<E> = (frame: NativeAgent.AgentTurnFrame) => Effect.Effect<void, E>
+export type FrameWriter<E> = (frame: NativeAgent.AgentTurnFrame) => void!E
 
 const appendWireMessage = (messages: Array<ModelRequest.Message>, item: NativeAgent.AgentChatMessage): void => {
   if ("role" in item) {
@@ -269,7 +269,7 @@ export const runModelTurn = <E>(
   write: FrameWriter<E>,
   host?: HostLeg,
   diagnostics: HostDiagnostics = createHostDiagnostics()
-): Effect.Effect<HeldToolCalls | undefined, Model.ModelFailure | ModelError.ModelError | E> => {
+): HeldToolCalls | undefined!Model.ModelFailure | ModelError.ModelError | E => {
   const text = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
   const reasoning = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
   const cut = (value: string): string => {
@@ -283,10 +283,10 @@ export const runModelTurn = <E>(
   // chunk after `finish_reason`, and the route ends the stream at that chunk.
   let settled: ModelEvent.Settle | undefined
   let usage: NativeAgent.AgentTurnUsage | undefined
-  const emit = (frame: NativeAgent.AgentTurnFrame): Effect.Effect<void, E> => write(frame)
-  const emitDelta = (kind: "text" | "reasoning", value: string): Effect.Effect<void, E> =>
+  const emit = (frame: NativeAgent.AgentTurnFrame): void!E => write(frame)
+  const emitDelta = (kind: "text" | "reasoning", value: string): void!E =>
     value === "" ? Effect.void : emit({ runId: turn.runId, type: "delta", kind, text: value })
-  const visit = (event: ModelEvent.ModelEvent): Effect.Effect<void, ModelError.ModelError | E> => {
+  const visit = (event: ModelEvent.ModelEvent): void!ModelError.ModelError | E => {
     switch (event.type) {
       case "text-delta":
         return emitDelta("text", text.push(event.text))
@@ -348,10 +348,10 @@ export const runModelTurn = <E>(
           )
         }
         settled = event
-        return Effect.gen(function*() {
-          yield* emitDelta("reasoning", reasoning.finish())
-          yield* emitDelta("text", text.finish())
-        })
+        return effect {
+          try emitDelta("reasoning", reasoning.finish())
+          try emitDelta("text", text.finish())
+        }
       case "usage":
         usage = mergeUsage(usage, event)
         return Effect.void
@@ -369,7 +369,7 @@ export const runModelTurn = <E>(
   // never reached the application.
   let consumed = 0
   let characters = 0
-  const observe = (event: ModelEvent.ModelEvent): Effect.Effect<void, ModelError.ModelError | E> => {
+  const observe = (event: ModelEvent.ModelEvent): void!ModelError.ModelError | E => {
     consumed += 1
     if (consumed === 1) diagnostics.record("model_stream", "first_event", { kind: event.type })
     if (event.type === "text-delta" || event.type === "thinking-delta") characters += event.text.length
@@ -396,26 +396,22 @@ export const runModelTurn = <E>(
   // it. The capacity and that deadline are one repair: neither holds alone.
   const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" })
   return Effect.flatMap(diagnostics.begin("model_stream"), (endStream) =>
-    Stream.runForEach(buffered, observe).pipe(
-      Effect.flatMap((): Effect.Effect<HeldToolCalls | undefined, ModelError.ModelError | E> => {
-        if (settled === undefined) {
-          return Effect.fail(
-            new ModelError.ModelError({
-              code: "invalid_provider_output",
-              message: "model stream ended without settlement"
-            })
-          )
-        }
-        const total = addUsage(host?.usage, usage)
-        if (host !== undefined && settled.stopReason === "tool-calls" && held.length > 0) {
-          return Effect.succeed({ calls: held, usage: total })
-        }
-        return Effect.as(emit(doneFrame(turn.runId, settled, total)), undefined)
-      }),
-      Effect.onExit((exit) =>
-        Effect.sync(() =>
-          endStream({ events: consumed, characters, settled: settled !== undefined, failed: exit._tag === "Failure" })
+    Stream.runForEach(buffered, observe)
+    |> Effect.flatMap(%, (): HeldToolCalls | undefined!ModelError.ModelError | E => {
+      if (settled === undefined) {
+        return Effect.fail(
+          new ModelError.ModelError({
+            code: "invalid_provider_output",
+            message: "model stream ended without settlement"
+          })
         )
-      )
-    ))
+      }
+      const total = addUsage(host?.usage, usage)
+      if (host !== undefined && settled.stopReason === "tool-calls" && held.length > 0) {
+        return Effect.succeed({ calls: held, usage: total })
+      }
+      return Effect.as(emit(doneFrame(turn.runId, settled, total)), undefined)
+    })
+    |> Effect.onExit(%, effect (exit) =>
+      endStream({ events: consumed, characters, settled: settled !== undefined, failed: exit._tag === "Failure" })))
 }
