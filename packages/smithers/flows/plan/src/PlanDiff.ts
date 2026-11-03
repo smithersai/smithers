@@ -16,7 +16,7 @@
 
 import { jsonMirror } from "./internal/JsonMirror.ts"
 import type * as Plan from "./Plan.ts"
-import type * as Planned from "./Planned.ts"
+import type * as Planned from "./Planned.vibe"
 
 /**
  * A node whose key moved, with the fields that moved it.

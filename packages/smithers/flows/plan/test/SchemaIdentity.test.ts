@@ -19,7 +19,7 @@ import * as Schema from "effect/Schema"
 import * as SchemaRepresentation from "effect/SchemaRepresentation"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as internal from "../src/internal/SchemaIdentity.ts"
+import * as internal from "../src/internal/SchemaIdentity.vibe"
 import * as Node from "../src/Node.ts"
 import { corpus, representations } from "./SchemaIdentityCorpus.ts"
 

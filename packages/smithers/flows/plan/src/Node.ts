@@ -34,8 +34,8 @@ import type * as Schema from "effect/Schema"
 import type * as Types from "effect/Types"
 import { GraphBuildError } from "./GraphBuildError.vibe"
 import * as internal from "./internal/node.ts"
-import * as internalSchemaIdentity from "./internal/SchemaIdentity.ts"
-import * as Planned from "./Planned.ts"
+import * as internalSchemaIdentity from "./internal/SchemaIdentity.vibe"
+import * as Planned from "./Planned.vibe"
 
 /**
  * The runtime type identifier carried by every node.

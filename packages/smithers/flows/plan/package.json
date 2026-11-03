@@ -37,7 +37,11 @@
     ".": "./src/index.ts",
     "./GraphBuildError": "./src/GraphBuildError.vibe",
     "./Node": "./src/Node.ts",
-    "./Planned": "./src/Planned.ts",
+    "./Planned": {
+      "types": "./.vibe/declarations/src/Planned.d.vibe.ts",
+      "vibelang-source": "./src/Planned.vibe",
+      "default": "./.vibelang/js/src/Planned.js"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./Effects": {
@@ -53,7 +57,11 @@
     "./Placement": "./src/Placement.vibe",
     "./PlanDiff": "./src/PlanDiff.ts",
     "./PlanStore": null,
-    "./StepKey": "./src/StepKey.ts",
+    "./StepKey": {
+      "types": "./.vibe/declarations/src/StepKey.d.vibe.ts",
+      "vibelang-source": "./src/StepKey.vibe",
+      "default": "./.vibelang/js/src/StepKey.js"
+    },
     "./Scheduling": "./src/Scheduling.ts",
     "./index": "./src/index.ts",
     "./test/PlanFixtures": "./src/test/PlanFixtures.ts"

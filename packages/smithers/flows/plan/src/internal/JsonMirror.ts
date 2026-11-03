@@ -11,7 +11,7 @@
  */
 
 import { GraphBuildError } from "../GraphBuildError.vibe"
-import * as Planned from "../Planned.ts"
+import * as Planned from "../Planned.vibe"
 
 /**
  * One container being cloned: the object walked, the clone being filled, and

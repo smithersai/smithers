@@ -55,7 +55,7 @@ const securityReview = Smithers.SecurityReview({
         "An InputRef variant (Literal, Ref, Pending) whose tag, from, or path is not folded into the hashed body.",
         "undefined, NaN, -0 or key order collapsing two different payloads into one canonical form."
       ],
-      paths: ["src/StepKey.ts", "src/KeyMaterial.vibe", "src/internal/JsonMirror.ts"]
+      paths: ["src/StepKey.vibe", "src/KeyMaterial.vibe", "src/internal/JsonMirror.ts"]
     },
     {
       id: "function-identity-cache-hit",

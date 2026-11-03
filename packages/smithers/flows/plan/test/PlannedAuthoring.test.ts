@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { ESLint } from "eslint"
 import tseslint from "typescript-eslint"
 import * as Node from "../src/Node.ts"
-import type * as Planned from "../src/Planned.ts"
+import type * as Planned from "../src/Planned.vibe"
 
 describe("explicit planned-value authoring", () => {
   it("refuses callback sequencing at both the TypeScript and JavaScript boundary", () => {

@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema"
 import * as FastCheck from "fast-check"
 import { effectProperty } from "../../../../repo-targets/test-utils/effect-property.mjs"
 import * as KeyMaterial from "../src/KeyMaterial.vibe"
-import * as StepKey from "../src/StepKey.ts"
+import * as StepKey from "../src/StepKey.vibe"
 import { withCrypto } from "./Crypto.ts"
 import { params as sharedParams } from "./FastCheckParams.ts"
 
