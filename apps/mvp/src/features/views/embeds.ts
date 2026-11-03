@@ -1,4 +1,4 @@
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Layer, Queue, Stream } from "effect"
 import { ChatStore } from "../chat/store"
 import { IssuesStore, repoIdOf } from "../issues/store"
 import { embed } from "../repo/embed"
@@ -12,15 +12,58 @@ import { ViewsStore } from "./store"
 // repository's issues view opens that repository's issues (`IssuesStore.forRepo`, decision 0079 slice 1b), whose
 // shapes then sync.
 
-/** Loads what each repository's view of the conversation this tab shows renders, as they arrive. */
-export const followEmbeds = Effect.gen(function* () {
+/**
+ * Whether the routed page at `path` may show a conversation: every page but a repository's issues and pull requests,
+ * which show only their own rows. Their cold boot is the one the first paint measures (decision 0152), and a
+ * conversation's views there would open other repositories' issues and ask their roles ahead of the page's own.
+ */
+export const showsConversation = (path: string): boolean => !/^\/[^/]+\/[^/]+\/(issues|pulls)(\/|$)/.test(path)
+
+/** Where the routed page is: its path now, and each page the router shows from then on. */
+export interface Route {
+  readonly pathname: () => string
+  readonly pages: (listener: (path: string) => void) => () => void
+}
+
+/** Each page the router shows, starting with the one it shows now. */
+const pathsOf = (route: Route) =>
+  Stream.concat(
+    Stream.sync(route.pathname),
+    Stream.callback<string>((queue) =>
+      Effect.acquireRelease(
+        Effect.sync(() => route.pages((path) => void Queue.offerUnsafe(queue, path))),
+        (stop) => Effect.sync(stop),
+      )
+    ),
+  )
+
+/**
+ * The conversation the tab shows, each time it changes, while the routed page may show it: with no `route`, always;
+ * with one, only while `showsConversation`.
+ */
+export const shownWhileRouted = <A>(conversations: Stream.Stream<A>, route?: Route): Stream.Stream<A> =>
+  route === undefined
+    ? conversations
+    : Stream.zipLatest(conversations, pathsOf(route).pipe(Stream.map(showsConversation), Stream.changes)).pipe(
+      Stream.filter(([, showing]) => showing),
+      Stream.map(([conversation]) => conversation),
+    )
+
+/**
+ * Loads what each repository's view of the conversation this tab shows renders, as they arrive. With `route`, only
+ * while the routed page may show a conversation (`showsConversation`): leaving an issues or pull requests page loads
+ * what its conversation's views need then.
+ */
+export const followEmbeds = (route?: Route) => Effect.gen(function* () {
   const chat = yield* ChatStore
   const views = yield* ViewsStore
   const issues = yield* IssuesStore
-  yield* chat.place.changes({ initial: true }).pipe(
+  const conversations = chat.place.changes({ initial: true }).pipe(
     Stream.flatMap((changes) => Stream.fromIterable(changes)),
     Stream.map((change) => change.value.conversationId),
     Stream.changes,
+  )
+  yield* shownWhileRouted(conversations, route).pipe(
     // The home conversation's views, or a branch's, which chat opened before it showed it (src/features/chat/store.ts).
     Stream.switchMap((conversationId) => views.rowsIn(conversationId ?? undefined).rows),
     Stream.runForEach((rows) =>
@@ -37,5 +80,5 @@ export const followEmbeds = Effect.gen(function* () {
   )
 })
 
-/** The follower, for as long as the views' store lives. */
-export const embedsLayer = Layer.effectDiscard(followEmbeds)
+/** The follower, for as long as the views' store lives; with `route`, only while the routed page may show a conversation. */
+export const embedsLayer = (route?: Route) => Layer.effectDiscard(followEmbeds(route))

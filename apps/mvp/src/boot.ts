@@ -262,8 +262,9 @@ export const appLayer = <S = never>(
     Docs.layer.pipe(Layer.provide(DocsStore.layer)),
     Commands.layer.pipe(Layer.provide(RunSteers.layer)),
     Views.layer,
-    // The repository and issues views in the conversation the tab shows: what each renders, loaded as it arrives.
-    embedsLayer,
+    // The repository and issues views in the conversation the tab shows: what each renders, loaded as it arrives, while
+    // the routed page may show it.
+    embedsLayer(host.pathname === undefined || host.pages === undefined ? undefined : { pathname: host.pathname, pages: host.pages }),
     Web.layer,
     // Agent status, and the personal feed beside it (decision 0009): the one toast stack and the list behind `+N`.
     Layer.merge(Status.layer, Attention.layer),
