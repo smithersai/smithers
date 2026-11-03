@@ -75,7 +75,7 @@
      "relative": "packages/smithers/flows/sandbox/src"
     },
     null,
-    "TAPPJaUm5u5k6SuzRXc2TdgppcFr5UiPWlHm1omlCls",
+    "RxsGtfqlGVnd6wPeCtqMTmjR24Q1UrwyrckoSIN0BW4",
     [],
     {
      "recursive": true,
@@ -1326,10 +1326,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.ts"
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/version.d.ts"
     },
-    "size": 1441,
-    "hash": "Mt80obSWTwAk96D4LEcWBG5rmGl0BgFVXZS71S2MfrY"
+    "size": 91,
+    "hash": "OLhx74xVvRMxcl4krcVslmdZGXNsTNFw1VSQRYH3mpc"
    },
    {
     "path": {
@@ -1739,20 +1739,6 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/describeExit.vibe"
-    },
-    "size": 439,
-    "hash": "_xEIIcw4Jn7vI9IySb-h0U6b_15DHvKB8bp1PHojLho"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/version.d.ts"
-    },
-    "size": 91,
-    "hash": "OLhx74xVvRMxcl4krcVslmdZGXNsTNFw1VSQRYH3mpc"
-   },
-   {
-    "path": {
      "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/calls.d.ts"
     },
     "size": 1375,
@@ -1970,10 +1956,24 @@
    },
    {
     "path": {
+     "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
+    },
+    "size": 1331,
+    "hash": "f_84t9-l1obiUyyL1UrGPa_mmWVXAlxVwSGeZ6hvKQY"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/sandbox/src/internal/describeExit.vibe"
+    },
+    "size": 439,
+    "hash": "_xEIIcw4Jn7vI9IySb-h0U6b_15DHvKB8bp1PHojLho"
+   },
+   {
+    "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Healthy.vibe"
     },
-    "size": 339,
-    "hash": "e195Sj5hH7_Ga1G2tvq8FpTESUmpF901N-0Bd0iBNfo"
+    "size": 338,
+    "hash": "rrZHTtdeKmDsO3F3meFyEGfUY4cr84r2wMWEOZ-lbro"
    },
    {
     "path": {
@@ -1986,8 +1986,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Unhealthy.vibe"
     },
-    "size": 546,
-    "hash": "FHbnFQ1hWnIdbGBE22zC4wV6y3wLweGnccVFCyp4AO4"
+    "size": 545,
+    "hash": "1HJF7D42E_ypjaZ6_jrlvv59LU_SFrnlJQXNDGFcCZ8"
    },
    {
     "path": {
@@ -2007,8 +2007,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/SandboxHealth.vibe"
     },
-    "size": 358,
-    "hash": "95iJWK2gLOwpYQzQi5IeMyZXMXnteaDblzoKemFthZM"
+    "size": 357,
+    "hash": "rGaA_WYZA8rwyzaewcktHTpRXED8T0y14FAF3zqYbfI"
    },
    {
     "path": {
@@ -2070,8 +2070,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.ts"
     },
-    "size": 9344,
-    "hash": "qZE09LhEJmGzVYxMkIokVteEVGGAU1WuiZDRYYlGKaY"
+    "size": 9346,
+    "hash": "QK10g9WSR8cI2Z46_EWgpKj9LOvcbEwe_cpFoJ3-GM0"
    },
    {
     "path": {
@@ -2091,8 +2091,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/Session.vibe"
     },
-    "size": 4827,
-    "hash": "w_3ZpIa5O0iuosDDaa0AEMliP-QXmn7oHOwrAUO-iPA"
+    "size": 4826,
+    "hash": "Ocp-bm33x6VMEpisKUEZNeLZ-dj-aV5BaFPjfdORr0U"
    },
    {
     "path": {
@@ -2329,8 +2329,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -2518,15 +2518,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -2889,8 +2889,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -2931,8 +2931,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -3582,8 +3582,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -3701,43 +3701,43 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
     },
-    "size": 2817,
-    "hash": "g2uaNsEVZhEUfbVDsqwxlt-hc_Unis2J6OXJxyOKE34"
+    "size": 2813,
+    "hash": "YSBjWmDQ2oGbRNcic1vjalrestrGfnFUYzzI-jSfgI4"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
     },
-    "size": 3169,
-    "hash": "Mnrw8ak0JG8dYR-MTa_v-E6nxRMCaQLl2aaqciwK008"
+    "size": 2939,
+    "hash": "fHUPcShTZoopCjbyTVFampnBZh73nZokBkuuB8A62yI"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
     },
-    "size": 3764,
-    "hash": "to9gjIIbfUSG6mEHBPVr-f7VqJe-GIALRxti7xuRhEU"
+    "size": 3617,
+    "hash": "aeWosIXv_PnA-KkLrpf2n73zJGJJzl06j5EsjznRenE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/apply.ts"
     },
-    "size": 11326,
-    "hash": "ZIPx89n0F6vQGsGtONbc2FW5MYuLU1ZO35Wmw--sOMk"
+    "size": 11330,
+    "hash": "LTsJ_PeZEkFUiX91dTydEMmYHJy5yaeZoKfNoKDlQxY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/ApplyAction.vibe"
     },
-    "size": 2366,
-    "hash": "OWAuAX-VNG5E0BRRh9r7ELxganrcJBDjXwgHwu-gbk4"
+    "size": 2361,
+    "hash": "7E7uy730JudwXaJoZadtqo7WTueR9RHmDY_XdsYnzHc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/index.ts"
     },
-    "size": 1342,
-    "hash": "FzsOMfIi_rxvLZEXMPL5ISoQ36MpNS-xRpozBAuJ_OM"
+    "size": 1346,
+    "hash": "UMCqFVlE3_6y6pKYdvh118qtJ75mUDPYoE5bwsvnJYo"
    },
    {
     "path": {
@@ -3757,8 +3757,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxConformance/check.ts"
     },
-    "size": 29368,
-    "hash": "MxhIUE7ciTxBy4-5KsPAYUFd-MwxdKuEzLmkI9dsbGY"
+    "size": 29370,
+    "hash": "ibRuI-0iXdmxIS-LwkjTbyTR6MElK7TEKuOfhXGzem0"
    },
    {
     "path": {
@@ -3771,8 +3771,8 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
     },
-    "size": 1367,
-    "hash": "KMRUmP-9Pq4fef97WjRMVwdSdKCtuF_hiS_zyvdpojA"
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
    },
    {
     "path": {
@@ -3827,15 +3827,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -3867,24 +3867,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.vibe"
     },
-    "size": 2352,
-    "hash": "V3E3Zqk7n56gHaUCPG2q69vuWonFCmR1_aVTJAZ6eCI"
+    "size": 2336,
+    "hash": "OUfItOPflfq3UDUfOIhpocAAhq4CzZs64Po9gDF1k6E"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
     },
-    "size": 2596,
-    "hash": "mTDVZpne4K3u2_Aw5ChQp5Xn13MrSsiTzbAZGVtg-h8"
+    "size": 2537,
+    "hash": "mjwOlSBEeu4NrFA_rcHdIw1lazTqDiCJbqeJ4WN7fKE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts"
     },
-    "size": 12610,
-    "hash": "k_-7n52JkMQ98BUI4hmaYdRDnAa1Y3Eui54T4r9oYGQ"
+    "size": 12614,
+    "hash": "aYNC5pqhZMmvFuV3vSdirQs9ObcoUH2wuwavEWfgrYs"
    },
    {
     "path": {
@@ -3925,22 +3925,22 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/existing.ts"
     },
-    "size": 9496,
-    "hash": "4kLeuIhZ6qxb_hGhkGuj6aH7R-_l4Z8ncOKutbdpAJI"
+    "size": 9500,
+    "hash": "vOAbKsJUn1gTIiHwSzmV4mnluPcM1S8a5qfA2bWarGc"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.vibe"
     },
-    "size": 1032,
-    "hash": "sLHc0o2QBsgdj1JPjLW_uVtkBEQ_aGKI6N4tsDXu5aQ"
+    "size": 1034,
+    "hash": "KFCMlrb2uP0Isy3b3N9ynkwycJjFsMO2golPw0b2tdA"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.vibe"
     },
-    "size": 1105,
-    "hash": "nwCzYUw40z8NjxBP4aeG4LpqREi7dxKCfecaRTSJyq4"
+    "size": 1012,
+    "hash": "zeW_cuDZ3FcKnS65F1Thf8n3jgxHIZpEEGDt781zzM4"
    },
    {
     "path": {
@@ -3953,15 +3953,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/execSession.ts"
     },
-    "size": 11047,
-    "hash": "UIhh4uVtbXRjUr2QRs-dzJq2UhwqSQuAhQEShuSBU88"
+    "size": 11053,
+    "hash": "GeRp00VFUUUsQ8p2iyggzHZ9cyjKnXwoxXuOXoFTbCc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/make.ts"
     },
-    "size": 18419,
-    "hash": "8BXecnlUJ6Dpmw4G5R8HSBWP1Ec-_4xroXPKca0Dw8g"
+    "size": 18427,
+    "hash": "i-LrAtM1qnl2ZGlsYXHE8V0pQFf6PcKXf1DbNTwNQGs"
    },
    {
     "path": {
@@ -3974,8 +3974,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CommandSandbox/make.ts"
     },
-    "size": 12258,
-    "hash": "bi11wTahn4hCtZ-54eMy8blgrrpXjXS9YCBZyHuHayY"
+    "size": 12262,
+    "hash": "o_Q_O8eRMJAdwbLTmS8nPj5Ib49VOD2ix1s1kBDhZ-4"
    },
    {
     "path": {
@@ -3988,8 +3988,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/KubernetesSandbox/make.ts"
     },
-    "size": 21804,
-    "hash": "IiCj_ycAKHSq_vzq3i168kOwQ_71sbDvw3epwcIaVro"
+    "size": 21812,
+    "hash": "kFfwHyLpUDxl106G7csBfGPSrYUyz2h1pVGcXUgvqZ4"
    },
    {
     "path": {
@@ -4009,8 +4009,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/JustBashSandbox/make.ts"
     },
-    "size": 10270,
-    "hash": "o0cBmWmH-Kc08muNOqXxBUR-5kmi782912GNkqEcdTY"
+    "size": 10274,
+    "hash": "rFx3gQDHmsLDsp_jP6A6uLh-PZ-cY5V6rzEa11D_LGY"
    },
    {
     "path": {
@@ -4023,8 +4023,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/GarbageCollector.vibe"
     },
-    "size": 2187,
-    "hash": "N8zt2gZvQqKcHH7jSfSxpIepOXeLa06Nzswi2mmpSO0"
+    "size": 2185,
+    "hash": "MDVNHtqVaWs6-IUjD-VcxN7vYcrdgClJKstn8CvU-eQ"
    },
    {
     "path": {
@@ -4035,10 +4035,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/attempt.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/attempt.vibe"
     },
-    "size": 727,
-    "hash": "8vQ1jvJEm0vfoVw5Se5UUfvMekyZXEpISLyXjc_Et3o"
+    "size": 711,
+    "hash": "2GYfIKqBlnYTBNOvsXjiyIhQ9bDw6coDiixSMemvyao"
    },
    {
     "path": {
@@ -4049,10 +4049,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.vibe"
     },
-    "size": 1342,
-    "hash": "jrU4CNWZ7AzXrS9fMw-l0Zzi6WGe27aw9dGkqCAy-tg"
+    "size": 1329,
+    "hash": "toAFHDviESsNRZYZdeA8PSurjq9gYCa6_D16JlQvqbI"
    },
    {
     "path": {
@@ -4072,29 +4072,29 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/linuxSignals.vibe"
     },
-    "size": 1120,
-    "hash": "OOGXY-0D1CqDzXKRKl4eUa6sUoveH0hZpDGv8GmnCKo"
+    "size": 1119,
+    "hash": "6w_ZfPNlZGxbdfNM3lVL2tiZZ-kCydlYEknfNWBLafA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/teardownWarning.vibe"
     },
-    "size": 738,
-    "hash": "zsfn-_YUEMAyYvyrbECrPoBjz0-Rdaeoa3rQfLrWSR8"
+    "size": 737,
+    "hash": "R5b2pzw492Bz_jwMpOBUw0byPT9v3WZ2nXTr6Vp93as"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"
     },
-    "size": 13581,
-    "hash": "unJCHmRc55FYXonnyqYWHhm5SvSCMs3svctc-ChLSaY"
+    "size": 13583,
+    "hash": "NA-KA6aFeLd2-V8KarQlm8_GEGwMZhB8gdOOpeWPy9Y"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/MicrosandboxReattachRefusal.vibe"
     },
-    "size": 955,
-    "hash": "4bhCLBfBffYTY1euwo_rvXyk1IDzd7cFmnDnXuPcQ08"
+    "size": 953,
+    "hash": "SyUNx7qmNgt0MkiuKg9uDHU5Hj4hpJczm9yHeO_ybCA"
    },
    {
     "path": {
@@ -4107,22 +4107,22 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
     },
-    "size": 38679,
-    "hash": "xRMN9J56XGhslJB7CAoNeit5hdNu25qninA-b-v8nd4"
+    "size": 38687,
+    "hash": "VOczQMtISvJE3i6bOVBLsHz-d63nJsCFXIsj4v50GgQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.ts"
     },
-    "size": 6908,
-    "hash": "Zue6AtzVXanLQi3IdkYTTDbUfeq26LwHz1G_Don1pO4"
+    "size": 6910,
+    "hash": "OBTdBYbjR-0BitXboOpEMrlVXlyoYX5YNAsCEzSyjhY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.vibe"
     },
-    "size": 16592,
-    "hash": "Ew7XOfuE-pLAqOchywoG8KnL7hen3xl5IVmpM4soyNE"
+    "size": 16594,
+    "hash": "9nMofLXBfeKUhzelBMoNw_s-434hf3ZiHC60GpBZOO0"
    },
    {
     "path": {
@@ -4142,8 +4142,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/checkedExit.vibe"
     },
-    "size": 689,
-    "hash": "G07GgpqTvWNjaA5LXP2h6N5ov98oUeXjZJw4GwIK8YA"
+    "size": 688,
+    "hash": "CT2FGidUnyyKIkypbuNN6bVXROIWKaAhhuPbK5JLbOs"
    },
    {
     "path": {
@@ -4156,8 +4156,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/stdinRedirect.ts"
     },
-    "size": 4891,
-    "hash": "ZJRTZKjM276a-34uoyLxVtNQ3fNJ51f4_QeVwvikc3c"
+    "size": 4893,
+    "hash": "Hkk7_L58xSWRBeIQ3A34Y6xbI91PltYS6vuP9l6OoJ8"
    },
    {
     "path": {
@@ -4170,8 +4170,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/VercelSandbox/make.ts"
     },
-    "size": 16608,
-    "hash": "onPo_I6oJnuCGamSkQdSxpL74KkQLIZgHirRrGdd-Us"
+    "size": 16614,
+    "hash": "cF1Sr6FPA3rQ56kGjTC1SLG9RVX97GnW9c2UguShU1I"
    },
    {
     "path": {
@@ -4191,8 +4191,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DaytonaSandbox/make.ts"
     },
-    "size": 14746,
-    "hash": "8tbVPX3oXCA16Ksrxi_ugdOrtk5mpPGhvxiupcAwVyg"
+    "size": 14754,
+    "hash": "7a5rBPqfG_3Hkomr5vOIGPEbsLomZ5vMIlebiWmIzgs"
    },
    {
     "path": {
@@ -4219,8 +4219,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/AwsSandbox/make.ts"
     },
-    "size": 39972,
-    "hash": "k0T1v-h4B4YjgrroHI8l8Dk9ss8ttrcfTCGKePXKa8Q"
+    "size": 39982,
+    "hash": "sGxb3oOsxGKf-7SeQ5ECEBARIe42GNOXPIWaWtFJ6xI"
    },
    {
     "path": {
@@ -4240,8 +4240,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CloudflareSandbox/make.ts"
     },
-    "size": 10165,
-    "hash": "uHy2hl3POWnot1CHdsMH0dv-0tlKEDMHsSd1czo0pmI"
+    "size": 10171,
+    "hash": "j9xkfsyexEcJfnUETyftrTdaN24Nr--OyTaQo0o7-3g"
    },
    {
     "path": {
@@ -4254,15 +4254,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/SandboxUnhealthy.vibe"
     },
-    "size": 1122,
-    "hash": "o79-32FOxsDh8OBY8sKS5wPqdvJCuUBKsJKraQjgOK8"
+    "size": 1120,
+    "hash": "-gD4FIcOJ9azykzUsMeRGsrRcVn5MqD5jUNDZbDEFs8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/Reporter.vibe"
     },
-    "size": 1013,
-    "hash": "Lfkg6dJjU8cyLnS_o78K8uKvf_-TXZdpaFaLhblE3Es"
+    "size": 1011,
+    "hash": "3SweM61inWWjetgKW0JEsFwyeVi6hPLZD3OFvNSeX5Y"
    },
    {
     "path": {
@@ -5237,7 +5237,7 @@
     "relative": "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/describeExit.vibe"
@@ -5894,10 +5894,10 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/apply.ts"
@@ -5963,10 +5963,10 @@
     "relative": "packages/smithers/flows/kernel/src/ContainedSpawner.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts"
@@ -5990,10 +5990,10 @@
     "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/existing.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/killScript.ts"
@@ -6035,13 +6035,13 @@
     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/labels.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/attempt.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/attempt.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/environmentCommand.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/microsandboxNetwork.ts"
@@ -6232,6 +6232,46 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
+    },
+    "line": 44,
+    "column": 12,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
+    },
+    "line": 50,
+    "column": 51,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcess#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
+    },
+    "line": 84,
+    "column": 66,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
+    },
+    "line": 85,
+    "column": 23,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/sandbox/src/internal/MicrosandboxReattachRefusal.vibe"
     },
     "line": 31,
@@ -6259,9 +6299,49 @@
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/process/ChildProcess#Signal` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
+    },
+    "line": 32,
+    "column": 41,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessHandle` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
+    },
+    "line": 62,
+    "column": 11,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessHandle` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    }
   ],
   "outputs": [
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
+     }
+    ],
+    "code": "/**\n * Observes one conformance check under a wall-clock deadline.\n *\n * @since 0.1.0\n */\nimport * as Fiber from \"effect/Fiber\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { expired } from \"./deadline.js\";\n/**\n * Races observation of a detached check, never its resource-owning scope.\n * Acquisition and release can be uninterruptible, so waiting for the check's\n * interruption would let teardown defeat the deadline. On timeout or caller\n * cancellation we initiate interruption in a second detached fiber. That\n * interruption fiber observes the check until cleanup finishes; reporting does\n * not await it.\n * The mask installs cleanup before the observation can be interrupted.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const boundedCheck = (effect, deadline) => Effect.uninterruptibleMask(Effect_1.fnUntraced(function* (restore) {\n    const running = yield* Effect.forkDetach(Effect.exit(restore(effect)));\n    return yield* (Effect.ensuring(restore(Effect.raceFirst(Fiber.join(running), Effect.exit(expired(deadline)))), Effect.forkDetach(Fiber.interrupt(running), { startImmediately: true })));\n}));\n",
+    "map": {
+     "version": 3,
+     "file": "boundedCheck.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;;AAGH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAGvC,OAAO,EAAE,OAAO,EAAE,MAAM,eAAe,CAAA;AAEvC;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAC1B,MAAa,EACb,QAAwB,EACiB,EAAE,CAC3C,MAAM,CAAC,mBAAmB,CAAC,+BAAQ,OAAO;IACxC,MAAM,OAAO,UAAO,MAAM,CAAC,UAAU,CAAC,MAAM,CAAC,IAAI,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,CAAC,CAAA;IACnE,cAAW,CAEN,MAAM,CAAC,QAAQ,CAFR,OAAO,CACjB,MAAM,CAAC,SAAS,CAAC,KAAK,CAAC,IAAI,CAAC,OAAO,CAAC,EAAE,MAAM,CAAC,IAAI,CAAC,OAAO,CAAC,QAAQ,CAAC,CAAC,CAAC,CACtE,EAAuB,MAAM,CAAC,UAAU,CAAC,KAAK,CAAC,SAAS,CAAC,OAAO,CAAC,EAAE,EAAE,gBAAgB,EAAE,IAAI,EAAE,CAAC,CAAC,CAAC,CAAA;AACnG,CAAC,CAAA,CAAC,CAAA"
+    }
+   },
    {
     "paths": [
      {
@@ -6288,7 +6368,7 @@
       "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Healthy.vibe"
      }
     ],
-    "code": "/**\n * Defines the healthy sandbox state.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * The sandbox answered its ping within the deadline.\n *\n * @category models\n * @since 0.1.0\n */\nexport class Healthy extends Schema.Class(\"@smthrs/sandbox/SandboxHealth/Healthy\")({\n    _tag: Schema.tag(\"Healthy\"),\n}) {\n}\n",
+    "code": "/**\n * Defines the healthy sandbox state.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * The sandbox answered its ping within the deadline.\n *\n * @category models\n * @since 0.1.0\n */\nexport class Healthy extends Schema.Class(\"@smthrs/sandbox/SandboxHealth/Healthy\")({\n    _tag: Schema.tag(\"Healthy\")\n}) {\n}\n",
     "map": {
      "version": 3,
      "file": "Healthy.js",
@@ -6328,7 +6408,7 @@
       "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Unhealthy.vibe"
      }
     ],
-    "code": "/**\n * Defines the unhealthy sandbox state.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { UnhealthyReason } from \"./UnhealthyReason.js\";\n/**\n * The sandbox did not prove liveness because its ping failed or never\n * answered.\n *\n * @category models\n * @since 0.1.0\n */\nexport class Unhealthy extends Schema.Class(\"@smthrs/sandbox/SandboxHealth/Unhealthy\")({\n    _tag: Schema.tag(\"Unhealthy\"),\n    component: Schema.Literal(\"sandbox\"),\n    reason: UnhealthyReason,\n    message: Schema.optional(Schema.String),\n}) {\n}\n",
+    "code": "/**\n * Defines the unhealthy sandbox state.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { UnhealthyReason } from \"./UnhealthyReason.js\";\n/**\n * The sandbox did not prove liveness because its ping failed or never\n * answered.\n *\n * @category models\n * @since 0.1.0\n */\nexport class Unhealthy extends Schema.Class(\"@smthrs/sandbox/SandboxHealth/Unhealthy\")({\n    _tag: Schema.tag(\"Unhealthy\"),\n    component: Schema.Literal(\"sandbox\"),\n    reason: UnhealthyReason,\n    message: Schema.optional(Schema.String)\n}) {\n}\n",
     "map": {
      "version": 3,
      "file": "Unhealthy.js",
@@ -6528,7 +6608,7 @@
       "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
      }
     ],
-    "code": "/**\n * What applying a session's work on the host produced.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { Unchanged } from \"../Sandbox/Work.js\";\n/**\n * The work is one conflict-free jj change on `onto`.\n *\n * @category models\n * @since 1.0.0\n */\nexport class Merged extends Schema.TaggedClass()(\"Merged\", {\n    /** The jj change id holding the work. Stable across rewrites of the change. */\n    change: Schema.String,\n    /** The commit id the change had when the outcome was read. */\n    commit: Schema.String,\n    /** The commit id the change was applied onto. */\n    onto: Schema.String,\n}) {\n}\n/**\n * The work is one jj change on `onto` that records conflicts, the way `jj\n * rebase` records them: the change exists, its conflicted files hold jj's\n * conflict markers, and nothing was dropped or overwritten.\n *\n * @category models\n * @since 1.0.0\n */\nexport class Conflicted extends Schema.TaggedClass()(\"Conflicted\", {\n    /** The jj change id holding the work. */\n    change: Schema.String,\n    /** The commit id the change had when the outcome was read. */\n    commit: Schema.String,\n    /** The commit id the change was applied onto. */\n    onto: Schema.String,\n    /** The repository-relative paths that hold conflicts. */\n    paths: Schema.Array(Schema.String),\n}) {\n}\n/**\n * What `apply` returns: {@link Merged}, {@link Conflicted}, or the session's\n * own {@link Unchanged}, which applies as nothing.\n *\n * @category models\n * @since 1.0.0\n */\nexport const Outcome = Schema.Union([Merged, Conflicted, Unchanged]);\n/**\n * Why work could not be applied.\n *\n * - `base_not_found`: the work's base is not a full commit id, or is not in\n *   the repository even after the configured fetch.\n * - `onto_unresolved`: `onto` does not name exactly one commit.\n * - `patch_rejected`: the patch does not apply to its own base, so it was not\n *   captured from that base.\n * - `conflict`: the `failOnConflict` strategy met a conflict; `paths` names it.\n * - `resolution_rejected`: a resolver's change still has conflicts or does\n *   not descend from `onto`.\n * - `vcs_failed`: a host command, fence acquisition or adapter load failed.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class MergeError extends Schema.TaggedError()(\"@smthrs/sandbox/SandboxMerge/MergeError\", {\n    reason: Schema.Literals([\n        \"base_not_found\",\n        \"onto_unresolved\",\n        \"patch_rejected\",\n        \"conflict\",\n        \"resolution_rejected\",\n        \"vcs_failed\",\n    ]),\n    message: Schema.String,\n    paths: Schema.optional(Schema.Array(Schema.String)),\n    /** Original host failure, including a jj error's code and nested cause. */\n    cause: Schema.optional(Schema.Unknown),\n}) {\n}\n",
+    "code": "/**\n * What applying a session's work on the host produced.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { Unchanged } from \"../Sandbox/Work.js\";\n/**\n * The work is one conflict-free jj change on `onto`.\n *\n * @category models\n * @since 1.0.0\n */\nexport class Merged extends Schema.TaggedClass()(\"Merged\", {\n    /** The jj change id holding the work. Stable across rewrites of the change. */\n    change: Schema.String,\n    /** The commit id the change had when the outcome was read. */\n    commit: Schema.String,\n    /** The commit id the change was applied onto. */\n    onto: Schema.String\n}) {\n}\n/**\n * The work is one jj change on `onto` that records conflicts, the way `jj\n * rebase` records them: the change exists, its conflicted files hold jj's\n * conflict markers, and nothing was dropped or overwritten.\n *\n * @category models\n * @since 1.0.0\n */\nexport class Conflicted extends Schema.TaggedClass()(\"Conflicted\", {\n    /** The jj change id holding the work. */\n    change: Schema.String,\n    /** The commit id the change had when the outcome was read. */\n    commit: Schema.String,\n    /** The commit id the change was applied onto. */\n    onto: Schema.String,\n    /** The repository-relative paths that hold conflicts. */\n    paths: Schema.Array(Schema.String)\n}) {\n}\n/**\n * What `apply` returns: {@link Merged}, {@link Conflicted}, or the session's\n * own {@link Unchanged}, which applies as nothing.\n *\n * @category models\n * @since 1.0.0\n */\nexport const Outcome = Schema.Union([Merged, Conflicted, Unchanged]);\n/**\n * Why work could not be applied.\n *\n * - `base_not_found`: the work's base is not a full commit id, or is not in\n *   the repository even after the configured fetch.\n * - `onto_unresolved`: `onto` does not name exactly one commit.\n * - `patch_rejected`: the patch does not apply to its own base, so it was not\n *   captured from that base.\n * - `conflict`: the `failOnConflict` strategy met a conflict; `paths` names it.\n * - `resolution_rejected`: a resolver's change still has conflicts or does\n *   not descend from `onto`.\n * - `vcs_failed`: a host command, fence acquisition or adapter load failed.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class MergeError extends Schema.TaggedError()(\"@smthrs/sandbox/SandboxMerge/MergeError\", {\n    reason: Schema.Literals([\n        \"base_not_found\",\n        \"onto_unresolved\",\n        \"patch_rejected\",\n        \"conflict\",\n        \"resolution_rejected\",\n        \"vcs_failed\"\n    ]),\n    message: Schema.String,\n    paths: Schema.optional(Schema.Array(Schema.String)),\n    /** Original host failure, including a jj error's code and nested cause. */\n    cause: Schema.optional(Schema.Unknown)\n}) {\n}\n",
     "map": {
      "version": 3,
      "file": "Outcome.js",
@@ -6545,10 +6625,50 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
+     }
+    ],
+    "code": "/**\n * The host jj repository work is applied to.\n *\n * @since 1.0.0\n */\nimport * as ChildProcess from \"effect/process/ChildProcess\";\nimport * as Stream from \"effect/Stream\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { ChildProcessSpawner } from \"effect/process/ChildProcessSpawner\";\nimport { MergeError } from \"./Outcome.js\";\n/**\n * One host command's output, failing with `vcs_failed` when it exits non-zero\n * or cannot start.\n *\n * @category utils\n * @since 1.0.0\n */\nexport const output = (spawner, command, args, options = {}) => Effect.catchTag(Effect.scoped(Effect_1.gen(function* () {\n    const handle = yield* spawner.spawn(ChildProcess.make(command, args, {\n        ...options.cwd === undefined ? {} : { cwd: options.cwd },\n        // Extends, never replaces, the host environment: `PATH` and the identity still apply.\n        ...options.env === undefined ? {} : { env: options.env, extendEnv: true },\n        ...options.stdin === undefined ? {} : { stdin: Stream.make(new TextEncoder().encode(options.stdin)) }\n    }));\n    const [stdout, stderr, code] = yield* Effect.all([\n        Stream.mkString(Stream.decodeText(handle.stdout)),\n        Stream.mkString(Stream.decodeText(handle.stderr)),\n        handle.exitCode\n    ], { concurrency: \"unbounded\" });\n    if (code !== 0) {\n        return yield* Effect_1.fail(new MergeError({\n            reason: \"vcs_failed\",\n            message: `${command} ${args.join(\" \")} exited ${code}: ${stderr.trim().split(\"\\n\").slice(-3).join(\"\\n\")}`\n        }));\n    }\n    return stdout;\n})), \"PlatformError\", (cause) => new MergeError({ reason: \"vcs_failed\", message: `${command} could not run: ${cause.message}`, cause }));\n/**\n * The {@link Repository} at `path`, running jj through the ambient spawner.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const make = Effect_1.fnUntraced(function* make(path) {\n    const spawner = yield* ChildProcessSpawner;\n    return {\n        path,\n        jj: (args) => \n        // From the repository's root, so the paths jj prints are repository-relative.\n        output(spawner, \"jj\", [\"-R\", path, \"--ignore-working-copy\", \"--no-pager\", \"--color=never\", ...args], {\n            cwd: path\n        })\n    };\n});\n",
+    "map": {
+     "version": 3,
+     "file": "Repository.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;;;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,mBAAmB,EAAE,MAAM,oCAAoC,CAAA;AACxE,OAAO,EAAE,UAAU,EAAE,MAAM,cAAgB,CAAA;AA2B3C;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,CACpB,OAAuC,EACvC,OAAe,EACf,IAA2B,EAC3B,OAAO,GAAQ,EAAE,EACE,EAAE,CAwBlB,MAAM,CAAC,QAAQ,CAvBlB,MAAM,CAAC,MAAM,CAAC,a,CAAA;IACZ,MAAM,MAAM,UAAO,OAAO,CAAC,KAAK,CAAC,YAAY,CAAC,IAAI,CAAC,OAAO,EAAE,IAAI,EAAE;QAChE,GAAG,OAAO,CAAC,GAAG,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,GAAG,EAAE,OAAO,CAAC,GAAG,EAAE;QACxD,sFAAsF;QACtF,GAAG,OAAO,CAAC,GAAG,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,GAAG,EAAE,OAAO,CAAC,GAAG,EAAE,SAAS,EAAE,IAAI,EAAE;QACzE,GAAG,OAAO,CAAC,KAAK,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,KAAK,EAAE,MAAM,CAAC,IAAI,CAAC,IAAI,WAAW,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC,CAAC,EAAE;KACtG,CAAC,CAAC,CAAA;IACH,MAAM,CAAC,MAAM,EAAE,MAAM,EAAE,IAAI,CAAC,UAAO,MAAM,CAAC,GAAG,CAC3C;QACE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,UAAU,CAAC,MAAM,CAAC,MAAM,CAAC,CAAC;QACjD,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,UAAU,CAAC,MAAM,CAAC,MAAM,CAAC,CAAC;QACjD,MAAM,CAAC,QAAQ;KAChB,EACD,EAAE,WAAW,EAAE,WAAW,EAAE,CAC7B,CAAA;IACD,IAAI,IAAI,KAAK,CAAC,EAAE,CAAC;QACf,4BAAM,IAAI,UAAU,CAAC;YACnB,MAAM,EAAE,YAAY;YACpB,OAAO,EAAE,GAAG,OAAO,IAAI,IAAI,CAAC,IAAI,CAAC,GAAG,CAAC,WAAW,IAAI,KAAK,MAAM,CAAC,IAAI,EAAE,CAAC,KAAK,CAAC,IAAI,CAAC,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,CAAC,IAAI,CAAC,IAAI,CAAC,EAAE;SAC1G,CAAC,EAAA;IACJ,CAAC;IACD,OAAO,MAAM,CAAA;AACf,CAAC,CAAA,CAAC,EAGA,eAAe,EACf,CAAC,KAAK,EAAE,EAAE,CAAC,IAAI,UAAU,CAAC,EAAE,MAAM,EAAE,YAAY,EAAE,OAAO,EAAE,GAAG,OAAO,mBAAmB,KAAK,CAAC,OAAO,EAAE,EAAE,KAAK,EAAE,CAAC,CAClH,CAAA;AAEH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,mCAAQ,IAAY;IACtC,MAAM,OAAO,UAAO,mBAAmB,CAAA;IACvC,OAAO;QACL,IAAI;QACJ,EAAE,EAAE,CAAC,IAAI,EAAE,EAAE;QACX,8EAA8E;QAC9E,MAAM,CAAC,OAAO,EAAE,IAAI,EAAE,CAAC,IAAI,EAAE,IAAI,EAAE,uBAAuB,EAAE,YAAY,EAAE,eAAe,EAAE,GAAG,IAAI,CAAC,EAAE;YACnG,GAAG,EAAE,IAAI;SACV,CAAC;KACL,CAAA;AACH,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
+     }
+    ],
+    "code": "/**\n * What `apply` does when work conflicts with its target.\n *\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { Merged, MergeError } from \"./Outcome.js\";\n/**\n * The default: keep the conflicted change and report it, as `jj rebase` does.\n * Its files carry jj's conflict markers until someone resolves them.\n *\n * @category strategies\n * @since 1.0.0\n */\nexport const recordConflicts = { onConflict: (conflicted) => Effect.succeed(conflicted) };\n/**\n * Abandon the conflicted change and fail with a `conflict` {@link MergeError}\n * naming its paths. The work itself stays wherever the caller keeps it, in\n * the journal for an action's result, so applying again later is possible.\n *\n * @category strategies\n * @since 1.0.0\n */\nexport const failOnConflict = {\n    onConflict: (conflicted, repository) => Effect.andThen(repository.jj([\"abandon\", conflicted.commit]), new MergeError({\n        reason: \"conflict\",\n        message: `the work conflicts with ${conflicted.onto} in ${conflicted.paths.join(\", \")}`,\n        paths: conflicted.paths\n    }))\n};\n/**\n * Hand the conflicted change to `resolver`, then verify what it produced.\n *\n * The resolver receives the conflicted change (an agent may edit it in a\n * workspace and squash, or replace it) and answers a jj revision holding the\n * resolution. That revision must name exactly one commit that descends from\n * the change's target, and neither it nor anything between the target and it\n * may hold a conflict; otherwise the strategy fails with\n * `resolution_rejected` and the conflicted change is left as it is.\n *\n * @category strategies\n * @since 1.0.0\n */\nexport const resolveWith = (resolver) => ({\n    onConflict: Effect_1.fnUntraced(function* onConflict(conflicted, repository) {\n        const { change } = yield* resolver(conflicted, repository);\n        const rejected = (why) => new MergeError({ reason: \"resolution_rejected\", message: `the resolution ${change} ${why}` });\n        const named = (yield* Effect.mapError(repository.jj([\"log\", \"--no-graph\", \"-r\", change, \"-T\", \"commit_id ++ \\\"\\\\t\\\" ++ change_id ++ \\\"\\\\n\\\"\"]), () => rejected(\"names no commit\"))).trim().split(\"\\n\");\n        if (named.length !== 1 || named[0] === \"\")\n            return yield* Effect_1.fail(rejected(\"must name exactly one commit\"));\n        const [commit, changeId] = named[0].split(\"\\t\");\n        const descends = yield* repository.jj([\n            \"log\",\n            \"--no-graph\",\n            \"-r\",\n            `${conflicted.onto} & ::${commit}`,\n            \"-T\",\n            \"commit_id\"\n        ]);\n        if (descends.trim() === \"\")\n            return yield* Effect_1.fail(rejected(`does not descend from ${conflicted.onto}`));\n        const conflicts = yield* repository.jj([\n            \"log\",\n            \"--no-graph\",\n            \"-r\",\n            `(${conflicted.onto}::${commit}) & conflicts()`,\n            \"-T\",\n            \"commit_id ++ \\\"\\\\n\\\"\"\n        ]);\n        if (conflicts.trim() !== \"\")\n            return yield* Effect_1.fail(rejected(\"still has conflicts\"));\n        return new Merged({ change: changeId, commit, onto: conflicted.onto });\n    })\n});\n",
+    "map": {
+     "version": 3,
+     "file": "Strategy.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAmB,MAAM,EAAE,UAAU,EAAE,MAAM,cAAgB,CAAA;AAoBpE;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,eAAe,GAAa,EAAE,UAAU,EAAE,CAAC,UAAU,EAAE,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,UAAU,CAAC,EAAE,CAAA;AAEnG;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,cAAc,GAAa;IACtC,UAAU,EAAE,CAAC,UAAU,EAAE,UAAU,EAAE,EAAE,CACrC,MAAM,CAAC,OAAO,CACZ,UAAU,CAAC,EAAE,CAAC,CAAC,SAAS,EAAE,UAAU,CAAC,MAAM,CAAC,CAAC,EAC7C,IAAI,UAAU,CAAC;QACb,MAAM,EAAE,UAAU;QAClB,OAAO,EAAE,2BAA2B,UAAU,CAAC,IAAI,OAAO,UAAU,CAAC,KAAK,CAAC,IAAI,CAAC,IAAI,CAAC,EAAE;QACvF,KAAK,EAAE,UAAU,CAAC,KAAK;KACxB,CAAC,CACH;CACJ,CAAA;AAED;;;;;;;;;;;;GAYG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,CACzB,QAA6F,EAC7E,EAAE,CAAC,CAAC;IACpB,UAAU,EAAE,yCAAQ,UAAU,EAAE,UAAU;QACxC,MAAM,EAAE,MAAM,EAAE,UAAO,QAAQ,CAAC,UAAU,EAAE,UAAU,CAAC,CAAA;QACvD,MAAM,QAAQ,GAAG,CAAC,GAAW,EAAE,EAAE,CAC/B,IAAI,UAAU,CAAC,EAAE,MAAM,EAAE,qBAAqB,EAAE,OAAO,EAAE,kBAAkB,MAAM,IAAI,GAAG,EAAE,EAAE,CAAC,CAAA;QAC/F,MAAM,KAAK,GAAG,QAAK,MAAM,CAAC,QAAQ,CAChC,UAAU,CAAC,EAAE,CAAC,CAAC,KAAK,EAAE,YAAY,EAAE,IAAI,EAAE,MAAM,EAAE,IAAI,EAAE,8CAA8C,CAAC,CAAC,EACxG,GAAG,EAAE,CAAC,QAAQ,CAAC,iBAAiB,CAAC,CAClC,EAAE,IAAI,EAAE,CAAC,KAAK,CAAC,IAAI,CAAC,CAAA;QACrB,IAAI,KAAK,CAAC,MAAM,KAAK,CAAC,IAAI,KAAK,CAAC,CAAC,CAAC,KAAK,EAAE;YAAE,4BAAM,QAAQ,CAAC,8BAA8B,CAAC,EAAA;QACzF,MAAM,CAAC,MAAM,EAAE,QAAQ,CAAC,GAAG,KAAK,CAAC,CAAC,CAAE,CAAC,KAAK,CAAC,IAAI,CAAqB,CAAA;QACpE,MAAM,QAAQ,UAAO,UAAU,CAAC,EAAE,CAAC;YACjC,KAAK;YACL,YAAY;YACZ,IAAI;YACJ,GAAG,UAAU,CAAC,IAAI,QAAQ,MAAM,EAAE;YAClC,IAAI;YACJ,WAAW;SACZ,CAAC,CAAA;QACF,IAAI,QAAQ,CAAC,IAAI,EAAE,KAAK,EAAE;YAAE,4BAAM,QAAQ,CAAC,yBAAyB,UAAU,CAAC,IAAI,EAAE,CAAC,EAAA;QACtF,MAAM,SAAS,UAAO,UAAU,CAAC,EAAE,CAAC;YAClC,KAAK;YACL,YAAY;YACZ,IAAI;YACJ,IAAI,UAAU,CAAC,IAAI,KAAK,MAAM,iBAAiB;YAC/C,IAAI;YACJ,sBAAsB;SACvB,CAAC,CAAA;QACF,IAAI,SAAS,CAAC,IAAI,EAAE,KAAK,EAAE;YAAE,4BAAM,QAAQ,CAAC,qBAAqB,CAAC,EAAA;QAClE,OAAO,IAAI,MAAM,CAAC,EAAE,MAAM,EAAE,QAAQ,EAAE,MAAM,EAAE,IAAI,EAAE,UAAU,CAAC,IAAI,EAAE,CAAC,CAAA;IACxE,CAAC,CAAA;CACF,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/ApplyAction.vibe"
      }
     ],
-    "code": "/**\n * Durable, recoverable application of captured work.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { Action, RetryPolicy } from \"@smthrs/flow\";\nimport { isGitLockContention } from \"@smthrs/jj\";\nimport * as Schema from \"effect/Schema\";\nimport { Work } from \"../Sandbox/Work.js\";\nimport { apply } from \"./apply.js\";\nimport { MergeError, Outcome } from \"./Outcome.js\";\n/**\n * Confirmed shared Git lock contention; only the engine retries it.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class GitLockContention extends Schema.TaggedError()(\"@smthrs/sandbox/SandboxMerge/GitLockContention\", { message: Schema.String }) {\n}\n/**\n * Lands work with a fixed commit target and key. Custom conflict strategies\n * belong in subsequent actions, outside this action's retry boundary.\n *\n * @category actions\n * @since 1.0.0\n */\nexport const Apply = Action.make(\"@smthrs/sandbox/SandboxMerge/Apply\", {\n    implementationVersion: \"sandbox-merge/v1\",\n    payload: {\n        work: Schema.toEncoded(Work),\n        repository: Schema.String,\n        onto: Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)),\n        message: Schema.String,\n        key: Schema.String,\n        fetch: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.Literal(false)])),\n    },\n    success: Outcome,\n    error: Schema.Union([MergeError, GitLockContention]),\n    retryPolicy: RetryPolicy.make({\n        initialMs: 100,\n        factor: 1,\n        maxMs: 100,\n        maxAttempts: 1_201,\n        nonRetryable: [\"@smthrs/sandbox/SandboxMerge/MergeError\"],\n    }),\n});\n/**\n * Implements {@link Apply} with the host's filesystem, spawner and mutation fence.\n * A failed command returns immediately. The engine journals the retry wait.\n *\n * @category layers\n * @since 1.0.0\n */\nexport const layerApply = Apply.toLayer(({ work, ...options }) => Effect.mapError(Effect.flatMap(Effect.orDie(Schema.decodeUnknownEffect(Work)(work)), (decoded) => apply(decoded, options)), (error) => error.reason === \"vcs_failed\" && isGitLockContention(error)\n    ? new GitLockContention({ message: error.message })\n    // Host errors can carry non-JSON objects. The raw effect preserves them;\n    // the action journals only the portable failure fields.\n    : new MergeError({\n        reason: error.reason,\n        message: error.message,\n    })), { implementationVersion: \"sandbox-merge/v1\" });\n",
+    "code": "/**\n * Durable, recoverable application of captured work.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { Action, RetryPolicy } from \"@smthrs/flow\";\nimport { isGitLockContention } from \"@smthrs/jj\";\nimport * as Schema from \"effect/Schema\";\nimport { Work } from \"../Sandbox/Work.js\";\nimport { apply } from \"./apply.js\";\nimport { MergeError, Outcome } from \"./Outcome.js\";\n/**\n * Confirmed shared Git lock contention; only the engine retries it.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class GitLockContention extends Schema.TaggedError()(\"@smthrs/sandbox/SandboxMerge/GitLockContention\", { message: Schema.String }) {\n}\n/**\n * Lands work with a fixed commit target and key. Custom conflict strategies\n * belong in subsequent actions, outside this action's retry boundary.\n *\n * @category actions\n * @since 1.0.0\n */\nexport const Apply = Action.make(\"@smthrs/sandbox/SandboxMerge/Apply\", {\n    implementationVersion: \"sandbox-merge/v1\",\n    payload: {\n        work: Schema.toEncoded(Work),\n        repository: Schema.String,\n        onto: Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)),\n        message: Schema.String,\n        key: Schema.String,\n        fetch: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.Literal(false)]))\n    },\n    success: Outcome,\n    error: Schema.Union([MergeError, GitLockContention]),\n    retryPolicy: RetryPolicy.make({\n        initialMs: 100,\n        factor: 1,\n        maxMs: 100,\n        maxAttempts: 1_201,\n        nonRetryable: [\"@smthrs/sandbox/SandboxMerge/MergeError\"]\n    })\n});\n/**\n * Implements {@link Apply} with the host's filesystem, spawner and mutation fence.\n * A failed command returns immediately. The engine journals the retry wait.\n *\n * @category layers\n * @since 1.0.0\n */\nexport const layerApply = Apply.toLayer(({ work, ...options }) => Effect.mapError(Effect.flatMap(Effect.orDie(Schema.decodeUnknownEffect(Work)(work)), (decoded) => apply(decoded, options)), (error) => error.reason === \"vcs_failed\" && isGitLockContention(error)\n    ? new GitLockContention({ message: error.message })\n    // Host errors can carry non-JSON objects. The raw effect preserves them;\n    // the action journals only the portable failure fields.\n    : new MergeError({\n        reason: error.reason,\n        message: error.message\n    })), { implementationVersion: \"sandbox-merge/v1\" });\n",
     "map": {
      "version": 3,
      "file": "ApplyAction.js",
@@ -6560,6 +6680,46 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,MAAM,EAAE,WAAW,EAAE,MAAM,cAAc,CAAA;AAClD,OAAO,EAAE,mBAAmB,EAAE,MAAM,YAAY,CAAA;AAChD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,IAAI,EAAE,MAAM,oBAAoB,CAAA;AACzC,OAAO,EAAE,KAAK,EAAE,MAAM,YAAY,CAAA;AAClC,OAAO,EAAE,UAAU,EAAE,OAAO,EAAE,MAAM,cAAgB,CAAA;AAEpD;;;;;GAKG;AACH,MAAM,OAAO,iBAAkB,SAAQ,MAAM,CAAC,WAAW,EAAqB,CAC5E,gDAAgD,EAChD,EAAE,OAAO,EAAE,MAAM,CAAC,MAAM,EAAE,CAC3B;CAAG;AAEJ;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,MAAM,CAAC,IAAI,CAAC,oCAAoC,EAAE;IACrE,qBAAqB,EAAE,kBAAkB;IACzC,OAAO,EAAE;QACP,IAAI,EAAE,MAAM,CAAC,SAAS,CAAC,IAAI,CAAC;QAC5B,UAAU,EAAE,MAAM,CAAC,MAAM;QACzB,IAAI,EAAE,MAAM,CAAC,MAAM,CAAC,KAAK,CAAC,MAAM,CAAC,SAAS,CAAC,iCAAiC,CAAC,CAAC;QAC9E,OAAO,EAAE,MAAM,CAAC,MAAM;QACtB,GAAG,EAAE,MAAM,CAAC,MAAM;QAClB,KAAK,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,KAAK,CAAC,CAAC,MAAM,CAAC,KAAK,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC;KAC3F;IACD,OAAO,EAAE,OAAO;IAChB,KAAK,EAAE,MAAM,CAAC,KAAK,CAAC,CAAC,UAAU,EAAE,iBAAiB,CAAC,CAAC;IACpD,WAAW,EAAE,WAAW,CAAC,IAAI,CAAC;QAC5B,SAAS,EAAE,GAAG;QACd,MAAM,EAAE,CAAC;QACT,KAAK,EAAE,GAAG;QACV,WAAW,EAAE,KAAK;QAClB,YAAY,EAAE,CAAC,yCAAyC,CAAC;KAC1D,CAAC;CACH,CAAC,CAAA;AAEF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,KAAK,CAAC,OAAO,CAAC,CAAC,EAAE,IAAI,EAAE,GAAG,OAAO,EAAE,EAAE,EAAE,CAI5D,MAAM,CAAC,QAAQ,CADf,MAAM,CAAC,OAAO,CADd,MAAM,CAAC,KAAK,CADf,MAAM,CAAC,mBAAmB,CAAC,IAAI,CAAC,CAAC,IAAI,CAAC,CACpB,EACG,CAAC,OAAO,EAAE,EAAE,CAAC,KAAK,CAAC,OAAO,EAAE,OAAO,CAAC,CAAC,EACpC,CAAC,KAAK,EAAE,EAAE,CAC9B,KAAK,CAAC,MAAM,KAAK,YAAY,IAAI,mBAAmB,CAAC,KAAK,CAAC;IACzD,CAAC,CAAC,IAAI,iBAAiB,CAAC,EAAE,OAAO,EAAE,KAAK,CAAC,OAAO,EAAE,CAAC;IACnD,yEAAyE;IACzE,wDAAwD;IACxD,CAAC,CAAC,IAAI,UAAU,CAAC;QACf,MAAM,EAAE,KAAK,CAAC,MAAM;QACpB,OAAO,EAAE,KAAK,CAAC,OAAO;KACvB,CAAC,CAAC,EAAE,EAAE,qBAAqB,EAAE,kBAAkB,EAAE,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.vibe"
+     }
+    ],
+    "code": "/**\n * Rejects environment names no guest shell would carry.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { ProviderError } from \"../RemoteChildProcessSpawner/ProviderError.js\";\n/**\n * The names a shell keeps: POSIX \"name\", a letter or underscore followed by\n * letters, digits, and underscores.\n */\nconst shellName = /^[A-Za-z_][A-Za-z0-9_]*$/;\n/**\n * Refuses a spawn whose environment holds a name a shell will not carry.\n *\n * Every provider runs the caller's command through a shell, because the\n * command is arbitrary shell text, and a shell rebuilds its environment from\n * the entries whose names are shell identifiers when it starts. `env(1)` and\n * a vendor's environment field both deliver `a-b=1` to the process they\n * start; the shell that process is then discards it, so the command runs\n * without the variable. Dash, which is `/bin/sh` on Debian and Ubuntu, drops\n * it. Bash, which is `/bin/sh` on macOS, keeps it. No arrangement of the\n * delivery fixes this, because the shell doing the dropping is the one that\n * has to interpret the command.\n *\n * The name is therefore refused before the command starts. A silent drop\n * would be worst: it is invisible to the host, so nothing downstream can\n * report it, and it lands only on the platform the machines actually run,\n * which is how one reached CI green on a developer's Mac and red on Linux.\n * Refusing fails closed, says which name and why, and gives every provider\n * and both platforms the same answer.\n *\n * Only names with a value are checked. An entry set to `undefined` asks for\n * no variable at all, so nothing can be lost by carrying it.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const checkEnvironmentNames = (env) => {\n    const unusable = Object.entries(env ?? {})\n        .filter((entry) => entry[1] !== undefined && !shellName.test(entry[0]))\n        .map((entry) => entry[0]);\n    return unusable.length === 0 ? Effect.void : Effect.fail(new ProviderError({\n        code: \"spawn_error\",\n        message: `the environment cannot carry ${unusable.join(\", \")}: a POSIX shell keeps only names ` +\n            `matching [A-Za-z_][A-Za-z0-9_]* and drops the rest when it starts, so the command would run ` +\n            `without them`\n    }));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "environmentNames.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,aAAa,EAAE,MAAM,+CAA+C,CAAA;AAE7E;;;GAGG;AACH,MAAM,SAAS,GAAG,0BAA0B,CAAA;AAE5C;;;;;;;;;;;;;;;;;;;;;;;;;GAyBG;AACH,MAAM,CAAC,MAAM,qBAAqB,GAAG,CACnC,GAA6D,EACzC,EAAE;IACtB,MAAM,QAAQ,GAAG,MAAM,CAAC,OAAO,CAAC,GAAG,IAAI,EAAE,CAAC;SACvC,MAAM,CAAC,CAAC,KAAK,EAAE,EAAE,CAAC,KAAK,CAAC,CAAC,CAAC,KAAK,SAAS,IAAI,CAAC,SAAS,CAAC,IAAI,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,CAAC;SACtE,GAAG,CAAC,CAAC,KAAK,EAAE,EAAE,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,CAAA;IAC3B,OAAO,QAAQ,CAAC,MAAM,KAAK,CAAC,CAAC,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,CAAC,CAAC,MAAM,CAAC,IAAI,CACtD,IAAI,aAAa,CAAC;QAChB,IAAI,EAAE,aAAa;QACnB,OAAO,EAAE,gCAAgC,QAAQ,CAAC,IAAI,CAAC,IAAI,CAAC,mCAAmC;YAC7F,8FAA8F;YAC9F,cAAc;KACjB,CAAC,CACH,CAAA;AACH,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
+     }
+    ],
+    "code": "/**\n * Adapts local child-process handles to the remote-process shape.\n *\n * @since 0.1.0\n */\nimport * as Stream from \"effect/Stream\";\nimport * as Effect from \"effect/Effect\";\nimport { ProviderError } from \"../RemoteChildProcessSpawner/ProviderError.js\";\nimport { concat } from \"./concat.js\";\n/**\n * Wraps a failure cause in the provider vocabulary. A cause that is already a\n * `ProviderError` is the more precise answer and passes through unchanged.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const providerFailure = (code, message) => (cause) => cause instanceof ProviderError ? cause : new ProviderError({ code, message, cause });\n/**\n * Presents a locally spawned handle as a remote process. The in-repository\n * providers run their transport locally — a shell, a container CLI — so the\n * three pieces a remote process has are the local handle's, with failures\n * restated in the provider vocabulary.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const remoteProcessOf = (handle, command) => ({\n    stdout: Stream.mapError(handle.stdout, providerFailure(\"unknown\", `\\`${command}\\`: stdout failed`)),\n    stderr: Stream.mapError(handle.stderr, providerFailure(\"unknown\", `\\`${command}\\`: stderr failed`)),\n    exitCode: Effect.mapError(handle.exitCode, providerFailure(\"unknown\", `\\`${command}\\`: exit could not be observed`))\n});\n/**\n * Runs one local command to completion and gathers its outputs.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const gather = (handle, command) => Effect.mapError(Effect.map(Effect.all([\n    Stream.runCollect(handle.stdout),\n    Stream.mkString(Stream.decodeText(handle.stderr)),\n    handle.exitCode\n], { concurrency: \"unbounded\" }), ([stdout, stderr, code]) => ({ stdout: concat(stdout), stderr, code })), providerFailure(\"unknown\", `\\`${command}\\` could not be observed to completion`));\n",
+    "map": {
+     "version": 3,
+     "file": "localProcess.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAGvC,OAAO,EAAE,aAAa,EAAE,MAAM,+CAA+C,CAAA;AAC7E,OAAO,EAAE,MAAM,EAAE,MAAM,aAAa,CAAA;AAEpC;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,CAAC,IAA2B,EAAE,OAAe,EAAE,EAAE,CAAC,CAAC,KAAc,EAAiB,EAAE,CACjH,KAAK,YAAY,aAAa,CAAC,CAAC,CAAC,KAAK,CAAC,CAAC,CAAC,IAAI,aAAa,CAAC,EAAE,IAAI,EAAE,OAAO,EAAE,KAAK,EAAE,CAAC,CAAA;AAEtF;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,CAAC,MAA0B,EAAE,OAAe,EAAiB,EAAE,CAAC,CAAC;IAC9F,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,EAAE,eAAe,CAAC,SAAS,EAAE,KAAK,OAAO,mBAAmB,CAAC,CAAC;IACnG,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,EAAE,eAAe,CAAC,SAAS,EAAE,KAAK,OAAO,mBAAmB,CAAC,CAAC;IACnG,QAAQ,EAAE,MAAM,CAAC,QAAQ,CACvB,MAAM,CAAC,QAAQ,EACf,eAAe,CAAC,SAAS,EAAE,KAAK,OAAO,gCAAgC,CAAC,CACzE;CACF,CAAC,CAAA;AAgBF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,CACpB,MAA0B,EAC1B,OAAe,EACY,EAAE,CAU1B,MAAM,CAAC,QAAQ,CADf,MAAM,CAAC,GAAG,CARb,MAAM,CAAC,GAAG,CACR;IACE,MAAM,CAAC,UAAU,CAAC,MAAM,CAAC,MAAM,CAAC;IAChC,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,UAAU,CAAC,MAAM,CAAC,MAAM,CAAC,CAAC;IACjD,MAAM,CAAC,QAAQ;CAChB,EACD,EAAE,WAAW,EAAE,WAAW,EAAE,CAC7B,EACgB,CAAC,CAAC,MAAM,EAAE,MAAM,EAAE,IAAI,CAAC,EAAE,EAAE,CAAC,CAAC,EAAE,MAAM,EAAE,MAAM,CAAC,MAAM,CAAC,EAAE,MAAM,EAAE,IAAI,EAAE,CAAC,CAAC,EAClE,eAAe,CAAC,SAAS,EAAE,KAAK,OAAO,wCAAwC,CAAC,CAAC,CAAA"
     }
    },
    {
@@ -6585,10 +6745,50 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.vibe"
+     }
+    ],
+    "code": "/**\n * Identifies the owner and requested configuration of a crash-left machine.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { providerFailure } from \"./localProcess.js\";\n/** A stable SHA-256 fingerprint, encoded to fit a Kubernetes label value.\n * @since 0.1.0\n * @private\n */\nexport const configurationFingerprint = (configuration) => Effect.tryPromise({\n    try: async () => {\n        const canonical = JSON.stringify(configuration, (_key, value) => value !== null && typeof value === \"object\" && !Array.isArray(value)\n            ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]))\n            : value);\n        const digest = await globalThis.crypto.subtle.digest(\"SHA-256\", new TextEncoder().encode(canonical));\n        return \"v1-\" + btoa(String.fromCharCode(...new Uint8Array(digest)))\n            .replaceAll(\"+\", \"-\").replaceAll(\"/\", \"_\").replaceAll(\"=\", \"\");\n    },\n    catch: providerFailure(\"unavailable\", \"could not fingerprint the sandbox configuration\")\n});\n",
+    "map": {
+     "version": 3,
+     "file": "configurationFingerprint.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,eAAe,EAAE,MAAM,mBAAqB,CAAA;AAErD;;;GAGG;AACH,MAAM,CAAC,MAAM,wBAAwB,GAAG,CAAC,aAAsB,EAAE,EAAE,CACjE,MAAM,CAAC,UAAU,CAAC;IAChB,GAAG,EAAE,KAAK,IAAI,EAAE;QACd,MAAM,SAAS,GAAG,IAAI,CAAC,SAAS,CAAC,aAAa,EAAE,CAAC,IAAI,EAAE,KAAK,EAAE,EAAE,CAC9D,KAAK,KAAK,IAAI,IAAI,OAAO,KAAK,KAAK,QAAQ,IAAI,CAAC,KAAK,CAAC,OAAO,CAAC,KAAK,CAAC;YAClE,CAAC,CAAC,MAAM,CAAC,WAAW,CAAC,MAAM,CAAC,IAAI,CAAC,KAAK,CAAC,CAAC,IAAI,EAAE,CAAC,GAAG,CAAC,CAAC,GAAG,EAAE,EAAE,CAAC,CAAC,GAAG,EAAE,KAAK,CAAC,GAAG,CAAC,CAAC,CAAC,CAAC;YAC/E,CAAC,CAAC,KAAK,CAAC,CAAA;QACZ,MAAM,MAAM,GAAG,MAAM,UAAU,CAAC,MAAM,CAAC,MAAM,CAAC,MAAM,CAAC,SAAS,EAAE,IAAI,WAAW,EAAE,CAAC,MAAM,CAAC,SAAS,CAAC,CAAC,CAAA;QACpG,OAAO,KAAK,GAAG,IAAI,CAAC,MAAM,CAAC,YAAY,CAAC,GAAG,IAAI,UAAU,CAAC,MAAM,CAAC,CAAC,CAAC;aAChE,UAAU,CAAC,GAAG,EAAE,GAAG,CAAC,CAAC,UAAU,CAAC,GAAG,EAAE,GAAG,CAAC,CAAC,UAAU,CAAC,GAAG,EAAE,EAAE,CAAC,CAAA;IAClE,CAAC;IACD,KAAK,EAAE,eAAe,CAAC,aAAa,EAAE,iDAAiD,CAAC;CACzF,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.vibe"
+     }
+    ],
+    "code": "/**\n * Bounds provider cleanup independently of the caller's clock.\n *\n * @since 0.1.0\n */\nimport * as Fiber from \"effect/Fiber\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { elapsed } from \"./deadline.js\";\n/**\n * Gives one cleanup operation five seconds, then warns with its resource name.\n * Observe a detached fiber: racing the operation itself would await its\n * interruption, including any uninterruptible transport acquisition or release.\n * Interruption is requested without waiting when observation ends.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const finalizeWithin = (cleanup, resource) => Effect.uninterruptible(Effect_1.gen(function* () {\n    const running = yield* Effect.forkDetach(Effect.interruptible(cleanup));\n    yield* (Effect.ensuring(Effect.raceFirst(Fiber.join(running), Effect.andThen(elapsed(5_000), Effect.logWarning(\"sandbox teardown timed out\", { resource, timeoutMs: 5_000 }))), Effect.forkDetach(Fiber.interrupt(running), { startImmediately: true })));\n}));\n",
+    "map": {
+     "version": 3,
+     "file": "finalizeWithin.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,OAAO,EAAE,MAAM,eAAe,CAAA;AAEvC;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,cAAc,GAAG,CAC5B,OAAqB,EACrB,QAAgB,EACF,EAAE,CAChB,MAAM,CAAC,eAAe,CAAC,a,CAAA;IACrB,MAAM,OAAO,UAAO,MAAM,CAAC,UAAU,CAAC,MAAM,CAAC,aAAa,CAAC,OAAO,CAAC,CAAC,CAAA;IACpE,OAAI,CAGC,MAAM,CAAC,QAAQ,CAHf,MAAM,CAAC,SAAS,CACnB,KAAK,CAAC,IAAI,CAAC,OAAO,CAAC,EACnB,MAAM,CAAC,OAAO,CAAC,OAAO,CAAC,KAAK,CAAC,EAAE,MAAM,CAAC,UAAU,CAAC,4BAA4B,EAAE,EAAE,QAAQ,EAAE,SAAS,EAAE,KAAK,EAAE,CAAC,CAAC,CAChH,EAAuB,MAAM,CAAC,UAAU,CAAC,KAAK,CAAC,SAAS,CAAC,OAAO,CAAC,EAAE,EAAE,gBAAgB,EAAE,IAAI,EAAE,CAAC,CAAC,CAAC,CAAA;AACnG,CAAC,CAAA,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/GarbageCollector.vibe"
      }
     ],
-    "code": "/**\n * The host's full garbage collection, which Microsandbox's finished command\n * handles wait for.\n *\n * The SDK's streaming exec handle holds its guest agent session until the\n * JavaScript object is garbage collected: draining it, waiting on it, or\n * killing it does not release it. A machine refuses new sessions\n * (`[AgentClient] … handshake: early eof`) once about 140 finished handles\n * are still uncollected, and in a host whose heap is large and quiet that is\n * the machine going dead in the middle of a task. The provider therefore\n * collects garbage every 64 command starts, and before it reconnects to a\n * guest that stopped answering.\n *\n * Collecting is the host's to do, so the provider asks for it as this\n * service: `NodeGarbageCollector.layer` from `@smthrs/platform-node` on Node,\n * `BunGarbageCollector.layer` from `@smthrs/platform-bun` on Bun, and\n * {@link layerGarbageCollectorNoop} on a host with no collector to call.\n *\n * @since 1.0.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\n/**\n * The host's garbage collector.\n *\n * @category services\n * @since 1.0.0\n */\nexport const GarbageCollector = Context.Service(\"@smthrs/sandbox/MicrosandboxSandbox/GarbageCollector\");\n/**\n * A collector that collects nothing, for a host that has none to call, such\n * as a browser or a Worker. Finished handles there wait for the runtime's own\n * collection, so a machine that runs more than about 140 commands between two\n * of them refuses further ones.\n *\n * @category layers\n * @since 1.0.0\n */\nexport const layerGarbageCollectorNoop = Layer.succeed(GarbageCollector)({\n    collect: Effect.void,\n});\n",
+    "code": "/**\n * The host's full garbage collection, which Microsandbox's finished command\n * handles wait for.\n *\n * The SDK's streaming exec handle holds its guest agent session until the\n * JavaScript object is garbage collected: draining it, waiting on it, or\n * killing it does not release it. A machine refuses new sessions\n * (`[AgentClient] … handshake: early eof`) once about 140 finished handles\n * are still uncollected, and in a host whose heap is large and quiet that is\n * the machine going dead in the middle of a task. The provider therefore\n * collects garbage every 64 command starts, and before it reconnects to a\n * guest that stopped answering.\n *\n * Collecting is the host's to do, so the provider asks for it as this\n * service: `NodeGarbageCollector.layer` from `@smthrs/platform-node` on Node,\n * `BunGarbageCollector.layer` from `@smthrs/platform-bun` on Bun, and\n * {@link layerGarbageCollectorNoop} on a host with no collector to call.\n *\n * @since 1.0.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\n/**\n * The host's garbage collector.\n *\n * @category services\n * @since 1.0.0\n */\nexport const GarbageCollector = Context.Service(\"@smthrs/sandbox/MicrosandboxSandbox/GarbageCollector\");\n/**\n * A collector that collects nothing, for a host that has none to call, such\n * as a browser or a Worker. Finished handles there wait for the runtime's own\n * collection, so a machine that runs more than about 140 commands between two\n * of them refuses further ones.\n *\n * @category layers\n * @since 1.0.0\n */\nexport const layerGarbageCollectorNoop = Layer.succeed(GarbageCollector)({\n    collect: Effect.void\n});\n",
     "map": {
      "version": 3,
      "file": "GarbageCollector.js",
@@ -6605,10 +6805,50 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/sandbox/src/internal/attempt.vibe"
+     }
+    ],
+    "code": "/**\n * Runs a vendor SDK promise in the provider error vocabulary.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { providerFailure } from \"./localProcess.js\";\n/**\n * Builds a provider's `attempt`: it runs `thunk` and restates a rejection as a\n * `ProviderError` with `code` and the message `${prefix}: ${message}`.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const attemptIn = (prefix) => (thunk, code, message) => Effect.tryPromise({ try: thunk, catch: providerFailure(code, `${prefix}: ${message}`) });\n",
+    "map": {
+     "version": 3,
+     "file": "attempt.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/internal/attempt.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC,OAAO,EAAE,eAAe,EAAE,MAAM,mBAAqB,CAAA;AAErD;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,MAAc,EAAE,EAAE,CAC5C,CACE,KAAuB,EACvB,IAA2B,EAC3B,OAAe,EACE,EAAE,CAAC,MAAM,CAAC,UAAU,CAAC,EAAE,GAAG,EAAE,KAAK,EAAE,KAAK,EAAE,eAAe,CAAC,IAAI,EAAE,GAAG,MAAM,KAAK,OAAO,EAAE,CAAC,EAAE,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.vibe"
+     }
+    ],
+    "code": "/**\n * When the provider gives Microsandbox's finished exec handles back to the\n * guest: every {@link collectEvery} command starts, through the host's\n * `GarbageCollector`. Why the handles wait for a collection is in\n * `../MicrosandboxSandbox/GarbageCollector.ts`.\n *\n * The count is kept per collector. A host provides one collector for its\n * process, so every provider in it counts toward the same collections, the\n * way they share one heap.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\n/**\n * How many command starts pass between two collections: with the concurrent\n * commands of one session on top, far fewer than the handles a machine\n * refuses at.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const collectEvery = 64;\nconst counts = new WeakMap();\n/**\n * Counts one command start toward `collector`'s next collection, and collects\n * on every `every`th.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const started = (collector, every = collectEvery) => Effect.suspend(() => {\n    const count = (counts.get(collector) ?? 0) + 1;\n    counts.set(collector, count);\n    return count % every === 0 ? collector.collect : Effect.void;\n});\n",
+    "map": {
+     "version": 3,
+     "file": "execHandles.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;;;GAWG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAGvC;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,EAAE,CAAA;AAE9B,MAAM,MAAM,GAAG,IAAI,OAAO,EAA4B,CAAA;AAEtD;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,CAAC,SAA2B,EAAE,KAAK,GAAW,YAAY,EAAU,EAAE,CAC3F,MAAM,CAAC,OAAO,CAAC,GAAG,EAAE;IAClB,MAAM,KAAK,GAAG,CAAC,MAAM,CAAC,GAAG,CAAC,SAAS,CAAC,IAAI,CAAC,CAAC,GAAG,CAAC,CAAA;IAC9C,MAAM,CAAC,GAAG,CAAC,SAAS,EAAE,KAAK,CAAC,CAAA;IAC5B,OAAO,KAAK,GAAG,KAAK,KAAK,CAAC,CAAC,CAAC,CAAC,SAAS,CAAC,OAAO,CAAC,CAAC,CAAC,MAAM,CAAC,IAAI,CAAA;AAC9D,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/sandbox/src/internal/linuxSignals.vibe"
      }
     ],
-    "code": "/**\n * Maps signal names onto Linux signal numbers.\n *\n * @since 0.1.0\n */\n/**\n * The Linux numbering. Guests are Linux, so a name's number is the guest's\n * whatever platform the host runs on. Names Linux has no signal for are\n * absent.\n */\nconst numbers = {\n    SIGHUP: 1,\n    SIGINT: 2,\n    SIGQUIT: 3,\n    SIGILL: 4,\n    SIGTRAP: 5,\n    SIGABRT: 6,\n    SIGIOT: 6,\n    SIGBUS: 7,\n    SIGFPE: 8,\n    SIGKILL: 9,\n    SIGUSR1: 10,\n    SIGSEGV: 11,\n    SIGUSR2: 12,\n    SIGPIPE: 13,\n    SIGALRM: 14,\n    SIGTERM: 15,\n    SIGSTKFLT: 16,\n    SIGCHLD: 17,\n    SIGCONT: 18,\n    SIGSTOP: 19,\n    SIGTSTP: 20,\n    SIGTTIN: 21,\n    SIGTTOU: 22,\n    SIGURG: 23,\n    SIGXCPU: 24,\n    SIGXFSZ: 25,\n    SIGVTALRM: 26,\n    SIGPROF: 27,\n    SIGWINCH: 28,\n    SIGIO: 29,\n    SIGPOLL: 29,\n    SIGPWR: 30,\n    SIGSYS: 31,\n    SIGUNUSED: 31,\n};\n/**\n * The Linux number of a signal name, or `undefined` for a name Linux does not\n * define (`SIGBREAK`, `SIGLOST`, `SIGINFO`).\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const linuxSignalNumber = (signal) => numbers[signal];\n",
+    "code": "/**\n * Maps signal names onto Linux signal numbers.\n *\n * @since 0.1.0\n */\n/**\n * The Linux numbering. Guests are Linux, so a name's number is the guest's\n * whatever platform the host runs on. Names Linux has no signal for are\n * absent.\n */\nconst numbers = {\n    SIGHUP: 1,\n    SIGINT: 2,\n    SIGQUIT: 3,\n    SIGILL: 4,\n    SIGTRAP: 5,\n    SIGABRT: 6,\n    SIGIOT: 6,\n    SIGBUS: 7,\n    SIGFPE: 8,\n    SIGKILL: 9,\n    SIGUSR1: 10,\n    SIGSEGV: 11,\n    SIGUSR2: 12,\n    SIGPIPE: 13,\n    SIGALRM: 14,\n    SIGTERM: 15,\n    SIGSTKFLT: 16,\n    SIGCHLD: 17,\n    SIGCONT: 18,\n    SIGSTOP: 19,\n    SIGTSTP: 20,\n    SIGTTIN: 21,\n    SIGTTOU: 22,\n    SIGURG: 23,\n    SIGXCPU: 24,\n    SIGXFSZ: 25,\n    SIGVTALRM: 26,\n    SIGPROF: 27,\n    SIGWINCH: 28,\n    SIGIO: 29,\n    SIGPOLL: 29,\n    SIGPWR: 30,\n    SIGSYS: 31,\n    SIGUNUSED: 31\n};\n/**\n * The Linux number of a signal name, or `undefined` for a name Linux does not\n * define (`SIGBREAK`, `SIGLOST`, `SIGINFO`).\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const linuxSignalNumber = (signal) => numbers[signal];\n",
     "map": {
      "version": 3,
      "file": "linuxSignals.js",
@@ -6648,7 +6888,7 @@
       "relative": "packages/smithers/flows/sandbox/src/internal/MicrosandboxReattachRefusal.vibe"
      }
     ],
-    "code": "/**\n * The reasons a named Microsandbox machine is not reattached to.\n *\n * `openMachine` raises one inside its attempt, and the provider reports it as\n * the `cause` of a `ProviderError`, so a caller reads the stable `code`\n * instead of parsing the message.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Why a reattach was refused.\n *\n * @category models\n * @since 1.0.0\n */\nexport const MicrosandboxReattachRefusalCode = Schema.Literals([\n    \"network_mismatch\",\n    \"limits_mismatch\",\n    \"ownership_not_recorded\",\n]);\n/**\n * A machine that cannot be reattached to under this session's configuration.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class MicrosandboxReattachRefusal extends Schema.TaggedError()(\"@smthrs/sandbox/MicrosandboxReattachRefusal\", {\n    code: MicrosandboxReattachRefusalCode,\n    message: Schema.String,\n}) {\n    name = \"MicrosandboxReattachRefusal\";\n}\n",
+    "code": "/**\n * The reasons a named Microsandbox machine is not reattached to.\n *\n * `openMachine` raises one inside its attempt, and the provider reports it as\n * the `cause` of a `ProviderError`, so a caller reads the stable `code`\n * instead of parsing the message.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Why a reattach was refused.\n *\n * @category models\n * @since 1.0.0\n */\nexport const MicrosandboxReattachRefusalCode = Schema.Literals([\n    \"network_mismatch\",\n    \"limits_mismatch\",\n    \"ownership_not_recorded\"\n]);\n/**\n * A machine that cannot be reattached to under this session's configuration.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class MicrosandboxReattachRefusal extends Schema.TaggedError()(\"@smthrs/sandbox/MicrosandboxReattachRefusal\", {\n    code: MicrosandboxReattachRefusalCode,\n    message: Schema.String\n}) {\n    name = \"MicrosandboxReattachRefusal\";\n}\n",
     "map": {
      "version": 3,
      "file": "MicrosandboxReattachRefusal.js",
@@ -6679,7 +6919,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    },
    {
@@ -6728,7 +6968,7 @@
       "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/SandboxUnhealthy.vibe"
      }
     ],
-    "code": "/**\n * Defines the event supervision reports when it retires a session.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { UnhealthyReason } from \"../SandboxHealth/UnhealthyReason.js\";\n/**\n * A supervised sandbox session failed its liveness probe and was retired.\n *\n * The event is a schema class rather than a log line because a control plane\n * records it: a run that failed because its sandbox died reads very differently\n * from a run that failed on its own, and only this event tells them apart.\n *\n * @category models\n * @since 0.1.0\n */\nexport class SandboxUnhealthy extends Schema.Class(\"@smthrs/sandbox/SandboxSupervision/SandboxUnhealthy\")({\n    _tag: Schema.tag(\"sandbox-unhealthy\"),\n    /** The provider-neutral session key that was retired. */\n    session: Schema.String,\n    /** Why the probe declared the session dead. */\n    reason: UnhealthyReason,\n    /** The probe's own description of the failure, when it had one. */\n    message: Schema.optional(Schema.String),\n    /** How many consecutive unhealthy probes it took to reach the verdict. */\n    probes: Schema.Int,\n}) {\n}\n",
+    "code": "/**\n * Defines the event supervision reports when it retires a session.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { UnhealthyReason } from \"../SandboxHealth/UnhealthyReason.js\";\n/**\n * A supervised sandbox session failed its liveness probe and was retired.\n *\n * The event is a schema class rather than a log line because a control plane\n * records it: a run that failed because its sandbox died reads very differently\n * from a run that failed on its own, and only this event tells them apart.\n *\n * @category models\n * @since 0.1.0\n */\nexport class SandboxUnhealthy extends Schema.Class(\"@smthrs/sandbox/SandboxSupervision/SandboxUnhealthy\")({\n    _tag: Schema.tag(\"sandbox-unhealthy\"),\n    /** The provider-neutral session key that was retired. */\n    session: Schema.String,\n    /** Why the probe declared the session dead. */\n    reason: UnhealthyReason,\n    /** The probe's own description of the failure, when it had one. */\n    message: Schema.optional(Schema.String),\n    /** How many consecutive unhealthy probes it took to reach the verdict. */\n    probes: Schema.Int\n}) {\n}\n",
     "map": {
      "version": 3,
      "file": "SandboxUnhealthy.js",
@@ -6748,7 +6988,7 @@
       "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/Reporter.vibe"
      }
     ],
-    "code": "/**\n * Defines where supervision reports an unhealthy sandbox.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\n/**\n * Reports a retirement as a warning on the current logger.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const loggingReporter = {\n    unhealthy: (event) => Effect.logWarning(\"sandbox-unhealthy\", {\n        session: event.session,\n        reason: event.reason,\n        message: event.message,\n        probes: event.probes,\n    }),\n};\n",
+    "code": "/**\n * Defines where supervision reports an unhealthy sandbox.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\n/**\n * Reports a retirement as a warning on the current logger.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const loggingReporter = {\n    unhealthy: (event) => Effect.logWarning(\"sandbox-unhealthy\", {\n        session: event.session,\n        reason: event.reason,\n        message: event.message,\n        probes: event.probes\n    })\n};\n",
     "map": {
      "version": 3,
      "file": "Reporter.js",

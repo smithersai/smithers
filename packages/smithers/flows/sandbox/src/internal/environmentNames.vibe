@@ -41,7 +41,7 @@ const shellName = /^[A-Za-z_][A-Za-z0-9_]*$/
  */
 export const checkEnvironmentNames = (
   env: Readonly<Record<string, string | undefined>> | undefined
-): Effect.Effect<void, ProviderError> => {
+): void!ProviderError => {
   const unusable = Object.entries(env ?? {})
     .filter((entry) => entry[1] !== undefined && !shellName.test(entry[0]))
     .map((entry) => entry[0])

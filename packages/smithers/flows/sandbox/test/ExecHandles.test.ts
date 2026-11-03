@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { collectEvery, started } from "../src/internal/execHandles.ts"
+import { collectEvery, started } from "../src/internal/execHandles.vibe"
 import { GarbageCollector, layerGarbageCollectorNoop } from "../src/MicrosandboxSandbox/GarbageCollector.vibe"
 
 /** A collector that counts its collections. */

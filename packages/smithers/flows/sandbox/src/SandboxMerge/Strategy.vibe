@@ -6,7 +6,7 @@
 
 import * as Effect from "effect/Effect"
 import { type Conflicted, Merged, MergeError } from "./Outcome.vibe"
-import type { Repository } from "./Repository.ts"
+import type { Repository } from "./Repository.vibe"
 
 /**
  * A merge strategy: given the conflicted change `apply` recorded, answer the
@@ -22,7 +22,7 @@ export interface Strategy<E = never, R = never> {
   readonly onConflict: (
     conflicted: Conflicted,
     repository: Repository
-  ) => Effect.Effect<Merged | Conflicted, E | MergeError, R>
+  ) => Merged | Conflicted!E | MergeError!R
 }
 
 /**
@@ -68,37 +68,36 @@ export const failOnConflict: Strategy = {
  * @since 1.0.0
  */
 export const resolveWith = <E, R>(
-  resolver: (conflicted: Conflicted, repository: Repository) => Effect.Effect<{ readonly change: string }, E, R>
+  resolver: (conflicted: Conflicted, repository: Repository) => { readonly change: string }!E!R
 ): Strategy<E, R> => ({
-  onConflict: (conflicted, repository) =>
-    Effect.gen(function*() {
-      const { change } = yield* resolver(conflicted, repository)
-      const rejected = (why: string) =>
-        new MergeError({ reason: "resolution_rejected", message: `the resolution ${change} ${why}` })
-      const named = (yield* Effect.mapError(
-        repository.jj(["log", "--no-graph", "-r", change, "-T", "commit_id ++ \"\\t\" ++ change_id ++ \"\\n\""]),
-        () => rejected("names no commit")
-      )).trim().split("\n")
-      if (named.length !== 1 || named[0] === "") return yield* rejected("must name exactly one commit")
-      const [commit, changeId] = named[0]!.split("\t") as [string, string]
-      const descends = yield* repository.jj([
-        "log",
-        "--no-graph",
-        "-r",
-        `${conflicted.onto} & ::${commit}`,
-        "-T",
-        "commit_id"
-      ])
-      if (descends.trim() === "") return yield* rejected(`does not descend from ${conflicted.onto}`)
-      const conflicts = yield* repository.jj([
-        "log",
-        "--no-graph",
-        "-r",
-        `(${conflicted.onto}::${commit}) & conflicts()`,
-        "-T",
-        "commit_id ++ \"\\n\""
-      ])
-      if (conflicts.trim() !== "") return yield* rejected("still has conflicts")
-      return new Merged({ change: changeId, commit, onto: conflicted.onto })
-    })
+  onConflict: effect (conflicted, repository) => {
+    const { change } = try resolver(conflicted, repository)
+    const rejected = (why: string) =>
+      new MergeError({ reason: "resolution_rejected", message: `the resolution ${change} ${why}` })
+    const named = (try Effect.mapError(
+      repository.jj(["log", "--no-graph", "-r", change, "-T", "commit_id ++ \"\\t\" ++ change_id ++ \"\\n\""]),
+      () => rejected("names no commit")
+    )).trim().split("\n")
+    if (named.length !== 1 || named[0] === "") throw rejected("must name exactly one commit")
+    const [commit, changeId] = named[0]!.split("\t") as [string, string]
+    const descends = try repository.jj([
+      "log",
+      "--no-graph",
+      "-r",
+      `${conflicted.onto} & ::${commit}`,
+      "-T",
+      "commit_id"
+    ])
+    if (descends.trim() === "") throw rejected(`does not descend from ${conflicted.onto}`)
+    const conflicts = try repository.jj([
+      "log",
+      "--no-graph",
+      "-r",
+      `(${conflicted.onto}::${commit}) & conflicts()`,
+      "-T",
+      "commit_id ++ \"\\n\""
+    ])
+    if (conflicts.trim() !== "") throw rejected("still has conflicts")
+    return new Merged({ change: changeId, commit, onto: conflicted.onto })
+  }
 })

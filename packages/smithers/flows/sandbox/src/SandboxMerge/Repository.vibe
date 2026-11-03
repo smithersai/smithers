@@ -5,9 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import * as Stream from "effect/Stream"
 import { MergeError } from "./Outcome.vibe"
 
 /**
@@ -24,7 +22,7 @@ export interface Repository {
    * standard output. Nothing here snapshots or rewrites a working copy, so
    * the repository may be a checkout other people are editing.
    */
-  readonly jj: (args: ReadonlyArray<string>) => Effect.Effect<string, MergeError>
+  readonly jj: (args: ReadonlyArray<string>) => string!MergeError
 }
 
 /** Options for one host command. */
@@ -47,15 +45,15 @@ export const output = (
   command: string,
   args: ReadonlyArray<string>,
   options: Run = {}
-): Effect.Effect<string, MergeError> =>
-  Effect.scoped(Effect.gen(function*() {
-    const handle = yield* spawner.spawn(ChildProcess.make(command, args, {
+): string!MergeError =>
+  Effect.scoped(effect {
+    const handle = try spawner.spawn(ChildProcess.make(command, args, {
       ...options.cwd === undefined ? {} : { cwd: options.cwd },
       // Extends, never replaces, the host environment: `PATH` and the identity still apply.
       ...options.env === undefined ? {} : { env: options.env, extendEnv: true },
       ...options.stdin === undefined ? {} : { stdin: Stream.make(new TextEncoder().encode(options.stdin)) }
     }))
-    const [stdout, stderr, code] = yield* Effect.all(
+    const [stdout, stderr, code] = try Effect.all(
       [
         Stream.mkString(Stream.decodeText(handle.stdout)),
         Stream.mkString(Stream.decodeText(handle.stderr)),
@@ -64,17 +62,17 @@ export const output = (
       { concurrency: "unbounded" }
     )
     if (code !== 0) {
-      return yield* new MergeError({
+      throw new MergeError({
         reason: "vcs_failed",
         message: `${command} ${args.join(" ")} exited ${code}: ${stderr.trim().split("\n").slice(-3).join("\n")}`
       })
     }
     return stdout
-  })).pipe(
-    Effect.catchTag(
-      "PlatformError",
-      (cause) => new MergeError({ reason: "vcs_failed", message: `${command} could not run: ${cause.message}`, cause })
-    )
+  })
+  |> Effect.catchTag(
+    %,
+    "PlatformError",
+    (cause) => new MergeError({ reason: "vcs_failed", message: `${command} could not run: ${cause.message}`, cause })
   )
 
 /**
@@ -83,15 +81,14 @@ export const output = (
  * @category constructors
  * @since 1.0.0
  */
-export const make = (path: string): Effect.Effect<Repository, MergeError, ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner
-    return {
-      path,
-      jj: (args) =>
-        // From the repository's root, so the paths jj prints are repository-relative.
-        output(spawner, "jj", ["-R", path, "--ignore-working-copy", "--no-pager", "--color=never", ...args], {
-          cwd: path
-        })
-    }
-  })
+export const make = effect (path: string): Repository!MergeError!ChildProcessSpawner => {
+  const spawner = try ChildProcessSpawner
+  return {
+    path,
+    jj: (args) =>
+      // From the repository's root, so the paths jj prints are repository-relative.
+      output(spawner, "jj", ["-R", path, "--ignore-working-copy", "--no-pager", "--color=never", ...args], {
+        cwd: path
+      })
+  }
+}

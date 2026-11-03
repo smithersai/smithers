@@ -6,7 +6,7 @@
 
 import * as Effect from "effect/Effect"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import { providerFailure } from "./localProcess.ts"
+import { providerFailure } from "./localProcess.vibe"
 
 /**
  * Builds a provider's `attempt`: it runs `thunk` and restates a rejection as a
@@ -20,5 +20,4 @@ export const attemptIn = (prefix: string) =>
   thunk: () => Promise<A>,
   code: ProviderError["code"],
   message: string
-): Effect.Effect<A, ProviderError> =>
-  Effect.tryPromise({ try: thunk, catch: providerFailure(code, `${prefix}: ${message}`) })
+): A!ProviderError => Effect.tryPromise({ try: thunk, catch: providerFailure(code, `${prefix}: ${message}`) })

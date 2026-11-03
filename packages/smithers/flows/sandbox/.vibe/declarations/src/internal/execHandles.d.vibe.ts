@@ -10,10 +10,8 @@
  *
  * @since 0.1.0
  */
-
-import * as Effect from "effect/Effect"
-import type { GarbageCollector } from "../MicrosandboxSandbox/GarbageCollector.vibe"
-
+import * as Effect from "effect/Effect";
+import type { GarbageCollector } from "../MicrosandboxSandbox/GarbageCollector.vibe";
 /**
  * How many command starts pass between two collections: with the concurrent
  * commands of one session on top, far fewer than the handles a machine
@@ -22,10 +20,7 @@ import type { GarbageCollector } from "../MicrosandboxSandbox/GarbageCollector.v
  * @category constants
  * @since 0.1.0
  */
-export const collectEvery = 64
-
-const counts = new WeakMap<GarbageCollector, number>()
-
+export declare const collectEvery = 64;
 /**
  * Counts one command start toward `collector`'s next collection, and collects
  * on every `every`th.
@@ -33,9 +28,4 @@ const counts = new WeakMap<GarbageCollector, number>()
  * @category constructors
  * @since 1.0.0
  */
-export const started = (collector: GarbageCollector, every: number = collectEvery): Effect.Effect<void> =>
-  Effect.suspend(() => {
-    const count = (counts.get(collector) ?? 0) + 1
-    counts.set(collector, count)
-    return count % every === 0 ? collector.collect : Effect.void
-  })
+export declare const started: (collector: GarbageCollector, every?: number) => Effect.Effect<void>;

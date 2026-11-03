@@ -25,6 +25,6 @@ export class SandboxUnhealthy extends Schema.Class("@smthrs/sandbox/SandboxSuper
     /** The probe's own description of the failure, when it had one. */
     message: Schema.optional(Schema.String),
     /** How many consecutive unhealthy probes it took to reach the verdict. */
-    probes: Schema.Int,
+    probes: Schema.Int
 }) {
 }

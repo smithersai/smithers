@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { configurationFingerprint } from "../src/internal/configurationFingerprint.ts"
+import { configurationFingerprint } from "../src/internal/configurationFingerprint.vibe"
 
 describe("configurationFingerprint", () => {
   it.effect("compares configuration values independently of object insertion order", () =>

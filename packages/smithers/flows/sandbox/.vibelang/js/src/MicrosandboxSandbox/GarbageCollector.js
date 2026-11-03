@@ -39,5 +39,5 @@ export const GarbageCollector = Context.Service("@smthrs/sandbox/MicrosandboxSan
  * @since 1.0.0
  */
 export const layerGarbageCollectorNoop = Layer.succeed(GarbageCollector)({
-    collect: Effect.void,
+    collect: Effect.void
 });

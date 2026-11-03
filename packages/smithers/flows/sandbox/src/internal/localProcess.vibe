@@ -6,7 +6,6 @@
 
 import * as Effect from "effect/Effect"
 import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
-import * as Stream from "effect/Stream"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { concat } from "./concat.ts"
@@ -62,7 +61,7 @@ export interface GatheredRun {
 export const gather = (
   handle: ChildProcessHandle,
   command: string
-): Effect.Effect<GatheredRun, ProviderError> =>
+): GatheredRun!ProviderError =>
   Effect.all(
     [
       Stream.runCollect(handle.stdout),
@@ -70,7 +69,6 @@ export const gather = (
       handle.exitCode
     ],
     { concurrency: "unbounded" }
-  ).pipe(
-    Effect.map(([stdout, stderr, code]) => ({ stdout: concat(stdout), stderr, code })),
-    Effect.mapError(providerFailure("unknown", `\`${command}\` could not be observed to completion`))
   )
+  |> Effect.map(%, ([stdout, stderr, code]) => ({ stdout: concat(stdout), stderr, code }))
+  |> Effect.mapError(%, providerFailure("unknown", `\`${command}\` could not be observed to completion`))
