@@ -11,14 +11,14 @@ import * as ImmutableMap from "@smthrs/canonical/ReadonlyMap"
 import type { Action } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import type { FlowsConfig } from "./Config.ts"
-import * as Config from "./Config.ts"
+import type { FlowsConfig } from "./Config.vibe"
+import * as Config from "./Config.vibe"
 import type { HookCatalog, HookKind, HookObject } from "./Hooks.vibe"
 import { engineHooks, handlerOf, orderOf } from "./Hooks.vibe"
 import type { FlowsHooks } from "./index.vibe"
 import * as Boundary from "./internal/Boundary.ts"
 import { mergePluginLayers } from "./internal/mergePluginLayers.vibe"
-import { snapshotCacheEnvironment } from "./internal/snapshotCacheEnvironment.ts"
+import { snapshotCacheEnvironment } from "./internal/snapshotCacheEnvironment.vibe"
 import type { Apply, FlowsPlugin, PluginInput } from "./Plugin.vibe"
 import { PluginError, type PluginErrorCode } from "./PluginError.vibe"
 
@@ -366,7 +366,7 @@ const included = <H>(
   { path, plugin }: AdmittedPlugin<H>,
   config: FlowsConfig,
   target: "engine" | "harness"
-): Effect.Effect<boolean, PluginError> => {
+): boolean!PluginError => {
   const apply = plugin.apply
   if (apply === undefined) return Effect.succeed(true)
   if (typeof apply !== "function") return Effect.succeed(apply === target)
@@ -376,13 +376,11 @@ const included = <H>(
       failure("apply_failed", `plugin "${plugin.name}" apply predicate failed`, `${path}.apply`, {
         plugin: plugin.name
       })
-  }).pipe(
-    Effect.flatMap((result) =>
+  })
+    |> Effect.flatMap(%, (result) =>
       typeof result === "boolean"
         ? Effect.succeed(result)
-        : Effect.fail(invalidPlugin(`${path}.apply`, "predicate must return a boolean", { plugin: plugin.name }))
-    )
-  )
+        : Effect.fail(invalidPlugin(`${path}.apply`, "predicate must return a boolean", { plugin: plugin.name })))
 }
 
 const rank = (enforce: "pre" | "post" | undefined): number => (enforce === "pre" ? 0 : enforce === "post" ? 2 : 1)
@@ -397,9 +395,9 @@ export const resolve = <H = FlowsHooks>(
   input: PluginInput<NoInfer<H>>,
   options: Options<NoInfer<H>> = {},
   configOverride?: FlowsConfig
-): Effect.Effect<Resolved<H>, PluginError> =>
-  Effect.gen(function*() {
-    const raw = yield* Effect.try({
+): Resolved<H>!PluginError =>
+  effect {
+    const raw = try Effect.try({
       try: () => snapshotOptions(options),
       catch: (cause) =>
         cause instanceof PluginError
@@ -407,13 +405,13 @@ export const resolve = <H = FlowsHooks>(
           : invalidPlugin("$options", "could not be inspected without executing user code")
     })
     if (configOverride !== undefined && raw.config !== undefined) {
-      return yield* Effect.fail(invalidPlugin(
+      throw invalidPlugin(
         "$options.config",
         "cannot declare config in options alongside the positional override"
-      ))
+      )
     }
     if (raw.target !== undefined && raw.target !== "engine" && raw.target !== "harness") {
-      return yield* Effect.fail(invalidPlugin("$options.target", "must be engine or harness"))
+      throw invalidPlugin("$options.target", "must be engine or harness")
     }
     if (
       raw.parallelConcurrency !== undefined &&
@@ -421,24 +419,24 @@ export const resolve = <H = FlowsHooks>(
         raw.parallelConcurrency <= 0 ||
         raw.parallelConcurrency > maximumParallelConcurrency)
     ) {
-      return yield* Effect.fail(failure(
+      throw failure(
         "resource_limit",
         `parallel concurrency must be between 1 and ${maximumParallelConcurrency}`,
         "$options.parallelConcurrency"
-      ))
+      )
     }
     const parallelConcurrency = raw.parallelConcurrency === undefined
       ? defaultParallelConcurrency
       : raw.parallelConcurrency
-    const config = yield* Config.snapshot(configOverride ?? raw.config ?? {})
-    const known = yield* Effect.try({
+    const config = try Config.snapshot(configOverride ?? raw.config ?? {})
+    const known = try Effect.try({
       try: () => snapshotCatalog(raw.hooks ?? engineHooks),
       catch: (cause) =>
         cause instanceof PluginError
           ? cause
           : invalidPlugin("$options.hooks", "could not be inspected without executing user code")
     })
-    const admitted = yield* Effect.try({
+    const admitted = try Effect.try({
       try: () => flatten<H>(input),
       catch: (cause) =>
         cause instanceof PluginError
@@ -446,7 +444,7 @@ export const resolve = <H = FlowsHooks>(
           : invalidPlugin("$", "could not be inspected without executing user code")
     })
     const target = raw.target ?? "engine"
-    const selected = yield* Effect.filter(admitted, (entry) => included(entry, config, target))
+    const selected = try Effect.filter(admitted, (entry) => included(entry, config, target))
 
     let handlerCount = 0
     for (const { path, plugin } of selected) {
@@ -454,20 +452,20 @@ export const resolve = <H = FlowsHooks>(
       if (pluginHooks === undefined) continue
       for (const hook of Object.keys(pluginHooks)) {
         if (!Object.hasOwn(known, hook)) {
-          return yield* Effect.fail(failure(
+          throw failure(
             "unknown_hook",
             `plugin ${JSON.stringify(plugin.name)} declares unknown hook ${JSON.stringify(diagnosticKey(hook))}`,
             childPath(`${path}.hooks`, hook),
             { plugin: plugin.name, hook }
-          ))
+          )
         }
         handlerCount += 1
         if (handlerCount > maximumHandlers) {
-          return yield* Effect.fail(failure(
+          throw failure(
             "resource_limit",
             `plugin handlers exceed the limit of ${maximumHandlers}`,
             childPath(`${path}.hooks`, hook)
-          ))
+          )
         }
       }
     }
@@ -475,12 +473,12 @@ export const resolve = <H = FlowsHooks>(
     const seen = new Set<string>()
     for (const { path, plugin } of selected) {
       if (seen.has(plugin.name)) {
-        return yield* Effect.fail(failure(
+        throw failure(
           "duplicate_name",
           `duplicate plugin name "${plugin.name}"`,
           `${path}.name`,
           { plugin: plugin.name }
-        ))
+        )
       }
       seen.add(plugin.name)
     }
@@ -518,15 +516,15 @@ export const resolve = <H = FlowsHooks>(
         .map(({ record }) => record)
       if (ordered.length > 0) entries.push([hook, Object.freeze(ordered)])
     }
-    const cacheEnvironment = yield* snapshotCacheEnvironment(raw.cacheEnvironment, orderedEntries)
+    const cacheEnvironment = try snapshotCacheEnvironment(raw.cacheEnvironment, orderedEntries)
     return Object.freeze({
       plugins,
-      handlers: ImmutableMap.make(entries),
+      handlers: try Effect.orDie(Effect.try({ try: () => ImmutableMap.make(entries), catch: (error) => error })),
       kinds: known,
       parallelConcurrency,
       ...(cacheEnvironment === undefined ? {} : { cacheEnvironment })
     })
-  })
+  }
 
 /**
  * Merges every resolved plugin layer left-to-right and supplies the detached

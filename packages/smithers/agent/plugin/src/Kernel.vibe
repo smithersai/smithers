@@ -20,14 +20,14 @@
 
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
-import type { FlowsConfig, ResolvedConfig } from "./Config.ts"
-import * as Config from "./Config.ts"
+import type { FlowsConfig, ResolvedConfig } from "./Config.vibe"
+import * as Config from "./Config.vibe"
 import type { ContextOf } from "./Hooks.vibe"
 import type { FlowsHooks } from "./index.vibe"
 import type { PluginInput } from "./Plugin.vibe"
 import type { PluginError } from "./PluginError.vibe"
 import * as Plugins from "./Plugins.vibe"
-import * as Resolve from "./Resolve.ts"
+import * as Resolve from "./Resolve.vibe"
 
 /**
  * Everything startup produces from a plugin list and a raw config.
@@ -73,19 +73,18 @@ export type StartupContext<H> = ConfigContext<H> | ContextOf<HookAt<H, "configRe
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const runConfig = <H = FlowsHooks>(
+export const runConfig = effect <H = FlowsHooks>(
   plugins: Plugins.Service<H>,
   config: FlowsConfig
-): Effect.Effect<ResolvedConfig, PluginError, ConfigContext<H>> =>
-  Effect.gen(function*() {
-    const initial = yield* Config.snapshot(config)
-    const merged = yield* (plugins.waterfall as unknown as (
-      hook: string,
-      initial: FlowsConfig,
-      merge: (previous: FlowsConfig, patch: unknown) => FlowsConfig
-    ) => Effect.Effect<FlowsConfig, PluginError, ConfigContext<H>>)("config", initial, Config.merge)
-    return yield* Config.resolve(merged)
-  })
+): ResolvedConfig!PluginError!ConfigContext<H> => {
+  const initial = try Config.snapshot(config)
+  const merged = try (plugins.waterfall as unknown as (
+    hook: string,
+    initial: FlowsConfig,
+    merge: (previous: FlowsConfig, patch: unknown) => FlowsConfig
+  ) => FlowsConfig!PluginError!ConfigContext<H>)("config", initial, Config.merge)
+  return try Config.resolve(merged)
+}
 
 /**
  * Resolves plugins, executes the config pipeline, and merges plugin layers.
@@ -100,20 +99,20 @@ export const make = <H = FlowsHooks>(
   input: PluginInput<NoInfer<H>>,
   config: FlowsConfig = {},
   options: Omit<Resolve.Options<NoInfer<H>>, "config"> = {}
-): Effect.Effect<Kernel<H>, PluginError, StartupContext<H>> =>
-  Effect.gen(function*() {
-    const initial = yield* Config.snapshot(config)
-    const resolved = yield* Resolve.resolve<H>(input, options, initial)
+): Kernel<H>!PluginError!StartupContext<H> =>
+  effect {
+    const initial = try Config.snapshot(config)
+    const resolved = try Resolve.resolve<H>(input, options, initial)
     const dispatcher = Plugins.make<H>(resolved)
-    const frozen = yield* runConfig(dispatcher, initial)
-    const observerErrors = yield* (dispatcher.parallel as unknown as (
+    const frozen = try runConfig(dispatcher, initial)
+    const observerErrors = try (dispatcher.parallel as unknown as (
       hook: string,
       value: ResolvedConfig
-    ) => Effect.Effect<ReadonlyArray<PluginError>, never, StartupContext<H>>)("configResolved", frozen)
+    ) => ReadonlyArray<PluginError>!never!StartupContext<H>)("configResolved", frozen)
     return Object.freeze({
       plugins: dispatcher,
       config: frozen,
       layer: Resolve.layer(resolved),
       observerErrors
     })
-  })
+  }

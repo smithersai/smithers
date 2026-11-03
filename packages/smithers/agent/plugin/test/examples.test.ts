@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hostAHook } from "../examples/host-a-hook.ts"
+import { hostAHook } from "../examples/host-a-hook.vibe"
 
 describe("examples", () => {
   it("host-a-hook freezes the agreed config and runs the pre plugin's tools first", async () => {

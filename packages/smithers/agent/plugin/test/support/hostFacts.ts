@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
-import type * as JsonSchema from "../../src/JsonSchema.ts"
+import type * as JsonSchema from "../../src/JsonSchema.vibe"
 import type * as Load from "../../src/Load.ts"
-import * as Manifest from "../../src/Manifest.ts"
+import * as Manifest from "../../src/Manifest.vibe"
 
 /** The printed 0017 manifest, with decision 0022's `queue` ids. */
 export const queueManifest = (): any =>

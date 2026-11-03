@@ -11,11 +11,10 @@
 import { BoundedJson } from "@smthrs/canonical"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as SchemaIssue from "effect/SchemaIssue"
 import { Refusal } from "./Contribution.vibe"
 import * as Path from "./internal/path.ts"
 import * as Patterns from "./internal/patterns.ts"
-import * as Subset from "./JsonSchema.ts"
+import * as Subset from "./JsonSchema.vibe"
 
 /**
  * The plugin API this package's loader implements. `requires.api` is a range
@@ -542,7 +541,7 @@ const refuse = (path: string, detail: string): Refusal =>
  * @category decoding
  * @since 1.1.0
  */
-export const decode = (input: unknown): Effect.Effect<Manifest, Refusal> =>
+export const decode = (input: unknown): Manifest!Refusal =>
   Effect.suspend(() => {
     const admitted = BoundedJson.admit(input, limits)
     if (!admitted.ok) {
@@ -553,12 +552,11 @@ export const decode = (input: unknown): Effect.Effect<Manifest, Refusal> =>
         )
       )
     }
-    return decodeManifest(admitted.value).pipe(
-      Effect.mapError((error) => {
+    return decodeManifest(admitted.value)
+      |> Effect.mapError(%, (error) => {
         const [first] = formatIssue(error.issue).issues
         return refuse(Path.join(first!.path as ReadonlyArray<PropertyKey>), first!.message)
       })
-    )
   })
 
 /**
@@ -568,7 +566,7 @@ export const decode = (input: unknown): Effect.Effect<Manifest, Refusal> =>
  * @category decoding
  * @since 1.1.0
  */
-export const parse = (text: string): Effect.Effect<Manifest, Refusal> =>
+export const parse = (text: string): Manifest!Refusal =>
   Effect.suspend(() => {
     if (new TextEncoder().encode(text).byteLength > maximumManifestBytes) {
       return Effect.fail(refuse("", `the manifest exceeds ${maximumManifestBytes} bytes`))

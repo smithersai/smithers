@@ -38,19 +38,47 @@
     "./internal/*": null,
     "./*/index": null,
     "./Bind": "./src/Bind.vibe",
-    "./Config": "./src/Config.ts",
+    "./Config": {
+      "types": "./.vibe/declarations/src/Config.d.vibe.ts",
+      "vibelang-source": "./src/Config.vibe",
+      "default": "./.vibelang/js/src/Config.js"
+    },
     "./Contribution": "./src/Contribution.vibe",
     "./Hooks": "./src/Hooks.vibe",
-    "./Host": "./src/Host.ts",
-    "./JsonSchema": "./src/JsonSchema.ts",
-    "./Kernel": "./src/Kernel.ts",
+    "./Host": {
+      "types": "./.vibe/declarations/src/Host.d.vibe.ts",
+      "vibelang-source": "./src/Host.vibe",
+      "default": "./.vibelang/js/src/Host.js"
+    },
+    "./JsonSchema": {
+      "types": "./.vibe/declarations/src/JsonSchema.d.vibe.ts",
+      "vibelang-source": "./src/JsonSchema.vibe",
+      "default": "./.vibelang/js/src/JsonSchema.js"
+    },
+    "./Kernel": {
+      "types": "./.vibe/declarations/src/Kernel.d.vibe.ts",
+      "vibelang-source": "./src/Kernel.vibe",
+      "default": "./.vibelang/js/src/Kernel.js"
+    },
     "./Keys": "./src/Keys.vibe",
-    "./Load": "./src/Load.ts",
-    "./Manifest": "./src/Manifest.ts",
+    "./Load": {
+      "types": "./src/Load.ts",
+      "vibelang-source": "./src/Load.ts",
+      "default": "./.vibelang/js/src/Load.js"
+    },
+    "./Manifest": {
+      "types": "./.vibe/declarations/src/Manifest.d.vibe.ts",
+      "vibelang-source": "./src/Manifest.vibe",
+      "default": "./.vibelang/js/src/Manifest.js"
+    },
     "./Plugin": "./src/Plugin.vibe",
     "./PluginError": "./src/PluginError.vibe",
     "./Plugins": "./src/Plugins.vibe",
-    "./Resolve": "./src/Resolve.ts",
+    "./Resolve": {
+      "types": "./.vibe/declarations/src/Resolve.d.vibe.ts",
+      "vibelang-source": "./src/Resolve.vibe",
+      "default": "./.vibelang/js/src/Resolve.js"
+    },
     "./When": "./src/When.vibe",
     "./index": "./src/index.vibe"
   },
@@ -64,7 +92,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

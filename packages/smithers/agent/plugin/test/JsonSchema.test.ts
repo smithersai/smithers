@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as JsonSchema from "../src/JsonSchema.ts"
+import * as JsonSchema from "../src/JsonSchema.vibe"
 
 const resolve = (schema: JsonSchema.Json, defs?: Record<string, JsonSchema.Json>) =>
   Effect.runPromise(JsonSchema.resolve(schema, defs, "s"))

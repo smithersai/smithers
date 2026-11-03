@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect"
 
 /** The kernel's config lifecycle plus this host's `tools` waterfall. */
 export interface HostHooks extends FlowsHooks {
-  readonly tools: WaterfallHook<(tools: ReadonlyArray<string>) => Effect.Effect<ReadonlyArray<string> | void>>
+  readonly tools: WaterfallHook<(tools: ReadonlyArray<string>) => ReadonlyArray<string> | void!!>
 }
 
 /** The runtime catalog; it must agree with `HostHooks`. */
@@ -38,12 +38,12 @@ const search = make<HostHooks>({
 /** Starts the kernel, dispatches `tools`, and resolves with what the host saw. */
 export const hostAHook = () =>
   Effect.runPromise(
-    Effect.gen(function*() {
-      const kernel = yield* Kernel.make<HostHooks>([editor, search], { host: { name: "example" } }, {
+    effect {
+      const kernel = try Kernel.make<HostHooks>([editor, search], { host: { name: "example" } }, {
         target: "harness",
         hooks
       })
-      const tools = yield* kernel.plugins.waterfall("tools", [], (_previous, next) => next)
+      const tools = try kernel.plugins.waterfall("tools", [], (_previous, next) => next)
       return { config: kernel.config, tools, observerErrors: kernel.observerErrors }
-    })
+    }
   )

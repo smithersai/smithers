@@ -1,11 +1,11 @@
 import { Effect, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Config from "../src/Config.ts"
+import * as Config from "../src/Config.vibe"
 import type { ParallelHook, SequentialHook } from "../src/Hooks.vibe"
 import * as Hooks from "../src/Hooks.vibe"
 import type { FlowsPlugin } from "../src/index.vibe"
 import * as Plugins from "../src/Plugins.vibe"
-import * as Resolve from "../src/Resolve.ts"
+import * as Resolve from "../src/Resolve.vibe"
 
 interface ToolCallContext {
   readonly tool: string
