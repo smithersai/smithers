@@ -21,7 +21,7 @@
 import { Annotations } from "@smthrs/core"
 import { Flow } from "@smthrs/flow"
 import { Context, Schema } from "effect"
-import { gateBody } from "../../../../16-gate-topology.ts"
+import { gateBody } from "../../../../16-gate-topology.vibe"
 
 /** The discovered descriptor: the gate's declaration, its graph, and its priority. */
 export default Flow.make("examples/ProjectGate", {

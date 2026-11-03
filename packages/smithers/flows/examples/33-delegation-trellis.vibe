@@ -15,7 +15,6 @@ import { Trellis } from "@smthrs/patterns"
 import { Node } from "@smthrs/plan"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 /** The bounds this delegation admits a plan under. */
@@ -134,28 +133,25 @@ export const leafNodesFor = (authored: Trellis.Plan): number =>
     .filter((node) => node.kind === "ActionCall").length
 
 /** Runs the two rounds over one SQLite file and reports what each step did. */
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (filename: string): Summary!! =>
+  effect {
     let authored = 0
     const dispatched: Array<string> = []
 
-    const authorPlan = AuthorPlan.toLayer(() =>
-      Effect.sync(() => {
-        authored += 1
-        return plan
-      })
-    )
+    const authorPlan = AuthorPlan.toLayer(effect () => {
+      authored += 1
+      return plan
+    })
 
-    const delegateWork = DelegateWork.toLayer(({ goal, path }) =>
-      Effect.sync(() => {
-        dispatched.push(`${goal}@${path}`)
-        return goal.toUpperCase()
-      })
-    )
+    const delegateWork = DelegateWork.toLayer(effect ({ goal, path }) => {
+      dispatched.push(`${goal}@${path}`)
+      return goal.toUpperCase()
+    })
 
-    const result = yield* Effect.scoped(
-      Delegate.execute({ goal: "ship the release notes" }, { executionId: "delegate-1" }).pipe(
-        Effect.provide(
+    const result = try Effect.scoped(
+      Delegate.execute({ goal: "ship the release notes" }, { executionId: "delegate-1" })
+        |> Effect.provide(
+          %,
           Layer.mergeAll(
             authorPlan,
             delegateWork,
@@ -166,8 +162,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
             Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "delegation-worker"))
           )
         )
-      )
     )
 
     return { result, authored, dispatched, leafNodes: leafNodesFor(plan) }
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)

@@ -10,7 +10,6 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 /**
@@ -55,26 +54,26 @@ export interface Summary {
 }
 
 /** Executes the flow, then reads back the durable journal for that run. */
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
-    const result = yield* Build.execute({ target: "server" }, { executionId: "build-1" })
-    const journal = yield* Journal.Journal
-    yield* journal.flush
-    const page = yield* journal.entries({ runId: "build-1" as JournalEvent.RunId, limit: 200 })
+export const main = (filename: string): Summary!! =>
+  (effect {
+    const result = try Build.execute({ target: "server" }, { executionId: "build-1" })
+    const journal = try Journal.Journal
+    try journal.flush
+    const page = try journal.entries({ runId: "build-1" as JournalEvent.RunId, limit: 200 })
     return {
       result,
       eventTypes: page.entries.map((entry) => entry.eventType)
     }
-  }).pipe(
-    Effect.provide(
-      Layer.mergeAll(
-        Bundle.toLayer(({ target }) => Effect.map(Compile, (artifact) => `${artifact}?target=${target}`)),
-        Interpreter.layer(Build)
-      ).pipe(
-        Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-worker"))
-      )
-    ),
-    Effect.scoped,
-    Effect.orDie
+  })
+  |> Effect.provide(
+    %,
+    Layer.mergeAll(
+      Bundle.toLayer(({ target }) => Effect.map(Compile, (artifact) => `${artifact}?target=${target}`)),
+      Interpreter.layer(Build)
+    ).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-worker"))
+    )
   )
+  |> Effect.scoped(%)
+  |> Effect.orDie(%)

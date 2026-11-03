@@ -34,11 +34,23 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./index": "./src/index.ts",
-    "./Runtime": "./src/Runtime.ts",
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Runtime": {
+      "types": "./src/Runtime.ts",
+      "vibelang-source": "./src/Runtime.ts",
+      "default": "./.vibelang/js/src/Runtime.js"
+    },
     "./NodeRuntime": null,
     "./SandboxedFlow": null
   },
@@ -53,7 +65,8 @@
     "README.md",
     "CHANGELOG.md",
     "dist/vendor/**",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
