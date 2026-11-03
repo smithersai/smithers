@@ -9,6 +9,27 @@
  */
 export const DEVICE_PERSON_HEADER = "x-smithers-device-person"
 
+/** The client advertises `credential-stale` here because its transport handles the server's stale-credential answer. */
+export const ACCEPTS_HEADER = "x-smithers-accepts"
+
+/**
+ * A write that asks the page's transport (src/device/identity.ts `boundFetch`) to check a `401` against the session
+ * before its caller decides. The transport removes it from every request, so it never leaves the page. Only a write the
+ * outbox holds, sent in the person's session, opts in: co-edit's updates, issue writes without a run credential, TODO
+ * changes, chat questions and steers without a run credential. A write sent with a run credential never does: its `401` is the run's.
+ */
+export const CONFIRM_401_HEADER = "x-smithers-confirm-401"
+
+/**
+ * On such a write's `401`, set by the transport (never by ChatApi): `same_person` when a session read after the refusal
+ * named the person the write was bound to, so the refusal said only that ChatApi couldn't tell who asked then.
+ */
+export const SESSION_CHECK_HEADER = "x-smithers-session-check"
+
+/** What a write's client reads from {@link SESSION_CHECK_HEADER}: `same_person`, or nothing. */
+export const sessionCheckOf = (headers: Readonly<Record<string, string | undefined>>) =>
+  headers[SESSION_CHECK_HEADER] === "same_person" ? { sessionCheck: "same_person" as const } : {}
+
 /** {@link DEVICE_PERSON_HEADER}'s value for a page or worker that opened none of the device's data. */
 export const NO_DEVICE_DATA = "@none"
 
@@ -151,6 +172,8 @@ export type SessionState =
     readonly expiresAt?: number
     /** The server's clock when it answered, epoch milliseconds: a tab's deadline is `sentAt + (expiresAt - serverNow)`. */
     readonly serverNow?: number
+    /** The device retains this opaque tag so later rereads can diagnose its prior session. */
+    readonly session?: string
   }
 
 /** How a tab's session check ended: ChatApi said signed in or signed out, or couldn't confirm authority (`unconfirmed`) or reach ChatApi (`unreachable`). */
@@ -207,6 +230,9 @@ export const CANCEL_HANDOFF = "Cancel"
 
 /** The button that ends the session. */
 export const SIGN_OUT = "Sign out"
+
+/** What the page offers while the outbox holds a write ChatApi refused because it couldn't tell who asked (src/outbox.ts). */
+export const SIGN_IN_TO_SEND = "Sign in to send your changes"
 
 /**
  * What sign-in records in the browser (docs/observability.md#browser), by name, and the attributes they carry. ChatApi's

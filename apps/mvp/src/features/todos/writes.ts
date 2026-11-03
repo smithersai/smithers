@@ -1,6 +1,6 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric, Option } from "effect"
-import { OutboxWrites } from "../../outbox"
+import { held, OutboxWrites } from "../../outbox"
 import { type ChangeRequest, StackClient } from "./api"
 import { type NotSentReason, notSentOf } from "./contract"
 import { sends } from "./metrics"
@@ -47,7 +47,11 @@ export class StackWrites extends Context.Service<
       })
       const context = yield* Effect.context<StackClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(requested, params).pipe(Effect.provideContext(context))
-      const writes = yield* OutboxWrites.adding({ collections: { [SENDING]: sending }, mutations: { [TODO_OP]: mutation } })
+      const writes = yield* OutboxWrites.adding({
+        collections: { [SENDING]: sending },
+        mutations: { [TODO_OP]: mutation },
+        orderingKeys: { [TODO_OP]: (rows) => (rows as ReadonlyArray<Sending>).map((row) => `stack:${row.repo}`) },
+      })
       return Context.make(StackWrites, StackWrites.of({ sending, requested })).pipe(Context.add(OutboxWrites, writes))
     }),
   )
@@ -119,7 +123,8 @@ export const reasonOf = (status: number | undefined, code: string | undefined): 
       : undefined)
 
 /**
- * Sends one queued change. ChatApi took it (202, or 200 for one it had): Requested, with its number, and done. A
+ * Sends one queued change. ChatApi took it (202, or 200 for one it had): Requested, with its number, and done. A `401`
+ * while its person is still signed in is held (`held`): still Requested, sent again, until they sign in again. A
  * refusal: Not sent with why, and never sent again. Anything else is sent again. Records the send as a span
  * `todos.send`, a log line and a count of `sends` by operation and outcome, never the text.
  */
@@ -131,9 +136,12 @@ const send = (requested: Collection.Collection<Requested, string>, { rows }: { r
     const answer = yield* Effect.result((yield* StackClient).change(owner, name, requestOf(row)))
     const status = answer._tag === "Success" ? undefined : answer.failure.status
     const code = answer._tag === "Success" ? undefined : answer.failure.code
-    const reason = answer._tag === "Success" ? undefined : reasonOf(status, code)
+    const holding = answer._tag === "Failure" && answer.failure.sessionCheck === "same_person"
+    const reason = answer._tag === "Success" || holding ? undefined : reasonOf(status, code)
     const outcome = answer._tag === "Success"
       ? answer.success.txid === null ? "existing" : "taken"
+      : holding
+      ? "held"
       : reason === undefined
       ? "retry"
       : "refused"
@@ -148,6 +156,7 @@ const send = (requested: Collection.Collection<Requested, string>, { rows }: { r
       }),
     )
     if (answer._tag === "Success") return yield* keep(requested, row, "requested", null, answer.success.number)
+    if (holding) return yield* held()
     if (reason === undefined) return yield* new Outbox.Retry(status === undefined ? {} : { status })
     yield* keep(requested, row, "not_sent", reason, null)
     return yield* new Outbox.Refused({ status: status! })

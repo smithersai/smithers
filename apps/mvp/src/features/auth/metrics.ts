@@ -26,3 +26,6 @@ export const deviceWipes = Metric.counter("smithers_web_device_wipes", {
  * or `auth/refresh` asking again after a check ChatApi couldn't answer (`retry`).
  */
 export const sessionRefreshes = Metric.counter("smithers_auth_session_refreshes", { incremental: true })
+
+/** Pending sign-out ownership and reopens it held back, without identities or payloads. */
+export const deviceLifecycle = Metric.counter("smithers_device_lifecycle", { incremental: true })

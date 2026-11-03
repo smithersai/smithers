@@ -2,7 +2,7 @@ import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Context, Deferred, Effect, Layer, Metric, Option, Schema } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { ChatDraftsStore, ChatUnsentStore, outboxUpgrade } from "../../device/registry"
-import { OutboxWrites } from "../../outbox"
+import { held, OutboxWrites } from "../../outbox"
 import { FormValues } from "../views/schema"
 import { ChatClient } from "./api"
 import { answerCannotFinish } from "./answerEnd"
@@ -133,6 +133,7 @@ const make = (host: ChatHost) => Effect.gen(function* () {
         ...(row.data === undefined ? {} : { data: row.data }),
       }).pipe(
         Effect.catchTag("QuestionNotTaken", (error): Effect.Effect<never, Outbox.Retry | Outbox.Refused> => {
+          if (error.status === 401 && error.sessionCheck === "same_person") return Effect.fail(held())
           const reason = refusal(error.status)
           return reason === undefined
             ? Effect.fail(new Outbox.Retry(error.status === undefined ? {} : { status: error.status }))
@@ -166,6 +167,10 @@ const make = (host: ChatHost) => Effect.gen(function* () {
         leader,
         collections: { ...others.collections, asking },
         mutations: { ...others.mutations, ask: send },
+        orderingKeys: {
+          ...others.orderingKeys,
+          ask: (rows) => (rows as ReadonlyArray<Asking>).map((row) => `conversation:${row.conversationId ?? "home"}`),
+        },
         // Writes an older build stored are upgraded before the outbox loads them, or parked (decision 0021 §4): a
         // parked question shows Not sent, with Retry and Discard.
         upgrade: outboxUpgrade,

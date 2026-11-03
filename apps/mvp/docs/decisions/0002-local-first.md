@@ -99,7 +99,7 @@ The connection pill sits in the header, in an `aria-live="polite"` region, and a
 2. On 202 or 200, start this device's agent, `chat/Answer` under the answer id (decision [0011](0011-the-agent-runs-in-the-browser.md)), and wait until its engine has recorded the run; the run goes on in the background. So the outbox entry outlives every moment the server holds a question no run will answer: a tab closed between the POST and the engine's record leaves the entry, and the next page sends it again (200) and starts the run. The engine starts an execution once. A start that fails (no engine in this tab, refused, the tab closing) is **Retry** (added 2026-10-20, review P1-1).
 3. On 202 or 200, wait until the question's row shows in `messages`, there already or once it arrives (`messages.awaitRow`), for 15 s counted from the device's restore, which it waits for 15 s at most (a device store in memory restores from the network). The row reaches every tab, the one that stores the shape's rows and the ones that watch, so the wait is on the row, never on this tab's own stream (2026-10-21; before, `awaitTxId` on 202 waited from the POST and timed out behind a slow restore, so the question was sent twice).
 4. **Refused (400, 409, 413):** upsert an `unsent` row keyed by `questionId` (a crash replay is harmless), then fail with `Refused`, which becomes `NonRetriableError` and rolls back `asking`.
-5. **Retry (network, 5xx, 408, 429, delivery timeout, a run not recorded):** fail with `Retry`. The library retries 1 s doubling to 60 s, with jitter, FIFO and one at a time; delays reset on `online` or on Retry.
+5. **Retry (network, 5xx, 408, 429, delivery timeout, a run not recorded):** fail with `Retry`. The library retries 1 s doubling to 60 s, with jitter, FIFO apart from independent keys passing a held write, and one at a time; delays reset on `online` or on Retry.
 
 **Library rules the wrapper defuses.** In `retry/RetryPolicy.ts` (1.1.3), an `AbortError` is never retried, and our deadline aborts `fetch`. An error whose message contains "400", "401", "403" or "422" is never retried either. The wrapper throws only its own error names, with fixed messages, and has a regression test for each rule.
 
@@ -117,7 +117,7 @@ The connection pill sits in the header, in an `aria-live="polite"` region, and a
 - **A tab that loses leadership mid-send** leaves its own transaction unsettled. The new leader restores the entry and resends it, and the server dedupes. The stale `asking` row stays hidden by the anti-join until reload.
 
 **Order.**
-- One device sends FIFO, one at a time, so its order reaches Postgres intact, even across a leadership change, because the new leader replays in creation order.
+- One device sends one write at a time. Ordinary retries remain FIFO. A held write permits independent dependency keys to pass; writes sharing a key remain ordered across reload and leadership changes. Keys are retained in transaction metadata, or derived from older rows' persisted payloads (0023's pending sign-out and held-delivery addendum).
 - Across devices, Postgres arrival (`position`) decides.
 - Queued questions sort after every synced row by local `queuedAt`, then take their server position. No device clock orders the conversation ([state.md](../state.md) rule 6).
 

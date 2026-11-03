@@ -1,5 +1,6 @@
 import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
 
 /** A question for `POST /api/questions` (docs/features/chat.md#post-apiquestions). */
 export type Question = {
@@ -32,6 +33,7 @@ const Existing = Schema.Struct({ txid: Schema.Null, existing: Schema.Literal(tru
 export class QuestionNotTaken extends Data.TaggedError("QuestionNotTaken")<{
   readonly reason: "unreachable" | "refused" | "invalid_response"
   readonly status?: number
+  readonly sessionCheck?: "same_person"
 }> {}
 
 /**
@@ -46,7 +48,7 @@ export const postQuestion = Effect.fn("chat.question.post")(function* (
   const client = yield* HttpClient.HttpClient
   return yield* Effect.gen(function* () {
     const response = yield* client
-      .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question)))
+      .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question), HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1")))
       .pipe(Effect.mapError(() => new QuestionNotTaken({ reason: "unreachable" })))
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
     if (response.status === 200) {
@@ -56,7 +58,7 @@ export const postQuestion = Effect.fn("chat.question.post")(function* (
       return { _tag: "existing" } satisfies Taken
     }
     if (response.status !== 202) {
-      return yield* new QuestionNotTaken({ reason: "refused", status: response.status })
+      return yield* new QuestionNotTaken({ reason: "refused", status: response.status, ...sessionCheckOf(response.headers) })
     }
     yield* HttpClientResponse.schemaBodyJson(Inserted)(response).pipe(
       Effect.mapError(() => new QuestionNotTaken({ reason: "invalid_response", status: 202 })),

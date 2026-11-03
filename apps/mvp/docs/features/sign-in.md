@@ -219,6 +219,8 @@ The login match is for the one upgrade from builds that kept a login and no stab
 
 **Each request.** Every request a tab or its engine worker makes to this origin's `/api/` carries `x-smithers-device-person`: the owner whose data it opened, `@visitor`, or `@none` for a tab on memory, which holds no one's data and acts as its cookie's person. ChatApi reads a request whose cookie or run credential is anyone else as nobody, and refuses a cookie-authenticated write or sign-out that names no one, as an earlier build's tab sends (`auth.device_principal` and `smithers_device_principal_refusals`, `mismatch` or `unbound`), so a page opened as one person can't act as the next person signed in. `GET /api/auth/session` stays unbound, so a tab can see the change. A session answer naming someone else, or a `401` while someone else is signed in, reopens every tab, and the request fails as unsent rather than refused, so a queued write waits for its owner. A request with a run credential is that run's whatever the cookie, as before; a read without the header is read as before.
 
+**A write ChatApi couldn't place.** A write the outbox holds and sends in the person's session opts in to a check of its `401` (`x-smithers-confirm-401`, which the page's fetch removes from every request): co-edit updates, issue writes and steers without a run credential, and TODO changes. The page's fetch reads the session after the refusal. Still the write's person: ChatApi couldn't tell who asked, as when a sign-in in another tab swapped the cookie, so the write is held (`src/outbox.ts` `held`), sent again with the outbox's backoff and after every reload, never refused, and the connection pill offers "Sign in to send your changes" until all held writes are delivered. Signed out: the page reopens and its activation decides the write with the device's data, unless a pending sign-out on this device owns the lifecycle guard, whose wipe deletes it; the write fails as unsent meanwhile. No session answer: the write fails as unsent and is checked again on its next send. A write sent with a run credential keeps its `401`: it is about the run. The page reopens at most once a minute; a reopen held back leaves the page's fetch working.
+
 **Each queued write.** A memory-only activation stamps its new writes `@none`, matching its request binding, so they can send without admitting any sealed device writes. The outbox stamps each write with the owner the tab opened the data as, and loads and sends only that owner's writes (`Outbox.Principal`). Another owner's writes stay sealed in IndexedDB (`outbox write sealed`), as an earlier owner's do when the browser evicted the device store but not the outbox, or when a visitor's device is adopted. A write an earlier build stored names no one. It is the owner's only when the receipt says the owner held the device before this activation (`continuous`: the recorded owner, or an earlier build's matching confirmed session). On a device that came to its owner only now, such a write stays sealed too, across reloads: the owner record persists eligibility for unstamped writes, and a fresh claim or visitor adoption never gains it just by reactivating.
 
 **Signing out** wipes the device, owner record included: the next person to sign in opens a new device. Signing out from a sealed tab wipes the sealed data too, so the person at the browser decides; it is the one way to clear another person's data.
@@ -288,7 +290,7 @@ When ChatApi says `roleConfirmed: false`, the tab retains that flag: a null or G
 
 **Signed out, nothing leaves the browser.** `ComposerGate` replaces the composer, so a signed-out person has nowhere to type an ask, and the model endpoint refuses a signed-out call with `401` either way. A question already in the outbox that ChatApi refuses with `401` (signed out since) or `403` (not a Member on the conversation's repository) stays on the device as Not sent (`refused`), with Edit and Discard, and is never sent again.
 
-`appLayer` (`src/boot.ts`) builds `Auth` over `AuthStore`, the device's `Persistence` and `DeviceWipe.layer(host.wipe)`, with `AuthClient` among the browser's services (`realServices`); `boot` renders it, and main.tsx gives it to React through `AuthProvider`. The app's header shows `Account`, and `ComposerGate` wraps the composer (`src/screens/app/AppShell.tsx`). On `/app`, until the person has had a conversation, the [first run](first-run.md)'s steps stand in the gate's place before Ask, and its Sign in step is the page's one sign-in action.
+`appLayer` (`src/boot.ts`) builds `Auth` over `AuthStore`, the device's `Persistence` and `DeviceWipe.layer(host.wipe, host.finishSignOut)`, with `AuthClient` among the browser's services (`realServices`); `boot` renders it, and main.tsx gives it to React through `AuthProvider`. The app's header shows `Account`, and `ComposerGate` wraps the composer (`src/screens/app/AppShell.tsx`). On `/app`, until the person has had a conversation, the [first run](first-run.md)'s steps stand in the gate's place before Ask, and its Sign in step is the page's one sign-in action.
 
 ### When ChatApi can't say
 
@@ -391,3 +393,69 @@ does not demote a Member. Elsewhere, the uninstalled public-copy fallback needs 
 successful public metadata answer; 404/410 are retryable `503 unavailable`, never
 private receipts. Confirmed private visibility, revoked sessions and confirmed
 role loss still deny. See [decision 0156](../decisions/0156-deployment-authority-without-installation-row.md).
+
+
+### Pending sign-out across tabs
+
+Before sending sign-out, the page holds the exclusive `smithers-sign-out` Web Lock. Reopen senders take a compatible shared guard before broadcasting. Receivers retain the request while sign-out holds its exclusive guard, so a broadcast delivered late cannot disappear. A failed sign-out releases queued reopens; a successful one proceeds to its wipe. Cancelled or rejected reopen decisions release the transport latch, including requests already waiting for the decision. A successful response retains the hold through the whole sign-out action. Its finalizer releases the guard even when changing local session state, reading or deleting the confirmed session, or saving that deletion fails. Once the server ends the session, wipe marking or safe sealing runs regardless of those failures. A failed request waits for release before returning. Closing or crashing the owning page releases the browser-owned lock, so it cannot strand later reopens. The existing wipe still stops every page and deletes both stores on the next boot.
+
+Held-write sign-in status comes from owned persisted outbox rows, with payload-free invalidations between tabs. Followers and an offline reload show it before another send. A different person's held rows remain sealed. Run-credential writes retain their existing exclusion from session reauthentication.
+
+Wipe marking and broadcasting finish inside the sign-out guard's lifecycle. If either fails after a successful sign-out, the page stops its program once, seals itself against reopening the stores, and releases the guard before reporting failure. The page shows “Wipe failed” and Retry outside the stopped app runtime; successful marking broadcasts the normal wipe. The whole action releases the guard in its finalizer, after wipe marking or safe sealing, rather than relying on reaching the wipe call. Lifecycle records report `sign_out_failed` and `sign_out_released`, without session data. A sealed page ignores delayed identity reopens until a wipe can be marked.
+
+
+### Browser capability failure
+
+Without Web Locks, startup renders “This browser needs Web Locks” before opening the device store, outbox or engine. It closes the wipe channel and reports `browser.unsupported` with capability `web_locks`. It starts no memory-only substitute.
+
+### Stale credentials on queued writes
+
+The bound transport advertises `x-smithers-accepts: credential-stale` on every
+same-origin `/api/` request, including its session rereads, so the server can
+return the stale-credential answer to clients that handle it. It adds no such
+header to other origins or paths.
+
+A cookie-authenticated response of `503` with `x-smithers-credential: stale`
+never reaches a feature's status handler. The bound transport fails it as
+`DeviceIdentityRefused({ reason: "credential_stale" })`, so the durable outbox
+retains the write and owns its retry schedule. Other statuses retain their
+existing behavior.
+
+Before another write is sent, the transport enforces `Retry-After` (seconds or
+an HTTP date) and rereads `GET /api/auth/session`, with
+`x-smithers-session-tag` when the device recorded one. An inconclusive reread
+keeps the write queued; a reread naming the bound person releases it. A signed-out
+or different-person answer follows the existing reopen paths. Session reads and
+explicit sign-out remain available while writes wait. The reread shares the
+write's cancellation signal. No write is replayed inside the transport.
+
+The versioned bootstrap owner record gains a nullable `session_tag` column.
+A verified activation records the server's optional 32-character hexadecimal
+`session` tag, and its receipt supplies that tag to page and worker transports.
+Offline activation retains it; another person's answer cannot replace it. The
+existing device wipe deletes it with the owner record. It grants no authority
+and never appears in logs, traces, metrics or URLs. This adds no collection or
+outbox payload schema and changes no outbox library or dependency patch.
+
+Queued chat questions use the same never-drop 401 hold and sign-in prompt as other
+session writes. A follower retains a hold discovered outside the index until the
+stored row actually settles. Reopen suppression records only accepted reloads
+and retains the suppressed request at its eligibility boundary.
+
+Stale-credential deadlines and verification requirements are stored by owner in
+the device outbox, shared by page and worker transports and removed by sign-out's
+wipe. A successor honors the deadline and verifies that owner before sending.
+Memory-only pages verify the current signed-in person for transient writes without
+opening retained data. No session tag grants authority. Failed publication keeps
+a local hold until the transport can persist it. AuthClient reports
+`credential_stale` distinctly from network failure, so the data gate hides private
+rows until a session answer verifies the person again.
+The refusal reaches AuthClient before publication completes, including when the
+credential lock or storage stalls beyond the session request's deadline.
+
+
+A wipe-marker failure seals the page immediately. Its sign-out finalizer returns
+before runtime shutdown waits for that fiber; the data lock stays held until
+shutdown finishes, then the sealed page offers Retry. Internal session rereads
+persist stale-credential Retry-After deadlines through the same serialized path
+as ordinary responses, including confirmation after 401 and expired-gate checks.

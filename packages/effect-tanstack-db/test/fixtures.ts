@@ -56,10 +56,22 @@ export const persistenceOn = (path: string) =>
 /** An outbox's storage in memory, shared by the executors a test starts on it: the library's `StorageAdapter`. */
 export const memoryStorage = () => {
   const entries = new Map<string, string>()
+  const lock = id("outbox-storage")
   return {
     entries,
+    withLock: <A>(name: string, action: () => Promise<A>): Promise<A> => navigator.locks.request(`${lock}:${name}`, action),
     get: async (key: string) => entries.get(key) ?? null,
     set: async (key: string, value: string) => void entries.set(key, value),
+    async setMany(rows: ReadonlyArray<readonly [string, string]>) {
+      const before = new Map(entries)
+      try {
+        for (const [key, value] of rows) await this.set(key, value)
+      } catch (error) {
+        entries.clear()
+        for (const [key, value] of before) entries.set(key, value)
+        throw error
+      }
+    },
     delete: async (key: string) => void entries.delete(key),
     keys: async () => [...entries.keys()],
     clear: async () => entries.clear()

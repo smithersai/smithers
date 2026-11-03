@@ -1,4 +1,4 @@
-import type { Collection, Outbox } from "@smthrs/effect-tanstack-db"
+import { type Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Option } from "effect"
 
 // The device has one durable outbox (decision 0002 §3), which ChatWrites builds and leads
@@ -6,6 +6,15 @@ import { Context, Effect, Option } from "effect"
 // chat's store: the collections its writes' optimistic rows go in and the mutations that send them, each under a name
 // that never changes, because a stored write names its collection and its mutation by them. Each mutation has its
 // services already: it runs as the outbox sends it, in whichever tab leads.
+
+/**
+ * A write ChatApi refused `401` while the session still named the person who queued it, as the page's transport found
+ * (src/device/identity.ts `boundFetch`, `CONFIRM_401_HEADER`): ChatApi couldn't tell who asked then, as after a sign-in in
+ * another tab swapped the cookie. Such a write is held, never refused. Its persisted row keeps the hold across
+ * reloads and leadership changes, and every tab offers sign-in until delivery. Unrelated dependency keys may pass;
+ * later writes to the same key wait. Only a held write is sent again with status `401`.
+ */
+export const held = () => new Outbox.Retry({ status: 401, held: true })
 
 /** The writes features send through the device's outbox besides chat's own questions. */
 export class OutboxWrites extends Context.Service<
@@ -15,6 +24,7 @@ export class OutboxWrites extends Context.Service<
     // restores rows into it by name.
     readonly collections: Readonly<Record<string, Collection.Collection<any, any, any>>>
     readonly mutations: Readonly<Record<string, Outbox.Mutation<never>>>
+    readonly orderingKeys?: Outbox.Options<never>["orderingKeys"]
     /**
      * What shows a parked write of each mutation, one an older build stored that this build can't send as it meant
      * (decision 0021 §4): the feature's own Not sent row. `true` when it took the write.
@@ -28,11 +38,12 @@ export class OutboxWrites extends Context.Service<
    */
   static readonly adding = (writes: OutboxWrites["Service"]) =>
     Effect.map(Effect.serviceOption(OutboxWrites), (below) => {
-      const earlier = Option.getOrElse(below, () => ({ collections: {}, mutations: {}, parked: {} }))
+      const earlier = Option.getOrElse(below, () => ({ collections: {}, mutations: {}, parked: {}, orderingKeys: {} }))
       return OutboxWrites.of({
         collections: { ...writes.collections, ...earlier.collections },
         mutations: { ...writes.mutations, ...earlier.mutations },
         parked: { ...writes.parked, ...earlier.parked },
+        orderingKeys: { ...writes.orderingKeys, ...earlier.orderingKeys },
       })
     })
 }

@@ -460,3 +460,7 @@ The normal action consumes the same response once, still checks repository autho
 The shell yields when that view has rows, this query has an answer (including an empty one), or sync completes; a query alone never settles an empty view. No early result enters a device store; replacement, revocation and a 15-second cap
 forget the transient read. See decision 0152. `issues.search.early` records outcome and duration, never query text;
 `issues_early_search_reads` counts reads. `issues.search.paint` and `issues_early_search_paints` record gate decisions.
+
+### Held-write ordering
+
+A held issue write retains its durable row. Later writes to the same repository and issue number wait; another issue, a new issue with its own write id, or another feature can send. Repository triage settings use a repository settings key. Ordering keys and held state travel with the existing persisted outbox entry, and the sign-in prompt reaches followers and reloads.

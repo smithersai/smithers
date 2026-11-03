@@ -1405,17 +1405,24 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
  * device runs its `agent`. A tab opened again on the same device is a reload: it restores what the last one stored.
  * Each device has its own locks, as each browser has its own Web Locks.
  */
+const outboxStorageLocks = new WeakMap<Map<string, string>, string>()
+
 export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceOptions = {}): NodeDevice => {
   if (typeof navigator.locks?.request !== "function") throw new Error("nodeDevice requires native Web Locks; use the workspace's Node toolchain")
   const path = file ?? join(tempDirectory("mvp-device-"), "device.sqlite")
   const entries = outboxEntries ?? new Map<string, string>()
+  const storageLock = outboxStorageLocks.get(entries) ?? `mvp-outbox-${crypto.randomUUID()}`
+  outboxStorageLocks.set(entries, storageLock)
   const storage = {
+    withLock: <A>(name: string, action: () => Promise<A>): Promise<A> => navigator.locks.request(`${storageLock}:${name}`, action),
     get: async (key: string) => entries.get(key) ?? null,
     set: async (key: string, value: string) => void entries.set(key, value),
+    setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { for (const [key, value] of rows) entries.set(key, value) },
     delete: async (key: string) => void entries.delete(key),
     keys: async () => [...entries.keys()],
     clear: async () => entries.clear()
   }
+  const outboxListeners = new Set<() => void>()
   const device = `mvp-device-${crypto.randomUUID()}`
   const locks = navigator.locks
   const painted: Array<ThemeMode | undefined> = []
@@ -1438,6 +1445,10 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     },
     outbox: {
       start: startOfflineExecutor,
+      changes: {
+        publish: () => { for (const listener of outboxListeners) listener() },
+        subscribe: (listener) => { outboxListeners.add(listener); return () => { outboxListeners.delete(listener) } },
+      },
       storage,
       get online() {
         return Outbox.Online.always()
@@ -1587,6 +1598,11 @@ export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">
   /** The default device's `reopenRoute`: what opening the tab's route again does; nothing unless set. */
   readonly reopenRoute?: () => void
   /**
+   * The page's transport around the harness's fetch, as main.tsx wraps the browser's in `boundFetch`: every request the
+   * tab makes goes through it (src/test/browserSession.ts).
+   */
+  readonly transport?: (fetch: typeof globalThis.fetch) => typeof globalThis.fetch
+  /**
    * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient`,
    * `PullsClient`, `RepoClient`, `SecretsClient`, `PersonalModelClient` or a ShapeSource reference (test.faults-by-injection).
    */
@@ -1614,6 +1630,7 @@ const app = (
     answers,
     host,
     reopenRoute,
+    transport,
     replace: _replace,
     webSocket: _webSocket,
     sessionLifecycle: _sessionLifecycle,
@@ -1624,7 +1641,7 @@ const app = (
 ): AppOptions => ({
   ...options,
   origin: api.origin,
-  fetch: api.fetch,
+  fetch: transport === undefined ? api.fetch : transport(api.fetch),
   reload: api.reload,
   host: host ??
     nodeDevice({ ...(answers === false ? {} : { agent: api }), ...(reopenRoute === undefined ? {} : { reopenRoute }) })

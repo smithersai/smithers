@@ -286,10 +286,12 @@ describe("a branch's unsent questions", () => {
     const real = device.outbox.storage
     const refusing = { now: false }
     const storage: Outbox.Options<never>["storage"] = {
+      withLock: (name, action) => real.withLock(name, action),
       get: (key) => real.get(key),
       keys: () => real.keys(),
       delete: (key) => real.delete(key),
       clear: () => real.clear(),
+      setMany: (rows) => refusing.now ? Promise.reject(new Error("quota")) : real.setMany(rows),
       set: (key, value) => (refusing.now ? Promise.reject(new Error("quota")) : real.set(key, value)),
     }
     const tab = await tabOn(openTestApp({ host: { ...device, outbox: { ...device.outbox, storage } } }))
@@ -340,12 +342,14 @@ describe("syncing a branch's conversation", () => {
 
 describe("delivering to a branch's conversation", () => {
   test("a question ChatApi already had is done once its own conversation delivers it, not before", async () => {
-    // ChatApi's 202 is cut short and the outbox's backoff is slow, so the question sits until Retry sends it again.
+    // The client sends the same question twice; ChatApi takes it once and answers the duplicate with 200.
     const tab = await tabOn(openFaultyApp({ retry: quick.retry }))
     const questions = await tab.runtime.runPromise(Effect.service(QuestionFaults))
     const shapes = await tab.runtime.runPromise(Effect.service(ShapeSource.Faults))
     const branch = await tab.branch("feature/one")
     await tab.chat.actions.show(branch)
+    // Rendering the branch starts its live query. A model request is not a receipt that this query has updated.
+    tab.shown(branch)
     await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
     // Electric's answers are held, so the device doesn't have the question when ChatApi says it has (200).
     tab.runtime.runSync(shapes.stall())
@@ -355,11 +359,15 @@ describe("delivering to a branch's conversation", () => {
 
     // The answer's run started: the send is past it, waiting for its own conversation to deliver the question.
     await tab.runtime.runPromise(tab.api.answerTo("sent twice"))
-    expect(tab.store.asking.tanstack.has(questionId)).toBe(true)
-    expect(tab.shown(branch)).toEqual(["user queued sent twice"])
+    await until(() => {
+      expect(tab.store.asking.tanstack.has(questionId)).toBe(true)
+      expect(tab.shown(branch)).toEqual(["user queued sent twice"])
+    })
     tab.runtime.runSync(shapes.heal)
-    await until(() => expect(tab.store.asking.tanstack.has(questionId)).toBe(false))
-    expect(tab.shown(branch)).toEqual(["user done sent twice", "assistant streaming "])
+    await until(() => {
+      expect(tab.store.asking.tanstack.has(questionId)).toBe(false)
+      expect(tab.shown(branch)).toEqual(["user done sent twice", "assistant streaming "])
+    })
     // The network sent it twice: ChatApi took the first and answered the second as one it had.
     expect(tab.api.questionStatuses()).toEqual([202, 200])
     expect(await tab.rows(branch)).toEqual(["sent twice", ""])

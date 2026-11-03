@@ -17,12 +17,15 @@ import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type * as Actor from "../../../worker/Actor.ts"
-import { asPerson, nodeDevice, openFaultyTab, openTab, openTestApi, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { asPerson, member, nodeDevice, openFaultyTab, openTab, openTestApi, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { ACTIONS_SHAPE_ROUTE, actionRunPath } from "../actions/contract"
 import { detailsOf } from "./details"
 import { actsOf, hostOf, listRows, missingOf, repoRunRows, repoRunsLoaded, steerOpen, steersOf } from "./page"
 import { Runs } from "./runs"
-import { REMOTE_RUN_SHAPE_ROUTE, stopRoute } from "./contract"
+import { REMOTE_RUN_SHAPE_ROUTE, steersRoute, stopRoute } from "./contract"
+import { browserSession } from "../../test/browserSession"
+import { CONNECTION } from "../chat/schema"
+import { ChatStore } from "../chat/store"
 import { RunSteers } from "./steers"
 import { AuthStore, SESSION } from "../auth/store"
 import { role as readRole } from "../repo/actions"
@@ -612,6 +615,50 @@ for (const delay of [0, 100, 300] as const) {
 }
 
 
+test("a steer refused 401 while its person is still signed in is held through a reload, with a sign-in prompt, and sent once after sign-in", async () => {
+  const t = await open(undefined, true)
+  const runId = await Effect.runPromise(t.api.remote.todoRun("Held steer"))
+  await Effect.runPromise(t.api.remote.start(runId, { label: "held", pauseMs: 60_000 }))
+  const browser = browserSession(member.subject.id, (request) =>
+    request.method === "POST" && new URL(request.url).pathname === steersRoute(runId))
+  const host = nodeDevice({ agent: t.api })
+  const opened = async () => {
+    const tab = openTab(t.api, { host, transport: browser.transport })
+    runtimes.push(tab)
+    const runs = await tab.runPromise(Effect.service(Runs))
+    for (const query of Object.values(runs.queries)) query.startSyncImmediate()
+    const { connection } = await tab.runPromise(Effect.service(ChatStore))
+    await runs.actions.openRun(runId)
+    return {
+      tab,
+      runs,
+      signIn: () => connection.tanstack.get(CONNECTION)?.signIn === true,
+    }
+  }
+  const first = await opened()
+  first.runs.actions.setSteerDraft("Held words")
+  await until(() => expect(first.runs.queries.view.toArray[0]?.steerDraft).toBe("Held words"))
+  await first.runs.actions.steer()
+  // Held: sent again, never Not sent, and the page asks its person to sign in.
+  await until(() => expect(browser.state.refusals).toBeGreaterThan(1))
+  await until(() => expect(first.signIn()).toBe(true))
+  expect(first.runs.queries.steerSent.toArray.filter((row) => row.status === "not_sent")).toEqual([])
+  // A reload keeps it held.
+  await first.tab.dispose()
+  const second = await opened()
+  await until(() => expect(second.signIn()).toBe(true))
+  expect(second.runs.queries.steerSending.toArray).toContainEqual(expect.objectContaining({ runId, body: "Held words" }))
+  expect(second.runs.queries.steerSent.toArray.filter((row) => row.status === "not_sent")).toEqual([])
+  // Signing in again comes back to the page: the steer is sent once, and the prompt goes.
+  await second.tab.dispose()
+  browser.state.cookie = "read"
+  const third = await opened()
+  await until(() => expect(third.runs.queries.steerSent.toArray).toContainEqual(expect.objectContaining({ body: "Held words", status: "sent" })))
+  expect(t.api.spans.filter((span) => span.name === "run.steer")).toHaveLength(1)
+  expect(browser.state.delivered).toBe(1)
+  expect(third.signIn()).toBe(false)
+}, 120_000)
+
 test("steering refuses overlong input before retaining a request", async () => {
   const t = await open(undefined, true)
   const runId = await Effect.runPromise(t.api.remote.todoRun("Long steer"))
@@ -629,7 +676,7 @@ test("a refused steer admission retries the retained identity and keeps one visi
   const base = nodeDevice({ agent: t.api })
   let full = true
   const host = { ...base, outbox: { ...base.outbox, storage: { ...base.outbox.storage,
-    set: (key: string, value: string) => full ? Promise.reject(new Error("quota")) : base.outbox.storage.set(key, value),
+    setMany: (rows: ReadonlyArray<readonly [string, string]>) => full ? Promise.reject(new Error("quota")) : base.outbox.storage.setMany(rows),
   } } }
   const tab = openTab(t.api, { host })
   runtimes.push(tab)
@@ -661,7 +708,7 @@ for (const change of ["typing", "navigation"] as const) {
     const entered = new Promise<void>((resolve) => { enter = resolve })
     const held = new Promise<void>((resolve) => { release = resolve })
     const host = { ...base, outbox: { ...base.outbox, storage: { ...base.outbox.storage,
-      set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+      setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; return base.outbox.storage.setMany(rows) },
     } } }
     const tab = openTab(t.api, { host })
     runtimes.push(tab)
@@ -717,7 +764,7 @@ test("repeated Steer joins one pending draft, while typing the same text again c
   const entered = new Promise<void>((resolve) => { enter = resolve })
   const held = new Promise<void>((resolve) => { release = resolve })
   const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
-    set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+    setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; return base.outbox.storage.setMany(rows) },
   } } }
   const tab = openTab(t.api, { host })
   runtimes.push(tab)

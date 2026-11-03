@@ -9,7 +9,7 @@ export const opens = Metric.counter("smithers_web_coedit_opens", {
   incremental: true,
 })
 
-/** Updates sent to ChatApi, by `outcome`: `stored`, `existing`, `retry` or `refused`. */
+/** Updates sent to ChatApi, by `outcome`: `stored`, `existing`, `held`, `retry` or `refused`. */
 export const sends = Metric.counter("smithers_web_coedit_sends", {
   description: "Shared text updates sent to ChatApi, by outcome",
   incremental: true,

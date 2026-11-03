@@ -1,5 +1,7 @@
 import { reloadAfter } from "../../test/reloadTiming"
 import { ModelError } from "@smthrs/model"
+import { browserSession } from "../../test/browserSession"
+import { CONNECTION } from "./schema"
 import { outboxPrincipal } from "../../device/identity"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Outbox } from "@smthrs/effect-tanstack-db"
@@ -685,10 +687,12 @@ describe("admission", () => {
     const real = device.outbox.storage
     const refusing = { now: false }
     const storage: Outbox.Options<never>["storage"] = {
+      withLock: (name, action) => real.withLock(name, action),
       get: (key) => real.get(key),
       keys: () => real.keys(),
       delete: (key) => real.delete(key),
       clear: () => real.clear(),
+      setMany: (rows) => refusing.now ? Promise.reject(new Error("quota")) : real.setMany(rows),
       set: (key, value) => (refusing.now ? Promise.reject(new Error("quota")) : real.set(key, value)),
     }
     return { device: { ...device, outbox: { ...device.outbox, storage } }, refusing }
@@ -840,7 +844,7 @@ describe("the device store", () => {
     await until(() => expect(ann.sentQuestions()).toHaveLength(1))
     ann.failNext("unreachable")
     await ann.close()
-    const kept = [...outboxEntries.keys()]
+    const kept = [...outboxEntries.keys()].filter((key) => key.startsWith("tx:"))
     expect(kept).toHaveLength(1)
 
     const ben = await tabOn(openTab(api, { ...quick, host: as("ben") }))
@@ -849,7 +853,7 @@ describe("the device store", () => {
     expect((await onApi(api.rows)).map(({ text }) => text)).not.toContain("ann's question")
     expect(ben.shown().filter((line) => line.includes("ann's question"))).toEqual([])
     // Ben's own write leaves the outbox once Postgres has it; Ann's stays.
-    await until(() => expect([...outboxEntries.keys()]).toEqual(kept), agentWithin)
+    await until(() => expect([...outboxEntries.keys()].filter((key) => key.startsWith("tx:"))).toEqual(kept), agentWithin)
     expect((await onApi(api.rows)).map(({ text }) => text)).not.toContain("ann's question")
   })
 
@@ -1374,7 +1378,7 @@ for (const later of ["typing", "navigation"] as const) {
     const entered = new Promise<void>((resolve) => { enter = resolve })
     const held = new Promise<void>((resolve) => { release = resolve })
     const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
-      set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+      setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; return base.outbox.storage.setMany(rows) },
     } } }
     const tab = await tabOn(openTab(opened.api, { host, answers: false }))
     await tab.actions.setDraft("Earlier question")
@@ -1395,7 +1399,7 @@ for (const later of ["typing", "navigation"] as const) {
 test("a refused question waits for its recovery row before returning or clearing the draft", async () => {
   const base = nodeDevice()
   const tab = await openChat({ answers: false, host: { ...base, outbox: { ...base.outbox, storage: { ...base.outbox.storage,
-    set: () => Promise.reject(new Error("quota")),
+    setMany: () => Promise.reject(new Error("quota")),
   } } } })
   const release = Effect.runSync(Deferred.make<void>())
   const unsent = { ...tab.store.unsent, insert: (row: Parameters<typeof tab.store.unsent.insert>[0]) => tab.store.unsent.insert(row).pipe(Effect.map((kept) => ({
@@ -1420,7 +1424,7 @@ for (const accepts of [true, false]) {
     const entered = new Promise<void>((resolve) => { enter = resolve })
     const held = new Promise<void>((resolve) => { release = resolve })
     const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
-      set: async (key: string, value: string) => { enter(); await held; if (!accepts) throw new Error("quota"); return base.outbox.storage.set(key, value) },
+      setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; if (!accepts) throw new Error("quota"); return base.outbox.storage.setMany(rows) },
     } } }
     const tab = await tabOn(openTab(opened.api, { host, answers: false }))
     await tab.actions.setDraft("First question")
@@ -1448,7 +1452,7 @@ test("cancelling an admitting Send wakes joined callers and releases its reserva
   const entered = new Promise<void>((resolve) => { enter = resolve })
   const held = new Promise<void>((resolve) => { release = resolve })
   const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
-    set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+    setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; return base.outbox.storage.setMany(rows) },
   } } }
   const tab = await tabOn(openTab(opened.api, { host, answers: false }))
   await tab.actions.setDraft("Cancel admission")
@@ -1475,3 +1479,30 @@ test("a summary lane that cannot proceed reaches the real chat rail and the shar
   await until(() => expect(tab.queries.timelineNotice.toArray).toMatchObject([{ code: "credit", text: "The summary model is out of credit" }]))
   expect((await tab.runtime.runPromise(attention.launches.toArray)).map((row) => row.subject)).toContain("timeline-summaries:credit")
 })
+
+
+test("a chat question refused 401 is held through reload with sign-in and delivered once after sign-in", async () => {
+  const { api } = await openApi()
+  const browser = browserSession("person-member", (request) => request.method === "POST" && new URL(request.url).pathname === "/api/questions")
+  const device = nodeDevice({ agent: api })
+  const open = () => tabOn(openTab(api, { ...quick, host: device, transport: browser.transport }))
+  const first = await open()
+  const { questionId } = asked(await first.actions.ask("Keep this held question"))
+  const signIn = (tab: Awaited<ReturnType<typeof open>>) => tab.store.connection.tanstack.get(CONNECTION)?.signIn === true
+  await until(() => expect(browser.state.refusals).toBeGreaterThan(0))
+  await until(() => expect(signIn(first)).toBe(true))
+  expect(first.store.unsent.tanstack.has(questionId)).toBe(false)
+  expect(first.queued()).toBe(1)
+  await first.close()
+  const second = await open()
+  await until(() => expect(signIn(second)).toBe(true))
+  expect(second.store.unsent.tanstack.has(questionId)).toBe(false)
+  await second.close()
+  browser.state.cookie = "read"
+  const third = await open()
+  await until(() => expect(third.synced(questionId)).toBe(true))
+  await until(() => expect(third.queued()).toBe(0))
+  expect(browser.state.delivered).toBe(1)
+  // The queue and connection pill have separate subscriptions; delivery settles before the pill consumes held=false.
+  await until(() => expect(signIn(third)).toBe(false), agentWithin)
+}, 120_000)

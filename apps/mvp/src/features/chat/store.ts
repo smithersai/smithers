@@ -214,6 +214,8 @@ interface Signals {
   readonly shape: "pending" | "ok" | "failing" | "stopped"
   readonly stopReason: "refused" | "invalid_response" | null
   readonly sending: boolean
+  /** Writes the outbox holds for their person's sign-in (src/outbox.ts `held`); their sends fail, but nothing is down. */
+  readonly held: boolean
   readonly overdue: boolean
   /** This tab's engine worker failed. */
   readonly engine: boolean
@@ -239,7 +241,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     id: "chat-connection",
     schema: Connection,
     getKey: (row) => row.id,
-    initialData: [{ id: CONNECTION, status: host.isOnline() ? "up" : "offline", retry: false }],
+    initialData: [{ id: CONNECTION, status: host.isOnline() ? "up" : "offline", retry: false, signIn: false }],
   })
   const history = yield* Collection.local<History, string>({
     id: "chat-history",
@@ -396,6 +398,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     shape: "pending",
     stopReason: null,
     sending: false,
+    held: false,
     overdue: false,
     engine: false,
   })
@@ -414,7 +417,9 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     const shown = yield* connectionNow
     // Read now, not from a stream that may not have caught up with an ask this tick.
     const waiting = (yield* queued.toArray).length
-    const next: Omit<Connection, "id"> =
+    // The outbox separates held writes from failures of other writes that still need the network.
+    const sending = now.sending
+    const next: Omit<Connection, "id" | "signIn"> =
       now.engine
         ? { status: "stopped", retry: false }
         : now.shape === "stopped"
@@ -423,9 +428,12 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
           ? { status: "offline", retry: false }
           : now.overdue
             ? { status: "offline", retry: true }
-            : shown.status !== "up" && !(now.shape === "ok" && !now.sending && waiting === 0)
+            : shown.status !== "up" && !(now.shape === "ok" && !sending && waiting === 0)
               ? { status: shown.status, retry: shown.retry }
               : { status: "up", retry: false }
+    if (now.held !== shown.signIn) {
+      yield* connection.update(CONNECTION, (row) => void (row.signIn = now.held)).pipe(Effect.orDie)
+    }
     if (next.status === shown.status && next.retry === shown.retry) return
     yield* connection
       .update(CONNECTION, (row) => {
@@ -596,7 +604,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     Effect.andThen(update(() => ({ engine: true }))),
     Effect.forkIn(scope, { startImmediately: true }),
   )
-  yield* background(outbox.status, ({ failing }) => update(() => ({ sending: failing !== null })))
+  yield* background(outbox.status, ({ failing, held }) => update(() => ({ sending: failing !== null, held })))
   yield* background(queued.rows, () => update(() => ({})))
   // Whether the device has messages before the window.
   yield* background(conversation.rows, (rows) => markEarlier(history, rows.length))

@@ -30,7 +30,7 @@ const open = async (refusing = false, engine = false) => {
   const retained = new Map<string, string>()
   const writeSnapshot = PendingSnapshot.make({ getItem: key => retained.get(key) ?? null, setItem: (key, value) => { retained.set(key, value) }, removeItem: key => { retained.delete(key) } }, "writes")
   const host = { ...base, writeSnapshot, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => engine }, storage: { ...base.outbox.storage,
-    set: async (key: string, value: string) => { await down.hold?.(); if (down.value) throw new Error("quota"); return base.outbox.storage.set(key, value) },
+    setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { await down.hold?.(); if (down.value) throw new Error("quota"); return base.outbox.storage.setMany(rows) },
   } } }
   const tab = openTab(api, { host, answers: !engine ? false : undefined })
   runtimes.push(tab)

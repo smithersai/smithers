@@ -1,4 +1,5 @@
-import type { StorageAdapter } from "@tanstack/offline-transactions"
+import type { Outbox } from "@smthrs/effect-tanstack-db"
+import { Effect, Semaphore } from "effect"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import type { Host } from "./boot"
 import type { Endpoint } from "./flows/tabPort"
@@ -22,6 +23,9 @@ export const WIPE = "smithers-wipe"
 
 /** The Web Lock every page holds, shared, while its program may have the device's data open. */
 export const DATA_LOCK = "smithers-data"
+
+/** Held exclusively by a signing-out page until it marks the wipe, fails, or closes. The browser releases it on a crash. */
+export const SIGN_OUT_LOCK = "smithers-sign-out"
 
 /** The OPFS directory `@smthrs/platform-browser`'s `BrowserRuntime.layerHost` keeps each engine's directory in. */
 export const ENGINES_DIRECTORY = "smithers"
@@ -55,9 +59,14 @@ export const leaveReason = (message: unknown): WipeReason =>
     ? "older_leader"
     : "wipe_channel_reopen"
 
+export type LifecycleOutcome = "sign_out_pending" | "sign_out_answered" | "sign_out_failed" | "sign_out_released" | "reopen_held"
+
 /** The page's browser: its Web Locks, localStorage, OPFS, IndexedDB and BroadcastChannel, and how it loads again. */
 export interface WipeHost {
-  readonly locks: Pick<LockManager, "request">
+  readonly record?: (outcome: LifecycleOutcome) => void
+  /** Shows a retry action after the program has stopped and the page has sealed its stores. */
+  readonly failed?: () => void
+  readonly locks: Pick<LockManager, "request"> | undefined
   readonly marks: Pick<Storage, "getItem" | "setItem" | "removeItem">
   readonly directory: () => Promise<Pick<FileSystemDirectoryHandle, "getDirectoryHandle" | "removeEntry">>
   readonly indexedDB: Pick<IDBFactory, "deleteDatabase">
@@ -70,20 +79,25 @@ export interface PageWipe {
   /**
    * Before the program starts: finishes a wipe a sign-out marked, then holds the device's data, shared, until the page
    * ends. `true` when the device holds nothing of an ended session; `false` when a marked wipe couldn't delete, so the
-   * page must start on `unwiped`'s stores. With `adopted`, the first paint's shell's own `smithers-data` hold, which it
-   * hands over only while it holds the lock and the mark is absent (src/firstPaint/shell.ts `handOver`): the page keeps
-   * that hold as its own, with no gap, and lets go of it as it would of its own.
+   * page must start on `unwiped`'s stores. `unsupported` opens nothing when Web Locks are absent. With `adopted`, the
+   * first paint's shell's own `smithers-data` hold, which it hands over only while it holds the lock and the mark is
+   * absent (src/firstPaint/shell.ts `handOver`): the page keeps that hold as its own, with no gap, and lets go of it as it
+   * would of its own.
    */
-  readonly open: (adopted?: () => void) => Promise<boolean>
+  readonly open: (adopted?: () => void) => Promise<boolean | "unsupported">
   /** The running program's `stop`, which leaving calls before the page loads again. */
   readonly started: (stop: () => Promise<void>) => void
   /** `Host.wipe`: marks the device and tells every page, this one included, to leave. */
   readonly wipe: () => Promise<void>
   /**
    * Tells every page, this one included, to leave and load again without marking a wipe, so the next boot checks
-   * the device's owner again (src/device/identity.ts). Nothing is deleted.
+   * the device's owner again (src/device/identity.ts). Nothing is deleted. Returns false while sign-out owns the guard.
    */
-  readonly reopen: (reason: ReopenReason) => void
+  readonly reopen: (reason: ReopenReason) => Promise<boolean>
+  /** Releases the guard from the whole sign-out action's finalizer, after wipe marking or safe sealing. */
+  readonly finishSignOut: () => Promise<void>
+  /** Publishes sign-out intent before the request, retaining it until the whole action ends or the page closes. */
+  readonly signOut: (send: () => Promise<Response>) => Promise<Response>
   /** Stops hearing wipes and lets go of the data, as the page ending does. */
   readonly close: () => void
 }
@@ -111,19 +125,38 @@ const deleteDatabase = (indexedDB: WipeHost["indexedDB"], name: string) =>
  */
 export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
   let stop: (() => Promise<void>) | undefined
+  let stopping: Promise<void> | undefined
+  let sealed = false
   let leaving: Promise<void> | undefined
   let release!: () => void
   const released = new Promise<void>((resolve) => (release = resolve))
   // How this page lets go of `smithers-data`: its own hold's release, or the adopted shell's.
   let letGo = () => release()
+  const signOutReleases = new Set<() => void>()
+  const signOutGuards = new Set<Promise<unknown>>()
+  let closed = false
+  const reopening = new AbortController()
+  // Reopens share a guard so receivers cannot exclude one another. Sign-out owns it exclusively through its wipe.
+  const unlessSigningOut = (action: () => void) => host.locks === undefined ? Promise.resolve(false) : host.locks.request(SIGN_OUT_LOCK, { mode: "shared", ifAvailable: true }, (lock) => {
+    if (lock === null) { host.record?.("reopen_held"); return false }
+    action()
+    return true
+  })
 
+  // A failed stop cannot keep a sign-out guard held or prevent the page from leaving.
+  const stopOnce = () => stopping ??= Promise.resolve().then(() => stop?.()).catch(() => undefined)
   const leave = (reason: WipeReason) =>
-    (leaving ??= Promise.resolve().then(() => stop?.())
-      // expected: the page reloads whether its program stopped or not
-      .catch(() => undefined)
+    (leaving ??= stopOnce()
       .then(() => host.reload(reason)))
   const hearing = host.channel(WIPE)
-  hearing.onmessage = (event: MessageEvent) => void leave(leaveReason(event.data))
+  hearing.onmessage = (event: MessageEvent) => {
+    const reason = leaveReason(event.data)
+    if (reason === "wipe") void leave(reason)
+    // Delivery can follow a sign-out that started after the broadcast. Retain that request until its guard releases.
+    else if (host.locks !== undefined) void host.locks.request(SIGN_OUT_LOCK, { mode: "shared", signal: reopening.signal }, () => {
+      if (!closed && !sealed) return leave(reason)
+    }).catch(() => undefined)
+  }
 
   const marked = () => {
     try {
@@ -146,18 +179,18 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     host.marks.removeItem(WIPE)
   }
 
-  const finish = async (): Promise<boolean> => {
+  const finish = async (locks: NonNullable<WipeHost["locks"]>): Promise<boolean> => {
     const pending = marked()
     if (pending === undefined) return false
     if (!pending) return true
-    return host.locks.request(WIPE, { mode: "exclusive" }, async () => {
+    return locks.request(WIPE, { mode: "exclusive" }, async () => {
       // Another page finished it while this one waited. An unreadable mark proves nothing.
       const pending = marked()
       if (pending === undefined) return false
       if (!pending) return true
       try {
-        await host.locks.request(DATA_LOCK, { mode: "exclusive" }, () =>
-          host.locks.request(targets.engine, { mode: "exclusive" }, remove))
+        await locks.request(DATA_LOCK, { mode: "exclusive" }, () =>
+          locks.request(targets.engine, { mode: "exclusive" }, remove))
         return true
       } catch {
         // recorded: a wipe that failed starts the page unwiped, browser.engine.unavailable WipeUnfinished
@@ -173,9 +206,9 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     telling.close()
   }
 
-  const hold = () =>
+  const hold = (locks: NonNullable<WipeHost["locks"]>) =>
     new Promise<void>((granted) => {
-      void host.locks.request(DATA_LOCK, { mode: "shared" }, () => {
+      void locks.request(DATA_LOCK, { mode: "shared" }, () => {
         granted()
         return released
       })
@@ -183,26 +216,80 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
 
   return {
     open: async (adopted) => {
+      if (sealed) return false
       if (adopted !== undefined) {
         // Held since before the shell's read, and the mark was absent under the hold: there is nothing to finish, and a
         // wipe marked from now on waits for this hold, as it waits for any running page's.
         letGo = adopted
         return true
       }
-      const clean = await finish()
-      await hold()
+      const locks = host.locks
+      if (locks === undefined) return "unsupported"
+      const clean = await finish(locks)
+      await hold(locks)
       return clean
     },
     started: (running) => {
       stop = running
     },
     wipe: async () => {
-      host.marks.setItem(WIPE, "1")
-      tell("wipe")
+      try {
+        host.marks.setItem(WIPE, "1")
+        tell("wipe")
+      } catch (error) {
+        // Without a durable mark, reloading could reopen the ended session's stores. Stop here until wipe is retried.
+        sealed = true
+        host.record?.("sign_out_failed")
+        // The sign-out's uninterruptible finalizer is awaiting this wipe. Let it finish before shutdown
+        // waits for that fiber; keep the data sealed and its lock held until shutdown completes.
+        void stopOnce().then(() => {
+          letGo()
+          host.failed?.()
+        })
+        throw error
+      }
     },
-    reopen: (reason) => tell(`reopen:${reason}`),
+    finishSignOut: async () => {
+      for (const releaseSignOut of signOutReleases) releaseSignOut()
+      await Promise.all(signOutGuards)
+    },
+    reopen: (reason) => sealed ? Promise.resolve(false) : unlessSigningOut(() => tell(`reopen:${reason}`)),
+    signOut: async (send) => {
+      const locks = host.locks
+      if (locks === undefined) throw new Error("Web Locks unavailable")
+      let letGo!: () => void
+      let held!: Promise<unknown>
+      await new Promise<void>((resolve, reject) => {
+        held = locks.request(SIGN_OUT_LOCK, { mode: "exclusive" }, () => {
+          if (closed) { reject(new Error("Page closed")); return }
+          return new Promise<void>((released) => {
+            letGo = () => { if (!signOutReleases.delete(letGo)) return; host.record?.("sign_out_released"); released() }
+            signOutReleases.add(letGo)
+            host.record?.("sign_out_pending")
+            resolve()
+          })
+        })
+        void held.catch(reject)
+      })
+      signOutGuards.add(held)
+      void held.then(() => signOutGuards.delete(held), () => signOutGuards.delete(held))
+      try {
+        const response = await send()
+        host.record?.(response.ok ? "sign_out_answered" : "sign_out_failed")
+        if (!response.ok) { letGo(); await held }
+        return response
+      } catch (error) {
+        host.record?.("sign_out_failed")
+        letGo()
+        await held
+        throw error
+      }
+    },
     close: () => {
+      closed = true
+      reopening.abort()
       hearing.close()
+      for (const releaseSignOut of signOutReleases) releaseSignOut()
       letGo()
     },
   }
@@ -214,10 +301,20 @@ export class WipeUnfinished extends Error {
 }
 
 /** An outbox storage in memory: what a page whose wipe failed keeps its writes in, never the stale database. */
-export const memoryStorage = (): StorageAdapter => {
+export const memoryStorage = (): Outbox.Options<never>["storage"] => {
   const entries = new Map<string, string>()
+  const locks = new Map<string, { readonly permit: Semaphore.Semaphore; users: number }>()
   return {
+    withLock: (name, action) => {
+      const lock = locks.get(name) ?? { permit: Semaphore.makeUnsafe(1), users: 0 }
+      locks.set(name, lock)
+      lock.users++
+      return Effect.runPromise(lock.permit.withPermit(Effect.promise(action))).finally(() => {
+        if (--lock.users === 0) locks.delete(name)
+      })
+    },
     get: async (key) => entries.get(key) ?? null,
+    setMany: async (rows) => { for (const [key, value] of rows) entries.set(key, value) },
     set: async (key, value) => void entries.set(key, value),
     delete: async (key) => void entries.delete(key),
     keys: async () => [...entries.keys()],

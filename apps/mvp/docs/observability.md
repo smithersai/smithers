@@ -112,7 +112,7 @@ Spans:
 | Span | Kind | Attributes |
 |---|---|---|
 | `chat.ask` | internal: `ask` putting the question into the outbox, synchronously | `questionId`, `answerId`, `question.length` |
-| `outbox.send` | internal: one send of one write (`@smthrs/effect-tanstack-db`), linked to the span the write was made in (`chat.ask`) | `name` (`ask`), `attempt` (1 for the first send), `outcome` (`sent`, `retry`, `refused`, `defect`, `withdrawn`) |
+| `outbox.send` | internal: one send of one write (`@smthrs/effect-tanstack-db`), linked to the span the write was made in (`chat.ask`) | `name` (`ask`), `attempt` (1 for the first send), `outcome` (`sent`, `retry`, `held`, `refused`, `defect`, `withdrawn`) |
 | `outbox.withdraw` | internal: Edit taking a queued question back out of the outbox (`Outbox.withdraw`) | `outcome` |
 | `chat.copy`, `chat.edit` | internal, in the engine worker: `chat/copy`'s and `chat/edit`'s steps asking the tab that started the run ([chat](features/chat.md#message-controls)); each is also a log line of the same name, Info when copied or edited, Warn for `not_found` or `sent`, Error for `failed` or `gone` | `smithers.chat.door`, `smithers.chat.outcome`; the log line's `door`, `outcome`, `executionId`, `durationMs` |
 | `chat.ask.send` | internal, child of `outbox.send`: from asking ChatApi, through this device's engine recording the answer's run, to Electric delivering the question | `questionId`, `answerId`, `taken` |
@@ -143,7 +143,7 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `smithers_web_repo_alias_checks` | counter | tree-to-file alias checks by `outcome`: `file`, `unconfirmed`, `timed_out` |
 | `smithers_slash_choices` | counter | rows chosen from the command menu: `kind` = `commands` or `values`, `how` = `accept` (Enter or a click) or `complete` (Tab) |
 | `smithers_slash_submits` | counter | command lines submitted: `outcome` = `run`, `unknown`, `missing` or `invalid`, and `command` for a command the app offers |
-| `outbox_attempts` | counter | `name`, `outcome` = `sent`, `retry`, `refused`, `defect`, or `sent_elsewhere` (a write this tab queued that the tab which took the lead sent meanwhile; settled here without a second send) |
+| `outbox_attempts` | counter | `name`, `outcome` = `sent`, `retry`, `held`, `refused`, `defect`, or `sent_elsewhere` (a write this tab queued that the tab which took the lead sent meanwhile; settled here without a second send) |
 | `outbox_refused` | counter | `name`, `status` |
 | `outbox_queued_ms` | histogram | `name`: from the write to its mutation succeeding |
 | `outbox_leader_changes` | counter | `leader` = `true` or `false` |
@@ -231,7 +231,7 @@ A sync or promise runner's typed failure is its caller's to handle; an interrupt
 |---|---|---|---|---|
 | `flow.step.failed` | log | `@smthrs/flow` `RunMetrics.recordStep`, for each step attempt whose body failed, in the engine worker and on Cloudflare | Warn | `flow`, `attempt`, `code` (the failure's code: a typed failure's `code` or tag, a defect's tag or name), `runId` |
 | `flows_step_failures` | counter | the same | | `flow`, `code` |
-| `outbox write retrying` | log | `@smthrs/effect-tanstack-db` `Outbox`: a write's first send that will be sent again | Warn | `name`, `status` (or `none`), `outcome: retry`; later retries only count in `outbox_attempts` |
+| `outbox write retrying` | log | `@smthrs/effect-tanstack-db` `Outbox`: a write's first send that will be sent again | Warn | `name`, `status` (or `none`), `outcome: retry` or `held`; later retries only count in `outbox_attempts` |
 | `outbox write refused` | log | the same: the server refused a write for good; its rows roll back | Warn | `name`, `status` (or `none`), `outcome: refused` |
 | `outbox write parked` | log | the same: a write an older build stored that this build can't send (`stage: upgrade`), and again on each load while no feature takes it (`stage: load`) | Warn | `name`, `reason`, `stage` |
 | `outbox couldn't upgrade its writes`, `outbox couldn't read its parked writes`, `outbox couldn't discard a parked write` | log | the same: the outbox's storage failed | Warn | `error`: the storage error's name |
@@ -901,7 +901,7 @@ The stack's route, its one writer, its shapes and the browser's TODO steps and s
 | `stack.shape.todos`, `stack.shape.todo_requests`; `smithers_todo_shape_requests`, `smithers_todo_request_shape_requests` | log, span; counters | ChatApi | `status`, `live` |
 | `todos.draft`, `todos.queue`, `smithers_todo_drafts`, `smithers_todo_queued` | browser | the engine worker | `draftId` or `opId`, `op`, `via`, `door`, `outcome` (`kept`, `not_kept`, `issue_not_found`, `tab_gone`, `agent`), `fromIssue`, `durationMs` |
 | `keys.press`, `smithers_web_shortcut_presses` | browser | the tab | `key`: a one-key shortcut pressed the button that declares it, such as Make TODO's `t` |
-| `todos.send`, `todos.pending`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser | the tab | `opId`, `op`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code`; `action` (`edit`, `discard`, `discard_draft`) |
+| `todos.send`, `todos.pending`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser | the tab | `opId`, `op`, `outcome` (`taken`, `existing`, `held`, `retry`, `refused`), `status`, `code`; `action` (`edit`, `discard`, `discard_draft`) |
 
 A refused commit or drop of the agent's (`outcome: agent`) is the defense the catalog already holds; a nonzero count means a flow call reached the step that the catalog should have refused.
 
@@ -917,7 +917,7 @@ Watching a TODO's run ([runs.md](features/runs.md#a-run-on-cloudflare)): ChatApi
 | `repo.run.record` | log, span | ChatApi or a remote flow, each repository run recorded | `runId`, `repoId`, `flow`, `event`, `outcome` (`recorded`, `existing`) |
 | `run.steer`; `smithers_run_steers` | log, span; counter | ChatApi, each `POST /api/remote-runs/<run id>/steers` | `host` (`remote`), `runId`, `steerId`, `via`, `outcome` (`taken`, `existing`, or the refusal's code), `bytes`, `status`, `durationMs`, `errorCode` |
 | `runs.steer.queue`; `smithers_run_steers_queued` | log, span; counter | the engine worker | `steerId`, `runId`, `via`, `door`, `outcome` (`kept`, `not_kept`, `tab_gone`, `no_credential`) |
-| `run.steer.send`; `smithers_run_steer_sends` | log, span; counter | the tab | `steerId`, `runId`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code` |
+| `run.steer.send`; `smithers_run_steer_sends` | log, span; counter | the tab | `steerId`, `runId`, `outcome` (`taken`, `existing`, `held`, `retry`, `refused`), `status`, `code` |
 
 Steering a TODO's agent ([runs.md](features/runs.md#steering)) records ids, sizes and outcomes; a message's words reach only the run's queue and its model, never a record. `worker/RemoteRuns.test.ts` asserts a sentinel message in no record.
 
@@ -1244,3 +1244,10 @@ then records `validate_superseded` or `validate_failed` with the same correlatio
 `repo.refusals.unavailable` records a failed refusal-store restoration with only `feature: repo`. The data gate remains closed; this is distinct from `repo.refusals.known`, which is emitted only after successful restoration and application of its marks.
 
 `repo.refusal.unstored` reports a refusal mark that failed to persist or timed out, with `feature: repo`; cancellation adds `reason: interrupted`. The in-memory refusal remains closed. `repo.refusal.wipe_failed` reports a failed cache cleanup with `feature: repo` and the registered collection `family`. Both pass through the browser exporter and server relay; neither includes a repository identifier or the failure payload.
+
+
+### Pending sign-out and durable holds
+
+`device.lifecycle` is a host record, an Info log, and `smithers_device_lifecycle{outcome}`. Outcomes are `sign_out_pending` after the exclusive lock is granted and before the request, `sign_out_answered` while the successful request awaits its wipe, `sign_out_failed`, `sign_out_released`, and `reopen_held` when that lock prevents a reopen. They contain no identities, payloads or credentials. `src/wipe.test.ts` asserts lock ownership and release records; `src/boot.test.ts` checks the exported log and counter.
+
+`outbox.send` and `outbox_attempts` distinguish `held` from ordinary `retry`. Held status is read from owned persisted rows, not the last attempt in a tab. The SDK logs `outbox couldn't read held status` or `outbox couldn't publish its change` with only an error name. An unreadable status read preserves the last known state; invalidations carry no data and receivers reread storage. The package outbox tests verify held attempt counts, follower status, reload, key ordering and leadership handoff; co-edit's integration tests use the real page wipe and real text routes.

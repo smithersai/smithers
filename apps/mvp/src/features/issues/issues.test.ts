@@ -32,6 +32,8 @@ import { CHATAPI_ORIGIN, failingWorker, nodeDevice, openFaultyApp, openTab, open
 import { EngineFaults, persistenceFailingOnce } from "../../test/faults"
 import { startedOnRead } from "../../test/liveQueries"
 import { read } from "../../test/otlp"
+import { browserSession } from "../../test/browserSession"
+import { CONNECTION } from "../chat/schema"
 import { anonymousRun, AuthStore, SESSION } from "../auth/store"
 import { repoVisibility } from "../repo/visibility"
 import { Auth } from "../auth/auth"
@@ -54,6 +56,7 @@ import {
   NOT_ACCEPTED_LABEL,
   triageRunExecutionId,
   writeExecutionId,
+  writesRoute,
 } from "./contract"
 import { Issues } from "./issues"
 import { IssueWrites } from "./writes"
@@ -150,6 +153,8 @@ const tabOf = async (runtime: App) => {
     /** The routed issue's comments as the screen shows them. */
     comments: () => (issues.queries.conversation.toArray as ReadonlyArray<CommentRow>).map(commentOf),
     view: () => issues.queries.view.toArray[0],
+    /** Whether the page asks its person to sign in to send what it holds. */
+    signIn: () => chat.connection.tanstack.get(CONNECTION)?.signIn === true,
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string>) =>
       runtime.runSync(Metric.value(Metric.withAttributes(metric, attributes))).count,
   }
@@ -1332,6 +1337,37 @@ describe("sending", () => {
     ).toEqual({ queued: true })
   }, WITHIN)
 
+  test("a write refused 401 while its person is still signed in is held through a reload, with a sign-in prompt, and sent once after sign-in", async () => {
+    const opened = await open()
+    const browser = browserSession(maya.subject.id, (request) =>
+      request.method === "POST" && new URL(request.url).pathname === writesRoute(OWNER, NAME))
+    const device = nodeDevice({ agent: opened.api })
+    const first = await another(opened.api, { host: device, transport: browser.transport })
+    await first.actions.open(OWNER, NAME)
+    first.actions.setNewTitle(OWNER, NAME, "Held issue")
+    await first.actions.create(OWNER, NAME)
+    const writeId = await pendingIssue(first)
+    // Held: sent again, never Not sent, and the page asks its person to sign in.
+    await until(() => expect(browser.state.refusals).toBeGreaterThan(1))
+    await until(() => expect(first.signIn()).toBe(true))
+    expect(first.count(sends, { op: "issue/create", outcome: "refused" })).toBe(0)
+    expect(first.list().issues).toEqual([expect.objectContaining({ id: writeId, number: null, pending: "requested" })])
+    // A reload keeps it held.
+    await first.runtime.dispose()
+    const second = await another(opened.api, { host: device, transport: browser.transport })
+    await until(() => expect(second.signIn()).toBe(true))
+    expect(second.store.sending.tanstack.get(writeId)).toMatchObject({ title: "Held issue" })
+    expect(second.store.requested.tanstack.get(writeId)?.status).not.toBe("not_sent")
+    // Signing in again comes back to the page: the write is sent once, and the prompt goes.
+    await second.runtime.dispose()
+    browser.state.cookie = "read"
+    const third = await another(opened.api, { host: device, transport: browser.transport })
+    await until(() => expect(third.count(sends, { op: "issue/create", outcome: "started" })).toBe(1))
+    expect(await server(opened.api).writes()).toEqual([{ id: writeId }])
+    expect(browser.state.delivered).toBe(1)
+    expect(third.signIn()).toBe(false)
+  }, WITHIN)
+
   test("an answer lost on the way back: the outbox sends it again, and ChatApi answers that it has it", async () => {
     const client = faultyClient()
     const tab = await open({ replace: client.layer })
@@ -1354,10 +1390,12 @@ describe("sending", () => {
     const real = device.outbox.storage
     let storageDown = true
     const storage: Outbox.Options<never>["storage"] = {
+      withLock: (name, action) => real.withLock(name, action),
       get: (key) => real.get(key),
       keys: () => real.keys(),
       delete: (key) => real.delete(key),
       clear: () => real.clear(),
+      setMany: (rows) => storageDown ? Promise.reject(new Error("quota")) : real.setMany(rows),
       set: (key, value) => storageDown ? Promise.reject(new Error("quota")) : real.set(key, value),
     }
     const tab = await another(opened.api, { host: { ...device, outbox: { ...device.outbox, storage } } })
@@ -1808,7 +1846,7 @@ test("a comment flow refused by outbox storage keeps its Not sent outcome", asyn
   const device = nodeDevice({ agent: opened.api })
   let full = true
   const tab = await another(opened.api, { host: { ...device, outbox: { ...device.outbox, storage: {
-    ...device.outbox.storage, set: (key, value) => full ? Promise.reject(new Error("quota")) : device.outbox.storage.set(key, value),
+    ...device.outbox.storage, setMany: (rows) => full ? Promise.reject(new Error("quota")) : device.outbox.storage.setMany(rows),
   } } } })
   await tab.actions.open(OWNER, NAME, 45)
   tab.actions.setCommentDraft(OWNER, NAME, 45, "Not admitted by the outbox")
@@ -1910,7 +1948,7 @@ test("triage admission cannot take ownership of an in-flight comment's form", as
   const entered = new Promise<void>((resolve) => { enter = resolve })
   const held = new Promise<void>((resolve) => { release = resolve })
   const tab = await another(opened.api, { host: { ...host, outbox: { ...host.outbox, storage: { ...host.outbox.storage,
-    set: async (key, value) => { enter(); await held; return host.outbox.storage.set(key, value) },
+    setMany: async (rows) => { enter(); await held; return host.outbox.storage.setMany(rows) },
   } } } })
   await tab.actions.open(OWNER, NAME, 45)
   tab.actions.setCommentDraft(OWNER, NAME, 45, "Concurrent comment")
@@ -1953,10 +1991,10 @@ for (const accepts of [true, false]) {
     const held = new Promise<void>((resolve) => { release = resolve })
     const tab = await another(opened.api, { answers: false, host: { ...device, outbox: { ...device.outbox,
       online: { ...device.outbox.online, isOnline: () => false },
-      storage: { ...device.outbox.storage, set: async (key, value) => {
+      storage: { ...device.outbox.storage, setMany: async (rows) => {
         enter(); await held
         if (!accepts) throw new Error("quota")
-        return device.outbox.storage.set(key, value)
+        return device.outbox.storage.setMany(rows)
       } },
     } } })
     const write = { id: crypto.randomUUID(), repo: TEST_REPOSITORY, op: "issue/comment" as const, title: "", number: 7, body: "One receipt" }

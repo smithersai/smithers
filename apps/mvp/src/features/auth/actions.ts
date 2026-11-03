@@ -68,7 +68,7 @@ export const load = Effect.gen(function* () {
     // A server that answered and couldn't verify, unlike a network that failed, hides private rows (`repositoryAccess`).
     // Only a session answer clears it: a retry that then fails on the network says nothing about the session, so it
     // keeps the hiding an earlier answer started (Astra on 0c7b9f01).
-    const unverifiable = answer.failure.code === "status" || answer.failure.code === "malformed"
+    const unverifiable = answer.failure.code === "status" || answer.failure.code === "malformed" || answer.failure.code === "credential_stale"
     yield* change(unverifiable ? { status: "unreachable", unverifiable: true } : { status: "unreachable" })
     yield* Effect.logWarning("session unreachable").pipe(Effect.annotateLogs(failed(answer.failure)))
     return "unreachable" as CheckOutcome
@@ -161,18 +161,23 @@ const wipeDevice = Effect.gen(function* () {
 
 /** Sends the sign-out and settles the tab's state when ChatApi answers; a sign-out ChatApi took wipes the device. */
 const sendSignOut = Effect.gen(function* () {
-  const client = yield* AuthClient
-  const sent = yield* Effect.result(client.signOut)
-  if (sent._tag === "Failure") {
-    yield* change({ signingOut: false })
-    yield* Metric.update(Metric.withAttributes(signOuts, { outcome: "failed" }), 1)
-    return yield* Effect.logWarning("sign out failed").pipe(Effect.annotateLogs(failed(sent.failure)))
-  }
-  yield* change({ status: "signed_out", login: null, role: null, signingOut: false })
-  yield* confirm(null)
-  yield* Metric.update(Metric.withAttributes(signOuts, { outcome: "signed_out" }), 1)
-  yield* Effect.logInfo("signed out")
-  yield* wipeDevice
+  const device = yield* DeviceWipe
+  yield* Effect.gen(function* () {
+    const client = yield* AuthClient
+    const sent = yield* Effect.result(client.signOut)
+    if (sent._tag === "Failure") {
+      yield* change({ signingOut: false })
+      yield* Metric.update(Metric.withAttributes(signOuts, { outcome: "failed" }), 1)
+      return yield* Effect.logWarning("sign out failed").pipe(Effect.annotateLogs(failed(sent.failure)))
+    }
+    // The server ended the session. No local state or telemetry failure may bypass durable wipe marking or sealing.
+    yield* Effect.gen(function* () {
+      yield* change({ status: "signed_out", login: null, role: null, signingOut: false })
+      yield* confirm(null)
+      yield* Metric.update(Metric.withAttributes(signOuts, { outcome: "signed_out" }), 1)
+      yield* Effect.logInfo("signed out")
+    }).pipe(Effect.ensuring(wipeDevice))
+  }).pipe(Effect.ensuring(device.finishSignOut))
 }).pipe(Effect.annotateLogs({ feature: "auth" }))
 
 /** Sign out pressed: `signingOut` at once, then signed out when ChatApi ends the session. Once at a time. */

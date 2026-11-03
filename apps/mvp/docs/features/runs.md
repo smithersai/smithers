@@ -206,7 +206,7 @@ Each act is a registered flow on this device's engine, model-invocable, so a per
 | `runs.shape.remote`, `smithers_remote_run_shape_requests` | log, span; counter (ChatApi) | `status`, `live` |
 | `run.steer`, `smithers_run_steers` | log, span; counter (ChatApi, [steering](#steering)) | `host` (`remote`), `runId`, `steerId`, `via` (`person`, `agent`), `outcome` (`taken`, `existing`, or the refusal's code), `bytes`, `status`, `durationMs`, `errorCode` |
 | `runs.steer.queue`, `smithers_run_steers_queued` | log, span; counter (engine worker) | `steerId`, `runId`, `via`, `door`, `outcome` (`kept`, `not_kept`, `tab_gone`, `no_credential`), `durationMs` |
-| `run.steer.send`, `smithers_run_steer_sends` | log, span; counter (tab) | `steerId`, `runId`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code`, `durationMs` |
+| `run.steer.send`, `smithers_run_steer_sends` | log, span; counter (tab) | `steerId`, `runId`, `outcome` (`taken`, `existing`, `held`, `retry`, `refused`), `status`, `code`, `durationMs` |
 
 A read of a run on Cloudflare is the tab's `run.read` with `outcome` `read`, `not_found`, `not_started` or `unavailable`. No record carries a value of a run, nor a message to its agent.
 
@@ -315,3 +315,8 @@ Repeated Steer of a pending draft shares its write id. Retyping after admission 
 
 
 System-run pages and expanded details use the same authorized cloud-list attribution as their list rows. A remote read without a repository or an explicitly listed system-run identity remains hidden by the data gate.
+
+
+### Held-write ordering
+
+A held steer retains its durable row. Later steers to that run wait; another run and other features can send. Persisted dependency keys and hold status survive reload and leadership handoff, and follower tabs offer sign-in immediately. Run credentials remain excluded from session reauthentication.

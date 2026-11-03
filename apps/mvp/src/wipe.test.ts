@@ -1,9 +1,19 @@
+import { Worker } from "node:worker_threads"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
+import { boundFetch } from "./device/identity"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Effect, ManagedRuntime } from "effect"
+import { Context, Effect, Layer, ManagedRuntime } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { Persistence } from "@smthrs/effect-tanstack-db"
+import { signOut } from "./features/auth/actions"
+import { AuthClient } from "./features/auth/api"
+import { DeviceWipe } from "./features/auth/device"
+import { AuthStore, SESSION } from "./features/auth/store"
 import { afterEach, expect, test, vi } from "vitest"
 import { tabEngine } from "./flows/engine"
 import { nodeDevice } from "./test/chatApi"
-import { DATA_LOCK, ENGINES_DIRECTORY, inMemory, leaveReason, memoryStorage, pageWipe, unwiped, WIPE, type WipeHost, WipeUnfinished } from "./wipe"
+import { DATA_LOCK, ENGINES_DIRECTORY, inMemory, leaveReason, memoryStorage, pageWipe, unwiped, WIPE, SIGN_OUT_LOCK, type WipeHost, WipeUnfinished } from "./wipe"
 
 // Sign-out's device wipe across pages (src/wipe.ts, docs/features/sign-in.md#signing-out), on Node's own Web Locks and
 // BroadcastChannel. Node has no OPFS and no IndexedDB, so those two are stand-ins that keep what was deleted, and a
@@ -21,7 +31,7 @@ afterEach(() => {
 const browser = () => {
   const profile = `wipe-${crypto.randomUUID()}`
   const marks = new Map<string, string>()
-  const markReads = { refused: false }
+  const markReads = { refused: false, writeRefused: false }
   // OPFS: `smithers/<engine>` until removed; `fail` makes a removal throw, as a handle another worker holds does.
   const entries = new Set([targets.engine])
   const removed: Array<string> = []
@@ -61,20 +71,27 @@ const browser = () => {
   const scoped = (name: string) => `${profile}/${name}`
   const locks: WipeHost["locks"] = {
     request: ((name: string, options: LockOptions, callback: LockGrantedCallback<unknown>) =>
-      navigator.locks.request(scoped(name), options, callback)) as WipeHost["locks"]["request"],
+      navigator.locks.request(scoped(name), options, callback)) as NonNullable<WipeHost["locks"]>["request"],
   }
   const page = (stop?: () => Promise<void>) => {
     const events: Array<string> = []
     const reasons: Array<string> = []
+    const records: Array<string> = []
+    const failures: Array<() => Promise<void>> = []
     const wipe = pageWipe(
       {
         locks,
+        record: (outcome) => { records.push(outcome) },
+        failed: () => { failures.push(() => wipe.wipe()) },
         marks: {
           getItem: (key) => {
             if (markReads.refused) throw new DOMException("blocked", "SecurityError")
             return marks.get(key) ?? null
           },
-          setItem: (key, value) => void marks.set(key, value),
+          setItem: (key, value) => {
+            if (markReads.writeRefused) throw new DOMException("blocked", "SecurityError")
+            marks.set(key, value)
+          },
           removeItem: (key) => void marks.delete(key),
         },
         directory: async () => directory,
@@ -94,7 +111,7 @@ const browser = () => {
       })
     }
     closing.push(wipe.close)
-    return { ...wipe, events, reasons }
+    return { ...wipe, events, reasons, records, failures }
   }
   /** Locks of this profile requested and not yet granted, as `name mode`. */
   const pending = async () =>
@@ -116,7 +133,7 @@ const browser = () => {
     idb.connections--
     for (const finish of idb.waiting.splice(0)) finish()
   }
-  return { marks, markReads, entries, removed, deleted, opfs, idb, page, pending, holdLock, closeConnection }
+  return { marks, markReads, entries, removed, deleted, opfs, idb, page, pending, holdLock, closeConnection, scoped, released: (name: string) => navigator.locks.request(scoped(name), () => {}) }
 }
 
 test("a page that still holds the device's data holds a sign-out's wipe off until it ends; the wipe then deletes both stores and clears the mark", async () => {
@@ -372,4 +389,199 @@ test("each page loads again for the reason the channel's message names, a messag
   // A build that names no reason sends a bare `reopen`.
   expect(leaveReason("reopen")).toBe("wipe_channel_reopen")
   expect(leaveReason({ reopen: true })).toBe("wipe_channel_reopen")
+})
+
+test("a sign-out intent suppresses every page's reopen until wipe or failure, and abruptly terminating its tab releases it", async () => {
+  const device = browser()
+  const a = device.page()
+  const b = device.page()
+  let finish!: (response: Response) => void
+  let entered!: () => void
+  const started = new Promise<void>((resolve) => { entered = resolve })
+  const pending = a.signOut(() => { entered(); return new Promise<Response>((resolve) => { finish = resolve }) })
+  await started
+  expect(await b.reopen("identity_reopen")).toBe(false)
+  expect(b.events).toEqual([])
+  finish(new Response(null, { status: 503 }))
+  await pending
+  expect(a.records).toEqual(["sign_out_pending", "sign_out_failed", "sign_out_released"])
+  expect(b.records).toEqual(["reopen_held"])
+  expect(await b.reopen("identity_reopen")).toBe(true)
+  await until(() => expect(b.events).toEqual(["reload"]))
+
+  const next = browser()
+  const surviving = next.page()
+  const crashed = new Worker(new URL("./test/wipeCrash.worker.ts", import.meta.url), { workerData: { lock: next.scoped(SIGN_OUT_LOCK) } })
+  closing.push(() => { void crashed.terminate() })
+  await new Promise<void>((resolve, reject) => { crashed.once("message", resolve); crashed.once("error", reject) })
+  expect(await surviving.reopen("identity_reopen")).toBe(false)
+  // Termination runs no PageWipe.close or finalizer. The lock manager alone must release the crashed page's lock.
+  await crashed.terminate()
+  await next.released(SIGN_OUT_LOCK)
+  expect(await surviving.reopen("identity_reopen")).toBe(true)
+})
+
+
+test("concurrent reopen requests and receivers share the guard so every page reloads once", async () => {
+  const device = browser()
+  const pages = Array.from({ length: 8 }, () => device.page(async () => {}))
+  expect(await Promise.all(pages.slice(0, 2).map((page) => page.reopen("identity_reopen")))).toEqual([true, true])
+  await until(() => {
+    for (const page of pages) expect(page.reasons).toEqual(["identity_reopen"])
+  })
+})
+
+
+test("a broadcast delivered after sign-out takes the guard is retained through failure", async () => {
+  const messages: unknown[] = []
+  const receivers: Array<BroadcastChannel> = []
+  const channels: WipeHost["channel"] = () => {
+    const receiver = new BroadcastChannel(`delayed-reopen-${crypto.randomUUID()}`)
+    receivers.push(receiver)
+    return { get onmessage() { return receiver.onmessage }, set onmessage(value) { receiver.onmessage = value }, postMessage: (message) => { messages.push(message) }, close: () => receiver.close() }
+  }
+  const reloads: string[] = []
+  const page = pageWipe({
+    locks: navigator.locks,
+    marks: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    channel: channels, reload: (reason) => { reloads.push(reason) },
+    directory: async () => { throw new Error("A reopen must never open device stores") },
+    indexedDB: { deleteDatabase: () => { throw new Error("A reopen must never delete a database") } },
+  }, targets)
+  closing.push(page.close)
+  const session = "bob"
+  let calls = 0
+  const fetch = boundFetch(async () => { calls++; return Response.json({ signedIn: true, personId: session, login: session, role: "member" }) }, {
+    origin: "https://app.test", principal: () => "alice", reauthorize: () => page.reopen("identity_reopen"),
+  })
+  await expect(fetch("https://app.test/api/auth/session")).rejects.toMatchObject({ reason: "reauthorizing" })
+  let finish!: (response: Response) => void
+  let entered!: () => void
+  const started = new Promise<void>((resolve) => { entered = resolve })
+  const signingOut = page.signOut(() => { entered(); return new Promise<Response>((resolve) => { finish = resolve }) })
+  await started
+  for (const data of messages) for (const receiver of receivers) receiver.dispatchEvent(new MessageEvent("message", { data }))
+  // Wait for the receiver's lock attempt before releasing sign-out.
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  expect(reloads).toEqual([])
+  finish(new Response(null, { status: 503 }))
+  await signingOut
+  await until(() => expect(reloads).toEqual(["identity_reopen"]))
+  expect(calls).toBe(1)
+})
+
+
+test("a wipe marker failure after 204 seals the page, releases sign-out, and can be retried", async () => {
+  const device = browser()
+  let stops = 0
+  const a = device.page(async () => { stops++ })
+  const b = device.page()
+  await a.open()
+  expect((await a.signOut(async () => new Response(null, { status: 204 }))).status).toBe(204)
+  device.markReads.writeRefused = true
+  await expect(a.wipe().finally(a.finishSignOut)).rejects.toMatchObject({ name: "SecurityError" })
+  expect(stops).toBe(1)
+  expect(a.records).toContain("sign_out_failed")
+  expect(a.records).toContain("sign_out_released")
+  await until(() => expect(a.failures).toHaveLength(1))
+  expect(await a.open()).toBe(false)
+  expect(device.entries.has(targets.engine)).toBe(true)
+  // A failed marker must leave a retry possible without an exclusive guard stranded in the owning tab.
+  expect((await b.signOut(async () => new Response(null, { status: 503 }))).status).toBe(503)
+  device.markReads.writeRefused = false
+  await a.failures[0]!()
+  expect(device.marks.get(WIPE)).toBe("1")
+  await until(() => expect(a.reasons).toEqual(["wipe"]))
+  expect(stops).toBe(1)
+})
+
+test("a failed wipe marker lets the scoped sign-out finish before real runtime disposal completes", async () => {
+  const device = browser()
+  const retained = nodeDevice()
+  const server = createServer((_request, response) => { response.writeHead(204); response.end() })
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  let disposed = false
+  let releaseCleanup!: () => void
+  // Only teardown releases this escape hatch, so the old deadlock reports an assertion rather than hanging the worker.
+  const cleanup = new Promise<void>(resolve => { releaseCleanup = resolve })
+  let dispose!: () => Promise<void>
+  const page = device.page(() => Promise.race([dispose().then(() => { disposed = true }), cleanup]))
+  const transport = boundFetch(fetch, { origin, principal: () => "alice", signOut: page.signOut })
+  const client = AuthClient.layer({ origin, within: "2 seconds" }).pipe(Layer.provide(
+    FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, transport))),
+  ))
+  const runtime = ManagedRuntime.make(Layer.mergeAll(
+    AuthStore.layer.pipe(Layer.provide(Persistence.layer(retained.persistence))),
+    client,
+    DeviceWipe.layer(page.wipe, page.finishSignOut),
+  ))
+  dispose = () => runtime.dispose()
+  try {
+    expect(await page.open()).toBe(true)
+    await runtime.runPromise(Effect.gen(function* () {
+      const store = yield* AuthStore
+      yield* store.confirmed.restored
+      yield* (yield* store.confirmed.insert({ id: SESSION, personId: "alice", login: "alice", role: "member" })).persisted
+    }))
+    device.markReads.writeRefused = true
+    await runtime.runPromise(signOut)
+    await until(() => expect(page.failures).toHaveLength(1))
+    expect(disposed).toBe(true)
+    expect(page.records).toContain("sign_out_released")
+    expect(await page.open()).toBe(false)
+    expect(await page.reopen("identity_reopen")).toBe(false)
+    await device.released(SIGN_OUT_LOCK)
+    device.markReads.writeRefused = false
+    await page.failures[0]!()
+    expect(device.marks.get(WIPE)).toBe("1")
+    await until(() => expect(page.reasons).toEqual(["wipe"]))
+    expect(page.events.filter(event => event === "stop")).toHaveLength(1)
+  } finally {
+    releaseCleanup()
+    await runtime.dispose()
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})
+
+
+test.each(["session update", "confirmation restore", "confirmation read", "confirmation delete", "confirmation persistence"])("a failure at %s after server sign-out still marks the wipe and releases the whole-action guard", async (stage) => {
+  const device = browser()
+  const page = device.page(async () => {})
+  const sibling = device.page()
+  const retained = nodeDevice()
+  let wiped = 0
+  let answered = false
+  let injected = false
+  const fail = Effect.sync(() => { injected = true; throw new Error("Local sign-out step unavailable") })
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const context = yield* Layer.build(AuthStore.layer.pipe(Layer.provide(Persistence.layer(retained.persistence))))
+    const store = Context.get(context, AuthStore)
+    yield* store.confirmed.restored
+    yield* (yield* store.confirmed.insert({ id: SESSION, personId: "alice", login: "alice", role: "member" })).persisted
+    const faulty = AuthStore.of({ ...store,
+      session: { ...store.session, update: (key, recipe) => answered && stage === "session update" ? fail : store.session.update(key, recipe) },
+      confirmed: { ...store.confirmed,
+        restored: stage === "confirmation restore" ? fail : store.confirmed.restored,
+        get: (key) => stage === "confirmation read" ? fail : store.confirmed.get(key),
+        delete: (key) => stage === "confirmation delete" ? fail : store.confirmed.delete(key).pipe(Effect.map((receipt) => stage === "confirmation persistence" ? { ...receipt, persisted: fail } : receipt)),
+      },
+    })
+    yield* signOut.pipe(
+      Effect.provideService(AuthStore, faulty),
+      Effect.provideService(AuthClient, AuthClient.of({ session: Effect.never, signOut: Effect.promise(async () => {
+        await page.signOut(async () => new Response(null, { status: 204 }))
+        answered = true
+      }) })),
+      Effect.provide(DeviceWipe.layer(async () => { wiped++; await page.wipe() }, page.finishSignOut)),
+    )
+    yield* Effect.promise(() => until(() => expect(injected).toBe(true)))
+    yield* Effect.promise(() => until(() => expect(device.marks.get(WIPE)).toBe("1")))
+    expect(wiped).toBe(1)
+    yield* Effect.promise(() => device.released(SIGN_OUT_LOCK))
+    expect(page.records).toContain("sign_out_released")
+    yield* Effect.promise(() => sibling.reopen("identity_reopen"))
+    expect(page.records.filter((record) => record === "sign_out_released")).toHaveLength(1)
+  })))
 })

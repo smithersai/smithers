@@ -33,7 +33,9 @@ import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { repoId } from "../repo/contract"
 import { ChangeNotTaken, StackClient } from "./api"
-import { stackPath } from "./contract"
+import { stackPath, stackRoute } from "./contract"
+import { browserSession } from "../../test/browserSession"
+import { CONNECTION } from "../chat/schema"
 import { FlowDispatch } from "../../flows/dispatch"
 import { TodoStatusUnavailable, TodoStepRefused } from "./flows"
 import { pendingActions, sends } from "./metrics"
@@ -130,6 +132,7 @@ const tabOf = async (runtime: App) => {
   const requested = () => queries.requested.toArray as ReadonlyArray<Requested>
   const drafts = () => queries.drafts.toArray as ReadonlyArray<Draft>
   const rows = () => stackRows(REPO_ID, stack().todos, sending(), requested())
+  const { connection } = await runtime.runPromise(Effect.service(ChatStore))
   return {
     runtime,
     todos,
@@ -144,6 +147,8 @@ const tabOf = async (runtime: App) => {
     notSent: () => notSentRows(REPO_ID, requested()),
     access: () => accessFor(REPO_ID, queries.access.toArray),
     view: () => queries.view.toArray[0],
+    /** Whether the page asks its person to sign in to send what it holds. */
+    signIn: () => connection.tanstack.get(CONNECTION)?.signIn === true,
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string>) =>
       runtime.runSync(Metric.value(Metric.withAttributes(metric, attributes))).count,
   }
@@ -335,6 +340,37 @@ describe("a commit", () => {
     await tab.runtime.runPromise(Effect.flatMap(ChatStore, (chat) => chat.outbox.retryNow))
     await until(() => expect(tab.rows()).toEqual([expect.objectContaining({ number: 1, title: "Offline commit" })]))
     expect(await sql(tab.api, `SELECT count(*)::int AS n FROM todos`)).toEqual([{ n: 1 }])
+  }, WITHIN)
+
+  test("a commit refused 401 while its person is still signed in is held through a reload, with a sign-in prompt, and numbered once after sign-in", async () => {
+    const opened = await open()
+    const browser = browserSession(maya.subject.id, (request) =>
+      request.method === "POST" && new URL(request.url).pathname === stackRoute(OWNER, NAME))
+    const device = nodeDevice({ agent: opened.api })
+    const first = await another(opened.api, { host: device, transport: browser.transport })
+    await first.actions.open(OWNER, NAME)
+    await first.actions.commit(drafted(first, "Held commit", "Made while the cookie went unread."))
+    // Held: sent again, never Not sent, and the page asks its person to sign in.
+    await until(() => expect(browser.state.refusals).toBeGreaterThan(1))
+    await until(() => expect(first.signIn()).toBe(true))
+    expect(first.count(sends, { op: "commit", outcome: "refused" })).toBe(0)
+    expect(first.rows()).toEqual([expect.objectContaining({ number: null, pending: "requested" })])
+    expect(first.notSent()).toEqual([])
+    // A reload keeps it held.
+    await first.runtime.dispose()
+    const second = await another(opened.api, { host: device, transport: browser.transport })
+    await second.actions.open(OWNER, NAME)
+    await until(() => expect(second.signIn()).toBe(true))
+    expect(second.notSent()).toEqual([])
+    // Signing in again comes back to the page: the commit is sent once, numbered, and the prompt goes.
+    await second.runtime.dispose()
+    browser.state.cookie = "read"
+    const third = await another(opened.api, { host: device, transport: browser.transport })
+    await third.actions.open(OWNER, NAME)
+    await until(() => expect(third.rows()).toEqual([expect.objectContaining({ number: 1, title: "Held commit" })]))
+    expect(await sql(opened.api, `SELECT count(*)::int AS n FROM todos`)).toEqual([{ n: 1 }])
+    expect(browser.state.delivered).toBe(1)
+    expect(third.signIn()).toBe(false)
   }, WITHIN)
 
   test("an answer lost after ChatApi took it: the resend answers the same, and the stack keeps one TODO", async () => {
@@ -842,10 +878,12 @@ describe("the device", () => {
     const real = device.outbox.storage
     let full = true
     const storage: Outbox.Options<never>["storage"] = {
+      withLock: (name, action) => real.withLock(name, action),
       get: (key) => real.get(key),
       keys: () => real.keys(),
       delete: (key) => real.delete(key),
       clear: () => real.clear(),
+      setMany: (rows) => full ? Promise.reject(new Error("quota")) : real.setMany(rows),
       set: (key, value) => full ? Promise.reject(new Error("quota")) : real.set(key, value),
     }
     const tab = await another(opened.api, { host: { ...device, outbox: { ...device.outbox, storage } } })

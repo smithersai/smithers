@@ -195,7 +195,7 @@ describe("Create issue", () => {
     const api = await openApi()
     const device = deviceOf(api)
     let refusing = true
-    const storage = { ...device.outbox.storage, set: (key: string, value: string) => refusing ? Promise.reject(new Error("quota")) : device.outbox.storage.set(key, value) }
+    const storage = { ...device.outbox.storage, setMany: (rows: ReadonlyArray<readonly [string, string]>) => refusing ? Promise.reject(new Error("quota")) : device.outbox.storage.setMany(rows) }
     const tab = await tabOn(api, { ...device, outbox: { ...device.outbox, storage } })
     const pressed = Date.now()
     const writeId = await createIssue(tab, "Refused once")
@@ -234,11 +234,11 @@ describe("an outbox that waits, then refuses storage", () => {
     let first = true
     const storage = {
       ...device.outbox.storage,
-      set: async (key: string, value: string) => {
-        if (!first) return device.outbox.storage.set(key, value)
+      setMany: async (rows: ReadonlyArray<readonly [string, string]>) => {
+        if (!first) return device.outbox.storage.setMany(rows)
         first = false
         if (!(await verdict)) throw new Error("quota")
-        return device.outbox.storage.set(key, value)
+        return device.outbox.storage.setMany(rows)
       },
     }
     const tab = await tabOn(api, { ...device, outbox: { ...device.outbox, storage } })
@@ -261,7 +261,7 @@ describe("two tabs of one device", () => {
     // The first tab's outbox write never finishes: the tab closes before the outbox took it. Its work ends
     // with the tab, so nothing of it runs after the close.
     const never = new Promise<void>(() => {})
-    const storage = { ...device.outbox.storage, set: async (key: string, value: string) => { await never; return device.outbox.storage.set(key, value) } }
+    const storage = { ...device.outbox.storage, setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { await never; return device.outbox.storage.setMany(rows) } }
     const first = await tabOn(api, { ...device, outbox: { ...device.outbox, storage } })
     const second = await tabOn(api, otherTab(device))
     void first.issues.actions.open(OWNER, NAME).then(() => {

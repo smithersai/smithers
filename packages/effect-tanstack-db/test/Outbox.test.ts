@@ -28,6 +28,9 @@ const start = (options: {
   readonly outcomes: Queue.Queue<Outcome>
   readonly sent: Array<{ readonly rows: ReadonlyArray<unknown>; readonly idempotencyKey: string }>
   readonly leader?: Outbox.Leader | undefined
+  readonly orderingKeys?: Outbox.Options<never>["orderingKeys"]
+  readonly changes?: Outbox.Options<never>["changes"]
+  readonly mutation?: Outbox.Mutation<never>
   readonly notes?: string
   readonly online?: Outbox.Online
   readonly principal?: Outbox.Principal
@@ -44,17 +47,19 @@ const start = (options: {
         storage: options.storage,
         ...("leader" in options ? (options.leader ? { leader: options.leader } : {}) : { leader: single }),
         online,
+        orderingKeys: options.orderingKeys,
+        changes: options.changes,
         ...(options.principal === undefined ? {} : { principal: options.principal }),
         ...(options.upgrade === undefined ? {} : { upgrade: options.upgrade }),
         ...(options.parked === undefined ? {} : { parked: options.parked }),
         mutations: {
-          save: (params) =>
+          save: options.mutation ?? ((params) =>
             Effect.gen(function*() {
               options.sent.push(params)
               const outcome = yield* Queue.take(options.outcomes)
               if (outcome === "defect") return yield* Effect.die(new Error("boom"))
               if (outcome !== "ok") return yield* outcome
-            })
+            }))
         }
       })
     )
@@ -77,6 +82,9 @@ const scoped = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
 const save = (outbox: Outbox.Service, notes: Collection.Collection<Note, string>, row: Note) =>
   outbox.transact("save", { idempotencyKey: row.id }, Effect.asVoid(notes.insert(row)))
 
+// Counter metadata survives an empty queue; assertions about retained writes exclude only that support row.
+const retainedKeys = (storage: ReturnType<typeof memoryStorage>) => [...storage.entries.keys()].filter((key) => key !== "outbox:admission-counter")
+
 const texts = (rows: ReadonlyArray<Note>) => rows.map(({ id }) => id)
 
 /** A network detector that starts offline; `connect` brings it online and tells the outbox, as a browser does. */
@@ -86,6 +94,7 @@ const offline = () => {
   return {
     ...detector,
     isOnline: () => state.online,
+    disconnect: () => { state.online = false },
     connect: () => {
       state.online = true
       detector.notifyOnline()
@@ -103,7 +112,7 @@ describe("a write", () => {
       const write = yield* save(outbox, notes, note("a", 1))
       const shown = texts(yield* notes.toArray)
       yield* write.admitted
-      const stored = [...world.storage.entries.keys()]
+      const stored = retainedKeys(world.storage)
       yield* Queue.offer(world.outcomes, "ok")
       yield* write.settled
       return {
@@ -111,7 +120,7 @@ describe("a write", () => {
         stored,
         sent: world.sent,
         after: texts(yield* notes.toArray),
-        left: [...world.storage.entries.keys()],
+        left: retainedKeys(world.storage),
         sends: (yield* Metric.value(Metric.withAttributes(Outbox.attempts, { name: "save", outcome: "sent" }))).count,
         queued: (yield* Metric.value(Metric.withAttributes(Outbox.queuedMs, { name: "save" }))).count
       }
@@ -154,7 +163,7 @@ describe("a write", () => {
       ["Warn", { name: "save", status: "none", outcome: "retry" }]
     ])
     expect(statuses.map(({ failing }) => failing)).toEqual(expect.arrayContaining(["network", "server", null]))
-    expect(statuses.at(-1)).toEqual({ leader: true, failing: null })
+    expect(statuses.at(-1)).toEqual({ leader: true, failing: null, held: false })
   })
 
   test("the server refuses is never sent again, rolls back, and is logged and counted", async () => {
@@ -168,7 +177,7 @@ describe("a write", () => {
           settled: Exit.isFailure(settled),
           rows: texts(yield* notes.toArray),
           refused: (yield* Metric.value(Metric.withAttributes(Outbox.refused, { name: "save", status: "409" }))).count,
-          left: [...world.storage.entries.keys()]
+          left: retainedKeys(world.storage)
         }
       })).pipe(Effect.provide(ownMetrics()))
     )
@@ -220,7 +229,7 @@ describe("a write", () => {
       // Its rows are back before it is sent again.
       const shown = texts(yield* notes.toArray)
       yield* Queue.offer(world.outcomes, "ok")
-      yield* Effect.promise(() => until(() => expect(world.storage.entries.size).toBe(0)))
+      yield* Effect.promise(() => until(() => expect(retainedKeys(world.storage).length).toBe(0)))
       return shown
     }))
     expect(restored).toEqual(["a"])
@@ -264,7 +273,7 @@ describe("a write", () => {
       }
     }))
     expect(seen).toEqual({ refused: true, rows: ["a"] })
-    expect(world.storage.entries.size).toBe(0)
+    expect(retainedKeys(world.storage).length).toBe(0)
     expect(world.sent).toEqual([])
   })
 })
@@ -284,7 +293,7 @@ describe("admission", () => {
     }))
     expect(seen.exit).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
     expect(seen.rows).toEqual([])
-    expect(seen.status).toEqual(Option.some({ leader: false, failing: null }))
+    expect(seen.status).toEqual(Option.some({ leader: false, failing: null, held: false }))
   })
 
   test.each([false, true])(
@@ -325,7 +334,7 @@ describe("admission", () => {
       expect(seen.admitted).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
       expect(seen.rows).toEqual([])
       expect(stores).toBe(0)
-      expect(world.storage.entries.size).toBe(0)
+      expect(retainedKeys(world.storage).length).toBe(0)
       expect(world.sent).toEqual([])
     }
   )
@@ -373,7 +382,7 @@ describe("admission", () => {
       yield* start({ ...world, notes: collection, storage: storage as never })
       yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(2)))
     }))
-    expect(world.storage.entries.size).toBe(1)
+    expect(retainedKeys(world.storage).length).toBe(1)
   })
 
   test("a storage that can't be read at start is logged, and the outbox starts", async () => {
@@ -424,7 +433,7 @@ describe("withdraw", () => {
         cause: (settled.cause as Error).name,
         sentOffline,
         withdrawn: (yield* withdrawnCount).count,
-        left: world.storage.entries.size
+        left: retainedKeys(world.storage).length
       }
     }))
     expect(seen).toEqual({
@@ -453,7 +462,7 @@ describe("withdraw", () => {
       yield* Queue.offer(world.outcomes, "ok")
       yield* outbox.retryNow
       yield* b.settled
-      return { withdrawn: (yield* withdrawnCount).count, left: world.storage.entries.size }
+      return { withdrawn: (yield* withdrawnCount).count, left: retainedKeys(world.storage).length }
     }))
     expect(seen).toEqual({ withdrawn: 1, left: 0 })
     expect(keys(world.sent)).toEqual(["a", "b"])
@@ -501,7 +510,7 @@ describe("withdraw", () => {
       yield* Queue.offer(world.outcomes, "ok")
       yield* outbox.retryNow
       yield* b.settled
-      return { storing, withdrawn: (yield* withdrawnCount).count, left: world.storage.entries.size }
+      return { storing, withdrawn: (yield* withdrawnCount).count, left: retainedKeys(world.storage).length }
     }))
     expect(seen).toEqual({ storing: "sending", withdrawn: 1, left: 0 })
     expect(keys(world.sent)).toEqual(["a", "b"])
@@ -521,7 +530,7 @@ describe("withdraw", () => {
       const deleting = yield* refusal(outbox, "a")
       gate.open()
       yield* a.settled
-      return { deleting, rows: texts(yield* notes.toArray), left: world.storage.entries.size }
+      return { deleting, rows: texts(yield* notes.toArray), left: retainedKeys(world.storage).length }
     }))
     expect(seen).toEqual({ deleting: "sending", rows: [], left: 0 })
     expect(keys(world.sent)).toEqual(["a"])
@@ -538,7 +547,7 @@ describe("withdraw", () => {
       const rows = texts(yield* notes.toArray)
       yield* Queue.offer(world.outcomes, "ok")
       yield* a.settled
-      return { refused, rows, left: world.storage.entries.size }
+      return { refused, rows, left: retainedKeys(world.storage).length }
     }))
     expect(seen).toEqual({ refused: "sending", rows: ["a"], left: 0 })
     expect(keys(world.sent)).toEqual(["a"])
@@ -552,14 +561,14 @@ describe("withdraw", () => {
       yield* (yield* save(outbox, notes, note("a", 1))).admitted
     }))
     // As the library stores a write the server took, before it deletes it: the program closed in between.
-    const [key, value] = [...world.storage.entries][0]!
+    const [key, value] = [...world.storage.entries].find(([key]) => key.startsWith("tx:"))!
     world.storage.entries.set(key, JSON.stringify({ ...JSON.parse(value), outboxPhase: "deletion-pending" }))
     const network = offline()
     const refused = await scoped(Effect.gen(function*() {
       const { outbox } = yield* start({ ...world, notes: collection, online: network })
       const refused = yield* refusal(outbox, "a")
       network.connect()
-      yield* Effect.promise(() => until(() => expect(world.storage.entries.size).toBe(0)))
+      yield* Effect.promise(() => until(() => expect(retainedKeys(world.storage).length).toBe(0)))
       return refused
     }))
     expect(refused).toBe("sending")
@@ -579,7 +588,7 @@ describe("withdraw", () => {
       const restored = texts(yield* notes.toArray)
       yield* outbox.withdraw("a")
       const rows = texts(yield* notes.toArray)
-      const left = world.storage.entries.size
+      const left = retainedKeys(world.storage).length
       // A write made after it is sent once the network is back; the outbox reaches the withdrawn one first.
       const b = yield* save(outbox, notes, note("b", 2))
       network.connect()
@@ -734,6 +743,72 @@ describe("Online.always and leadership", () => {
     expect(seen.counted).toBe(1)
     expect(world.sent.map(({ idempotencyKey }) => idempotencyKey)).toEqual(["b"])
   })
+
+  test("default executor disposal drains a paused admission before reopening can allocate or replay", async () => {
+    const world = await setup([])
+    let enter!: () => void
+    let release!: () => void
+    const entered = new Promise<void>(resolve => { enter = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const counters: number[] = []
+    const storage = { ...world.storage, setMany: async (entries: ReadonlyArray<readonly [string, string]>) => {
+      if (entries.some(([key, value]) => key.startsWith("tx:") && JSON.parse(value).idempotencyKey === "first")) {
+        enter()
+        await gate
+      }
+      await world.storage.setMany(entries)
+      const counter = entries.find(([key]) => key === "outbox:admission-counter")
+      if (counter !== undefined) counters.push(Number(counter[1]))
+    } }
+    const sent: string[] = []
+    const mutation: Outbox.Mutation<never> = ({ idempotencyKey }) => Effect.sync(() => { sent.push(idempotencyKey) })
+    const options = { ...world, storage, leader: undefined, orderingKeys: { save: () => ["same"] }, mutation }
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(1800000000000)
+    try {
+      await scoped(Effect.gen(function*() {
+        const firstScope = yield* Scope.make()
+        yield* Effect.addFinalizer(() => Scope.close(firstScope, Exit.void))
+        const first = yield* Scope.provide(start({ ...options, online: offline() }), firstScope)
+        const firstWrite = yield* save(first.outbox, first.notes, note("first", 1))
+        yield* Effect.promise(() => entered)
+        const closing = yield* Scope.close(firstScope, Exit.void).pipe(Effect.forkScoped)
+        for (let turn = 0; turn < 20; turn++) yield* Effect.yieldNow
+        expect(yield* Effect.exit(save(first.outbox, first.notes, note("late", 4))))
+          .toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
+        const secondScope = yield* Scope.make()
+        yield* Effect.addFinalizer(() => Scope.close(secondScope, Exit.void))
+        const second = yield* Scope.provide(start({ ...options, online: offline() }), secondScope)
+        // A reopen that still follows retries after disposal completes. If it leads early, expose both allocations
+        // before releasing the older batch so the counter history catches regression, not merely a duplicated value.
+        const early = yield* Effect.exit(save(second.outbox, second.notes, note("second", 2)))
+        if (Exit.isSuccess(early)) {
+          yield* early.value.admitted
+          yield* (yield* save(second.outbox, second.notes, note("third", 3))).admitted
+        }
+        release()
+        yield* firstWrite.admitted
+        yield* Fiber.join(closing)
+        yield* Scope.close(secondScope, Exit.void)
+        const network = offline()
+        const reopened = yield* start({ ...options, online: network })
+        if (Exit.isFailure(early)) {
+          expect(early).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
+          yield* (yield* save(reopened.outbox, reopened.notes, note("second", 2))).admitted
+          yield* (yield* save(reopened.outbox, reopened.notes, note("third", 3))).admitted
+        }
+        expect(counters.every((value, index) => index === 0 || value > counters[index - 1]!)).toBe(true)
+        const rows = [...storage.entries.values()].map(value => JSON.parse(value)).filter(row => row.idempotencyKey)
+        const sequence = (key: string) => rows.find(row => row.idempotencyKey === key).metadata.admissionSequence
+        expect(sequence("first")).toBeLessThan(sequence("second"))
+        expect(sequence("second")).toBeLessThan(sequence("third"))
+        expect(Number(storage.entries.get("outbox:admission-counter"))).toBe(sequence("third"))
+        network.connect()
+        yield* reopened.outbox.retryNow
+        yield* Effect.promise(() => until(() => expect(sent).toEqual(["first", "second", "third"])))
+      }).pipe(Effect.ensuring(Effect.sync(release))))
+    } finally { release(); vi.useRealTimers() }
+  })
 })
 
 describe("lockLeader", () => {
@@ -756,7 +831,7 @@ describe("lockLeader", () => {
       const waited = (yield* Stream.runHead(second.outbox.status)).pipe(Option.map(({ leader }) => leader))
       yield* Scope.close(firstScope, Exit.void)
       yield* Effect.promise(() => until(() => expect(leader.isLeader()).toBe(true)))
-      yield* Effect.promise(() => until(() => expect(world.storage.entries.size).toBe(0)))
+      yield* Effect.promise(() => until(() => expect(retainedKeys(world.storage).length).toBe(0)))
       leader.dispose()
       return { waited, after: leader.isLeader() }
     }))
@@ -830,7 +905,7 @@ describe("lockLeader", () => {
       )
       yield* Scope.provide(start({ ...world, leader: secondLeader, notes }), secondScope)
       yield* secondLeader.take
-      yield* Effect.promise(() => until(() => expect(world.storage.entries.size).toBe(0)))
+      yield* Effect.promise(() => until(() => expect(retainedKeys(world.storage).length).toBe(0)))
       yield* Scope.close(secondScope, Exit.void)
 
       // The first leads again: its queued copy settles without a third send.
@@ -850,7 +925,7 @@ describe("lockLeader", () => {
     const storage = {
       ...world.storage,
       get: (key: string) =>
-        unreadable.reads > 0 && unreadable.reads-- > 0
+        key.startsWith("tx:") && unreadable.reads > 0 && unreadable.reads-- > 0
           ? Promise.reject(new Error("unreadable"))
           : world.storage.get(key)
     }
@@ -989,14 +1064,14 @@ describe("principal", () => {
   test("a write queued as one principal is never loaded, shown or sent as another; the storage keeps it", async () => {
     const world = await setup(["ok", "ok"])
     await queue(world, as("ann").principal, [note("a", 1)])
-    const stored = [...world.storage.entries.keys()]
+    const stored = retainedKeys(world.storage)
     const { result, logs } = await withLogs(
       Effect.scoped(Effect.gen(function*() {
         const { notes, outbox } = yield* start({ ...world, principal: as("ben").principal })
         const shown = texts(yield* notes.toArray)
         // Ben's own write goes; had Ann's loaded, it would have gone first.
         yield* (yield* save(outbox, notes, note("b", 2))).settled
-        return { shown, ben: [...world.storage.entries.keys()] }
+        return { shown, ben: retainedKeys(world.storage) }
       })).pipe(Effect.provide(ownMetrics()))
     )
     expect(result.shown).toEqual([])
@@ -1011,7 +1086,7 @@ describe("principal", () => {
     await scoped(Effect.gen(function*() {
       yield* start({ ...world, principal: as("ann").principal })
       yield* Effect.promise(() => until(() => expect(sent(world)).toEqual(["b", "a"])))
-      yield* Effect.promise(() => until(() => expect(world.storage.entries.size).toBe(0)))
+      yield* Effect.promise(() => until(() => expect(retainedKeys(world.storage).length).toBe(0)))
     }))
   })
 
@@ -1071,7 +1146,7 @@ describe("principal", () => {
     }))
     expect(seen).toEqual({ settled: true, rows: [], sealed: 1 })
     expect(sent(world)).toEqual([])
-    expect([...world.storage.entries.keys()]).toHaveLength(1)
+    expect(retainedKeys(world.storage)).toHaveLength(1)
     await Effect.runPromise(Queue.offer(world.outcomes, "ok"))
     await scoped(Effect.gen(function*() {
       yield* start({ ...world, principal: as("visitor").principal })
@@ -1182,4 +1257,916 @@ test("an older non-joined write settling cannot erase a newer receipt with the s
     yield* Queue.offer(world.outcomes, "ok")
     yield* second.settled
   }))
+})
+
+
+describe("held writes", () => {
+  const changes = () => {
+    const listeners = new Set<() => void>()
+    return {
+      publish: () => { for (const listener of listeners) listener() },
+      subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }
+    }
+  }
+  const orderingKeys = { save: (rows: ReadonlyArray<unknown>) => (rows as ReadonlyArray<Note>).map((row) => row.text) }
+
+  test("a permanent hold lets another key pass, retains same-key order through reload and leadership change, and delivers each once", async () => {
+    const world = await setup([])
+    let signedIn = false
+    const delivered: Array<string> = []
+    const attempted: Array<string> = []
+    const mutation: Outbox.Mutation<never> = ({ rows, idempotencyKey }) => Effect.suspend(() => {
+      attempted.push(idempotencyKey)
+      if ((rows[0] as Note).text === "a" && !signedIn) return new Outbox.Retry({ status: 401, held: true })
+      delivered.push(idempotencyKey)
+      return Effect.void
+    })
+    await scoped(Effect.gen(function*() {
+      const firstScope = yield* Scope.make()
+      const lock = webLocks({ prefix: id("held-lock") })
+      const firstLeader = yield* Outbox.lockLeader({ lock, name: "outbox" }).pipe(Effect.provideService(Scope.Scope, firstScope))
+      const first = yield* start({ ...world, leader: firstLeader, notes: id("first"), orderingKeys, mutation }).pipe(Effect.provideService(Scope.Scope, firstScope))
+      const takeoverScope = yield* Scope.make()
+      const takeoverLeader = yield* Outbox.lockLeader({ lock, name: "outbox" }).pipe(Effect.provideService(Scope.Scope, takeoverScope))
+      const takeover = yield* start({ ...world, leader: takeoverLeader, notes: id("takeover"), orderingKeys, mutation }).pipe(Effect.provideService(Scope.Scope, takeoverScope))
+      yield* (yield* save(first.outbox, first.notes, note("a1", 1, "a"))).admitted
+      yield* Effect.promise(() => until(() => expect(attempted).toContain("a1")))
+      yield* (yield* save(first.outbox, first.notes, note("a2", 2, "a"))).admitted
+      yield* (yield* save(first.outbox, first.notes, note("b1", 3, "b"))).admitted
+      yield* Effect.promise(() => until(() => expect(delivered).toEqual(["b1"])))
+      expect(attempted).not.toContain("a2")
+      expect(retainedKeys(world.storage).filter((key) => key.startsWith("tx:"))).toHaveLength(2)
+      expect((yield* Metric.value(Metric.withAttributes(Outbox.attempts, { name: "save", outcome: "held" }))).count).toBeGreaterThan(0)
+      // Earlier builds stored payloads without dependency metadata. A new leader must recover their keys from rows.
+      for (const [key, value] of world.storage.entries) {
+        if (!key.startsWith("tx:")) continue
+        const legacy = JSON.parse(value)
+        delete legacy.metadata.orderingKeys
+        world.storage.entries.set(key, JSON.stringify(legacy))
+      }
+      yield* takeoverLeader.take
+      yield* (yield* save(takeover.outbox, takeover.notes, note("c1", 4, "c"))).admitted
+      yield* (yield* save(takeover.outbox, takeover.notes, note("a3", 5, "a"))).admitted
+      yield* Effect.promise(() => until(() => expect(delivered).toEqual(["b1", "c1"])))
+      expect(attempted).not.toContain("a2")
+      yield* Scope.close(firstScope, Exit.void)
+      yield* Scope.close(takeoverScope, Exit.void)
+      const network = offline()
+      const next = yield* start({ ...world, notes: id("next"), orderingKeys, mutation, online: network })
+      expect(attempted).not.toContain("a2")
+      signedIn = true
+      network.connect()
+      yield* Effect.promise(() => until(() => expect(delivered).toEqual(["b1", "c1", "a1", "a2", "a3"])))
+      expect(retainedKeys(world.storage).length).toBe(0)
+    }))
+  })
+
+  test("held status comes from storage in a follower and after reload while offline, before any send", async () => {
+    const world = await setup([])
+    const bus = changes()
+    let calls = 0
+    let signedIn = false
+    const mutation: Outbox.Mutation<never> = () => Effect.suspend(() => {
+      calls++
+      return signedIn ? Effect.void : new Outbox.Retry({ status: 401, held: true })
+    })
+    await scoped(Effect.gen(function*() {
+      const leaderScope = yield* Scope.make()
+      const leader = yield* start({ ...world, orderingKeys, changes: bus, mutation }).pipe(Effect.provideService(Scope.Scope, leaderScope))
+      const follower: Outbox.Leader = { ...single, requestLeadership: async () => false, isLeader: () => false }
+      const following = yield* start({ ...world, leader: follower, orderingKeys, changes: bus, mutation })
+      const states: Array<Outbox.Status> = []
+      yield* following.outbox.status.pipe(Stream.runForEach((state) => Effect.sync(() => states.push(state))), Effect.forkScoped)
+      yield* (yield* save(leader.outbox, leader.notes, note("a", 1))).admitted
+      yield* Effect.promise(() => until(() => expect(states.at(-1)?.held).toBe(true)))
+      yield* Scope.close(leaderScope, Exit.void)
+      const before = calls
+      const network = offline()
+      const reloaded = yield* start({ ...world, online: network, orderingKeys, changes: bus, mutation })
+      const restored = yield* Stream.runHead(reloaded.outbox.status)
+      expect(Option.getOrThrow(restored).held).toBe(true)
+      expect(calls).toBe(before)
+      signedIn = true
+      network.connect()
+      yield* Effect.promise(() => until(() => expect(states.at(-1)?.held).toBe(false)))
+      expect(calls).toBe(before + 1)
+      expect(retainedKeys(world.storage).length).toBe(0)
+    }))
+  })
+
+  test("a selector defect rolls back an uncommitted write, and a notification failure cannot revoke admission", async () => {
+    const world = await setup(["ok"])
+    const { logs } = await withLogs(Effect.scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({
+        ...world,
+        orderingKeys: { save: (rows) => {
+          if ((rows[0] as Note).id === "bad") throw new TypeError("private sentinel")
+          return ["safe"]
+        } },
+        changes: { publish: () => { throw new Error("private sentinel") }, subscribe: () => () => {} }
+      })
+      const defect = yield* Effect.exit(save(outbox, notes, note("bad", 1)))
+      expect(Exit.isFailure(defect)).toBe(true)
+      expect(yield* notes.toArray).toEqual([])
+      expect(retainedKeys(world.storage).length).toBe(0)
+      const write = yield* save(outbox, notes, note("good", 2))
+      yield* write.admitted
+      yield* write.settled
+      expect(world.sent.map(({ idempotencyKey }) => idempotencyKey)).toEqual(["good"])
+      expect(retainedKeys(world.storage).length).toBe(0)
+    })))
+    expect(logs).toContainEqual(expect.objectContaining({
+      message: ["outbox couldn't publish its change"], annotations: { error: "Error" }
+    }))
+    expect(JSON.stringify(logs)).not.toContain("private sentinel")
+  })
+
+})
+
+
+describe("round 2 admission regressions", () => {
+  test("equal timestamps restore in IndexedDB key order without reversing admission order", async () => {
+    const world = await setup([])
+    // IndexedDB getAllKeys returns lexical primary-key order, independently of insertion order.
+    world.storage.keys = async () => retainedKeys(world.storage).sort()
+    const attempted: string[] = []
+    let held = true
+    const orderingKeys = { save: () => ["same"] }
+    const mutation: Outbox.Mutation<never> = ({ idempotencyKey }) => Effect.suspend(() => {
+      attempted.push(idempotencyKey)
+      return held && idempotencyKey === "first" ? new Outbox.Retry({ held: true }) : Effect.void
+    })
+    await scoped(Effect.gen(function*() {
+      const originalScope = yield* Scope.make()
+      const original = yield* start({ ...world, online: offline(), orderingKeys, mutation }).pipe(Effect.provideService(Scope.Scope, originalScope))
+      yield* (yield* save(original.outbox, original.notes, note("first", 1))).admitted
+      yield* (yield* save(original.outbox, original.notes, note("second", 2))).admitted
+      yield* Scope.close(originalScope, Exit.void)
+      const saved = [...world.storage.entries].filter(([key]) => key.startsWith("tx:"))
+      for (const [key, value] of saved) {
+        const row = JSON.parse(value)
+        world.storage.entries.delete(key)
+        row.id = row.idempotencyKey === "first" ? "z-first" : "a-second"
+        row.createdAt = 1000
+        if (row.idempotencyKey === "first") {
+          row.metadata.held = true
+          row.nextAttemptAt = Date.now() + 60_000
+        }
+        world.storage.entries.set(`tx:${row.id}`, JSON.stringify(row))
+      }
+      const network = offline()
+      const next = yield* start({ ...world, online: network, orderingKeys, mutation })
+      network.connect()
+      // retryNow waits for the executor's current processing pass.
+      yield* next.outbox.retryNow
+      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+      expect(attempted).not.toContain("second")
+      held = false
+      yield* next.outbox.retryNow
+      yield* Effect.promise(() => until(() => expect(attempted.slice(-2)).toEqual(["first", "second"])))
+    }))
+  })
+
+  test("empty dependency keys retain the conservative barrier", async () => {
+    const world = await setup([])
+    const attempted: string[] = []
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({ ...world, orderingKeys: { save: () => [] }, mutation: ({ idempotencyKey }) => Effect.suspend(() => {
+        attempted.push(idempotencyKey)
+        return idempotencyKey === "first" ? new Outbox.Retry({ held: true }) : Effect.void
+      }) })
+      yield* (yield* save(outbox, notes, note("first", 1))).admitted
+      yield* Effect.promise(() => until(() => expect(attempted).toContain("first")))
+      yield* (yield* save(outbox, notes, note("second", 2))).admitted
+      yield* outbox.retryNow
+      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+      expect(attempted).not.toContain("second")
+    }))
+  })
+
+  test("a missing held index is rebuilt from rows without exposing A's hold to B", async () => {
+    const world = await setup([])
+    let principal = "alice"
+    const sent: string[] = []
+    const ownership = { now: () => principal, ownsUnstamped: () => false }
+    const mutation: Outbox.Mutation<never> = ({ idempotencyKey }) => Effect.suspend(() => {
+      sent.push(`${principal}:${idempotencyKey}`)
+      return idempotencyKey === "a" ? new Outbox.Retry({ held: true }) : Effect.void
+    })
+    await scoped(Effect.gen(function*() {
+      const firstScope = yield* Scope.make()
+      const first = yield* start({ ...world, principal: ownership, mutation }).pipe(Effect.provideService(Scope.Scope, firstScope))
+      yield* (yield* save(first.outbox, first.notes, note("a", 1))).admitted
+      yield* Effect.promise(() => until(() => expect([...world.storage.entries.values()].some((row) => JSON.parse(row).metadata?.held)).toBe(true)))
+      yield* Scope.close(firstScope, Exit.void)
+      // A crash between the durable row write and index update leaves this exact state.
+      yield* Effect.promise(() => world.storage.delete("outbox:held"))
+      principal = "bob"
+      const next = yield* start({ ...world, principal: ownership, mutation })
+      expect(Option.getOrThrow(yield* Stream.runHead(next.outbox.status)).held).toBe(false)
+      expect(yield* next.notes.toArray).toEqual([])
+      yield* (yield* save(next.outbox, next.notes, note("b", 2))).settled
+      expect(sent).toEqual(["alice:a", "bob:b"])
+      const queued = [...world.storage.entries].filter(([key]) => key.startsWith("tx:"))
+      expect(queued).toHaveLength(1)
+      expect(JSON.parse(queued[0]![1]).metadata.principal).toBe("alice")
+      expect(JSON.parse(queued[0]![1]).metadata.held).toBe(true)
+      expect(JSON.parse((yield* Effect.promise(() => world.storage.get("outbox:held")))!)).toEqual([queued[0]![0]])
+    }))
+  })
+
+  test("a transient held-index write or delete failure recovers live followers without rescanning admissions", async () => {
+    const world = await setup([])
+    let rejectSet = true
+    let rejectDelete = false
+    let indexSets = 0
+    const storage = { ...world.storage,
+      set: async (key: string, value: string) => {
+        if (key === "outbox:held") {
+          indexSets++
+          if (rejectSet) { rejectSet = false; throw new Error("Index unavailable") }
+        }
+        return await world.storage.set(key, value)
+      },
+      delete: async (key: string) => {
+        if (key === "outbox:held" && rejectDelete) { rejectDelete = false; throw new Error("Index unavailable") }
+        return await world.storage.delete(key)
+      },
+    }
+    const listeners = new Set<() => void>()
+    const changes = { publish: () => { for (const listener of listeners) listener() }, subscribe: (listener: () => void) => {
+      listeners.add(listener); return () => { listeners.delete(listener) }
+    } }
+    let signedIn = false
+    const states: Outbox.Status[] = []
+    await scoped(Effect.gen(function*() {
+      const leading = yield* start({ ...world, storage, changes,
+        mutation: () => signedIn ? Effect.void : new Outbox.Retry({ held: true }) })
+      const follower: Outbox.Leader = { ...single, requestLeadership: async () => false, isLeader: () => false }
+      const following = yield* start({ ...world, storage, changes, leader: follower })
+      yield* following.outbox.status.pipe(Stream.runForEach((state) => Effect.sync(() => { states.push(state) })), Effect.forkScoped)
+      const write = yield* save(leading.outbox, leading.notes, note("held", 1))
+      yield* write.admitted
+      yield* Effect.promise(() => until(() => expect(indexSets).toBeGreaterThanOrEqual(1)))
+      yield* leading.outbox.retryNow
+      yield* Effect.promise(() => until(() => expect(indexSets).toBeGreaterThanOrEqual(2)))
+      yield* Effect.promise(() => until(() => expect(states.at(-1)?.held).toBe(true)))
+      expect(hasIndex()).toBe(true)
+      rejectDelete = true
+      signedIn = true
+      yield* leading.outbox.retryNow
+      yield* write.settled
+      yield* Effect.promise(() => until(() => expect(states.at(-1)?.held).toBe(false)))
+      yield* Effect.promise(() => until(() => expect(hasIndex()).toBe(false)))
+      expect([...storage.entries.keys()].filter((key) => key.startsWith("tx:"))).toEqual([])
+    }))
+    function hasIndex() { return storage.entries.has("outbox:held") }
+  })
+
+  test("an in-place principal change recomputes held status without sending A's row as B", async () => {
+    const world = await setup([])
+    let principal = "alice"
+    const sent: string[] = []
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({ ...world,
+        principal: { now: () => principal, ownsUnstamped: () => false },
+        orderingKeys: { save: (rows) => (rows as Note[]).map((row) => row.id) },
+        mutation: ({ idempotencyKey }) => Effect.suspend(() => {
+          sent.push(`${principal}:${idempotencyKey}`)
+          return idempotencyKey === "a" ? new Outbox.Retry({ held: true }) : Effect.void
+        }),
+      })
+      yield* (yield* save(outbox, notes, note("a", 1))).admitted
+      yield* Effect.promise(() => until(() => expect([...world.storage.entries.values()].some((row) => JSON.parse(row).metadata?.held)).toBe(true)))
+      expect(Option.getOrThrow(yield* Stream.runHead(outbox.status)).held).toBe(true)
+      principal = "bob"
+      yield* (yield* save(outbox, notes, note("b", 2))).settled
+      expect(Option.getOrThrow(yield* Stream.runHead(outbox.status)).held).toBe(false)
+      expect(sent).toContain("bob:b")
+      expect(sent).not.toContain("bob:a")
+      const queued = [...world.storage.entries].filter(([key]) => key.startsWith("tx:"))
+      expect(queued).toHaveLength(1)
+      expect(JSON.parse(queued[0]![1]).metadata.principal).toBe("alice")
+    }))
+  })
+
+  test("a transient notification failure republishes a held index on the existing retry path", async () => {
+    const world = await setup([])
+    const listeners = new Set<() => void>()
+    let reject = true
+    const changes = {
+      publish: () => {
+        if (reject && world.storage.entries.has("outbox:held")) { reject = false; throw new Error("Channel unavailable") }
+        for (const listener of listeners) listener()
+      },
+      subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    }
+    const states: Outbox.Status[] = []
+    await scoped(Effect.gen(function*() {
+      const leading = yield* start({ ...world, changes, mutation: () => new Outbox.Retry({ held: true }) })
+      const follower: Outbox.Leader = { ...single, requestLeadership: async () => false, isLeader: () => false }
+      const following = yield* start({ ...world, changes, leader: follower })
+      yield* following.outbox.status.pipe(Stream.runForEach((state) => Effect.sync(() => { states.push(state) })), Effect.forkScoped)
+      yield* (yield* save(leading.outbox, leading.notes, note("held", 1))).admitted
+      yield* Effect.promise(() => until(() => expect(reject).toBe(false)))
+      expect(world.storage.entries.has("outbox:held")).toBe(true)
+      expect(states.at(-1)?.held).toBe(false)
+      yield* leading.outbox.retryNow
+      yield* Effect.promise(() => until(() => expect(states.at(-1)?.held).toBe(true)))
+    }))
+  })
+
+  test("1000 offline admissions read a bounded number of rows while status invalidations avoid backlog scans", async () => {
+    const world = await setup([])
+    let reads = 0
+    const get = world.storage.get
+    world.storage.get = async (key) => { reads++; return get(key) }
+    let invalidate = () => {}
+    const listeners = new Set<() => void>()
+    const changes = { publish: () => { for (const listener of listeners) listener() }, subscribe: (listener: () => void) => {
+      listeners.add(listener); invalidate = listener; return () => { listeners.delete(listener) }
+    } }
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({ ...world, online: offline(), principal: { now: () => "alice", ownsUnstamped: () => false },
+        changes })
+      const follower: Outbox.Leader = { ...single, requestLeadership: async () => false, isLeader: () => false }
+      yield* start({ ...world, leader: follower, online: offline(), principal: { now: () => "alice", ownsUnstamped: () => false }, changes })
+      for (let n = 0; n < 1000; n++) yield* (yield* save(outbox, notes, note(`row-${n}`, n))).admitted
+      // Neither admission nor status maintenance may rescan the retained backlog.
+      expect(reads).toBeLessThan(4000)
+      expect(Number(world.storage.entries.get("outbox:admission-counter"))).toBeGreaterThan(999)
+      const before = reads
+      for (let n = 0; n < 1000; n++) invalidate()
+      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+      expect(reads - before).toBeLessThan(2000)
+      console.info("outbox.row_reads", { admissions: 1000, admissionReads: before, invalidationReads: reads - before })
+    }))
+  }, 120_000)
+})
+
+
+describe("round 3 admission regressions", () => {
+  test("legacy tied timestamps migrate held rows before ambiguous dependent rows once at open", async () => {
+    const world = await setup([])
+    world.storage.keys = async () => retainedKeys(world.storage).sort()
+    const attempted: string[] = []
+    let held = true
+    const orderingKeys = { save: () => ["same"] }
+    const mutation: Outbox.Mutation<never> = ({ idempotencyKey }) => Effect.suspend(() => {
+      attempted.push(idempotencyKey)
+      return held && idempotencyKey === "first" ? new Outbox.Retry({ held: true }) : Effect.void
+    })
+    await scoped(Effect.gen(function*() {
+      const originalScope = yield* Scope.make()
+      const original = yield* start({ ...world, online: offline(), orderingKeys, mutation }).pipe(Effect.provideService(Scope.Scope, originalScope))
+      yield* (yield* save(original.outbox, original.notes, note("first", 1))).admitted
+      yield* (yield* save(original.outbox, original.notes, note("second", 2))).admitted
+      yield* Scope.close(originalScope, Exit.void)
+      for (const [key, value] of [...world.storage.entries]) {
+        if (!key.startsWith("tx:")) continue
+        const row = JSON.parse(value)
+        world.storage.entries.delete(key)
+        row.id = row.idempotencyKey === "first" ? "z-first" : "a-second"
+        row.createdAt = 1000
+        delete row.metadata.admissionSequence
+        if (row.idempotencyKey === "first") {
+          row.metadata.held = true
+          row.nextAttemptAt = Date.now() + 60_000
+        }
+        world.storage.entries.set(`tx:${row.id}`, JSON.stringify(row))
+      }
+      const network = offline()
+      const reloadScope = yield* Scope.make()
+      yield* start({ ...world, online: network, orderingKeys, mutation }).pipe(Effect.provideService(Scope.Scope, reloadScope))
+      const rows = [...world.storage.entries.values()].map((value) => JSON.parse(value)).filter((row) => row.idempotencyKey)
+      const first = rows.find((row) => row.idempotencyKey === "first")
+      const second = rows.find((row) => row.idempotencyKey === "second")
+      expect(first.metadata.admissionSequence).toBeTypeOf("number")
+      expect(first.metadata.admissionSequence).toBeLessThan(second.metadata.admissionSequence)
+      const snapshot = rows.map((row) => [row.id, row.metadata.admissionSequence])
+      yield* Scope.close(reloadScope, Exit.void)
+      const next = yield* start({ ...world, online: network, orderingKeys, mutation })
+      expect([...world.storage.entries.values()].map((value) => JSON.parse(value)).filter((row) => row.idempotencyKey).map((row) => [row.id, row.metadata.admissionSequence])).toEqual(snapshot)
+      network.connect()
+      yield* next.outbox.retryNow
+      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+      expect(attempted).not.toContain("second")
+      held = false
+      yield* next.outbox.retryNow
+      yield* Effect.promise(() => until(() => expect(attempted.slice(-2)).toEqual(["first", "second"])))
+    }))
+  })
+
+  test("leadership transfer drains paused durable admission before allocating the next sequence", async () => {
+    const world = await setup([])
+    let enter!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => { enter = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const storage = { ...world.storage, set: async (key: string, value: string): Promise<undefined> => {
+      if (key.startsWith("tx:") && JSON.parse(value).idempotencyKey === "first") { enter(); await gate }
+      return await world.storage.set(key, value)
+    } }
+    const now = vi.spyOn(Date, "now").mockReturnValue(1800000000000)
+    const attempted: string[] = []
+    let held = true
+    const orderingKeys = { save: () => ["same"] }
+    const mutation: Outbox.Mutation<never> = ({ idempotencyKey }) => Effect.suspend(() => {
+      attempted.push(idempotencyKey)
+      return held && idempotencyKey === "first" ? new Outbox.Retry({ held: true }) : Effect.void
+    })
+    const network = offline()
+    try {
+      await scoped(Effect.gen(function*() {
+        const lock = webLocks({ prefix: id("admission-handoff") })
+        const leaderA = yield* Outbox.lockLeader({ lock, name: "outbox" })
+        const leaderB = yield* Outbox.lockLeader({ lock, name: "outbox" })
+        const a = yield* start({ ...world, storage, leader: leaderA, online: offline(), orderingKeys, mutation })
+        const b = yield* start({ ...world, storage, leader: leaderB, online: network, orderingKeys, mutation })
+        const first = yield* save(a.outbox, a.notes, note("first", 1))
+        yield* Effect.promise(() => entered)
+        yield* leaderB.take
+        const second = yield* save(b.outbox, b.notes, note("second", 2)).pipe(Effect.forkScoped)
+        yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+        release()
+        yield* first.admitted
+        yield* (yield* Fiber.join(second)).admitted
+        const rows = [...storage.entries.values()].map((value) => JSON.parse(value)).filter((row) => row.idempotencyKey)
+        const firstSequence = rows.find((row) => row.idempotencyKey === "first").metadata.admissionSequence
+        const secondSequence = rows.find((row) => row.idempotencyKey === "second").metadata.admissionSequence
+        expect(secondSequence).toBeGreaterThan(firstSequence)
+        network.connect()
+        yield* b.outbox.retryNow
+        yield* Effect.promise(() => until(() => expect(attempted).toContain("first")))
+        expect(attempted).not.toContain("second")
+        held = false
+        yield* b.outbox.retryNow
+        yield* Effect.promise(() => until(() => expect(attempted.slice(-2)).toEqual(["first", "second"])))
+      }))
+    } finally { release(); now.mockRestore() }
+  })
+
+  test("closing a fenced leader returns while its paused admission still fences its successor", async () => {
+    const world = await setup([])
+    let enter!: () => void
+    let release!: () => void
+    const entered = new Promise<void>(resolve => { enter = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const storage = { ...world.storage, setMany: async (entries: ReadonlyArray<readonly [string, string]>) => {
+      if (entries.some(([key, value]) => key.startsWith("tx:") && JSON.parse(value).idempotencyKey === "first")) {
+        enter()
+        await gate
+      }
+      await world.storage.setMany(entries)
+    } }
+    const attempted: string[] = []
+    const mutation: Outbox.Mutation<never> = ({ idempotencyKey }) => Effect.sync(() => { attempted.push(idempotencyKey) })
+    const network = offline()
+    try {
+      await scoped(Effect.gen(function*() {
+        const lock = webLocks({ prefix: id("closing-admission") })
+        const firstScope = yield* Scope.make()
+        yield* Effect.addFinalizer(() => Scope.close(firstScope, Exit.void))
+        const first = yield* Scope.provide(Effect.flatMap(
+          Outbox.lockLeader({ lock, name: "outbox" }),
+          leader => start({ ...world, storage, leader, online: offline(), mutation })
+        ), firstScope)
+        const leader = yield* Outbox.lockLeader({ lock, name: "outbox" })
+        const second = yield* start({ ...world, storage, leader, online: network, mutation })
+        const firstWrite = yield* save(first.outbox, first.notes, note("first", 1))
+        yield* Effect.promise(() => entered)
+        let closed = false
+        const closing = yield* Scope.close(firstScope, Exit.void).pipe(
+          Effect.tap(() => Effect.sync(() => { closed = true })), Effect.forkScoped)
+        yield* Effect.promise(() => until(() => expect(closed).toBe(true)))
+        yield* Fiber.join(closing)
+        let admitted = false
+        const next = yield* save(second.outbox, second.notes, note("second", 2)).pipe(
+          Effect.tap(write => write.admitted),
+          Effect.tap(() => Effect.sync(() => { admitted = true })), Effect.forkScoped)
+        yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)))
+        expect(admitted).toBe(false)
+        expect([...storage.entries.keys()].some(key => key.startsWith("tx:"))).toBe(false)
+        release()
+        yield* firstWrite.admitted
+        yield* Fiber.join(next)
+        const rows = [...storage.entries.values()].map(value => JSON.parse(value)).filter(row => row.idempotencyKey)
+        const sequence = (key: string) => rows.find(row => row.idempotencyKey === key).metadata.admissionSequence
+        expect(sequence("first")).toBeLessThan(sequence("second"))
+        expect(Number(storage.entries.get("outbox:admission-counter"))).toBe(sequence("second"))
+        network.connect()
+        yield* second.outbox.retryNow
+        yield* Effect.promise(() => until(() => expect(attempted).toEqual(["first", "second"])))
+      }).pipe(Effect.ensuring(Effect.sync(release))))
+    } finally { release() }
+  })
+
+  test.each(["retry", "notification"])("an empty backlog repairs a stale follower hold through %s", async (repair) => {
+    const world = await setup([])
+    let failDelete = false
+    let signedIn = false
+    let deletions = 0
+    const storage = { ...world.storage, delete: async (key: string): Promise<undefined> => {
+      if (key === "outbox:held" && failDelete) { deletions++; throw new Error("Index unavailable") }
+      return await world.storage.delete(key)
+    } }
+    const listeners = new Set<() => void>()
+    const changes = { publish: () => { for (const listener of listeners) listener() }, subscribe: (listener: () => void) => {
+      listeners.add(listener); return () => { listeners.delete(listener) }
+    } }
+    await scoped(Effect.gen(function*() {
+      const leading = yield* start({ ...world, storage, changes, mutation: () => signedIn ? Effect.void : new Outbox.Retry({ held: true }) })
+      const follower: Outbox.Leader = { ...single, requestLeadership: async () => false, isLeader: () => false }
+      const following = yield* start({ ...world, storage, changes, leader: follower })
+      const states: Outbox.Status[] = []
+      yield* following.outbox.status.pipe(Stream.runForEach((state) => Effect.sync(() => { states.push(state) })), Effect.forkScoped)
+      const write = yield* save(leading.outbox, leading.notes, note("held", 1))
+      yield* write.admitted
+      yield* Effect.promise(() => until(() => expect(states.at(-1)?.held).toBe(true)))
+      failDelete = true
+      signedIn = true
+      yield* leading.outbox.retryNow
+      yield* write.settled
+      yield* Effect.promise(() => until(() => expect([...storage.entries.keys()].filter((key) => key.startsWith("tx:"))).toEqual([])))
+      expect(deletions).toBeGreaterThanOrEqual(2)
+      expect(storage.entries.has("outbox:held")).toBe(true)
+      failDelete = false
+      if (repair === "retry") yield* Effect.sync(() => Effect.runSync(leading.outbox.retryNow))
+      else changes.publish()
+      yield* Effect.promise(() => until(() => expect(states.at(-1)?.held).toBe(false)))
+      if (repair === "retry") expect(storage.entries.has("outbox:held")).toBe(false)
+    }))
+  })
+})
+
+
+test("a partially persisted legacy migration stays closed and resumes its saved order", async () => {
+  const world = await setup([])
+  await scoped(Effect.gen(function*() {
+    const originalScope = yield* Scope.make()
+    const original = yield* start({ ...world, online: offline() }).pipe(Effect.provideService(Scope.Scope, originalScope))
+    yield* (yield* save(original.outbox, original.notes, note("first", 1))).admitted
+    yield* (yield* save(original.outbox, original.notes, note("second", 2))).admitted
+    yield* Scope.close(originalScope, Exit.void)
+    for (const [key, value] of world.storage.entries) {
+      if (!key.startsWith("tx:")) continue
+      const row = JSON.parse(value)
+      delete row.metadata.admissionSequence
+      row.createdAt = row.idempotencyKey === "first" ? 1000 : 2000
+      world.storage.entries.set(key, JSON.stringify(row))
+    }
+    const interruptedScope = yield* Scope.make()
+    const interrupted = yield* start({ ...world, online: offline(), storage: { ...world.storage, set: async (key, value) => {
+      if (key.startsWith("tx:") && JSON.parse(value).idempotencyKey === "second") throw new Error("Storage unavailable")
+      return world.storage.set(key, value)
+    } } }).pipe(Effect.provideService(Scope.Scope, interruptedScope))
+    const refusal = yield* Effect.exit(save(interrupted.outbox, interrupted.notes, note("third", 3)))
+    expect(Exit.isFailure(refusal)).toBe(true)
+    expect(world.storage.entries.has("outbox:admission-migration")).toBe(true)
+    yield* Scope.close(interruptedScope, Exit.void)
+    const attempted: string[] = []
+    yield* start({ ...world, mutation: ({ idempotencyKey }) => Effect.sync(() => { attempted.push(idempotencyKey) }) })
+    yield* Effect.promise(() => until(() => expect(attempted).toEqual(["first", "second"])))
+    expect(world.storage.entries.has("outbox:admission-migration")).toBe(false)
+  }))
+})
+
+
+describe("round 4 recovery regressions", () => {
+  test("persisted duplicate sequences recover with a held predecessor before replay", async () => {
+    const world = await setup([])
+    await scoped(Effect.gen(function*() {
+      const initialScope = yield* Scope.make()
+      const initial = yield* start({ ...world, online: offline() }).pipe(Effect.provideService(Scope.Scope, initialScope))
+      yield* (yield* save(initial.outbox, initial.notes, note("held", 1))).admitted
+      yield* (yield* save(initial.outbox, initial.notes, note("dependent", 2))).admitted
+      yield* Scope.close(initialScope, Exit.void)
+      for (const [key, value] of world.storage.entries) {
+        if (!key.startsWith("tx:")) continue
+        const row = JSON.parse(value)
+        row.metadata.admissionSequence = 1000
+        row.metadata.held = row.idempotencyKey === "held"
+        world.storage.entries.set(key, JSON.stringify(row))
+      }
+      const network = offline()
+      const attempted: string[] = []
+      const recovered = yield* start({ ...world, online: network, orderingKeys: { save: () => ["same"] }, mutation: ({ idempotencyKey }) => Effect.suspend(() => {
+        attempted.push(idempotencyKey)
+        return idempotencyKey === "held" ? new Outbox.Retry({ held: true }) : Effect.void
+      }) })
+      const rows = [...world.storage.entries.values()].map((value) => JSON.parse(value)).filter((row) => row.idempotencyKey)
+      expect(rows.find((row) => row.idempotencyKey === "held").metadata.admissionSequence).toBeLessThan(rows.find((row) => row.idempotencyKey === "dependent").metadata.admissionSequence)
+      network.connect()
+      yield* recovered.outbox.retryNow
+      yield* Effect.promise(() => until(() => expect(attempted).toContain("held")))
+      expect(attempted).not.toContain("dependent")
+    }))
+  })
+
+  test("leadership reacquisition allocates a queued admission after the intervening leader's stored maximum", async () => {
+    const world = await setup([])
+    let entered!: () => void
+    let release!: () => void
+    const paused = new Promise<void>((resolve) => { entered = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let pause = true
+    const storage = { ...world.storage, set: async (key: string, value: string): Promise<undefined> => {
+      if (pause && key.startsWith("tx:") && JSON.parse(value).lastError?.name === "OutboxHeld") {
+        pause = false
+        entered()
+        await gate
+      }
+      return world.storage.set(key, value)
+    } }
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000)
+    try {
+      await scoped(Effect.gen(function*() {
+        const lock = webLocks({ prefix: id("reacquire") })
+        const leaderA = yield* Outbox.lockLeader({ lock, name: "outbox" })
+        const leaderB = yield* Outbox.lockLeader({ lock, name: "outbox" })
+        const a = yield* start({ ...world, storage, leader: leaderA, orderingKeys: { save: () => ["same"] }, mutation: () => new Outbox.Retry({ held: true }) })
+        const b = yield* start({ ...world, storage, leader: leaderB, online: offline() })
+        yield* (yield* save(a.outbox, a.notes, note("held", 1))).admitted
+        yield* Effect.promise(() => paused)
+        const queued = yield* save(a.outbox, a.notes, note("queued", 2))
+        yield* leaderB.take
+        yield* (yield* save(b.outbox, b.notes, note("intervening", 3))).admitted
+        yield* leaderA.take
+        release()
+        yield* queued.admitted
+        const rows = [...storage.entries.values()].map((value) => JSON.parse(value)).filter((row) => row.idempotencyKey)
+        const sequence = (id: string) => rows.find((row) => row.idempotencyKey === id).metadata.admissionSequence
+        expect(sequence("queued")).toBeGreaterThan(sequence("intervening"))
+        expect(new Set(rows.map((row) => row.metadata.admissionSequence)).size).toBe(3)
+      }))
+    } finally { release(); now.mockRestore() }
+  })
+
+  test.each(["before retry", "while retry is queued"])("an invalidation %s cannot erase a hold whose index publication failed", async (ordering) => {
+    const world = await setup([])
+    let failIndex = true
+    let failures = 0
+    let intercept = false
+    let entered!: () => void
+    let release!: () => void
+    const reading = new Promise<void>((resolve) => { entered = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const storage = { ...world.storage,
+      get: async (key: string) => {
+        const value = await world.storage.get(key)
+        if (intercept && key === "outbox:held") { intercept = false; entered(); await gate }
+        return value
+      },
+      set: async (key: string, value: string): Promise<undefined> => {
+        if (failIndex && key === "outbox:held") { failures++; throw new Error("Index unavailable") }
+        return world.storage.set(key, value)
+      }
+    }
+    let invalidate = () => {}
+    const changes = { publish: () => {}, subscribe: (listener: () => void) => { invalidate = listener; return () => {} } }
+    let online = true
+    const network = { ...Outbox.Online.always(), isOnline: () => online }
+    try {
+      await scoped(Effect.gen(function*() {
+        const { outbox, notes } = yield* start({ ...world, storage, changes, online: network, mutation: () => new Outbox.Retry({ held: true }) })
+        const states: Outbox.Status[] = []
+        yield* outbox.status.pipe(Stream.runForEach((state) => Effect.sync(() => { states.push(state) })), Effect.forkScoped)
+        const write = yield* save(outbox, notes, note("held", 1))
+        yield* write.admitted
+        yield* Effect.promise(() => until(() => expect(failures).toBeGreaterThan(0)))
+        expect(states.at(-1)?.held).toBe(true)
+        online = false
+        failIndex = false
+        intercept = true
+        invalidate()
+        yield* Effect.promise(() => reading)
+        if (ordering === "while retry is queued") yield* outbox.retryNow
+        release()
+        yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+        expect(states.at(-1)?.held).toBe(true)
+        if (ordering === "before retry") yield* outbox.retryNow
+        yield* Effect.promise(() => until(() => expect(JSON.parse(storage.entries.get("outbox:held") ?? "[]")).toContain(`tx:${write.id}`)))
+        expect(JSON.parse(storage.entries.get(`tx:${write.id}`)!).metadata.held).toBe(true)
+      }))
+    } finally { release() }
+  })
+})
+
+
+test("a follower retains an unindexed hold across refreshes and repairs it on leadership", async () => {
+  const world = await setup([])
+  let failIndex = true
+  let leading = false
+  let leadership = (_leader: boolean) => {}
+  const leader: Outbox.Leader = { ...single, requestLeadership: async () => leading, isLeader: () => leading,
+    onLeadershipChange: (listener) => { leadership = listener; return () => {} } }
+  let invalidate = () => {}
+  const changes = { publish: () => {}, subscribe: (listener: () => void) => { invalidate = listener; return () => {} } }
+  const storage = { ...world.storage, set: async (key: string, value: string) => {
+    if (key === "outbox:held" && failIndex) throw new Error("Index unavailable")
+    return world.storage.set(key, value)
+  } }
+  await scoped(Effect.gen(function*() {
+    const original = yield* Scope.make()
+    const first = yield* start({ ...world, storage, mutation: () => new Outbox.Retry({ held: true }) }).pipe(Effect.provideService(Scope.Scope, original))
+    const write = yield* save(first.outbox, first.notes, note("held", 1))
+    yield* write.admitted
+    yield* Effect.promise(() => until(() => expect(JSON.parse(storage.entries.get(`tx:${write.id}`)!).metadata?.held).toBe(true)))
+    yield* Scope.close(original, Exit.void)
+    const follower = yield* start({ ...world, storage, leader, changes, online: offline() })
+    const held = () => Stream.runHead(follower.outbox.status).pipe(Effect.map((status) => Option.getOrThrow(status).held))
+    expect(yield* held()).toBe(true)
+    invalidate()
+    yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+    expect(yield* held()).toBe(true)
+    expect(storage.entries.has(`tx:${write.id}`)).toBe(true)
+    failIndex = false
+    leading = true
+    leadership(true)
+    yield* Effect.promise(() => until(() => expect(JSON.parse(storage.entries.get("outbox:held") ?? "[]")).toContain(`tx:${write.id}`)))
+    expect(yield* held()).toBe(true)
+  }))
+})
+
+
+test("an aborted admission persists neither the counter nor the write", async () => {
+  const world = await setup([])
+  let full = true
+  const storage = { ...world.storage, set: async (key: string, value: string) => {
+    if (full && key.startsWith("tx:")) throw new Error("Storage full")
+    return world.storage.set(key, value)
+  } }
+  await scoped(Effect.gen(function*() {
+    const { outbox, notes } = yield* start({ ...world, storage, online: offline() })
+    const refused = yield* save(outbox, notes, note("refused", 1))
+    expect(yield* Effect.exit(refused.admitted)).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "storage" })))
+    expect(storage.entries.has("outbox:admission-counter")).toBe(false)
+    expect(retainedKeys(storage)).toEqual([])
+    full = false
+    const admitted = yield* save(outbox, notes, note("accepted", 2))
+    yield* admitted.admitted
+    const row = JSON.parse(storage.entries.get(`tx:${admitted.id}`)!)
+    expect(row.metadata.admissionSequence).toBe(Number(storage.entries.get("outbox:admission-counter")))
+    expect(retainedKeys(storage)).toEqual([`tx:${admitted.id}`])
+  }))
+})
+
+
+test("late predecessor index publication cannot erase a successor hold before a follower reads it", async () => {
+  const world = await setup([])
+  let finishSend!: () => void
+  let sent!: () => void
+  let releaseIndex!: () => void
+  let readingIndex!: () => void
+  let published!: () => void
+  const sendGate = new Promise<void>(resolve => { finishSend = resolve })
+  const sending = new Promise<void>(resolve => { sent = resolve })
+  const indexGate = new Promise<void>(resolve => { releaseIndex = resolve })
+  const indexRead = new Promise<void>(resolve => { readingIndex = resolve })
+  const newIndex = new Promise<void>(resolve => { published = resolve })
+  let intercept = false
+  let held = true
+  let nextKey = ""
+  const firstStorage = { ...world.storage, get: async (key: string) => {
+    const value = await world.storage.get(key)
+    if (intercept && key === "outbox:held") { intercept = false; readingIndex(); await indexGate }
+    return value
+  } }
+  const secondStorage = { ...world.storage, set: async (key: string, value: string): Promise<undefined> => {
+    await world.storage.set(key, value)
+    if (key === "outbox:held" && nextKey && JSON.parse(value).includes(nextKey)) published()
+  } }
+  let invalidate = () => {}
+  const changes = { publish: () => {}, subscribe: (listener: () => void) => { invalidate = listener; return () => {} } }
+  const principal = (owner: string) => ({ now: () => owner, ownsUnstamped: () => false })
+  try {
+    await scoped(Effect.gen(function*() {
+      const firstScope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(firstScope, Exit.void))
+      const first = yield* Scope.provide(start({ ...world, storage: firstStorage, principal: principal("alice"),
+        mutation: () => held ? new Outbox.Retry({ held: true }) : Effect.promise(() => { sent(); return sendGate })
+      }), firstScope)
+      const old = yield* save(first.outbox, first.notes, note("old", 1))
+      yield* old.admitted
+      yield* Effect.promise(() => until(() => expect(JSON.parse(world.storage.entries.get("outbox:held") ?? "[]")).toContain(`tx:${old.id}`)))
+      const network = offline()
+      const second = yield* start({ ...world, storage: secondStorage, principal: principal("bob"), online: network,
+        mutation: () => new Outbox.Retry({ held: true }) })
+      const follower = yield* start({ ...world, principal: principal("bob"), online: offline(), changes,
+        leader: { ...single, requestLeadership: async () => false, isLeader: () => false } })
+      held = false
+      yield* first.outbox.retryNow
+      yield* Effect.promise(() => sending)
+      yield* Scope.close(firstScope, Exit.void)
+      intercept = true
+      finishSend()
+      yield* Effect.promise(() => indexRead)
+      const next = yield* save(second.outbox, second.notes, note("new", 2))
+      nextKey = `tx:${next.id}`
+      yield* next.admitted
+      network.connect()
+      yield* second.outbox.retryNow
+      yield* Effect.promise(() => until(() => expect(JSON.parse(world.storage.entries.get(nextKey)!).metadata.held).toBe(true)))
+      // The row can be held while its index publication waits on the predecessor's cross-context lock.
+      yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)))
+      releaseIndex()
+      yield* old.settled
+      yield* Effect.promise(() => newIndex)
+      invalidate()
+      yield* Effect.promise(() => until(async () => {
+        const status = await Effect.runPromise(Stream.runHead(follower.outbox.status))
+        expect(Option.getOrThrow(status).held).toBe(true)
+      }))
+      expect(JSON.parse(world.storage.entries.get("outbox:held") ?? "[]")).toContain(nextKey)
+      expect(world.storage.entries.has(nextKey)).toBe(true)
+    }).pipe(Effect.ensuring(Effect.sync(() => { finishSend(); releaseIndex() }))))
+  } finally { finishSend(); releaseIndex() }
+})
+
+
+test.each(["held", "settled"])("a predecessor's late retry preserves a successor's %s write", async (outcome) => {
+  const world = await setup([])
+  let begin!: () => void
+  let release!: () => void
+  let updated!: () => void
+  let read!: () => void
+  let resumeRead!: () => void
+  const reading = new Promise<void>(resolve => { read = resolve })
+  const readGate = new Promise<void>(resolve => { resumeRead = resolve })
+  let pauseRead = false
+  const began = new Promise<void>(resolve => { begin = resolve })
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const retried = new Promise<void>(resolve => { updated = resolve })
+  let intercept = false
+  const storage = { ...world.storage,
+    get: async (key: string) => {
+      const value = await world.storage.get(key)
+      if (pauseRead && key.startsWith("tx:")) { pauseRead = false; read(); await readGate }
+      return value
+    },
+    withLock: <A>(name: string, action: () => Promise<A>): Promise<A> => world.storage.withLock(name, async () => {
+      const result = await action()
+      if (intercept && name.startsWith("tx:")) updated()
+      return result
+    }),
+    set: async (key: string, value: string): Promise<undefined> => {
+      await world.storage.set(key, value)
+      if (intercept && key.startsWith("tx:") && JSON.parse(value).lastError?.name === "OutboxRetry") updated()
+    }
+  }
+  const listeners = new Set<() => void>()
+  const changes = { publish: () => { for (const listener of listeners) listener() }, subscribe: (listener: () => void) => {
+    listeners.add(listener); return () => { listeners.delete(listener) }
+  } }
+  try {
+    await scoped(Effect.gen(function*() {
+      const lock = webLocks({ prefix: id("late-retry") })
+      const firstScope = yield* Scope.make()
+      const secondScope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(firstScope, Exit.void))
+      yield* Effect.addFinalizer(() => Scope.close(secondScope, Exit.void))
+      const first = yield* Scope.provide(Effect.flatMap(Outbox.lockLeader({ lock, name: "outbox" }),
+        leader => start({ ...world, storage, leader, changes: { ...changes, subscribe: () => () => {} }, mutation: () => Effect.andThen(
+          Effect.promise(() => { begin(); return gate }), new Outbox.Retry({})
+        ) })), firstScope)
+      const leader = yield* Scope.provide(Outbox.lockLeader({ lock, name: "outbox" }), secondScope)
+      const network = offline()
+      const second = yield* Scope.provide(start({ ...world, leader, online: network, changes,
+        mutation: () => outcome === "held" ? new Outbox.Retry({ held: true }) : Effect.void }), secondScope)
+      const follower = yield* start({ ...world, changes, online: offline(),
+        leader: { ...single, requestLeadership: async () => false, isLeader: () => false } })
+      const write = yield* save(first.outbox, first.notes, note("retained", 1))
+      yield* write.admitted
+      yield* Effect.promise(() => began)
+      yield* leader.take
+      intercept = true
+      pauseRead = true
+      release()
+      yield* Effect.promise(() => reading)
+      network.connect()
+      yield* second.outbox.retryNow
+      const key = `tx:${write.id}`
+      yield* Effect.promise(() => until(() => {
+        if (outcome === "held") expect(JSON.parse(world.storage.entries.get(key)!).metadata.held).toBe(true)
+        else expect(world.storage.entries.has(key)).toBe(false)
+      }))
+      network.disconnect()
+      resumeRead()
+      // Await the actual storage action: a terminal row may intentionally require no replacement.
+      yield* Effect.promise(() => retried)
+      changes.publish()
+      yield* Effect.promise(() => until(async () => {
+        if (outcome === "held") {
+          expect(JSON.parse(world.storage.entries.get(key)!).metadata.held).toBe(true)
+          expect(Option.getOrThrow(await Effect.runPromise(Stream.runHead(follower.outbox.status))).held).toBe(true)
+        } else expect(world.storage.entries.has(key)).toBe(false)
+      }))
+      yield* Scope.close(firstScope, Exit.void)
+      yield* Scope.close(secondScope, Exit.void)
+      const reopened = yield* start({ ...world, online: offline() })
+      expect(Option.getOrThrow(yield* Stream.runHead(reopened.outbox.status)).held).toBe(outcome === "held")
+      if (outcome === "held") expect(JSON.parse(world.storage.entries.get(key)!).idempotencyKey).toBe("retained")
+      else expect([...world.storage.entries.keys()].filter(key => key.startsWith("tx:"))).toEqual([])
+    }).pipe(Effect.ensuring(Effect.sync(() => { release(); resumeRead() }))))
+  } finally { release(); resumeRead() }
 })

@@ -2,6 +2,7 @@ import { earlySearch, type EarlySearchHost, type EarlyRead } from "./earlySearch
 import { Context, Data, type Duration, Effect, Layer, Option, Schema, type SubscriptionRef } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewalOf, renewed, withBearer, withoutCookie } from "../../flows/bearer"
+import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
 import { issuesRoute, type TriageDecision, type WriteOp, writesRoute } from "./contract"
 import { ListedIssue, WriteTaken } from "./schema"
 
@@ -10,9 +11,14 @@ import { ListedIssue, WriteTaken } from "./schema"
 
 /**
  * ChatApi didn't take the write: no whole answer within the deadline, or no network (`status` absent), any status but
- * 200 and 202 (`status`), or a 200 or 202 whose body isn't the contract's.
+ * 200 and 202 (`status`), or a 200 or 202 whose body isn't the contract's. A session write's `401` the page's transport
+ * checked against the session carries what it found (`sessionCheck`).
  */
-export class WriteNotTaken extends Data.TaggedError("WriteNotTaken")<{ readonly status?: number; readonly code?: string }> {}
+export class WriteNotTaken extends Data.TaggedError("WriteNotTaken")<{
+  readonly status?: number
+  readonly code?: string
+  readonly sessionCheck?: "same_person"
+}> {}
 
 /** A write as the route takes it. It names nobody: who acts is the session's or the run credential's to say. */
 export type WriteRequest =
@@ -66,8 +72,10 @@ export const postWrite = (
       : yield* renewed(origin, credential).pipe(
         Effect.mapError(({ status }) => new WriteNotTaken(status === undefined ? {} : { status })),
       )
+    // A 401 in the session is checked against the session first, so a queued write can be held (writes.ts); a run's
+    // 401 is about the run, and stands.
     const response = yield* (authority === undefined
-      ? client.execute(request)
+      ? client.execute(HttpClientRequest.setHeader(request, CONFIRM_401_HEADER, "1"))
       : withoutCookie(client.execute(withBearer(request, authority))))
       .pipe(Effect.mapError(() => new WriteNotTaken({})))
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
@@ -76,7 +84,9 @@ export const postWrite = (
       const code = yield* response.json.pipe(Effect.map(decodeCode), Effect.orElseSucceed(() => undefined))
       return yield* new WriteNotTaken(code === undefined ? { status: 404 } : { status: 404, code })
     }
-    if (response.status !== 200 && response.status !== 202) return yield* new WriteNotTaken({ status: response.status })
+    if (response.status !== 200 && response.status !== 202) {
+      return yield* new WriteNotTaken({ status: response.status, ...sessionCheckOf(response.headers) })
+    }
     return yield* response.json.pipe(
       Effect.flatMap(decodeTaken),
       Effect.mapError(() => new WriteNotTaken({ status: response.status })),

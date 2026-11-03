@@ -411,3 +411,8 @@ role read/refresh, 2 s each for retry-candidate lookup and remote stopped status
 (including database acquisition). The conservative total is 36 s, with at most one refresh and second apply.
 Postgres independently caps each writing transaction at 5 s (lock 1 s, statement 2 s). Timeout stages emit `write.wait`
 and `smithers_write_wait_timeouts`. See [the complete bound and transport limits](../work/commit-authority.md#astra-repair-5--every-synchronous-wait).
+
+
+### Held-write ordering
+
+A held stack change retains its durable row. Stack changes share a repository key because numbering and dependent operations are ordered by that stack. Another repository and other features can send. Ordering and the held sign-in prompt survive reload and a change of leading tab.

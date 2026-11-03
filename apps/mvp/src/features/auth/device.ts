@@ -9,10 +9,17 @@ import { Context, Data, Effect, Layer } from "effect"
 export class WipeFailed extends Data.TaggedError("WipeFailed")<{}> {}
 
 /** Wipes this device's synced data and outbox. */
-export class DeviceWipe extends Context.Service<DeviceWipe, { readonly wipe: Effect.Effect<void, WipeFailed> }>()(
+export class DeviceWipe extends Context.Service<DeviceWipe, {
+  readonly wipe: Effect.Effect<void, WipeFailed>
+  /** Releases the host's guard when the whole sign-out action ends, including local failures before wipe. */
+  readonly finishSignOut: Effect.Effect<void>
+}>()(
   "@smthrs/mvp/auth/DeviceWipe",
 ) {
   /** The device whose wipe is the host's `wipe` (`Host.wipe` in src/boot.ts). */
-  static readonly layer = (wipe: () => Promise<void>) =>
-    Layer.succeed(DeviceWipe, DeviceWipe.of({ wipe: Effect.tryPromise({ try: wipe, catch: () => new WipeFailed() }) }))
+  static readonly layer = (wipe: () => Promise<void>, finishSignOut: () => Promise<void> = async () => {}) =>
+    Layer.succeed(DeviceWipe, DeviceWipe.of({
+      wipe: Effect.tryPromise({ try: wipe, catch: () => new WipeFailed() }),
+      finishSignOut: Effect.promise(finishSignOut),
+    }))
 }

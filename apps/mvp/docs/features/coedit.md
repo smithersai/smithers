@@ -54,7 +54,7 @@ A change of sharing holds the rooms of the branch's texts to the new list, as it
 `src/features/coedit/`:
 
 - **`store.ts`** keeps each open text: its replica, its synced updates (an Electric collection kept on the device), and, while it is shown, its room. Updates reach the replica from the shape and from the outbox's rows (`text-sending`), so text typed offline survives a reload. `coedit-texts` is what a frontend reads: the text, this person's selection as it now stands, everyone else's carets, and for a file whether this tab's Save is running or failed, and whether the text is saved.
-- **`writes.ts`** sends updates through the device's one outbox (`text-update`): a refusal drops the update for good. In a tab that doesn't lead the outbox, an edit waits and goes with the next one once the tab leads.
+- **`writes.ts`** sends updates through the device's one outbox (`text-update`): a refusal drops the update for good. A `401` while the session still names the update's person is no refusal: the update is held, sent again and kept across reloads, and the page offers "Sign in to send your changes" until it is delivered ([sign-in.md](sign-in.md), "A write ChatApi couldn't place"). In a tab that doesn't lead the outbox, an edit waits and goes with the next one once the tab leads.
 - **`actions.ts`**: `type` merges an input's change, made on the text the input showed (`base`), past updates that arrived meanwhile, so it never undoes them; `select` sends the caret to the room; `showFile` opens a file and seeds it; `save` writes it through `sandbox/write`, the sandbox tools' one write path, then sets the text's `saved` mark ([Saved](#saved)); `followPrompt` keeps the prompt of the shown conversation open while it is shared ([The prompt](#the-prompt)), and `followAnswers` the open questions' answer boxes.
 - **`prompt.ts`** is chat's `SharedPrompt`: on a shared branch, the composer's draft is the branch's prompt. Chat's draft actions hand each change to it, and everyone else's typing comes back into the draft.
 
@@ -106,3 +106,8 @@ Content-free: ids, sizes, scopes' kinds, statuses and outcomes; never a text, an
 Typing updates the visible replica before waiting for durable outbox admission. The action resolves after admission, so a device reload restores that update while network delivery continues in the background.
 
 AUTH-8: a run’s answer draft follows its launcher’s current permission to ask in that run’s conversation, including Members of another repository with no deployment role. Every write, shape read and room join rechecks that repository. Another person never inherits the draft; losing the repository or branch refuses writes and joins and empties the shape.
+
+
+### Held-write ordering
+
+Text updates use the text id as their dependency key. A held update retains its optimistic row and durable outbox entry. Other texts can send; later updates to that text wait through reload and leadership handoff. Each keeps its original idempotency key. The sign-in prompt follows the persisted hold in every tab, including an offline reload before a send.

@@ -333,6 +333,7 @@ test("logs what the page's host saw, those from before it listened first: render
     host.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
     host.record({ _tag: "page.reload", reason: "pwa_update" })
     host.record({ _tag: "page.reload", reason: "browser" })
+    host.record({ _tag: "device.lifecycle", outcome: "reopen_held" })
   })))
   // Once the program stops listening, nothing it hears is logged.
   host.record({ _tag: "pwa.install" })
@@ -360,6 +361,8 @@ test("logs what the page's host saw, those from before it listened first: render
   ])
   expect(records.point("smithers_web_page_reloads", { reason: "pwa_update" })?.value).toBe(1)
   expect(records.point("smithers_web_page_reloads", { reason: "browser" })?.value).toBe(1)
+  expect(lines("device.lifecycle")).toEqual([{ severity: "Info", attributes: { feature: "app", outcome: "reopen_held" } }])
+  expect(records.point("smithers_device_lifecycle", { outcome: "reopen_held" })?.value).toBe(1)
 })
 
 test("start logs a defect that ends the program, by its name, never its message", async () => {

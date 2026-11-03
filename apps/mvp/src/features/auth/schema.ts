@@ -19,6 +19,7 @@ export const SessionState = Schema.Union([
     install: Schema.optional(Schema.String),
     expiresAt: Schema.optional(Schema.Number),
     serverNow: Schema.optional(Schema.Number),
+    session: Schema.optional(Schema.String),
   }),
 ])
 

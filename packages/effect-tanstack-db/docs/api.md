@@ -429,6 +429,41 @@ browser) before anything is sent, and the library sends it with its own
 backoff, one at a time in the order written, across reloads and restarts. Only
 a program that leads the outbox, with durable storage, admits a write.
 
+At open, legacy rows receive persisted admission sequences before replay. Equal
+historical timestamps put held rows before ambiguous peers, then use the storage
+key for a deterministic order. A saved migration plan resumes after a partial
+storage failure; until it finishes, replay and new admission stay closed. Only
+owned rows are migrated, and sealed rows retain their original owner.
+Followers can read status and park incompatible payloads while leadership is
+unavailable. They do not wait for the admission lock or replay unmigrated rows.
+
+`Outbox.lockLeader` serializes sequence allocation and the durable row write
+under a separate, non-stealable admission lock. A successor waits for an admission
+already writing to finish before recovering its sequence; queued callbacks from
+a displaced leader are refused. Custom elections that can transfer leadership
+during persistence must supply `Leader.withAdmission` with the same cross-context
+exclusion contract. The lock must cover the entire returned promise.
+With that separate fence, scope closure need not await storage: the admission
+keeps its lock until storage completes, and successor recovery waits on that
+lock. Closure never pretends an unresolved transaction has aborted.
+With the default election, scope closure rejects new and late admissions,
+drains persistence already in flight, and only then disposes the
+executor and releases its Web Lock. A reopened default executor therefore cannot
+allocate a counter that an older admission might overwrite. A paused storage
+operation must settle before shutdown can finish; no timeout releases authority
+while that operation can still commit.
+Settlement remains available after disposal so a completed send can persist its
+terminal receipt and leave storage without being replayed on reopening.
+The recovery barrier is installed before leadership status is published, so
+subscribers admitting a retained write wait for the correct sequence snapshot.
+
+Held status treats persisted transaction rows as authoritative on every
+invalidation, including previously cached keys. `retryNow` remains a synchronous
+signal for input handlers and schedules dirty-index repair on the existing storage
+chain, even when the last transaction has already settled. Diagnostics include
+`outbox admission order migrated` with the write count, and index read/write
+failures with their stage and error name, without payloads or owner identities.
+
 ### `Outbox.layer`
 
 ```ts
@@ -437,7 +472,10 @@ const layer: <R>(options: Options<R>) => Layer.Layer<Outbox, never, R>
 interface Options<R> {
   readonly start: (config: OfflineConfig) => OfflineExecutor
   readonly collections: Readonly<Record<string, Collection<any, any, any>>>
-  readonly storage: StorageAdapter
+  readonly storage: StorageAdapter & {
+    readonly setMany: (rows: ReadonlyArray<readonly [string, string]>) => Promise<void>
+    readonly withLock: <A>(name: string, action: () => Promise<A>) => Promise<A>
+  }
   readonly leader?: Leader
   readonly online: Online
   readonly mutations: Readonly<Record<string, Mutation<R>>>
@@ -461,7 +499,7 @@ type Mutation<R> = (params: {
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `start`       | The library's entry point: `startOfflineExecutor` from `@tanstack/offline-transactions`.                                                                                                                                                                |
 | `collections` | The collections writes may change, keyed by a name that never changes: a stored write names its collection by this key, so a write queued by one version of a program is restored into the same collection by the next.                                 |
-| `storage`     | Where writes are stored: `new IndexedDBAdapter(...)` in a browser. The library's own storage probe is skipped.                                                                                                                                          |
+| `storage`     | The host storage adapter with atomic `setMany`. In a browser it commits both admission rows in one IndexedDB transaction. The library's own storage probe is skipped.                                                                                                                                          |
 | `leader`      | Who leads: a `LeaderElection`, such as `lockLeader`'s. Without one, the library elects with its own `WebLocksLeader`, which never queues: when the leader closes, no other program takes over.                                                          |
 | `online`      | The network detector: the library's `WebOnlineDetector` in a browser, `Online.always()` elsewhere.                                                                                                                                                      |
 | `mutations`   | The named mutations, as Effects run with the services of the fiber that builds the layer.                                                                                                                                                               |
@@ -723,3 +761,34 @@ Live queries retain their last settled window by default. Provide `LiveQuery.inc
 The pinned TanStack DB patch adds only this opt-in publication mode; unconfigured consumers keep its settled-window behavior.
 
 Incremental queries withdraw public rows on a source or demand error while preserving the error receipt. Recoverable sources apply queued changes before publishing again; a fatal demand failure stays empty until its read scope is reopened.
+
+Admission keeps `outbox:admission-counter` beside its writes. The host's required
+`storage.setMany` commits the counter and new write atomically, resolving only
+when committed and rejecting with neither row retained on failure. Recovery
+reconstructs the high-water mark under `leader.withAdmission`; ordinary admissions
+read one counter row rather than every retained write. Counter metadata remains
+when the queue empties and never reaches mutation callbacks. Hosts must implement
+this transaction capability; there is no non-atomic fallback.
+
+Held refresh validates indexed keys together with cached membership against the
+actual rows. A follower that discovers a hold absent from the index keeps it
+through later invalidations and retains repair information. Ownership and removal
+are always decided from the stored row.
+
+Held-index publication takes `storage.withLock("outbox:held", action)` across the
+whole read, row validation and replacement. Every context on the same storage,
+including a disposed predecessor completing a send, must share this non-stealable
+lock until the action settles. The browser host uses a Web Lock scoped to the
+outbox database; memory-only storage uses its own Effect semaphore. This lock is
+independent of admission and leadership, so a late settlement cannot erase a
+successor hold and a follower can discover it from the shared index. Lock
+acquisition failures leave publication dirty for the existing repair path.
+
+Row admission, replacement, deletion and ordering repair take
+`storage.withLock(rowKey, action)`. Clearing takes each stored key's lock before
+deleting it. Different row keys remain independent: a paused retry cannot block
+an unrelated admission. A retry rereads the authoritative row
+inside that lock: it preserves a persisted hold and admission sequence, leaves a
+terminal receipt terminal, and does not recreate a deleted row. The row lock is
+released before held-index publication acquires its separate lock. A late
+predecessor callback therefore cannot revoke a successor hold or settlement.

@@ -1,6 +1,6 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric, Option } from "effect"
-import { OutboxWrites } from "../../outbox"
+import { held, OutboxWrites } from "../../outbox"
 import { RemoteRunsClient } from "./api"
 import { STEER_FINAL, STEER_REFUSALS, type SteerRefusal } from "./contract"
 import { steerSends } from "./metrics"
@@ -45,7 +45,11 @@ export class SteerWrites extends Context.Service<
       })
       const context = yield* Effect.context<RemoteRunsClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(sent, params).pipe(Effect.provideContext(context))
-      const writes = yield* OutboxWrites.adding({ collections: { [STEER_SENDING]: sending }, mutations: { [RUN_STEER]: mutation } })
+      const writes = yield* OutboxWrites.adding({
+        collections: { [STEER_SENDING]: sending },
+        mutations: { [RUN_STEER]: mutation },
+        orderingKeys: { [RUN_STEER]: (rows) => (rows as ReadonlyArray<SteerSending>).map((row) => `run:${row.runId}`) },
+      })
       return Context.make(SteerWrites, SteerWrites.of({ sending, sent })).pipe(Context.add(OutboxWrites, writes))
     }),
   )
@@ -89,8 +93,9 @@ export const finalReasonOf = (status: number | undefined, code: string | undefin
 }
 
 /**
- * Sends one queued steer. ChatApi took it (202, or 200 for one it had): Sent, and done. A final refusal: Not sent with
- * why, and never sent again. Anything else is sent again. Records the send as a span `run.steer.send`, a log line and a
+ * Sends one queued steer. ChatApi took it (202, or 200 for one it had): Sent, and done. A session steer's `401` while its
+ * person is still signed in is held (`held`): sent again, until they sign in again. A final refusal: Not sent with why,
+ * and never sent again. Anything else is sent again. Records the send as a span `run.steer.send`, a log line and a
  * count of `steerSends` by outcome, never the message.
  */
 export const send = (sent: Collection.Collection<SteerSent, string>, { rows }: { readonly rows: ReadonlyArray<unknown> }) => {
@@ -100,9 +105,12 @@ export const send = (sent: Collection.Collection<SteerSent, string>, { rows }: {
     const answer = yield* Effect.result((yield* RemoteRunsClient).steer(row.runId, { id: row.id, body: row.body }, row.credential))
     const status = answer._tag === "Success" ? undefined : answer.failure.status
     const code = answer._tag === "Success" ? undefined : answer.failure.code
-    const reason = answer._tag === "Success" ? undefined : finalReasonOf(status, code)
+    const holding = answer._tag === "Failure" && answer.failure.sessionCheck === "same_person"
+    const reason = answer._tag === "Success" || holding ? undefined : finalReasonOf(status, code)
     const outcome = answer._tag === "Success"
       ? answer.success.existing ? "existing" : "taken"
+      : holding
+      ? "held"
       : reason === undefined
       ? "retry"
       : "refused"
@@ -117,6 +125,7 @@ export const send = (sent: Collection.Collection<SteerSent, string>, { rows }: {
       }),
     )
     if (answer._tag === "Success") return yield* keep(sent, row, "sent", null)
+    if (holding) return yield* held()
     if (reason === undefined) return yield* new Outbox.Retry(status === undefined ? {} : { status })
     yield* keep(sent, row, "not_sent", reason)
     return yield* new Outbox.Refused({ status: status! })

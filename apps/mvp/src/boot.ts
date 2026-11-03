@@ -118,6 +118,7 @@ import { TabErrors } from "./flows/errors"
 import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
 import { deviceRegistry } from "./device/registry"
+import { deviceLifecycle } from "./features/auth/metrics"
 import { Page, pageReloads } from "./page"
 import type { AppReloadReason } from "./reloadReason"
 import { apiRoute } from "./apiRoutes"
@@ -188,6 +189,8 @@ export interface Host extends ChatHost {
    * (decision 0008 §4.6). Sign-out calls it once ChatApi has ended the session (src/features/auth/device.ts).
    */
   readonly wipe: () => Promise<void>
+  /** Releases a host-owned sign-out guard after all local cleanup, including failures. */
+  readonly finishSignOut?: () => Promise<void>
 }
 
 /**
@@ -239,7 +242,7 @@ export const appLayer = <S = never>(
     Auth.layer,
     tabSession({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     tabDoors({ name: host.engineName, signedOut: anonymousRun }).pipe(Layer.provide(TabChannel.layer)),
-  ).pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe)))
+  ).pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe, host.finishSignOut)))
   const app = Layer.mergeAll(
     Chat.layer,
     auth,
@@ -516,6 +519,11 @@ export const logPageErrors = Effect.fnUntraced(function* (target: EventTarget) {
 /** One record of the host's as a log line: never an error's message or a component's props. */
 const logHostRecord = (record: HostRecord): Effect.Effect<void> => {
   switch (record._tag) {
+    case "device.lifecycle":
+      return Effect.andThen(
+        Metric.update(Metric.withAttributes(deviceLifecycle, { outcome: record.outcome }), 1),
+        Effect.logInfo("device.lifecycle").pipe(Effect.annotateLogs({ outcome: record.outcome })),
+      )
     case "render":
       return Effect.logError("render error").pipe(Effect.annotateLogs({ boundary: record.boundary, name: record.name }))
     case "pwa.register":

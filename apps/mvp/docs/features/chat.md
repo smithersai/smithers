@@ -253,3 +253,13 @@ seed expands in base64 JSON and needs more than 10 seconds at 1 Mbit/s. Authorit
 Early body refusals are recorded as `write.body` and `smithers_write_bodies`, before a feature handler runs.
 
 Branch queued and unsent questions follow the conversation access gate when displayed; delivery keeps their raw rows. Missing ownership, an unknown refusal restore, and denial hide their text. Home agent statuses use the same attributed messages as the conversation.
+
+
+### Held-write ordering
+
+An earlier held write for another dependency key no longer blocks queued questions. Questions share their conversation key and remain ordered within that conversation. The connection pill reads held status from owned persisted outbox rows, with cross-tab invalidations and an initial read on boot; it does not wait for another refusal to offer sign-in.
+
+A question refused 401 while a confirming session reread still names its owner
+stays in the durable outbox. Every tab offers sign-in until the question is
+delivered; reloading preserves the hold and automatic continuation. Other final
+refusals still keep the question as Not sent.

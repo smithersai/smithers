@@ -2,7 +2,7 @@ import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric, Option, Schema } from "effect"
 import { codeOf } from "../../errorCode"
 import { renewalOf } from "../../flows/bearer"
-import { OutboxWrites } from "../../outbox"
+import { held, OutboxWrites } from "../../outbox"
 import { IssuesClient, WriteNotTaken, type WriteRequest } from "./api"
 import { type NotSentReason, refusalOf, type WriteOp } from "./contract"
 import { sends } from "./metrics"
@@ -52,6 +52,8 @@ export class IssueWrites extends Context.Service<
       const writes = yield* OutboxWrites.adding({
         collections: { [SENDING]: sending },
         mutations: { [ISSUE_WRITE]: mutation },
+        orderingKeys: { [ISSUE_WRITE]: (rows) => (rows as ReadonlyArray<Sending>).map((row) =>
+          `issue:${row.repo}:${row.number > 0 ? row.number : row.op === "issue/create" ? row.id : "settings"}`) },
         parked: { [ISSUE_WRITE]: (write) => keepParked(requested, write) },
       })
       const { search } = Context.get(context, IssuesClient)
@@ -186,7 +188,8 @@ export const requestOf = (row: Queued): WriteRequest => {
 
 /**
  * Sends one queued write, as the run that wrote it when it carries that run's credential, else in the person's
- * session. ChatApi took it (202, or 200 for one it had): Requested, and done. A refusal (400, 401, 403,
+ * session. ChatApi took it (202, or 200 for one it had): Requested, and done. A session write's `401` while its person
+ * is still signed in is held (`held`): still Requested, sent again, until they sign in again. A refusal (400, 401, 403,
  * 404, 409, 413): Not sent with why, and never sent again. Anything else (no answer, a deadline, 429, 5xx) is sent
  * again. Records the send as a span `issues.write.send`, a log line and a count of `sends` by operation and outcome,
  * never the text.
@@ -212,9 +215,12 @@ const send = (requested: Collection.Collection<Requested, string>, { rows }: { r
       ? Effect.fail(new WriteNotTaken({ status: 403 }))
       : (yield* IssuesClient).write(owner, name, requestOf(row), row.credential))
     const status = answer._tag === "Success" ? undefined : answer.failure.status
-    const reason = answer._tag === "Success" ? undefined : refusalOf(status, answer.failure.code)
+    const holding = answer._tag === "Failure" && answer.failure.sessionCheck === "same_person"
+    const reason = answer._tag === "Success" || holding ? undefined : refusalOf(status, answer.failure.code)
     const outcome = answer._tag === "Success"
       ? answer.success.txid === null ? "existing" : "started"
+      : holding
+      ? "held"
       : reason === undefined
       ? "retry"
       : "refused"
@@ -228,6 +234,7 @@ const send = (requested: Collection.Collection<Requested, string>, { rows }: { r
       }),
     )
     if (answer._tag === "Success") return yield* keep(requested, row, "requested", null)
+    if (holding) return yield* held()
     if (reason === undefined) return yield* new Outbox.Retry(status === undefined ? {} : { status })
     yield* keep(requested, row, "not_sent", reason)
     return yield* new Outbox.Refused({ status: status! })

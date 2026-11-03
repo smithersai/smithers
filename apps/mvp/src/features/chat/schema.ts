@@ -127,12 +127,16 @@ export interface QuestionSubmitted { readonly asked: true; readonly questionId: 
  * - `offline`: the device is offline, or, with `retry`, Smithers has been unreachable for `unreachableAfter`;
  * - `failed`: Electric refused the shape, or answered with something it couldn't read; it waits for Retry;
  * - `stopped`: this tab's engine worker failed, so this device can't answer or keep its rows; only a reload can help.
+ *
+ * Beside any of them, `signIn` while the outbox this tab leads holds a write for its person's sign-in (src/outbox.ts
+ * `held`): the pill offers sign-in until one is delivered.
  */
 export const CONNECTION = "connection"
 export const Connection = Schema.Struct({
   id: Schema.Literal(CONNECTION),
   status: Schema.Literals(["up", "offline", "failed", "stopped"]),
   retry: Schema.Boolean,
+  signIn: Schema.Boolean,
 })
 export type Connection = typeof Connection.Type
 

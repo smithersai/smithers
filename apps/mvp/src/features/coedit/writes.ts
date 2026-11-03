@@ -1,6 +1,6 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric } from "effect"
-import { OutboxWrites } from "../../outbox"
+import { held, OutboxWrites } from "../../outbox"
 import { TextsClient } from "./api"
 import { sends } from "./metrics"
 import { Sending, type Sending as SendingRow } from "./schema"
@@ -9,13 +9,18 @@ import { Sending, type Sending as SendingRow } from "./schema"
 // update in the outbox (store.ts); the outbox stores it, then sends it through the `text-update` mutation here to
 // ChatApi's text route, with the library's backoff, across reloads, from whichever tab leads. Until then the update is
 // an optimistic row of `text-sending`, which the store applies to the text again after a reload, so nothing typed
-// offline is lost. A refusal drops it for good: a viewer's update never reaches the text.
+// offline is lost. A refusal drops it for good: a viewer's update never reaches the text. A 401 while its person is
+// still signed in is no refusal: ChatApi couldn't tell who asked, so the update is held until they sign in again
+// (src/outbox.ts `held`).
 
 /** The outbox's names for text updates: the collection of their optimistic rows, and the mutation that sends them. */
 export const SENDING = "text-sending"
 export const TEXT_UPDATE = "text-update"
 
-/** The statuses ChatApi refuses an update for good with; any other failure is sent again. */
+/**
+ * The statuses ChatApi refuses an update for good with; any other failure is sent again. A 401 here is one the page's
+ * transport couldn't check, or a visitor's.
+ */
 const REFUSED = new Set([400, 401, 403, 404, 413])
 
 /** Text updates the outbox holds, as the optimistic rows of their writes; in memory, restored by the outbox. */
@@ -32,16 +37,22 @@ export class TextWrites extends Context.Service<TextWrites, { readonly sending: 
       const sending = yield* Collection.local<SendingRow, string>({ id: SENDING, schema: Sending, getKey: (row) => row.id })
       const context = yield* Effect.context<TextsClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(params).pipe(Effect.provideContext(context))
-      const writes = yield* OutboxWrites.adding({ collections: { [SENDING]: sending }, mutations: { [TEXT_UPDATE]: mutation } })
+      const writes = yield* OutboxWrites.adding({
+        collections: { [SENDING]: sending },
+        mutations: { [TEXT_UPDATE]: mutation },
+        orderingKeys: { [TEXT_UPDATE]: (rows) => (rows as ReadonlyArray<SendingRow>).map((row) => `text:${row.textId}`) },
+      })
       return Context.make(TextWrites, TextWrites.of({ sending })).pipe(Context.add(OutboxWrites, writes))
     }),
   )
 }
 
 /**
- * Sends one queued update. ChatApi took it (`stored`), or had it (`existing`): done. A refusal (400, 401, 403, 404,
- * 413) drops it for good; anything else is sent again. Records the send as a span `coedit.send`, a log line and a count
- * by outcome, never the update.
+ * Sends one queued update. ChatApi took it (`stored`), or had it (`existing`): done. A `401` the page's transport found
+ * its person still signed in for is held (`held`): sent again, never refused, until they sign in again. A `401` after
+ * the session ended never arrives here: the transport leaves the update queued and reopens the page. Any other refusal
+ * (400, 401, 403, 404, 413) drops it for good; anything else is sent again. Records the send as a span `coedit.send`, a
+ * log line and a count by outcome, never the update.
  */
 const send = ({ rows }: { readonly rows: ReadonlyArray<unknown> }) => {
   const row = rows[0] as SendingRow
@@ -58,6 +69,8 @@ const send = ({ rows }: { readonly rows: ReadonlyArray<unknown> }) => {
     const status = answer._tag === "Success" ? 200 : answer.failure.status
     const outcome = answer._tag === "Success"
       ? answer.success.txid === null ? "existing" : "stored"
+      : answer.failure.sessionCheck === "same_person"
+      ? "held"
       : status !== undefined && REFUSED.has(status)
       ? "refused"
       : "retry"
@@ -71,6 +84,7 @@ const send = ({ rows }: { readonly rows: ReadonlyArray<unknown> }) => {
         durationMs: (yield* Clock.currentTimeMillis) - startedAt,
       }),
     )
+    if (outcome === "held") return yield* held()
     if (outcome === "refused") return yield* new Outbox.Refused({ status: status! })
     if (outcome === "retry") return yield* new Outbox.Retry(status === undefined ? {} : { status })
   }).pipe(
