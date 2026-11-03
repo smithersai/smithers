@@ -103,7 +103,11 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./test/Notifying": "./src/test/Notifying.ts",
-    "./test/TestJournal": "./src/test/TestJournal.ts",
+    "./test/TestJournal": {
+      "types": "./src/test/TestJournal.ts",
+      "vibelang-source": "./src/test/TestJournal.ts",
+      "default": "./.vibelang/js/src/test/TestJournal.js"
+    },
     "./JournalGeneration": {
       "types": "./src/JournalGeneration.ts",
       "vibelang-source": "./src/JournalGeneration.ts",

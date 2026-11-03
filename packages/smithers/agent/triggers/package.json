@@ -107,7 +107,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/TestTriggers": "./src/test/TestTriggers.ts"
+    "./test/TestTriggers": {
+      "types": "./src/test/TestTriggers.ts",
+      "vibelang-source": "./src/test/TestTriggers.ts",
+      "default": "./.vibelang/js/src/test/TestTriggers.js"
+    }
   },
   "files": [
     "src/**/*.ts",

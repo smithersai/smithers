@@ -77,7 +77,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/TestRunStore": "./src/test/TestRunStore.ts"
+    "./test/TestRunStore": {
+      "types": "./src/test/TestRunStore.ts",
+      "vibelang-source": "./src/test/TestRunStore.ts",
+      "default": "./.vibelang/js/src/test/TestRunStore.js"
+    }
   },
   "files": [
     "src/**/*.ts",

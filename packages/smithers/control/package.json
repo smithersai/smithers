@@ -177,7 +177,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/TestControl": "./src/test/TestControl.ts",
+    "./test/TestControl": {
+      "types": "./src/test/TestControl.ts",
+      "vibelang-source": "./src/test/TestControl.ts",
+      "default": "./.vibelang/js/src/test/TestControl.js"
+    },
     "./Health": {
       "types": "./.vibe/declarations/src/Health.d.vibe.ts",
       "vibelang-source": "./src/Health.vibe",

@@ -152,7 +152,11 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./test/TestSocket": "./src/test/TestSocket.ts",
-    "./test/TestSync": "./src/test/TestSync.ts"
+    "./test/TestSync": {
+      "types": "./src/test/TestSync.ts",
+      "vibelang-source": "./src/test/TestSync.ts",
+      "default": "./.vibelang/js/src/test/TestSync.js"
+    }
   },
   "files": [
     "src/**/*.ts",

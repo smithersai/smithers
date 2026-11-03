@@ -39,7 +39,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/contract": "./src/test/HostContract.ts",
+    "./test/contract": {
+      "types": "./src/test/HostContract.ts",
+      "vibelang-source": "./src/test/HostContract.ts",
+      "default": "./.vibelang/js/src/test/HostContract.js"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./CapabilitySet": {
@@ -126,8 +130,16 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/HostContract": "./src/test/HostContract.ts",
-    "./test/TestGrantStore": "./src/test/TestGrantStore.ts",
+    "./test/HostContract": {
+      "types": "./src/test/HostContract.ts",
+      "vibelang-source": "./src/test/HostContract.ts",
+      "default": "./.vibelang/js/src/test/HostContract.js"
+    },
+    "./test/TestGrantStore": {
+      "types": "./src/test/TestGrantStore.ts",
+      "vibelang-source": "./src/test/TestGrantStore.ts",
+      "default": "./.vibelang/js/src/test/TestGrantStore.js"
+    },
     "./ChildProcessEnvironment": {
       "types": "./src/ChildProcessEnvironment.ts",
       "vibelang-source": "./src/ChildProcessEnvironment.ts",
