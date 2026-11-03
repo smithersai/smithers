@@ -2,7 +2,6 @@
   "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
     "rootDirs": [".",".vibe/declarations"],
-    "moduleSuffixes": ["", ".d.vibe"],
     "allowArbitraryExtensions": true,
     "target": "ES2024",
     "lib": ["ES2024"],
