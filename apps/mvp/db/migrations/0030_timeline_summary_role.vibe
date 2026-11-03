@@ -1,5 +1,0 @@
-export default effect {
-  const sql = try SqlClient.SqlClient
-  try sql`ALTER TABLE model_roles DROP CONSTRAINT model_roles_role_check`
-  try sql`ALTER TABLE model_roles ADD CONSTRAINT model_roles_role_check CHECK (role IN ('agent', 'renderer', 'judge', 'summary'))`
-}
