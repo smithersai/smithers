@@ -4,7 +4,7 @@ import { Unauthorized } from "@smthrs/control/ControlError"
 import { Effect, Exit, Layer, Redacted, Stream } from "effect"
 import { createHmac } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import * as Core from "../src/core/Channel.ts"
+import * as Core from "../src/core/Channel.vibe"
 import { readHeader } from "../src/core/JsonPath.ts"
 import { GITHUB_SIGNATURE_PREFIX, verifySignature } from "../src/core/Signature.ts"
 

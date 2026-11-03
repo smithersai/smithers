@@ -25,7 +25,7 @@ import { InvalidInput, Unauthorized } from "@smthrs/control/ControlError"
 import type { FlowId, RunId, RunSummary } from "@smthrs/control/ControlSchema"
 import type { Credential, CredentialRef } from "@smthrs/control/Credential"
 import * as WebhookChannel from "@smthrs/control/WebhookChannel"
-import { Cause, Effect, Redacted, Schema } from "effect"
+import { Effect, Redacted } from "effect"
 import { decode as decodeExternalEvent, type ExternalEvent } from "./ExternalEvent.vibe"
 import { IntegrationError, isIntegrationError, toInvalidInput, toUnauthorized } from "./IntegrationError.ts"
 import * as SignalName from "./SignalName.ts"
@@ -41,7 +41,7 @@ import * as SignalName from "./SignalName.ts"
  */
 export type SecretResolver = (
   credential: Redacted.Redacted<CredentialRef>
-) => Effect.Effect<Redacted.Redacted<string>, Unauthorized>
+) => Redacted.Redacted<string>!Unauthorized
 
 /**
  * A resolver that always answers with one secret. For a single-tenant
@@ -62,13 +62,11 @@ export const constantSecret = (secret: Redacted.Redacted<string>): SecretResolve
  * @since 1.0.0
  */
 export const credentialSecret = (credentials: Credential): SecretResolver => (credential) =>
-  credentials.resolve(Redacted.value(credential)).pipe(
-    Effect.mapError((error) =>
-      error._tag === "/control/Unauthorized"
-        ? error
-        : new Unauthorized({ message: `credential ${Redacted.value(credential).name} is unavailable` })
-    )
-  )
+  credentials.resolve(Redacted.value(credential))
+  |> Effect.mapError(%, (error) =>
+    error._tag === "/control/Unauthorized"
+      ? error
+      : new Unauthorized({ message: `credential ${Redacted.value(credential).name} is unavailable` }))
 
 /**
  * What a provider supplies to get a control-plane channel.
@@ -92,14 +90,14 @@ export interface Config {
    * failed verification: the delivery is refused with `Unauthorized`, not
    * turned into a defect that kills the ingress fiber. Only `true` verifies.
    */
-  readonly verify: (raw: RawInbound, secret: string) => boolean | Effect.Effect<boolean, unknown>
+  readonly verify: (raw: RawInbound, secret: string) => boolean | (boolean!unknown)
   /**
    * The provider's decoder. Runs only after verification, and may throw an
    * `IntegrationError` for a delivery whose headers or body it cannot read.
    */
   readonly decode: (raw: RawInbound, payload: unknown) => ExternalEvent
   /** What the event does: start a flow, or signal a run. */
-  readonly route: (event: ExternalEvent) => Effect.Effect<InboundResult, InvalidInput>
+  readonly route: (event: ExternalEvent) => InboundResult!InvalidInput
   /** The outbound projection. Defaults to `noop`, which posts nothing. */
   readonly project?: ((run: RunSummary, delivery: unknown) => ReturnType<Channel["project"]>) | undefined
 }
@@ -127,35 +125,35 @@ const invalidSignature = (name: string): IntegrationError =>
 export const make = (config: Config): Channel => {
   const unauthorized = () => toUnauthorized(invalidSignature(config.name))
   const verifier: WebhookChannel.SignatureVerifier = (raw, credential) =>
-    config.secret(credential).pipe(
-      Effect.flatMap((secret) =>
-        // An application-supplied verifier is ordinary code that can throw,
-        // fail or die. Each is a refusal, not a defect: the delivery did not
-        // verify. An interruption stays one. An Effect verdict is run, never
-        // read for truthiness: an unrun Effect is a truthy object that would
-        // pass every delivery.
-        Effect.suspend(() => {
-          const verdict = config.verify(raw, Redacted.value(secret))
-          return Effect.isEffect(verdict) ? verdict : Effect.succeed(verdict)
-        }).pipe(
-          Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(unauthorized())),
-          Effect.flatMap((verified) => verified === true ? Effect.void : Effect.fail(unauthorized()))
-        )
+    config.secret(credential)
+    |> Effect.flatMap(%, (secret) =>
+      // An application-supplied verifier is ordinary code that can throw,
+      // fail or die. Each is a refusal, not a defect: the delivery did not
+      // verify. An interruption stays one. An Effect verdict is run, never
+      // read for truthiness: an unrun Effect is a truthy object that would
+      // pass every delivery.
+      Effect.suspend(() => {
+        const verdict = config.verify(raw, Redacted.value(secret))
+        return Effect.isEffect(verdict) ? verdict : Effect.succeed(verdict)
+      })
+      |> Effect.catchCause(
+        %,
+        (cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(unauthorized())
       )
-    )
+      |> Effect.flatMap(%, (verified) => verified === true ? Effect.void : Effect.fail(unauthorized())))
   // An `IntegrationError` is provider-safe by construction, so its summary
   // crosses to the control plane. Anything else is internal text, a
   // `TypeError` message or a foreign error's docs-URL suffix, and only the
   // channel name crosses. Raw errors and schema issues can contain payloads
   // or credentials, so they never reach logs either.
-  const decodeFailed = (cause: unknown): Effect.Effect<never, InvalidInput> =>
+  const decodeFailed = (cause: unknown): never!InvalidInput =>
     isIntegrationError(cause)
       ? Effect.fail(toInvalidInput(cause))
-      : Effect.logWarning(`${config.name} webhook decoder failed`).pipe(
-        Effect.andThen(
+      : (Effect.logWarning(`${config.name} webhook decoder failed`)
+        |> Effect.andThen(
+          %,
           Effect.fail(new InvalidInput({ issue: `${config.name} webhook payload could not be decoded.` }))
-        )
-      )
+        ))
 
   const map: Channel["map"] = (event) => config.route(event as ExternalEvent)
   const json = WebhookChannel.make({
@@ -173,29 +171,26 @@ export const make = (config: Config): Channel => {
     ...(json.fingerprintHeaders === undefined ? {} : { fingerprintHeaders: json.fingerprintHeaders }),
     verify: json.verify,
     decode: (raw) =>
-      json.decode(raw).pipe(
-        Effect.flatMap((payload) =>
-          Effect.try({ try: () => config.decode(raw, payload), catch: (cause) => cause }).pipe(
-            Effect.catch(decodeFailed),
-            // The decoder's own output is validated here, at the ingress
-            // boundary, so a decoder bug fails loudly on the delivery that
-            // triggered it rather than as a malformed signal three hops later.
-            Effect.flatMap((event) =>
-              decodeExternalEvent(event).pipe(
-                Effect.catch(() =>
-                  Effect.logWarning(`${config.name} webhook decoder produced a malformed event`).pipe(
-                    Effect.andThen(
-                      Effect.fail(
-                        new InvalidInput({ issue: `${config.name} webhook decoder produced a malformed event.` })
-                      )
-                    )
-                  )
-                )
+      json.decode(raw)
+      |> Effect.flatMap(%, (payload) =>
+        Effect.try({
+          try: () => config.decode(raw, payload),
+          catch: (cause) => cause
+        })
+        |> Effect.catch(%, decodeFailed)
+        // The decoder's own output is validated here, at the ingress
+        // boundary, so a decoder bug fails loudly on the delivery that
+        // triggered it rather than as a malformed signal three hops later.
+        |> Effect.flatMap(%, (event) =>
+          decodeExternalEvent(event)
+          |> Effect.catch(%, () =>
+            Effect.logWarning(`${config.name} webhook decoder produced a malformed event`)
+            |> Effect.andThen(
+              %,
+              Effect.fail(
+                new InvalidInput({ issue: `${config.name} webhook decoder produced a malformed event.` })
               )
-            )
-          )
-        )
-      ),
+            )))),
     map,
     project: json.project
   }
@@ -207,7 +202,7 @@ export const make = (config: Config): Channel => {
  * @category constructors
  * @since 1.0.0
  */
-export const startFlow = (flowId: FlowId) => (event: ExternalEvent): Effect.Effect<InboundResult, InvalidInput> =>
+export const startFlow = (flowId: FlowId) => (event: ExternalEvent): InboundResult!InvalidInput =>
   Effect.succeed({ _tag: "Start", flowId, input: event })
 
 /**
@@ -216,5 +211,5 @@ export const startFlow = (flowId: FlowId) => (event: ExternalEvent): Effect.Effe
  * @category constructors
  * @since 1.0.0
  */
-export const signalRun = (runId: RunId) => (event: ExternalEvent): Effect.Effect<InboundResult, InvalidInput> =>
+export const signalRun = (runId: RunId) => (event: ExternalEvent): InboundResult!InvalidInput =>
   Effect.succeed({ _tag: "Signal", runId, signal: SignalName.toSignalPayload(event) })

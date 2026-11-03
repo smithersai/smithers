@@ -11,7 +11,7 @@ import {
   MAX_MESSAGE_LENGTH,
   RetryableIntegrationFailure,
   toIntegrationError
-} from "../src/core/ActionFailure.ts"
+} from "../src/core/ActionFailure.vibe"
 import { buildAuthorizationUrl } from "../src/core/AuthorizationUrl.ts"
 import * as ExternalEvent from "../src/core/ExternalEvent.vibe"
 import {

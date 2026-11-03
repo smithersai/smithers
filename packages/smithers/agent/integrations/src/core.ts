@@ -14,7 +14,7 @@ export * as AccessToken from "./core/AccessToken.vibe"
  * @category schemas
  * @since 1.0.0
  */
-export * as ActionFailure from "./core/ActionFailure.ts"
+export * as ActionFailure from "./core/ActionFailure.vibe"
 
 /**
  * @category constructors
@@ -26,7 +26,7 @@ export * as AuthorizationUrl from "./core/AuthorizationUrl.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Channel from "./core/Channel.ts"
+export * as Channel from "./core/Channel.vibe"
 
 /**
  * @category schemas
@@ -38,7 +38,7 @@ export * as Connection from "./core/Connection.ts"
  * @category services
  * @since 1.0.0
  */
-export * as CursorStore from "./core/CursorStore.ts"
+export * as CursorStore from "./core/CursorStore.vibe"
 
 /**
  * @category schemas

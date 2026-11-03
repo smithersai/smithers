@@ -1,7 +1,7 @@
 import { Effect, Redacted } from "effect"
 import { expect, it } from "vitest"
 import * as AccessToken from "../src/core/AccessToken.vibe"
-import * as Channel from "../src/core/Channel.ts"
+import * as Channel from "../src/core/Channel.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import { readHeader } from "../src/core/JsonPath.ts"
 

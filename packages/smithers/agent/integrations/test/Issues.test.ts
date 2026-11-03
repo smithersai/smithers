@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
 import { RECONCILE_PAGES } from "../src/github/Actions.ts"
 import type { GitHubClient } from "../src/github/GitHubClient.ts"
-import * as Issues from "../src/github/Issues.ts"
+import * as Issues from "../src/github/Issues.vibe"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import { faultingTransport, gitHubLayer, gitHubLayerOver } from "./Http.ts"
 

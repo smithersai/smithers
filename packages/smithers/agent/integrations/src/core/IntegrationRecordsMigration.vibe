@@ -24,9 +24,9 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const integrationRecords: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE TABLE IF NOT EXISTS smithers_integration_records (
+export const integrationRecords: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE TABLE IF NOT EXISTS smithers_integration_records (
     connection_id TEXT NOT NULL,
     external_id TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -51,13 +51,13 @@ export const integrationRecords: Effect.Effect<void, unknown, SqlClient.SqlClien
     seen_generation ${Dialect.integer(sql)} NOT NULL DEFAULT 0,
     PRIMARY KEY (connection_id, external_id)
   )`
-  yield* sql`CREATE INDEX IF NOT EXISTS smithers_integration_records_stream
+  try sql`CREATE INDEX IF NOT EXISTS smithers_integration_records_stream
     ON smithers_integration_records (connection_id, stream, seen_generation)`
-  yield* sql`CREATE INDEX IF NOT EXISTS smithers_integration_records_access_container
+  try sql`CREATE INDEX IF NOT EXISTS smithers_integration_records_access_container
     ON smithers_integration_records (connection_id, access_container_id)`
-  yield* sql`CREATE INDEX IF NOT EXISTS smithers_integration_records_thread_container
+  try sql`CREATE INDEX IF NOT EXISTS smithers_integration_records_thread_container
     ON smithers_integration_records (connection_id, thread_container_id)`
-  yield* sql`CREATE TABLE IF NOT EXISTS smithers_integration_streams (
+  try sql`CREATE TABLE IF NOT EXISTS smithers_integration_streams (
     connection_id TEXT NOT NULL,
     stream TEXT NOT NULL,
     generation ${Dialect.integer(sql)} NOT NULL,
@@ -65,13 +65,13 @@ export const integrationRecords: Effect.Effect<void, unknown, SqlClient.SqlClien
     updated_at_ms ${Dialect.integer(sql)} NOT NULL,
     PRIMARY KEY (connection_id, stream)
   )`
-  yield* sql`CREATE TABLE IF NOT EXISTS smithers_integration_revocations (
+  try sql`CREATE TABLE IF NOT EXISTS smithers_integration_revocations (
     connection_id TEXT NOT NULL,
     container_id TEXT NOT NULL,
     revoked_at_ms ${Dialect.integer(sql)} NOT NULL,
     PRIMARY KEY (connection_id, container_id)
   )`
-})
+}
 
 /**
  * Adds `swept` to `smithers_integration_records`: whether a record's deletion
@@ -83,8 +83,8 @@ export const integrationRecords: Effect.Effect<void, unknown, SqlClient.SqlClien
  * @category migrations
  * @since 1.0.0
  */
-export const integrationRecordsSwept: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`ALTER TABLE smithers_integration_records
+export const integrationRecordsSwept: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`ALTER TABLE smithers_integration_records
     ADD COLUMN swept ${Dialect.integer(sql)} NOT NULL DEFAULT 0 CHECK (swept IN (0, 1))`
-})
+}

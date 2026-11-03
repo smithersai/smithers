@@ -17,7 +17,6 @@
  * @since 1.0.0
  */
 
-import { Effect, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 
 /**
@@ -133,7 +132,7 @@ export const fullNamePath = (fullName: string): string => {
  * @category constructors
  * @since 1.0.0
  */
-export const requireFullNamePath = (fullName: string): Effect.Effect<string, IntegrationError> =>
+export const requireFullNamePath = (fullName: string): string!IntegrationError =>
   Effect.try({ try: () => fullNamePath(fullName), catch: (cause) => cause as IntegrationError })
 
 /**
@@ -142,5 +141,5 @@ export const requireFullNamePath = (fullName: string): Effect.Effect<string, Int
  * @category constructors
  * @since 1.0.0
  */
-export const requireRepositoryPath = (owner: string, repo: string): Effect.Effect<string, IntegrationError> =>
+export const requireRepositoryPath = (owner: string, repo: string): string!IntegrationError =>
   Effect.try({ try: () => repositoryPath(owner, repo), catch: (cause) => cause as IntegrationError })

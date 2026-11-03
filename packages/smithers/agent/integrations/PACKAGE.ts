@@ -72,7 +72,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/core/Signature.ts",
-        "src/core/Channel.ts",
+        "src/core/Channel.vibe",
         "src/github/Payload.vibe"
       ]
     },
@@ -103,7 +103,7 @@ const securityReview = Smithers.SecurityReview({
         "A query value or GraphQL variable concatenated into a query string instead of passed as a variable."
       ],
       paths: [
-        "src/github/Repository.ts",
+        "src/github/Repository.vibe",
         "src/github/Actions.ts",
         "src/core/IssueSync.ts"
       ]
@@ -152,7 +152,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/core/SourceStore.ts",
         "src/core/SourceRecord.vibe",
-        "src/core/CursorStore.ts",
+        "src/core/CursorStore.vibe",
         "src/core/Sync.vibe"
       ]
     }

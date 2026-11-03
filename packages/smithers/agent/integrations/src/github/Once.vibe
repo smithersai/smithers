@@ -31,11 +31,11 @@
  */
 
 import { Action } from "@smthrs/flow"
-import { Effect, Option } from "effect"
+import { Effect } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import * as Commits from "./Commits.vibe"
 import type { GitHubClient } from "./GitHubClient.ts"
-import * as Issues from "./Issues.ts"
+import * as Issues from "./Issues.vibe"
 import * as Pulls from "./Pulls.ts"
 import * as Refs from "./Refs.ts"
 
@@ -115,25 +115,23 @@ const incomplete = (operation: string): IntegrationError =>
 export const branch = <E = never, R = never>(
   owner: string,
   repo: string,
-  input: { readonly prefix: string; readonly label: string; readonly at: Effect.Effect<string, E, R> }
+  input: { readonly prefix: string; readonly label: string; readonly at: string!E!R }
 ): Action.Keyed<Refs.Branch, IntegrationError | E, GitHubClient | R> =>
   Action.keyed({
-    find: (key) =>
-      Effect.gen(function*() {
-        const suffix = key.slice(0, BRANCH_KEY_LENGTH)
-        const listed = yield* Refs.listBranches(owner, repo, input.prefix)
-        // GitHub lists refs by name, so the first match is the same on every run.
-        const found = listed.items.find((candidate) =>
-          candidate.name === `${input.prefix}${suffix}` || candidate.name.endsWith(`-${suffix}`)
-        )
-        if (found === undefined && listed.truncated) return yield* Effect.fail(incomplete("GitHub.Once.branch"))
-        return Option.fromUndefinedOr(found)
-      }),
-    perform: (key) =>
-      Effect.gen(function*() {
-        const sha = yield* input.at
-        return yield* Refs.createBranch(owner, repo, { name: branchName(input.prefix, input.label, key), sha })
-      })
+    find: effect (key) => {
+      const suffix = key.slice(0, BRANCH_KEY_LENGTH)
+      const listed = try Refs.listBranches(owner, repo, input.prefix)
+      // GitHub lists refs by name, so the first match is the same on every run.
+      const found = listed.items.find((candidate) =>
+        candidate.name === `${input.prefix}${suffix}` || candidate.name.endsWith(`-${suffix}`)
+      )
+      if (found === undefined && listed.truncated) throw incomplete("GitHub.Once.branch")
+      return Option.fromUndefinedOr(found)
+    },
+    perform: effect (key) => {
+      const sha = try input.at
+      return try Refs.createBranch(owner, repo, { name: branchName(input.prefix, input.label, key), sha })
+    }
   })
 
 /**
@@ -161,20 +159,17 @@ export const commitOnBranch = (
   }
 ): Action.Keyed<string, IntegrationError, GitHubClient> =>
   Action.keyed({
-    find: (key) =>
-      Effect.gen(function*() {
-        const head = yield* Refs.getBranch(owner, repo, input.branch)
-        if (Option.isNone(head) || head.value.sha === input.expectedHeadOid) return Option.none()
-        const commit = yield* Commits.getCommit(owner, repo, head.value.sha)
-        if (trailerKeyOf(commit.message) === key) return Option.some(head.value.sha)
-        return yield* Effect.fail(
-          new IntegrationError(
-            "delivery-failed",
-            "The branch moved past the expected head, and its head is not this write's commit.",
-            { status: 409, stale: true, retryable: false, outcomeUnknown: false }
-          )
-        )
-      }),
+    find: effect (key) => {
+      const head = try Refs.getBranch(owner, repo, input.branch)
+      if (Option.isNone(head) || head.value.sha === input.expectedHeadOid) return Option.none()
+      const commit = try Commits.getCommit(owner, repo, head.value.sha)
+      if (trailerKeyOf(commit.message) === key) return Option.some(head.value.sha)
+      throw new IntegrationError(
+        "delivery-failed",
+        "The branch moved past the expected head, and its head is not this write's commit.",
+        { status: 409, stale: true, retryable: false, outcomeUnknown: false }
+      )
+    },
     perform: (key) => Commits.createOnBranch(owner, repo, { ...input, body: withTrailer(input.body ?? "", key) })
   })
 
@@ -289,15 +284,14 @@ export const merge = (
   }
 ): Action.Keyed<Pulls.Merged, IntegrationError, GitHubClient> =>
   Action.keyed({
-    find: (key) =>
-      Effect.gen(function*() {
-        const pull = yield* Pulls.getPull(owner, repo, number)
-        if (input.method === "rebase" || !pull.merged || pull.merge_commit_sha === null) return Option.none()
-        const commit = yield* Commits.getCommit(owner, repo, pull.merge_commit_sha)
-        return trailerKeyOf(commit.message) === key
-          ? Option.some({ sha: pull.merge_commit_sha, merged: true })
-          : Option.none()
-      }),
+    find: effect (key) => {
+      const pull = try Pulls.getPull(owner, repo, number)
+      if (input.method === "rebase" || !pull.merged || pull.merge_commit_sha === null) return Option.none()
+      const commit = try Commits.getCommit(owner, repo, pull.merge_commit_sha)
+      return trailerKeyOf(commit.message) === key
+        ? Option.some({ sha: pull.merge_commit_sha, merged: true })
+        : Option.none()
+    },
     perform: (key) =>
       Pulls.mergePull(owner, repo, number, {
         sha: input.sha,
@@ -329,15 +323,14 @@ export const mergeInto = (
   input: { readonly base: string; readonly head: string; readonly commitMessage?: string | undefined }
 ): Action.Keyed<Commits.MergedInto, IntegrationError, GitHubClient> =>
   Action.keyed({
-    find: (key) =>
-      Effect.gen(function*() {
-        const branch = yield* Refs.getBranch(owner, repo, input.base)
-        if (Option.isNone(branch)) return Option.none()
-        const commit = yield* Commits.getCommit(owner, repo, branch.value.sha)
-        return trailerKeyOf(commit.message) === key
-          ? Option.some<Commits.MergedInto>({ kind: "merged", sha: branch.value.sha })
-          : Option.none()
-      }),
+    find: effect (key) => {
+      const branch = try Refs.getBranch(owner, repo, input.base)
+      if (Option.isNone(branch)) return Option.none()
+      const commit = try Commits.getCommit(owner, repo, branch.value.sha)
+      return trailerKeyOf(commit.message) === key
+        ? Option.some<Commits.MergedInto>({ kind: "merged", sha: branch.value.sha })
+        : Option.none()
+    },
     perform: (key) =>
       Commits.mergeInto(owner, repo, {
         base: input.base,

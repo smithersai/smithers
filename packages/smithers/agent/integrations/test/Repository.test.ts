@@ -20,7 +20,7 @@ import {
   repositoryPath,
   requireFullNamePath,
   requireRepositoryPath
-} from "../src/github/Repository.ts"
+} from "../src/github/Repository.vibe"
 
 describe("the traversal this module exists for", () => {
   it("survives encodeURIComponent and percent-encoding, which is why segments are validated", () => {
