@@ -86,6 +86,14 @@ Each writes the rows and its `personal_model_events` record in one transaction u
 again records nothing twice. A kept connection that was removed or moved meanwhile writes nothing (`stale`). A database
 failure is `StoreUnavailable`, retried for up to 30 minutes.
 
+Connection writes share a per-person transaction lock, including when the list is empty. A Codex link carries the
+latest deletion event id observed before requesting its device code. Its Keep step compares that generation under
+the same lock before inserting a credential: a later deletion cancels it (`stale`), including deletion of an empty
+list. A legacy link without a generation is stale. Replaying a previously committed Keep only returns `repeat` and
+never recreates a deleted credential. No new table or read-path query is needed. SQL spans measure one added link
+admission query, one added transaction lock for each list writer, and one generation query for Keep.
+
+
 ## Reading
 
 `GET /api/shapes/personal-model` syncs the person's own rows, never another's: `PERSONAL_MODEL_SHAPE_COLUMNS`, which

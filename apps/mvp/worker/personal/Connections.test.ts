@@ -5,7 +5,7 @@
 // through `FetchHttpClient.Fetch`. Every credential is searched for in what was stored and recorded.
 import { Action } from "@smthrs/flow"
 import { Classifier, type ModelEvent, ModelRequest } from "@smthrs/model"
-import { ConfigProvider, Effect, Exit, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { ConfigProvider, Deferred, Effect, Exit, Layer, Option, Redacted, Schema, Stream, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
@@ -541,6 +541,38 @@ describe("POST /api/me/model/codex", () => {
         : undefined
     )
 
+  test.each([false, true])("deleting connections while an approved Codex link waits to store cannot restore a credential (existing: %s)", async (existing) => {
+    if (existing) await seedKeys(runtime, "person-member", [model("openai-chat", { fast: "gpt-test" })])
+    const openai = approving()
+    const storing = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    const client = await runtime.runPromise(Effect.service(SqlClient.SqlClient))
+    // Delay only the actual Keep step's database service, after the real Poll step has approved and sealed.
+    const database = Layer.effect(SqlClient.SqlClient, Effect.gen(function* () {
+      yield* Deferred.succeed(storing, undefined)
+      yield* Deferred.await(release)
+      return client
+    }))
+    const delayed = await engine(runtime, { database, fetch: openai.fetch, config: { CODEX_AUTH_ORIGIN } })
+    const h = await open({ actor: member, provider: openai.fetch, starter: delayed.starter })
+    const linking = link(h)
+    try {
+      await Effect.runPromise(Deferred.await(storing))
+      expect(openai.seen.map((seen) => seen.path)).toContain("/oauth/token")
+      const normal = await open({ actor: member })
+      expect((await normal.fetch(PERSONAL_MODEL_ROUTE, { method: "DELETE" })).status).toBe(202)
+      await Effect.runPromise(Deferred.succeed(release, undefined))
+      expect((await linking).status).toBe(202)
+      expect((await rows(runtime)).map(({ kind, active }) => ({ kind, active }))).toEqual([])
+      expect(JSON.stringify(delayed.exits)).toContain('"change":"stale"')
+      expect((await events(runtime)).map((event) => event.action)).toEqual([...(existing ? ["set"] : []), "delete"])
+    } finally {
+      await Effect.runPromise(Deferred.succeed(release, undefined))
+      await linking
+      await delayed.close()
+    }
+  })
+
   test("answers the code, polls once the person approves, and seals a credential at the end of their list", async () => {
     await seedKeys(runtime, "person-member", [model("openai-chat", { fast: "gpt-test" })])
     const openai = approving()
@@ -668,11 +700,48 @@ describe("POST /api/me/model/codex", () => {
       id: crypto.randomUUID(),
       sealed: { ciphertext: "c", nonce: "n", keyVersion: 1, keyLast4: "abcd" },
       invocationKey: "step-1",
+      generation: await runtime.runPromise(Store.linkGeneration("person-member")),
     }
     expect(await run(Store.link(write))).toBe("set")
     expect(await run(Store.link(write))).toBe("repeat")
     expect((await rows(runtime)).map((row) => [row.position, row.id])).toEqual([[0, write.id]])
     expect((await events(runtime)).map((event) => event.action)).toEqual(["set"])
+  })
+
+  test("link deletion generations fail closed, remain cancelled on replay, and allow a new link", async () => {
+    const generation = await runtime.runPromise(Store.linkGeneration("person-member"))
+    const write = { personId: "person-member", id: crypto.randomUUID(), generation,
+      sealed: { ciphertext: "sealed-test-only", nonce: "nonce-test-only", keyVersion: 1, keyLast4: "abcd" },
+      invocationKey: "link-generation-test" }
+    expect(await runtime.runPromise(Store.remove({ personId: write.personId, invocationKey: "delete-before-link" }))).toBe("missing")
+    expect(await runtime.runPromise(Store.link(write))).toBe("stale")
+    expect(await runtime.runPromise(Store.link(write))).toBe("stale")
+    expect(await runtime.runPromise(Store.link({ ...write, generation: undefined }))).toBe("stale")
+    const next = { ...write, generation: await runtime.runPromise(Store.linkGeneration(write.personId)) }
+    expect(await runtime.runPromise(Store.link(next))).toBe("set")
+    expect(await runtime.runPromise(Store.remove({ personId: write.personId, invocationKey: "delete-after-link" }))).toBe("deleted")
+    expect(await runtime.runPromise(Store.link(next))).toBe("repeat")
+    expect((await rows(runtime)).map(({ kind }) => kind)).toEqual([])
+  })
+
+  test("personal connection fencing adds one admission query, one writer lock and one link generation query", async () => {
+    const measure = async <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({ span(options) { const span = new Tracer.NativeSpan(options); spans.push(span); return span } })
+      const value = await runtime.runPromise(effect.pipe(Effect.provideService(Tracer.Tracer, tracer)))
+      const statements = spans.filter((span) => span.kind === "client")
+        .map((span) => String(span.attributes.get("db.query.text") ?? span.attributes.get("db.statement") ?? ""))
+      return { value, statements }
+    }
+    const admission = await measure(Store.linkGeneration("person-member"))
+    expect(admission.statements).toHaveLength(1)
+    const linked = await measure(Store.link({ personId: "person-member", id: crypto.randomUUID(), generation: admission.value,
+      sealed: { ciphertext: "sealed-test-only", nonce: "nonce-test-only", keyVersion: 1, keyLast4: "abcd" }, invocationKey: "link-cost" }))
+    expect(linked.value).toBe("set")
+    expect(linked.statements.filter((text) => text.includes("pg_advisory_xact_lock"))).toHaveLength(1)
+    expect(linked.statements.filter((text) => text.includes("coalesce(max(id)"))).toHaveLength(1)
+    const removed = await measure(Store.remove({ personId: "person-member", invocationKey: "remove-cost" }))
+    expect(removed.statements.filter((text) => text.includes("pg_advisory_xact_lock"))).toHaveLength(1)
   })
 
   test("a step whose database can't be reached, or with no invocation key, never records twice", async () => {

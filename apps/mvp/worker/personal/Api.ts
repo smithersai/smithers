@@ -415,6 +415,7 @@ export const make = <E, R>(
       if (yield* refusesPersonOnly(actor.value, "model")) return refuse(403, "forbidden")
       if (Option.isNone(keys)) return refuse(503, "off")
       if (op === "link") {
+        const generation = yield* Store.linkGeneration(personId).pipe(Effect.provide(database))
         const device = yield* Codex.requestCode.pipe(Effect.provideService(Codex.CodexAuth, codexAuth), Effect.result)
         if (device._tag === "Failure") {
           fields.outcome = "refused"
@@ -429,7 +430,7 @@ export const make = <E, R>(
         )
         const started = yield* starter.start(ModelFlows.CodexLink, {
           executionId: writeExecutionId("link", crypto.randomUUID()),
-          payload: { personId, id: crypto.randomUUID(), ...sealed, keyVersion: version },
+          payload: { personId, id: crypto.randomUUID(), generation, ...sealed, keyVersion: version },
         }).pipe(Effect.result)
         if (started._tag === "Failure") return refuse(503, "unavailable")
         fields.outcome = "linking"

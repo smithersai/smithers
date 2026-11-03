@@ -54,6 +54,17 @@ const repeated = (invocationKey: string) =>
       (rows) => rows.length > 0,
     ))
 
+/** Serializes list changes even when no credential row exists (including after a deletion). */
+const holdConnections = (personId: string) => Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  sql`SELECT pg_advisory_xact_lock(hashtextextended(${`personal-model:${personId}`}, 0))`)
+
+/** The latest deletion is a durable tombstone: a pending device link cannot undo it, even for an empty list. */
+export const linkGeneration = (personId: string) => Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.map(
+  sql<{ readonly generation: string }>`SELECT coalesce(max(id), 0)::text AS generation FROM personal_model_events
+    WHERE person_id = ${personId} AND action = 'delete'`,
+  (rows) => rows[0]!.generation,
+))
+
 /**
  * Writes `put`'s list in one transaction and records `set` or `replace` once: removes the person's connections it leaves
  * out, writes each with a new credential (clearing any failure the earlier one had), keeps each other credential where
@@ -65,6 +76,7 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* holdConnections(write.personId)
       if (yield* repeated(write.invocationKey)) return "repeat" as const
       const before = yield* sql<{
         readonly id: string
@@ -121,6 +133,8 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
 
 /** A Codex subscription a device link finished: added at the end of the person's list, or replacing the one they have. */
 export interface Linked {
+  /** The deletion generation observed before requesting the device code; absent legacy links are stale. */
+  readonly generation?: string
   readonly personId: string
   readonly id: string
   readonly sealed: Sealed & { readonly keyLast4: string }
@@ -129,13 +143,16 @@ export interface Linked {
 
 /**
  * Adds or replaces the person's Codex subscription and records it once. A person holds one: a link replaces its
- * credential and keeps its place and activity, as Amp's reconnect does.
+ * credential and keeps its place and activity, as Amp's reconnect does. A deletion after admission cancels it
+ * (`stale`); the per-person transaction lock serializes the generation check with deletes of even an empty list.
  */
-export const link = (write: Linked): Effect.Effect<"set" | "replace" | "repeat", unknown, SqlClient.SqlClient> =>
+export const link = (write: Linked): Effect.Effect<"set" | "replace" | "repeat" | "stale", unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* holdConnections(write.personId)
       if (yield* repeated(write.invocationKey)) return "repeat" as const
+      if (write.generation === undefined || (yield* linkGeneration(write.personId)) !== write.generation) return "stale" as const
       const before = yield* sql<{ readonly kind: string }>`
         SELECT kind FROM personal_models WHERE person_id = ${write.personId} FOR UPDATE`
       const { ciphertext, nonce, keyVersion, keyLast4 } = write.sealed
@@ -190,6 +207,7 @@ export const remove = (write: {
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* holdConnections(write.personId)
       if (yield* repeated(write.invocationKey)) return "repeat" as const
       const deleted = yield* sql`DELETE FROM personal_models WHERE person_id = ${write.personId} RETURNING person_id`
       yield* sql`

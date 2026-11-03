@@ -118,6 +118,7 @@ export const LINK_RETRY = RetryPolicy.make({
 })
 
 const linkPayload = {
+  generation: Schema.optional(Schema.String),
   personId: Schema.String,
   /** The new connection's id, chosen by the route, so a replay writes one row. */
   id: Schema.String,
@@ -149,8 +150,8 @@ export const Poll = Action.make("model/CodexPoll", {
 
 /** Puts the sealed credential on the person's list, once. */
 export const Keep = Action.make("model/CodexKeep", {
-  payload: { personId: Schema.String, id: Schema.String, sealed: SealedCredential },
-  success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat"]) }),
+  payload: { personId: Schema.String, id: Schema.String, generation: Schema.optional(Schema.String), sealed: SealedCredential },
+  success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat", "stale"]) }),
   error: StoreUnavailable,
   capabilities: ["db:write:personal_models"],
   retryPolicy: STORE_RETRY,
@@ -167,7 +168,7 @@ export const CodexLink = Flow.make("model/CodexLink", {
   body: Node.capture({ poll: Poll.name, keep: Keep.name }, (write) =>
     Poll.call(write).pipe(
       Node.bindPlanned(Node.capture({ keep: Keep.name }, (sealed: Planned.Planned<typeof SealedCredential.Type>) =>
-        Keep.call({ personId: write.personId, id: write.id, sealed }))),
+        Keep.call({ personId: write.personId, id: write.id, generation: write.generation, sealed }))),
     )),
 })
 
@@ -258,6 +259,7 @@ export const keepStep = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>)
       const change = yield* Store.link({
         personId: write.personId,
         id: write.id,
+        generation: write.generation,
         sealed: write.sealed,
         invocationKey: yield* invocationKey,
       }).pipe(Effect.provide(database), Effect.catch(unavailable))
