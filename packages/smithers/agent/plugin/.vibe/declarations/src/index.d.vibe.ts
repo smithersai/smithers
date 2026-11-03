@@ -74,7 +74,7 @@ export * from "./PluginError.vibe";
  * @since 1.0.0-rc.0
  * @category dispatch
  */
-export * as Plugins from "./Plugins.vibe";
+export * as Plugins from "../../../src/Plugins.ts";
 /**
  * @since 1.0.0-rc.0
  * @category resolution

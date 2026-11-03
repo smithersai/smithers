@@ -103,7 +103,7 @@
     },
     "./Plugins": {
       "types": "./.vibe/declarations/src/Plugins.d.vibe.ts",
-      "vibelang-source": "./src/Plugins.vibe",
+      "vibelang-source": "./src/Plugins.ts",
       "default": "./.vibelang/js/src/Plugins.js"
     },
     "./Resolve": {
