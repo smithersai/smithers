@@ -154,7 +154,7 @@
     "@lezer/highlight": "1.2.3",
     "y-protocols": "1.0.6",
     "@smthrs/views": "workspace:*",
-    "vibelang-runtime": "file:../../../.vibelang-toolchain/vibelang-runtime-0.0.11-0316568e1eb7.tgz"
+    "vibelang-runtime": "file:../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "peerDependencies": {
     "react": "^19.2.8",
@@ -176,7 +176,7 @@
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
     "happy-dom": "20.13.2",
-    "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-1339d0a354a3.tgz",
-    "vibelang-unplugin": "file:../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-43f50ca2b19c.tgz"
+    "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-08394abdd788.tgz",
+    "vibelang-unplugin": "file:../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-45a3600458c6.tgz"
   }
 }
