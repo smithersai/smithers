@@ -1,3 +1,5 @@
+import { withRequestRay } from "./RequestRay.ts"
+import * as RepoRoles from "./github/RepoRoles.ts"
 import { BranchRoles } from "./branch/Access.ts"
 import * as MirrorRefresh from "./MirrorRefresh.ts"
 import * as RefReads from "./branch/RefReads.ts"
@@ -332,7 +334,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const startedAt = yield* Clock.currentTimeMillis
         const target = parseRead(path)
         const kind = target?.kind ?? "tree"
-        const fields: Record<string, string | number> = {}
+        const fields: Record<string, string | number | null> = {}
         const response = yield* Effect.gen(function* () {
           if (target === undefined || !isRepository(target.owner, target.name) || target.extra > 0) {
             return refuse(404, "not_found")
@@ -358,7 +360,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               const names = yield* Effect.gen(function* () {
                 const actor = yield* (yield* Sessions).resolve
                 return yield* RefReads.visible(repoId(target.owner, target.name), actor).pipe(Effect.provide(database))
-              }).pipe(Effect.mapError(() => new RepoReads.ReadRefused({ code: "unavailable" })))
+              }).pipe(Effect.mapError((error) => {
+                if (error instanceof RepoRoles.RoleRefused) Object.assign(fields, RepoRoles.refusalFields(error))
+                return new RepoReads.ReadRefused({ code: "unavailable" })
+              }))
               const refs = yield* reads.value.refs(target.owner, target.name, names)
               yield* MirrorRefresh.request(target.owner, target.name).pipe(Effect.catch(() => Effect.void))
               return refs
@@ -540,5 +545,5 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       return HttpServerResponse.empty({ status: 404 })
     })
 
-    return { fetch, reads, about: aboutSource }
+    return { fetch: withRequestRay(fetch), reads, about: aboutSource }
   })

@@ -57,6 +57,7 @@ interface RouteOptions {
   readonly database?: typeof unreachable
   /** Local development without the App: the session's role holds everywhere (worker/DevChatApi.ts). */
   readonly local?: boolean
+  readonly refreshCooldownSeconds?: number
   /** Which repositories the deployment syncs (worker/github/Api.ts `maySync`); unset, the answer doesn't say. */
   readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
   readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
@@ -85,7 +86,7 @@ const route = async (options: RouteOptions = {}) => {
     ...(options.github === undefined ? {} : { http: options.github.http }),
     ...(options.local === undefined ? {} : { local: options.local }),
     // Each refusal here is GitHub's own and the next request asks again: RepoRoles.test.ts tests the cooldown.
-    refreshCooldownSeconds: 0,
+    refreshCooldownSeconds: options.refreshCooldownSeconds ?? 0,
   }))
   const handler = HttpEffect.toWebHandler(
     make({
@@ -109,6 +110,8 @@ const route = async (options: RouteOptions = {}) => {
       Effect.runSync(
         Metric.value(Metric.withAttributes(requests, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
       ).count,
+    roleReadCount: (attributes: Record<string, string>) =>
+      Effect.runSync(Metric.value(Metric.withAttributes(RepoRoles.reads, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count,
     roleCount: (attributes: Record<string, string>) =>
       Effect.runSync(
         Metric.value(Metric.withAttributes(roleRequests, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
@@ -536,4 +539,68 @@ test("a public-read receipt stays separate from GitHub authority and the workspa
   expect([response.status, await response.json()]).toEqual([200, {
     role: null, workspaceRole: "member", own: false, readable: true,
   }])
+})
+
+
+test("fresh role failures and held cooldowns explain themselves once per read, correlated and content-free", async () => {
+  const github = scriptedGitHub("acme", "widgets")
+  const r = await route({ github, sessions: signedIn(person("admin")), refreshCooldownSeconds: 10 })
+  github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+  const rays = ["0123456789abcdef-SJC", "fedcba9876543210-SJC"]
+  for (const [index, path] of [WIDGETS, WIDGETS.replace("/home", "/role")].entries()) {
+    const response = await r.get(path, { headers: { "cf-ray": rays[index]!, "x-private-token": "PRIVATE_TOKEN", cookie: "PRIVATE_COOKIE" } })
+    expect(response.status).toBe(503)
+    expect(response.headers.get("x-smithers-ray")).toBe(rays[index])
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0)
+    expect(await response.json()).toEqual({ code: index === 0 ? "github_unavailable" : "unavailable" })
+  }
+  const reads = r.logs.filter(log => log.message === "github.repo_role")
+  expect(reads).toHaveLength(2)
+  expect(reads[0]!.annotations).toMatchObject({ code: "github_unavailable", stage: "permission", upstreamStatus: 502,
+    failureSource: "fresh", ray: rays[0], source: "refused", outcome: "github_unavailable" })
+  expect(reads[1]!.annotations).toMatchObject({ code: "unavailable", stage: "cooldown", upstreamStatus: null,
+    failureSource: "held_cooldown", ray: rays[1], source: "refused", outcome: "unavailable" })
+  for (const read of reads) expect(Number(read.annotations.retryAfterSeconds)).toBeGreaterThan(0)
+  for (const name of ["home.curated", "repo.role"]) {
+    const lines = r.logs.filter(log => log.message === name)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]!.annotations).toMatchObject({ failureSource: name === "home.curated" ? "fresh" : "held_cooldown" })
+  }
+  expect(r.roleReadCount({ source: "refused", outcome: "github_unavailable" })).toBe(1)
+  expect(r.roleReadCount({ source: "refused", outcome: "unavailable" })).toBe(1)
+  const serialized = JSON.stringify(r.logs)
+  for (const privateValue of [MAYA, "maya", "PRIVATE_TOKEN", "PRIVATE_COOKIE", ...github.minted.map(minted => minted.token)]) {
+    expect(serialized).not.toContain(privateValue)
+  }
+  expect(github.calls.filter(call => call.path.endsWith("/permission"))).toHaveLength(1)
+})
+
+
+test.each(["home", "role"])("%s keeps diagnostics when an unconfigured role read becomes a no-role answer", async routeName => {
+  const r = await route({ sessions: signedIn(person("admin")) })
+  const response = await r.get(`/api/repos/acme/widgets/${routeName}`, { headers: { "cf-ray": "0123456789abcdef-SJC" } })
+  expect(response.status).toBe(200)
+  const body = await response.json()
+  expect(body).not.toHaveProperty("refusal")
+  const expected = { code: "not_configured", stage: "configuration", upstreamStatus: null,
+    retryAfterSeconds: null, failureSource: "fresh", ray: "0123456789abcdef-SJC" }
+  expect(r.logs.filter(log => log.message === "github.repo_role")).toHaveLength(1)
+  expect(r.logs.find(log => log.message === "github.repo_role")?.annotations).toMatchObject(expected)
+  expect(r.logs.find(log => log.message === (routeName === "home" ? "home.curated" : "repo.role"))?.annotations).toMatchObject(expected)
+})
+
+test.each([
+  ["/access_tokens", 429, "installation_token", "rate_limited"],
+  ["/access_tokens", 502, "installation_token", "github_unavailable"],
+  ["/permission", 429, "permission", "rate_limited"],
+] as const)("role refusal at %s retains upstream %i", async (suffix, status, stage, code) => {
+  const github = scriptedGitHub("acme", "widgets")
+  github.faults.push({ match: (_, path) => path.endsWith(suffix), status, headers: { "retry-after": "7" } })
+  const r = await route({ github, sessions: signedIn(person("admin")) })
+  const response = await r.get(WIDGETS, { headers: { "cf-ray": "0123456789abcdef-SJC" } })
+  expect(response.status).toBe(status === 429 ? 429 : 503)
+  expect(await response.json()).toEqual({ code })
+  expect(r.logs.find(log => log.message === "github.repo_role")?.annotations).toMatchObject({
+    code, stage, upstreamStatus: status, failureSource: "fresh", ray: "0123456789abcdef-SJC",
+  })
 })

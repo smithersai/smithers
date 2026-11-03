@@ -618,7 +618,7 @@ class Devices {
     }
     // Every device's server, console and page errors, while their pages are still open: a closing page cancels its requests.
     const problemLog: Array<string> = []
-    expect.soft(this.problems.check(this.testInfo, problemLog), UNDECLARED).toEqual([])
+    expect.soft(await this.problems.check(this.testInfo, problemLog), UNDECLARED).toEqual([])
     const failed = this.testInfo.status !== this.testInfo.expectedStatus
     if (failed) {
       // Saved beside the test's videos and attached: each tab's browser and network log, screenshot, and what it showed.

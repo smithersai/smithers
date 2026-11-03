@@ -585,6 +585,33 @@ describe("another repository's stack (decision 0079)", () => {
     expect(await sql(`SELECT * FROM todos`)).toEqual([])
   })
 
+  test("four role refusals retain each ray and explain fresh failure versus held cooldown without recording the body", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+    const h = await onGitHub(github)
+    const body = commitBody({ title: "PRIVATE_TITLE", prompt: "PRIVATE_PROMPT" })
+    for (let index = 0; index < 4; index++) {
+      const ray = `0123456789abcde${index}-SJC`
+      const response = await post(h, body, { headers: { "content-type": "application/json", "cf-ray": ray, "x-smithers-device-person": MAYA, cookie: "PRIVATE_COOKIE" } }, OTHER)
+      expect(response.status).toBe(503)
+      expect(response.headers.get("x-smithers-ray")).toBe(ray)
+      expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0)
+      const code = index === 0 ? "github_unavailable" : "unavailable"
+      expect(await response.json()).toEqual({ code })
+      for (const record of ["github.repo_role", "stack.request"]) {
+        expect(h.line(record).at(-1)?.annotations).toMatchObject({ code, ray,
+          stage: index === 0 ? "permission" : "cooldown", upstreamStatus: index === 0 ? 502 : null,
+          failureSource: index === 0 ? "fresh" : "held_cooldown" })
+      }
+    }
+    expect(h.line("github.repo_role")).toHaveLength(4)
+    expect(h.line("stack.request")).toHaveLength(4)
+    expect(github.calls.filter(call => call.path.endsWith("/permission"))).toHaveLength(1)
+    expect(await sql("SELECT id FROM todos")).toEqual([])
+    const records = JSON.stringify(h.logs)
+    for (const value of [MAYA, "maya", "PRIVATE_TITLE", "PRIVATE_PROMPT", "PRIVATE_COOKIE", ...github.minted.map(value => value.token)]) expect(records).not.toContain(value)
+  })
+
   test("a role that changes between the read and the change refuses the change, recording nothing", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "write")

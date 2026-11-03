@@ -1185,3 +1185,27 @@ source. This covers summaries, sync metadata, triage, pending writes and TODOs;
 no issue text or credentials enter a receipt. Failed or cancelled loads never
 emit an applied receipt. The mobile audit retains both network and applied
 receipts, then measures the rendered controls.
+
+
+## Repository role refusals and request rays
+
+`github.repo_role` remains the single outcome line for every role read, including refusals that `/home` or `/role` can turn into a no-role answer. Its existing `smithers_github_repo_roles` counter keeps the same `source` and `outcome` labels; no parallel refusal counter is added. Request identifiers are never metric labels.
+
+Every refused read adds these fields to that structured warning:
+
+| Field | Meaning |
+| --- | --- |
+| `code` | The role refusal code, also retained as `outcome` |
+| `stage` | `configuration`, `allowlist`, `database` (client acquisition), `row_read`, `claim`, `account_read`, `app_auth`, `installation_token`, `permission`, `role_record`, `deadline`, or `cooldown` |
+| `upstreamStatus` | GitHub's HTTP status, or `null` when no status is known |
+| `retryAfterSeconds` | The role read's retry wait, or `null` when it specified none; route fallback waits remain unchanged |
+| `failureSource` | `fresh` for this request's failure; `held_cooldown` for an existing failed-read hold |
+| `ray` | The incoming `cf-ray`, or `none` outside an edge request |
+
+The row holds the refusal and remaining cooldown, not the original upstream status or a failure history. A held cooldown therefore reports `stage: cooldown` and `upstreamStatus: null`; it never invents a new upstream failure. Fresh failures retain their stage and status even when recording a cooldown changes the returned retry wait. The existing stack, repository refs, `repo.role`, and `home.curated` outcome lines carry the same fields when the role read refuses them. `/refs` still returns its existing `503 unavailable` response. Routes keep their existing admission, reads, statuses and bodies.
+
+API errors echo a valid incoming `cf-ray` as `x-smithers-ray`, following the app's `x-smithers-*` response-header convention. Existing request logs carry `ray` too. No ray is invented locally; malformed header content is omitted. Successful response representations are unchanged. To investigate an error, take its ray from the client and find the matching Workers outcome lines; `stage` separates database, installation-token, permission and deadline failures, while `failureSource` explains repeat refusals without another upstream request.
+
+The e2e problem log appends `code=<body code> x-smithers-ray=<ray>` to each undeclared 5xx. Separate rays remain separate lines, so a repeated stack failure retains each correlation identifier. Missing or unreadable JSON uses `code=unknown`; a missing ray uses `x-smithers-ray=none`. Only a bounded machine-readable top-level code and a valid ray are retained: no response bodies, arbitrary headers, query values, tokens, cookies, logins or additional person identifiers. Declared matches and allowed shape retries keep their existing text and counts. Error-body collection waits at most two seconds at teardown; status failures are recorded immediately even when their bodies never complete.
+
+Tests: `worker/home/Api.test.ts` verifies one existing role outcome line per fresh failure and held cooldown, fields, correlation, unchanged responses and metric counts, and absence of private person, login, cookie and token sentinels. `worker/RequestRay.test.ts` checks error-header propagation, validation and unchanged successes. `e2e/problems.test.ts` checks per-ray undeclared output, declared grouping, missing and malformed diagnostics, and private-content exclusion. `e2e/watch.test.ts` uses real HTTP and browser events to verify error-body collection during teardown and a body that never finishes.

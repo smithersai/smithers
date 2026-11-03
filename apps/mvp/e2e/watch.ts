@@ -3,7 +3,8 @@ import { appendFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { recordConsole } from "./console"
 import { DocumentRequests, nativeAccessControlURL } from "./cancellations"
-import { consoleErrorAnnotation, environmentAnnotations, pathOf, Problems, serverErrorAnnotation, type Observation, type Status, UNDECLARED } from "./problems"
+import { RAY_HEADER, rayOf } from "../src/requestRay.ts"
+import { bodyCodeOf, type ResponseDiagnostics, consoleErrorAnnotation, environmentAnnotations, pathOf, Problems, serverErrorAnnotation, type Observation, type Status, UNDECLARED } from "./problems"
 import { baseURL, DOT_ENV, dotEnvSets, meets, onThisMachine, target } from "./target"
 
 // Every browser context a test opens is watched from its first request (docs/infrastructure.md#server-and-console-errors):
@@ -20,6 +21,7 @@ export class Watched extends Problems {
   private readonly documents = new WeakMap<Page, DocumentRequests>()
   private readonly requestIds = new WeakMap<Request, number>()
   private requestSequence = 0
+  private readonly pendingDiagnostics = new Set<Promise<void>>()
 
   private document(page: Page): DocumentRequests {
     let history = this.documents.get(page)
@@ -61,7 +63,13 @@ export class Watched extends Problems {
       if (url.origin === this.origin && !request.isNavigationRequest()) trace.history.start(trace.id, request.url(), Date.now())
     })
     context.on("response", response => {
-      this.note({ kind: "response", method: response.request().method(), url: response.url(), status: response.status(), retryAfter: response.headers()["retry-after"] })
+      const headers = response.headers()
+      const diagnostics: ResponseDiagnostics = { ray: rayOf(headers[RAY_HEADER]) }
+      this.note({ kind: "response", method: response.request().method(), url: response.url(), status: response.status(), retryAfter: headers["retry-after"], diagnostics })
+      if (response.status() >= 500 && new URL(response.url()).origin === this.origin && headers["content-type"]?.includes("application/json")) {
+        const pending = response.json().then(body => { diagnostics.code = bodyCodeOf(body) }, () => {}).finally(() => this.pendingDiagnostics.delete(pending))
+        this.pendingDiagnostics.add(pending)
+      }
       const trace = this.trace(response.request())
       trace?.history.response(trace.id, response.status())
     })
@@ -122,7 +130,19 @@ export class Watched extends Problems {
    * The check, at a test's teardown: appends the list to `log` (the test's browser.log, saved when it fails) and returns
    * each problem the test didn't declare, for `expect.soft(…, UNDECLARED).toEqual([])`.
    */
-  check(testInfo: TestInfo, log: Array<string>): Array<string> {
+  async check(testInfo: Pick<TestInfo, "annotations">, log: Array<string>): Promise<Array<string>> {
+    // A broken or streaming error body must never hide its already-recorded status or hold teardown indefinitely.
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const endsAt = Date.now() + 2_000
+    try {
+      while (this.pendingDiagnostics.size > 0 && Date.now() < endsAt) {
+        await Promise.race([
+          Promise.allSettled([...this.pendingDiagnostics]),
+          new Promise<void>(resolve => { timeout = setTimeout(resolve, Math.max(0, endsAt - Date.now())) }),
+        ])
+        clearTimeout(timeout)
+      }
+    } finally { clearTimeout(timeout) }
     for (const candidate of this.nativeCandidates.splice(0)) {
       const cancelled = candidate.classify?.() === true
       this.cancellationRecords.push(`${cancelled ? "navigation cancellation" : "access-control"} ${candidate.receipt}`)
@@ -210,7 +230,7 @@ export const strictTest = base.extend<{ problems: Watched; strict: void }>({
       await use()
       if (testInfo.status === "skipped") return
       const log: Array<string> = []
-      expect.soft(problems.check(testInfo, log), UNDECLARED).toEqual([])
+      expect.soft(await problems.check(testInfo, log), UNDECLARED).toEqual([])
       if (testInfo.status === testInfo.expectedStatus) return
       const path = testInfo.outputPath("browser.log")
       await appendFile(path, `${log.join("\n")}\n`)

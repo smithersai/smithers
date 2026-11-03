@@ -1,3 +1,4 @@
+import { withRequestRay } from "../RequestRay.ts"
 import { canAsk } from "../Actor.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
@@ -202,7 +203,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const startedAt = yield* Clock.currentTimeMillis
-        const fields: Record<string, string | number> = {}
+        const fields: Record<string, string | number | null> = {}
         const response = yield* Effect.gen(function* () {
           if (request.method !== "GET") {
             fields.outcome = "method"
@@ -215,6 +216,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
           const resolved = yield* roles.resolve(who, repositoryNamed(`${target.owner}/${target.name}`)).pipe(Effect.result)
           if (resolved._tag === "Failure") {
             const { code, retryAfterSeconds } = resolved.failure
+            Object.assign(fields, RepoRoles.refusalFields(resolved.failure))
             fields.outcome = code
             return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
           }
@@ -263,7 +265,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
         const request = yield* HttpServerRequest.HttpServerRequest
         const runs = yield* Effect.serviceOption(Stack.TodoRuns)
         const startedAt = yield* Clock.currentTimeMillis
-        const fields: Record<string, string | number> = {}
+        const fields: Record<string, string | number | null> = {}
         const refused = (code: StackRefusal) => {
           fields.outcome = code
           return refusal(REFUSAL_STATUS[code], code)
@@ -296,6 +298,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
           const resolved = yield* roles.resolve(who, repositoryNamed(`${target.owner}/${target.name}`)).pipe(Effect.result)
           if (resolved._tag === "Failure") {
             const { code, retryAfterSeconds } = resolved.failure
+            Object.assign(fields, RepoRoles.refusalFields(resolved.failure))
             fields.outcome = code
             return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
           }
@@ -344,6 +347,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
             const again = yield* roles.refresh(who, repositoryNamed(`${target.owner}/${target.name}`), held.value).pipe(Effect.result)
             if (again._tag === "Failure") {
               const { code, retryAfterSeconds } = again.failure
+              Object.assign(fields, RepoRoles.refusalFields(again.failure))
               fields.outcome = code
               return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
             }
@@ -415,5 +419,5 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
       const target = parseStackPath(path)
       return target === undefined ? HttpServerResponse.empty({ status: 404 }) : yield* change(target)
     })
-    return { fetch }
+    return { fetch: withRequestRay(fetch) }
   })

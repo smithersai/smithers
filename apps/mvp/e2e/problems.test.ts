@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  bodyCodeOf,
   consoleErrorAnnotation,
   declarationsOf,
   declares,
@@ -222,8 +223,8 @@ describe("Problems", () => {
     it("fails a third on one shape, however the requests' queries differ", () => {
       const problems = noted(retry("items"), retry("items", "offset=-1"), retry("items"), retry("pulls"))
       expect(problems.undeclared([])).toEqual([
-        "503 GET /api/shapes/items?handle&live&offset retry-after ×2",
-        "503 GET /api/shapes/items?offset retry-after ×1",
+        "503 GET /api/shapes/items?handle&live&offset retry-after code=unknown x-smithers-ray=none ×2",
+        "503 GET /api/shapes/items?offset retry-after code=unknown x-smithers-ray=none ×1",
       ])
     })
 
@@ -234,7 +235,7 @@ describe("Problems", () => {
       ])
       expect(noted(retry(), retry(), retry()).report([])).toEqual([
         "problems (e2e/problems.ts):",
-        "  UNDECLARED 503 GET /api/shapes/items?handle&live&offset retry-after ×3",
+        "  UNDECLARED 503 GET /api/shapes/items?handle&live&offset retry-after code=unknown x-smithers-ray=none ×3",
       ])
     })
 
@@ -263,7 +264,7 @@ describe("Problems", () => {
     problems.note({ kind: "page", text: "boom" })
     problems.note(response(500, app("/api/shapes/items?offset=0_0&handle=h2")))
     expect(problems.list([])).toEqual([
-      { line: "500 GET /api/shapes/items?handle&offset", count: 2, declared: false, retried: false },
+      { line: "500 GET /api/shapes/items?handle&offset code=unknown x-smithers-ray=none", count: 2, declared: false, retried: false },
       { line: "page error: boom", count: 1, declared: false, retried: false },
     ])
   })
@@ -276,11 +277,38 @@ describe("Problems", () => {
     problems.note(response(500))
     problems.note(response(500))
     const annotations = [serverErrorAnnotation(503, "/api/auth/session")]
-    expect(problems.undeclared(annotations)).toEqual(["500 GET /api/shapes/items?handle&offset ×2"])
+    expect(problems.undeclared(annotations)).toEqual(["500 GET /api/shapes/items?handle&offset code=unknown x-smithers-ray=none ×2"])
     expect(problems.report(annotations)).toEqual([
       "problems (e2e/problems.ts):",
       "  declared 503 GET /api/auth/session ×1",
-      "  UNDECLARED 500 GET /api/shapes/items?handle&offset ×2",
+      "  UNDECLARED 500 GET /api/shapes/items?handle&offset code=unknown x-smithers-ray=none ×2",
     ])
   })
+})
+
+
+it("undeclared failures retain each body code and ray; declared matches retain their shape and counts", () => {
+  const problems = new Problems(ORIGIN)
+  for (const ray of ["0123456789abcdef-SJC", "fedcba9876543210-SJC"]) {
+    problems.note({ ...response(503, app("/api/repos/acme/widgets/stack?secret=PRIVATE_QUERY"), "POST"),
+      diagnostics: { code: bodyCodeOf({ code: "github_unavailable", token: "PRIVATE_TOKEN", body: "PRIVATE_BODY" }), ray } })
+  }
+  expect(problems.undeclared([])).toEqual([
+    "503 POST /api/repos/acme/widgets/stack?secret code=github_unavailable x-smithers-ray=0123456789abcdef-SJC ×1",
+    "503 POST /api/repos/acme/widgets/stack?secret code=github_unavailable x-smithers-ray=fedcba9876543210-SJC ×1",
+  ])
+  expect(problems.report([serverErrorAnnotation(503, "/api/repos/*/stack")])).toEqual([
+    "problems (e2e/problems.ts):", "  declared 503 POST /api/repos/acme/widgets/stack?secret ×2",
+  ])
+  const log = problems.report([]).join("\n")
+  for (const value of ["PRIVATE_QUERY", "PRIVATE_TOKEN", "PRIVATE_BODY"]) expect(log).not.toContain(value)
+})
+
+it("missing, non-JSON and malformed diagnostics keep the failure visible without copying private content", () => {
+  for (const body of [undefined, null, "PRIVATE_BODY", { message: "PRIVATE_BODY" }, { code: "private body\nPRIVATE_TOKEN" }, { code: 503 }, { code: "x".repeat(65) }]) {
+    expect(bodyCodeOf(body)).toBeUndefined()
+  }
+  const problems = new Problems(ORIGIN)
+  problems.note({ ...response(503, app("/api/repos/acme/widgets/home")), diagnostics: { code: "PRIVATE_BODY", ray: "PRIVATE_TOKEN" } })
+  expect(problems.undeclared([])).toEqual(["503 GET /api/repos/acme/widgets/home code=unknown x-smithers-ray=none ×1"])
 })

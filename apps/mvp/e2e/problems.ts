@@ -1,3 +1,5 @@
+import { RAY_HEADER, rayOf } from "../src/requestRay.ts"
+
 // What fails every e2e test unless the test declares it (docs/infrastructure.md#server-and-console-errors): a response
 // of 500 or above from the app's origin, a failed `/api/` request, a console error and a page error, from every page of
 // every browser context the test opened. On 2026-10-25 smithers.sh answered its shapes `500` 60 to 600 times an hour
@@ -23,16 +25,25 @@ export const SHAPE_RETRIES = 2
 /** What a declaration names: a response status, or `failed` for a request that got no response. */
 export type Status = number | "failed"
 
+/** Only the public error code and request ray, never the response body or other headers. */
+export interface ResponseDiagnostics { code?: string; ray?: string }
+
+/** JSON error codes have a bounded machine-readable spelling; HTML and arbitrary error messages stay out. */
+export const bodyCodeOf = (body: unknown): string | undefined => {
+  const code = typeof body === "object" && body !== null && "code" in body ? body.code : undefined
+  return typeof code === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : undefined
+}
+
 /** What a browser reported, as plain data. */
 export type Observation =
-  | { readonly kind: "response"; readonly method: string; readonly url: string; readonly status: number; readonly retryAfter?: string | undefined }
+  | { readonly kind: "response"; readonly method: string; readonly url: string; readonly status: number; readonly retryAfter?: string | undefined; readonly diagnostics?: ResponseDiagnostics }
   | { readonly kind: "failed"; readonly method: string; readonly url: string; readonly error: string }
   | { readonly kind: "console"; readonly text: string; readonly url: string | undefined }
   | { readonly kind: "page"; readonly text: string; readonly name?: string }
 
 /** A problem: its line in the list, and what a declaration matches it by. */
 export type Problem =
-  | { readonly kind: "server"; readonly status: Status; readonly path: string; readonly line: string; readonly shape?: string }
+  | { readonly kind: "server"; readonly status: Status; readonly path: string; readonly line: string; readonly shape?: string; readonly diagnostics?: ResponseDiagnostics }
   | { readonly kind: "console"; readonly line: string }
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
@@ -117,8 +128,8 @@ export const problemOf = (origin: string, observation: Observation): Problem | u
       const path = pathOf(observation.url)
       const line = `${observation.status} ${observation.method} ${path}`
       return shapeRetry(observation)
-        ? { kind: "server", status: observation.status, path, line: `${line} retry-after`, shape: pathnameOf(path) }
-        : { kind: "server", status: observation.status, path, line }
+        ? { kind: "server", status: observation.status, path, line: `${line} retry-after`, shape: pathnameOf(path), diagnostics: observation.diagnostics }
+        : { kind: "server", status: observation.status, path, line, diagnostics: observation.diagnostics }
     }
     case "failed": {
       const { error } = observation
@@ -212,6 +223,7 @@ export type Counted = { readonly line: string; readonly count: number; readonly 
 /** Every problem a test's browsers reported, counted by its line, in the order each first happened. */
 export class Problems {
   private readonly counts = new Map<string, { problem: Problem; count: number }>()
+  private sequence = 0
 
   constructor(readonly origin: string) {}
 
@@ -219,8 +231,9 @@ export class Problems {
   note(observation: Observation): void {
     const problem = problemOf(this.origin, observation)
     if (problem === undefined) return
-    const counted = this.counts.get(problem.line)
-    if (counted === undefined) this.counts.set(problem.line, { problem, count: 1 })
+    const key = problem.kind === "server" && problem.diagnostics !== undefined ? `${problem.line} #${++this.sequence}` : problem.line
+    const counted = this.counts.get(key)
+    if (counted === undefined) this.counts.set(key, { problem, count: 1 })
     else counted.count++
   }
 
@@ -231,12 +244,18 @@ export class Problems {
     // A shape's allowance spans its lines: the same shape's requests can name different query parameters.
     const retries = (shape: string) => counted.reduce((total, { problem, count }) =>
       problem.kind === "server" && problem.shape === shape ? total + count : total, 0)
-    return counted.map(({ problem, count }) => ({
-      line: problem.line,
-      count,
-      declared: declarations.some((declaration) => declares(declaration, problem)),
-      retried: problem.kind === "server" && problem.shape !== undefined && retries(problem.shape) <= SHAPE_RETRIES,
-    }))
+    const lines = new Map<string, Counted>()
+    for (const { problem, count } of counted) {
+      const declared = declarations.some((declaration) => declares(declaration, problem))
+      const retried = problem.kind === "server" && problem.shape !== undefined && retries(problem.shape) <= SHAPE_RETRIES
+      const details = !declared && !retried && problem.kind === "server" && typeof problem.status === "number" && problem.status >= 500
+        ? ` code=${bodyCodeOf({ code: problem.diagnostics?.code }) ?? "unknown"} ${RAY_HEADER}=${rayOf(problem.diagnostics?.ray) ?? "none"}`
+        : ""
+      const line = `${problem.line}${details}`
+      const prior = lines.get(line)
+      lines.set(line, { line, count: count + (prior?.count ?? 0), declared, retried })
+    }
+    return [...lines.values()]
   }
 
   /** The problems the test didn't declare, as `<line> ×<count>`: a passing test has none. */

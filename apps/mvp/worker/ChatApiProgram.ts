@@ -1,3 +1,4 @@
+import { withRequestRay } from "./RequestRay.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
@@ -521,6 +522,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         )
       }).pipe(
+        withRequestRay,
         Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
         // Every shape route calls Electric through the gateway's service binding in production (infra/ElectricUpstream.ts).
         Effect.provide(Layer.unwrap(Effect.map(Effect.service(Cloudflare.WorkerEnvironment), ElectricUpstream.upstream))),

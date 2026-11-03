@@ -1,3 +1,4 @@
+import { withRequestRay } from "../RequestRay.ts"
 import { Home } from "@smthrs/views"
 import { Clock, Effect, Metric, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -87,6 +88,7 @@ interface Decided {
   readonly role: Role | null
   readonly source: "signed_out" | "role" | "no_role_here"
   readonly refused?: RepoRoles.Refusal
+  readonly refusal?: RepoRoles.RoleRefused
 }
 
 /** The routes. They read who is asking from `Sessions`. */
@@ -103,7 +105,7 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
           Effect.map((resolved): Decided => ({ role: resolved.role, source: "role" })),
           Effect.catch((refused) =>
             RepoRoles.CANT_ACT.has(refused.code)
-              ? Effect.succeed<Decided>({ role: null, source: "no_role_here", refused: refused.code })
+              ? Effect.succeed<Decided>({ role: null, source: "no_role_here", refused: refused.code, refusal: refused })
               : Effect.fail(refused)
           ),
         ),
@@ -129,16 +131,18 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
         readonly hidden?: number
         readonly source?: "signed_out" | "role" | "no_role_here"
         readonly refused?: RepoRoles.Refusal
+        readonly refusal?: RepoRoles.RoleRefused
       },
     ) =>
       Effect.gen(function* () {
+        const { refusal, ...safeFields } = fields
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
         const audience = fields.audience ?? "none"
         yield* Metric.update(Metric.withAttributes(requests, { outcome: fields.outcome, audience }), 1)
         yield* Effect.annotateCurrentSpan({ "smithers.home.outcome": fields.outcome, "smithers.home.audience": audience })
         yield* Effect.logWithLevel(fields.outcome === "unavailable" || fields.outcome === "invalid" || fields.outcome === "role_unavailable" ? "Warn" : "Info")(
           "home.curated",
-        ).pipe(Effect.annotateLogs({ ...fields, status: response.status, durationMs }))
+        ).pipe(Effect.annotateLogs({ ...safeFields, ...(refusal === undefined ? {} : RepoRoles.refusalFields(refusal)), status: response.status, durationMs }))
         return response
       })
     if (request.method !== "GET") {
@@ -153,7 +157,7 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
     }
     const decided = yield* decide(actor.success, target).pipe(Effect.result)
     if (decided._tag === "Failure") {
-      return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code })
+      return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code, refusal: decided.failure })
     }
     const { role, ...why } = decided.success
     const ownView = audienceOf(role)
@@ -197,16 +201,18 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
         readonly own?: boolean
         readonly source?: Decided["source"]
         readonly refused?: RepoRoles.Refusal
+        readonly refusal?: RepoRoles.RoleRefused
       },
     ) =>
       Effect.gen(function* () {
+        const { refusal, ...safeFields } = fields
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
         const role = fields.role === undefined ? "none" : fields.role ?? "no_role"
         yield* Metric.update(Metric.withAttributes(roleRequests, { outcome: fields.outcome, role }), 1)
         yield* Effect.annotateCurrentSpan({ "smithers.role.outcome": fields.outcome, "smithers.role.role": role })
         yield* Effect.logWithLevel(fields.outcome === "answered" || fields.outcome === "method" ? "Info" : "Warn")(
           "repo.role",
-        ).pipe(Effect.annotateLogs({ ...fields, status: response.status, durationMs }))
+        ).pipe(Effect.annotateLogs({ ...safeFields, ...(refusal === undefined ? {} : RepoRoles.refusalFields(refusal)), status: response.status, durationMs }))
         return response
       })
     if (request.method !== "GET") {
@@ -221,7 +227,7 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
     }
     const decided = yield* decide(actor.success, target).pipe(Effect.result)
     if (decided._tag === "Failure") {
-      return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code })
+      return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code, refusal: decided.failure })
     }
     const own = repositoryOf(`${target.owner}/${target.name}`).id === roles.repository.id
     const workspaceRole = decided.success.source === "no_role_here" && Option.isSome(actor.success)
@@ -240,7 +246,7 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
   }).pipe(Effect.withSpan("repo.role"))
 
   return {
-    fetch: Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
-      parseRolePath(request.url.split("?")[0]!) === undefined ? home : role),
+    fetch: withRequestRay(Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+      parseRolePath(request.url.split("?")[0]!) === undefined ? home : role)),
   }
 }

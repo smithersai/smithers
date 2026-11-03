@@ -34,6 +34,7 @@ export class TokenUnavailable extends Schema.TaggedError<TokenUnavailable>()("@s
   reason: Schema.Literals(["sign_in_required", "refreshing", "app_not_installed", "not_allowed", "unavailable"]),
   retryAfterMillis: Schema.optional(Schema.Number),
   rateLimited: Schema.optional(Schema.Boolean),
+  upstreamStatus: Schema.optional(Schema.Number),
 }) {}
 
 /** What the tokens need: the App, and, when sign-in is configured, the session keys and the role check that refreshes. */
@@ -78,6 +79,7 @@ const unavailable = (error: unknown) => {
   const classified = classify(error)
   return new TokenUnavailable({
     reason: "unavailable",
+    ...(statusOf(error) === undefined ? {} : { upstreamStatus: statusOf(error) }),
     ...(classified.kind === "retry" && classified.retryAfterMillis !== undefined
       ? { retryAfterMillis: classified.retryAfterMillis }
       : {}),
@@ -128,7 +130,7 @@ export const make = (services: Services) => {
       if (Option.isSome(known)) return known.value
       const found = yield* services.app.installation(repository.owner, repository.name).pipe(
         Effect.mapError((error) =>
-          statusOf(error) === 404 ? new TokenUnavailable({ reason: "app_not_installed" }) : unavailable(error)
+          statusOf(error) === 404 ? new TokenUnavailable({ reason: "app_not_installed", upstreamStatus: 404 }) : unavailable(error)
         ),
       )
       yield* Store.rememberInstallation(repository.id, found.id).pipe(Effect.mapError(unavailable))
@@ -156,13 +158,13 @@ export const make = (services: Services) => {
       if (status === 404) {
         yield* Store.forgetInstallation(repository.id).pipe(Effect.mapError(unavailable))
         yield* counted("app", "app_not_installed", { access })
-        return yield* new TokenUnavailable({ reason: "app_not_installed" })
+        return yield* new TokenUnavailable({ reason: "app_not_installed", upstreamStatus: 404 })
       }
       // The App wasn't granted the permission (decision 0012 question 2): Will adds it in the App's settings. A 403
       // for GitHub's rate limit is no refusal: it passes on, retried.
       if (status === 422 || (status === 403 && !isRateLimited(minted.failure))) {
         yield* counted("app", "not_allowed", { access, status })
-        return yield* new TokenUnavailable({ reason: "not_allowed" })
+        return yield* new TokenUnavailable({ reason: "not_allowed", upstreamStatus: status })
       }
       yield* counted("app", "unavailable", { access, ...(status === undefined ? {} : { status }) })
       return yield* unavailable(minted.failure)

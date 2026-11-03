@@ -1236,3 +1236,19 @@ test("ephemeral ref listing failures stay private and never fall back to the ord
   expect(answer.status).toBe(200)
   expect(await answer.text()).not.toContain("private-ref")
 })
+
+
+test("refs retains a role refusal's diagnostics and ray while keeping its unavailable answer", async () => {
+  const h = await repoHarness(runtime, { branchRoles: Layer.succeed(BranchRoles, BranchRoles.of({
+    roleOn: () => Effect.fail(new RepoRoles.RoleRefused({ code: "rate_limited", stage: "permission", upstreamStatus: 429, retryAfterSeconds: 12 })),
+  })) })
+  await sql("INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/octocat/spoon-knife', 77)")
+  const ray = "0123456789abcdef-SJC"
+  const response = await h.fetch(refsRoute("octocat", "Spoon-Knife"), { headers: { "cf-ray": ray, cookie: "PRIVATE_COOKIE" } })
+  expect(response.status).toBe(503)
+  expect(response.headers.get("x-smithers-ray")).toBe(ray)
+  expect(await response.json()).toEqual({ code: "unavailable" })
+  expect(h.line("repo.refs").at(-1)?.annotations).toMatchObject({ code: "rate_limited", stage: "permission", upstreamStatus: 429,
+    retryAfterSeconds: 12, failureSource: "fresh", ray, status: 503 })
+  expect(JSON.stringify(h.logs)).not.toContain("PRIVATE_COOKIE")
+})

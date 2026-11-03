@@ -6,9 +6,10 @@ import { SqlClient } from "effect/sql"
 import { ROLES } from "../../src/features/auth/contract.ts"
 import type { Actor, Role } from "../Actor.ts"
 import { type Permission, roleOf } from "../GitHubAuth.ts"
-import { classify, isRateLimited, withToken } from "./Calls.ts"
+import { classify, isRateLimited, statusOf, withToken } from "./Calls.ts"
 import { type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import * as Tokens from "./Tokens.ts"
+import { requestRay } from "../RequestRay.ts"
 import * as FeedLocks from "../FeedLocks.ts"
 
 // A person's role on one repository (decision 0079). On the deployment's own repository (`GITHUB_REPOSITORY`) it is
@@ -61,10 +62,25 @@ export const REFUSALS = {
 } as const
 export type Refusal = keyof typeof REFUSALS
 
+/** Finite operation names only: provider messages and SQL text never enter diagnostics. */
+const stages = ["configuration", "allowlist", "database", "row_read", "claim", "account_read", "app_auth", "installation_token", "permission", "role_record", "deadline", "cooldown"] as const
+
 export class RoleRefused extends Schema.TaggedError<RoleRefused>()("@smthrs/mvp/github/RoleRefused", {
   code: Schema.Literals(Object.keys(REFUSALS) as Array<Refusal>),
   retryAfterSeconds: Schema.optional(Schema.Number),
+  stage: Schema.optional(Schema.Literals(stages)),
+  upstreamStatus: Schema.optional(Schema.Number),
+  cooldown: Schema.optional(Schema.Boolean),
 }) {}
+
+/** The existing role-read outcome line's content-free refusal fields, also used by route outcome lines. */
+export const refusalFields = (refused: RoleRefused) => ({
+  code: refused.code,
+  stage: refused.stage ?? "database",
+  upstreamStatus: refused.upstreamStatus ?? null,
+  retryAfterSeconds: refused.retryAfterSeconds ?? null,
+  failureSource: refused.cooldown === true ? "held_cooldown" : "fresh",
+})
 
 /**
  * The refusals that say the deployment can't act on the repository, so nobody holds a role GitHub gives there: no App
@@ -245,7 +261,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const fromGitHub = (configured: NonNullable<Option.Option.Value<typeof app>>, repository: Repository, login: string) =>
       Effect.gen(function* () {
         const tokens = Tokens.make({
-          app: yield* configured.auth.pipe(Effect.mapError(refusedFor)),
+          app: yield* configured.auth.pipe(Effect.mapError((error) => refusedFor(error, "app_auth"))),
           // Installation tokens only: no session's token to refresh.
           keys: Option.none(),
           refresh: Function.constant(Effect.void),
@@ -253,22 +269,24 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const token = yield* tokens.forInstallation(repository, "metadata").pipe(
           Effect.mapError((error) =>
             error.reason === "app_not_installed"
-              ? new RoleRefused({ code: "app_not_installed" })
+              ? new RoleRefused({ code: "app_not_installed", stage: "installation_token", upstreamStatus: error.upstreamStatus })
               : new RoleRefused({
                 code: error.rateLimited === true ? "rate_limited" : "github_unavailable",
+                stage: "installation_token",
+                upstreamStatus: error.upstreamStatus,
                 ...waitOf(error.retryAfterMillis),
               })
           ),
         )
         return yield* GitHub.Collaborators.permission(repository.owner, repository.name, login).pipe(
           withToken(token, configured.config.apiBaseUrl),
-          Effect.mapError(refusedFor),
+          Effect.mapError((error) => refusedFor(error, "permission")),
         )
       }).pipe(client)
 
     /** A query of `fromRow`'s: Postgres failing is `unavailable`. */
-    const inDatabase = <A, X>(effect: Effect.Effect<A, X, SqlClient.SqlClient>) =>
-      Effect.mapError(effect, () => new RoleRefused({ code: "unavailable" }))
+    const inDatabase = <A, X>(effect: Effect.Effect<A, X, SqlClient.SqlClient>, stage: NonNullable<RoleRefused["stage"]> = "database") =>
+      Effect.mapError(effect, () => new RoleRefused({ code: "unavailable", stage }))
 
     /** The role and where it came from (`session`, `cached`, `github`, `refresh`, `reused`). */
     const decide = (actor: Actor, repository: Repository, read?: Held) =>
@@ -279,10 +297,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         }
         if (Option.isNone(app)) {
           if (options.local === true) return { source: "local", resolved: { role: uninstalled(actor, repository), held: Option.none<Held>() } }
-          return yield* new RoleRefused({ code: "not_configured" })
+          return yield* new RoleRefused({ code: "not_configured", stage: "configuration" })
         }
         if (Option.isSome(allowedIds) && !allowedIds.value.has(repository.id)) {
-          return yield* new RoleRefused({ code: "not_found" })
+          return yield* new RoleRefused({ code: "not_found", stage: "allowlist" })
         }
         // One Postgres client for the reads, the App's installation and the record; one that can't be had is
         // `unavailable`.
@@ -301,7 +319,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // The first read of the row, bounded by Postgres itself at the request's deadline (`bounded`), so a lock on the
         // table can't hold it past the deadline whatever the client's cancellation does. Only a row that isn't fresh goes
         // on to `readExpired`.
-        const state = yield* within(endsAt, inDatabase(readState(repository.id, actor.subject.id, undefined)))
+        const state = yield* within(endsAt, inDatabase(readState(repository.id, actor.subject.id, undefined), "row_read"))
         if (Option.isSome(state.fresh)) return { source: "cached", resolved: heldBy(repository, actor, state.fresh.value) }
         return yield* readExpired(actor, repository, configured, undefined, "github", endsAt)
       })
@@ -338,27 +356,27 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // after it, each wait on Postgres included (`within`).
         const cleanup = Math.min(CLEANUP_MILLIS, deadline / 4)
         const left = Effect.map(Clock.currentTimeMillis, (now) => endsAt - now)
-        const unavailable = new RoleRefused({ code: "unavailable", retryAfterSeconds: 1 })
+        const unavailable = new RoleRefused({ code: "unavailable", retryAfterSeconds: 1, stage: "deadline" })
         let pause = READ_POLL_MILLIS
         while (true) {
           // One read of the row: a fresh read newer than this request's, or the claim another holds.
-          const state = yield* within(endsAt, inDatabase(readState(repoId, personId, after)))
+          const state = yield* within(endsAt, inDatabase(readState(repoId, personId, after), "row_read"))
           if (Option.isSome(state.fresh)) return { source: "reused", resolved: heldBy(repository, actor, state.fresh.value) }
           if (state.claim?.failed === true) {
-            return yield* new RoleRefused({ code: state.claim.refusal, retryAfterSeconds: Math.max(1, Math.ceil(state.claim.remainingSeconds)) })
+            return yield* new RoleRefused({ code: state.claim.refusal, stage: "cooldown", cooldown: true, retryAfterSeconds: Math.max(1, Math.ceil(state.claim.remainingSeconds)) })
           }
           if (state.claim === undefined) {
             const remaining = yield* left
             if (remaining <= cleanup) return yield* unavailable
             // Claimed only while the row still needs reading, its lease from when the claim got the row, outliving this
             // request's deadline a little so a worker that died mid-read frees the row soon after.
-            const claimed = yield* within(endsAt, inDatabase(claimRead(repoId, personId, after, remaining + 2_000)))
+            const claimed = yield* within(endsAt, inDatabase(claimRead(repoId, personId, after, remaining + 2_000), "claim"))
             if (Option.isSome(claimed)) {
               const lease = claimed.value
               const read = yield* fromGitHubRecorded(actor, repository, configured).pipe(
                 Effect.timeoutOrElse({
                   duration: Duration.millis(Math.max(0, (yield* left) - cleanup)),
-                  orElse: () => Effect.fail(new RoleRefused({ code: "unavailable" })),
+                  orElse: () => Effect.fail(new RoleRefused({ code: "unavailable", stage: "deadline" })),
                 }),
                 Effect.result,
               )
@@ -393,7 +411,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 if (!cools) return yield* read.failure
                 // What is left of the hold, as the database recorded it; else as this Worker counts it.
                 const leftMillis = Option.isSome(held) ? held.value : yield* remainingMillis
-                return yield* new RoleRefused({ code: read.failure.code, retryAfterSeconds: Math.max(1, Math.ceil(leftMillis / 1000)) })
+                return yield* new RoleRefused({ ...read.failure, retryAfterSeconds: Math.max(1, Math.ceil(leftMillis / 1000)) })
               }
               return { source, resolved: read.success }
             }
@@ -418,7 +436,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // Who the person is on GitHub is sign-in's `people` row to say, never a request: their login to ask about and
         // their account's id, which the answer must name, because a login can change hands after a rename. `asOf` is
         // when this read began: an older read never overwrites a newer one.
-        const { asOf, account } = yield* inDatabase(observe(personId))
+        const { asOf, account } = yield* inDatabase(observe(personId), "account_read")
         const answer = Option.isNone(account)
           ? Option.none<GitHub.Collaborators.Permission>()
           : yield* fromGitHub(configured, repository, account.value.login)
@@ -432,10 +450,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // What decides is the row as it stands after this read: a later read's, when one already landed.
         const kept = yield* inDatabase(
           remember(repository.id, personId, sameAccount ? roleOf(permissionOf(answer.value)) : null, asOf),
+          "role_record",
         )
         // A read slow enough that its row expired before it returned decides nothing: decision 0079's five minutes run
         // from when the read began.
-        if (!kept.fresh) return yield* new RoleRefused({ code: "unavailable" })
+        if (!kept.fresh) return yield* new RoleRefused({ code: "unavailable", stage: "role_record" })
         return heldBy(repository, actor, kept)
       })
 
@@ -447,9 +466,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const source = decided._tag === "Success" ? decided.success.source : "refused"
         const outcome = decided._tag === "Success" ? decided.success.resolved.role ?? "none" : decided.failure.code
         yield* Metric.update(Metric.withAttributes(reads, { source, outcome }), 1)
+        const ray = yield* requestRay
         yield* Effect.logWithLevel(decided._tag === "Success" ? "Info" : "Warn")("github.repo_role").pipe(
           Effect.annotateLogs({
             repoId: repository.id,
+            ray: ray ?? "none",
+            ...(decided._tag === "Failure" ? refusalFields(decided.failure) : {}),
             source,
             outcome,
             durationMs: (yield* Clock.currentTimeMillis) - startedAt,
@@ -494,10 +516,10 @@ const waitOfError = (error: unknown): number | undefined =>
   (classify(error) as { readonly retryAfterMillis?: number }).retryAfterMillis
 
 /** A failed GitHub call as a refusal: its rate limit, or GitHub not answering. */
-const refusedFor = (error: unknown) =>
+const refusedFor = (error: unknown, stage: "app_auth" | "permission") =>
   isRateLimited(error)
-    ? new RoleRefused({ code: "rate_limited", ...waitOf(waitOfError(error)) })
-    : new RoleRefused({ code: "github_unavailable" })
+    ? new RoleRefused({ code: "rate_limited", stage, upstreamStatus: statusOf(error), ...waitOf(waitOfError(error)) })
+    : new RoleRefused({ code: "github_unavailable", stage, upstreamStatus: statusOf(error) })
 
 /** `row` as what decides: its role, and the row a write's transaction must still find. */
 const heldBy = (repository: Repository, actor: Actor, row: { readonly role: Role | null; readonly checkedAt: string }): Resolved => ({
@@ -510,7 +532,7 @@ const within = <A, R>(endsAt: number, effect: Effect.Effect<A, RoleRefused, R>) 
   Effect.flatMap(Clock.currentTimeMillis, (now) =>
     effect.pipe(Effect.timeoutOrElse({
       duration: Duration.millis(Math.max(0, endsAt - now)),
-      orElse: () => Effect.fail(new RoleRefused({ code: "unavailable", retryAfterSeconds: 1 })),
+      orElse: () => Effect.fail(new RoleRefused({ code: "unavailable", retryAfterSeconds: 1, stage: "deadline" })),
     })))
 
 /**

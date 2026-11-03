@@ -322,7 +322,7 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void; p
       const failures = crashes.failure === undefined ? [] : [crashes.failure]
       describeCrashes(testInfo, failures)
       expect.soft(failures, failures.join("\n") || "no page crashed").toEqual([])
-      expect.soft(problems.check(testInfo, log), UNDECLARED).toEqual([])
+      expect.soft(await problems.check(testInfo, log), UNDECLARED).toEqual([])
       if (!page.isClosed() && crashes.failure === undefined) expect(await spinnersSeen(page), "the page never showed a loading state").toEqual([])
       if (testInfo.status !== testInfo.expectedStatus) {
         await testInfo.attach("browser-log", { path: await writeLog(testInfo.outputPath("browser.log"), log), contentType: "text/plain" })
