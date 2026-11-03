@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import * as Cancellation from "../examples/cancellation.ts"
-import * as Quickstart from "../examples/quickstart.ts"
+import * as Cancellation from "../examples/cancellation.vibe"
+import * as Quickstart from "../examples/quickstart.vibe"
 
 describe("examples", () => {
   it.effect("quickstart settles the run as completed with the final state and owner cleared", () =>

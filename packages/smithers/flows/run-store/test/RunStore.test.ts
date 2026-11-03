@@ -4,7 +4,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import {
   heartbeatInterval,
   heartbeatLoop,

@@ -4,7 +4,7 @@ import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
 import { Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 
 const database = Layer.provideMerge(Migrations.layer, TestDatabase.layer)
 const layer = Layer.provideMerge(

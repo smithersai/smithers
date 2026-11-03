@@ -19,7 +19,7 @@ import { TestClock } from "effect/testing"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { vi } from "vitest"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import {
   heartbeatInterval,
   heartbeatLoop,

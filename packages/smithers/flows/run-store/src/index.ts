@@ -42,10 +42,10 @@ export * as Ownership from "./Ownership.ts"
  * @category services
  * @since 0.1.0
  */
-export * as AttemptStore from "./AttemptStore.ts"
+export * as AttemptStore from "./AttemptStore.vibe"
 
 /**
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"

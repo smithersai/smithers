@@ -19,7 +19,6 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as SqlError from "effect/sql/SqlError"
 import * as Boundary from "./internal/Boundary.ts"
 import { observeExit, observeOutcome } from "./internal/SpanOutcome.ts"
 
@@ -316,8 +315,8 @@ export type FinishResult =
  * @since 0.1.0
  */
 export interface Service {
-  readonly put: (attempt: Attempt, owner: OwnerId) => Effect.Effect<PutResult, AttemptStoreError>
-  readonly get: (id: AttemptId) => Effect.Effect<Option.Option<Attempt>, AttemptStoreError>
+  readonly put: (attempt: Attempt, owner: OwnerId) => PutResult!AttemptStoreError
+  readonly get: (id: AttemptId) => Option.Option<Attempt>!AttemptStoreError
   /**
    * Every attempt row of one run, ordered by step key digest and attempt, in
    * one read: what `get` answers for each, all at once. A resumed run's
@@ -327,7 +326,7 @@ export interface Service {
    * Optional: a store that cannot read a run's rows at once omits it, and its
    * callers read each attempt with `get`.
    */
-  readonly listRun?: ((runId: string) => Effect.Effect<ReadonlyArray<Attempt>, AttemptStoreError>) | undefined
+  readonly listRun?: ((runId: string) => ReadonlyArray<Attempt>!AttemptStoreError) | undefined
   readonly heartbeat: (
     runId: string,
     stepKeyDigest: string,
@@ -335,8 +334,8 @@ export interface Service {
     owner: OwnerId,
     nowMs: number,
     checkpoint?: JsonValue
-  ) => Effect.Effect<HeartbeatResult, AttemptStoreError>
-  readonly finish: (attempt: FinishAttempt, owner: OwnerId) => Effect.Effect<FinishResult, AttemptStoreError>
+  ) => HeartbeatResult!AttemptStoreError
+  readonly finish: (attempt: FinishAttempt, owner: OwnerId) => FinishResult!AttemptStoreError
   /**
    * Rewrites opaque fields without competing for the attempt lifecycle: a
    * patch never moves `state`, so executors record response text, worktree
@@ -353,7 +352,7 @@ export interface Service {
     id: AttemptId,
     patch: AttemptPatch,
     owner: OwnerId
-  ) => Effect.Effect<PatchResult, AttemptStoreError>
+  ) => PatchResult!AttemptStoreError
 }
 
 /**
@@ -413,7 +412,7 @@ const encode = (
   value: unknown,
   field: string,
   maxBytes?: number | undefined
-): Effect.Effect<string, AttemptStoreError> =>
+): string!AttemptStoreError =>
   Effect.suspend(() => {
     const admitted = Boundary.admitJson(value, jsonLimits(maxBytes))
     return admitted.ok
@@ -422,8 +421,7 @@ const encode = (
   })
 
 const encodeOptionalWith =
-  (method: AttemptStoreMethod) =>
-  (value: unknown | undefined, field: string): Effect.Effect<string | null, AttemptStoreError> =>
+  (method: AttemptStoreMethod) => (value: unknown | undefined, field: string): string | null!AttemptStoreError =>
     value === undefined ? Effect.succeed(null) : encode(method, value, field)
 
 const defaultMaxCheckpointBytes = 1024 * 1024
@@ -431,8 +429,7 @@ const defaultMaxCheckpointBytes = 1024 * 1024
 const defaultInProgressStates: ReadonlyArray<string> = ["running"]
 
 const encodeCheckpointWith =
-  (method: AttemptStoreMethod, maxBytes: number) =>
-  (value: unknown | undefined): Effect.Effect<string | null, AttemptStoreError> =>
+  (method: AttemptStoreMethod, maxBytes: number) => (value: unknown | undefined): string | null!AttemptStoreError =>
     value === undefined ? Effect.succeed(null) : encode(method, value, "checkpoint", maxBytes)
 
 const decode = (
@@ -440,7 +437,7 @@ const decode = (
   value: string | null,
   field: string,
   maxBytes?: number | undefined
-): Effect.Effect<JsonValue | undefined, AttemptStoreError> =>
+): JsonValue | undefined!AttemptStoreError =>
   Effect.suspend(() => {
     if (value === null) return Effect.succeed(undefined)
     const admitted = Boundary.admitJsonText(value, jsonLimits(maxBytes))
@@ -454,11 +451,11 @@ const decodeRequired = (
   value: string,
   field: string,
   maxBytes?: number | undefined
-): Effect.Effect<JsonValue, AttemptStoreError> =>
+): JsonValue!AttemptStoreError =>
   // A non-null SQL column cannot take `decode`'s missing-value branch.
-  decode(method, value, field, maxBytes) as Effect.Effect<JsonValue, AttemptStoreError>
+  decode(method, value, field, maxBytes) as JsonValue!AttemptStoreError
 
-const validateId = (method: AttemptStoreMethod, id: AttemptId): Effect.Effect<void, AttemptStoreError> =>
+const validateId = (method: AttemptStoreMethod, id: AttemptId): void!AttemptStoreError =>
   Boundary.isDurableText(id.runId) &&
     Boundary.isDurableText(id.stepKeyDigest) &&
     Number.isSafeInteger(id.attempt) &&
@@ -503,7 +500,7 @@ const inspectRecord = (
  * predicate, and fence comparison reads this copy, so an accessor, a proxy, or
  * a mutation during an await cannot put two different owners into one write.
  */
-const snapshotOwner = (method: AttemptStoreMethod, input: OwnerId): Effect.Effect<OwnerId, AttemptStoreError> =>
+const snapshotOwner = (method: AttemptStoreMethod, input: OwnerId): OwnerId!AttemptStoreError =>
   Effect.suspend(() => {
     try {
       const values = inspectRecord(input, ["hostId", "pid", "nonce"], [], "owner")
@@ -555,7 +552,7 @@ const inspectIdRecord = (input: unknown, field: string): Readonly<Record<string,
   return output
 }
 
-const snapshotId = (method: AttemptStoreMethod, input: AttemptId): Effect.Effect<AttemptId, AttemptStoreError> =>
+const snapshotId = (method: AttemptStoreMethod, input: AttemptId): AttemptId!AttemptStoreError =>
   Effect.suspend(() => {
     try {
       const values = inspectIdRecord(input, "attempt id")
@@ -570,7 +567,7 @@ const snapshotId = (method: AttemptStoreMethod, input: AttemptId): Effect.Effect
     }
   })
 
-const snapshotAttempt = (method: AttemptStoreMethod, input: Attempt): Effect.Effect<Attempt, AttemptStoreError> =>
+const snapshotAttempt = (method: AttemptStoreMethod, input: Attempt): Attempt!AttemptStoreError =>
   Effect.suspend(() => {
     try {
       const values = inspectRecord(
@@ -602,9 +599,8 @@ const snapshotAttempt = (method: AttemptStoreMethod, input: Attempt): Effect.Eff
         ...(outcome === undefined ? {} : { outcome: outcome.value }),
         meta: meta.value
       })
-      return Schema.decodeUnknownEffect(Attempt)(candidate).pipe(
-        Effect.mapError(() => error(method, "invalid_attempt", "attempt violates the persistence contract"))
-      )
+      return Schema.decodeUnknownEffect(Attempt)(candidate)
+        |> Effect.mapError(%, () => error(method, "invalid_attempt", "attempt violates the persistence contract"))
     } catch {
       return Effect.fail(error(method, "invalid_attempt", "attempt must be an inert data record"))
     }
@@ -613,7 +609,7 @@ const snapshotAttempt = (method: AttemptStoreMethod, input: Attempt): Effect.Eff
 const snapshotFinish = (
   method: AttemptStoreMethod,
   input: FinishAttempt
-): Effect.Effect<FinishAttempt, AttemptStoreError> =>
+): FinishAttempt!AttemptStoreError =>
   Effect.suspend(() => {
     try {
       const values = inspectRecord(
@@ -637,7 +633,7 @@ const snapshotFinish = (
         ...(attemptError === undefined ? {} : { error: attemptError.value }),
         ...(outcome === undefined ? {} : { outcome: outcome.value }),
         ...(meta === undefined ? {} : { meta: meta.value })
-      })).pipe(Effect.mapError(() => error(method, "invalid_attempt", "finished attempt violates the contract")))
+      })) |> Effect.mapError(%, () => error(method, "invalid_attempt", "finished attempt violates the contract"))
     } catch {
       return Effect.fail(error(method, "invalid_attempt", "finished attempt must be an inert data record"))
     }
@@ -646,7 +642,7 @@ const snapshotFinish = (
 const snapshotPatch = (
   method: AttemptStoreMethod,
   input: AttemptPatch
-): Effect.Effect<AttemptPatch, AttemptStoreError> =>
+): AttemptPatch!AttemptStoreError =>
   Effect.suspend(() => {
     try {
       const values = inspectRecord(input, [], ["checkpoint", "error", "outcome", "meta"], "attempt patch")
@@ -680,7 +676,7 @@ interface ResolvedOptions {
 const snapshotOptions = (
   method: AttemptStoreMethod,
   input: Options
-): Effect.Effect<ResolvedOptions, AttemptStoreError> =>
+): ResolvedOptions!AttemptStoreError =>
   Effect.suspend(() => {
     try {
       const values = inspectRecord(
@@ -781,34 +777,30 @@ const mapPersistenceError = (method: AttemptStoreMethod) => (cause: unknown): At
   )
 }
 
-const decodeRow = (method: AttemptStoreMethod, input: unknown): Effect.Effect<Attempt, AttemptStoreError> =>
-  Schema.decodeUnknownEffect(AttemptRow)(input).pipe(
-    Effect.mapError(() => error(method, "decode_failed", "could not decode flows_attempts row")),
-    Effect.flatMap((row) =>
-      Effect.all({
-        checkpoint: decode(method, row.checkpoint_json, "checkpoint_json", maximumCheckpointBytes),
-        error: decode(method, row.error_json, "error_json"),
-        outcome: decode(method, row.outcome_json, "outcome_json"),
-        meta: decodeRequired(method, row.meta_json, "meta_json")
-      }).pipe(
-        Effect.map(({ checkpoint, error: attemptError, outcome, meta }) =>
-          Object.freeze({
-            runId: row.run_id,
-            stepKeyDigest: row.step_key_digest,
-            attempt: row.attempt,
-            state: row.state,
-            startedAtMs: row.started_at_ms,
-            ...(row.finished_at_ms === null ? {} : { finishedAtMs: row.finished_at_ms }),
-            ...(row.heartbeat_at_ms === null ? {} : { heartbeatAtMs: row.heartbeat_at_ms }),
-            ...(checkpoint === undefined ? {} : { checkpoint }),
-            ...(attemptError === undefined ? {} : { error: attemptError }),
-            ...(outcome === undefined ? {} : { outcome }),
-            meta
-          })
-        )
-      )
-    )
-  )
+const decodeRow = (method: AttemptStoreMethod, input: unknown): Attempt!AttemptStoreError =>
+  Schema.decodeUnknownEffect(AttemptRow)(input)
+  |> Effect.mapError(%, () => error(method, "decode_failed", "could not decode flows_attempts row"))
+  |> Effect.flatMap(%, (row) =>
+    Effect.all({
+      checkpoint: decode(method, row.checkpoint_json, "checkpoint_json", maximumCheckpointBytes),
+      error: decode(method, row.error_json, "error_json"),
+      outcome: decode(method, row.outcome_json, "outcome_json"),
+      meta: decodeRequired(method, row.meta_json, "meta_json")
+    })
+    |> Effect.map(%, ({ checkpoint, error: attemptError, outcome, meta }) =>
+      Object.freeze({
+        runId: row.run_id,
+        stepKeyDigest: row.step_key_digest,
+        attempt: row.attempt,
+        state: row.state,
+        startedAtMs: row.started_at_ms,
+        ...(row.finished_at_ms === null ? {} : { finishedAtMs: row.finished_at_ms }),
+        ...(row.heartbeat_at_ms === null ? {} : { heartbeatAtMs: row.heartbeat_at_ms }),
+        ...(checkpoint === undefined ? {} : { checkpoint }),
+        ...(attemptError === undefined ? {} : { error: attemptError }),
+        ...(outcome === undefined ? {} : { outcome }),
+        meta
+      })))
 
 /**
  * Builds the SQL-backed attempt store under an explicit policy.
@@ -818,17 +810,16 @@ const decodeRow = (method: AttemptStoreMethod, input: unknown): Effect.Effect<At
  */
 export const makeWith = (
   options: Options = {}
-): Effect.Effect<Service, AttemptStoreError, DurableWriter | SqlClient.SqlClient> =>
-  Effect.gen(function*() {
-    const sql = yield* Effect.service(SqlClient.SqlClient)
-    const writer = yield* DurableWriter
+): Service!AttemptStoreError!DurableWriter | SqlClient.SqlClient =>
+  effect {
+    const sql = try Effect.service(SqlClient.SqlClient)
+    const writer = try DurableWriter
     // Every write reads and changes one run's attempt rows and reads that run's
     // row for the fence, so it writes the run's partition
     // (`packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md`).
-    const writeRun = <A, E, R>(runId: string, effect: Effect.Effect<A, E, R>) =>
-      writer.write(effect, { partition: runId })
+    const writeRun = <A, E, R>(runId: string, effect: A!E!R) => writer.write(effect, { partition: runId })
 
-    const configured = yield* snapshotOptions("makeWith", options)
+    const configured = try snapshotOptions("makeWith", options)
     const inProgressStates = configured.inProgressStates
     const maxCheckpointBytes = configured.maxCheckpointBytes
     const upsert = configured.putMode === "upsert"
@@ -841,23 +832,23 @@ export const makeWith = (
     const inProgress = sql.in("state", [...inProgressStates])
 
     const put: Service["put"] = Effect.fn("AttemptStore.put")((input, ownerInput) =>
-      Effect.gen(function*() {
-        const owner = yield* snapshotOwner("put", ownerInput)
-        const attempt = yield* snapshotAttempt("put", input)
-        yield* Effect.annotateCurrentSpan({
+      effect {
+        const owner = try snapshotOwner("put", ownerInput)
+        const attempt = try snapshotAttempt("put", input)
+        try Effect.annotateCurrentSpan({
           runId: attempt.runId,
           stepKeyDigest: attempt.stepKeyDigest,
           attempt: attempt.attempt,
           ownerHostId: owner.hostId
         })
-        const checkpoint = yield* putEncodeCheckpoint(attempt.checkpoint)
-        const attemptError = yield* putEncodeOptional(attempt.error, "error")
-        const outcome = yield* putEncodeOptional(attempt.outcome, "outcome")
-        const meta = yield* encode("put", attempt.meta, "meta")
-        return yield* writeRun(
+        const checkpoint = try putEncodeCheckpoint(attempt.checkpoint)
+        const attemptError = try putEncodeOptional(attempt.error, "error")
+        const outcome = try putEncodeOptional(attempt.outcome, "outcome")
+        const meta = try encode("put", attempt.meta, "meta")
+        return try (writeRun(
           attempt.runId,
-          Effect.gen(function*() {
-            const inserted = yield* sql<{ readonly attempt: number }>`
+          effect {
+            const inserted = try sql<{ readonly attempt: number }>`
             INSERT INTO flows_attempts (
               run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
               heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
@@ -882,7 +873,7 @@ export const makeWith = (
             }
 
             if (upsert) {
-              const replaced = yield* sql<{ readonly attempt: number }>`
+              const replaced = try sql<{ readonly attempt: number }>`
               UPDATE flows_attempts
               SET
                 state = ${attempt.state},
@@ -912,7 +903,7 @@ export const makeWith = (
               }
             }
 
-            const runRows = yield* sql<RunFenceRow>`
+            const runRows = try sql<RunFenceRow>`
             SELECT status, owner_host_id, owner_pid, owner_nonce
             FROM flows_runs WHERE run_id = ${attempt.runId}
           `
@@ -923,7 +914,7 @@ export const makeWith = (
               return { _tag: "FenceLost" } as const
             }
 
-            const rows = yield* sql<AttemptRow>`
+            const rows = try sql<AttemptRow>`
             SELECT run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
               heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
             FROM flows_attempts
@@ -933,52 +924,50 @@ export const makeWith = (
           `
             /* v8 ignore next -- the owned run and conflicting row are read in the same serialized write transaction */
             if (rows.length === 0) {
-              return yield* Effect.fail(error("put", "unknown", "attempt disappeared during put"))
+              throw error("put", "unknown", "attempt disappeared during put")
             }
-            const stored = yield* decodeRow("put", rows[0]!)
+            const stored = try decodeRow("put", rows[0]!)
             return sameAttempt(stored, attempt)
               ? { _tag: "ExistingSame" } as const
               : { _tag: "Conflict" } as const
-          })
-        ).pipe(Effect.mapError(mapPersistenceError("put")))
-      }).pipe(observeOutcome<PutResult>())
+          }
+        ) |> Effect.mapError(%, mapPersistenceError("put")))
+      } |> observeOutcome<PutResult>()(%)
     )
 
     const get: Service["get"] = Effect.fn("AttemptStore.get")((input) =>
-      Effect.gen(function*() {
-        const id = yield* snapshotId("get", input)
-        yield* Effect.annotateCurrentSpan({
+      effect {
+        const id = try snapshotId("get", input)
+        try Effect.annotateCurrentSpan({
           runId: id.runId,
           stepKeyDigest: id.stepKeyDigest,
           attempt: id.attempt
         })
-        const rows = yield* sql<Record<string, unknown>>`
+        const rows = try (sql<Record<string, unknown>>`
         SELECT run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
           heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
         FROM flows_attempts
         WHERE run_id = ${id.runId} AND step_key_digest = ${id.stepKeyDigest} AND attempt = ${id.attempt}
-      `.pipe(Effect.mapError(mapPersistenceError("get")))
-        return rows.length === 0 ? Option.none() : yield* Effect.map(decodeRow("get", rows[0]!), Option.some)
-      }).pipe(observeExit)
+      ` |> Effect.mapError(%, mapPersistenceError("get")))
+        return rows.length === 0 ? Option.none() : try Effect.map(decodeRow("get", rows[0]!), Option.some)
+      } |> observeExit(%)
     )
 
     const listRun: NonNullable<Service["listRun"]> = Effect.fn("AttemptStore.listRun")((runId) =>
-      Effect.gen(function*() {
-        if (!Boundary.isDurableText(runId)) {
-          return yield* Effect.fail(
-            error("listRun", "invalid_attempt", "run id violates the durable identifier contract")
-          )
+      effect {
+        if (!(try Effect.orDie(Effect.try({ try: () => Boundary.isDurableText(runId), catch: (error) => error })))) {
+          throw error("listRun", "invalid_attempt", "run id violates the durable identifier contract")
         }
-        yield* Effect.annotateCurrentSpan({ runId })
-        const rows = yield* sql<Record<string, unknown>>`
+        try Effect.annotateCurrentSpan({ runId })
+        const rows = try (sql<Record<string, unknown>>`
         SELECT run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
           heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
         FROM flows_attempts
         WHERE run_id = ${runId}
         ORDER BY step_key_digest, attempt
-      `.pipe(Effect.mapError(mapPersistenceError("listRun")))
-        return yield* Effect.forEach(rows, (row) => decodeRow("listRun", row))
-      }).pipe(observeExit)
+      ` |> Effect.mapError(%, mapPersistenceError("listRun")))
+        return try Effect.forEach(rows, (row) => decodeRow("listRun", row))
+      } |> observeExit(%)
     )
 
     const heartbeat: Service["heartbeat"] = Effect.fn("AttemptStore.heartbeat")((
@@ -989,20 +978,18 @@ export const makeWith = (
       nowMs,
       checkpointValue
     ) =>
-      Effect.gen(function*() {
-        const owner = yield* snapshotOwner("heartbeat", ownerInput)
-        yield* validateId("heartbeat", { runId, stepKeyDigest, attempt })
+      effect {
+        const owner = try snapshotOwner("heartbeat", ownerInput)
+        try validateId("heartbeat", { runId, stepKeyDigest, attempt })
         if (!Number.isSafeInteger(nowMs) || nowMs < 0) {
-          return yield* Effect.fail(
-            error("heartbeat", "invalid_attempt", "nowMs must be a non-negative safe integer")
-          )
+          throw error("heartbeat", "invalid_attempt", "nowMs must be a non-negative safe integer")
         }
-        yield* Effect.annotateCurrentSpan({ runId, stepKeyDigest, attempt, ownerHostId: owner.hostId })
-        const checkpoint = yield* heartbeatEncodeCheckpoint(checkpointValue)
-        return yield* writeRun(
+        try Effect.annotateCurrentSpan({ runId, stepKeyDigest, attempt, ownerHostId: owner.hostId })
+        const checkpoint = try heartbeatEncodeCheckpoint(checkpointValue)
+        return try (writeRun(
           runId,
-          Effect.gen(function*() {
-            const updated = yield* sql<{ readonly attempt: number }>`
+          effect {
+            const updated = try sql<{ readonly attempt: number }>`
             UPDATE flows_attempts
             SET
               heartbeat_at_ms = ${Dialect.greatest(sql)}(COALESCE(heartbeat_at_ms, ${nowMs}), ${nowMs}),
@@ -1024,14 +1011,14 @@ export const makeWith = (
             if (updated.length > 0) {
               return { _tag: "Updated" } as const
             }
-            const found = yield* sql<Pick<AttemptRow, "state">>`
+            const found = try sql<Pick<AttemptRow, "state">>`
             SELECT state FROM flows_attempts
             WHERE run_id = ${runId} AND step_key_digest = ${stepKeyDigest} AND attempt = ${attempt}
           `
             if (found.length === 0) {
               return { _tag: "NotFound" } as const
             }
-            const runRows = yield* sql<RunFenceRow>`
+            const runRows = try sql<RunFenceRow>`
             SELECT status, owner_host_id, owner_pid, owner_nonce
             FROM flows_runs WHERE run_id = ${runId}
           `
@@ -1039,16 +1026,16 @@ export const makeWith = (
               return { _tag: "FenceLost" } as const
             }
             return { _tag: "StateChanged" } as const
-          })
-        ).pipe(Effect.mapError(mapPersistenceError("heartbeat")))
-      }).pipe(observeOutcome<HeartbeatResult>())
+          }
+        ) |> Effect.mapError(%, mapPersistenceError("heartbeat")))
+      } |> observeOutcome<HeartbeatResult>()(%)
     )
 
     const finish: Service["finish"] = Effect.fn("AttemptStore.finish")((input, ownerInput) =>
-      Effect.gen(function*() {
-        const owner = yield* snapshotOwner("finish", ownerInput)
-        const attempt = yield* snapshotFinish("finish", input)
-        yield* Effect.annotateCurrentSpan({
+      effect {
+        const owner = try snapshotOwner("finish", ownerInput)
+        const attempt = try snapshotFinish("finish", input)
+        try Effect.annotateCurrentSpan({
           runId: attempt.runId,
           stepKeyDigest: attempt.stepKeyDigest,
           attempt: attempt.attempt,
@@ -1056,19 +1043,19 @@ export const makeWith = (
         })
         if (
           inProgressStates.includes(attempt.state) ||
-          !Boundary.isDurableText(attempt.state)
+          !(try Effect.orDie(
+            Effect.try({ try: () => Boundary.isDurableText(attempt.state), catch: (error) => error })
+          ))
         ) {
-          return yield* Effect.fail(
-            error("finish", "invalid_attempt", "finish requires a terminal state and valid timestamp")
-          )
+          throw error("finish", "invalid_attempt", "finish requires a terminal state and valid timestamp")
         }
-        const attemptError = yield* finishEncodeOptional(attempt.error, "error")
-        const outcome = yield* finishEncodeOptional(attempt.outcome, "outcome")
-        const meta = yield* finishEncodeOptional(attempt.meta, "meta")
-        return yield* writeRun(
+        const attemptError = try finishEncodeOptional(attempt.error, "error")
+        const outcome = try finishEncodeOptional(attempt.outcome, "outcome")
+        const meta = try finishEncodeOptional(attempt.meta, "meta")
+        return try (writeRun(
           attempt.runId,
-          Effect.gen(function*() {
-            const updated = yield* sql<{ readonly attempt: number }>`
+          effect {
+            const updated = try sql<{ readonly attempt: number }>`
             UPDATE flows_attempts
             SET
               state = ${attempt.state},
@@ -1093,7 +1080,7 @@ export const makeWith = (
             if (updated.length > 0) {
               return { _tag: "Finished" } as const
             }
-            const found = yield* sql<Pick<AttemptRow, "state">>`
+            const found = try sql<Pick<AttemptRow, "state">>`
             SELECT state FROM flows_attempts
             WHERE run_id = ${attempt.runId}
               AND step_key_digest = ${attempt.stepKeyDigest}
@@ -1102,7 +1089,7 @@ export const makeWith = (
             if (found.length === 0) {
               return { _tag: "NotFound" } as const
             }
-            const runRows = yield* sql<RunFenceRow>`
+            const runRows = try sql<RunFenceRow>`
             SELECT status, owner_host_id, owner_pid, owner_nonce
             FROM flows_runs WHERE run_id = ${attempt.runId}
           `
@@ -1110,34 +1097,34 @@ export const makeWith = (
               return { _tag: "FenceLost" } as const
             }
             return { _tag: "StateChanged" } as const
-          })
-        ).pipe(Effect.mapError(mapPersistenceError("finish")))
-      }).pipe(observeOutcome<FinishResult>())
+          }
+        ) |> Effect.mapError(%, mapPersistenceError("finish")))
+      } |> observeOutcome<FinishResult>()(%)
     )
 
     const patch: Service["patch"] = Effect.fn("AttemptStore.patch")((idInput, patchInput, ownerInput) =>
-      Effect.gen(function*() {
-        const owner = yield* snapshotOwner("patch", ownerInput)
-        const id = yield* snapshotId("patch", idInput)
-        const fields = yield* snapshotPatch("patch", patchInput)
-        yield* Effect.annotateCurrentSpan({
+      effect {
+        const owner = try snapshotOwner("patch", ownerInput)
+        const id = try snapshotId("patch", idInput)
+        const fields = try snapshotPatch("patch", patchInput)
+        try Effect.annotateCurrentSpan({
           runId: id.runId,
           stepKeyDigest: id.stepKeyDigest,
           attempt: id.attempt,
           ownerHostId: owner.hostId
         })
-        const checkpoint = yield* patchEncodeCheckpoint(fields.checkpoint)
-        const attemptError = yield* patchEncodeOptional(fields.error, "error")
-        const outcome = yield* patchEncodeOptional(fields.outcome, "outcome")
-        const meta = yield* patchEncodeOptional(fields.meta, "meta")
-        return yield* writeRun(
+        const checkpoint = try patchEncodeCheckpoint(fields.checkpoint)
+        const attemptError = try patchEncodeOptional(fields.error, "error")
+        const outcome = try patchEncodeOptional(fields.outcome, "outcome")
+        const meta = try patchEncodeOptional(fields.meta, "meta")
+        return try (writeRun(
           id.runId,
-          Effect.gen(function*() {
+          effect {
             // Unlike `heartbeat`/`finish` there is no state predicate: a patch
             // may touch a terminal row (evidence quarantine does), so the run
             // fence is the only gate. After a terminal run transition the
             // owner columns are cleared and every patch is refused.
-            const updated = yield* sql<{ readonly attempt: number }>`
+            const updated = try sql<{ readonly attempt: number }>`
             UPDATE flows_attempts
             SET
               checkpoint_json = COALESCE(${checkpoint}, checkpoint_json),
@@ -1160,20 +1147,20 @@ export const makeWith = (
             if (updated.length > 0) {
               return { _tag: "Patched" } as const
             }
-            const found = yield* sql<Pick<AttemptRow, "state">>`
+            const found = try sql<Pick<AttemptRow, "state">>`
             SELECT state FROM flows_attempts
             WHERE run_id = ${id.runId} AND step_key_digest = ${id.stepKeyDigest} AND attempt = ${id.attempt}
           `
             return found.length === 0
               ? { _tag: "NotFound" } as const
               : { _tag: "FenceLost" } as const
-          })
-        ).pipe(Effect.mapError(mapPersistenceError("patch")))
-      }).pipe(observeOutcome<PatchResult>())
+          }
+        ) |> Effect.mapError(%, mapPersistenceError("patch")))
+      } |> observeOutcome<PatchResult>()(%)
     )
 
     return { put, get, listRun, heartbeat, finish, patch }
-  })
+  }
 
 /**
  * Builds the SQL-backed attempt store with default policy.
@@ -1181,7 +1168,7 @@ export const makeWith = (
  * @category constructors
  * @since 0.1.0
  */
-export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient> = Effect.orDie(makeWith())
+export const make: Service!never!DurableWriter | SqlClient.SqlClient = Effect.orDie(makeWith())
 
 /**
  * Creates an attempt store from an implementation.

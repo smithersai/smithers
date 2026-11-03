@@ -20,20 +20,12 @@
  *
  * @since 1.0.0
  */
-
-import * as Dialect from "@smthrs/database/Dialect"
-import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/sql/SqlClient"
-
+import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/sql/SqlClient";
 /**
  * Adds `waiting_request` to `flows_runs`.
  *
  * @category migrations
  * @since 1.0.0
  */
-export const waitingRequest: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-
-  yield* sql`ALTER TABLE flows_runs ADD COLUMN waiting_request TEXT
-    CHECK (waiting_request IS NULL OR ${Dialect.jsonValid(sql, sql`waiting_request`)})`
-})
+export declare const waitingRequest: Effect.Effect<void, unknown, SqlClient.SqlClient>;
