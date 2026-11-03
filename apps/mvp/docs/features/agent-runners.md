@@ -184,7 +184,7 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 
 | Route | Body | Answer |
 |---|---|---|
-| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25, machine?, minQueuedSeconds? }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true`; `403 not_authorized` for a runner not registered by GitHub's role ([decision 0148](../decisions/0148-runner-git-credential.md)) |
+| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25, machine?, minQueuedSeconds? }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true`; `403 not_authorized` for a runner not registered by GitHub's role, or whose repository's installation isn't recorded, checked again before an empty answer ([decision 0148](../decisions/0148-runner-git-credential.md)) |
 | `POST /api/runners/heartbeat` | `{ key, claim, delivered?, account?, cpuSeconds?, usage? }` | `{ held, cancel, leaseSeconds: 45, steers? }`: the job's undelivered steers, `{ id, text }` |
 | `POST /api/runners/settle` | `{ key, claim, outcome, delivered? }` | `{ recorded }`; `false` when the claim no longer holds the job. `delivered` records the steers the agent read since the last heartbeat that reported them |
 | `POST /api/runners/events` | `{ key, claim, events }` | `{ next }`: the agent's transcript ([transcripts](agent-transcripts.md#the-events-route)) |

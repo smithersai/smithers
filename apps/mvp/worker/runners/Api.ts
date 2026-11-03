@@ -726,7 +726,9 @@ export const make = <E, R>(
           UPDATE agent_jobs SET git_credential_reservation = NULL, git_credential_reserved_at = NULL,
             git_credential_retry_at = clock_timestamp() + ${waitSeconds}::float8 * interval '1 second'
           WHERE key = ${key} AND git_credential_reservation = ${reservation}::uuid`
-      // A request that dies here leaves its reservation, which goes stale after `RESERVATION_SECONDS`.
+      // A request that dies here leaves its reservation, which goes stale after `RESERVATION_SECONDS`. A mint that
+      // succeeds at GitHub after the timeout is never read, so it can't be revoked; GitHub ends it within the hour
+      // (decision 0148).
       const minted = yield* Effect.exit(credentials.mint(runner.repoId).pipe(Effect.timeout(MINT_TIMEOUT_SECONDS * 1000)))
       if (minted._tag === "Failure") {
         // GitHub's wait when it said one, never less than the gap: a failing GitHub is asked at most that often.
