@@ -31,6 +31,7 @@ import * as TodoSession from "./flows/TodoSession.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import * as RepoRuns from "./RepoRuns.ts"
+import { stillAdmitted } from "./RunAuthority.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { repositoryOf } from "./github/Config.ts"
 import { mayRead } from "./stack/Access.ts"
@@ -245,12 +246,14 @@ export const make = <E, R, EE, ER, RS>(
      * Whether `actor` is a Member or above on `repoId`, by `RepoRoles` (decision 0079): a refusal that says the
      * deployment can't act there is no; GitHub or Postgres not answering passes on, never a guess.
      */
-    const memberOn = (actor: Actor, repoId: string) =>
+    const resolvedMember = (actor: Actor, repoId: string) =>
       roles.resolve(actor, repositoryOf(repoId.slice("github/".length))).pipe(
-        Effect.map((resolved) => mayRead(Option.some({ ...actor, role: resolved.role }))),
+        Effect.map((resolved) => mayRead(Option.some({ ...actor, role: resolved.role })) ? Option.some(resolved) : Option.none()),
         Effect.catch((error) => RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
-          ? Effect.fail(error) : Effect.succeed(false)),
+          ? Effect.fail(error) : Effect.succeed(Option.none<RepoRoles.Resolved>())),
       )
+
+    const memberOn = (actor: Actor, repoId: string) => resolvedMember(actor, repoId).pipe(Effect.map(Option.isSome))
 
     /**
      * A run's access comes from its recorded repository, never the deployment's session role on another one: a TODO's
@@ -266,8 +269,9 @@ export const make = <E, R, EE, ER, RS>(
           (attempts) => Option.fromNullishOr(attempts.find(Option.isSome)).pipe(Option.flatten),
         ))
       if (Option.isSome(attempt)) {
-        const permitted = yield* memberOn(actor, attempt.value.repoId)
-        return { allowed: permitted, watched: permitted, repoRun: Option.none<RepoRuns.Admitted>() }
+        const authority = yield* resolvedMember(actor, attempt.value.repoId)
+        const permitted = Option.isSome(authority)
+        return { allowed: permitted, watched: permitted, repoRun: Option.none<RepoRuns.Admitted>(), authority }
       }
       const admitted = yield* RepoRuns.admit(runId, engine.database)
       if (Option.isNone(admitted)) {
@@ -276,10 +280,11 @@ export const make = <E, R, EE, ER, RS>(
           EngineStore.RunInspection.RunInspection,
           (reads) => reads.list({ runIds: [runId], flows: CloudRuns.SYSTEM_FLOW_TAGS, roots: false, limit: 1 }),
         ).pipe(Effect.provide(inspection), Effect.provide(engine.database))).runs.length === 1
-        return { allowed: ownRole || system, watched: system, repoRun: admitted }
+        return { allowed: ownRole || system, watched: system, repoRun: admitted, authority: Option.none<RepoRoles.Resolved>() }
       }
-      const permitted = yield* memberOn(actor, admitted.value.repoId)
-      return { allowed: ownRole || permitted, watched: permitted, repoRun: permitted ? admitted : Option.none<RepoRuns.Admitted>() }
+      const authority = yield* resolvedMember(actor, admitted.value.repoId)
+      const permitted = Option.isSome(authority)
+      return { allowed: ownRole || permitted, watched: permitted, repoRun: permitted ? admitted : Option.none<RepoRuns.Admitted>(), authority }
     }).pipe(Effect.provide(database))
 
     /** `POST /api/remote-runs/<runId>/stop`: a repository's run, stopped on its Durable Object. */
@@ -308,6 +313,15 @@ export const make = <E, R, EE, ER, RS>(
           const admitted = yield* access(runId, actor.value.value)
           if (!admitted.allowed) return refused(403, "forbidden")
           fields.via = actor.value.value.act === undefined ? "person" : "agent"
+          const who = actor.value.value
+          // Retain the resolved receipt, then lock and recheck it after all delayed reads, through the stop write.
+          const write = <E2, R2>(body: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>) =>
+            Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+              if (Option.isNone(admitted.authority)) return refused(403, "forbidden")
+              const refusal = yield* stillAdmitted(who, admitted.authority.value)
+              if (refusal !== undefined) return refused(refusal === "authentication" ? 401 : 403, refusal)
+              return yield* body
+            }))).pipe(Effect.provide(database))
           // A TODO's run: its external agent stops, and the run goes on to fail the TODO, which keeps its place for
           // Retry (docs/features/runs.md#stopping-a-todos-agent).
           const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
@@ -318,11 +332,13 @@ export const make = <E, R, EE, ER, RS>(
               (reads) => reads.inspect(runId, { limit: 1 }),
             ).pipe(Effect.provide(inspection), Effect.provide(engine.database), Effect.option)
             if (Option.isNone(read) || !stoppable(read.value.run, read.value.steps)) return refused(409, "not_working")
-            const open = yield* TodoSession.stop(attempt.value.id).pipe(Effect.provide(database))
-            if (open === 0) return refused(409, "not_working")
-            fields.outcome = "requested"
-            fields.generations = open
-            return HttpServerResponse.jsonUnsafe({ outcome: "requested" }, { status: 202, headers: noStore })
+            return yield* write(Effect.gen(function* () {
+              const open = yield* TodoSession.stop(attempt.value.id)
+              if (open === 0) return refused(409, "not_working")
+              fields.outcome = "requested"
+              fields.generations = open
+              return HttpServerResponse.jsonUnsafe({ outcome: "requested" }, { status: 202, headers: noStore })
+            }))
           }
           // Only a repository's run itself: a job stops with its run.
           if (Option.isNone(admitted.repoRun) || admitted.repoRun.value.execution !== runId) return refused(404, "not_found")
@@ -337,9 +353,11 @@ export const make = <E, R, EE, ER, RS>(
               Effect.provide(engine.database),
             )
           const outcome = status[0] !== undefined && settled(status[0].status) ? "settled" as const : "requested" as const
-          if (outcome === "requested") yield* engine.stop(runId)
-          fields.outcome = outcome
-          return HttpServerResponse.jsonUnsafe({ outcome }, { status: outcome === "requested" ? 202 : 200, headers: noStore })
+          return yield* write(Effect.gen(function* () {
+            if (outcome === "requested") yield* engine.stop(runId)
+            fields.outcome = outcome
+            return HttpServerResponse.jsonUnsafe({ outcome }, { status: outcome === "requested" ? 202 : 200, headers: noStore })
+          }))
         }).pipe(
           Effect.catchCause((cause) =>
             Effect.sync(() => {

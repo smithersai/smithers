@@ -35,6 +35,8 @@ The repository runs routes (`worker/ci/RunsApi.ts`) are for a Member or above on
 
 Stop also reads the execution object's immutable `repo/Run` intent and requires its execution and repository to match the recorded association. Missing intents, other flows and conflicting repositories grant no cancellation, including historical poisoned rows and executions not yet begun by the engine.
 
+Stop retains the role receipt that admitted the request. After GitHub and engine reads, the write transaction locks and revalidates that receipt, the parent session and any alias by the database's current clock. It holds those locks through the cancellation handoff or TODO agent-job stop. Changed session authority returns 401; changed repository authority returns 403.
+
 The stop route's refusals are `{ code }`, `Cache-Control: no-store`:
 
 | Status | `code` | When |
