@@ -34,16 +34,40 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./BrowserChildProcessSpawner": "./src/BrowserChildProcessSpawner/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./BrowserChildProcessSpawner": {
+      "types": "./src/BrowserChildProcessSpawner/index.ts",
+      "vibelang-source": "./src/BrowserChildProcessSpawner/index.ts",
+      "default": "./.vibelang/js/src/BrowserChildProcessSpawner/index.js"
+    },
     "./BrowserChildProcessSpawner/*": null,
-    "./BrowserFileSystem": "./src/BrowserFileSystem/index.ts",
+    "./BrowserFileSystem": {
+      "types": "./src/BrowserFileSystem/index.ts",
+      "vibelang-source": "./src/BrowserFileSystem/index.ts",
+      "default": "./.vibelang/js/src/BrowserFileSystem/index.js"
+    },
     "./BrowserFileSystem/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./BrowserHost": "./src/BrowserHost.ts",
-    "./BrowserServices": "./src/BrowserServices.ts",
-    "./index": "./src/index.ts"
+    "./BrowserHost": {
+      "types": "./src/BrowserHost.ts",
+      "vibelang-source": "./src/BrowserHost.ts",
+      "default": "./.vibelang/js/src/BrowserHost.js"
+    },
+    "./BrowserServices": {
+      "types": "./src/BrowserServices.ts",
+      "vibelang-source": "./src/BrowserServices.ts",
+      "default": "./.vibelang/js/src/BrowserServices.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "imports": {
     "#access-handle-pool-vfs": {
@@ -61,7 +85,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
