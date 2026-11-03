@@ -72,7 +72,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/TestCacheStore": "./src/test/TestCacheStore.ts"
+    "./test/TestCacheStore": {
+      "types": "./src/test/TestCacheStore.ts",
+      "vibelang-source": "./src/test/TestCacheStore.ts",
+      "default": "./.vibelang/js/src/test/TestCacheStore.js"
+    }
   },
   "files": [
     "src/**/*.ts",

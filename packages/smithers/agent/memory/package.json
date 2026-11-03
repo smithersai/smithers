@@ -136,7 +136,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/TestMemory": "./src/test/TestMemory.ts",
+    "./test/TestMemory": {
+      "types": "./src/test/TestMemory.ts",
+      "vibelang-source": "./src/test/TestMemory.ts",
+      "default": "./.vibelang/js/src/test/TestMemory.js"
+    },
     "./migrations/*": null
   },
   "files": [

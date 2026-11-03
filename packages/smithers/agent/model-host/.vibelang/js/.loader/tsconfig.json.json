@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/model-host"
   },
-  "compiler": "6BEBkDMfX4Ny2sSnlQW1x2MFwgW5jvmkMsoUb4Rq3ow",
+  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
   "configs": [
    {
     "path": {
@@ -272,7 +272,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "beX3dophnbrbxNoQtYK3SGH7HEUwLPUDZe4aeAb96S0"
+    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
    },
    {
     "path": {
@@ -296,8 +296,8 @@
     "path": {
      "relative": "bun.lock"
     },
-    "size": 1174004,
-    "hash": "xrwS4mp--1Dc0e0_Mp58Lh5tWoTHIukRNdJKGsBccvY"
+    "size": 1488383,
+    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
    },
    {
     "path": {
@@ -326,91 +326,91 @@
      "relative": "packages/smithers/agent/model-host/package.json"
     },
     "size": 2361,
-    "hash": "YaZBLJc-qYJyyIUZ62pXRm1J8X8vC9x_hUyVLOaMKUU"
+    "hash": "6vlv5xSvAqYEg4DoJPyKRhLbzEqPplCfMs7AGlVOBdE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "D2Y-qYhp6VncVpnVkeX_2Xns0XG5I-VLOzvDcuio73E"
+    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14108,
-    "hash": "C7LdBvOYkz_eX0aXQzyI4fkhwPDxzWaSTAdUDcgrq5I"
+    "hash": "JoPVNfhPyRO19D_3aET-BYy6ipqPKXeXaNt5KVmIJUU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "tclGin2j7J1-1euvTEo7n3UUHL7pm4M_063wLVWOaoM"
+    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "KAwOWrxcXiPg0yBe8oFehvIPEwA_Uh15ifIZVQhFEJI"
+    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8845,
-    "hash": "S2xrkx_X-GtYsWRSTS0YYRAAk4wCvt9XotDFizAGeZM"
+    "hash": "VrF-0613k3AeimFa9sPtlXyjtkJo6YczusrpNEAdImo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11122,
-    "hash": "R9pPiv0vb3cdcG18_Rxkz5BXWBkGLYKOSc42WDs479k"
+    "hash": "HkpKCUONLNsHGL65Ns5SOQCPYagw-2Fni4T8uxQPrII"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "TUdvf-1CRSYQjXqZD2WbbHoTzr8876U9la6H-EXYeIE"
+    "hash": "BdDRbIPt5QY59jYpdII9ws0c-Hr64YvA6FvaiRCvZII"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10177,
-    "hash": "HVzQHdlCGoRJ7BNjX20MIWjfqqwKwpcOYGB1797MYvs"
+    "hash": "c8DDzn-eAe02bg8GdRdgBqFoqDXPcSGjkqjKHuZ2gNQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "qcvi_3wmI6ce7NbCetMP6LKzZ3o5_w1_EAy1aNA8kiQ"
+    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "zkTgD_at0d7bHzzm6d3mmuN5FV1nnW-ovzdwmFL9XtQ"
+    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
     "size": 15062,
-    "hash": "tB6dMRn77O4ZHVfBCOw1pqLh2Lw0Wjbk4lsw8dSwUW4"
+    "hash": "Ehoav5n_0WiCoUYF2geBfe9CWBxFJmFFbZd4MnMPjks"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "_UzuX1bu3eFd_Xr--f1qPyMTXOHkwH2YIMn5lu6qmXo"
+    "hash": "O9iDHySpA30BJ4H48_xLoYKtd_38nfhgRWUlLwL8hII"
    },
    {
     "path": {
@@ -452,7 +452,7 @@
      "relative": "packages/rpc/package.json"
     },
     "size": 1555,
-    "hash": "Ctik_REjIaUBl55Ch_v5akrt4t8nelkAWH9TX5rzHFY"
+    "hash": "BO-e9gnMA2YsEMRwlCf_mKD1q9BOyYXkMDC4vsJwPVk"
    },
    {
     "path": {
@@ -465,22 +465,22 @@
     "path": {
      "relative": "packages/smithers/agent/memory/package.json"
     },
-    "size": 12425,
-    "hash": "CcJi2ePrmwI1T_1zCeNkqEGlwrJHsdyGCX3qL47IMt0"
+    "size": 12559,
+    "hash": "ML9XnL3gy0S3dMXo2vzWWgXMgkBXXrpbnaJC9soCpgM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
     "size": 15033,
-    "hash": "a_ih1Y8br756CcdiJVQM-e4zam3B82Vkg1HZUFEac3I"
+    "hash": "TpVwbO2uX8Kyk01XChbs_dKm-u4RLcUmXdPchEq9YxU"
    },
    {
     "path": {
      "relative": "packages/smithers/package.json"
     },
     "size": 28481,
-    "hash": "H_vOPP5cGJvTUYZlR5OLzvdkZ7up5cwPuow7YEP8uXw"
+    "hash": "rV8GRvvYEk-djs7zJqkqaZBGx0g2zgZNxvb165X96vo"
    },
    {
     "path": {

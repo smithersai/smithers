@@ -116,7 +116,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/PlanFixtures": "./src/test/PlanFixtures.ts"
+    "./test/PlanFixtures": {
+      "types": "./src/test/PlanFixtures.ts",
+      "vibelang-source": "./src/test/PlanFixtures.ts",
+      "default": "./.vibelang/js/src/test/PlanFixtures.js"
+    }
   },
   "files": [
     "src/**/*.ts",

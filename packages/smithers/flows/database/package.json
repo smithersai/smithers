@@ -71,7 +71,11 @@
       "vibelang-source": "./src/node/NodeDatabase.ts",
       "default": "./.vibelang/js/src/node/NodeDatabase.js"
     },
-    "./test/TestDatabase": "./src/test/TestDatabase.ts",
+    "./test/TestDatabase": {
+      "types": "./src/test/TestDatabase.ts",
+      "vibelang-source": "./src/test/TestDatabase.ts",
+      "default": "./.vibelang/js/src/test/TestDatabase.js"
+    },
     "./test/SlowNetwork": "./src/test/SlowNetwork.ts",
     "./bun/BunDatabase": {
       "types": "./src/bun/BunDatabase.ts",
