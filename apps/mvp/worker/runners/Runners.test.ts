@@ -7,7 +7,7 @@ import { digestSync } from "@smthrs/crypto"
 import { Action, Fault, type Flow, FlowRuntime } from "@smthrs/flow"
 import { Database as FlowsDatabase, Journal } from "@smthrs/flows"
 import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
-import { Context, Effect, Exit, Layer, Logger, Option, Scope } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Option, Scope, Tracer } from "effect"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -831,6 +831,29 @@ describe("the repository's runners and agents", () => {
       return { person, session, alias, actor }
     }
 
+    test.each(["session", "alias"] as const)("a repository Admin registration queued before %s revocation writes nothing", async (end) => {
+      await recordInstallation("github/acme/private")
+      const who = await signedInAdmin()
+      await sql`INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+        VALUES ('github/acme/private', ${who.person}, 'admin', clock_timestamp())`
+      const gate = gated()
+      const routes = await fencedRoutes({ actor: who.actor, ...gate })
+      const writing = routes.send("runners/queued", "PUT", RUNNER_BODY)
+      try {
+        await gate.asked
+        if (end === "session") await sql`UPDATE sessions SET revoked_at = now(), revoked_reason = 'sign_out' WHERE id = ${who.session}::uuid`
+        else await sql`UPDATE host_sessions SET revoked_at = now() WHERE id = ${who.alias}::uuid`
+        gate.release()
+        const answer = await writing
+        expect(answer.status).toBe(202)
+        expect((await routes.receipt(answer.body!.execution!)).body).toMatchObject({ outcome: "authorization_expired" })
+        expect(await sql`SELECT name FROM runners`).toEqual([])
+      } finally {
+        gate.release()
+        await routes.close()
+      }
+    })
+
     /** A write's `By` under a fence admitted now, `Local` unless `authority` says otherwise. */
     const fencedBy = (fence: Partial<Fence.Fence> & { readonly execution: string }, kind: "runners" | "agents" = "runners"): Store.By => ({
       actorId: "person-admin",
@@ -840,6 +863,35 @@ describe("the repository's runners and agents", () => {
         op: "put",
         fence: { expiresAt: Date.now() + 60_000, generation: 0, authority: { _tag: "Local" as const }, ...fence },
       },
+    })
+
+    test("repository fences retain session identity at two extra SQL round trips, three with an alias", async () => {
+      const who = await signedInAdmin()
+      await sql`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES (${REPO}, ${who.person}, 'admin')`
+      const counts: Array<number> = []
+      for (const [index, session] of [null, { personId: who.person, sessionId: who.session },
+        { personId: who.person, sessionId: who.session, alias: who.alias }].entries()) {
+        const spans: Array<Tracer.NativeSpan> = []
+        const tracer = Tracer.make({ span(options) { const span = new Tracer.NativeSpan(options); spans.push(span); return span } })
+        expect(await query(Store.addRunner({ repoId: REPO, name: `cost-${index}`, tokenSha256: String(index).repeat(64),
+          labels: [], capacity: 1, repoAuthorized: true,
+        }, fencedBy({ execution: `runners-put:cost-${index}`, authority: {
+          _tag: "Repo", held: { repoId: REPO, personId: who.person, role: "admin" }, session,
+        } })).pipe(Effect.provideService(Tracer.Tracer, tracer)))).toBe("set")
+        counts.push(spans.filter((span) => span.kind === "client").length)
+      }
+      expect(counts.map((count) => count - counts[0]!)).toEqual([0, 2, 3])
+    })
+
+    test("a legacy repository fence that lost its session is refused", async () => {
+      await recordRole("admin")
+      const change = await query(Store.addRunner({ repoId: "github/acme/private", name: "legacy-session", tokenSha256: "f".repeat(64),
+        labels: [], capacity: 1, repoAuthorized: true,
+      }, fencedBy({ execution: "runners-put:legacy-session", authority: { _tag: "Repo", held: {
+        repoId: "github/acme/private", personId: "person-admin", role: "admin",
+      } } })))
+      expect(change).toBe("authorization_expired")
+      expect(await sql`SELECT name FROM runners`).toEqual([])
     })
 
     // Astra's review of 29cacd16: the session was read unlocked and before the write's own wait, so a sign-out that
@@ -1057,8 +1109,7 @@ describe("the repository's runners and agents", () => {
             authority: {
               _tag: "Repo",
               held: { repoId, personId: who.person, role: "admin", checkedAt: row!.checkedAt },
-              sessionId: who.session,
-              alias: who.alias,
+              session: { personId: who.person, sessionId: who.session, alias: who.alias },
             },
           }),
         ))

@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { AgentRunner } from "@smthrs/agent"
 import { digestSync } from "@smthrs/crypto"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
@@ -159,12 +160,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       const executionId = adminExecutionId(route.kind, op, crypto.randomUUID())
       const actorId = actor.value.subject.id
       const authority = Option.isSome(resolved.held)
-        ? {
-          _tag: "Repo" as const,
-          held: resolved.held.value,
-          ...(actor.value.session === undefined ? {} : { sessionId: actor.value.session }),
-          ...(actor.value.alias === undefined ? {} : { alias: actor.value.alias }),
-        }
+        ? { _tag: "Repo" as const, held: resolved.held.value, session: WriteAuthority.sessionOf(actor.value) ?? null }
         : actor.value.session === undefined
         ? { _tag: "Local" as const }
         : {

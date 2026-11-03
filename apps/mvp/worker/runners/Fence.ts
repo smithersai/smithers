@@ -2,15 +2,16 @@ import { Effect, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ROLES } from "../../src/features/auth/contract.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { latestRole } from "../SessionStore.ts"
 
 // The fence every Admin action on a repository's runners, agents and overflow carries (decision 0148,
 // docs/features/agent-runners.md#admin). The route reads the request's body first, then the authority it admits the
 // action by, and hands the flow:
 //
-// - `authority`: the repository's role row the Admin role came from (`Repo`, checked again with `RepoRoles.holds`);
-//   with the sign-in session and alias it came through, each still live; on the deployment's own repository, or one
-//   where Smithers recorded no installation, the sign-in session whose role
+// - `authority`: the repository's role row and the admitting session and alias (`Repo`, revalidated through
+//   `RepoRoles.holds` and the shared `WriteAuthority` write seam);
+//   on the deployment's own repository, or one where Smithers recorded no installation, the sign-in session whose role
 //   it was (`Session`: the session, and the alias it came through on another host, still live, and the person's newest
 //   role Admin); with no session, local development's or a test's own person (`Local`), which only the expiry bounds.
 // - `expiresAt`: `FENCE_SECONDS` from admission. An action that runs later writes nothing.
@@ -45,9 +46,8 @@ export const Fence = Schema.Struct({
   authority: Schema.Union([
     Schema.TaggedStruct("Repo", {
       held: Held,
-      // The sign-in it came through, which ends what it admitted. Absent on an action admitted before this was carried.
-      sessionId: Schema.optional(Schema.String),
-      alias: Schema.optional(Schema.String),
+      // null is explicit local development; absent is a legacy payload that lost its sign-in authority.
+      session: Schema.optional(Schema.NullOr(WriteAuthority.Session)),
     }),
     Schema.TaggedStruct("Session", {
       personId: Schema.String,
@@ -75,9 +75,9 @@ export const authorityHolds = (fence: Fence) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const held = fence.authority._tag === "Repo"
-      ? (fence.authority.sessionId === undefined ||
-          (yield* sessionLive(fence.authority.held.personId, fence.authority.sessionId, fence.authority.alias))) &&
-        (yield* RepoRoles.holds(fence.authority.held))
+      ? fence.authority.session === undefined ? false
+        : (yield* RepoRoles.holds(fence.authority.held)) && (fence.authority.session === null ||
+          fence.authority.session.personId === fence.authority.held.personId && (yield* WriteAuthority.holds(fence.authority.session)))
       : fence.authority._tag === "Session"
       ? yield* sessionHolds(fence.authority.personId, fence.authority.sessionId, fence.authority.alias)
       : true
@@ -94,38 +94,13 @@ export const authorityHolds = (fence: Fence) =>
  */
 const sessionHolds = (personId: string, sessionId: string, alias: string | undefined) =>
   Effect.gen(function* () {
-    if (!(yield* sessionLive(personId, sessionId, alias))) return false
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly admin: boolean | null }>`
-      SELECT ${latestRole(sql, sql`${personId}::uuid`)} = 'admin' AS admin`
-    return row?.admin === true
-  })
-
-/**
- * Whether the sign-in session, and the alias it came through, are live. Every row is locked first: judged in the
- * statement that locks it, a session could expire while a later lock waited.
- */
-const sessionLive = (personId: string, sessionId: string, alias: string | undefined) =>
-  Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [person] = yield* sql`SELECT 1 FROM people WHERE id::text = ${personId} FOR SHARE`
     if (person === undefined) return false
-    const [locked] = yield* sql`
-      SELECT 1 FROM sessions WHERE id::text = ${sessionId} AND person_id::text = ${personId} FOR SHARE`
-    if (locked === undefined) return false
-    if (alias !== undefined) {
-      const [host] = yield* sql`
-        SELECT 1 FROM host_sessions WHERE id::text = ${alias} AND parent_id::text = ${sessionId} FOR SHARE`
-      if (host === undefined) return false
-    }
-    // Then each judged by the clock as it stands now.
-    const [session] = yield* sql<{ readonly live: boolean }>`
-      SELECT revoked_at IS NULL AND expires_at > clock_timestamp() AS live FROM sessions WHERE id::text = ${sessionId}`
-    if (session?.live !== true) return false
-    if (alias === undefined) return true
-    const [host] = yield* sql<{ readonly live: boolean }>`
-      SELECT revoked_at IS NULL AS live FROM host_sessions WHERE id::text = ${alias}`
-    return host?.live === true
+    if (!(yield* WriteAuthority.holds({ personId, sessionId, ...(alias === undefined ? {} : { alias }) }))) return false
+    const [row] = yield* sql<{ readonly admin: boolean | null }>`
+      SELECT ${latestRole(sql, sql`${personId}::uuid`)} = 'admin' AS admin`
+    return row?.admin === true
   })
 
 /**
@@ -142,7 +117,7 @@ const deadline = (sql: SqlClient.SqlClient, fence: Fence) => {
     : authority._tag === "Repo"
     ? sql`least(${own}, (SELECT checked_at + make_interval(secs => ${RepoRoles.FRESH_SECONDS}) FROM github_repo_roles
         WHERE repo_id = ${authority.held.repoId} AND person_id = ${authority.held.personId}),
-        (SELECT expires_at FROM sessions WHERE id::text = ${authority.sessionId ?? ""}))`
+        (SELECT expires_at FROM sessions WHERE id::text = ${authority.session?.sessionId ?? ""}))`
     : own
 }
 
