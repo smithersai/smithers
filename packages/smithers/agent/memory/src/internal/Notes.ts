@@ -29,7 +29,7 @@ import {
   validateLimit,
   validateNonEmpty,
   validateTags
-} from "./Store.ts"
+} from "./Store.vibe"
 
 const CREATION_COLUMNS = "namespace_kind, namespace_id, id, text, tags_json, provenance_json, status, created_at_ms"
 

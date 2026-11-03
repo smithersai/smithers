@@ -25,7 +25,7 @@ import {
   validateLimit,
   validateNonEmpty,
   validateTime
-} from "./Store.ts"
+} from "./Store.vibe"
 
 const THREAD_COLUMNS = "thread_id, namespace_kind, namespace_id, title, metadata_json, created_at_ms, updated_at_ms"
 const MESSAGE_COLUMNS = "thread_id, id, role, text, at_ms"

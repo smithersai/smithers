@@ -108,7 +108,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Notes.ts",
         "src/internal/Facts.ts",
         "src/internal/Threads.ts",
-        "src/internal/Store.ts",
+        "src/internal/Store.vibe",
         "src/MemoryStore.ts"
       ]
     },
@@ -171,7 +171,7 @@ const securityReview = Smithers.SecurityReview({
         "runRemember recording empty provenance, so a model-written fact is indistinguishable from an operator-written one.",
         "putFact replacing an existing fact key written by a different source without superseding or recording the prior author."
       ],
-      paths: ["src/Flows.ts", "src/Namespace.vibe", "src/Recall.ts", "src/internal/Facts.ts", "src/internal/Store.ts"]
+      paths: ["src/Flows.ts", "src/Namespace.vibe", "src/Recall.ts", "src/internal/Facts.ts", "src/internal/Store.vibe"]
     },
     {
       id: "ttl-and-retention",

@@ -47,7 +47,7 @@ export const resolveNamespace = Effect_1.fnUntraced(runtime.$joinedFrame(functio
     if (typeof input !== "string") {
         return yield* Effect.map(Effect.mapError(Schema.decodeUnknownEffect(Namespace.Namespace)(input), () => new MemoryError({
             code: "invalid_namespace",
-            message: "memory namespace is invalid",
+            message: "memory namespace is invalid"
         })), (namespace) => ({ namespace, bank: bankForNamespace(namespace) }));
     }
     if (input.length === 0) {

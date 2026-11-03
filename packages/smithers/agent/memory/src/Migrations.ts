@@ -12,8 +12,8 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
 import { ftsFold } from "./internal/MemoryFtsFold.ts"
 import { indexes } from "./internal/MemoryIndexes.vibe"
-import { initial } from "./internal/MemorySchema.ts"
-import { noteLifecycle } from "./internal/NoteLifecycle.ts"
+import { initial } from "./internal/MemorySchema.vibe"
+import { noteLifecycle } from "./internal/NoteLifecycle.vibe"
 
 /**
  * Memory's authoritative schema, in the block following the control plane.

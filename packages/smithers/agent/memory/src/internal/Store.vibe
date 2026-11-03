@@ -5,7 +5,6 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { MemoryError } from "../MemoryError.vibe"
 import type { Fact, ListNotesInput, Note, NoteStatus, Provenance, SearchRowsInput, Thread } from "../MemoryStore.ts"
@@ -160,10 +159,9 @@ export const changed = (result: unknown): number => {
  * @category validation
  * @since 0.1.0
  */
-export const validateTags = (tags: Namespace.Tags): Effect.Effect<Namespace.Tags, MemoryError> =>
-  Schema.decodeUnknownEffect(Namespace.Tags)(tags).pipe(
-    Effect.mapError(() => error("invalid_tag", "memory tags violate the vocabulary or 16-tag cap"))
-  )
+export const validateTags = (tags: Namespace.Tags): Namespace.Tags!MemoryError =>
+  Schema.decodeUnknownEffect(Namespace.Tags)(tags)
+  |> Effect.mapError(%, () => error("invalid_tag", "memory tags violate the vocabulary or 16-tag cap"))
 
 /**
  * Rejects an empty identifier.
@@ -175,7 +173,7 @@ export const validateNonEmpty = (
   value: string,
   field: string,
   path: ReadonlyArray<string>
-): Effect.Effect<string, MemoryError> =>
+): string!MemoryError =>
   value.length > 0
     ? Effect.succeed(value)
     : Effect.fail(error("invalid_argument", `${field} must not be empty`, undefined, path))
@@ -190,7 +188,7 @@ export const validateTime = (
   value: number,
   field: string,
   path: ReadonlyArray<string>
-): Effect.Effect<number, MemoryError> =>
+): number!MemoryError =>
   Number.isSafeInteger(value) && value >= 0
     ? Effect.succeed(value)
     : Effect.fail(error("invalid_argument", `${field} must be a non-negative safe integer`, undefined, path))
@@ -204,7 +202,7 @@ export const validateTime = (
 export const validateLimit = (
   value: number | undefined,
   operation: string
-): Effect.Effect<number | undefined, MemoryError> =>
+): number | undefined!MemoryError =>
   value === undefined || (Number.isSafeInteger(value) && value >= 0)
     ? Effect.succeed(value)
     : Effect.fail(
@@ -221,7 +219,7 @@ export const encodeJson = (
   value: unknown,
   field: string,
   path: ReadonlyArray<string>
-): Effect.Effect<string, MemoryError> =>
+): string!MemoryError =>
   Effect.try({
     try: () => {
       const encoded = JSON.stringify(value)
@@ -239,29 +237,24 @@ export const encodeJson = (
  * @category utils
  * @since 0.1.0
  */
-export const decodeJson = (value: string, field: string): Effect.Effect<unknown, MemoryError> =>
+export const decodeJson = (value: string, field: string): unknown!MemoryError =>
   Effect.try({
     try: () => JSON.parse(value) as unknown,
     catch: (cause) => error("store", `could not decode ${field}`, cause)
   })
 
-const decodeProvenance = (value: string): Effect.Effect<Provenance, MemoryError> =>
-  decodeJson(value, "provenance").pipe(
-    Effect.flatMap((decoded) =>
-      typeof decoded === "object" && decoded !== null
-        ? Effect.succeed(decoded as Provenance)
-        : Effect.fail(error("store", "stored provenance is not an object"))
-    )
-  )
+const decodeProvenance = (value: string): Provenance!MemoryError =>
+  decodeJson(value, "provenance")
+  |> Effect.flatMap(%, (decoded) =>
+    typeof decoded === "object" && decoded !== null
+      ? Effect.succeed(decoded as Provenance)
+      : Effect.fail(error("store", "stored provenance is not an object")))
 
-const decodeTags = (value: string): Effect.Effect<Namespace.Tags, MemoryError> =>
-  decodeJson(value, "tags").pipe(
-    Effect.flatMap((decoded) =>
-      Schema.decodeUnknownEffect(Namespace.Tags)(decoded).pipe(
-        Effect.mapError((cause) => error("invalid_tag", "stored tags violate the memory vocabulary", cause))
-      )
-    )
-  )
+const decodeTags = (value: string): Namespace.Tags!MemoryError =>
+  decodeJson(value, "tags")
+  |> Effect.flatMap(%, (decoded) =>
+    Schema.decodeUnknownEffect(Namespace.Tags)(decoded)
+    |> Effect.mapError(%, (cause) => error("invalid_tag", "stored tags violate the memory vocabulary", cause)))
 
 /**
  * Decodes a fact row.
@@ -269,23 +262,22 @@ const decodeTags = (value: string): Effect.Effect<Namespace.Tags, MemoryError> =
  * @category utils
  * @since 0.1.0
  */
-export const decodeFact = (row: FactRow): Effect.Effect<Fact, MemoryError> =>
+export const decodeFact = (row: FactRow): Fact!MemoryError =>
   Effect.all({
     value: decodeJson(row.value_json, "fact value"),
     tags: row.tags_json === null ? Effect.succeed(undefined) : decodeTags(row.tags_json),
     provenance: decodeProvenance(row.provenance_json)
-  }).pipe(
-    Effect.map(({ provenance, tags, value }) => ({
-      namespace: { kind: row.namespace_kind, id: row.namespace_id },
-      key: row.fact_key,
-      value,
-      ...(tags === undefined ? {} : { tags }),
-      ...(row.ttl_ms === null ? {} : { ttlMs: Number(row.ttl_ms) }),
-      provenance,
-      createdAtMs: Number(row.created_at_ms),
-      updatedAtMs: Number(row.updated_at_ms)
-    }))
-  )
+  })
+  |> Effect.map(%, ({ provenance, tags, value }) => ({
+    namespace: { kind: row.namespace_kind, id: row.namespace_id },
+    key: row.fact_key,
+    value,
+    ...(tags === undefined ? {} : { tags }),
+    ...(row.ttl_ms === null ? {} : { ttlMs: Number(row.ttl_ms) }),
+    provenance,
+    createdAtMs: Number(row.created_at_ms),
+    updatedAtMs: Number(row.updated_at_ms)
+  }))
 
 /**
  * Decodes a note row.
@@ -293,23 +285,22 @@ export const decodeFact = (row: FactRow): Effect.Effect<Fact, MemoryError> =>
  * @category utils
  * @since 0.1.0
  */
-export const decodeNote = (row: NoteRow): Effect.Effect<Note, MemoryError> =>
+export const decodeNote = (row: NoteRow): Note!MemoryError =>
   Effect.all({
     tags: decodeTags(row.tags_json),
     provenance: decodeProvenance(row.provenance_json)
-  }).pipe(
-    Effect.map(({ provenance, tags }) => ({
-      namespace: { kind: row.namespace_kind, id: row.namespace_id },
-      id: row.id,
-      text: row.text,
-      tags,
-      provenance,
-      status: row.status,
-      ...(row.status_at_ms == null ? {} : { statusAtMs: Number(row.status_at_ms) }),
-      ...(row.accepted_todo == null ? {} : { acceptedTodo: row.accepted_todo }),
-      createdAtMs: Number(row.created_at_ms)
-    }))
-  )
+  })
+  |> Effect.map(%, ({ provenance, tags }) => ({
+    namespace: { kind: row.namespace_kind, id: row.namespace_id },
+    id: row.id,
+    text: row.text,
+    tags,
+    provenance,
+    status: row.status,
+    ...(row.status_at_ms == null ? {} : { statusAtMs: Number(row.status_at_ms) }),
+    ...(row.accepted_todo == null ? {} : { acceptedTodo: row.accepted_todo }),
+    createdAtMs: Number(row.created_at_ms)
+  }))
 
 /**
  * Decodes a thread row.
@@ -317,19 +308,18 @@ export const decodeNote = (row: NoteRow): Effect.Effect<Note, MemoryError> =>
  * @category utils
  * @since 0.1.0
  */
-export const decodeThread = (row: ThreadRow): Effect.Effect<Thread, MemoryError> =>
+export const decodeThread = (row: ThreadRow): Thread!MemoryError =>
   (row.metadata_json === null
     ? Effect.succeed(undefined)
-    : decodeJson(row.metadata_json, "thread metadata")).pipe(
-      Effect.map((metadata) => ({
-        id: row.thread_id,
-        namespace: { kind: row.namespace_kind, id: row.namespace_id },
-        ...(row.title === null ? {} : { title: row.title }),
-        ...(metadata === undefined ? {} : { metadata }),
-        createdAtMs: Number(row.created_at_ms),
-        updatedAtMs: Number(row.updated_at_ms)
-      }))
-    )
+    : decodeJson(row.metadata_json, "thread metadata"))
+  |> Effect.map(%, (metadata) => ({
+    id: row.thread_id,
+    namespace: { kind: row.namespace_kind, id: row.namespace_id },
+    ...(row.title === null ? {} : { title: row.title }),
+    ...(metadata === undefined ? {} : { metadata }),
+    createdAtMs: Number(row.created_at_ms),
+    updatedAtMs: Number(row.updated_at_ms)
+  }))
 
 /**
  * Rows a tag-filtered note read pulls per round trip.
@@ -358,24 +348,23 @@ export const MIN_NOTE_PAGE_SIZE = 128
  * @category utils
  * @since 0.1.0
  */
-export const collectUntil = <Row, A>(
+export const collectUntil = effect <Row, A>(
   limit: number,
   pageSize: number,
-  fetchPage: (pageSize: number, after: Row | undefined) => Effect.Effect<ReadonlyArray<Row>, MemoryError>,
-  keep: (rows: ReadonlyArray<Row>) => Effect.Effect<ReadonlyArray<A>, MemoryError>
-): Effect.Effect<ReadonlyArray<A>, MemoryError> =>
-  Effect.gen(function*() {
-    const collected: Array<A> = []
-    let after: Row | undefined
-    while (collected.length < limit) {
-      const rows = yield* fetchPage(pageSize, after)
-      if (rows.length === 0) break
-      collected.push(...(yield* keep(rows)).slice(0, limit - collected.length))
-      if (rows.length < pageSize) break
-      after = rows[rows.length - 1]!
-    }
-    return collected
-  })
+  fetchPage: (pageSize: number, after: Row | undefined) => ReadonlyArray<Row>!MemoryError,
+  keep: (rows: ReadonlyArray<Row>) => ReadonlyArray<A>!MemoryError
+): ReadonlyArray<A>!MemoryError => {
+  const collected: Array<A> = []
+  let after: Row | undefined
+  while (collected.length < limit) {
+    const rows = try fetchPage(pageSize, after)
+    if (rows.length === 0) break
+    collected.push(...(try keep(rows)).slice(0, limit - collected.length))
+    if (rows.length < pageSize) break
+    after = rows[rows.length - 1]!
+  }
+  return collected
+}
 
 /**
  * Builds the tag-group predicate of a read.
@@ -392,16 +381,15 @@ export const tagMatcher = (input: Pick<ListNotesInput, "tagGroups">) => (tags: R
  * @category validation
  * @since 0.1.0
  */
-export const validateRecords = (records: SearchRowsInput["records"], operation: "searchRows" | "searchFts") =>
-  Effect.gen(function*() {
-    if (records === undefined) return
-    if (records.length > 64) {
-      return yield* Effect.fail(error("invalid_argument", `${operation} accepts at most 64 record identities`))
+export const validateRecords = effect (records: SearchRowsInput["records"], operation: "searchRows" | "searchFts") => {
+  if (records === undefined) return
+  if (records.length > 64) {
+    throw error("invalid_argument", `${operation} accepts at most 64 record identities`)
+  }
+  for (const record of records) {
+    if (record.kind !== "fact" && record.kind !== "note") {
+      throw error("invalid_argument", `${operation} record kind must be fact or note`)
     }
-    for (const record of records) {
-      if (record.kind !== "fact" && record.kind !== "note") {
-        return yield* Effect.fail(error("invalid_argument", `${operation} record kind must be fact or note`))
-      }
-      yield* validateNonEmpty(record.id, "record id", ["records", "id"])
-    }
-  })
+    try validateNonEmpty(record.id, "record id", ["records", "id"])
+  }
+}

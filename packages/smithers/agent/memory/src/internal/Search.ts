@@ -25,7 +25,7 @@ import {
   tagMatcher,
   validateLimit,
   validateRecords
-} from "./Store.ts"
+} from "./Store.vibe"
 
 /**
  * The domain readers search pages through.
