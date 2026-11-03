@@ -67,8 +67,8 @@ export interface MakeOptions<R = never> {
  * @since 0.1.0
  */
 export interface RuntimeRung<I, A, E, R, E2, R2> {
-  readonly run: (input: I) => Effect.Effect<A, E, R>
-  readonly escalateIf?: ((result: A, level: number) => Effect.Effect<boolean, E2, R2>) | undefined
+  readonly run: (input: I) => A!E!R
+  readonly escalateIf?: ((result: A, level: number) => boolean!E2!R2) | undefined
 }
 
 /**
@@ -86,9 +86,9 @@ export interface RuntimeRung<I, A, E, R, E2, R2> {
  * @since 0.1.0
  */
 export interface RuntimeOptions<I, A, E, R, E2, R2, F = A, E3 = never, R3 = never> {
-  readonly rungs: ReadonlyArray<((input: I) => Effect.Effect<A, E, R>) | RuntimeRung<I, A, E, R, E2, R2>>
-  readonly accept?: ((result: A) => Effect.Effect<unknown, E2, R2>) | undefined
-  readonly fallback?: ((input: I) => Effect.Effect<F, E3, R3>) | undefined
+  readonly rungs: ReadonlyArray<((input: I) => A!E!R) | RuntimeRung<I, A, E, R, E2, R2>>
+  readonly accept?: ((result: A) => unknown!E2!R2) | undefined
+  readonly fallback?: ((input: I) => F!E3!R3) | undefined
 }
 
 /**
@@ -168,7 +168,7 @@ const declared = <R>(rung: Member<R> | Rung<R>): Rung<R> =>
   "flow" in rung ? { flow: rung.flow, escalateIf: rung.escalateIf } : { flow: rung }
 
 const operational = <I, A, E, R, E2, R2>(
-  rung: ((input: I) => Effect.Effect<A, E, R>) | RuntimeRung<I, A, E, R, E2, R2>
+  rung: ((input: I) => A!E!R) | RuntimeRung<I, A, E, R, E2, R2>
 ): RuntimeRung<I, A, E, R, E2, R2> =>
   typeof rung === "function" ? { run: rung } : { run: rung.run, escalateIf: rung.escalateIf }
 
@@ -272,10 +272,10 @@ export const make = <R = never>(options: MakeOptions<R>): EscalationFlow<R> => {
 
 const escalates = <I, A, E, R, E2, R2>(
   rung: RuntimeRung<I, A, E, R, E2, R2>,
-  accept: ((result: A) => Effect.Effect<unknown, E2, R2>) | undefined,
+  accept: ((result: A) => unknown!E2!R2) | undefined,
   result: A,
   level: number
-): Effect.Effect<boolean, E2, R2> => {
+): boolean!E2!R2 => {
   if (rung.escalateIf !== undefined) return rung.escalateIf(result, level)
   if (accept !== undefined) return Effect.map(accept(result), (decision) => !accepted(decision))
   return Effect.succeed(defaultEscalate(result))
@@ -299,7 +299,7 @@ const escalates = <I, A, E, R, E2, R2>(
 export const run = <I, A, E, R, E2 = never, R2 = never, F = A, E3 = never, R3 = never>(
   input: I,
   options: RuntimeOptions<I, A, E, R, E2, R2, F, E3, R3>
-): Effect.Effect<Settled<A, F>, E | E2 | E3 | PatternError, R | R2 | R3> => {
+): Settled<A, F>!E | E2 | E3 | PatternError!R | R2 | R3 => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the array, a rung record, or the option object in between must
   // not reach it.
@@ -311,23 +311,23 @@ export const run = <I, A, E, R, E2 = never, R2 = never, F = A, E3 = never, R3 = 
       new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" })
     )
   }
-  return Effect.gen(function*() {
+  return effect {
     let last: A | undefined
     let level = 0
     for (const rung of rungs) {
-      const result = yield* rung.run(input)
+      const result = try rung.run(input)
       last = result
-      if (!(yield* escalates(rung, accept, result, level))) {
+      if (!(try escalates(rung, accept, result, level))) {
         const settled: Reached<A> = { level, result, exhausted: false }
         return settled
       }
       level = level + 1
     }
     if (fallback !== undefined) {
-      const settled: Reached<F> = { level: rungs.length, result: yield* fallback(input), exhausted: false }
+      const settled: Reached<F> = { level: rungs.length, result: try fallback(input), exhausted: false }
       return settled
     }
     const spent: Exhausted<A> = { level: rungs.length - 1, result: last as A, accepted: false, exhausted: true }
     return spent
-  })
+  }
 }

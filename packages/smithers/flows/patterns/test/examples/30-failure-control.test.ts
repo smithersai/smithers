@@ -4,7 +4,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
-import { declaredCalls, main, protectRelease } from "../../examples/30-failure-control.ts"
+import { declaredCalls, main, protectRelease } from "../../examples/30-failure-control.vibe"
 
 it("declares the deploy's compensations in reverse order", () => {
   expect(declaredCalls).toEqual([

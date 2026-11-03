@@ -104,7 +104,7 @@ export interface Verdict {
  * @since 0.1.0
  */
 export interface RuntimeOptions<I, Out, E, R> {
-  readonly checks: Readonly<Record<string, (input: I) => Effect.Effect<Out, E, R>>>
+  readonly checks: Readonly<Record<string, (input: I) => Out!E!R>>
   readonly strategy: Strategy
   readonly concurrency: number
   readonly continueOnFail: boolean
@@ -320,7 +320,7 @@ export const make = <R = never>(options: MakeOptions<R>): CheckSuiteFlow<R> => {
 export const run = <I, Out, E, R>(
   input: I,
   options: RuntimeOptions<I, Out, E, R>
-): Effect.Effect<Verdict, E | PatternError, R> => {
+): Verdict!E | PatternError!R => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the record or the option object in between must not reach it.
   const declared = Object.entries(options.checks)
@@ -348,7 +348,7 @@ export const run = <I, Out, E, R>(
   return Effect.map(
     Effect.forEach(
       declared,
-      ([id, check]): Effect.Effect<CheckResult, E, R> => {
+      ([id, check]): CheckResult!E!R => {
         const attempt = Effect.map(check(input), (row) => classify(id, row))
         return continueOnFail
           ? Effect.catch(attempt, (error) => Effect.succeed({ id, passed: false, error }))
