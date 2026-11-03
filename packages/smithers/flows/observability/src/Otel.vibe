@@ -16,7 +16,7 @@ import {
   type InvalidResourceConfiguration,
   layer as resourceLayer,
   Resource,
-} from "./Resource.ts"
+} from "./Resource.vibe"
 
 /**
  * Injected providers used by the provider-neutral OTEL layer.

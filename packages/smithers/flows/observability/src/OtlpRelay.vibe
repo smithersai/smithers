@@ -21,9 +21,6 @@ import * as Effect from "effect/Effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import type * as LogLevel from "effect/LogLevel"
-import * as Metric from "effect/Metric"
-import * as Schema from "effect/Schema"
-import * as Stream from "effect/Stream"
 import * as FlowsMetric from "./Metric.vibe"
 
 /**
@@ -354,12 +351,12 @@ const finish = (allowed: Allowed | undefined, record: Draft): Line => ({
 })
 
 const relayOf = <A>(
-  decode: (input: unknown) => Effect.Effect<A, Schema.SchemaError>,
+  decode: (input: unknown) => A!Schema.SchemaError,
   toDrafts: (request: A) => Array<Draft>,
   rejected: string
 ) => ({
-  drafts: (text: string): Effect.Effect<Array<Draft>, number> =>
-    decode(text).pipe(Effect.mapError(() => 400), Effect.map(toDrafts)),
+  drafts: (text: string): Array<Draft>!number =>
+    decode(text) |> Effect.mapError(%, () => 400) |> Effect.map(%, toDrafts),
   rejected
 })
 
@@ -402,21 +399,20 @@ const nestedTooDeep = (text: string): boolean => {
 const route = /\/v1\/(logs|traces|metrics)$/
 
 /** Reads the body as text, failing with 413 as soon as it passes `limit` bytes. */
-const readText = (stream: Stream.Stream<Uint8Array, unknown>, limit: number): Effect.Effect<string, number> =>
+const readText = (stream: Stream<Uint8Array, unknown>, limit: number): string!number =>
   Effect.suspend(() => {
     const decoder = new TextDecoder()
     let bytes = 0
     let text = ""
-    return stream.pipe(
-      Stream.mapError(() => 400),
-      Stream.runForEach((chunk) => {
+    return stream
+      |> Stream.mapError(%, () => 400)
+      |> Stream.runForEach(%, (chunk) => {
         bytes += chunk.byteLength
         if (bytes > limit) return Effect.fail(413)
         text += decoder.decode(chunk, { stream: true })
         return Effect.void
-      }),
-      Effect.map(() => text + decoder.decode())
-    )
+      })
+      |> Effect.map(%, () => text + decoder.decode())
   })
 
 const answer = (status: number): HttpServerResponse.HttpServerResponse =>
@@ -471,40 +467,40 @@ const answer = (status: number): HttpServerResponse.HttpServerResponse =>
  */
 export const serve = (
   options: Options = {}
-): Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest> => {
+): HttpServerResponse.HttpServerResponse!never!HttpServerRequest.HttpServerRequest => {
   const maxBodyBytes = options.maxBodyBytes ?? defaultMaxBodyBytes
   const maxRecords = options.maxRecords ?? defaultMaxRecords
   const allowed: Allowed | undefined = options.allow === undefined ? undefined : {
     records: new Set(options.allow.records),
     fields: new Set(options.allow.fields)
   }
-  return Effect.gen(function*() {
-    const request = yield* HttpServerRequest.HttpServerRequest
+  return (effect {
+    const request = try HttpServerRequest.HttpServerRequest
     const signal = route.exec(request.url.split("?")[0]!)?.[1] as Signal | undefined
-    if (signal === undefined) return yield* Effect.fail(404)
-    if (request.method !== "POST") return yield* Effect.fail(405)
-    const text = yield* readText(request.stream, maxBodyBytes)
-    if (nestedTooDeep(text)) return yield* Effect.fail(400)
+    if (signal === undefined) throw 404
+    if (request.method !== "POST") throw 405
+    const text = try readText(request.stream, maxBodyBytes)
+    if (nestedTooDeep(text)) throw 400
     const relay = relays[signal]
-    const drafts = yield* relay.drafts(text)
+    const drafts = try relay.drafts(text)
     const listedDrafts = drafts.filter((record) => listed(allowed, record))
     const kept = listedDrafts.slice(0, maxRecords)
     const notAllowed = drafts.length - listedDrafts.length
     const overLimit = listedDrafts.length - kept.length
-    yield* Effect.forEach(
+    try Effect.forEach(
       kept,
       (record) => {
         const line = finish(allowed, record)
-        return Effect.logWithLevel(line.level)(line.message).pipe(Effect.annotateLogs(line.annotations))
+        return Effect.logWithLevel(line.level)(line.message) |> Effect.annotateLogs(line.annotations)(%)
       },
       { discard: true }
     )
-    yield* Metric.update(Metric.withAttributes(FlowsMetric.relayedRecords, { signal }), kept.length)
-    yield* Metric.update(
+    try Metric.update(Metric.withAttributes(FlowsMetric.relayedRecords, { signal }), kept.length)
+    try Metric.update(
       Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal, reason: "not_allowed" }),
       notAllowed
     )
-    yield* Metric.update(
+    try Metric.update(
       Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal, reason: "over_limit" }),
       overLimit
     )
@@ -517,5 +513,5 @@ export const serve = (
         partialSuccess: { [relay.rejected]: notAllowed + overLimit, errorMessage: reasons.join("; ") }
       }
     )
-  }).pipe(Effect.catch((status) => Effect.succeed(answer(status))))
+  }) |> Effect.catch(%, (status) => Effect.succeed(answer(status)))
 }

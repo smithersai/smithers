@@ -8,7 +8,6 @@ import * as OtelResource from "@effect/opentelemetry/Resource"
 import type { Attributes as OtelAttributes } from "@opentelemetry/api"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as OtlpResource from "effect/observability/OtlpResource"
 import * as Schema from "effect/Schema"
 import { schemaIssueMessage, schemaIssuePath } from "./internal/schemaIssuePath.ts"
 
@@ -246,8 +245,8 @@ const invalid = (cause: unknown): InvalidResourceConfiguration => {
  */
 export const decode = (
   configuration: unknown
-): Effect.Effect<Configuration, InvalidResourceConfiguration> =>
-  Schema.decodeUnknownEffect(Configuration)(configuration).pipe(Effect.mapError(invalid))
+): Configuration!InvalidResourceConfiguration =>
+  Schema.decodeUnknownEffect(Configuration)(configuration) |> Effect.mapError(%, invalid)
 
 /**
  * Decodes one resource configuration for the package's pure projection API.

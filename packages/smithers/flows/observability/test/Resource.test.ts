@@ -5,7 +5,7 @@ import * as BrowserOtel from "../src/BrowserOtel.vibe"
 import * as NodeOtel from "../src/NodeOtel.vibe"
 import * as Otel from "../src/Otel.vibe"
 import * as Otlp from "../src/Otlp.ts"
-import * as Resource from "../src/Resource.ts"
+import * as Resource from "../src/Resource.vibe"
 import { effectVersion } from "./fixtures/effectVersion.ts"
 import { boundaryResources, resourceBytes, sdkResourceBytes } from "./fixtures/resources.ts"
 

@@ -6,13 +6,9 @@
 
 import { Journal, JournalEvent, TelemetryLog as Telemetry } from "@smthrs/journal"
 import * as Cause from "effect/Cause"
-import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Logger from "effect/Logger"
 import type * as LogLevel from "effect/LogLevel"
 import * as EffectMetric from "effect/Metric"
-import * as Queue from "effect/Queue"
-import * as References from "effect/References"
 import * as Schema from "effect/Schema"
 import { schemaIssuePath } from "./internal/schemaIssuePath.ts"
 import { droppedLogRecords } from "./Metric.vibe"
@@ -201,16 +197,15 @@ const OptionsSchema = Schema.Struct({
 })
 
 const validateOptions = (options: Options) =>
-  Schema.decodeUnknownEffect(OptionsSchema)(options).pipe(
-    Effect.mapError((cause) => {
-      const path = schemaIssuePath(cause, "options")
-      return new InvalidJournalLoggerOptions({
-        code: "invalid_journal_logger_options",
-        path,
-        message: `journal logger ${path} is invalid`
-      })
+  Schema.decodeUnknownEffect(OptionsSchema)(options)
+  |> Effect.mapError(%, (cause) => {
+    const path = schemaIssuePath(cause, "options")
+    return new InvalidJournalLoggerOptions({
+      code: "invalid_journal_logger_options",
+      path,
+      message: `journal logger ${path} is invalid`
     })
-  )
+  })
 
 const makeLog = (options: Logger.Options<unknown>, runId: JournalEvent.RunId): JournalEvent.Input =>
   new JournalEvent.Input({
@@ -257,50 +252,48 @@ export const layerJournalForwarding = (
       Layer.merge(
         Layer.effect(
           Logger.CurrentLoggers,
-          Effect.gen(function*() {
-            const journal = yield* Journal.Journal
-            const queue = yield* Queue.bounded<JournalEvent.Input>(configured.capacity ?? 256)
-            const dropped = EffectMetric.update(droppedLogRecords, 1)
+          effect {
+            const journal = try Journal.Journal
+            const queue = try Queue.bounded<JournalEvent.Input>(configured.capacity ?? 256)
+            const dropped = effect {
+              return try EffectMetric.update(droppedLogRecords, 1)
+            }
             // This worker is forked before the logger it feeds is installed, so
             // its ambient logger set cannot contain that logger and a warning
             // here cannot enqueue itself. Delivery stays lossy; the loss is
             // reported and counted instead of vanishing. Warning annotations
             // use fixed codes so ambient sinks never receive raw failures.
             const forward = Effect.fn("JournalLogger.forward")((input: JournalEvent.Input) =>
-              journal.emitLossy(input).pipe(
-                Effect.tap((receipt) => receipt._tag === "Dropped" ? dropped : Effect.void),
-                Effect.catch(() =>
-                  dropped.pipe(
-                    Effect.andThen(
-                      Effect.annotateLogs(Effect.logWarning("A telemetry log record could not be forwarded"), {
-                        runId: configured.runId,
-                        code: "journal_forwarding_failed"
-                      })
-                    )
-                  )
-                )
-              )
+              journal.emitLossy(input)
+              |> Effect.tap(%, (receipt) => receipt._tag === "Dropped" ? dropped : Effect.void)
+              |> Effect.catch(%, () =>
+                dropped
+                |> Effect.andThen(
+                  %,
+                  Effect.annotateLogs(Effect.logWarning("A telemetry log record could not be forwarded"), {
+                    runId: configured.runId,
+                    code: "journal_forwarding_failed"
+                  })
+                ))
             )
-            yield* Effect.forever(
-              Queue.take(queue).pipe(
-                Effect.flatMap(forward),
+            try (Effect.forever(
+              Queue.take(queue)
+                |> Effect.flatMap(%, forward)
                 // A defect from a journal implementation would otherwise end
                 // this fiber for the rest of the run, silently, while the layer
                 // still looks installed. Interruption stays fatal.
-                Effect.catchCause((cause) =>
+                |> Effect.catchCause(%, (cause) =>
                   Cause.hasInterruptsOnly(cause)
                     ? Effect.failCause(cause)
-                    : dropped.pipe(
-                      Effect.andThen(
+                    : (dropped
+                      |> Effect.andThen(
+                        %,
                         Effect.annotateLogs(
                           Effect.logWarning("The telemetry forwarding worker recovered from a defect"),
                           { runId: configured.runId, code: "journal_forwarding_defect" }
                         )
-                      )
-                    )
-                )
-              )
-            ).pipe(Effect.forkScoped)
+                      )))
+            ) |> Effect.forkScoped(%))
 
             const logger = Logger.make<unknown, void>((logOptions) => {
               // Snapshotting and redacting the record is the expensive half of
@@ -313,9 +306,9 @@ export const layerJournalForwarding = (
                 && Queue.offerUnsafe(queue, makeLog(logOptions, configured.runId))
               if (!accepted) droppedLogRecords.updateUnsafe(1, logOptions.fiber.context)
             })
-            const current = yield* Effect.withFiber((fiber) => Effect.sync(() => fiber.getRef(Logger.CurrentLoggers)))
+            const current = try Effect.withFiber(effect (fiber) => fiber.getRef(Logger.CurrentLoggers))
             return new Set(configured.mergeWithExisting === true ? current : []).add(logger)
-          })
+          }
         ),
         configured.minimumLogLevel === undefined
           ? Layer.empty

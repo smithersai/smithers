@@ -38,14 +38,22 @@
     "./BrowserOtel": "./src/BrowserOtel.vibe",
     "./Endpoint": "./src/Endpoint.ts",
     "./FetchFailures": "./src/FetchFailures.ts",
-    "./JournalLogger": "./src/JournalLogger.ts",
+    "./JournalLogger": {
+      "types": "./.vibe/declarations/src/JournalLogger.d.vibe.ts",
+      "vibelang-source": "./src/JournalLogger.vibe",
+      "default": "./.vibelang/js/src/JournalLogger.js"
+    },
     "./LogFailures": "./src/LogFailures.vibe",
     "./Logger": "./src/Logger.vibe",
     "./Metric": "./src/Metric.vibe",
     "./NodeOtel": "./src/NodeOtel.vibe",
     "./Otel": "./src/Otel.vibe",
     "./Otlp": "./src/Otlp.ts",
-    "./Resource": "./src/Resource.ts",
+    "./Resource": {
+      "types": "./.vibe/declarations/src/Resource.d.vibe.ts",
+      "vibelang-source": "./src/Resource.vibe",
+      "default": "./.vibelang/js/src/Resource.js"
+    },
     "./index": "./src/index.ts"
   },
   "files": [

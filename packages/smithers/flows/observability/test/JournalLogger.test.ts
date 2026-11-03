@@ -12,7 +12,7 @@ import {
   TelemetryLog,
   truncatedMarker,
   unrenderableMarker
-} from "../src/JournalLogger.ts"
+} from "../src/JournalLogger.vibe"
 import { droppedLogRecords } from "../src/Metric.vibe"
 
 const run = <A, E>(program: Effect.Effect<A, E, never>) => Effect.runPromise(program.pipe(Effect.scoped))
