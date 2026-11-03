@@ -47,6 +47,10 @@ test("each repository has one live run and machine query; timestamps and reporte
     await sql((sql) => sql`UPDATE runners SET held = 'load 31/24' WHERE name = 'alpha'`)
     await runtime.runPromise(machines.rows.pipe(Stream.filter((rows) => rows.some((row) => row.name === "alpha" && row.held === "load 31/24")), Stream.runHead), { signal })
     expect(await runtime.runPromise(machines.toArray)).toMatchObject([{ name: "alpha", held: "load 31/24" }, { name: "zulu" }])
+    expect(h.electric.some((url) => url.searchParams.get("live") === "true")).toBe(true)
+    expect(h.electric.every((url) =>
+      !url.searchParams.has("live_sse") && !url.searchParams.has("experimental_live_sse"),
+    )).toBe(true)
   } finally { await runtime.dispose() }
 })
 

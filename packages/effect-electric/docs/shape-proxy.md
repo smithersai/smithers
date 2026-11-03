@@ -78,6 +78,22 @@ or `params` that changes under them makes Electric answer
 keeps its rows on a refusal: it retries a `503` under its sync policy and stops
 on a `401` or `403`.
 
+## Live requests and authorization
+
+The default `cache: "no-store"` policy refuses SSE with `400`, without calling
+Electric. Both `live_sse` and `experimental_live_sse` must be absent or have
+`"false"` as their first value. Invalid opt-ins are refused too. This applies
+to fixed shapes as well as shape Effects: a route may check access before
+calling the proxy.
+
+Use Electric's long polling (`live=true`). Each finite request runs the host's
+access decision again. An already admitted long poll may return one last batch
+after access is removed; its next request must pass access again. An SSE
+response would keep delivering new rows indefinitely under the original check.
+
+Only an explicitly public shape (`cache: "public"`), whose rows never depend on
+access, may forward SSE. Do not mark a protected shape public to enable SSE.
+
 ## What reaches Electric
 
 The proxy builds every upstream request itself from:

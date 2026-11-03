@@ -15,6 +15,8 @@
  *   another shape under the same URL;
  * - drops every other parameter, subset requests' (`subset__*`) included, so
  *   a browser reads the whole shape or nothing;
+ * - refuses SSE on no-store shapes, so one authorization cannot admit an
+ *   unbounded stream; long polls authorize again on their next request;
  * - adds Electric's `secret`, as a parameter or a bearer token, and Electric
  *   Cloud's `source_id`;
  * - sends one canonical URL per request (parameters sorted by name, each
@@ -118,6 +120,8 @@ export interface Shape {
  *   session, or a shape served only after a session check. The browser's URL
  *   doesn't name the person, so a cached response would answer the next
  *   person in that browser, or anyone after sign-out.
+ *   SSE requests are refused with 400: a session check authorizes one finite
+ *   response, never an unbounded stream. Use long polling instead.
  * - `"public"`: Electric's caching headers pass through, for a shape that is
  *   the same for everyone and served without a session check.
  *
@@ -291,6 +295,9 @@ const noStore = { "cache-control": "private, no-store" } as const
  *   and `cursor` send the same URL, and two different shapes never do.
  * - A `shape` Effect that fails with `Refused` is answered with its status,
  *   and Electric is never called.
+ * - Unless `cache` is `"public"`, an SSE opt-in (`live_sse` or
+ *   `experimental_live_sse`, present with a first value other than `"false"`)
+ *   is 400 without calling Electric. Long polling checks access per request.
  * - Electric unreachable is 502. Otherwise Electric's status, headers and body
  *   stream back.
  * - A refusal, and unless `cache` is `"public"` every other response, a 405
@@ -409,6 +416,16 @@ export const make = <R = never>(
       })
     }
     const shape = decided.success
+
+    // A protected shape's access decision admits one finite response. SSE can keep sending new rows forever
+    // after that decision expires or access is removed. Only explicitly public shapes may opt into SSE.
+    // Match the first-value rule below, and fail closed on malformed opt-ins as well as `true`.
+    if (
+      !keeps && ["live_sse", "experimental_live_sse"].some((key) => incoming.has(key) && incoming.get(key) !== "false")
+    ) {
+      yield* ended(400, "proxy")
+      return HttpServerResponse.empty({ status: 400, headers: ownHeaders })
+    }
 
     // The first value of each protocol parameter, then the host's shape and credentials. The two sets of names never
     // overlap, so every name appears once and sorting them gives one URL per request whatever the browser's order.

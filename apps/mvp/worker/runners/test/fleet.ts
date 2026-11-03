@@ -12,12 +12,14 @@ export const fleetHarness = async (runtime: ReturnType<typeof testFile>, options
   readonly actor?: Actor.Actor
   readonly sessions?: Layer.Layer<Actor.Sessions>
   readonly roles?: RepoRoles.RepoRoles<never>
+  readonly onElectric?: (url: URL) => void
 } = {}) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
   const electric: Array<URL> = []
   const toElectric: typeof globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     electric.push(new URL(url))
+    options.onElectric?.(url)
     const table = url.searchParams.get("table")
     if (table !== null) url.searchParams.set("table", `${scratch.name}.${table}`)
     return globalThis.fetch(url, init)

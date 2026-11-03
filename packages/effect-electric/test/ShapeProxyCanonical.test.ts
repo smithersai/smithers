@@ -18,7 +18,8 @@ const proxy = (shape: ShapeProxy.Shape) => {
     return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
   }
   const handler = HttpEffect.toWebHandler(
-    ShapeProxy.make({ url: ELECTRIC_URL, shape }).pipe(
+    // Public shapes may forward arbitrary SSE parameters; protected shapes refuse SSE before contacting upstream.
+    ShapeProxy.make({ url: ELECTRIC_URL, shape, cache: "public" }).pipe(
       Effect.provide(Layer.mergeAll(FetchHttpClient.layer, Logger.layer([]))),
       Effect.provideService(FetchHttpClient.Fetch, fetch)
     )

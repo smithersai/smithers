@@ -1,6 +1,6 @@
-import { TestSchemas } from "@smthrs/database"
 import { PgClient } from "@effect/sql-pg"
 import { isChangeMessage, ShapeStream } from "@electric-sql/client"
+import { TestSchemas } from "@smthrs/database"
 import { ConfigProvider, Effect, Fiber, Layer, Logger, Metric, Redacted, References, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -449,6 +449,25 @@ describe("caching: no Electric needed", () => {
 })
 
 describe.skipIf(!electricUp)("through Electric", () => {
+  test.each(["live_sse", "experimental_live_sse"])(
+    "a protected shape rejects %s, including duplicate and malformed opt-ins, before Electric",
+    async (flag) => {
+      for (const options of [{}, { cache: "no-store" as const }, { shape: Effect.succeed({ table: "items" }) }]) {
+        for (const query of [`${flag}=true`, `${flag}=true&${flag}=false`, `${flag}=`, `${flag}=1`]) {
+          const h = harness(options)
+          const response = await h.request(`?offset=-1&live=true&${query}`)
+          expect(response.status).toBe(400)
+          expect(await response.text()).toBe("")
+          expect(response.headers.get("cache-control")).toBe("private, no-store")
+          expect(h.upstream).toEqual([])
+          expect(h.line()).toMatchObject({ level: "Warn", annotations: { status: 400, upstream: "proxy", bytes: 0 } })
+          expect(h.count(ShapeProxy.defaultMetric, { status: "400", live: "true" })).toBe(1)
+          expect(h.span().attributes.get("http.response.status_code")).toBe(400)
+        }
+      }
+    }
+  )
+
   test("forwards only the protocol parameters, the first of each, with the host's shape, its columns, and credentials, sorted by name", async () => {
     const secret = "electric-secret-4b2d"
     const h = harness({
@@ -551,6 +570,24 @@ describe.skipIf(!electricUp)("through Electric", () => {
       expect(response.headers.get("cache-control")).toMatch(/^public, max-age=\d+/)
       expect(response.headers.get("etag")).toEqual(expect.any(String))
       await response.text()
+    })
+
+    test("an explicitly public shape can still open SSE", async () => {
+      const h = harness({ shape: { table }, cache: "public" })
+      const snapshot = await h.request("?offset=-1")
+      expect(snapshot.status).toBe(200)
+      await snapshot.text()
+      const response = await h.request(
+        `?live=true&live_sse=true&handle=${snapshot.headers.get("electric-handle")}` +
+          `&offset=${snapshot.headers.get("electric-offset")}`
+      )
+      try {
+        expect(response.status).toBe(200)
+        expect(response.headers.get("content-type")).toContain("text/event-stream")
+        expect(h.upstream.at(-1)?.searchParams.get("live_sse")).toBe("true")
+      } finally {
+        await response.body?.cancel()
+      }
     })
 
     test("an Electric client follows a no-store shape through the proxy: its rows, then a live insert", async () => {
