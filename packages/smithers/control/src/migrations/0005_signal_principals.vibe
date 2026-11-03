@@ -17,11 +17,11 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const signalPrincipals = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql.withTransaction(Effect.gen(function*() {
-    const columns = yield* Dialect.columns(sql, "control_signal_commands")
+export const signalPrincipals = effect {
+  const sql = try SqlClient.SqlClient
+  try sql.withTransaction(effect {
+    const columns = try Dialect.columns(sql, "control_signal_commands")
     if (columns.some((column) => column.name === "principal_json")) return
-    yield* sql`ALTER TABLE control_signal_commands ADD COLUMN principal_json TEXT`
-  }))
-})
+    try sql`ALTER TABLE control_signal_commands ADD COLUMN principal_json TEXT`
+  })
+}

@@ -5,10 +5,10 @@
  */
 import { Effect, type Redacted, Schema } from "effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
-import { type Channel, Channels, type InboundResult, type RawInbound } from "../../../src/Channels.ts";
+import { type Channel, Channels, type InboundResult, type RawInbound } from "./Channels.vibe";
 import { InvalidInput, type Unauthorized } from "../../../src/ControlError.ts";
 import type { IdempotencyKey } from "../../../src/ControlSchema.ts";
-import type { CredentialRef } from "../../../src/Credential.ts";
+import type { CredentialRef } from "./Credential.vibe";
 /**
  * Signature verifier injected by a webhook transport.
  *

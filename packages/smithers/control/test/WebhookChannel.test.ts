@@ -9,9 +9,9 @@
 import { Cause, Effect, Exit, Layer, Redacted, Schema, Stream } from "effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { describe, expect, it } from "vitest"
-import * as Channels from "../src/Channels.ts"
+import * as Channels from "../src/Channels.vibe"
 import { InvalidInput, Unauthorized } from "../src/ControlError.ts"
-import type { CredentialRef } from "../src/Credential.ts"
+import type { CredentialRef } from "../src/Credential.vibe"
 import * as WebhookChannel from "../src/WebhookChannel.vibe"
 
 const accepted = { _tag: "Accepted" as const, receiptId: "receipt" }

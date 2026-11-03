@@ -17,12 +17,12 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const resumeConsent = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql.withTransaction(Effect.gen(function*() {
-    const columns = yield* Dialect.columns(sql, "control_run_resumes")
+export const resumeConsent = effect {
+  const sql = try SqlClient.SqlClient
+  try sql.withTransaction(effect {
+    const columns = try Dialect.columns(sql, "control_run_resumes")
     if (!columns.some((column) => column.name === "consent_seq")) {
-      yield* sql`ALTER TABLE control_run_resumes ADD COLUMN consent_seq ${Dialect.integer(sql)}`
+      try sql`ALTER TABLE control_run_resumes ADD COLUMN consent_seq ${Dialect.integer(sql)}`
     }
-  }))
-})
+  })
+}

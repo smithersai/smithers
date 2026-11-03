@@ -120,7 +120,7 @@ import {
 } from "./internal/planning.ts"
 import { causeMessages, missingTable } from "./internal/sqlSchemaErrors.ts"
 import * as Lineage from "./Lineage.vibe"
-import * as Migrations from "./Migrations.ts"
+import * as Migrations from "./Migrations.vibe"
 import { plannable } from "./SystemFlows.ts"
 
 /**

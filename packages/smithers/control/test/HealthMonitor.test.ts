@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import * as Health from "../src/Health.vibe"
-import * as Monitor from "../src/Monitor.ts"
+import * as Monitor from "../src/Monitor.vibe"
 import { durable, type DurableStack } from "./DurableStack.ts"
 import * as ObservedClock from "./ObservedClock.ts"
 

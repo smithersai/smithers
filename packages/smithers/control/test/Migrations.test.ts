@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import { initial } from "../src/migrations/0001_control_tables.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 
