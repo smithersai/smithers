@@ -11,7 +11,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
-import * as PresenceProtocol from "../src/PresenceProtocol.ts"
+import * as PresenceProtocol from "../src/PresenceProtocol.vibe"
 import * as PresenceRoom from "../src/PresenceRoom.ts"
 import { hostOver, makeHost, type TestSocket } from "./presenceHost.ts"
 

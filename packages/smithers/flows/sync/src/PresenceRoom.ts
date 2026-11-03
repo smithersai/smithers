@@ -38,7 +38,7 @@ import {
   maxFrameBytes,
   maxParticipants,
   type Participant
-} from "./PresenceProtocol.ts"
+} from "./PresenceProtocol.vibe"
 
 /**
  * One socket the host holds open, shaped like Alchemy's `Cloudflare.WebSocket`.

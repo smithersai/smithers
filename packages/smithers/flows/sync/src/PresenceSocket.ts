@@ -38,7 +38,7 @@ import {
   maxStateBytes,
   type Participant,
   reconnectDelay
-} from "./PresenceProtocol.ts"
+} from "./PresenceProtocol.vibe"
 
 /**
  * Where the connection stands.

@@ -21,12 +21,8 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as Base64Url from "effect/encoding/Base64Url"
-import * as Headers from "effect/http/Headers"
 import * as Layer from "effect/Layer"
-import * as Result from "effect/Result"
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware"
-import * as Schema from "effect/Schema"
 import { causeText } from "./internal/CauseText.ts"
 import * as shareSigner from "./internal/ShareSigner.ts"
 import { SyncError } from "./SyncError.ts"
@@ -53,7 +49,7 @@ const denied = shareSigner.unauthorized
  */
 export const encodeCapability = (
   capability: WorkspaceShare.WorkspaceCapability
-): Effect.Effect<string, SyncError> => {
+): string!SyncError => {
   const encoded = Schema.encodeUnknownResult(WorkspaceShare.WorkspaceCapability)(capability)
   return Result.isFailure(encoded)
     ? Effect.fail(
@@ -75,7 +71,7 @@ export const encodeCapability = (
  * @category encoding
  * @since 0.1.0
  */
-export const decodeCapability = (value: string): Effect.Effect<WorkspaceShare.WorkspaceCapability, SyncError> => {
+export const decodeCapability = (value: string): WorkspaceShare.WorkspaceCapability!SyncError => {
   const text = Base64Url.decodeString(value)
   if (Result.isFailure(text)) {
     return Effect.fail(denied("The workspace capability header is not a capability"))
@@ -104,16 +100,16 @@ export const decodeCapability = (value: string): Effect.Effect<WorkspaceShare.Wo
  */
 export const layer: Layer.Layer<SyncAuth, never, WorkspaceShare.WorkspaceShare> = Layer.effect(
   SyncAuth,
-  Effect.gen(function*() {
-    const share = yield* WorkspaceShare.WorkspaceShare
+  effect {
+    const share = try WorkspaceShare.WorkspaceShare
     const middleware: RpcMiddleware.RpcMiddleware<never, SyncError, never> = (effect, options) => {
       const header = Headers.get(options.headers, capabilityHeader)
       if (header._tag === "None") {
         return Effect.provideService(effect, SyncPrincipal.SyncPrincipal, SyncPrincipal.anonymous)
       }
-      return decodeCapability(header.value).pipe(
-        Effect.flatMap((capability) => share.verify(capability, { access: "read" })),
-        Effect.flatMap((claims) =>
+      return decodeCapability(header.value)
+        |> Effect.flatMap(%, (capability) => share.verify(capability, { access: "read" }))
+        |> Effect.flatMap(%, (claims) =>
           Effect.provideService(
             effect,
             SyncPrincipal.SyncPrincipal,
@@ -121,12 +117,10 @@ export const layer: Layer.Layer<SyncAuth, never, WorkspaceShare.WorkspaceShare> 
             // opens a stream authorizes once; reducing the verified claims to
             // a capability id here left the stream with nothing to expire on.
             SyncPrincipal.workspace(claims.capabilityId, claims.expiresAtMs)
-          )
-        )
-      )
+          ))
     }
     return middleware
-  })
+  }
 )
 
 /**
