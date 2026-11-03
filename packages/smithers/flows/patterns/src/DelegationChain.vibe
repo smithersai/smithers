@@ -27,7 +27,7 @@ import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Escalation from "./Escalation.ts"
+import * as Escalation from "./Escalation.vibe"
 import * as Compose from "./internal/Compose.vibe"
 import * as FailureSchema from "./internal/Failure.vibe"
 import type { Member } from "./internal/Member.ts"
@@ -213,12 +213,12 @@ export interface Settlement {
  * @since 0.1.0
  */
 export interface RuntimeOptions<Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6> extends Bounds {
-  readonly refine: (input: { readonly prompt: string }) => Effect.Effect<unknown, E1, R1>
-  readonly plan: (request: PlanRequest) => Effect.Effect<unknown, E2, R2>
-  readonly derisk: (request: DeriskRequest) => Effect.Effect<unknown, E3, R3>
-  readonly execute: Readonly<Record<string, (work: Work) => Effect.Effect<unknown, E4, R4>>>
-  readonly review: (request: ReviewRequest) => Effect.Effect<unknown, E5, R5>
-  readonly settle: (settlement: Settlement) => Effect.Effect<Settled, E6, R6>
+  readonly refine: (input: { readonly prompt: string }) => unknown!E1!R1
+  readonly plan: (request: PlanRequest) => unknown!E2!R2
+  readonly derisk: (request: DeriskRequest) => unknown!E3!R3
+  readonly execute: Readonly<Record<string, (work: Work) => unknown!E4!R4>>
+  readonly review: (request: ReviewRequest) => unknown!E5!R5
+  readonly settle: (settlement: Settlement) => Settled!E6!R6
   readonly budget?: Budget | undefined
   readonly concurrency?: number | undefined
 }
@@ -675,11 +675,7 @@ const attemptCause = (attempts: ReadonlyArray<Attempt>): ReadonlyArray<Readonly<
 export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
   prompt: string,
   caller: RuntimeOptions<Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>
-): Effect.Effect<
-  Settled,
-  E1 | E2 | E3 | E5 | E6 | DelegationError | Trellis.TrellisError,
-  R1 | R2 | R3 | R4 | R5 | R6
-> => {
+): Settled!E1 | E2 | E3 | E5 | E6 | DelegationError | Trellis.TrellisError!R1 | R2 | R3 | R4 | R5 | R6 => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the option object in between must not reach it.
   const options: typeof caller = {
@@ -693,50 +689,50 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
     budget: copiedBudget(caller.budget),
     concurrency: caller.concurrency
   }
-  return Effect.gen(function*() {
+  return effect {
     const refusal = checkBounds(options, Object.keys(options.execute))
-    if (refusal !== undefined) return yield* Effect.fail(refusal)
+    if (refusal !== undefined) throw refusal
     const envelope: Trellis.Envelope = {
       fuel: options.maxDepth,
       depth: options.maxDepth,
       fanout: options.maxDepth
     }
-    const goal = yield* options.refine({ prompt })
-    const derisked = yield* ReviewLoop.run(goal, {
+    const goal = try options.refine({ prompt })
+    const derisked = try (ReviewLoop.run(goal, {
       maxRounds: options.maxDeriskRounds,
       produce: () => options.plan({ goal, round: 1 }),
       review: (plan, round) => options.derisk({ goal, plan, round }),
       revise: ({ output, review, round }) => options.plan({ goal, round: round + 1, previous: output, derisk: review })
-    }).pipe(
-      Effect.catchIf(
+    })
+      |> Effect.catchIf(
+        %,
         isPatternError,
         (error) => Effect.fail(refuse("derisk_failed", error.message))
-      )
-    )
+      ))
     const exhausted = derisked._tag === "Exhausted"
     const authored = derisked.output
-    const refusals = Trellis.validate(authored, envelope)
+    const refusals = try Effect.orDie(
+      Effect.try({ try: () => Trellis.validate(authored, envelope), catch: (error) => error })
+    )
     if (refusals.length > 0) {
       const refusal = refusals[0] as Trellis.TrellisError
-      return yield* Effect.fail(
-        new Trellis.TrellisError({
-          code: refusal.code,
-          path: refusal.path,
-          message: refusal.message,
-          cause: { rounds: [], remaining: envelope.fuel, refusals }
-        })
-      )
+      throw new Trellis.TrellisError({
+        code: refusal.code,
+        path: refusal.path,
+        message: refusal.message,
+        cause: { rounds: [], remaining: envelope.fuel, refusals }
+      })
     }
     const plan = authored as Trellis.Plan
     const outputs = new Map<string, unknown>()
-    yield* Trellis.execute(plan, {
+    try Trellis.execute(plan, {
       concurrency: options.concurrency ?? options.maxDepth,
       leaf: (leaf) => {
         const attempts: Array<Attempt> = []
         return Escalation.run<Trellis.Leaf, Attempt, E5, R4 | R5, never, never>(leaf, {
           rungs: options.tierOrder.map((tier) => (work: Trellis.Leaf) =>
             Effect.matchEffect(
-              (options.execute[tier] as (work: Work) => Effect.Effect<unknown, E4, R4>)({
+              (options.execute[tier] as (work: Work) => unknown!E4!R4)({
                 leaf: work,
                 tier,
                 goal,
@@ -750,13 +746,12 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
                     (decision): Attempt => ({ tier, failed: false, output, rejected: !accepted(decision) })
                   )
               }
-            ).pipe(
-              Effect.tap((attempt) => Effect.sync(() => attempts.push(attempt)))
             )
+            |> Effect.tap(%, effect (attempt) => attempts.push(attempt))
           ),
           accept: (attempt) => Effect.succeed(!attempt.failed && !attempt.rejected)
-        }).pipe(
-          Effect.flatMap((reached) =>
+        })
+          |> Effect.flatMap(%, (reached) =>
             reached.exhausted
               ? Effect.fail(
                 new DelegationError({
@@ -766,16 +761,17 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
                   cause: attemptCause(attempts)
                 })
               )
-              : Effect.succeed(reached.result)
-          ),
+              : Effect.succeed(reached.result))
           // The preceding acceptance predicate admits exactly the successful,
           // non-rejected member of `Attempt`. Escalation's generic predicate
           // cannot carry that refinement into its result type, so retain the
           // proven branch here instead of pretending a failed attempt can pass.
-          Effect.tap((attempt) =>
-            Effect.sync(() => outputs.set(leaf.path, (attempt as Extract<Attempt, { readonly failed: false }>).output))
-          ),
-          Effect.catchTag(
+          |> Effect.tap(
+            %,
+            effect (attempt) => outputs.set(leaf.path, (attempt as Extract<Attempt, { readonly failed: false }>).output)
+          )
+          |> Effect.catchTag(
+            %,
             "flows/patterns/PatternError",
             (error) =>
               Effect.fail(
@@ -787,12 +783,13 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
                 })
               )
           )
-        )
       }
     })
-    const leaves = Trellis.leaves(plan).map((leaf) => outputs.get(leaf.path))
-    const review = yield* options.review({ stage: "chain", goal, plan, leaves })
-    return yield* options.settle({
+    const leaves = (try Effect.orDie(Effect.try({ try: () => Trellis.leaves(plan), catch: (error) => error }))).map((
+      leaf
+    ) => outputs.get(leaf.path))
+    const review = try options.review({ stage: "chain", goal, plan, leaves })
+    return try options.settle({
       prompt,
       goal,
       plan,
@@ -800,5 +797,5 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
       review,
       deriskExhausted: exhausted
     })
-  })
+  }
 }

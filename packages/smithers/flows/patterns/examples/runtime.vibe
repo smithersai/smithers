@@ -8,7 +8,6 @@ import * as Bounded from "@smthrs/patterns/Bounded"
 import * as Quarantine from "@smthrs/patterns/Quarantine"
 import * as ReviewLoop from "@smthrs/patterns/ReviewLoop"
 import * as Effect from "effect/Effect"
-import * as Ref from "effect/Ref"
 
 /**
  * Drafts a title, then revises it until the reviewer approves or two rounds
@@ -26,15 +25,15 @@ export const reviewTitle = (draft: string) =>
  * Starts three checks at most two at a time, highest priority first, and
  * records the order they started in.
  */
-export const rankedChecks = Effect.gen(function*() {
-  const started = yield* Ref.make<ReadonlyArray<string>>([])
+export const rankedChecks = effect {
+  const started = try Ref.make<ReadonlyArray<string>>([])
   const check = (name: string) => Effect.as(Ref.update(started, (names) => [...names, name]), `${name}: ok`)
-  const results = yield* Bounded.run(
+  const results = try Bounded.run(
     { docs: check("docs"), web: check("web"), api: check("api") },
     { concurrency: 2, priorities: { api: 2, web: 1, docs: 0 } }
   )
-  return { results, order: yield* Ref.get(started) }
-})
+  return { results, order: try Ref.get(started) }
+}
 
 /**
  * Runs three checks so a failed one is quarantined while its siblings still
@@ -47,5 +46,5 @@ export const checkRepositories = (broken: ReadonlyArray<string>) => {
   return Quarantine.run(
     { api: check("api"), web: check("web"), docs: check("docs") },
     { policy: "quarantine", concurrency: 2 }
-  ).pipe(Effect.flatMap(Quarantine.settle))
+  ) |> Effect.flatMap(%, Quarantine.settle)
 }

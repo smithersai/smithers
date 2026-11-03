@@ -6,7 +6,7 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
-import { audit, drain, main, repair, settle, shadow, tune, wordy } from "../../examples/31-bounded-loops.ts"
+import { audit, drain, main, repair, settle, shadow, tune, wordy } from "../../examples/31-bounded-loops.vibe"
 
 const runtime = FlowEngine.layerMemory.pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 

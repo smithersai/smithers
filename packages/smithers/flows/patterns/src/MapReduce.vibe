@@ -11,7 +11,7 @@ import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Bounded from "./Bounded.ts"
+import * as Bounded from "./Bounded.vibe"
 import * as Compose from "./internal/Compose.vibe"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
@@ -58,11 +58,11 @@ export interface RuntimeOptions<I, Shard, Mapped, Reduced, E, R, E2, R2> {
     readonly shard: Shard
     readonly index: number
     readonly input: I
-  }) => Effect.Effect<Mapped, E, R>
+  }) => Mapped!E!R
   readonly reduce: (input: {
     readonly input: I
     readonly mapped: ReadonlyArray<Mapped>
-  }) => Effect.Effect<Reduced, E2, R2>
+  }) => Reduced!E2!R2
   readonly concurrency: number
   readonly onEmpty: OnEmpty
 }
@@ -191,7 +191,7 @@ export function run<
   options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2> & {
     readonly onEmpty: "reduce" | "fail"
   }
-): Effect.Effect<Reduced, E | E2 | PatternError, R | R2>
+): Reduced!E | E2 | PatternError!R | R2
 export function run<
   I extends { readonly shards: ReadonlyArray<unknown> },
   Mapped,
@@ -203,7 +203,7 @@ export function run<
 >(
   input: I,
   options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
-): Effect.Effect<Reduced | ReadonlyArray<Mapped>, E | E2 | PatternError, R | R2>
+): Reduced | ReadonlyArray<Mapped>!E | E2 | PatternError!R | R2
 export function run<
   I extends { readonly shards: ReadonlyArray<unknown> },
   Mapped,
@@ -215,7 +215,7 @@ export function run<
 >(
   input: I,
   options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
-): Effect.Effect<Reduced | ReadonlyArray<Mapped>, E | E2 | PatternError, R | R2> {
+): Reduced | ReadonlyArray<Mapped>!E | E2 | PatternError!R | R2 {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the shard array or the option object in between must not reach
   // it. The input itself is handed to the callbacks as the caller's object.
@@ -237,7 +237,9 @@ export function run<
     }
     return onEmpty === "succeed"
       ? Effect.succeed([])
-      : Effect.suspend(() => stages.reduce({ input, mapped: [] }))
+      : effect {
+        return try stages.reduce({ input, mapped: [] })
+      }
   }
   return Effect.flatMap(
     Effect.forEach(

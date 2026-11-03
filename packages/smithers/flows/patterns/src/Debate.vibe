@@ -53,17 +53,17 @@ export interface RuntimeOptions<I, Proponent, Opponent, Judge, E, R, E2, R2, E3,
     readonly input: I
     readonly transcript: ReadonlyArray<RuntimeTurn<Proponent, Opponent>>
     readonly round: number
-  }) => Effect.Effect<Proponent, E, R>
+  }) => Proponent!E!R
   readonly opponent: (state: {
     readonly input: I
     readonly transcript: ReadonlyArray<RuntimeTurn<Proponent, Opponent>>
     readonly proponent: Proponent
     readonly round: number
-  }) => Effect.Effect<Opponent, E2, R2>
+  }) => Opponent!E2!R2
   readonly judge: (state: {
     readonly input: I
     readonly transcript: ReadonlyArray<RuntimeTurn<Proponent, Opponent>>
-  }) => Effect.Effect<Judge, E3, R3>
+  }) => Judge!E3!R3
 }
 
 /**
@@ -167,7 +167,7 @@ export const make = <R = never>(options: MakeOptions<R>): DebateFlow<R> => {
 export const run = <I, Proponent, Opponent, Judge, E, R, E2, R2, E3, R3>(
   input: I,
   options: RuntimeOptions<I, Proponent, Opponent, Judge, E, R, E2, R2, E3, R3>
-): Effect.Effect<Judge, E | E2 | E3 | PatternError, R | R2 | R3> => {
+): Judge!E | E2 | E3 | PatternError!R | R2 | R3 => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the option object in between must not reach it.
   const participants = { proponent: options.proponent, opponent: options.opponent, judge: options.judge }
@@ -180,14 +180,14 @@ export const run = <I, Proponent, Opponent, Judge, E, R, E2, R2, E3, R3>(
       })
     )
   }
-  return Effect.gen(function*() {
+  return effect {
     const transcript: Array<RuntimeTurn<Proponent, Opponent>> = []
     const snapshot = (): ReadonlyArray<RuntimeTurn<Proponent, Opponent>> => Object.freeze([...transcript])
     for (let round = 1; round <= rounds; round++) {
-      const proponent = yield* participants.proponent({ input, transcript: snapshot(), round })
-      const opponent = yield* participants.opponent({ input, transcript: snapshot(), proponent, round })
+      const proponent = try participants.proponent({ input, transcript: snapshot(), round })
+      const opponent = try participants.opponent({ input, transcript: snapshot(), proponent, round })
       transcript.push(Object.freeze({ proponent, opponent }))
     }
-    return yield* participants.judge({ input, transcript: snapshot() })
-  })
+    return try participants.judge({ input, transcript: snapshot() })
+  }
 }

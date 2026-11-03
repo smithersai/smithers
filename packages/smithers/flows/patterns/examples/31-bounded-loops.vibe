@@ -12,7 +12,6 @@ import * as ScanFixVerify from "@smthrs/patterns/ScanFixVerify"
 import * as Sidecar from "@smthrs/patterns/Sidecar"
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 interface Setting {
@@ -74,29 +73,29 @@ const Repair = ScanFixVerify.make<
 
 /** Repairs a copy of the configuration with journaled action calls. */
 export const repair = (initial: ReadonlyMap<string, number> = config()) =>
-  Effect.gen(function*() {
+  effect {
     const current = new Map(initial)
-    const raw = yield* Repair.execute({ input: "settings" }).pipe(
-      Effect.provide(
+    const raw = try (Repair.execute({ input: "settings" })
+      |> Effect.provide(
+        %,
         Layer.mergeAll(
           Interpreter.layer(Repair),
-          Scan.toLayer(() => Effect.sync(() => violations(current))),
-          Fix.toLayer(({ issue }) => Effect.sync(() => (current.set(issue.key, issue.limit), issue.key))),
-          Verify.toLayer(() => Effect.sync(() => ({ resolved: violations(current).length === 0 })))
+          Scan.toLayer(effect () => violations(current)),
+          Fix.toLayer(effect ({ issue }) => (current.set(issue.key, issue.limit), issue.key)),
+          Verify.toLayer(effect () => ({ resolved: violations(current).length === 0 }))
         ).pipe(Layer.provide(Action.layerImplementations))
-      ),
-      Effect.orDie
-    )
-    const report = yield* Schema.decodeUnknownEffect(Schema.Struct({
+      )
+      |> Effect.orDie(%))
+    const report = try (Schema.decodeUnknownEffect(Schema.Struct({
       iterations: Schema.Number,
       remaining: Schema.Array(Violation)
-    }))(raw).pipe(Effect.orDie)
+    }))(raw) |> Effect.orDie(%))
     return {
       iterations: report.iterations,
       remaining: report.remaining,
       settled: [...current].map(([key, value]) => ({ key, value }))
     }
-  })
+  }
 
 /**
  * Compares the repaired config to the baseline an operator recorded, and pages
@@ -109,27 +108,25 @@ export const repair = (initial: ReadonlyMap<string, number> = config()) =>
  * The detector runs once. For polling, declare a flow that hands off to itself
  * with `.to(...)` and bounds the lineage with `maxRounds`.
  */
-export const audit = (
+export const audit = effect (
   settled: ReadonlyArray<Setting>
-): Effect.Effect<{ readonly drifted: boolean; readonly paged: ReadonlyArray<string> }> =>
-  Effect.gen(function*() {
-    const paged: Array<string> = []
-    const approved: Record<string, number> = { retries: 9, timeoutMs: 90_000, concurrency: 4 }
-    const result = yield* DriftDetector.run(settled, {
-      baseline: approved,
-      capture: ({ input }) => Effect.succeed(Object.fromEntries(input.map((s) => [s.key, s.value]))),
-      // Walk the union of both key sets: a setting the operator never approved
-      // is drift just as much as an approved one that moved or went missing.
-      compare: ({ baseline, snapshot }) =>
-        Effect.sync(() => {
-          const keys = new Set([...Object.keys(baseline), ...Object.keys(snapshot)])
-          const changed = [...keys].filter((key) => baseline[key] !== snapshot[key])
-          return { drifted: changed.length > 0, changed }
-        }),
-      alert: ({ comparison }) => Effect.sync(() => (paged.push(...comparison.changed), comparison.changed.length))
-    })
-    return { drifted: result.drifted, paged }
+): { readonly drifted: boolean; readonly paged: ReadonlyArray<string> }!! => {
+  const paged: Array<string> = []
+  const approved: Record<string, number> = { retries: 9, timeoutMs: 90_000, concurrency: 4 }
+  const result = try DriftDetector.run(settled, {
+    baseline: approved,
+    capture: ({ input }) => Effect.succeed(Object.fromEntries(input.map((s) => [s.key, s.value]))),
+    // Walk the union of both key sets: a setting the operator never approved
+    // is drift just as much as an approved one that moved or went missing.
+    compare: effect ({ baseline, snapshot }) => {
+      const keys = new Set([...Object.keys(baseline), ...Object.keys(snapshot)])
+      const changed = [...keys].filter((key) => baseline[key] !== snapshot[key])
+      return { drifted: changed.length > 0, changed }
+    },
+    alert: effect ({ comparison }) => (paged.push(...comparison.changed), comparison.changed.length)
   })
+  return { drifted: result.drifted, paged }
+}
 
 /**
  * The candidates the search produces, in order. The second is the shortest, so
@@ -165,29 +162,29 @@ const Tune = Optimizer.make<Action.Requirement<"bounded-loops/generate" | "bound
 })
 
 /** Runs the search and returns the best summary. */
-export const tune = Effect.gen(function*() {
-  const raw = yield* Tune.execute({ input: "summary" }, { executionId: "bounded-loops/tune" }).pipe(
-    Effect.provide(
+export const tune = effect {
+  const raw = try (Tune.execute({ input: "summary" }, { executionId: "bounded-loops/tune" })
+    |> Effect.provide(
+      %,
       Layer.mergeAll(
         Interpreter.layer(Tune),
         Generate.toLayer(({ iteration }) => Effect.succeed(wordy[iteration - 1] ?? "")),
         Evaluate.toLayer(({ value }) => Effect.succeed({ score: 1 - value.length / 60, feedback: "shorter" }))
       ).pipe(Layer.provide(Action.layerImplementations))
-    ),
-    Effect.orDie
-  )
-  const result = yield* Schema.decodeUnknownEffect(Schema.Struct({
+    )
+    |> Effect.orDie(%))
+  const result = try (Schema.decodeUnknownEffect(Schema.Struct({
     best: Schema.Struct({ candidate: Schema.String, score: Schema.Number }),
     iterations: Schema.Number,
     converged: Schema.Boolean
-  }))(raw).pipe(Effect.orDie)
+  }))(raw) |> Effect.orDie(%))
   return {
     best: result.best.candidate,
     score: Number(result.best.score.toFixed(4)),
     iterations: result.iterations,
     converged: result.converged
   }
-})
+}
 
 /**
  * Runs a cheap shadow beside the expensive summary to see whether the cheap
@@ -197,28 +194,28 @@ export const tune = Effect.gen(function*() {
  * experiment and the primary result is the answer. `delta` stays absent, since
  * there is nothing to compare against.
  */
-export const shadow: Effect.Effect<{
+export const shadow: {
   readonly primary: string
   readonly quarantined: boolean
   readonly delta: number | undefined
-}> = Effect.gen(function*() {
-  const result = yield* Sidecar.run("summary", {
+}!! = effect {
+  const result = try (Sidecar.run("summary", {
     primary: () => Effect.succeed("config repaired"),
     // Annotated because this shadow only fails: without it the shadow output
     // type infers as `never` and the scorer cannot read it.
-    shadow: (): Effect.Effect<string, string> => Effect.fail("the cheap seat is out of quota"),
+    shadow: (): string!string => Effect.fail("the cheap seat is out of quota"),
     score: ({ primary, shadow }) => Effect.succeed({ primary: primary.length, shadow: shadow.length })
     // All options are literals, so an unsafe configuration is an example defect.
-  }).pipe(Effect.orDie)
+  }) |> Effect.orDie(%))
   return {
     primary: result.primary,
     quarantined: result.shadow.quarantined,
     delta: result.delta?.difference
   }
-})
+}
 
-const QueuePayload = Schema.Struct({ pending: Schema.Number, turns: Schema.Number })
-const QueueResult = Schema.Struct({ turns: Schema.Number, exhausted: Schema.Boolean })
+schema QueuePayload { pending: number; turns: number }
+schema QueueResult { turns: number; exhausted: boolean }
 const Drain = Action.make("bounded-loops/drain", {
   payload: QueuePayload,
   success: QueuePayload
@@ -248,13 +245,13 @@ export const Queue: QueueFlow = Flow.make("bounded-loops/queue", {
 
 /** Runs a queue lineage with a caller-owned execution identity. */
 export const drain = (pending: number, executionId: string) =>
-  Queue.execute({ pending, turns: 0 }, { executionId }).pipe(
-    Effect.provide(
-      Layer.mergeAll(
-        Interpreter.layer(Queue),
-        Drain.toLayer(({ pending, turns }) => Effect.succeed({ pending: pending - 1, turns: turns + 1 }))
-      ).pipe(Layer.provide(Action.layerImplementations))
-    )
+  Queue.execute({ pending, turns: 0 }, { executionId })
+  |> Effect.provide(
+    %,
+    Layer.mergeAll(
+      Interpreter.layer(Queue),
+      Drain.toLayer(({ pending, turns }) => Effect.succeed({ pending: pending - 1, turns: turns + 1 }))
+    ).pipe(Layer.provide(Action.layerImplementations))
   )
 
 /** Drains three items through three engine rounds. */
@@ -263,12 +260,12 @@ export const settle = drain(3, "bounded-loops/settle")
 /**
  * Runs the whole story: repair, audit, tune, shadow, settle.
  */
-export const main = Effect.gen(function*() {
-  const repaired = yield* repair()
-  const audited = yield* audit(repaired.settled)
-  const tuned = yield* tune
-  const shadowed = yield* shadow
-  const settled = yield* settle
+export const main = effect {
+  const repaired = try repair()
+  const audited = try audit(repaired.settled)
+  const tuned = try tune
+  const shadowed = try shadow
+  const settled = try settle
   return {
     repair: { iterations: repaired.iterations, remaining: repaired.remaining },
     audit: audited,
@@ -276,4 +273,4 @@ export const main = Effect.gen(function*() {
     shadow: { quarantined: shadowed.quarantined },
     settle: { turns: settled.turns }
   }
-})
+}
