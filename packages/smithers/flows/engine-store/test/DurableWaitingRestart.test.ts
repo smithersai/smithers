@@ -1,10 +1,11 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
+import * as ChildProcesses from "./ChildProcesses.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/durable-wait-child.ts", import.meta.url))
@@ -45,13 +46,9 @@ const childEnv = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.
 const outputTailBytes = 4096
 const tail = (text: string): string => text.length > outputTailBytes ? `...${text.slice(-outputTailBytes)}` : text
 
-/** Every child a case starts; `afterEach` kills and awaits any still alive. */
-const liveChildren = new Set<ChildProcessWithoutNullStreams>()
-
+/** Every child a case starts leads its own process group; `afterEach` kills each group and awaits the child. */
 const spawnChild = (args: ReadonlyArray<string>): ChildProcessWithoutNullStreams => {
-  const child = spawn(process.execPath, [fixture, ...args], { cwd: repositoryRoot, env: childEnv })
-  liveChildren.add(child)
-  child.once("close", () => liveChildren.delete(child))
+  const child = ChildProcesses.spawn(process.execPath, [fixture, ...args], { cwd: repositoryRoot, env: childEnv })
   return child
 }
 
@@ -87,7 +84,7 @@ const runChild = (
       else reject(error)
     }
     const onError = (cause: Error) => {
-      child.kill("SIGKILL")
+      ChildProcesses.killGroup(child)
       settle(cause)
     }
     const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
@@ -107,7 +104,7 @@ const runChild = (
     }
     const deadline = setTimeout(() => {
       expired = true
-      child.kill("SIGKILL")
+      ChildProcesses.killGroup(child)
     }, options.deadlineMs ?? restartBudget)
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
@@ -168,19 +165,11 @@ const firstJsonLine = (
   })
 
 const killHard = async (child: ChildProcessWithoutNullStreams): Promise<void> => {
-  child.kill("SIGKILL")
+  ChildProcesses.killGroup(child)
   await once(child, "exit")
 }
 
-afterEach(async () => {
-  await Promise.all(
-    [...liveChildren].map(async (child) => {
-      const closed = once(child, "close")
-      child.kill("SIGKILL")
-      await closed
-    })
-  )
-})
+afterEach(ChildProcesses.reap)
 
 describe("durable waiting across process loss", () => {
   it("picks up a pending deferred wait after a hard process kill", async () => {
@@ -288,7 +277,7 @@ describe("durable waiting across process loss", () => {
       ).rejects.toThrow(/missed its 2000 ms deadline/)
       expect(pid).toBeTypeOf("number")
       expect(() => process.kill(pid as number, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
-      expect(liveChildren.size).toBe(0)
+      expect(ChildProcesses.pids()).toEqual([])
     } finally {
       await PersistentDatabase.remove(filename)
       await rm(directory, { recursive: true, force: true })

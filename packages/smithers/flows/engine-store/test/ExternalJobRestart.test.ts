@@ -1,15 +1,16 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, it } from "vitest"
+import { afterEach, expect, it } from "vitest"
+import * as ChildProcesses from "./ChildProcesses.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/external-job-child.ts", import.meta.url))
 const root = fileURLToPath(new URL("../../../../../", import.meta.url))
 const launch = (directory: string, mode: string) =>
-  spawn(process.execPath, [fixture, directory, mode], {
+  ChildProcesses.spawn(process.execPath, [fixture, directory, mode], {
     cwd: root,
     env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
   })
@@ -18,7 +19,7 @@ const receipt = (child: ChildProcessWithoutNullStreams, status: string): Promise
     let output = ""
     let errors = ""
     const timeout = setTimeout(() => {
-      child.kill("SIGKILL")
+      ChildProcesses.killGroup(child)
       reject(new Error(`missing ${status}: ${output}\n${errors}`))
     }, 20_000)
     child.stderr.on("data", (chunk) => {
@@ -46,6 +47,9 @@ const receipt = (child: ChildProcessWithoutNullStreams, status: string): Promise
     })
   })
 
+// A timed-out case stops awaiting its children; teardown still kills their process groups.
+afterEach(ChildProcesses.reap)
+
 it(
   "SIGKILL during a durable probe wait reattaches, starts once, and returns the result to its original caller",
   async () => {
@@ -56,7 +60,7 @@ it(
       children.push(first)
       await receipt(first, "parked")
       const closed = once(first, "close")
-      first.kill("SIGKILL")
+      ChildProcesses.killGroup(first)
       await closed
       expect(await readFile(join(directory, "calls"), "utf8")).not.toContain("cancel")
       await writeFile(join(directory, "exited"), "0")
@@ -76,7 +80,7 @@ it(
       await Promise.all(children.map(async (child) => {
         if (child.exitCode === null && child.signalCode === null) {
           const closed = once(child, "close")
-          child.kill("SIGKILL")
+          ChildProcesses.killGroup(child)
           await closed
         }
       }))
@@ -102,7 +106,7 @@ for (const mode of ["compose-before", "compose-after"] as const) {
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
         const closed = once(child, "close")
-        child.kill("SIGKILL")
+        ChildProcesses.killGroup(child)
         await closed
       }
       await rm(directory, { recursive: true, force: true })
@@ -121,40 +125,44 @@ it("cancelling the original caller while its external job is parked runs Cancel"
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       const closed = once(child, "close")
-      child.kill("SIGKILL")
+      ChildProcesses.killGroup(child)
       await closed
     }
     await rm(directory, { recursive: true, force: true })
   }
 }, 30_000)
 
-it("a process that never held the parked job cancels its caller, and the job's Cancel runs as cancel:<key>", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "external-job-cancel-restart-"))
-  const children: Array<ChildProcessWithoutNullStreams> = []
-  try {
-    const first = launch(directory, "start")
-    children.push(first)
-    await receipt(first, "parked")
-    const closed = once(first, "close")
-    first.kill("SIGKILL")
-    await closed
-    const second = launch(directory, "cancel-restart")
-    children.push(second)
-    const result = await receipt(second, "cancelled")
-    const calls = (await readFile(join(directory, "calls"), "utf8")).trim().split("\n")
-    const starts = calls.filter((call) => call.startsWith("start:"))
-    expect(starts).toEqual([`start:${String(result.key)}`])
-    // Once, by the durable cancellation run: the parked scope's rollback died with the first process.
-    expect(calls.filter((call) => call.startsWith("cancel:"))).toEqual([`cancel:${String(result.key)}`])
-    expect(calls.filter((call) => call.startsWith("collect:"))).toEqual([])
-  } finally {
-    await Promise.all(children.map(async (child) => {
-      if (child.exitCode === null && child.signalCode === null) {
-        const closed = once(child, "close")
-        child.kill("SIGKILL")
-        await closed
-      }
-    }))
-    await rm(directory, { recursive: true, force: true })
-  }
-}, 50_000)
+it(
+  "a process that never held the parked job cancels its caller, and the job's Cancel runs as cancel:<key>",
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), "external-job-cancel-restart-"))
+    const children: Array<ChildProcessWithoutNullStreams> = []
+    try {
+      const first = launch(directory, "start")
+      children.push(first)
+      await receipt(first, "parked")
+      const closed = once(first, "close")
+      ChildProcesses.killGroup(first)
+      await closed
+      const second = launch(directory, "cancel-restart")
+      children.push(second)
+      const result = await receipt(second, "cancelled")
+      const calls = (await readFile(join(directory, "calls"), "utf8")).trim().split("\n")
+      const starts = calls.filter((call) => call.startsWith("start:"))
+      expect(starts).toEqual([`start:${String(result.key)}`])
+      // Once, by the durable cancellation run: the parked scope's rollback died with the first process.
+      expect(calls.filter((call) => call.startsWith("cancel:"))).toEqual([`cancel:${String(result.key)}`])
+      expect(calls.filter((call) => call.startsWith("collect:"))).toEqual([])
+    } finally {
+      await Promise.all(children.map(async (child) => {
+        if (child.exitCode === null && child.signalCode === null) {
+          const closed = once(child, "close")
+          ChildProcesses.killGroup(child)
+          await closed
+        }
+      }))
+      await rm(directory, { recursive: true, force: true })
+    }
+  },
+  50_000
+)

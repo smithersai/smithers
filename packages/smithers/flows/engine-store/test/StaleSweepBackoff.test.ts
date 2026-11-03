@@ -17,7 +17,7 @@
  * Uses the SQL `DurableEngineState` over the same database as `RunStore`,
  * because the evidence is `flows_runs` and its consensus lease.
  */
-import { describe, expect, it } from "@effect/vitest"
+import { afterEach, describe, expect, it } from "@effect/vitest"
 import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
@@ -35,12 +35,12 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import { spawn } from "node:child_process"
 import { once } from "node:events"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as JournalRecords from "../src/internal/JournalRecords.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as Migrations from "../src/Migrations.ts"
+import * as ChildProcesses from "./ChildProcesses.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import { withCrypto } from "./Sha256.ts"
 
@@ -157,6 +157,9 @@ const refusalEvidenceOf = (runId: string) =>
     refusalsOf(runId),
     (entries) => entries.map((entry) => (entry.payload as { readonly evidence: string }).evidence)
   )
+
+// A timed-out case stops awaiting its children; teardown still kills their process groups.
+afterEach(ChildProcesses.reap)
 
 describe("the stale-running sweep backs off refused rows (B-04)", () => {
   it.effect("probes past the batch within two ticks and journals one refusal per lease", () =>
@@ -573,10 +576,12 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
 describe("two drivers over one database arbitrate by pid (B-09)", () => {
   /** A real process this host can be asked about, killed when the scope closes. */
   const liveProcess = Effect.acquireRelease(
-    Effect.sync(() => spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })),
+    Effect.sync(() =>
+      ChildProcesses.spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })
+    ),
     (child) =>
       Effect.sync(() => {
-        child.kill("SIGKILL")
+        ChildProcesses.killGroup(child)
       })
   )
 
@@ -617,7 +622,7 @@ describe("two drivers over one database arbitrate by pid (B-09)", () => {
 
         // Driver A dies the way a crash kills it, and is reaped, so the pid
         // names nothing by the time the next probe asks.
-        child.kill("SIGKILL")
+        ChildProcesses.killGroup(child)
         yield* Effect.promise(() => once(child, "exit"))
 
         // Past the first refusal's backoff, which is two ticks.

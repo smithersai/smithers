@@ -12,7 +12,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Interpreter } from "@smthrs/flow"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { once } from "node:events"
 import { existsSync, readFileSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
@@ -22,6 +22,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as ChildProcesses from "./ChildProcesses.ts"
 import { RemoteWrite } from "./fixtures/RemoteCeilingFlow.ts"
 import { remoteTestDatabases } from "./fixtures/RemoteTestDatabase.ts"
 
@@ -55,7 +56,7 @@ const freePort = (): Promise<number> =>
   })
 
 const launch = (argv: ReadonlyArray<string>): Host => {
-  const child = spawn(process.execPath, argv, { cwd: repositoryRoot, env: childEnv })
+  const child = ChildProcesses.spawn(process.execPath, argv, { cwd: repositoryRoot, env: childEnv })
   // Observe exit before a fast replay can print its result and leave.
   const exited = once(child, "exit").then(() => undefined)
   const events: Array<Record<string, unknown>> = []
@@ -86,7 +87,7 @@ const waitFor = async (host: Host, predicate: (event: Record<string, unknown>) =
 
 const kill = async (host: Host) => {
   if (host.child.exitCode !== null || host.child.signalCode !== null) return
-  host.child.kill("SIGKILL")
+  ChildProcesses.killGroup(host.child)
   await host.exited
 }
 
@@ -158,7 +159,8 @@ beforeAll(async () => {
 }, bootBudget)
 
 afterAll(async () => {
-  await kill(serving)
+  // Every host the file started, its process group included, even after a timed-out case.
+  await ChildProcesses.reap()
   await databases.close()
   await rm(directory, { recursive: true, force: true })
 })

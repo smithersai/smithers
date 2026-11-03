@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { expect, test } from "vitest"
 
-for (const source of ["vitest", "coverage", "process-cache", "matrix"]) {
+for (const source of ["vitest", "coverage", "process-cache", "matrix", "orphan"]) {
   test(`${source} cleans up after real test runs`, () => {
     const result = spawnSync(process.execPath, ["--test", `test-utils/${source}-temp-cleanup.test.mjs`], {
       cwd: import.meta.dirname + "/..",

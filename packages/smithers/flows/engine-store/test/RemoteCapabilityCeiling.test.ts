@@ -16,7 +16,7 @@ import { Cause, Context, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import * as SqlClient from "effect/sql/SqlClient"
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { once } from "node:events"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
@@ -26,6 +26,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as ChildProcesses from "./ChildProcesses.ts"
 import { RemoteWrite } from "./fixtures/RemoteCeilingFlow.ts"
 import { remoteTestDatabases } from "./fixtures/RemoteTestDatabase.ts"
 
@@ -62,7 +63,7 @@ const serve = async (
   port: number,
   environment: NodeJS.ProcessEnv = childEnv
 ): Promise<Serving> => {
-  const child = spawn(process.execPath, [fixture, filename, root, String(port)], {
+  const child = ChildProcesses.spawn(process.execPath, [fixture, filename, root, String(port)], {
     cwd: repositoryRoot,
     env: environment
   })
@@ -96,7 +97,7 @@ const waitFor = async (serving: Serving, predicate: (event: Record<string, unkno
 const stop = async (serving: Serving) => {
   if (serving.child.exitCode !== null || serving.child.signalCode !== null) return
   const exited = once(serving.child, "exit")
-  serving.child.kill("SIGKILL")
+  ChildProcesses.killGroup(serving.child)
   await exited
 }
 
@@ -188,7 +189,8 @@ beforeAll(async () => {
 }, bootBudget)
 
 afterAll(async () => {
-  await stop(serving)
+  // Every child the file started, its process group included, even after a timed-out case.
+  await ChildProcesses.reap()
   await databases.close()
   await rm(directory, { recursive: true, force: true })
 })

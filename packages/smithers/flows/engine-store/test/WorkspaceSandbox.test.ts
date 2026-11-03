@@ -1,6 +1,6 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { describe, expect, it } from "@effect/vitest"
+import { afterEach, describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
@@ -14,9 +14,9 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import { TestClock } from "effect/testing"
-import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as ChildProcesses from "./ChildProcesses.ts"
 import { hostPath } from "./HostPath.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 import { win32Host } from "./Win32Host.ts"
@@ -102,6 +102,9 @@ const injected = (path: string) =>
  * `Effects.Declaration`) and its identity surfaces (`@smthrs/crypto` rather
  * than the deleted `@smthrs/keys` digest module).
  */
+// A timed-out case stops awaiting its children; teardown still kills their process groups.
+afterEach(ChildProcesses.reap)
+
 describe("WorkspaceSandbox conformance", () => {
   it.effect("uses an immutable declaration even when the workflow mutates every nested field", () =>
     Effect.gen(function*() {
@@ -1607,14 +1610,14 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
         const lock = `${root}/.smithers-workspace-lock`
         const child = yield* Effect.acquireRelease(
           Effect.sync(() =>
-            spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(lockChild), root], {
+            ChildProcesses.spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(lockChild), root], {
               cwd: new URL("..", import.meta.url),
               stdio: ["pipe", "pipe", "pipe"]
             })
           ),
           (child) =>
             Effect.sync(() => {
-              if (child.exitCode === null) child.kill("SIGKILL")
+              if (child.exitCode === null) ChildProcesses.killGroup(child)
             })
         )
         let stderr = ""
@@ -1630,7 +1633,7 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
             child.once("exit", (code) => reject(new Error(`child exited ${code}: ${stderr}`)))
           })
         )
-        child.kill("SIGKILL")
+        ChildProcesses.killGroup(child)
         expect(yield* Effect.promise(() => killed)).toBe("SIGKILL")
         expect(yield* fs.exists(lock)).toBe(true)
         // The killed owner's heartbeat stopped; age its lock past the bound
@@ -1892,14 +1895,20 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
       `
         const child = yield* Effect.acquireRelease(
           Effect.sync(() =>
-            spawn(process.execPath, ["--experimental-strip-types", "--input-type=module", "--eval", script, root], {
+            ChildProcesses.spawn(process.execPath, [
+              "--experimental-strip-types",
+              "--input-type=module",
+              "--eval",
+              script,
+              root
+            ], {
               cwd: new URL("..", import.meta.url),
               stdio: ["pipe", "pipe", "pipe"]
             })
           ),
           (child) =>
             Effect.sync(() => {
-              child.kill()
+              ChildProcesses.killGroup(child, "SIGTERM")
             })
         )
         let stderr = ""

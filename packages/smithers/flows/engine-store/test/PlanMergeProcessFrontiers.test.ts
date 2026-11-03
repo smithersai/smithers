@@ -1,10 +1,14 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { expect, it } from "vitest"
+import { afterEach, expect, it } from "vitest"
+import * as ChildProcesses from "./ChildProcesses.ts"
+
+// A timed-out case stops awaiting its children; teardown still kills their process groups.
+afterEach(ChildProcesses.reap)
 
 for (const frontier of ["intent", "completion"] as const) {
   it(`recovers after SIGKILL at the committed merge ${frontier} frontier`, async () => {
@@ -18,7 +22,10 @@ for (const frontier of ["intent", "completion"] as const) {
     }
     await mkdir(join(root, ".flows"))
     await writeFile(join(root, "shared.txt"), "initial")
-    const child = spawn(process.execPath, [fixture, root, "crash", frontier], { env, stdio: ["pipe", "pipe", "pipe"] })
+    const child = ChildProcesses.spawn(process.execPath, [fixture, root, "crash", frontier], {
+      env,
+      stdio: ["pipe", "pipe", "pipe"]
+    })
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }))
     })
@@ -43,7 +50,7 @@ for (const frontier of ["intent", "completion"] as const) {
         child.once("exit", () => finish(new Error(`child exited early: ${stderr}`)))
       })
       expect(await readFile(join(root, "shared.txt"), "utf8")).toBe(frontier === "intent" ? "initial" : "winner")
-      expect(child.kill("SIGKILL")).toBe(true)
+      expect(ChildProcesses.killGroup(child)).toBe(true)
       expect((await exited).signal).toBe("SIGKILL")
       const resumed = await promisify(execFile)(process.execPath, [fixture, root, "resume", frontier], {
         env,
@@ -59,7 +66,7 @@ for (const frontier of ["intent", "completion"] as const) {
       expect(report.results).toEqual({ a: "a", "b+merge": "b+merge" })
       expect(await readFile(join(root, "shared.txt"), "utf8")).toBe("merged")
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+      if (child.exitCode === null && child.signalCode === null) ChildProcesses.killGroup(child)
       await exited
       await rm(root, { recursive: true, force: true })
     }

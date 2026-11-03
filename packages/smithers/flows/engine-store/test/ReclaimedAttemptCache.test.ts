@@ -19,7 +19,7 @@
  * last heartbeat, with the pid probe a Node host uses. The bodies count
  * themselves; a label never decides.
  */
-import { describe, expect, it } from "@effect/vitest"
+import { afterEach, describe, expect, it } from "@effect/vitest"
 import { FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
@@ -36,73 +36,26 @@ import * as Option from "effect/Option"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import * as Tracer from "effect/Tracer"
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
-import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as ChildProcesses from "./ChildProcesses.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import * as ReclaimedAttemptFlow from "./fixtures/ReclaimedAttemptFlow.ts"
+import { killDuringTest, orphan, processBudget } from "./ReclaimedAttemptProcess.ts"
 import { runPromise } from "./Sha256.ts"
-
-const fixture = fileURLToPath(new URL("./fixtures/reclaimed-attempt-child.ts", import.meta.url))
-const repositoryRoot = fileURLToPath(new URL("../../../../../", import.meta.url))
-
-/** Wall-clock budget per case: a child boot plus migrations, under coverage, on a loaded host. */
-const processBudget = 180_000
 
 const heartbeatMs = Duration.toMillis(Ownership.heartbeatInterval)
 /** How far past the dead owner's last heartbeat its lease has expired. */
 const expiry = Duration.toMillis(Ownership.heartbeatStaleAfter) + heartbeatMs
 
-const orphan = "orphan"
 const restart = "restart"
 
-/** Kills the child once its `Test` body is running. */
-const killDuringTest = async (filename: string): Promise<void> => {
-  const child: ChildProcessWithoutNullStreams = spawn(process.execPath, [fixture, filename, orphan, "#42"], {
-    cwd: repositoryRoot,
-    // The fixture reads only argv; never hand it the parent's credentials.
-    env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
-  })
-  try {
-    const marker = await new Promise<{ readonly status: string }>((resolve, reject) => {
-      let stdout = ""
-      let stderr = ""
-      const timeout = setTimeout(
-        () => reject(new Error(`child never reached Test\n${stderr}\n${stdout}`)),
-        processBudget
-      )
-      child.stdout.setEncoding("utf8")
-      child.stderr.setEncoding("utf8")
-      child.stdout.on("data", (chunk: string) => {
-        stdout += chunk
-        // Admission telemetry shares stdout with this child protocol.
-        const line = stdout.split("\n").slice(0, -1).find((line) => line.startsWith("{"))
-        if (line === undefined) return
-        clearTimeout(timeout)
-        resolve(JSON.parse(line))
-      })
-      child.stderr.on("data", (chunk: string) => {
-        stderr = (stderr + chunk).slice(-4096)
-      })
-      child.once("exit", (code, signal) => {
-        clearTimeout(timeout)
-        reject(new Error(`child exited before Test with ${code ?? signal}\n${stderr}\n${stdout}`))
-      })
-    })
-    expect(marker.status).toBe("testing")
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGKILL")
-      await once(child, "exit")
-    }
-  }
-}
+// A timed-out case stops awaiting its child; teardown still kills its process group.
+afterEach(ChildProcesses.reap)
 
 /** What the survivor's step bodies did, in order. */
 interface Ran {

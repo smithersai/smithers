@@ -1,14 +1,16 @@
-import { spawn } from "node:child_process"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, it } from "vitest"
+import { afterEach, expect, it } from "vitest"
+import * as ChildProcesses from "./ChildProcesses.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/cache-permit-process.mjs", import.meta.url))
 const launch = (filename: string, counter: string, runId: string, mode = "hold") => {
-  const child = spawn(process.execPath, [fixture, filename, counter, runId, mode], { stdio: ["pipe", "pipe", "pipe"] })
+  const child = ChildProcesses.spawn(process.execPath, [fixture, filename, counter, runId, mode], {
+    stdio: ["pipe", "pipe", "pipe"]
+  })
   let stdout = ""
   let stderr = ""
   child.stdout.on("data", (chunk) => {
@@ -30,6 +32,9 @@ const launch = (filename: string, counter: string, runId: string, mode = "hold")
   return { child, exited, wait, output: () => stdout }
 }
 
+// A timed-out case stops awaiting its children; teardown still kills their process groups.
+afterEach(ChildProcesses.reap)
+
 it.each([false, true])("serializes cache bodies across processes (dead owner: %s)", async (crash) => {
   const root = await mkdtemp(join(tmpdir(), "cache-permit-process-"))
   const filename = PersistentDatabase.filename(join(root, "engine.sqlite"))
@@ -40,7 +45,7 @@ it.each([false, true])("serializes cache bodies across processes (dead owner: %s
   try {
     await first.wait("body-started\n")
     if (crash) {
-      first.child.kill("SIGKILL")
+      ChildProcesses.killGroup(first.child)
       await first.exited
     }
     second = launch(filename, counter, "second")
@@ -58,10 +63,12 @@ it.each([false, true])("serializes cache bodies across processes (dead owner: %s
     expect(await readFile(counter, "utf8")).toBe(crash ? "first\nsecond\n" : "first\n")
     expect(second.output().includes("body-started\n")).toBe(crash)
   } finally {
-    for (const process of [first, second]) {
-      if (!process) continue
-      if (process.child.exitCode === null && process.child.signalCode === null) process.child.kill("SIGKILL")
-      await process.exited
+    for (const launched of [first, second]) {
+      if (!launched) continue
+      if (launched.child.exitCode === null && launched.child.signalCode === null) {
+        ChildProcesses.killGroup(launched.child)
+      }
+      await launched.exited
     }
     await PersistentDatabase.remove(filename)
     await rm(root, { recursive: true, force: true })

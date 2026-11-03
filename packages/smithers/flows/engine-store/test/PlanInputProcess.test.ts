@@ -1,10 +1,14 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { expect, it } from "vitest"
+import { afterEach, expect, it } from "vitest"
+import * as ChildProcesses from "./ChildProcesses.ts"
+
+// A timed-out case stops awaiting its children; teardown still kills their process groups.
+afterEach(ChildProcesses.reap)
 
 it(
   "recovers input observations after SIGKILL and transfers ownership without repeating a completed update",
@@ -19,7 +23,10 @@ it(
     }
     await mkdir(join(root, ".flows"))
     await writeFile(join(root, "config.txt"), "initial")
-    const child = spawn(process.execPath, [fixture, root, "crash"], { env, stdio: ["pipe", "pipe", "pipe"] })
+    const child = ChildProcesses.spawn(process.execPath, [fixture, root, "crash"], {
+      env,
+      stdio: ["pipe", "pipe", "pipe"]
+    })
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }))
     })
@@ -44,7 +51,7 @@ it(
         child.once("exit", () => finish(new Error(`child exited before its frontier: ${stderr}`)))
       })
       expect(await readFile(join(root, "config.txt"), "utf8")).toBe("initial!")
-      expect(child.kill("SIGKILL")).toBe(true)
+      expect(ChildProcesses.killGroup(child)).toBe(true)
       expect((await exited).signal).toBe("SIGKILL")
       const resumed = await promisify(execFile)(process.execPath, [fixture, root, "resume"], {
         env,
@@ -63,7 +70,7 @@ it(
       expect(report.results).toEqual({ update: "initial", pause: "resumed" })
       expect(await readFile(join(root, "config.txt"), "utf8")).toBe("initial!")
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+      if (child.exitCode === null && child.signalCode === null) ChildProcesses.killGroup(child)
       await exited
       await rm(root, { recursive: true, force: true })
     }

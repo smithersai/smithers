@@ -14,7 +14,7 @@ import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
  * because the hard-kill evidence (a `running` row with a stale
  * `heartbeat_at_ms`) lives in `flows_runs` and its consensus lease.
  */
-import { describe, expect, it } from "@effect/vitest"
+import { afterEach, describe, expect, it } from "@effect/vitest"
 import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
@@ -29,17 +29,16 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
-import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as ChildProcesses from "./ChildProcesses.ts"
 import { ReclaimFlow } from "./fixtures/LeaseReclaimFlow.ts"
+import { firstJsonLine, killHard, launch, processBudget } from "./LeaseReclaimProcess.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const TestFlow = Flow.make("HardKillReclaim/Test", {
@@ -124,56 +123,8 @@ type TestStoresServices = Layer.Success<ReturnType<typeof TestStores.layerAt>>
 const staleAfterMs = Duration.toMillis(Ownership.heartbeatStaleAfter)
 const heartbeatMs = Duration.toMillis(Ownership.heartbeatInterval)
 
-const fixture = fileURLToPath(new URL("./fixtures/lease-reclaim-child.ts", import.meta.url))
-const repositoryRoot = fileURLToPath(new URL("../../../../../", import.meta.url))
-
-/**
- * Wall-clock budget for the process case, matching `DurableWaitingRestart`.
- *
- * The child boots an engine and runs migrations, which is most of the cost,
- * and coverage-instrumented workers multiply it. Finite, so a child that never
- * speaks still fails the gate rather than hanging it.
- */
-const processBudget = 120_000
-
-/** The child's first protocol line, or a failure naming what it did instead. */
-/** Keep only the last 4 KiB of child output in an error message. */
-const tail = (text: string): string => text.length > 4096 ? `...${text.slice(-4096)}` : text
-
-const firstJsonLine = (child: ChildProcessWithoutNullStreams): Promise<Record<string, unknown>> =>
-  new Promise((resolve, reject) => {
-    let stdout = ""
-    let stderr = ""
-    const timeout = setTimeout(() => {
-      reject(new Error(`child did not produce a JSON line\n${tail(stderr)}\n${tail(stdout)}`))
-    }, processBudget)
-    child.stdout.setEncoding("utf8")
-    child.stderr.setEncoding("utf8")
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk
-      // Admission telemetry shares stdout with this child protocol.
-      const line = stdout.split("\n").slice(0, -1).find((line) => line.startsWith("{"))
-      if (line === undefined) return
-      clearTimeout(timeout)
-      resolve(JSON.parse(line) as Record<string, unknown>)
-    })
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk
-    })
-    child.once("error", (cause) => {
-      clearTimeout(timeout)
-      reject(cause)
-    })
-    child.once("exit", (code, signal) => {
-      clearTimeout(timeout)
-      reject(new Error(`child exited before its marker with ${code ?? signal}\n${tail(stderr)}\n${tail(stdout)}`))
-    })
-  })
-
-const killHard = async (child: ChildProcessWithoutNullStreams): Promise<void> => {
-  child.kill("SIGKILL")
-  await once(child, "exit")
-}
+// A timed-out case stops awaiting its child; teardown still kills its process group.
+afterEach(ChildProcesses.reap)
 
 /** The engine decisions journaled for one run. */
 const decisionsOf = (runId: string) =>
@@ -302,11 +253,7 @@ describe("hard-killed running runs are reclaimed (issue #53)", () => {
     const directory = await mkdtemp(join(tmpdir(), "lease-reclaim-process-"))
     const filename = PersistentDatabase.filename(join(directory, "runs.db"))
     const runId = "lease-reclaim-after-sigkill"
-    const child = spawn(process.execPath, [fixture, filename, runId], {
-      cwd: repositoryRoot,
-      // The fixture reads only argv; never hand it the parent's credentials.
-      env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
-    })
+    const child = launch(filename, runId)
     try {
       const marker = await firstJsonLine(child)
       expect(marker.status).toBe("running")
@@ -355,9 +302,7 @@ describe("hard-killed running runs are reclaimed (issue #53)", () => {
         expect.objectContaining({ decision: "stolen-and-activated", evidence: "lease-expired" })
       )
     } finally {
-      if (child.exitCode === null && child.signalCode === null) {
-        await killHard(child)
-      }
+      await killHard(child)
       await PersistentDatabase.remove(filename)
       await rm(directory, { recursive: true, force: true })
     }
