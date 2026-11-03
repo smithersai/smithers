@@ -34,17 +34,37 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./Action": "./src/Action/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Action": {
+      "types": "./src/Action/index.ts",
+      "vibelang-source": "./src/Action/index.ts",
+      "default": "./.vibelang/js/src/Action/index.js"
+    },
     "./Action/*": null,
     "./CacheEnvironment": "./src/Action/CacheEnvironment.vibe",
     "./FileBoundary": "./src/Action/FileBoundary.vibe",
     "./FileInput": "./src/Action/FileInput.vibe",
-    "./Flow": "./src/Flow/index.ts",
+    "./Flow": {
+      "types": "./src/Flow/index.ts",
+      "vibelang-source": "./src/Flow/index.ts",
+      "default": "./.vibelang/js/src/Flow/index.js"
+    },
     "./Flow/*": null,
-    "./FlowRuntime": "./src/FlowRuntime/index.ts",
+    "./FlowRuntime": {
+      "types": "./src/FlowRuntime/index.ts",
+      "vibelang-source": "./src/FlowRuntime/index.ts",
+      "default": "./.vibelang/js/src/FlowRuntime/index.js"
+    },
     "./FlowRuntime/*": null,
-    "./StepIdentity": "./src/Action/StepIdentity.ts",
+    "./StepIdentity": {
+      "types": "./src/Action/StepIdentity.ts",
+      "vibelang-source": "./src/Action/StepIdentity.ts",
+      "default": "./.vibelang/js/src/Action/StepIdentity.js"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./Deadline": {
@@ -62,12 +82,36 @@
       "vibelang-source": "./src/DurableDeferred.vibe",
       "default": "./.vibelang/js/src/DurableDeferred.js"
     },
-    "./DurableQueue": "./src/DurableQueue.ts",
-    "./ExternalJob": "./src/ExternalJob.ts",
-    "./Fault": "./src/Fault.ts",
-    "./Graph": "./src/Graph.ts",
-    "./HumanTask": "./src/HumanTask.ts",
-    "./Interpreter": "./src/Interpreter.ts",
+    "./DurableQueue": {
+      "types": "./src/DurableQueue.ts",
+      "vibelang-source": "./src/DurableQueue.ts",
+      "default": "./.vibelang/js/src/DurableQueue.js"
+    },
+    "./ExternalJob": {
+      "types": "./src/ExternalJob.ts",
+      "vibelang-source": "./src/ExternalJob.ts",
+      "default": "./.vibelang/js/src/ExternalJob.js"
+    },
+    "./Fault": {
+      "types": "./src/Fault.ts",
+      "vibelang-source": "./src/Fault.ts",
+      "default": "./.vibelang/js/src/Fault.js"
+    },
+    "./Graph": {
+      "types": "./src/Graph.ts",
+      "vibelang-source": "./src/Graph.ts",
+      "default": "./.vibelang/js/src/Graph.js"
+    },
+    "./HumanTask": {
+      "types": "./src/HumanTask.ts",
+      "vibelang-source": "./src/HumanTask.ts",
+      "default": "./.vibelang/js/src/HumanTask.js"
+    },
+    "./Interpreter": {
+      "types": "./src/Interpreter.ts",
+      "vibelang-source": "./src/Interpreter.ts",
+      "default": "./.vibelang/js/src/Interpreter.js"
+    },
     "./Poll": {
       "types": "./.vibe/declarations/src/Poll.d.vibe.ts",
       "vibelang-source": "./src/Poll.vibe",
@@ -93,7 +137,11 @@
       "vibelang-source": "./src/WaitFor.vibe",
       "default": "./.vibelang/js/src/WaitFor.js"
     },
-    "./index": "./src/index.ts"
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -106,7 +154,8 @@
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

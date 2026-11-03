@@ -34,31 +34,75 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./migrations/*": null,
     "./*/index": null,
-    "./Journal": "./src/Journal.ts",
+    "./Journal": {
+      "types": "./src/Journal.ts",
+      "vibelang-source": "./src/Journal.ts",
+      "default": "./.vibelang/js/src/Journal.js"
+    },
     "./JournalEvent": "./src/JournalEvent.vibe",
-    "./EngineEvent": "./src/EngineEvent.ts",
+    "./EngineEvent": {
+      "types": "./src/EngineEvent.ts",
+      "vibelang-source": "./src/EngineEvent.ts",
+      "default": "./.vibelang/js/src/EngineEvent.js"
+    },
     "./JournalMetrics": "./src/JournalMetrics.vibe",
-    "./Migrations": "./src/Migrations.ts",
+    "./Migrations": {
+      "types": "./src/Migrations.ts",
+      "vibelang-source": "./src/Migrations.ts",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
     "./OwnerId": "./src/OwnerId.vibe",
     "./Projection": "./src/Projection.vibe",
-    "./RedactedLogger": "./src/RedactedLogger.ts",
-    "./Redaction": "./src/Redaction.ts",
-    "./SqlJournal": "./src/SqlJournal.ts",
+    "./RedactedLogger": {
+      "types": "./src/RedactedLogger.ts",
+      "vibelang-source": "./src/RedactedLogger.ts",
+      "default": "./.vibelang/js/src/RedactedLogger.js"
+    },
+    "./Redaction": {
+      "types": "./src/Redaction.ts",
+      "vibelang-source": "./src/Redaction.ts",
+      "default": "./.vibelang/js/src/Redaction.js"
+    },
+    "./SqlJournal": {
+      "types": "./src/SqlJournal.ts",
+      "vibelang-source": "./src/SqlJournal.ts",
+      "default": "./.vibelang/js/src/SqlJournal.js"
+    },
     "./TelemetryLog": {
       "types": "./.vibe/declarations/src/TelemetryLog.d.vibe.ts",
       "vibelang-source": "./src/TelemetryLog.vibe",
       "default": "./.vibelang/js/src/TelemetryLog.js"
     },
-    "./index": "./src/index.ts",
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./test/Notifying": "./src/test/Notifying.ts",
     "./test/TestJournal": "./src/test/TestJournal.ts",
-    "./JournalGeneration": "./src/JournalGeneration.ts",
-    "./Consensus": "./src/Consensus.ts",
-    "./SqlConsensus": "./src/SqlConsensus.ts"
+    "./JournalGeneration": {
+      "types": "./src/JournalGeneration.ts",
+      "vibelang-source": "./src/JournalGeneration.ts",
+      "default": "./.vibelang/js/src/JournalGeneration.js"
+    },
+    "./Consensus": {
+      "types": "./src/Consensus.ts",
+      "vibelang-source": "./src/Consensus.ts",
+      "default": "./.vibelang/js/src/Consensus.js"
+    },
+    "./SqlConsensus": {
+      "types": "./src/SqlConsensus.ts",
+      "vibelang-source": "./src/SqlConsensus.ts",
+      "default": "./.vibelang/js/src/SqlConsensus.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -70,7 +114,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

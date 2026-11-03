@@ -42,20 +42,44 @@
       "vibelang-source": "./src/DatabaseMetrics.vibe",
       "default": "./.vibelang/js/src/DatabaseMetrics.js"
     },
-    "./DurableWriter": "./src/DurableWriter.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./UnsupportedBackend": "./src/UnsupportedBackend.ts",
+    "./DurableWriter": {
+      "types": "./src/DurableWriter.ts",
+      "vibelang-source": "./src/DurableWriter.ts",
+      "default": "./.vibelang/js/src/DurableWriter.js"
+    },
+    "./Migrations": {
+      "types": "./src/Migrations.ts",
+      "vibelang-source": "./src/Migrations.ts",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./UnsupportedBackend": {
+      "types": "./src/UnsupportedBackend.ts",
+      "vibelang-source": "./src/UnsupportedBackend.ts",
+      "default": "./.vibelang/js/src/UnsupportedBackend.js"
+    },
     "./index": "./src/index.vibe",
-    "./node/NodeDatabase": "./src/node/NodeDatabase.ts",
+    "./node/NodeDatabase": {
+      "types": "./src/node/NodeDatabase.ts",
+      "vibelang-source": "./src/node/NodeDatabase.ts",
+      "default": "./.vibelang/js/src/node/NodeDatabase.js"
+    },
     "./test/TestDatabase": "./src/test/TestDatabase.ts",
     "./test/SlowNetwork": "./src/test/SlowNetwork.ts",
-    "./bun/BunDatabase": "./src/bun/BunDatabase.ts",
+    "./bun/BunDatabase": {
+      "types": "./src/bun/BunDatabase.ts",
+      "vibelang-source": "./src/bun/BunDatabase.ts",
+      "default": "./.vibelang/js/src/bun/BunDatabase.js"
+    },
     "./Dialect": {
       "types": "./.vibe/declarations/src/Dialect.d.vibe.ts",
       "vibelang-source": "./src/Dialect.vibe",
       "default": "./.vibelang/js/src/Dialect.js"
     },
-    "./postgres/PostgresDatabase": "./src/postgres/PostgresDatabase.ts"
+    "./postgres/PostgresDatabase": {
+      "types": "./src/postgres/PostgresDatabase.ts",
+      "vibelang-source": "./src/postgres/PostgresDatabase.ts",
+      "default": "./.vibelang/js/src/postgres/PostgresDatabase.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -67,7 +91,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

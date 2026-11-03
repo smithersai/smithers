@@ -1,0 +1,2687 @@
+{
+ "format": 1,
+ "base": "../../../../../../..",
+ "entry": {
+  "format": 7,
+  "version": "0.0.11",
+  "project": "<vibelang-record-base>/packages/smithers/flows/capability/tsconfig.json",
+  "root": "<vibelang-record-base>/packages/smithers/flows/capability",
+  "compiler": "liRRhWuR7SatehIzNdP9ptHVdQugMZLF3scOuLkyR2Y",
+  "configs": [
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/tsconfig.json",
+    "size": 1323,
+    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/tsconfig.json",
+    "size": 1155,
+    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+   }
+  ],
+  "directories": [
+   [
+    "<vibelang-record-base>/packages/smithers/flows/capability/src",
+    null,
+    "4ZUey_m7CXnpTHQc_en_BsOTznBLetLXrzCuKTiaC5w",
+    [],
+    {
+     "recursive": true,
+     "excluded": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/dist/esm"
+     ],
+     "sidecarDir": "<vibelang-record-base>/packages/smithers/flows/capability/.vibe/declarations",
+     "home": "<vibelang-record-base>/packages/smithers/flows/capability"
+    }
+   ]
+  ],
+  "installs": [
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/pnpm-lock.yaml",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/package-lock.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/npm-shrinkwrap.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/yarn.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/bun.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/bun.lockb",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/pnpm-lock.yaml",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/package-lock.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/npm-shrinkwrap.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/yarn.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/bun.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/bun.lockb",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/pnpm-lock.yaml",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/package-lock.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/npm-shrinkwrap.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/yarn.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/bun.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/bun.lockb",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/pnpm-lock.yaml",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/package-lock.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/npm-shrinkwrap.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/yarn.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/bun.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/packages/bun.lockb",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/pnpm-lock.yaml",
+    "size": 1032876,
+    "hash": "QD7luCx0cUj9IjNWMU2-EyNFMRL4IgfwZN40mj5Y1QM"
+   },
+   {
+    "path": "<vibelang-record-base>/package-lock.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/npm-shrinkwrap.json",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/yarn.lock",
+    "hash": null
+   },
+   {
+    "path": "<vibelang-record-base>/bun.lock",
+    "size": 1174004,
+    "hash": "rXVSNJJ9rn_KciJHUcusr5UtdV431JUh6C2RqEV9JeI"
+   },
+   {
+    "path": "<vibelang-record-base>/bun.lockb",
+    "hash": null
+   }
+  ],
+  "packages": [
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/package.json",
+    "size": 4687,
+    "hash": "20imS0cRUHTXLT9UZAzWgkgMGpkkKl68_TUrhg7ognw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/package.json",
+    "size": 3248,
+    "hash": "7PmG49ZKDChXFhZNpgHjo7Ob8RiJorctU9qPdszh9WA"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/package.json",
+    "size": 4935,
+    "hash": "CIap0NOE3IDk8N-HcATKFpUatEkbEXBXWbxSVvACZAY"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/package.json",
+    "size": 4856,
+    "hash": "2OvttFnTvghSTO78D0HSJTmkME3JwyFmSXFzDL0CUlg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/package.json",
+    "size": 4508,
+    "hash": "tk5oy5tRZme9fMj6N6jLKW5NvN7Z4XdmNrMbYWv-i08"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/package.json",
+    "size": 1192,
+    "hash": "_l3m1Qs-Qmr1u-CLnYO2s8UQbWOewo5bkMeb-x183as"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/buffer@5.7.1/node_modules/buffer/package.json",
+    "size": 2597,
+    "hash": "Wve2Lb9VdaMBzRPoYW8dfZz_PJD5-re8PWofT7_ulOs"
+   }
+  ],
+  "files": [
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/version.d.ts",
+    "size": 91,
+    "hash": "OLhx74xVvRMxcl4krcVslmdZGXNsTNFw1VSQRYH3mpc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Types.d.ts",
+    "size": 32385,
+    "hash": "QVm-r5RF17mULkSllZF9BYAhFi9vcx6ROl_sSKDH5-c"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/HKT.d.ts",
+    "size": 6595,
+    "hash": "Amf2M18QE8U5IejPf2Z374E2k7VIx_Qqi2wOIXYlFj8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Function.d.ts",
+    "size": 32336,
+    "hash": "86yuhRDaJcTpQb2FUG6q-UWsWLeOgD_8W19LVrd1fH4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Ordering.d.ts",
+    "size": 6202,
+    "hash": "nc3ZgAuLBa1XKbNNkiXsNTRg7ldj-ZW1xDm0vcydgcI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Order.d.ts",
+    "size": 30713,
+    "hash": "u0sJlDsWn-Lk7u7UMFY4Ld2F9jhfQuAkN-798AUhvPw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Combiner.d.ts",
+    "size": 7796,
+    "hash": "zhuMD4egQEUS-WfUseidhELHZcRAfXkE7R6nRn2JA0o"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Reducer.d.ts",
+    "size": 4747,
+    "hash": "HizrFIwM3t5-1QRj-uA_UbGZqz57dpw0OnTFaHWcNRA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Equivalence.d.ts",
+    "size": 30217,
+    "hash": "sd3sYBxliMvpBXD-tDcGLnRaFoPe5JsyfotO-KlYUIg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Predicate.d.ts",
+    "size": 70822,
+    "hash": "vHEkM-ieWNNr3ERyJ-dQCFT9p383hBCHXAy46YA7EMI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Inspectable.d.ts",
+    "size": 7763,
+    "hash": "aIJVGNfkL8ip-l-THLBQ8VqIvfpbUUD41YPJDXS7dg8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Pipeable.d.ts",
+    "size": 11504,
+    "hash": "vBSKcrSAxe5jTXIKIR9ts8TQz1f-j_-FqywOpuFK5Ig"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Unify.d.ts",
+    "size": 17542,
+    "hash": "zfMe7pElA6R0b4P1QtRvS3Tmwne9hC73Juup23vKmr4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Utils.d.ts",
+    "size": 5114,
+    "hash": "SWcQXKZr7TEzBf7BAQqkqOvdnXY0NSYwPQK-3owLxsI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Result.d.ts",
+    "size": 98194,
+    "hash": "BGfLpmgd5cP_4uUyOOGqsAtWoOPt-1BesPC0JZQzuR4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Filter.d.ts",
+    "size": 36194,
+    "hash": "oXqxrQ054QghNzRYz8YX5FDv715iT9zc9P8W-TvrBBA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Option.d.ts",
+    "size": 135005,
+    "hash": "gxa7Ui-EWkfKbeGOwEIzlRmcZEjhJD6BDRlrdEmDnL0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Record.d.ts",
+    "size": 66726,
+    "hash": "Z_tC918VenWz-ztorpyfqUqoUSFgS10xTys7OfOawlg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Array.d.ts",
+    "size": 294760,
+    "hash": "0gDNsJvuABgjum2scY4gRvX3EvASTCiyRYQU-vd3ino"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Hash.d.ts",
+    "size": 12037,
+    "hash": "r7D20TqSKXKfB7j42LdKBb0pT-6ZD3QNNthV6K_Dmis"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Equal.d.ts",
+    "size": 10462,
+    "hash": "6qSjhiaI5iPKoHBy_XpPWdg6UlersX6fLZhKaTwI1Po"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Context.d.ts",
+    "size": 54728,
+    "hash": "14KhUgdyAMTBq7CscsLGS_O3hJzbfIPPx2FD_KrYUN0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Exit.d.ts",
+    "size": 36405,
+    "hash": "iTSakEpEODgRXhgOqafxaUb5ofPQ98VTYq1_Y-E0JA0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/LogLevel.d.ts",
+    "size": 19875,
+    "hash": "1se05Z-1TpbWyfNezPIjtmcsvsHmUOd68v1ahYK-rGo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Duration.d.ts",
+    "size": 55764,
+    "hash": "7bFeWmGRrqTXY5MiaZc0Zw9iXg7W0DhCbsD-TPjAFTI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/NonEmptyIterable.d.ts",
+    "size": 2721,
+    "hash": "APrcWDvcf5Wze9PatuYK-ULdVGJHS1G-Y9DWyaZ_CaE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Chunk.d.ts",
+    "size": 153449,
+    "hash": "WS391WPKW-ybUYS89GvEeisD2tRe6en7eeFoAfQJQ0k"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Deferred.d.ts",
+    "size": 55929,
+    "hash": "af6XmOzWPJwUlaGYLlk97TANRyO2VXqukDrU2jFQupw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Latch.d.ts",
+    "size": 12562,
+    "hash": "2XgjtOb8-qrxaXbAkJ1hl2Wam7cjvLP5s9K3RamAaFU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/MutableList.d.ts",
+    "size": 15227,
+    "hash": "Ou6t9HRJKi00hk5MRNKIp-j11q7YmD-qw45Z2upvtN8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/MutableRef.d.ts",
+    "size": 44439,
+    "hash": "y_820WZuuKCyr2_ctqMUqjY7Uj79kvnxcpbP4B5TjFw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Scope.d.ts",
+    "size": 20990,
+    "hash": "_4T7JHRLsSQtryITzVDZhCXKsb12nreDacJN_O7WmYA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/PubSub.d.ts",
+    "size": 66325,
+    "hash": "CBoW_lm-tvPH-gAeeyRjpkD1TuCY7J0DEdYBNMVihf0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Pull.d.ts",
+    "size": 15239,
+    "hash": "4RmpQh-QMw5Px1Kkw0KUlHipX_HymIKDgC83oYEfpsI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Scheduler.d.ts",
+    "size": 6497,
+    "hash": "ATsz9H6-BTWMN3Fgw7XUotZE1GAY-P0soWtVwE_SAsk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Queue.d.ts",
+    "size": 66883,
+    "hash": "t9C0a4x2a7t3ufWd4hDJRPLQAgESMRxW1mfiD7P7KbE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/DateTime.d.ts",
+    "size": 132096,
+    "hash": "HmLlltCLStznjnSRlPtrkDKqEyjZwxncVaju9PzNsJs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Cron.d.ts",
+    "size": 23375,
+    "hash": "Ka8UASChZBypabggOiQAfOKNMTQs-97Ei9UhJzNvdJs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Schedule.d.ts",
+    "size": 50505,
+    "hash": "RPzgIu6hgoVfX-DdUOdsq4lVCx1hhEC9vcqxrrY9ElM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Take.d.ts",
+    "size": 1517,
+    "hash": "Wu6DfTHKNeRnhSjeLOPRy7wzwevCBL2n1dIA1naC5N0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Tracer.d.ts",
+    "size": 21198,
+    "hash": "HoFzV8n36xU4cZds-Dykxx0kUeAdc6Aie_llzwkiu2Q"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Channel.d.ts",
+    "size": 310488,
+    "hash": "rDEQGb_g2VW5uDJ6cThfMx5pu7vi5KVMdFR9tKYO8hA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/BigDecimal.d.ts",
+    "size": 79061,
+    "hash": "LRR9mZ9LXWXWaH3oWDFeH2GHf9hHsBPxVAUzJrIQI1g"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/CryptoError.d.ts",
+    "size": 7110,
+    "hash": "aEMZ_brGseF4_5GfcLcauiNtD3uO3QbOT0A_1oZha7o"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/SecureRandom.d.ts",
+    "size": 12342,
+    "hash": "YCpb6SiDrBLXZdT_WuwinbhSln7cvwfcL3h1Wd3wHvA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/WebCrypto.d.ts",
+    "size": 2529,
+    "hash": "wev01FVIkl3g9KiR173dQYDqy84Voi30eiKZ0lf9HHQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Aead.d.ts",
+    "size": 11172,
+    "hash": "GQSTipYT0YIqM2HqjjSkJVz4z-8ARI8x2R7G6nMrjRU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Cipher.d.ts",
+    "size": 8027,
+    "hash": "sACXxe6AnNb9FrdAjV5otpiynXwpMr4NulcFw6lUtoE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/KeyAgreement.d.ts",
+    "size": 10918,
+    "hash": "tgbdXrIcABcpNqMQ-rdRFzuAl4is8lKL-t9MyTB4S_0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Digest.d.ts",
+    "size": 3928,
+    "hash": "a9VjRfGwr5m9QwyoRhVCa5p7I96HmDXBgUdRfyhOT0E"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/KeyWrap.d.ts",
+    "size": 12812,
+    "hash": "YgURUlpk4UbTM_NNUAPnFazXTixOKuWYVIOt2smPqSE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Mac.d.ts",
+    "size": 8756,
+    "hash": "8u0WAx85nKeVIAyLDXgRMTMjW7ooyXC7kFitIpWaQns"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Signature.d.ts",
+    "size": 14283,
+    "hash": "Tc7OYIVQkpv4GO0b9cv7pVLy6KM52y6L4KKfLJjlLug"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/KeyFormat.d.ts",
+    "size": 11342,
+    "hash": "VZnqXGC45Q7OYKk-ilL7yynjEFhjmHfVDG7aVBw_MVo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Differ.d.ts",
+    "size": 1058,
+    "hash": "J16qyCUzhH33Bjp9lHJY9PZhQBoRCpcGCvN8AhxWniI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Formatter.d.ts",
+    "size": 5449,
+    "hash": "K8ObMAHjy0YzgpTuaBtORE2mYbmd1akh5Q-UdxMGfJ8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Graph.d.ts",
+    "size": 241963,
+    "hash": "sU5GLW_wSiO6MQrp1oJksV522UiyOVhRPaPFXy6gyPU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/HashMap.d.ts",
+    "size": 71043,
+    "hash": "NocdHXXOPzwRzSrjVdKEB4dcR2Z-6z4KwPNhGhMqEGA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/HashSet.d.ts",
+    "size": 30325,
+    "hash": "EhmlcIotV9xf0no2pyGh3ulmGczpqyui_2mDPko3tmk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Data.d.ts",
+    "size": 27342,
+    "hash": "HykEXp_lXw1dnOdqg28tf-5eCQcoucxP3bGfB2D3yrQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Cookies.d.ts",
+    "size": 24274,
+    "hash": "tA-Qid29ljvaSZh6uwOpfXLCtj3KFiUJNUsU0UyDKd4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Redactable.d.ts",
+    "size": 4779,
+    "hash": "lhWATKjbF8NJfOOldgn_kuMFPFMGdLPJZazwy12cm8M"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Redacted.d.ts",
+    "size": 8091,
+    "hash": "gdirXijV45YJzSzkWoi7wOe1zbdVipnydYcZpiI50Gs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Headers.d.ts",
+    "size": 19187,
+    "hash": "UktiEfpfn8pRopZkWCXIv7TAEEcfPRgUgNnU9hPWtOw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/UrlParams.d.ts",
+    "size": 17394,
+    "hash": "J8amv7Kd3MxsXzx2Kjp6pWrlmHJz3bvQDdgd2QxYCFY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/internal/schemaError.d.ts",
+    "size": 230,
+    "hash": "MlPehA_I5y_gSYiTZZiTs-oTT8iwP4Lt5ekLsPD7Yss"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/JsonPatch.d.ts",
+    "size": 6878,
+    "hash": "n9nMBU_OZrL1gU2Aih4hLQgOA2wlKJXWcvdJMqT1xsg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/JsonSchema.d.ts",
+    "size": 18014,
+    "hash": "6wJU_KkRzjoxmMXAx2P8_EeeyWs4TEVHE3viGFggnUM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/NetAddress.d.ts",
+    "size": 47085,
+    "hash": "yPpehyyk9ENHNWM0z3sjJRfEzvYsoDDc8jzGGfSbrbM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/Host.d.ts",
+    "size": 11296,
+    "hash": "PfqmDliGB4BOL0zyJvQOch8Ouc2aqB5yEtLULPpn0AY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/Dns.d.ts",
+    "size": 20049,
+    "hash": "UaSegTER-fGTIFbtZBpb2qC2Haygg7ic7dzfYvM_CiM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/IpInterface.d.ts",
+    "size": 7379,
+    "hash": "3PgefZZ7ZPCEkIyLwCsHCgkWz_sstwfSY_kDmwQxlx0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/IpNetwork.d.ts",
+    "size": 10494,
+    "hash": "X5GGBE5IsMmmyLaT_ipMfAb3Yfmd6YxFwPjprWErlTI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/StandardSchema.d.ts",
+    "size": 6268,
+    "hash": "vZP5VlEJEzAUzJ1-f467cCCG2TThFIjkHfRVsMG3RfU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaIssue.d.ts",
+    "size": 25977,
+    "hash": "_6DEuTXPi5oEZ2sSL2I-CvbD-bmheGUXjQSB8WmGIa4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaGetter.d.ts",
+    "size": 61384,
+    "hash": "IKyp62ff6dUL6PKtjSYq7wGU1-H3AszML3SS17B1d7w"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaTransformation.d.ts",
+    "size": 54970,
+    "hash": "Ox710Eg7cpJhgWQ-mzj_xZSrJZFu9hKMiBc8aYxcY_M"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaAST.d.ts",
+    "size": 56328,
+    "hash": "G3t2xtwE2QfEbmNPsQlbWXTN0YeDt-gM20bEKjQViGA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Optic.d.ts",
+    "size": 46781,
+    "hash": "9oJAb80N5OjlWVffEE9q6G3gTK9vsh_Bs8Fq9OuskeQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaParser.d.ts",
+    "size": 28444,
+    "hash": "fOIHkYhY-j1xn4BJDf3BwfarH925XsGWwqejWGvlGC8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaRepresentation.d.ts",
+    "size": 75735,
+    "hash": "GXoZvPbU_X2dEar5slbxFiB1awC-ZIoJI_Kx-yL5G9E"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SemVer.d.ts",
+    "size": 37063,
+    "hash": "l_EMR67RdUDmLwNVrm1d3yeB3tO5pKETnaXo1rOCbu4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SemVerRange.d.ts",
+    "size": 18851,
+    "hash": "OSSiVn__FCw2Z_HtVfv3DF9rqbD2RsKHxXri7TRZHcs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Struct.d.ts",
+    "size": 47319,
+    "hash": "iWT4Iu84rl5aXZEStYpzpWkU9EWvWZPRkXXlDVeZ43I"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Schema.d.ts",
+    "size": 451650,
+    "hash": "rIgwxmjBoY1ai-EFZgZzKaXJ4blJMzcyt-iQGz6s884"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Brand.d.ts",
+    "size": 8379,
+    "hash": "5AYZosPBDIj0bWTTGwz8SquweOcXuODb8MV7LG-jD7A"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ByteSize.d.ts",
+    "size": 18616,
+    "hash": "pfF5HoIpi1lZtIWcTrQf9EtS2Oyq3KIitKYmShb79Aw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ExecutionPlan.d.ts",
+    "size": 12685,
+    "hash": "6LBRWaRCTZANg1GT4M7AD1-X6IlSioXG3RYp7GjFNXE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Sink.d.ts",
+    "size": 63297,
+    "hash": "0zaVhhiBiQ3_xX-CUsym3H39NVL9GT1UPqrQyiPPjmQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Stream.d.ts",
+    "size": 545237,
+    "hash": "b6kUObbmluIK1y2P3ZiWpDDlvm7dFoQkuAPpH3FXDrg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Layer.d.ts",
+    "size": 154832,
+    "hash": "9AxWcdioBtE7whQpy4ZRnYdveLSAGgbdZpXjQG-yoSw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Metric.d.ts",
+    "size": 135658,
+    "hash": "t59pfOpsCEKxywZbrXYNQLIUnHXIb3XObDIYZ7OYWCk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/PlatformError.d.ts",
+    "size": 7604,
+    "hash": "ZE1lf8qUiKLbnkn9QNaPXQS8XjY1aCPTXQnXqwYcYMA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/FileSystem.d.ts",
+    "size": 32680,
+    "hash": "jnScgCZmnCoh0fEZjGgKQ4iVNHG6TwbkY0lwsMl1ckY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Logger.d.ts",
+    "size": 29287,
+    "hash": "LqbOl4xpHfeujd5SKKykdK5mfQqS7vuFCmAOAMa4Dd8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/References.d.ts",
+    "size": 20485,
+    "hash": "l5_94-e688N_YkfYdr2dlP8WwNG3CrFcEVMS6CjjDHw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Fiber.d.ts",
+    "size": 25348,
+    "hash": "1CS9AjQ3cwTMOxKo4L2Th6d7BLhVOFdZJMbOUBgY-Pc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Cause.d.ts",
+    "size": 58630,
+    "hash": "2nD2WfKylmlTaM7du7ll4cSoqOBYAtltNpZ_gnIvnMY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Clock.d.ts",
+    "size": 10680,
+    "hash": "Hqgo89XKXD2v4sTUUaYss7oVcOjoDbzt2icoOnNRaeU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Request.d.ts",
+    "size": 23985,
+    "hash": "dDw58nf-3n4QMW84rh3HQBGynvtjDSkWlWqg_Lvwl18"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/MutableHashMap.d.ts",
+    "size": 33529,
+    "hash": "Dc7iPibf2NShOx6TzqpAyQqg89J3vW2GNrMgWAGu_QU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Cache.d.ts",
+    "size": 77021,
+    "hash": "CB0jOQCsB329pMl_d4gKR1qwS5OEVlruO2dQb_ImrnY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/PrimaryKey.d.ts",
+    "size": 3523,
+    "hash": "2wBq5xlErr0xZNKySDVFofU9g0KSOQeLRXaFvoi5P4o"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/Reactivity.d.ts",
+    "size": 9117,
+    "hash": "qrU2AD_3X55k3YbIlpK7lNnFRH3bzqSM1WCUKrDbRr0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Semaphore.d.ts",
+    "size": 30706,
+    "hash": "6Nmg2ci5lq-PwxfAr72soMz7moh4ZLjfIKOg3EbYMNk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlError.d.ts",
+    "size": 13968,
+    "hash": "qfdZMBw4enhimwwDvBZG-A1R-m0AsWRWhA_Ju1bGr-0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlConnection.d.ts",
+    "size": 3335,
+    "hash": "FxIYC4vJdl2FL0HDP1OvexsFAQIb7RDQn9gaCCONpIU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/Statement.d.ts",
+    "size": 21356,
+    "hash": "LdyDmhKhm2_X6RmgCSo86b5-iklsPWPp_mWwKAXkVsg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlClient.d.ts",
+    "size": 18408,
+    "hash": "WG634liSTqfW5C1ZqTbJaPxDpcCBymiBjMK16bzQcQ8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Path.d.ts",
+    "size": 10404,
+    "hash": "mrxPukRhYvS-KbRF1suOP-3DcXZmr4-mH3CfUvfVwVM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/KeyValueStore.d.ts",
+    "size": 13631,
+    "hash": "0dYV2XdO18JwQikOj9xmnV0YMdJskoOteTBYezVpzls"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/Redis.d.ts",
+    "size": 8401,
+    "hash": "z-6AYna365tDzeyq249DqfvNoF2TVyiePq1pjUU88AY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/Persistence.d.ts",
+    "size": 10473,
+    "hash": "k3PsmbesXvDpjlmZ6aLQy7JhdcvaEkfyNOahrUjwDuA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/Persistable.d.ts",
+    "size": 6604,
+    "hash": "o2CajscUMquA6yE5N9IdqpK53zvfcWcLqdhz-5p_Jvc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/RequestResolver.d.ts",
+    "size": 62616,
+    "hash": "7NuRRi_z5SI5eA3gZ1nIm1zJPKfDS7nYB1cSX0BUuDs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxRef.d.ts",
+    "size": 11799,
+    "hash": "ub9W3zC0_Viql5YNG2Q_rRbCf-iXLYfzaM1MYB0PmAc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Effect.d.ts",
+    "size": 851142,
+    "hash": "cv0lQHO-2jsvO49TPKzg939LFKeU9XKp0ggQgzjYaD8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/internal/arbitrary/runner.d.ts",
+    "size": 165,
+    "hash": "oR7Y5S4QXv4ovadVHFqi6T23-gKwFX8lGuCcxIGgzls"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Arbitrary.d.ts",
+    "size": 27586,
+    "hash": "g2ZbED-xyXm1FlerLI5H7houe9YJ3eWa7c7cUNohLVs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/BigInt.d.ts",
+    "size": 43887,
+    "hash": "mxj5qpJK1wvBbKg1XaCvduEktHKcVtlNalZhHhJ9pdA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Boolean.d.ts",
+    "size": 20618,
+    "hash": "xyF7Ye7YItZPsuS4kREdE_ikphZJSSFZ8W4uhcu0ryI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Bytes.d.ts",
+    "size": 2227,
+    "hash": "CXoh3nx8qCFTDYvJt-BRKdq24UDFvdTOsFMgOOJ3D-A"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ChannelSchema.d.ts",
+    "size": 11502,
+    "hash": "1e_lH2Aggoftce5zHxI5JUAozy3dmX9ff69ymt85EKA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ConfigProvider.d.ts",
+    "size": 41014,
+    "hash": "SvnA4ZUvg4jbymR0tcJ5B87CP14uA1NHmyy0DjQt2x4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Config.d.ts",
+    "size": 53654,
+    "hash": "qVCqA2lzIAOEWiJkhu-94ZSNGZsCWTDd9aNnJkgpQTE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Console.d.ts",
+    "size": 24529,
+    "hash": "yk9VkxIgo5d5EiHjchgkeLdSs6egFkKuGdVLVLLZFkw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Effectable.d.ts",
+    "size": 4027,
+    "hash": "VFoIyxH7_1afvhFQVNW6qACtE5oPpN2o-Y7pyC5tunE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ErrorReporter.d.ts",
+    "size": 16108,
+    "hash": "F1hkYBl0TO7SUjnXryruVUiPvZE_Dzk9mNyWhQ2vDzE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/FiberHandle.d.ts",
+    "size": 26032,
+    "hash": "GqRolH5h4AIHnVG-u0473IJMf9iTTwP9txoA3OvKdFQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/FiberMap.d.ts",
+    "size": 42474,
+    "hash": "vf5IreNZTfygS4dM2XU15MPceZZzngGUH9GIeHglouo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/FiberSet.d.ts",
+    "size": 21668,
+    "hash": "U0BbTABEKpNDMtMDKxkOBusic9g6ZRbGQGyCilQLYoA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Glob.d.ts",
+    "size": 5392,
+    "hash": "u7ZqQ5YV8ErbEet0GjAxhMfMol1KQ0nYMM0hFSuj9O4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/HashRing.d.ts",
+    "size": 12243,
+    "hash": "3k8IRVhBoOWjWE4QqWU9sPgLc3gqoGZBYBh7gNtOoK4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Iterable.d.ts",
+    "size": 153982,
+    "hash": "esOtvd7S75OFpKRPyhZ0_qwv487yt6RG1993c6P5B30"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/JsonPointer.d.ts",
+    "size": 4527,
+    "hash": "rFg2XEPTRrO40g487Xdt8GGi-tmAeUbdtMjUhpf8lYo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/RcMap.d.ts",
+    "size": 34249,
+    "hash": "LWL9_stRHEQqB5sQN8MOaCMWzned9OIf4icT6VSCw4o"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/LayerMap.d.ts",
+    "size": 14810,
+    "hash": "xfOzgDuICcI7iUdHzXwAlQsYXVtm7UI2krvcy9BdBA4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/RcRef.d.ts",
+    "size": 7601,
+    "hash": "BXnDVTGHMvXhrRJVaeOkqzpfRzzRFwW6ZwgNudKn83w"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/LayerRef.d.ts",
+    "size": 9109,
+    "hash": "h_CjzsvNYvGacG6EFHOli-z5qciq10ZiAAMJVMmA_WI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ManagedRuntime.d.ts",
+    "size": 9511,
+    "hash": "PdqXBL-OoOMuQnKkRVQAm-8aAFmsMUDNw99kSNQlceg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Match.d.ts",
+    "size": 90964,
+    "hash": "tmCxhhbq6oI2akoifQnIC9eqFUrQWVT9BPYX2ROD-mE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/MutableHashSet.d.ts",
+    "size": 16266,
+    "hash": "muNycftE2h4LwRIwiF-TUXuaRKgDSD0J3fGMPxfgOB0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Newtype.d.ts",
+    "size": 9511,
+    "hash": "5kXRujhX-JVHexvgd38_HRt40Id6P-xO0TsXorBOrx0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Number.d.ts",
+    "size": 37456,
+    "hash": "ep0iiSrLvKEO9uF0ruflRFtRkz2BMVcMTwsp3ocXGgw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/PartitionedSemaphore.d.ts",
+    "size": 20405,
+    "hash": "1DnNmm3V2DIe_ZCqsosp87r0R9wa_Htr3PR0I_i3N7o"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Pool.d.ts",
+    "size": 19390,
+    "hash": "uvwXKBzGCwgvt3gN_K_x9H14yhI2oH_N8Wqa6JZmW-c"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Random.d.ts",
+    "size": 10414,
+    "hash": "bE1FJLnNo6biAB0cxRJLxbOE9fQoa1u00Do2AlB6N_0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Ref.d.ts",
+    "size": 22959,
+    "hash": "K-Ur7AVRaO3RUNL9-KZKpG0kpOIFXd5Fs890TTiPrZo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/RegExp.d.ts",
+    "size": 1569,
+    "hash": "jR2vs6ePTqJ5jG3xOZK_JV0gqcdqflZUCj8WYZUy5yo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SynchronizedRef.d.ts",
+    "size": 41480,
+    "hash": "kJKIjW3i01jP8YDfeXzTcK0RO0LABSWiQWcBZa8Fvs0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ScopedRef.d.ts",
+    "size": 6106,
+    "hash": "p_FYf4aQYs80nUejU_wW1nXq8nNdXwsOjV830AfmQmw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Resource.d.ts",
+    "size": 4169,
+    "hash": "HnVHWqJQQarqNHI65oKh97uH0IUNR3-1KqESB5iLIYc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Runtime.d.ts",
+    "size": 10431,
+    "hash": "ZMDblKwrnP645cJKqUeLzty7Mb4P3ekyiTcDtTPJ6D8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ScopedCache.d.ts",
+    "size": 28156,
+    "hash": "gk_Wevfqv8Pc7JGWfvptQeROHFZS3Ud0xsT5aNtK9hg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Stdio.d.ts",
+    "size": 4792,
+    "hash": "T-DnaBHPE9WMb769TDv2bHjI4UvZDZJh4ee5Dd5HAQU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/String.d.ts",
+    "size": 47506,
+    "hash": "PvmEQefV2HJNvGDwX17x7Mq9gpVhXBhMrL4Wf_51Jr4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SubscriptionRef.d.ts",
+    "size": 59359,
+    "hash": "pSrdiOo8ZK9NwdOA1IiYULo2DA_niuo7m5VI7UusdDo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Symbol.d.ts",
+    "size": 820,
+    "hash": "TObyYPSWmyQIxOFy0KVrqFXURhCThi1Z80BQ8VV-wZE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Terminal.d.ts",
+    "size": 6158,
+    "hash": "HDaJ09wH5P7ofszeIXyEftCz-MhQUaIa953bbwgyyjI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TextDiff.d.ts",
+    "size": 13516,
+    "hash": "Z5EbLitr_sDh-IbHAplt6bpkdaaqdnlaBbX44EHaAH0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Trie.d.ts",
+    "size": 48271,
+    "hash": "t7PctoOMOJtT7HVZAqtcRfE61WXAfh09rNrS1J7-qlo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Tuple.d.ts",
+    "size": 36898,
+    "hash": "hxeesgxG0fN1rqHr42vsuseM6ztDE-5c-GGuuEl_qXE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxChunk.d.ts",
+    "size": 49851,
+    "hash": "Vd6eMxrFrNdtHDUQM5paDAgzQWLtlvtwJ_nE4_YRsIM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxDeferred.d.ts",
+    "size": 13817,
+    "hash": "_WSaeNW-k-cKvJM16efcn4hXNYZ6qxm5DmSADIAxBA0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxHashMap.d.ts",
+    "size": 123661,
+    "hash": "aSi4bXMdN7NluZ3ZR4iDW27d_urve_bppk1pQrwOVV4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxHashSet.d.ts",
+    "size": 45646,
+    "hash": "XI4JStJ5ohse1ZDk6cadOg5lEAdcIaF_kuVYxs9mXfc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxPriorityQueue.d.ts",
+    "size": 20191,
+    "hash": "q3wRcJiA2WkQZXAsHKfLpCaD7519IYAietoXxzIpYkQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxQueue.d.ts",
+    "size": 48997,
+    "hash": "rPexRdYZbsd2GrcT0OBBADPVmyIHr1ooaF8NBCvcUJQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxPubSub.d.ts",
+    "size": 23127,
+    "hash": "exXVUsX4xWjGbFpT7o97iLvb-J6tDik4zKox-Mcb2j0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxReentrantLock.d.ts",
+    "size": 17333,
+    "hash": "SYo1LtOyaS7FYVFlRwdZiStSnENVIdmBLMpT2FKYZUM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxSemaphore.d.ts",
+    "size": 34438,
+    "hash": "yVaOfmxZPzW3dWaSHKNLDV0-oz6KoCi8AsnYyEVvgww"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxSubscriptionRef.d.ts",
+    "size": 24713,
+    "hash": "8fQhoHUp5ReU86tGsya91urzUUNRDNCA88A98BShdy8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/UndefinedOr.d.ts",
+    "size": 10200,
+    "hash": "oyrnK6b6TwSy9ySsLpv7wV-mSHCdSnkmjwlNB0cJQH8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Version.d.ts",
+    "size": 642,
+    "hash": "x3__gi43164Bxl1Pib0MvFA6siwolcM7LsXHvRCbeLo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/index.d.ts",
+    "size": 13254,
+    "hash": "0PpqEQlrfMhrxRLRPiEmFILdAxRuOqxV7wFDHQt16vk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/calls.d.ts",
+    "size": 1375,
+    "hash": "dsRmJCNPzxmBw80oYCGtYgErjsc0O0IdrlavmcSqJgg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/fastcalls.d.ts",
+    "size": 4743,
+    "hash": "5KioEbTxBNd_QZvwfzx_Wtto96eJo5t1os1-dStu3Sg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/regions.d.ts",
+    "size": 6347,
+    "hash": "OimZR3Bn-U-YG7GsPRLkO7ojAkjKNP_YHZLHjIojefk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/fork.d.ts",
+    "size": 1450,
+    "hash": "48HdCKdKyA1Q-ImyNbFxHEH8MvHTioJ4AhPv04LWEvg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/kernel/internals.d.ts",
+    "size": 1192,
+    "hash": "7Fiel2LtGrvq-9nBG4DTXdPWPq5ssE5zGD2xtKyop7k"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/kernel/kernel.d.ts",
+    "size": 6233,
+    "hash": "SpddlG9nvj1HKpa57Bira5G8t4QoTcG4oRl4hnC1-xE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/services.d.ts",
+    "size": 3272,
+    "hash": "Aky7KJ-_at6kU0rh2fYbON-xEor5MYT7r0dKny8eFp4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/handlers.d.ts",
+    "size": 4437,
+    "hash": "dM4ZRB9CryabX-dYLCHS1WlVbZMqBRsuuvJGPL-Sc94"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/producers.d.ts",
+    "size": 2648,
+    "hash": "nSdLzVgLSb7ZsOITdmOllPu94EmFjCD7W-O0F8qihHs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/iterators.d.ts",
+    "size": 299,
+    "hash": "D_KJoFVsbFdHLj8ECD9in36LfyVin-Znz3X0acOoUt4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/boundaries.d.ts",
+    "size": 2229,
+    "hash": "J2cNQ7D_ohM_EnMxDLD02YYHFErO1YyFaZklO0hQ_Pk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/hatches.d.ts",
+    "size": 4025,
+    "hash": "oqvtVpJc8AcFi9rs2TGpCZrhLlfEiQDj2P_AnQ1bolE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/fibers.d.ts",
+    "size": 6547,
+    "hash": "cDcWyGACNXLksMJEw8tcdYjoou7l_s5wOhwJh0ykPG4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/provide.d.ts",
+    "size": 2281,
+    "hash": "k31QBghV46lk2i0f4JI_OSQJCFzTOLh5I_FnCBfDmuU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/primitives.d.ts",
+    "size": 3019,
+    "hash": "JDRuJVxm5DSqXy6rm-AZOOoiCHO9zxzG8opl8KaFA7I"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/match.d.ts",
+    "size": 5172,
+    "hash": "uwgSabm-29wJOa4xu5kyRJRcHwjsVV1Y50w66ZVLqYM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/main.d.ts",
+    "size": 1361,
+    "hash": "NVDMPJgJKrqMc_i-77_arVwTNhh8LBDWGq6mG7urGRk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/Animations.d.ts",
+    "size": 4110,
+    "hash": "cEE59Tu20yTZFh6QGcq-31Q091UyexFzfpebGFy6gnU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/Crypto.d.ts",
+    "size": 6627,
+    "hash": "XwHusiTQVjE4hwkTA3zAFGJPZll6iaWLc-hZp7hAFPk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/Document.d.ts",
+    "size": 2088,
+    "hash": "ZfpxqfNU-KjD32uGY8QnQEGp3bqdbPrbrF_Wc7xR9bA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/FileReader.d.ts",
+    "size": 3271,
+    "hash": "Izc4Lg3SrR_vTOYfWz0LwZeU40DjL8144EqjrGxp8AU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/FileSystem.d.ts",
+    "size": 4237,
+    "hash": "GscyJs1q8_cVZgxDm-u1CJwscBRKw-f5XSRJdUxCAP8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/Locks.d.ts",
+    "size": 5678,
+    "hash": "vA5GYo8h7qcs5a-fuxQPj_Xrbx1iP5fNyo4v0SJHAKk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/MediaQuery.d.ts",
+    "size": 2800,
+    "hash": "H2TsmsCxrAVQFpn2-nEjFgeAxGOVseTq6FcGaP1wfeE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/ChildProcessSpawner.d.ts",
+    "size": 10049,
+    "hash": "thXsQ6k-zkFoKCmsVYtf5M6c35jjGBMUFpTT-aWMdLA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/CommandLine.d.ts",
+    "size": 11522,
+    "hash": "lxWpSvbLSZaDoTOhUfkj6S-HePD5KBJ-tFZkDiae1Dg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/ChildProcess.d.ts",
+    "size": 40640,
+    "hash": "AE8za_rMlCaeaidHj6lgF2rgn2xY2_8CONWi6Xw1LPU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/Process.d.ts",
+    "size": 7380,
+    "hash": "_z_I5eJfXZwEimH5VahhPwP6hwn1kMKtridb-SyuyiI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/ResizeObserver.d.ts",
+    "size": 2495,
+    "hash": "uUMxJ3p5sbc-qhqfyWNUwnitOJtINeXL_9M1xJLWz30"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/experimental/index.d.ts",
+    "size": 1010,
+    "hash": "K11NEFLQ8PgFIFcDru85qcGI9jymH7mBq_DzSUhxNBw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/prelude.d.ts",
+    "size": 2329,
+    "hash": "MRRyeKwM8ihjWMtJiwb1xCl33USvnI3slGHouhsXZMo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/resources.d.ts",
+    "size": 1599,
+    "hash": "U-JuKPY9JEuXM24F00Rd5NNsioH-5xMK4AMyix5GT4w"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/legacy-await-types.d.ts",
+    "size": 1948,
+    "hash": "yLNOHMBuLdk8f5F8zEtXmfK2YpMjr5UX54CdKqCyap4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-0316568e1eb7.tgz_@eff_527fb01e8a0d561f7c4b711b0f5b34b4/node_modules/vibelang-runtime/dist/index.d.ts",
+    "size": 1501,
+    "hash": "L6Wc5kc26xu8poMi8QYphUCOBmEd5zpZDXJT1AGA-KA"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/Action.vibe",
+    "size": 780,
+    "hash": "Vckor4eZmkDllw6l8jNdfAkQDaL_pe3WLRzmYSgzjAQ"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/maxResourceLength.ts",
+    "size": 594,
+    "hash": "Qf9tdoYUXYVKHOMRb5zF12N-jYvlUD13Kuae1kUjOMg"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/PatternResource.vibe",
+    "size": 287,
+    "hash": "jWgIIYZbtWABUqQWb7bFHc2A3O2H2QdCm9-FK9HZ24A"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/PatternAction.vibe",
+    "size": 622,
+    "hash": "cvGzYB3wcKkwiLFAjv1qbXwre-ZzGMQg-Ii9qfjcgqE"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/CapabilityPattern.vibe",
+    "size": 2052,
+    "hash": "-2-wYxuuzAA0kgT4HggVEMHvEqBKTTOzdBzV-OIY8gg"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/EffectTier.vibe",
+    "size": 456,
+    "hash": "7o84W3HhZCS8hp6b3lP0pYz6hukbqyL65a9x0J84N8I"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/ExactCapability.vibe",
+    "size": 738,
+    "hash": "hWcef9aJ2HTpFd7l7Io-S0nf8UhiSgK7XlN_uoO_VNU"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/isPatternAction.ts",
+    "size": 350,
+    "hash": "Iz-x-r4p_Py3wBI9WGN5VeTvonBYzrDO1fei-oYknQU"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/InvalidCapabilityAction.vibe",
+    "size": 502,
+    "hash": "OJRT37qJljDbjgGPFMHJyfAmah6nHdXRO41qhnRiRtw"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/format.ts",
+    "size": 1275,
+    "hash": "Scd1DmwgP2F-u5HJ2K2zXS93KgclvwmxMQiQD_zTlxg"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/metacharacters.ts",
+    "size": 231,
+    "hash": "Z04VtzOoc9o_Jj1YWpXgbkEXpJHu_sqtQIZQ0MmjC9Q"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/isLiteralResource.ts",
+    "size": 781,
+    "hash": "w6GhQtvHcc2ktUFPWOmaZJFaUAL8wFNR_k202A9EV-U"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/make.ts",
+    "size": 366,
+    "hash": "lUqMz7J1y2klWDGiGPtXtNjMakJk_P99AcbW4hZtilo"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/hasDotSegment.ts",
+    "size": 2848,
+    "hash": "-AzNNSv6KhVylAjm4kVis7Y2Lu_ljgfa5K6r5zwq64w"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/matchesAction.ts",
+    "size": 426,
+    "hash": "u5ukLIv9-VqKl0cSaYgoppFR0wRO7FBQsRvBTYOaL-I"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/maxMatchWork.ts",
+    "size": 825,
+    "hash": "uNTnvFYgAv6BM7ClB9oL7vrLIY7iM7qtQTZjz4RMI78"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/matchesResource.ts",
+    "size": 2517,
+    "hash": "rV9DMyqs6B8A8UZlEgr8rGsFOe_ZDx_BOke2y58qr2k"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/matches.ts",
+    "size": 1339,
+    "hash": "dRqR_DNXytJE_hTrJU_mHP7PFvOTOZuftVOLU0wBpUU"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/actionSubsumes.ts",
+    "size": 417,
+    "hash": "gAxQxv6huaxdS77uAXBrb4Sik2nTuyBXgRzRzlPkJJM"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/mayOverlap.ts",
+    "size": 2233,
+    "hash": "SUE2kXjChnCIGfScVmQ57rADMwePT2MNX1vMQhrp2es"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/isAction.ts",
+    "size": 299,
+    "hash": "hyldHvAiwYiSosR3TVPWj6qpCx0Kqx3vxCtNwuqtVrc"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/parse.vibe",
+    "size": 993,
+    "hash": "SVyI_YeL4FVM0LfWWZ6Rim5GoV5k2SnqpH4Agax2AWY"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/parsePattern.vibe",
+    "size": 2259,
+    "hash": "9JxiBsJHYq8rnxQfiJ00POktPhxkSxtsZgUEPzQm850"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/patternFromCapability.vibe",
+    "size": 1227,
+    "hash": "fs5W_xQiKHQHKIqFe3RP-c8K7yMk7aiRb7wm7FmrxBI"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/requiresIdempotencyKey.ts",
+    "size": 365,
+    "hash": "0u4aVdE_QkYjv-H0blOmCSI0mDpaXmxwXcpUgDUDZVU"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/subsumes.ts",
+    "size": 1393,
+    "hash": "f4WO6f7VdWTARbgU_V9wWzulnxdOLauStsza2EAw_uA"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/TierOptions.ts",
+    "size": 600,
+    "hash": "F7chHWrLNgxY4I9arNgPGlSRIgWe58Wq35VY0Q8TtO8"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/tierOf.ts",
+    "size": 3284,
+    "hash": "pHnl3wJTMnDyYASTK5fPaWiP-RvchYJZgNfzULUnCDo"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/withinMatchBudget.ts",
+    "size": 900,
+    "hash": "cuTWrbc1mzgkNIKFknxG3vBxg8EiP1wdOKtNgwYKXGQ"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/Capability.ts",
+    "size": 1380,
+    "hash": "lN3i_KrJZK2bpHPoLlhrnLC6H35aM4wuUt-Cf27mzG0"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/CapabilitySet.vibe",
+    "size": 7882,
+    "hash": "AlEdU52KFZrTovc3hzoOpU4ouGC0YBXFqp8pACWIjkM"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreErrorCode.vibe",
+    "size": 505,
+    "hash": "7S9FP_6ThwrqEOidOX4Qr0x5cU_obo37TZOmyf3Gw7Q"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreError.vibe",
+    "size": 615,
+    "hash": "PEH41lNuKKlEG5oreBncw_XK4M73-I7vPb9CKzajD1Q"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/RuleEffect.vibe",
+    "size": 429,
+    "hash": "1b0rE7r5gRUVpT6xkN5-XKk6w46DXspBaSnLHIl6MhI"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/Rule.vibe",
+    "size": 671,
+    "hash": "wX3E_XvmNgpWaIvLGlEz6Bk7rCcBcK7OPwxDN3GaYeI"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/evaluate.ts",
+    "size": 3544,
+    "hash": "GsGtXCBtMupM3l8bNgAgjpABLetiwUXrdFaLMbngYvc"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/maxDisplayFieldLength.ts",
+    "size": 409,
+    "hash": "hAanL6aO0eDkEYPa_RQJEVCcQZhUukKCw_vl5gTo7pc"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/displayField.ts",
+    "size": 1496,
+    "hash": "joICeDL3vo_-PfFXHr0nsu4DaOLHaD6TBpHtWwulqss"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionErrorPayload.ts",
+    "size": 1011,
+    "hash": "RZDRElqPA_AiKEFz1ioFrMlfGRPo57n2tDVy8DQdp7Y"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/formatError.ts",
+    "size": 1646,
+    "hash": "-bMreMaZAtDjUipmDqJJLzAMleMvf-ImoA10JE-gA6w"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/src/internal/describe.ts",
+    "size": 388,
+    "hash": "_h8CSmq_kZob_8k2D688-4kTfd_kbuYEC4EWs0m4OhQ"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/src/internal/canonicalize.ts",
+    "size": 11884,
+    "hash": "rYomHNIcHNZvY6vov1hrHUPpyL-nXBfKlQONc5DGqGU"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/src/Canonical.ts",
+    "size": 3466,
+    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/src/Serializer.ts",
+    "size": 380,
+    "hash": "ujxrdyUuUkUuEsos_UL6g4bSjv7JLRwZiLcJfhERZ_8"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/src/Record.ts",
+    "size": 1382,
+    "hash": "y7iZGGOgtt_BfRe2gW6yRE9zsjI31BD_WmLfQWF3kqE"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/src/BoundedJson.ts",
+    "size": 18557,
+    "hash": "xOvlbiuEfZlqjmL7FZFrAYEKFW5zRoSsrXpK-OGIycA"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/canonical/src/index.vibe",
+    "size": 1664,
+    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/isPlainObject.ts",
+    "size": 403,
+    "hash": "tcrzheYBgKrRSsyGR22I3B2vCWkqEO591sNfCIeGXP4"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/isPermissionError.vibe",
+    "size": 6470,
+    "hash": "sbzM6yeOtAnLcl1zYTKZiFOuj5D5UwR_3cALo9ZaX2M"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/fromPlatformError.vibe",
+    "size": 1047,
+    "hash": "koOdJyZTmdb0yLTZuJd3k1uXTwDR_SxxSxFExr_lyrM"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/capabilitySnapshot.ts",
+    "size": 580,
+    "hash": "mLIFoKJWs97BJN5rv3qaiVHqBasQqQ_sRipNLFA19Uc"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionDenied.vibe",
+    "size": 1350,
+    "hash": "nUHIW_ZnIhBJP9OCX1QLTPya8PwNDl1UU317S9mfVF8"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/permissionMetaSnapshot.vibe",
+    "size": 6031,
+    "hash": "hBy0dJVcsP165BmvSd_g7ll-dNUub-G65O4pmM3VYqg"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionRequired.vibe",
+    "size": 3509,
+    "hash": "OM7ktRGIeYL9ztx-FWjHA9OdGSgjQUMFIoOO026Effk"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionError.vibe",
+    "size": 942,
+    "hash": "24IpgfMGKJPA34r7ul9esYT_PFwL9h50pmfzj_C-avc"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/toPlatformError.vibe",
+    "size": 2064,
+    "hash": "xVb4GVbfp6C6y0O605QGN6Kk7AKO2K0n7bqAZlAB2K8"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/Permission.ts",
+    "size": 1296,
+    "hash": "XsCzM8UYEVG2_yFyFSDUOCJK3Q06GJfwtF2bCcCdJOI"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/decodePermissionError.vibe",
+    "size": 1528,
+    "hash": "kmrfpsdGiw38KiIqsfvYjYl6qVz8-m4qcW1YW0mO8LI"
+   },
+   {
+    "path": "<vibelang-record-base>/packages/smithers/flows/capability/src/index.ts",
+    "size": 1144,
+    "hash": "pjuZbnYPm4SMEkstTHSJc84_RyLMSMIM5-5cEg-Bhi0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/globals.typedarray.d.ts",
+    "size": 4864,
+    "hash": "DM2qGYUtJezYTuw2XDv6FueFnK3s9unKbQ27vuQ5dD8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/buffer.buffer.d.ts",
+    "size": 22956,
+    "hash": "-baKHD-PRbTBmfpbOsCUlyMMuPLwzc_r5YF7MLg2pko"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/globals.d.ts",
+    "size": 5084,
+    "hash": "9Tp2Ujks8m675OKf0GcqqHyTvW0CQSicE_q4e5rDXIo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/abortcontroller.d.ts",
+    "size": 1989,
+    "hash": "5eATdcnhJKg7Uu5LMkTtGk0hSmz7VKxz4WSoI6Snhgo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/blob.d.ts",
+    "size": 902,
+    "hash": "-Qriu84VBeZ_L2UCOS4xj1cUuugtLZaRhcSmzsyK8vw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/console.d.ts",
+    "size": 149,
+    "hash": "S1jiB7k6jxyIu_KpXdxoasg5YrE4MP6K0_QE_8cFH7Q"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/crypto.d.ts",
+    "size": 1449,
+    "hash": "H--ryysGc2pm0pBAdNViaHU2VIBegpmJpGoBYc2EEsU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/domexception.d.ts",
+    "size": 3052,
+    "hash": "sApjBVfRYirTEmM72_vbnGtyINlI3Kn4mdswZ58WAHQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/encoding.d.ts",
+    "size": 414,
+    "hash": "wYqZ8B63iNhJrQMrMcr9Sd4LGeCD_ndTcINMVnXX344"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/events.d.ts",
+    "size": 3367,
+    "hash": "UkeHTCojuaYtF4roTy22odVObJoufgV-F4zF7qE3V_w"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/utility.d.ts",
+    "size": 245,
+    "hash": "zc-epCatlw-WrJMM0XbVxpxsJO69n8WA4VctbGqI9iw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/header.d.ts",
+    "size": 3500,
+    "hash": "iICdbBuceNBKEzZGpv65Jt7wWod0wwjHyTvDLuFj0nE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/readable.d.ts",
+    "size": 1910,
+    "hash": "FWqFniHvMkTROv7rpOSXYKavoDXBSd2lLwxF6okDszg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/fetch.d.ts",
+    "size": 7029,
+    "hash": "OsQFFsM7h_dR91BzRpMwgaJs24o-EaazqgfSP4A8hds"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/formdata.d.ts",
+    "size": 5009,
+    "hash": "YVdUkkcXwLHik-CDuDUDwKhycXrVqmDtfxppnrG06lw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/connector.d.ts",
+    "size": 1105,
+    "hash": "FOms-Ca6ug70tWZXBAhIlue8wG9lqasTr36T0n1rcGk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/client-stats.d.ts",
+    "size": 456,
+    "hash": "aINNYxyIOMcV8iVQnPw5J5E7nMekhwRgtbYMjb25m68"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/client.d.ts",
+    "size": 6458,
+    "hash": "gpvFfujyh7SQq1u8WpYvylfkMsHjjsaA7NPsrxKABhM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/errors.d.ts",
+    "size": 4868,
+    "hash": "7sdr9rk0bz-V-kAmIbiJSJ6Wkw5yKVsDaQIvMy6bSmo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/dispatcher.d.ts",
+    "size": 14424,
+    "hash": "Oj_xTaU9UBPz5tjErVUiXjZJwIeGxEIc5jnADY1Ym30"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/global-dispatcher.d.ts",
+    "size": 275,
+    "hash": "6mvI3otZ-Qp6OWAAX9AZiPmP0HhOFLxpIt3i6TMF7H0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/global-origin.d.ts",
+    "size": 176,
+    "hash": "NhB5lWdLKShKEV4hoGGMTCdRsyqHZt1Ms7p0AwixbVk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/pool-stats.d.ts",
+    "size": 663,
+    "hash": "kUoK4w2W1xkV_FGcy0778rYsDd-zo_xhKRUQdrwB3GA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/pool.d.ts",
+    "size": 1384,
+    "hash": "OABOaAE0DLiQr7jLWp_IlyKX5_iKuUAm5LCzxh-zL4o"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/handlers.d.ts",
+    "size": 413,
+    "hash": "0kPbayV4j0Oefi8DwFaI6S9GdkNRZzuw57LzYxIy4YY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/balanced-pool.d.ts",
+    "size": 1019,
+    "hash": "TTJ_fXKtCRgnXOo-7kmmqNyBFK4dW38_XQd03nX3Q5o"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/round-robin-pool.d.ts",
+    "size": 1474,
+    "hash": "FJ-ann8E5nr6DipJ_A_0IQNcAda3k8_K59Lp9oGUMeI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/h2c-client.d.ts",
+    "size": 4298,
+    "hash": "6KnfpMde9tJd-LQOqpwx4KaUUqryztSj9CFdvbqodvQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/agent.d.ts",
+    "size": 1062,
+    "hash": "pwr4RaLrndbicj4xnhTqf7KLEp7BNhwhUJtJMFRIwyM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/dispatcher1-wrapper.d.ts",
+    "size": 169,
+    "hash": "tT3FctTxh5BCB64RZmUt5HqrjusAwlTQCcsiaGMHa1Y"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-interceptor.d.ts",
+    "size": 3931,
+    "hash": "CmCikricpyGLhhb3jlu9HJa4fgSISUaczLQ1XpivlZo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-call-history.d.ts",
+    "size": 5558,
+    "hash": "C24lI0tO7G7ZarE42W63CxNWkNfdAfPdioqykcNaaDo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-agent.d.ts",
+    "size": 3448,
+    "hash": "lmby-EuYW2JADS5asK2un_RN6bKjSAPCxb08gyWxfcA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-client.d.ts",
+    "size": 1065,
+    "hash": "QM01yV6c8iz6W9hOlkCLb8vKVSlfT_giOQq7Ea-8Pco"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-pool.d.ts",
+    "size": 1037,
+    "hash": "sWFriVm_VX_rFjacYSSpeg507W9J0d9zu0ud32is8_M"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/snapshot-agent.d.ts",
+    "size": 3306,
+    "hash": "9QEjTFru6112WUEjNSJ0Zqqs8wuVI3LWCv6yHALJY0g"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-errors.d.ts",
+    "size": 336,
+    "hash": "QLRjxnZsobaJv8xG0mteKVlU8yrUPjfuaVPApnfkris"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/proxy-agent.d.ts",
+    "size": 806,
+    "hash": "msl3UD8VvxPKfIKtmjKngvQtQ-R0gk6LO__iKP1fJjk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/socks5-proxy-agent.d.ts",
+    "size": 870,
+    "hash": "i5H_W7kSvj6iE8vPAHWqzh9dT_JJoNIn7Wc4aMt7-rw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/env-http-proxy-agent.d.ts",
+    "size": 732,
+    "hash": "gKrmr8Z_qlrAsytbi8jMn3-imc_xXPCcwuEf0oxq4p4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/retry-handler.d.ts",
+    "size": 3262,
+    "hash": "9HPNIoiZH_MiEWXc9zzV0k2jA5H4foWz3U0EUMeHo5E"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/retry-agent.d.ts",
+    "size": 233,
+    "hash": "SZ5bBVpauh4ZmPcxGmxEGjaYMccJBcxWXOrJPCgIPVM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/api.d.ts",
+    "size": 1609,
+    "hash": "iu6LbU-fYs83ds2hMF-xh2Piqt5-E86lu-aZES34UhQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/cache-interceptor.d.ts",
+    "size": 4362,
+    "hash": "mEmLEBgDuz3en3albmXBS3XbHMi-xfTbcr5UFXD3T8U"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/interceptors.d.ts",
+    "size": 3624,
+    "hash": "fLT0MaRZGw4jACvtgF3Icah03-1rmjmU3OaKbfc-Zzk"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/util.d.ts",
+    "size": 623,
+    "hash": "XQN1ynMQ77d-PvGNBo1TeE-vYnBeCtBFaVl64OdVxAE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/cookies.d.ts",
+    "size": 696,
+    "hash": "Wa83yuxB7Pey52BZyWcqSeaCwaKqb519x4h49TqihNY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/patch.d.ts",
+    "size": 599,
+    "hash": "rd9Be56z-Tj9342B6WOToWXkvg1Ki2QCKS-cY0scsA0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/websocket.d.ts",
+    "size": 4711,
+    "hash": "Q217RUOzQLDz7vQxDVJCQuQTabllKqnHBCh2fE3KxFU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/eventsource.d.ts",
+    "size": 1794,
+    "hash": "rfJ5N9umr58IpoxbHT_ODKfUuWDFfm1shE59Go5Tra4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/diagnostics-channel.d.ts",
+    "size": 1776,
+    "hash": "EpUEEe6rhWOzSct5WVQ9ktjQLCie2JPXhJmhm-y1qMw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/content-type.d.ts",
+    "size": 561,
+    "hash": "LoXbnm_XPPo9fyjgq2tVQX6hiTFCO9R7QJqW5KFp6OY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/cache.d.ts",
+    "size": 1251,
+    "hash": "xG4Hn-VMdvlcZ_uJCBs-OZ2ix9EJ59yo5LWNg-My5gU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/index.d.ts",
+    "size": 4707,
+    "hash": "6Zljrh46SMp6eVjALz6Iu5Y-t5eMKLaK5rjJ8DMJ2Dw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/fetch.d.ts",
+    "size": 3524,
+    "hash": "w_UomCCZCrZrcMf7W2PLZ0ABAJ_4SxPeQGGWGanIF18"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/importmeta.d.ts",
+    "size": 259,
+    "hash": "syddVfrBC3mclUaAQSYjm68CDSIBNhY_djtVp05Q51A"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/messaging.d.ts",
+    "size": 1113,
+    "hash": "-migo7fLMsAOOe480x-PFbgMrJfc5Rtu5_wUoejesws"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/navigator.d.ts",
+    "size": 891,
+    "hash": "HPBZ6vRo78xkn4z2B108uY6aNaD-nERBnsPS9UKNcSM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/performance.d.ts",
+    "size": 2551,
+    "hash": "bDbnVbztgt9_ts6BaSZdCnuwRqtOLLbQ2gy3KyIDPok"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/storage.d.ts",
+    "size": 724,
+    "hash": "53IcT2n5PJE2DCagqE7ohZl9dII373jvZlsVPmIrNsE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/streams.d.ts",
+    "size": 6707,
+    "hash": "epPeT_imO6_mK6hria8d8My15Au4Wwxn1rvP3Plr89Q"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/timers.d.ts",
+    "size": 1557,
+    "hash": "kOhfm8VJ3-K1dJtF_nNBROls1dBLOOriRAKHlOFCp34"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/url.d.ts",
+    "size": 800,
+    "hash": "4KXe62ELKlCmNQvSPfZJADahdzqKcdcPL5VJqwCeZ-4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/assert.d.ts",
+    "size": 42891,
+    "hash": "WUrpDKzYE_o5L_gNLgqO_05B9KE2MpqUDjITmd2IlbQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/assert/strict.d.ts",
+    "size": 1652,
+    "hash": "0fMzrej_NaQJtJhOHxGVb-EcYYVbDH6bWfAxPki0DEo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/async_hooks.d.ts",
+    "size": 29929,
+    "hash": "AiSqSzRkiV1pxBOmQKGawhZneKdOtes7NrAhxy1CsnQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/buffer.d.ts",
+    "size": 81152,
+    "hash": "Lm_KACTdigdqiG2ewDGpNupZrYeKJblEggSV2S-Dgd0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/child_process.d.ts",
+    "size": 59905,
+    "hash": "R9kX5zHQas8YK6o4rC-9cgw1VfqRYOakDUeZRRX38Oo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/cluster.d.ts",
+    "size": 19527,
+    "hash": "L79QTEeR-dMs12bP5rYFvNpjKJuSVAGVOnkA25r4U0g"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/console.d.ts",
+    "size": 4250,
+    "hash": "7Q-2M8rjWUjZ4UQAQpmkvfGrkSZnx4e3-__NbYx7kqI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/constants.d.ts",
+    "size": 491,
+    "hash": "FniwRVfcpS_qtzzGdhCRin9eJb_bo-f6CBrNYl2TEG0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/crypto.d.ts",
+    "size": 168236,
+    "hash": "TIoi7OHvn7RlnsA04RMTEMoYiXXzmUirOPfkSFy0bR8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/dgram.d.ts",
+    "size": 31107,
+    "hash": "nJD1AoFr0BeVVruHXobJRK8_a5lc3mMZntvk4LEhmro"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/diagnostics_channel.d.ts",
+    "size": 34577,
+    "hash": "mPxyMdbIRqjtGb3vAm3f_l4hgsyBi-dImSh0Ia03Coc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/dns.d.ts",
+    "size": 34353,
+    "hash": "5JSyhsjifFL4x_lFqoD_Ij8qPNT3omGfqJkfFFnibwc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/dns/promises.d.ts",
+    "size": 20815,
+    "hash": "9U9fnhC7zrp1Fd-tD_yJ3_2410nQYEWUxXpyXPbXnCA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/domain.d.ts",
+    "size": 6597,
+    "hash": "QdF-GtmgAv6xHIzdJ3flu8DNseP1ldI35N3tC2lJmDs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/events.d.ts",
+    "size": 47375,
+    "hash": "jH5hjCqR6n9rXMonKilYZOksFkE76PxWqUPox9UyABE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/ffi.d.ts",
+    "size": 20006,
+    "hash": "vqvXXqsA9y55_rhfa76BtUlGGiyHBnSSPCSo0YDWzwc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/fs.d.ts",
+    "size": 202247,
+    "hash": "nTe4qWeO-83zgji1nOjm99twq6GlFvOkpnGjAdus-z0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/fs/promises.d.ts",
+    "size": 63652,
+    "hash": "pHp5K4z_cUQ76N-xmfK3fhAqe_nU-QwYBZ8F2a8tdBM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/http.d.ts",
+    "size": 99275,
+    "hash": "d8M_qFoUhczw182OD1BneSQEXMQIajmvVk9gjiGkY0M"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/http2.d.ts",
+    "size": 119374,
+    "hash": "Iud8xT3hmVn9tMSHbnuv0vKoz46tBZq_eyme_oX3YlE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/https.d.ts",
+    "size": 16812,
+    "hash": "LCvaodjq2faGKNbZ0lDkbujoGqSJi0dpo2lWrhXgYP4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/inspector.d.ts",
+    "size": 12276,
+    "hash": "ujif09f7pmcOl7yC6xJGncs3HSLyTmOFnB31oIPII-0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/inspector.generated.d.ts",
+    "size": 228362,
+    "hash": "X_RDOi3q5PhasTd-kKdVTOa0euUcaahMowpuIvroWDQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/inspector/promises.d.ts",
+    "size": 1471,
+    "hash": "grkeTkLmxBvH_BtsLcXrpqK6mDdesfIQ5v9rui1UF34"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/module.d.ts",
+    "size": 32983,
+    "hash": "lyNMUwOGZXb5E9DMrn1Y1jItnoA8e_Eiij_aRquAh7I"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/net.d.ts",
+    "size": 47292,
+    "hash": "UzZnRUfYMrkB9H1WAsYd1LqReWpHESNapK6tM4bOBaQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/buffer@5.7.1/node_modules/buffer/index.d.ts",
+    "size": 8755,
+    "hash": "jpwjuniqvC4KJwM_GHN6bfdUBncx5p3F9SgjlX1gpLY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/os.d.ts",
+    "size": 19278,
+    "hash": "c-63QNrMRa3GB6T1n5D6nb4nF9k9gvEV9F804Y-NZEo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/path.d.ts",
+    "size": 7639,
+    "hash": "7FARAcKpYTOmxpX5NMj2ZCFJzHKFcbKcu3t3CYTBCI4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/path/posix.d.ts",
+    "size": 194,
+    "hash": "shTrz3bFGxFUU_aXKe6Kp7f47M2uKpIrVopFwtf_Uvc"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/path/win32.d.ts",
+    "size": 194,
+    "hash": "Qpyc36fRJiVXee_X5tkFfO0tacgYWburMgc7rVLpunY"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/perf_hooks.d.ts",
+    "size": 23015,
+    "hash": "sX8nL5A9FVuewheRtYibY4l3vB3uGB77K8MXzgBtjJs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/process.d.ts",
+    "size": 115066,
+    "hash": "GLA6g5UZKBETEXAELWr1DEKSsNcIeJ2_W8gFtt2fTBQ"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/punycode.d.ts",
+    "size": 3780,
+    "hash": "IwdjJQ8gRJ-ns8knPhlnrbACPciQ1L4VU_rKZY7mWXE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/querystring.d.ts",
+    "size": 6642,
+    "hash": "w-kHi2DLMp0SIfWHjojOz6PnRGBVDmBaWPz7QaZgKf8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/quic.d.ts",
+    "size": 92303,
+    "hash": "zS883DlUxVGZ1oj-69wqqmhnDoaWPjC3-rLyfA3JRVM"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/readline.d.ts",
+    "size": 21216,
+    "hash": "RBubsJATZUqj0FDmiwZGTYlZtHPoWGgknZ0Y9pKs01s"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/readline/promises.d.ts",
+    "size": 6418,
+    "hash": "vBihmRumgfA-Eyhfode5mwO2fuZxt7yTYlRGcXdUOJA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/repl.d.ts",
+    "size": 19023,
+    "hash": "VSRvFeM_8eLp5nmyX6l5CkjbVdxj1Wf-JfrItqDv6RE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/sea.d.ts",
+    "size": 2045,
+    "hash": "-pS79TK3r485S5X6MQmA1uIL0tTIccamy59w8DdQpEs"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/sqlite.d.ts",
+    "size": 55651,
+    "hash": "klc08wO38MwRHUKusheB04p55tWsBbKxQAzRhhp10ns"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream.d.ts",
+    "size": 90588,
+    "hash": "WybE3WctiDNruSl4fJv7VRGegLqJ7G3JI9ocBjiShD4"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream/consumers.d.ts",
+    "size": 4272,
+    "hash": "f6IhS7DWRwG8b5zozeL9L_jFceCyMGX6BKilpr65FRE"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream/iter.d.ts",
+    "size": 17428,
+    "hash": "uOgFvNjPt5htK89eeF40_f4MsvMaibWF4skgRRPvqM8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream/promises.d.ts",
+    "size": 7347,
+    "hash": "8SYkpKjQQraJFOrBsKFlcfwcUjFz_N8lF8ZdGRvVqGw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream/web.d.ts",
+    "size": 12122,
+    "hash": "tHaXZ_E6FpKmYYbgHDqhhv-AjV_3LtNu2ow3c4-yrJI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/string_decoder.d.ts",
+    "size": 1318,
+    "hash": "hBmD45vUy7Rjvjhekv2hEFfKs2i_JxAKgBxJLx2Gy6o"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/test.d.ts",
+    "size": 117229,
+    "hash": "RBopsYzGTDf7GWFy7B5Jn2DVeS7ciWSObLVQGAyBBQ8"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/test/reporters.d.ts",
+    "size": 2779,
+    "hash": "HsPzpfBMxC3zMnT75cCTfZqeBvJJp6JiiNfVTwdj_9Q"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/timers.d.ts",
+    "size": 7351,
+    "hash": "5BVt2yWqDjtTA9Ny8mlXs2d48Pa71DJjWSaYcyleMFg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/timers/promises.d.ts",
+    "size": 3383,
+    "hash": "zBtDOoTK4F3cVnLUgjFwr3hgatIezvYNvEVwGQy_E1c"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/tls.d.ts",
+    "size": 59265,
+    "hash": "dmGXNKY0kmUcNGfeb9Q9k9e92Dav9JuG8Og-LB4XERo"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/trace_events.d.ts",
+    "size": 3842,
+    "hash": "f3jPsrNDg4YSwZLLJRdG46fGKsdnVyakfhMNmyE_ZYA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/tty.d.ts",
+    "size": 11270,
+    "hash": "rtjz5cflNGJWXu3zSpvLcAOTyywasMdoYCuSnD7TFF0"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/url.d.ts",
+    "size": 25457,
+    "hash": "jiV35yYgUf08W9bKKyBW01j_iFNWVyD5JFWGCCTCUYg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/util.d.ts",
+    "size": 65409,
+    "hash": "fsjX1IP3OU-dphGxDToOQC92_1yZEmHmzkOhX4HKQlg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/util/types.d.ts",
+    "size": 23832,
+    "hash": "u527SyrYHj5x7FukMUlzcYVVudBLoqF9-_h17-y44sA"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/v8.d.ts",
+    "size": 42889,
+    "hash": "kCHcW-jzqHr1zt4pIhGIpkl-IJK2iJ4L4hLva2txU-k"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/vfs.d.ts",
+    "size": 6533,
+    "hash": "2zk5xwACc02eNE818z0VHPMC0ybvCDOOm-uOf5k30qI"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/vm.d.ts",
+    "size": 53141,
+    "hash": "MuzMJy8140_xw9M9LI0F5oIabpX2SOEYpfSg81Eolaw"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/wasi.d.ts",
+    "size": 6250,
+    "hash": "mattDWYM5NIe-1Ioijn9Nbs_VWmA7FRjsa6PMEo7vIU"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/worker_threads.d.ts",
+    "size": 29736,
+    "hash": "YyxFzLTNwsOoDHo2pj3XdjAW5ZysXge_s-N-NUiVcCg"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/zlib.d.ts",
+    "size": 22874,
+    "hash": "yaLa9s0euFTNW55CQkfF4wZpIFVzjC7_0194cdlCt24"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/zlib/iter.d.ts",
+    "size": 5077,
+    "hash": "r6HEn45VnkE9VzQzOduFfSqBWUNc-c99TetBcY__G4g"
+   },
+   {
+    "path": "<vibelang-record-base>/node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/index.d.ts",
+    "size": 5053,
+    "hash": "xG8RGvZHxBNK6GllMTBhDWLaMh-Q6_GeGGo-pL7Xk1A"
+   }
+  ],
+  "inputs": [
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/Action.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/maxResourceLength.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/PatternResource.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/PatternAction.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/CapabilityPattern.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/EffectTier.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/ExactCapability.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/isPatternAction.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/InvalidCapabilityAction.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/format.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/metacharacters.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/isLiteralResource.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/make.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/hasDotSegment.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/matchesAction.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/maxMatchWork.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/matchesResource.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/matches.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/actionSubsumes.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/mayOverlap.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/isAction.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/parse.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/parsePattern.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/patternFromCapability.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/requiresIdempotencyKey.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/subsumes.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/TierOptions.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/tierOf.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/withinMatchBudget.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/Capability.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/CapabilitySet.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreErrorCode.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreError.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/RuleEffect.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/Rule.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/evaluate.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/maxDisplayFieldLength.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/displayField.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionErrorPayload.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/formatError.ts",
+   "<vibelang-record-base>/packages/smithers/flows/canonical/src/internal/describe.ts",
+   "<vibelang-record-base>/packages/smithers/flows/canonical/src/internal/canonicalize.ts",
+   "<vibelang-record-base>/packages/smithers/flows/canonical/src/Canonical.ts",
+   "<vibelang-record-base>/packages/smithers/flows/canonical/src/Serializer.ts",
+   "<vibelang-record-base>/packages/smithers/flows/canonical/src/Record.ts",
+   "<vibelang-record-base>/packages/smithers/flows/canonical/src/BoundedJson.ts",
+   "<vibelang-record-base>/packages/smithers/flows/canonical/src/index.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/isPlainObject.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/isPermissionError.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/fromPlatformError.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/capabilitySnapshot.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionDenied.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/permissionMetaSnapshot.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionRequired.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionError.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/toPlatformError.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/Permission.ts",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/decodePermissionError.vibe",
+   "<vibelang-record-base>/packages/smithers/flows/capability/src/index.ts"
+  ],
+  "warnings": [
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreError.vibe",
+    "line": 19,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "GrantStoreError extends Schema.TaggedError; a schema error declaration, schema error GrantStoreError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/InvalidCapabilityAction.vibe",
+    "line": 14,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "InvalidCapabilityAction extends Schema.TaggedError; a schema error declaration, schema error InvalidCapabilityAction { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionDenied.vibe",
+    "line": 19,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "PermissionDenied extends Schema.TaggedError; a schema error declaration, schema error PermissionDenied { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionDenied.vibe",
+    "line": 27,
+    "column": 3,
+    "category": "warning",
+    "code": "EK4814",
+    "text": "PermissionDenied overrides the constructor of a Schema class, which decoding does not call.\n  Decoding builds instances without calling it. Add a static function that makes an instance instead."
+   },
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionRequired.vibe",
+    "line": 27,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "PermissionRequired extends Schema.TaggedError; a schema error declaration, schema error PermissionRequired { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionRequired.vibe",
+    "line": 55,
+    "column": 3,
+    "category": "warning",
+    "code": "EK4814",
+    "text": "PermissionRequired overrides the constructor of a Schema class, which decoding does not call.\n  Decoding builds instances without calling it. Add a static function that makes an instance instead."
+   },
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/fromPlatformError.vibe",
+    "line": 23,
+    "column": 42,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#PlatformError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/toPlatformError.vibe",
+    "line": 39,
+    "column": 5,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#PlatformError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": "<vibelang-record-base>/packages/smithers/flows/capability/src/toPlatformError.vibe",
+    "line": 40,
+    "column": 3,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#systemError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   }
+  ],
+  "outputs": [
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/Action.vibe"
+    ],
+    "code": "/**\n * The closed vocabulary of host operations the permission kernel authorizes.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Schema for host operations that the permission kernel can authorize.\n *\n * @since 0.1.0\n * @category schemas\n * @slop\n */\nexport const Action = Schema.Literals([\n    \"fs:read\",\n    \"fs:write\",\n    \"net:get\",\n    \"net:post\",\n    \"net:private\",\n    \"model:call\",\n    \"memory:read\",\n    \"memory:write\",\n    \"proc:spawn\",\n    \"jj:status\",\n    \"jj:diff\",\n    \"jj:snapshot\",\n    \"jj:restore\",\n    \"jj:workspace-add\",\n    \"jj:workspace-forget\",\n    \"jj:root\",\n    \"jj:revert\",\n    \"jj:op-restore\"\n]);\n",
+    "map": {
+     "version": 3,
+     "file": "Action.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/Action.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,QAAQ,CACnC;IACE,SAAS;IACT,UAAU;IACV,SAAS;IACT,UAAU;IACV,aAAa;IACb,YAAY;IACZ,aAAa;IACb,cAAc;IACd,YAAY;IACZ,WAAW;IACX,SAAS;IACT,aAAa;IACb,YAAY;IACZ,kBAAkB;IAClB,qBAAqB;IACrB,SAAS;IACT,WAAW;IACX,eAAe;CACP,CACX,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/PatternResource.vibe"
+    ],
+    "code": "/**\n * The resource field schema shared by exact capabilities and patterns.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { maxResourceLength } from \"../maxResourceLength.js\";\n/**\n * @since 0.1.0\n * @private\n */\nexport const PatternResource = Schema.String.check(Schema.isMaxLength(maxResourceLength));\n",
+    "map": {
+     "version": 3,
+     "file": "PatternResource.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/PatternResource.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,iBAAiB,EAAE,MAAM,yBAAyB,CAAA;AAE3D;;;GAGG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,MAAM,CAAC,MAAM,CAAC,KAAK,CAAC,MAAM,CAAC,WAAW,CAAC,iBAAiB,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/PatternAction.vibe"
+    ],
+    "code": "/**\n * Action selectors a capability pattern may name: every exact action plus the\n * namespace and whole-authority wildcards.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { Action } from \"./Action.js\";\n/**\n * Schema for action selectors accepted in capability patterns.\n *\n * @since 0.1.0\n * @category schemas\n * @slop\n */\nexport const PatternAction = Schema.Literals([...Action.literals, \"fs:*\", \"net:*\", \"model:*\", \"memory:*\", \"proc:*\", \"jj:*\", \"*\"]);\n",
+    "map": {
+     "version": 3,
+     "file": "PatternAction.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/PatternAction.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;GAKG;;AAEH,OAAO,EAAE,MAAM,EAAE,MAAM,aAAe,CAAA;AAEtC;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,MAAM,CAAC,QAAQ,CAC1C,CAAC,GAAG,MAAM,CAAC,QAAQ,EAAE,MAAM,EAAE,OAAO,EAAE,SAAS,EAAE,UAAU,EAAE,QAAQ,EAAE,MAAM,EAAE,GAAG,CAAU,CAC7F,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/CapabilityPattern.vibe"
+    ],
+    "code": "/**\n * The wildcard pattern a grant or policy rule selects capabilities with.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport {} from \"effect\";\nimport { PatternResource } from \"./internal/PatternResource.js\";\nimport { PatternAction } from \"./PatternAction.js\";\n/**\n * An action and resource glob used to grant or deny a family of capabilities.\n * The matcher compares the pattern against the whole resource byte-exactly\n * over UTF-16 code units. It performs no path normalization and no case\n * folding, so `\\` is an ordinary character that never matches `/`, and `A:/x`\n * never matches `a:/X`.\n *\n * `*` matches any run of UTF-16 code units, including path separators and\n * newlines. `?` matches exactly one UTF-16 code unit, so an astral character\n * such as an emoji requires two `?` characters. A trailing ` *` also matches\n * the bare resource without trailing argument text. This rule makes a\n * `proc:spawn` command grant such as `npm *` grant bare `npm`.\n *\n * Apart from an identical resource, `subsumes` can prove only the `**`\n * wildcard form. A grant written `/workspace/*` can match `/workspace/src/a.ts`\n * but cannot be proven to cover it; only the identical `/workspace/*` pattern\n * is provable. Use `**` when an envelope must prove coverage of other\n * resources. The grammar has no escape. Callers whose\n * resources can contain `*` or `?`, including URLs with query strings and\n * command lines, must not build patterns by string concatenation. Use\n * `patternFromCapability` to derive exact grants safely.\n *\n * Matching costs O(pattern length times resource length) in the worst case.\n * Both resources are limited to `maxResourceLength`, and\n * `maxMatchWork` remains a fail-closed guard for unchecked structural\n * inputs at the host boundary.\n *\n * @since 0.1.0\n * @category models\n * @slop\n */\nexport class CapabilityPattern extends Schema.Class(\"@smthrs/capability/CapabilityPattern\")({\n    action: PatternAction,\n    resource: PatternResource\n}) {\n}\n",
+    "map": {
+     "version": 3,
+     "file": "CapabilityPattern.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/CapabilityPattern.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAc,MAAM,QAAQ,CAAA;AACnC,OAAO,EAAE,eAAe,EAAE,MAAM,+BAAiC,CAAA;AACjE,OAAO,EAAE,aAAa,EAAE,MAAM,oBAAsB,CAAA;AAEpD;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GA8BG;AACH,MAAM,OAAO,iBAAkB,SAAQ,MAAM,CAAC,KAAK,CAGjD,sCAAsC,CAAC,CAAC;IACxC,MAAM,EAAE,aAAa;IACrB,QAAQ,EAAE,eAAe;CAC1B,CAAC;CAAG"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/EffectTier.vibe"
+    ],
+    "code": "/**\n * The durability and retry classification of an effect.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Schema for the durability and retry semantics of an effect.\n *\n * @since 0.1.0\n * @category schemas\n * @slop\n */\nexport const EffectTier = Schema.Literals([\"sealed\", \"compensable\", \"irreversible\"]);\n",
+    "map": {
+     "version": 3,
+     "file": "EffectTier.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/EffectTier.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,QAAQ,EAAE,aAAa,EAAE,cAAc,CAAU,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/ExactCapability.vibe"
+    ],
+    "code": "/**\n * The exact capability value.\n *\n * The class is named `Capability`, and `Capability.ts` is the module barrel\n * that re-exports it, so the definition lives here to keep the barrel free of\n * a runtime cycle with the constructors and parsers that instantiate it.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport {} from \"effect\";\nimport { Action } from \"./Action.js\";\nimport { PatternResource } from \"./internal/PatternResource.js\";\n/**\n * An exact adapter request subject to authorization.\n *\n * @since 0.1.0\n * @category models\n * @slop\n */\nexport class Capability extends Schema.Class(\"@smthrs/capability/Capability\")({\n    action: Action,\n    resource: PatternResource\n}) {\n}\n",
+    "map": {
+     "version": 3,
+     "file": "ExactCapability.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/ExactCapability.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;GAQG;;AAEH,OAAO,EAAc,MAAM,QAAQ,CAAA;AACnC,OAAO,EAAE,MAAM,EAAE,MAAM,aAAe,CAAA;AACtC,OAAO,EAAE,eAAe,EAAE,MAAM,+BAAiC,CAAA;AAEjE;;;;;;GAMG;AACH,MAAM,OAAO,UAAW,SAAQ,MAAM,CAAC,KAAK,CAC1C,+BAA+B,CAChC,CAAC;IACA,MAAM,EAAE,MAAM;IACd,QAAQ,EAAE,eAAe;CAC1B,CAAC;CAAG"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/InvalidCapabilityAction.vibe"
+    ],
+    "code": "/**\n * The failure of rendering a capability with an action outside the vocabulary.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * An action outside the closed vocabulary was handed to {@link format}.\n * `code` is always `invalid_capability_action`.\n *\n * @since 0.1.0\n * @category errors\n */\nexport class InvalidCapabilityAction extends Schema.TaggedError()(\"@smthrs/capability/InvalidCapabilityAction\", { code: Schema.Literal(\"invalid_capability_action\"), message: Schema.String }) {\n}\n",
+    "map": {
+     "version": 3,
+     "file": "InvalidCapabilityAction.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/InvalidCapabilityAction.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH;;;;;;GAMG;AACH,MAAM,OAAO,uBAAwB,SAAQ,MAAM,CAAC,WAAW,EAA2B,CACxF,4CAA4C,EAC5C,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,2BAA2B,CAAC,EAAE,OAAO,EAAE,MAAM,CAAC,MAAM,EAAE,CAC9E;CAAG"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/parse.vibe"
+    ],
+    "code": "/**\n * The exact capability parser for the `action:resource` text form.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport { isAction } from \"./internal/isAction.js\";\nimport { make } from \"./make.js\";\nimport { maxResourceLength } from \"./maxResourceLength.js\";\n/**\n * Parses an exact capability. The action is the first two colon-separated\n * components; all remaining text belongs to the resource.\n *\n * @since 0.1.0\n * @category parsing\n * @slop\n */\nexport const parse = (input) => {\n    const components = input.split(\":\");\n    const namespace = components[0];\n    const operation = components[1];\n    if (namespace === undefined || operation === undefined || components.length < 3) {\n        return Option.none();\n    }\n    const action = `${namespace}:${operation}`;\n    const resource = components.slice(2).join(\":\");\n    return isAction(action) && resource.length <= maxResourceLength\n        ? Option.some(make(action, resource))\n        : Option.none();\n};\n",
+    "map": {
+     "version": 3,
+     "file": "parse.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/parse.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAGH,OAAO,EAAE,QAAQ,EAAE,MAAM,wBAAwB,CAAA;AACjD,OAAO,EAAE,IAAI,EAAE,MAAM,WAAW,CAAA;AAChC,OAAO,EAAE,iBAAiB,EAAE,MAAM,wBAAwB,CAAA;AAE1D;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,KAAa,EAAsB,EAAE;IACzD,MAAM,UAAU,GAAG,KAAK,CAAC,KAAK,CAAC,GAAG,CAAC,CAAA;IACnC,MAAM,SAAS,GAAG,UAAU,CAAC,CAAC,CAAC,CAAA;IAC/B,MAAM,SAAS,GAAG,UAAU,CAAC,CAAC,CAAC,CAAA;IAC/B,IAAI,SAAS,KAAK,SAAS,IAAI,SAAS,KAAK,SAAS,IAAI,UAAU,CAAC,MAAM,GAAG,CAAC,EAAE,CAAC;QAChF,OAAO,MAAM,CAAC,IAAI,EAAE,CAAA;IACtB,CAAC;IACD,MAAM,MAAM,GAAG,GAAG,SAAS,IAAI,SAAS,EAAE,CAAA;IAC1C,MAAM,QAAQ,GAAG,UAAU,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,IAAI,CAAC,GAAG,CAAC,CAAA;IAC9C,OAAO,QAAQ,CAAC,MAAM,CAAC,IAAI,QAAQ,CAAC,MAAM,IAAI,iBAAiB;QAC7D,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,CAAC,MAAM,EAAE,QAAQ,CAAC,CAAC;QACrC,CAAC,CAAC,MAAM,CAAC,IAAI,EAAE,CAAA;AACnB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/parsePattern.vibe"
+    ],
+    "code": "/**\n * The capability pattern parser, including the bare `*` sentinel.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport { CapabilityPattern } from \"./CapabilityPattern.js\";\nimport { isPatternAction } from \"./internal/isPatternAction.js\";\nimport { maxResourceLength } from \"./maxResourceLength.js\";\n/**\n * Parses a formatted capability pattern.\n *\n * The wildcard action `*` occupies the first component. Every other action\n * occupies the first two components. All remaining text belongs to the\n * resource, including colons and an empty string. Missing components and\n * unknown actions return `Option.none()`, with one single-token exception:\n * the bare `*` is the whole-authority sentinel that `@smthrs/registry`\n * markdown discovery emits for a flow whose frontmatter declares no\n * `capabilities:`. Plans persist that string in durable key material, so the\n * emitted form cannot change; this parser owns its meaning instead and reads\n * it as `{ action: \"*\", resource: \"**\" }`. The resource is `**` and not `*`\n * because `subsumes` recognises only `**` as recursive, so a grant\n * written `*` could be proven to cover only the identical `*` resource and\n * never any other. Every other missing component remains a rejection, not a\n * default.\n *\n * @since 0.1.0\n * @category parsing\n * @slop\n */\nexport const parsePattern = (input) => {\n    const components = input.split(\":\");\n    if (components[0] === \"*\") {\n        if (components.length < 2) {\n            // One component and it is `*`: the input is exactly the bare sentinel.\n            return Option.some(new CapabilityPattern({ action: \"*\", resource: \"**\" }));\n        }\n        const resource = components.slice(1).join(\":\");\n        return resource.length <= maxResourceLength\n            ? Option.some(new CapabilityPattern({ action: \"*\", resource }))\n            : Option.none();\n    }\n    const namespace = components[0];\n    const operation = components[1];\n    if (namespace === undefined || operation === undefined || components.length < 3) {\n        return Option.none();\n    }\n    const action = `${namespace}:${operation}`;\n    const resource = components.slice(2).join(\":\");\n    return isPatternAction(action) && resource.length <= maxResourceLength\n        ? Option.some(new CapabilityPattern({ action, resource }))\n        : Option.none();\n};\n",
+    "map": {
+     "version": 3,
+     "file": "parsePattern.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/parsePattern.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,iBAAiB,EAAE,MAAM,wBAA0B,CAAA;AAC5D,OAAO,EAAE,eAAe,EAAE,MAAM,+BAA+B,CAAA;AAC/D,OAAO,EAAE,iBAAiB,EAAE,MAAM,wBAAwB,CAAA;AAE1D;;;;;;;;;;;;;;;;;;;;GAoBG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAAC,KAAa,EAA6B,EAAE;IACvE,MAAM,UAAU,GAAG,KAAK,CAAC,KAAK,CAAC,GAAG,CAAC,CAAA;IACnC,IAAI,UAAU,CAAC,CAAC,CAAC,KAAK,GAAG,EAAE,CAAC;QAC1B,IAAI,UAAU,CAAC,MAAM,GAAG,CAAC,EAAE,CAAC;YAC1B,uEAAuE;YACvE,OAAO,MAAM,CAAC,IAAI,CAAC,IAAI,iBAAiB,CAAC,EAAE,MAAM,EAAE,GAAG,EAAE,QAAQ,EAAE,IAAI,EAAE,CAAC,CAAC,CAAA;QAC5E,CAAC;QACD,MAAM,QAAQ,GAAG,UAAU,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,IAAI,CAAC,GAAG,CAAC,CAAA;QAC9C,OAAO,QAAQ,CAAC,MAAM,IAAI,iBAAiB;YACzC,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,iBAAiB,CAAC,EAAE,MAAM,EAAE,GAAG,EAAE,QAAQ,EAAE,CAAC,CAAC;YAC/D,CAAC,CAAC,MAAM,CAAC,IAAI,EAAE,CAAA;IACnB,CAAC;IACD,MAAM,SAAS,GAAG,UAAU,CAAC,CAAC,CAAC,CAAA;IAC/B,MAAM,SAAS,GAAG,UAAU,CAAC,CAAC,CAAC,CAAA;IAC/B,IAAI,SAAS,KAAK,SAAS,IAAI,SAAS,KAAK,SAAS,IAAI,UAAU,CAAC,MAAM,GAAG,CAAC,EAAE,CAAC;QAChF,OAAO,MAAM,CAAC,IAAI,EAAE,CAAA;IACtB,CAAC;IACD,MAAM,MAAM,GAAG,GAAG,SAAS,IAAI,SAAS,EAAE,CAAA;IAC1C,MAAM,QAAQ,GAAG,UAAU,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,IAAI,CAAC,GAAG,CAAC,CAAA;IAC9C,OAAO,eAAe,CAAC,MAAM,CAAC,IAAI,QAAQ,CAAC,MAAM,IAAI,iBAAiB;QACpE,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,iBAAiB,CAAC,EAAE,MAAM,EAAE,QAAQ,EAAE,CAAC,CAAC;QAC1D,CAAC,CAAC,MAAM,CAAC,IAAI,EAAE,CAAA;AACnB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/patternFromCapability.vibe"
+    ],
+    "code": "/**\n * Safe derivation of an exact grant pattern from a capability.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport { CapabilityPattern } from \"./CapabilityPattern.js\";\nimport { isLiteralResource } from \"./isLiteralResource.js\";\nimport { maxResourceLength } from \"./maxResourceLength.js\";\n/**\n * Derives an exact pattern from a capability when the glob grammar can\n * represent the resource exactly.\n *\n * The function returns `Option.none()` when the resource is longer than\n * {@link maxResourceLength} or contains `*` or `?`. The grammar has no escape\n * for those metacharacters, so returning a pattern would silently widen the\n * grant. Quotes, newlines, and other literal text are accepted. The derived\n * pattern matches that resource and nothing else because the matcher neither\n * normalizes text nor folds case.\n *\n * @since 0.1.0\n * @category constructors\n * @slop\n */\nexport const patternFromCapability = (capability) => capability.resource.length > maxResourceLength || !isLiteralResource(capability.resource)\n    ? Option.none()\n    : Option.some(new CapabilityPattern({ action: capability.action, resource: capability.resource }));\n",
+    "map": {
+     "version": 3,
+     "file": "patternFromCapability.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/patternFromCapability.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,iBAAiB,EAAE,MAAM,wBAA0B,CAAA;AAE5D,OAAO,EAAE,iBAAiB,EAAE,MAAM,wBAAwB,CAAA;AAC1D,OAAO,EAAE,iBAAiB,EAAE,MAAM,wBAAwB,CAAA;AAE1D;;;;;;;;;;;;;;GAcG;AACH,MAAM,CAAC,MAAM,qBAAqB,GAAG,CAAC,UAAsB,EAA6B,EAAE,CACzF,UAAU,CAAC,QAAQ,CAAC,MAAM,GAAG,iBAAiB,IAAI,CAAC,iBAAiB,CAAC,UAAU,CAAC,QAAQ,CAAC;IACvF,CAAC,CAAC,MAAM,CAAC,IAAI,EAAE;IACf,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,iBAAiB,CAAC,EAAE,MAAM,EAAE,UAAU,CAAC,MAAM,EAAE,QAAQ,EAAE,UAAU,CAAC,QAAQ,EAAE,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/CapabilitySet.vibe"
+    ],
+    "code": "/**\n * Monotone capability authority represented as exact intersections of\n * wildcard languages.\n *\n * Governing design:\n * `docs/specs/Concepts/Permission Kernel.md`,\n * `docs/specs/Concepts/Step Keys.md`, and `docs/specs/Specs/Plan.md`.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport { CapabilityPattern, matches, subsumes } from \"./Capability.js\";\nconst CapabilitySetTypeId = Symbol.for(\"@smthrs/kernel/CapabilitySet\");\nconst comparePattern = (left, right) => left.action < right.action ?\n    -1 :\n    left.action > right.action ?\n        1 :\n        left.resource < right.resource ?\n            -1 :\n            left.resource > right.resource ?\n                1 :\n                0;\nconst compareGroup = (left, right) => {\n    const length = Math.min(left.length, right.length);\n    for (let index = 0; index < length; index += 1) {\n        const order = comparePattern(left[index], right[index]);\n        if (order !== 0) {\n            return order;\n        }\n    }\n    return left.length - right.length;\n};\nconst normalizeGroup = (patterns) => {\n    const sorted = patterns.map((pattern) => Object.freeze(new CapabilityPattern({\n        action: pattern.action,\n        resource: pattern.resource\n    }))).sort(comparePattern);\n    const normalized = [];\n    for (const pattern of sorted) {\n        const previous = normalized.at(-1);\n        if (previous === undefined || comparePattern(previous, pattern) !== 0) {\n            normalized.push(pattern);\n        }\n    }\n    return Object.freeze(normalized);\n};\nconst fromNormalizedGroups = (groups) => {\n    const set = {\n        [CapabilitySetTypeId]: CapabilitySetTypeId,\n        groups: Object.freeze(groups)\n    };\n    return Object.freeze(set);\n};\nconst make = (groups) => {\n    const sorted = groups.map(normalizeGroup).sort(compareGroup);\n    if (sorted.some((group) => group.length === 0)) {\n        return fromNormalizedGroups([Object.freeze([])]);\n    }\n    const normalized = [];\n    for (const group of sorted) {\n        const previous = normalized.at(-1);\n        if (previous === undefined || compareGroup(previous, group) !== 0) {\n            normalized.push(group);\n        }\n    }\n    return fromNormalizedGroups(normalized);\n};\n/**\n * Creates authority described by one any-of group.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const fromPatterns = (patterns) => make([patterns]);\nconst unrestricted = make([]);\n/**\n * Empty authority. Its single empty any-of group rejects every capability.\n *\n * @category defaults\n * @since 1.0.0-rc.0\n */\nexport const none = make([[]]);\n/**\n * Tests whether every group contains a pattern matching the capability.\n *\n * @category predicates\n * @since 1.0.0-rc.0\n */\nexport const allows = (set, capability) => set.groups.every((group) => group.some((pattern) => matches(pattern, capability)));\n/**\n * Intersects two authorities without synthesizing or simplifying globs.\n *\n * @category combinators\n * @since 1.0.0-rc.0\n */\nexport const intersect = (left, right) => make([...left.groups, ...right.groups]);\n/**\n * Tests structural equality between normalized capability sets.\n *\n * @category equivalence\n * @since 1.0.0-rc.0\n */\nexport const equals = (left, right) => {\n    if (left.groups.length !== right.groups.length) {\n        return false;\n    }\n    for (let index = 0; index < left.groups.length; index += 1) {\n        if (compareGroup(left.groups[index], right.groups[index]) !== 0) {\n            return false;\n        }\n    }\n    return true;\n};\n/**\n * Creates authority from normalized or transported groups, normalized exactly\n * as {@link intersect} normalizes its result. Each inner group is an any-of\n * alternative and the groups intersect.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const fromGroups = (groups) => make(groups);\n/**\n * Conservatively proves that every capability `inner` allows is also allowed\n * by `outer`: each group of `outer` covers, by `subsumes`, every pattern of\n * some group of `inner`. It returns `false` for any containment its syntactic\n * checks cannot prove, so a `true` never lets `inner` stand for authority\n * `outer` lacks. Even a `*` pattern rejects some resources an unrestricted set\n * allows (an absolute path with a dot segment), so unrestricted `inner` is\n * within only an unrestricted `outer`.\n *\n * @category predicates\n * @since 1.0.0\n */\nexport const within = (inner, outer) => outer.groups.every((group) => inner.groups.some((candidate) => candidate.every((pattern) => group.some((cover) => subsumes(cover, pattern)))));\n/**\n * The ambient ceiling, defaulting to {@link unrestricted} — a fiber that never\n * passed through {@link attenuate} allows every capability.\n *\n * The default is `unrestricted` because it is the identity element of\n * {@link intersect}, and `intersect` is the only way authority ever moves:\n * this reference is module-private, {@link attenuate} is its only writer, and\n * `attenuate` composes with the parent rather than replacing it. `none` is the\n * absorbing element of the same operation, so defaulting to it would make the\n * ceiling permanently closed — no exported operation could ever widen a fiber\n * back to any authority at all. A fail-closed ceiling therefore needs a root\n * grant primitive, not a different default.\n *\n * The ceiling is not what makes the kernel fail closed. `GrantStore.check`\n * consults it first and then evaluates the ruleset, whose default verdict is\n * `ask`; an unattended store turns `ask` into `PermissionRequired`. So the\n * composed kernel refuses an ungranted capability on the ruleset, and the\n * ceiling's job is to bound what a *scoped* fiber may ask for.\n */\nconst CurrentCapabilities = Context.Reference(\"@smthrs/kernel/CurrentCapabilities\", { defaultValue: () => unrestricted });\n/**\n * Reads the current fiber's capability authority.\n *\n * The underlying service reference is deliberately private. Callers can\n * inspect authority and attenuate it, but cannot replace the ambient service\n * with a wider set.\n *\n * @category accessors\n * @since 1.0.0-rc.0\n */\nexport const current = CurrentCapabilities;\n/**\n * Runs an effect with authority intersected with one additional any-of group.\n *\n * @category combinators\n * @since 1.0.0-rc.0\n */\nexport const attenuate = (patterns) => (effect) => Effect.updateService(effect, CurrentCapabilities, (parent) => intersect(parent, fromPatterns(patterns)));\n/** Runs with every persisted ceiling, intersecting with current authority.\n * @category combinators\n * @since 1.0.0\n */\nexport const attenuateGroups = (groups) => (effect) => groups.reduce((effect, group) => attenuate(group)(effect), effect);\n",
+    "map": {
+     "version": 3,
+     "file": "CapabilitySet.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/CapabilitySet.vibe"
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreErrorCode.vibe"
+    ],
+    "code": "/**\n * The stable code vocabulary a grant-store failure carries.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable grant-store failure codes.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const GrantStoreErrorCode = Schema.Literals([\n    \"duplicate_request\",\n    \"request_not_found\",\n    \"journal_failed\",\n    \"store_closed\",\n    \"invalid_resolution\"\n]);\n",
+    "map": {
+     "version": 3,
+     "file": "GrantStoreErrorCode.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreErrorCode.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,mBAAmB,GAAG,MAAM,CAAC,QAAQ,CAAC;IACjD,mBAAmB;IACnB,mBAAmB;IACnB,gBAAgB;IAChB,cAAc;IACd,oBAAoB;CACrB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreError.vibe"
+    ],
+    "code": "/**\n * The grant-store failure.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { GrantStoreErrorCode } from \"./GrantStoreErrorCode.js\";\n/**\n * A failure to register, persist, or resolve a grant request.\n *\n * `message` and `cause` are optional operation context for persistence\n * adapters; callers branch on the stable `code`.\n *\n * @category errors\n * @since 0.1.0\n * @slop\n */\nexport class GrantStoreError extends Schema.TaggedError()(\"@smthrs/capability/GrantStoreError\", {\n    code: GrantStoreErrorCode,\n    message: Schema.optional(Schema.String),\n    cause: Schema.optional(Schema.Defect())\n}) {\n}\n",
+    "map": {
+     "version": 3,
+     "file": "GrantStoreError.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/GrantStoreError.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,mBAAmB,EAAE,MAAM,0BAA4B,CAAA;AAEhE;;;;;;;;;GASG;AACH,MAAM,OAAO,eAAgB,SAAQ,MAAM,CAAC,WAAW,EAAmB,CACxE,oCAAoC,EACpC;IACE,IAAI,EAAE,mBAAmB;IACzB,OAAO,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;IACvC,KAAK,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,EAAE,CAAC;CACxC,CACF;CAAG"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/RuleEffect.vibe"
+    ],
+    "code": "/**\n * The decision a matching permission rule applies.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Schema for decisions made by matching permission rules.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const RuleEffect = Schema.Literals([\"allow\", \"deny\", \"ask\"]);\n",
+    "map": {
+     "version": 3,
+     "file": "RuleEffect.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/RuleEffect.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,OAAO,EAAE,MAAM,EAAE,KAAK,CAAU,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/Rule.vibe"
+    ],
+    "code": "/**\n * One ordered policy rule: a capability pattern and the decision it applies.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { CapabilityPattern } from \"./Capability.js\";\nimport { RuleEffect } from \"./RuleEffect.js\";\n/**\n * A capability pattern and the decision it applies.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport class Rule extends Schema.Class(\"@smthrs/capability/Rule\")({\n    effect: RuleEffect,\n    // Require a constructed pattern at the type boundary; decoding still uses\n    // the original wire schema. Nested Class construction would coerce requests.\n    pattern: CapabilityPattern.pipe(Schema.decodeTo(Schema.declare(Schema.is(CapabilityPattern))))\n}) {\n}\n",
+    "map": {
+     "version": 3,
+     "file": "Rule.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/Rule.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,iBAAiB,EAAE,MAAM,iBAAiB,CAAA;AACnD,OAAO,EAAE,UAAU,EAAE,MAAM,iBAAmB,CAAA;AAE9C;;;;;;GAMG;AACH,MAAM,OAAO,IAAK,SAAQ,MAAM,CAAC,KAAK,CAAO,yBAAyB,CAAC,CAAC;IACtE,MAAM,EAAE,UAAU;IAClB,0EAA0E;IAC1E,6EAA6E;IAC7E,OAAO,EAAE,iBAAiB,CAAC,IAAI,CAAC,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,EAAE,CAAC,iBAAiB,CAAC,CAAC,CAAC,CAAC;CAC/F,CAAC;CAAG"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/isPermissionError.vibe"
+    ],
+    "code": "/**\n * Structural validation of a permission-error payload at a trust boundary.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { isRecord } from \"@smthrs/canonical\";\nimport { Action, EffectTier, maxResourceLength } from \"./Capability.js\";\nimport { GrantStoreError } from \"./GrantStoreError.js\";\nimport { GrantStoreErrorCode } from \"./GrantStoreErrorCode.js\";\nimport { isPlainObject } from \"./internal/isPlainObject.js\";\nconst isAction = Schema.is(Action);\nconst isEffectTier = Schema.is(EffectTier);\n// Inspect descriptors rather than feeding unknown containers to Schema.Json,\n// whose property reads can execute user getters. Track the active path to\n// reject cycles while allowing repeated references to already checked data.\nconst isPermissionMeta = (input) => {\n    if (!isPlainObject(input))\n        return false;\n    const active = new WeakSet();\n    const checked = new WeakSet();\n    const stack = [{ value: input }];\n    while (stack.length > 0) {\n        const { value, exit } = stack.pop();\n        if (value === null || typeof value === \"string\" || typeof value === \"boolean\")\n            continue;\n        if (typeof value === \"number\" && Number.isFinite(value))\n            continue;\n        if (typeof value !== \"object\" || value === null)\n            return false;\n        if (exit) {\n            active.delete(value);\n            checked.add(value);\n            continue;\n        }\n        if (active.has(value))\n            return false;\n        if (checked.has(value))\n            continue;\n        const array = Array.isArray(value);\n        if (array ? Object.getPrototypeOf(value) !== Array.prototype : !isPlainObject(value))\n            return false;\n        const descriptors = Object.getOwnPropertyDescriptors(value);\n        // Arrays always own a non-configurable length data descriptor.\n        const length = array ? descriptors.length.value : 0;\n        let elements = 0;\n        for (const key of Reflect.ownKeys(descriptors)) {\n            const descriptor = descriptors[key];\n            if (typeof key !== \"string\" || !(\"value\" in descriptor))\n                return false;\n            if (array) {\n                if (key === \"length\")\n                    continue;\n                const index = Number(key);\n                if (!Number.isInteger(index) || index < 0 || String(index) !== key || index >= length)\n                    return false;\n                elements++;\n            }\n        }\n        if (array && elements !== length)\n            return false;\n        active.add(value);\n        stack.push({ value, exit: true });\n        for (const key of Object.keys(descriptors)) {\n            if (!array || key !== \"length\")\n                stack.push({ value: descriptors[key].value });\n        }\n    }\n    return true;\n};\nconst grantStoreErrorCodes = new Set(GrantStoreErrorCode.literals);\nconst missing = Symbol(\"missing\");\nconst accessorOrInherited = Symbol(\"accessorOrInherited\");\nconst ownData = (input, key) => {\n    const descriptor = Object.getOwnPropertyDescriptor(input, key);\n    if (descriptor === undefined)\n        return key in input ? accessorOrInherited : missing;\n    return \"value\" in descriptor ? descriptor.value : accessorOrInherited;\n};\nconst isGrantStoreError = Schema.is(GrantStoreError);\nconst isGrantStoreMessage = (input) => {\n    const message = ownData(input, \"message\");\n    if (message === missing || message === undefined || typeof message === \"string\")\n        return true;\n    if (Object.hasOwn(input, \"message\"))\n        return false;\n    // Effect errors with no explicit message inherit Error's empty data field.\n    // Use schema identity for dual-package instances, after checking descriptors.\n    let prototype = Object.getPrototypeOf(input);\n    while (prototype !== null) {\n        const descriptor = Object.getOwnPropertyDescriptor(prototype, \"message\");\n        if (descriptor !== undefined) {\n            return \"value\" in descriptor && descriptor.value === \"\" && isGrantStoreError(input);\n        }\n        prototype = Object.getPrototypeOf(prototype);\n    }\n    return false;\n};\nconst hasOnlyEnumerableFields = (input, allowed) => Object.keys(input).every((key) => allowed.has(key));\nconst requiredFields = new Set([\"_tag\", \"code\", \"requestId\", \"runId\", \"capability\", \"tier\", \"meta\"]);\nconst deniedFields = new Set([\"_tag\", \"code\", \"capability\", \"reason\"]);\nconst grantStoreFields = new Set([\"_tag\", \"code\", \"message\", \"cause\"]);\nconst capabilityFields = new Set([\"action\", \"resource\"]);\nconst isCapability = (input) => isRecord(input) &&\n    hasOnlyEnumerableFields(input, capabilityFields) &&\n    typeof ownData(input, \"resource\") === \"string\" &&\n    ownData(input, \"resource\").length <= maxResourceLength &&\n    isAction(ownData(input, \"action\"));\n/**\n * Refines an unknown value to data-only permission fields, not a yieldable\n * error instance. Own accessors and inherited fields are rejected; metadata\n * is checked through descriptors at every depth. This establishes structure,\n * not the producer or request identity. Use the package-root decodePermissionError to construct\n * an error instance after validation.\n *\n * @category refinements\n * @since 0.1.0\n * @slop\n */\nexport const isPermissionError = (input) => {\n    if (!isRecord(input)) {\n        return false;\n    }\n    switch (ownData(input, \"_tag\")) {\n        case \"@smthrs/capability/PermissionRequired\":\n            return hasOnlyEnumerableFields(input, requiredFields) &&\n                ownData(input, \"code\") === \"permission_required\" &&\n                typeof ownData(input, \"requestId\") === \"string\" &&\n                (ownData(input, \"runId\") === missing ||\n                    ownData(input, \"runId\") === undefined ||\n                    typeof ownData(input, \"runId\") === \"string\") &&\n                isEffectTier(ownData(input, \"tier\")) &&\n                isCapability(ownData(input, \"capability\")) &&\n                isPermissionMeta(ownData(input, \"meta\"));\n        case \"@smthrs/capability/PermissionDenied\":\n            return hasOnlyEnumerableFields(input, deniedFields) &&\n                ownData(input, \"code\") === \"permission_denied\" &&\n                typeof ownData(input, \"reason\") === \"string\" &&\n                isCapability(ownData(input, \"capability\"));\n        case \"@smthrs/capability/GrantStoreError\":\n            return hasOnlyEnumerableFields(input, grantStoreFields) &&\n                ownData(input, \"cause\") !== accessorOrInherited &&\n                typeof ownData(input, \"code\") === \"string\" &&\n                grantStoreErrorCodes.has(ownData(input, \"code\")) &&\n                isGrantStoreMessage(input);\n        default:\n            return false;\n    }\n};\n",
+    "map": {
+     "version": 3,
+     "file": "isPermissionError.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/isPermissionError.vibe"
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/fromPlatformError.vibe"
+    ],
+    "code": "/**\n * Recovery of the structured permission failure a `PlatformError` carries.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport { isPermissionError } from \"./isPermissionError.js\";\n/**\n * Recovers the structured permission failure a `toPlatformError`\n * projection carries, so an attended surface can still reply to the request\n * and an unattended report can still name the capability. Any PermissionDenied\n * reason with a valid structural cause is accepted, including foreign errors.\n * Callers crossing a trust boundary must establish producer or request identity\n * separately. The result guarantees data fields, not class operations.\n *\n * @category refinements\n * @since 0.1.0\n * @slop\n */\nexport const fromPlatformError = (error) => error.reason._tag === \"PermissionDenied\" && isPermissionError(error.reason.cause)\n    ? Option.some(error.reason.cause)\n    : Option.none();\n",
+    "map": {
+     "version": 3,
+     "file": "fromPlatformError.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/fromPlatformError.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAGH,OAAO,EAAE,iBAAiB,EAAE,MAAM,wBAA0B,CAAA;AAG5D;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,iBAAiB,GAAG,CAAC,KAAoB,EAAkC,EAAE,CACxF,KAAK,CAAC,MAAM,CAAC,IAAI,KAAK,kBAAkB,IAAI,iBAAiB,CAAC,KAAK,CAAC,MAAM,CAAC,KAAK,CAAC;IAC/E,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,KAAK,CAAC,MAAM,CAAC,KAAK,CAAC;IACjC,CAAC,CAAC,MAAM,CAAC,IAAI,EAAE,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionDenied.vibe"
+    ],
+    "code": "/**\n * The refused-capability failure and its constructor.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { Capability } from \"./Capability.js\";\nimport { capabilitySnapshot } from \"./internal/capabilitySnapshot.js\";\n/**\n * A capability rejected by policy or by the current capability ceiling. The\n * error retains a defensive copy rather than the caller's `Capability`\n * instance, and its `capability` slot is non-writable.\n *\n * @category errors\n * @since 0.1.0\n * @slop\n */\nexport class PermissionDenied extends Schema.TaggedError()(\"@smthrs/capability/PermissionDenied\", {\n    code: Schema.Literal(\"permission_denied\"),\n    capability: Capability,\n    reason: Schema.String\n}) {\n    constructor(props) {\n        super({ ...props, code: \"permission_denied\" });\n        Object.defineProperty(this, \"capability\", {\n            value: capabilitySnapshot(props.capability),\n            enumerable: true,\n            writable: false,\n            configurable: false\n        });\n    }\n}\n/**\n * Constructs a denied permission failure.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const permissionDenied = (capability, reason) => new PermissionDenied({\n    code: \"permission_denied\",\n    capability,\n    reason\n});\n",
+    "map": {
+     "version": 3,
+     "file": "PermissionDenied.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionDenied.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,UAAU,EAAE,MAAM,iBAAiB,CAAA;AAC5C,OAAO,EAAE,kBAAkB,EAAE,MAAM,kCAAkC,CAAA;AAErE;;;;;;;;GAQG;AACH,MAAM,OAAO,gBAAiB,SAAQ,MAAM,CAAC,WAAW,EAAoB,CAC1E,qCAAqC,EACrC;IACE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,mBAAmB,CAAC;IACzC,UAAU,EAAE,UAAU;IACtB,MAAM,EAAE,MAAM,CAAC,MAAM;CACtB,CACF;IACC,YAAY,KAIX;QACC,KAAK,CAAC,EAAE,GAAG,KAAK,EAAE,IAAI,EAAE,mBAAmB,EAAE,CAAC,CAAA;QAC9C,MAAM,CAAC,cAAc,CAAC,IAAI,EAAE,YAAY,EAAE;YACxC,KAAK,EAAE,kBAAkB,CAAC,KAAK,CAAC,UAAU,CAAC;YAC3C,UAAU,EAAE,IAAI;YAChB,QAAQ,EAAE,KAAK;YACf,YAAY,EAAE,KAAK;SACpB,CAAC,CAAA;IACJ,CAAC;CACF;AAED;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,gBAAgB,GAAG,CAAC,UAAsB,EAAE,MAAc,EAAoB,EAAE,CAC3F,IAAI,gBAAgB,CAAC;IACnB,IAAI,EAAE,mBAAmB;IACzB,UAAU;IACV,MAAM;CACP,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/permissionMetaSnapshot.vibe"
+    ],
+    "code": "/**\n * The bounded, deep-frozen JSON snapshot `PermissionRequired` takes of caller\n * metadata.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as SchemaIssue from \"effect/SchemaIssue\";\nimport { isPlainObject } from \"./isPlainObject.js\";\n// Match the kernel GrantStore envelope without depending on the kernel.\nconst maximumMetadataDepth = 16;\nconst maximumMetadataMembers = 1_024;\nconst maximumMetadataBytes = 64 * 1024;\nconst metadataEncoder = new TextEncoder();\nconst invalidMetadata = (path, reason) => new Schema.SchemaError(new SchemaIssue.InvalidValue({ message: `Expected JSON value at ${path}: ${reason}` }));\nconst metadataStringBytes = (value, path) => {\n    // Check before escaping/encoding so a single huge string cannot allocate an\n    // unbounded temporary serialization. JSON's UTF-8 size is at least this long.\n    if (value.length > maximumMetadataBytes) {\n        throw invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`);\n    }\n    return metadataEncoder.encode(JSON.stringify(value)).byteLength;\n};\nconst metadataKeys = function* (value) {\n    if (Array.isArray(value)) {\n        for (let index = 0; index < value.length; index++)\n            yield String(index);\n    }\n    else {\n        for (const key in value) {\n            if (Object.hasOwn(value, key))\n                yield key;\n        }\n    }\n};\n/**\n * @since 0.1.0\n * @private\n */\nexport const permissionMetaSnapshot = (meta) => {\n    if (!isPlainObject(meta))\n        throw invalidMetadata(\"meta\", \"metadata must be a plain record\");\n    const snapshots = new WeakMap();\n    const active = new WeakSet();\n    const stack = [];\n    let visitedMembers = 0;\n    const push = (input, path, depth, key) => {\n        active.add(input);\n        stack.push({\n            input,\n            path,\n            depth,\n            key,\n            array: Array.isArray(input),\n            keys: metadataKeys(input),\n            entries: [],\n            members: 0,\n            bytes: 2,\n            height: 0\n        });\n    };\n    const append = (frame, key, child, path) => {\n        // Count repeated references as expanded JSON, but reuse their computed\n        // totals. Neither validation nor copying expands a shared DAG into a tree.\n        frame.members += 1 + child.members;\n        frame.height = Math.max(frame.height, 1 + child.height);\n        if (frame.depth + frame.height > maximumMetadataDepth) {\n            throw invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`);\n        }\n        if (frame.members > maximumMetadataMembers) {\n            throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`);\n        }\n        frame.bytes += child.bytes + (frame.entries.length === 0 ? 0 : 1) +\n            (frame.array ? 0 : metadataStringBytes(key, path) + 1);\n        if (frame.bytes > maximumMetadataBytes) {\n            throw invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`);\n        }\n        frame.entries.push([key, child.value]);\n    };\n    push(meta, \"meta\", 0, \"\");\n    while (stack.length > 0) {\n        const frame = stack[stack.length - 1];\n        const next = frame.keys.next();\n        if (next.done) {\n            // fromEntries installs own data properties, including __proto__. Only\n            // copy a container after its depth, members and encoded size are checked.\n            const snapshot = {\n                value: Object.freeze(frame.array ? frame.entries.map(([, value]) => value) : Object.fromEntries(frame.entries)),\n                members: frame.members,\n                bytes: frame.bytes,\n                height: frame.height\n            };\n            snapshots.set(frame.input, snapshot);\n            active.delete(frame.input);\n            stack.pop();\n            if (stack.length > 0)\n                append(stack[stack.length - 1], frame.key, snapshot, frame.path);\n            continue;\n        }\n        const key = next.value;\n        // Bound key encoding before putting it in an error path, too.\n        metadataStringBytes(key, frame.path);\n        const path = `${frame.path}[${JSON.stringify(key)}]`;\n        if (++visitedMembers > maximumMetadataMembers) {\n            throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`);\n        }\n        const value = frame.input[key];\n        if (value === undefined && !frame.array) {\n            if (++frame.members > maximumMetadataMembers) {\n                throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`);\n            }\n            continue;\n        }\n        const depth = frame.depth + 1;\n        if (depth > maximumMetadataDepth)\n            throw invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`);\n        if (value !== null && typeof value === \"object\") {\n            if (active.has(value))\n                throw invalidMetadata(path, \"metadata must not contain cycles\");\n            const existing = snapshots.get(value);\n            if (existing !== undefined) {\n                append(frame, key, existing, path);\n            }\n            else if (Array.isArray(value) || isPlainObject(value)) {\n                push(value, path, depth, key);\n            }\n            else {\n                throw invalidMetadata(path, \"metadata objects must be plain records\");\n            }\n            continue;\n        }\n        let bytes;\n        if (typeof value === \"string\")\n            bytes = metadataStringBytes(value, path);\n        else if (value === null || typeof value === \"boolean\" || (typeof value === \"number\" && Number.isFinite(value))) {\n            bytes = JSON.stringify(value).length;\n        }\n        else {\n            throw invalidMetadata(path, \"metadata must be JSON data\");\n        }\n        append(frame, key, { value, bytes, members: 0, height: 0 }, path);\n    }\n    return snapshots.get(meta).value;\n};\n",
+    "map": {
+     "version": 3,
+     "file": "permissionMetaSnapshot.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/internal/permissionMetaSnapshot.vibe"
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionRequired.vibe"
+    ],
+    "code": "/**\n * The suspended-request failure and its constructor.\n *\n * The schema id is identity, not display text: a stored decision keeps the\n * exact string and is read back through it.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { Capability, EffectTier } from \"./Capability.js\";\nimport { capabilitySnapshot } from \"./internal/capabilitySnapshot.js\";\nimport { permissionMetaSnapshot } from \"./internal/permissionMetaSnapshot.js\";\nconst PermissionMeta = Schema.Record(Schema.String, Schema.Json);\n/**\n * A permission request that must be resolved by an attended surface.\n *\n * The capability is always the exact adapter request, never a wildcard. The\n * error retains neither the caller's metadata object nor the caller's\n * `Capability` instance, and its `meta` and `capability` slots are non-writable.\n *\n * @category errors\n * @since 0.1.0\n * @slop\n */\nexport class PermissionRequired extends Schema.TaggedError()(\"@smthrs/capability/PermissionRequired\", {\n    code: Schema.Literal(\"permission_required\"),\n    requestId: Schema.String,\n    runId: Schema.optional(Schema.String),\n    capability: Capability,\n    tier: EffectTier,\n    /**\n     * Journal-safe permission context.\n     *\n     * Only JSON-representable values survive the grant journal. Construction\n     * takes a deep-frozen snapshot and does not retain the caller's object. An\n     * undefined property value is dropped, mirroring `JSON.stringify`, so the\n     * encoded payload is unchanged and a host can pass an optional field it\n     * does not have, such as a spawn with no explicit cwd. Undefined array\n     * elements are rejected because JSON serialization would change them to\n     * null rather than omit them. Own `__proto__` data properties are preserved.\n     * Metadata is limited to depth 16 (root 0), 1024 members and 64 KiB of\n     * UTF-8 JSON. Shared references retain one snapshot but count at every\n     * occurrence toward the limits. Cycles and excesses fail naming the field.\n     *\n     * @since 0.1.0\n     * @category models\n     */\n    meta: PermissionMeta\n}) {\n    constructor(props) {\n        const meta = permissionMetaSnapshot(props.meta);\n        super({ ...props, code: \"permission_required\", meta });\n        Object.defineProperty(this, \"capability\", {\n            value: capabilitySnapshot(props.capability),\n            enumerable: true,\n            writable: false,\n            configurable: false\n        });\n        Object.defineProperty(this, \"meta\", {\n            value: meta,\n            enumerable: true,\n            writable: false,\n            configurable: false\n        });\n        // Do not freeze a Schema.Class instance: Effect needs to populate its\n        // symbol-keyed hash and equality caches after construction.\n    }\n}\n/**\n * Constructs a permission request for an exact capability.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const permissionRequired = (options) => new PermissionRequired({\n    code: \"permission_required\",\n    requestId: options.requestId,\n    runId: options.runId,\n    capability: options.capability,\n    tier: options.tier,\n    meta: options.meta ?? {}\n});\n",
+    "map": {
+     "version": 3,
+     "file": "PermissionRequired.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionRequired.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;GAOG;;AAEH,OAAO,EAAE,UAAU,EAAE,UAAU,EAAE,MAAM,iBAAiB,CAAA;AACxD,OAAO,EAAE,kBAAkB,EAAE,MAAM,kCAAkC,CAAA;AACrE,OAAO,EAAE,sBAAsB,EAAE,MAAM,sCAAwC,CAAA;AAE/E,MAAM,cAAc,GAAG,MAAM,CAAC,MAAM,CAAC,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,IAAI,CAAC,CAAA;AAEhE;;;;;;;;;;GAUG;AACH,MAAM,OAAO,kBAAmB,SAAQ,MAAM,CAAC,WAAW,EAAsB,CAC9E,uCAAuC,EACvC;IACE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,qBAAqB,CAAC;IAC3C,SAAS,EAAE,MAAM,CAAC,MAAM;IACxB,KAAK,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;IACrC,UAAU,EAAE,UAAU;IACtB,IAAI,EAAE,UAAU;IAChB;;;;;;;;;;;;;;;;OAgBG;IACH,IAAI,EAAE,cAAc;CACrB,CACF;IACC,YAAY,KAOX;QACC,MAAM,IAAI,GAAG,sBAAsB,CAAC,KAAK,CAAC,IAAI,CAAC,CAAA;QAC/C,KAAK,CAAC,EAAE,GAAG,KAAK,EAAE,IAAI,EAAE,qBAAqB,EAAE,IAAI,EAAE,CAAC,CAAA;QACtD,MAAM,CAAC,cAAc,CAAC,IAAI,EAAE,YAAY,EAAE;YACxC,KAAK,EAAE,kBAAkB,CAAC,KAAK,CAAC,UAAU,CAAC;YAC3C,UAAU,EAAE,IAAI;YAChB,QAAQ,EAAE,KAAK;YACf,YAAY,EAAE,KAAK;SACpB,CAAC,CAAA;QACF,MAAM,CAAC,cAAc,CAAC,IAAI,EAAE,MAAM,EAAE;YAClC,KAAK,EAAE,IAAI;YACX,UAAU,EAAE,IAAI;YAChB,QAAQ,EAAE,KAAK;YACf,YAAY,EAAE,KAAK;SACpB,CAAC,CAAA;QACF,sEAAsE;QACtE,4DAA4D;IAC9D,CAAC;CACF;AAED;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,kBAAkB,GAAG,CAAC,OAMlC,EAAsB,EAAE,CACvB,IAAI,kBAAkB,CAAC;IACrB,IAAI,EAAE,qBAAqB;IAC3B,SAAS,EAAE,OAAO,CAAC,SAAS;IAC5B,KAAK,EAAE,OAAO,CAAC,KAAK;IACpB,UAAU,EAAE,OAAO,CAAC,UAAU;IAC9B,IAAI,EAAE,OAAO,CAAC,IAAI;IAClB,IAAI,EAAE,OAAO,CAAC,IAAI,IAAI,EAAE;CACzB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionError.vibe"
+    ],
+    "code": "/**\n * The union of every failure the capability kernel adds to a guarded call.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { GrantStoreError } from \"./GrantStoreError.js\";\nimport { PermissionDenied } from \"./PermissionDenied.js\";\nimport { PermissionRequired } from \"./PermissionRequired.js\";\n/**\n * Schema for every failure the capability kernel adds to a guarded Host call.\n *\n * @category schemas\n * @since 0.1.0\n * @slop\n */\nexport const PermissionError = Schema.Union([PermissionRequired, PermissionDenied, GrantStoreError]);\n",
+    "map": {
+     "version": 3,
+     "file": "PermissionError.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/PermissionError.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,eAAe,EAAE,MAAM,sBAAwB,CAAA;AACxD,OAAO,EAAE,gBAAgB,EAAE,MAAM,uBAAyB,CAAA;AAC1D,OAAO,EAAE,kBAAkB,EAAE,MAAM,yBAA2B,CAAA;AAe9D;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,MAAM,CAAC,KAAK,CAAC,CAAC,kBAAkB,EAAE,gBAAgB,EAAE,eAAe,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/toPlatformError.vibe"
+    ],
+    "code": "/**\n * Projection of a permission failure into Effect's `PlatformError` channel.\n *\n * @since 0.1.0\n */\nimport { systemError } from \"effect/PlatformError\";\nimport { formatError } from \"./formatError.js\";\nimport { displayField } from \"./internal/displayField.js\";\n/**\n * Projects a permission failure into Effect's `PlatformError` channel.\n *\n * Effect owns `FileSystem` and `ChildProcessSpawner`, and their tags fix the\n * error channel to `PlatformError`. Rather than mint a second tag whose only\n * difference is a wider error type, the kernel decorates those tags in place\n * and maps its own failures through here.\n *\n * The structured failure is preserved: the normalized reason is always `PermissionDenied` — the\n * operation did not happen because the capability kernel refused, suspended,\n * or could not decide it — `description` carries the human rendering from\n * {@link formatError}, and `cause` carries the structured failure itself, so\n * `fromPlatformError` hands the attended surface back the original\n * `capability`, `tier`, `requestId`, and `reason`.\n * Module, method, and string paths use the same escaping and field limit as\n * the description. The projected path is display text; the raw capability\n * resource remains in the cause. Numeric descriptors are unchanged.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const toPlatformError = (options) => systemError({\n    _tag: \"PermissionDenied\",\n    module: displayField(options.module),\n    method: displayField(options.method),\n    description: formatError(options.error),\n    ...(options.pathOrDescriptor === undefined ? {} : {\n        pathOrDescriptor: typeof options.pathOrDescriptor === \"string\"\n            ? displayField(options.pathOrDescriptor)\n            : options.pathOrDescriptor\n    }),\n    cause: options.error\n});\n",
+    "map": {
+     "version": 3,
+     "file": "toPlatformError.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/toPlatformError.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,EAAsB,WAAW,EAAE,MAAM,sBAAsB,CAAA;AACtE,OAAO,EAAE,WAAW,EAAE,MAAM,kBAAkB,CAAA;AAC9C,OAAO,EAAE,YAAY,EAAE,MAAM,4BAA4B,CAAA;AAGzD;;;;;;;;;;;;;;;;;;;;;GAqBG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,CAAC,OAK/B,EAAiB,EAAE,CAClB,WAAW,CAAC;IACV,IAAI,EAAE,kBAAkB;IACxB,MAAM,EAAE,YAAY,CAAC,OAAO,CAAC,MAAM,CAAC;IACpC,MAAM,EAAE,YAAY,CAAC,OAAO,CAAC,MAAM,CAAC;IACpC,WAAW,EAAE,WAAW,CAAC,OAAO,CAAC,KAAK,CAAC;IACvC,GAAG,CAAC,OAAO,CAAC,gBAAgB,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC;QAChD,gBAAgB,EAAE,OAAO,OAAO,CAAC,gBAAgB,KAAK,QAAQ;YAC5D,CAAC,CAAC,YAAY,CAAC,OAAO,CAAC,gBAAgB,CAAC;YACxC,CAAC,CAAC,OAAO,CAAC,gBAAgB;KAC7B,CAAC;IACF,KAAK,EAAE,OAAO,CAAC,KAAK;CACrB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     "<vibelang-record-base>/packages/smithers/flows/capability/src/decodePermissionError.vibe"
+    ],
+    "code": "/**\n * Constructed permission failures from structural boundary values.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Option from \"effect/Option\";\nimport { Capability } from \"./Capability.js\";\nimport { GrantStoreError, isPermissionError, PermissionDenied, PermissionRequired } from \"./Permission.js\";\n/**\n * Validates data before constructing a yieldable permission error. Invalid\n * payloads, inspection failures, or metadata exceeding the constructor's\n * limits return None.\n * Construction also accepts instances from another copy of the package,\n * without relying on JavaScript instanceof identity.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const decodePermissionError = (input) => {\n    try {\n        if (!isPermissionError(input))\n            return Option.none();\n        switch (input._tag) {\n            case \"@smthrs/capability/PermissionRequired\":\n                return Option.some(new PermissionRequired({\n                    requestId: input.requestId,\n                    runId: input.runId,\n                    capability: new Capability(input.capability),\n                    tier: input.tier,\n                    meta: input.meta\n                }));\n            case \"@smthrs/capability/PermissionDenied\":\n                return Option.some(new PermissionDenied({ capability: new Capability(input.capability), reason: input.reason }));\n            case \"@smthrs/capability/GrantStoreError\":\n                return Option.some(new GrantStoreError({ code: input.code, message: input.message, cause: input.cause }));\n        }\n    }\n    catch {\n        return Option.none();\n    }\n};\n",
+    "map": {
+     "version": 3,
+     "file": "decodePermissionError.js",
+     "sourceRoot": "",
+     "sources": [
+      "<vibelang-record-base>/packages/smithers/flows/capability/src/decodePermissionError.vibe"
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,EAAE,UAAU,EAAE,MAAM,iBAAiB,CAAA;AAC5C,OAAO,EACL,eAAe,EACf,iBAAiB,EACjB,gBAAgB,EAEhB,kBAAkB,EACnB,MAAM,iBAAiB,CAAA;AAExB;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,qBAAqB,GAAG,CAAC,KAAc,EAA2B,EAAE;IAC/E,IAAI,CAAC;QACH,IAAI,CAAC,iBAAiB,CAAC,KAAK,CAAC;YAAE,OAAO,MAAM,CAAC,IAAI,EAAE,CAAA;QACnD,QAAQ,KAAK,CAAC,IAAI,EAAE,CAAC;YACnB,KAAK,uCAAuC;gBAC1C,OAAO,MAAM,CAAC,IAAI,CAChB,IAAI,kBAAkB,CAAC;oBACrB,SAAS,EAAE,KAAK,CAAC,SAAS;oBAC1B,KAAK,EAAE,KAAK,CAAC,KAAK;oBAClB,UAAU,EAAE,IAAI,UAAU,CAAC,KAAK,CAAC,UAAU,CAAC;oBAC5C,IAAI,EAAE,KAAK,CAAC,IAAI;oBAChB,IAAI,EAAE,KAAK,CAAC,IAAI;iBACjB,CAAC,CACH,CAAA;YACH,KAAK,qCAAqC;gBACxC,OAAO,MAAM,CAAC,IAAI,CAAC,IAAI,gBAAgB,CAAC,EAAE,UAAU,EAAE,IAAI,UAAU,CAAC,KAAK,CAAC,UAAU,CAAC,EAAE,MAAM,EAAE,KAAK,CAAC,MAAM,EAAE,CAAC,CAAC,CAAA;YAClH,KAAK,oCAAoC;gBACvC,OAAO,MAAM,CAAC,IAAI,CAAC,IAAI,eAAe,CAAC,EAAE,IAAI,EAAE,KAAK,CAAC,IAAI,EAAE,OAAO,EAAE,KAAK,CAAC,OAAO,EAAE,KAAK,EAAE,KAAK,CAAC,KAAK,EAAE,CAAC,CAAC,CAAA;QAC7G,CAAC;IACH,CAAC;IAAC,MAAM,CAAC;QACP,OAAO,MAAM,CAAC,IAAI,EAAE,CAAA;IACtB,CAAC;AACH,CAAC,CAAA"
+    }
+   }
+  ]
+ }
+}
