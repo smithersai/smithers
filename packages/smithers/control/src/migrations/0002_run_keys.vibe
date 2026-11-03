@@ -13,11 +13,11 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const runKeys = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE TABLE IF NOT EXISTS control_run_keys (
+export const runKeys = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE TABLE IF NOT EXISTS control_run_keys (
     idempotency_key TEXT PRIMARY KEY,
     fingerprint TEXT NOT NULL,
     claimant TEXT NOT NULL
   )`
-})
+}

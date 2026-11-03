@@ -29,7 +29,7 @@
 
 import { Context, Effect, Layer, Option, Redacted } from "effect"
 import { CredentialConflict, InvalidInput, type PersistenceError, Unauthorized, Unavailable } from "./ControlError.ts"
-import * as CredentialCipher from "./CredentialCipher.ts"
+import * as CredentialCipher from "./CredentialCipher.vibe"
 import * as CredentialStore from "./CredentialStore.ts"
 
 // String.prototype.isWellFormed without the ES2024 lib, which every package

@@ -16,7 +16,7 @@ import {
   ControlRuntime,
   requireApproved
 } from "../src/ControlRuntime.ts"
-import { initial } from "../src/migrations/0001_control_tables.ts"
+import { initial } from "../src/migrations/0001_control_tables.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 import { durable as baseDurable, fileBundle } from "./DurableStack.ts"

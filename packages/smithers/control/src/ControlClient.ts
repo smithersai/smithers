@@ -10,7 +10,7 @@ import { RpcClient, RpcClientError, type RpcSerialization } from "effect/rpc"
 import type { Socket } from "effect/socket"
 import { Control, make } from "./Control.ts"
 import { type ControlError, ControlErrorSchema, TransportError, Unauthorized } from "./ControlError.ts"
-import { ControlRpcs } from "./ControlRpcs.ts"
+import { ControlRpcs } from "./ControlRpcs.vibe"
 import {
   ApprovalInputSchema,
   CancelInputSchema,

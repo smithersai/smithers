@@ -76,10 +76,10 @@ const securityReview = Smithers.SecurityReview({
       caller: ["src/GatewayServer.ts", "src/RuntimeBridge.ts"],
       authorization: [
         "src/internal/NativeGateway.ts",
-        "//packages/smithers/control/src/ControlRpcs.ts",
+        "//packages/smithers/control/src/ControlRpcs.vibe",
         "//packages/smithers/control/src/ApprovalAuthority.ts"
       ],
-      service: ["//packages/smithers/control/src/ControlServer.ts", "//packages/smithers/control/src/ControlLive.ts"],
+      service: ["//packages/smithers/control/src/ControlServer.vibe", "//packages/smithers/control/src/ControlLive.ts"],
       storageOrEgress: [
         "//packages/smithers/control/src/ControlExecutor.ts",
         "//packages/smithers/control/src/ControlRuntime.ts",

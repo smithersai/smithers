@@ -70,11 +70,11 @@ import {
   steerItem,
   WatchCursor
 } from "./ControlSchema.ts"
-import * as DispatchReader from "./DispatchReader.ts"
+import * as DispatchReader from "./DispatchReader.vibe"
 import { schemaIssuePath } from "./internal/issues.ts"
 import * as MutationBoundary from "./internal/MutationBoundary.ts"
 import { alreadyApplied, canonical, mutationKey } from "./internal/planning.ts"
-import * as Lineage from "./Lineage.ts"
+import * as Lineage from "./Lineage.vibe"
 import * as Steering from "./Steering.ts"
 
 const sourceId = JournalEvent.SourceId.make("/control")

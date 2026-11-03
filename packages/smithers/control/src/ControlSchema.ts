@@ -10,7 +10,7 @@ import * as SteerPayload from "@smthrs/notifications/SteerPayload"
 import * as PersistedPlan from "@smthrs/plan/Plan"
 import { BudgetOnExceeded, DiscoveryWarning } from "@smthrs/registry/Descriptor"
 import { Schema } from "effect"
-import { Origin } from "./Lineage.ts"
+import { Origin } from "./Lineage.vibe"
 
 /**
  * A durable control-plane run identifier.

@@ -5,8 +5,8 @@ import { RpcSerialization } from "effect/rpc"
 import { createServer, request as httpsRequest } from "node:https"
 import { describe, expect, it } from "vitest"
 import { layerNoop } from "../src/Control.ts"
-import { layerNoopAuth } from "../src/ControlRpcs.ts"
-import * as ControlServer from "../src/ControlServer.ts"
+import { layerNoopAuth } from "../src/ControlRpcs.vibe"
+import * as ControlServer from "../src/ControlServer.vibe"
 import { cert, key } from "./fixtures/controlTls.ts"
 
 const request = (url: string, origin?: string, forwardedProto?: string) =>

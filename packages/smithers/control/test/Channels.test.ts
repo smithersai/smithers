@@ -9,7 +9,7 @@ import { InvalidInput, PersistenceError, Unauthorized } from "../src/ControlErro
 import * as ControlRuntime from "../src/ControlRuntime.ts"
 import { RunSummary } from "../src/ControlSchema.ts"
 import type { RunStatus } from "../src/ControlSchema.ts"
-import * as WebhookChannel from "../src/WebhookChannel.ts"
+import * as WebhookChannel from "../src/WebhookChannel.vibe"
 
 const accepted = { _tag: "Accepted" as const, receiptId: "receipt" }
 

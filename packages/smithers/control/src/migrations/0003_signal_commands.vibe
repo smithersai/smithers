@@ -12,9 +12,9 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const signalCommands = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE TABLE IF NOT EXISTS control_signal_commands (
+export const signalCommands = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE TABLE IF NOT EXISTS control_signal_commands (
     seq ${Dialect.identity(sql)},
     command_id TEXT NOT NULL UNIQUE,
     run_id TEXT NOT NULL,
@@ -22,6 +22,6 @@ export const signalCommands = Effect.gen(function*() {
     wait_token TEXT,
     state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'delivered', 'rejected', 'terminal'))
   )`
-  yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS control_signal_commands_wait ON control_signal_commands(wait_token) WHERE wait_token IS NOT NULL`
-  yield* sql`CREATE INDEX IF NOT EXISTS control_signal_commands_pending ON control_signal_commands(state, seq)`
-})
+  try sql`CREATE UNIQUE INDEX IF NOT EXISTS control_signal_commands_wait ON control_signal_commands(wait_token) WHERE wait_token IS NOT NULL`
+  try sql`CREATE INDEX IF NOT EXISTS control_signal_commands_pending ON control_signal_commands(state, seq)`
+}

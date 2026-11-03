@@ -1,7 +1,7 @@
 import { Cause, Effect, Fiber, Metric, Schema, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as Health from "../src/Health.ts"
+import * as Health from "../src/Health.vibe"
 
 const observation = (overrides: Partial<Health.HealthObservation> = {}): Health.HealthObservation => ({
   subjectId: "session:one",

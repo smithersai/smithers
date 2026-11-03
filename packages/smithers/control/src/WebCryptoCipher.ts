@@ -21,7 +21,7 @@
 import { canonicalize } from "@smthrs/canonical"
 import { Effect, Layer, Redacted } from "effect"
 import { InvalidInput, PersistenceError, type Unavailable } from "./ControlError.ts"
-import * as CredentialCipher from "./CredentialCipher.ts"
+import * as CredentialCipher from "./CredentialCipher.vibe"
 
 const algorithm = "AES-GCM"
 const nonceBytes = 12

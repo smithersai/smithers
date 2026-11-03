@@ -91,9 +91,9 @@ const statements = (sql: SqlClient.SqlClient) =>
  * @category migrations
  * @since 0.1.0
  */
-export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const initial: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
   for (const statement of statements(sql)) {
-    yield* statement
+    try statement
   }
-})
+}
