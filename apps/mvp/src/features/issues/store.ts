@@ -49,6 +49,8 @@ import {
   ItemSummary,
   OpenedRepository,
   type QueuedWrite,
+  SEARCHED,
+  Searched,
   type Requested,
   type Sending,
   syncKey,
@@ -138,6 +140,15 @@ export class IssuesStore extends Context.Service<
     readonly requested: Collection.Collection<Requested, string>
     readonly drafts: Collection.Collection<Draft, string>
     readonly view: Collection.Collection<IssueView, string>
+    /** What the issues route last answered this tab's search, in memory (schema.ts `Searched`). */
+    readonly searched: Collection.Collection<Searched, string>
+    readonly searchedRows: LiveRows<Searched>
+    /** Takes the answer away. */
+    readonly forgetSearch: Effect.Effect<void>
+    /** Which search this tab asked last: only its answer is kept. */
+    readonly searches: { latest: number; repoId: string }
+    /** Asks the issues route. */
+    readonly search: IssueWrites["Service"]["search"]
     readonly viewState: Query<typeof viewQuery>
     readonly forRepo: (id: string, number?: number) => Effect.Effect<RepoIssues>
     readonly opened: (id: string) => RepoIssues | undefined
@@ -160,7 +171,7 @@ const byRepo = (row: { readonly repoId: string }) => row.repoId
 const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   const scope = yield* Effect.scope
   const chat = yield* ChatStore
-  const { sending, requested } = yield* IssueWrites
+  const { sending, requested, search } = yield* IssueWrites
   const persistence = yield* Persistence.Persistence
   const source = yield* ShapeSource.ShapeSource
   const auth = yield* AuthStore
@@ -200,6 +211,15 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     initialData: [{ id: VIEW, owner: "", name: "", repoId: "", number: null, draftKey: "", submitting: false }],
   })
 
+  const searched = yield* Collection.local<Searched, string>({ id: "issue-searched", schema: Searched, getKey: (row) => row.id })
+  const searches = { latest: 0, repoId: "" }
+  // An answer still on its way is dropped too: it checks `latest` before it stays.
+  const forgetSearch = Effect.gen(function* () {
+    searches.latest++
+    if (Option.isSome(yield* searched.get(SEARCHED))) yield* Effect.orDie(searched.delete(SEARCHED))
+  })
+  // Only repository `id`'s own: another repository syncing or refusing leaves this tab's search alone.
+  const forgetSearchOf = (id: string) => Effect.suspend(() => searches.repoId === id ? forgetSearch : Effect.void)
   const requestedDetails = yield* Collection.local<OpenedRepository, string>({
     id: "issue-detail-demand",
     schema: OpenedRepository,
@@ -423,9 +443,15 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       for (const [shape, source] of [[items, "item-summaries"], [sync, "github-sync"], [triageSettings, "triage-settings"]] as const) {
         yield* observeInitialApplied(shape, source, id.slice("github/".length)).pipe(Effect.forkIn(scope, { startImmediately: true }))
       }
-      yield* evictWhenRefused(authority, [items, details, comments, sync, triageSettings, workLinks], true)
+      yield* evictWhenRefused(authority, [items, details, comments, sync, triageSettings, workLinks, { evict: forgetSearchOf(id) }], true)
       // Availability follows the shape the page reads. A summary receipt never certifies a missing detail body.
       yield* followAvailability(items, access, id)
+      // Its summaries are here: they answer every search from now on, and the route's answer goes.
+      yield* items.currentApplied.pipe(
+        Effect.andThen(forgetSearchOf(id)),
+        Effect.ignore,
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
       yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "detail" }), Effect.forkIn(scope, { startImmediately: true }))
       // The follower: a requested write of this repository whose GitHub row arrived goes, and the synced row shows in
       // its place.
@@ -558,6 +584,11 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     requested,
     drafts,
     view,
+    searched,
+    searchedRows: yield* rowsQuery(searched),
+    forgetSearch,
+    searches,
+    search,
     viewState: yield* viewQuery(view, drafts),
     forRepo,
     opened: (id) => repositories.get(id),

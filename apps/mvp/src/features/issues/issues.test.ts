@@ -5,7 +5,7 @@ import { TodosStore } from "../todos/store"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { resumeAdmissions } from "../../resumeAdmissions"
 import { reloadAfter } from "../../test/reloadTiming"
-import { comment as commentAction, create as createAction, open as openAction, retryWrite, triage as triageAction } from "./actions"
+import { comment as commentAction, create as createAction, open as openAction, retryWrite, search as searchAction, triage as triageAction } from "./actions"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import { RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
@@ -36,7 +36,7 @@ import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { repoId } from "../repo/contract"
-import { IssuesClient, WriteNotTaken } from "./api"
+import { IssuesClient, SearchNotAnswered, WriteNotTaken } from "./api"
 import {
   ACCEPTED_LABEL,
   commentId,
@@ -68,7 +68,7 @@ import {
   syncsHere,
   triageSwitchOf,
 } from "./view"
-import type { ItemSummary } from "./schema"
+import { type ItemSummary, SEARCHED } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -102,6 +102,7 @@ const faultyClient = () => {
     IssuesClient,
     Effect.map(IssuesClient, (real) =>
       IssuesClient.of({
+        search: real.search,
         write: (owner, name, write) =>
           Effect.suspend(() => {
             state.writes += 1
@@ -327,6 +328,113 @@ describe("a new issue", () => {
     const restored = await another(opened.api, { host, replace: client.layer })
     await restored.actions.open(OWNER, NAME)
     await until(() => expect(restored.list().issues).toContainEqual(expect.objectContaining({ id: writeId, title: "Survives immediate reload", pending: "requested" })))
+  }, WITHIN)
+
+  test("a search in a list still syncing: only the last one asked keeps the route's answer, in memory, until a refusal", async () => {
+    const tab = await open()
+    // Another repository's search is on screen as this one's summaries arrive: it stays.
+    tab.store.searches.repoId = "elsewhere"
+    await tab.actions.open(OWNER, NAME)
+    await tab.runtime.runPromise(tab.store.searched.insert({ id: SEARCHED, repoId: "elsewhere", q: "other", issues: [] }))
+    await tab.runtime.runPromise((tab.store.opened(REPO_ID)!.items as unknown as { readonly currentApplied: Effect.Effect<void> }).currentApplied)
+    expect(tab.store.searched.tanstack.toArray[0]).toMatchObject({ q: "other" })
+    // This repository's own: its summaries answer searches from now on, so the route's answer goes.
+    const second = await another(tab.api)
+    second.store.searches.repoId = REPO_ID
+    await second.runtime.runPromise(second.store.searched.insert({ id: SEARCHED, repoId: REPO_ID, q: "mine", issues: [] }))
+    await second.actions.open(OWNER, NAME)
+    await until(() => expect(second.store.searched.tanstack.toArray).toEqual([]))
+    await tab.runtime.runPromise(tab.store.forgetSearch)
+    const answered = (q: string) => [{ number: 1, title: q, state: "open", author: { login: null }, comments: 0, created_at: "c", updated_at: "u", triage: "", commitment: null }]
+    const asked: Array<string> = []
+    const release: Array<() => void> = []
+    // This tab's authority, as a test sets it.
+    let authority: { status: string; installed: boolean } = { status: "allowed", installed: false }
+    const store = {
+      ...tab.store,
+      opened: () => ({ accessState: { rows: Stream.sync(() => [authority]) } }) as never,
+      search: (_owner: string, _name: string, q: string) => Effect.promise(() => new Promise<void>((resolve) => { asked.push(q); release.push(resolve) })).pipe(
+        Effect.andThen(q === "refused" ? Effect.fail(new SearchNotAnswered({ status: 403 })) : Effect.succeed(answered(q))),
+      ),
+    }
+    const run = (q: string) => tab.runtime.runPromise(searchAction(OWNER, NAME, q).pipe(Effect.provideService(IssuesStore, store)))
+    const row = () => tab.store.searched.tanstack.toArray[0]
+    // A keypress before the wait ends asks nothing; the last one asks once, trimmed.
+    const typed = [run("a"), run(" ab ")]
+    await until(() => expect(asked).toEqual(["ab"]))
+    // A newer search while the route answers: the old answer is dropped.
+    const newer = run("abc")
+    await until(() => expect(asked).toEqual(["ab", "abc"]))
+    release[0]!()
+    await Promise.all(typed)
+    expect(row()).toBeUndefined()
+    release[1]!()
+    await newer
+    expect(row()).toMatchObject({ repoId: REPO_ID, q: "abc", issues: answered("abc") })
+    // A refused search shows nothing; an emptied one forgets the last answer.
+    const refused = run("refused")
+    await until(() => expect(asked).toHaveLength(3))
+    expect(row()).toBeUndefined()
+    release[2]!()
+    await refused
+    expect(row()).toBeUndefined()
+    await run("")
+    await tab.runtime.runPromise(tab.store.searched.insert({ id: SEARCHED, repoId: REPO_ID, q: "x", issues: [] }))
+    await run("  ")
+    expect(row()).toBeUndefined()
+    // A refusal while the route answers: the answer never stays, and nor does one the tab may no longer keep.
+    const during = run("during")
+    await until(() => expect(asked).toHaveLength(4))
+    await tab.runtime.runPromise(tab.store.forgetSearch)
+    release[3]!()
+    await during
+    expect(row()).toBeUndefined()
+    const installing = run("installing")
+    await until(() => expect(asked).toHaveLength(5))
+    authority = { status: "allowed", installed: true }
+    release[4]!()
+    await installing
+    expect(row()).toBeUndefined()
+    // A search forgotten while this tab waits on its authority a last time: the answer doesn't stay.
+    authority = { status: "allowed", installed: false }
+    let checks = 0
+    const waiting = { ...store, opened: () => ({ accessState: { rows: Stream.fromEffect(Effect.gen(function* () {
+      checks++
+      if (checks === 2) yield* tab.store.forgetSearch
+      return [authority]
+    })) } }) as never }
+    const lastWait = tab.runtime.runPromise(searchAction(OWNER, NAME, "lastwait").pipe(Effect.provideService(IssuesStore, waiting)))
+    await until(() => expect(asked).toHaveLength(6))
+    release[5]!()
+    await lastWait
+    expect(row()).toBeUndefined()
+    // Refused, or the list already installed, or a repository nobody opened: the route is never asked.
+    authority = { status: "allowed", installed: true }
+    await run("installed")
+    authority = { status: "forbidden", installed: false }
+    await run("forbidden")
+    await tab.runtime.runPromise(searchAction(OWNER, NAME, "unopened").pipe(Effect.provideService(IssuesStore, { ...store, opened: () => undefined })))
+    expect(asked).toHaveLength(6)
+    // A keypress newer than the wait for this tab's authority: the older search stops there.
+    const unknown = { status: "unknown", installed: false }
+    let held = true
+    const slow = { ...store, opened: () => ({ accessState: { rows: Stream.fromEffect(Effect.sleep(held ? "60 millis" : "0 millis")).pipe(Stream.map(() => [{ ...unknown, status: "allowed" }])) } }) as never }
+    const older = tab.runtime.runPromise(searchAction(OWNER, NAME, "older").pipe(Effect.provideService(IssuesStore, slow)))
+    await new Promise((resolve) => setTimeout(resolve, 170))
+    await tab.runtime.runPromise(tab.store.forgetSearch)
+    held = false
+    await older
+    expect(asked).toHaveLength(6)
+    // Opening another repository forgets; opening this one again doesn't.
+    await tab.runtime.runPromise(tab.store.searched.insert({ id: SEARCHED, repoId: REPO_ID, q: "kept", issues: [] }))
+    tab.store.searches.repoId = REPO_ID
+    await tab.actions.open(OWNER, NAME)
+    expect(row()).toMatchObject({ q: "kept" })
+    tab.store.searches.repoId = "elsewhere"
+    await tab.actions.open(OWNER, NAME)
+    expect(row()).toBeUndefined()
+    // The real route: nothing of this repository yet, an empty first page.
+    expect(await tab.runtime.runPromise(tab.store.search(OWNER, NAME, "nothing-matches"))).toEqual([])
   }, WITHIN)
 
   test("a failed device receipt keeps the draft and shows Not sent without starting delivery", async () => {

@@ -20,7 +20,7 @@ test("failed persistence keeps a refused write retryable", async () => {
 
 test.each([undefined, {}, { ...row, repo: null }, { ...row, op: "pr/merge" }, { ...row, op: "issue/triage" }, { ...row, op: "issue/commitment" }])("malformed restored rows never reach the transport: %j", async (restored) => {
   let sent = 0
-  const client = Layer.succeed(IssuesClient, IssuesClient.of({ write: () => { sent++; return Effect.die("malformed write reached transport") } }))
+  const client = Layer.succeed(IssuesClient, IssuesClient.of({ search: () => Effect.die("no search"), write: () => { sent++; return Effect.die("malformed write reached transport") } }))
   const result = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     const writes = yield* OutboxWrites
     return yield* Effect.result(writes.mutations[ISSUE_WRITE]!({ rows: [restored] } as never))
@@ -49,7 +49,7 @@ test("parked writes stay parked after storage failure and settle after persisten
 
 test("an opaque restored credential keeps its forbidden refusal without transport", async () => {
   let sent = 0
-  const client = Layer.succeed(IssuesClient, IssuesClient.of({ write: () => { sent++; return Effect.die("unrenewable write reached transport") } }))
+  const client = Layer.succeed(IssuesClient, IssuesClient.of({ search: () => Effect.die("no search"), write: () => { sent++; return Effect.die("unrenewable write reached transport") } }))
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     const writes = yield* OutboxWrites
     const issues = yield* IssueWrites

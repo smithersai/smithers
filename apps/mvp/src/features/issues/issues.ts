@@ -12,6 +12,7 @@ import {
   pauseTriage,
   retry,
   retryWrite,
+  search,
   warm,
   runTriageAgain,
   setCommentDraft,
@@ -34,6 +35,8 @@ type Store = IssuesStore["Service"]
 export interface IssuesQueries {
   /** What the route shows, with its draft and whether a press is on its way. */
   readonly view: Store["viewState"]["tanstack"]
+  /** What the issues route last answered this tab's search, while the list hasn't synced. */
+  readonly searched: Store["searchedRows"]["tanstack"]
   readonly writes: Store["writeRows"]["tanstack"]
   /** The repository's issues, this device's own new ones first. */
   readonly list: RepoIssues["list"]["tanstack"]
@@ -77,6 +80,8 @@ export interface IssuesActions {
   readonly warm: (owner: string, name: string, number?: number) => Promise<void>
   /** Reconnect failed issue shapes now. */
   readonly retry: () => void
+  /** A search typed in a list that hasn't synced: the issues route answers it. */
+  readonly search: (owner: string, name: string, q: string) => void
   readonly setNewTitle: (owner: string, name: string, title: string) => void
   readonly setNewBody: (owner: string, name: string, body: string) => void
   readonly setCommentDraft: (owner: string, name: string, number: number, body: string) => void
@@ -111,6 +116,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
         // The routed repository's, read when the page renders.
         queries: {
           view: store.viewState.tanstack,
+          searched: store.searchedRows.tanstack,
           writes: store.writeRows.tanstack,
           get list() { return store.routed().list.tanstack },
           get publicList() { return store.routed().publicList.tanstack },
@@ -134,6 +140,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           open: (owner, name, number, writeId) => promise(open(owner, name, number, writeId)),
           warm: (owner, name, number) => promise(warm(owner, name, number)),
           retry: () => run(retry),
+          search: (owner, name, q) => void promise(search(owner, name, q)),
           setNewTitle: (owner, name, title) => run(setNewTitle(owner, name, title)),
           setNewBody: (owner, name, body) => run(setNewBody(owner, name, body)),
           setCommentDraft: (owner, name, number, body) => run(setCommentDraft(owner, name, number, body)),

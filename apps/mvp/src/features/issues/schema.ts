@@ -168,6 +168,33 @@ export type Requested = typeof Requested.Type
 export const Draft = Schema.Struct({ id: Schema.String, title: Schema.String, body: Schema.String })
 export type Draft = typeof Draft.Type
 
+/** One issue as `GET /api/repos/<owner>/<name>/issues` lists it, with what the list shows of it. */
+export const ListedIssue = Schema.Struct({
+  number: Schema.Number,
+  title: Schema.String,
+  state: Schema.String,
+  author: Schema.Struct({ login: Schema.NullOr(Schema.String) }),
+  comments: Schema.Number,
+  created_at: Schema.String,
+  updated_at: Schema.String,
+  triage: Schema.String,
+  commitment: Schema.NullOr(Schema.String),
+})
+export type ListedIssue = typeof ListedIssue.Type
+
+/**
+ * What the issues route last answered this tab's search, while the repository's list hasn't synced: in memory only,
+ * one row, gone on a refusal, on another search and with the page. Decides nothing once the list has synced.
+ */
+export const SEARCHED = "searched"
+export const Searched = Schema.Struct({
+  id: Schema.Literal(SEARCHED),
+  repoId: Schema.String,
+  q: Schema.String,
+  issues: Schema.Array(ListedIssue),
+})
+export type Searched = typeof Searched.Type
+
 /**
  * What this tab's issue routes show: the repository and, on an issue's page, its number; the draft the page edits; and
  * whether a write it pressed is on its way to the outbox. One row.

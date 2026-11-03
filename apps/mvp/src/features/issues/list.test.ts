@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { listSearch, visibleRows } from "./list"
+import { listSearch, visibleRows, withSearched } from "./list"
 
 test("search and sort survive validated URLs", () => {
   expect(listSearch({ q: " crash ", sort: "oldest", ignored: 1 })).toEqual({ q: " crash ", sort: "oldest" })
@@ -22,4 +22,22 @@ test("searches titles and numbers, orders by the date shown, and retains pending
   expect(rows[0]!.updatedAt).toBe("2026-03-01")
   const tied = [{ title: "a", number: 1, updatedAt: "x" }, { title: "b", number: 2, updatedAt: "x" }]
   for (const sort of ["newest", "oldest", "updated"] as const) expect(visibleRows(tied, { sort }).map((row) => row.number)).toEqual([2, 1])
+})
+
+test("a search the route answered adds its rows to a list that hasn't synced; any other search adds nothing", () => {
+  const issue = (number: number) => ({ number, title: `t${number}`, state: "open", author: { login: number === 8 ? null : "ada" }, comments: 1, created_at: "c", updated_at: "u", triage: "", commitment: number === 8 ? null : "now" })
+  const own = { id: "r#7", number: 7, title: "own", state: "open", author: "me", comments: 0, updatedAt: "x", triage: "", pending: "", reason: "", local: 0 }
+  const searched = { repoId: "r", q: "t", issues: [issue(7), issue(8), issue(9)] }
+  expect(withSearched([own], undefined, "r", "t")).toEqual([own])
+  expect(withSearched([own], searched, "other", "t")).toEqual([own])
+  expect(withSearched([own], searched, "r", "tt")).toEqual([own])
+  expect(withSearched([own], searched, "r", undefined)).toEqual([own])
+  const merged = withSearched([own], searched, "r", " t ")
+  // The device's own row stays; the rest come as list rows under the shapes' ids.
+  expect(merged.map((row) => [row.id, row.title, row.author, (row as { readonly commitment?: string | null }).commitment])).toEqual([
+    ["r#7", "own", "me", undefined],
+    ["r#8", "t8", "", ""],
+    ["r#9", "t9", "ada", "now"],
+  ])
+  expect(merged[1]).toMatchObject({ updatedAt: "u", createdAt: "c", local: 0, pending: "" })
 })

@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net"
 import { Effect } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { IssuesClient, type WriteRequest } from "./api"
 
 // The real writes client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so a
@@ -172,4 +172,33 @@ test("a malformed 404 body keeps the refusal status without inventing a code", a
   const result = await send(gateway.origin)
   expect(result).toMatchObject({ _tag: "Failure", failure: { status: 404 } })
   expect(result._tag === "Failure" && result.failure.code).toBeUndefined()
+})
+
+describe("a search asked of the issues route", () => {
+  const search = (origin: string) =>
+    Effect.runPromise(
+      Effect.result(Effect.flatMap(IssuesClient, (client) => client.search("octo", "hello", "#7 a&b"))).pipe(
+        Effect.provide(IssuesClient.layer({ origin, within: "300 millis" })),
+        Effect.provide(FetchHttpClient.layer),
+      ),
+    )
+  const listed = { number: 7, title: "t", state: "open", author: { login: null }, comments: 0, created_at: "a", updated_at: "b", triage: "", commitment: null, work: { status: "none", links: [] } }
+
+  test("asks for every state and the search, encoded, and answers its issues", async () => {
+    const { origin, asked } = await serve(json(200, [listed]))
+    const answered = await search(origin)
+    expect(answered._tag === "Success" ? answered.success.map((issue) => issue.number) : answered).toEqual([7])
+    expect(asked.map((request) => request.url)).toEqual(["/api/repos/octo/hello/issues?state=all&q=%237%20a%26b"])
+  })
+
+  test("a refusal, another body, a stalled answer and nothing listening are not answered", async () => {
+    const refused = await search((await serve(json(403, { code: "forbidden" }))).origin)
+    expect(refused).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered", status: 403 } })
+    const other = await search((await serve(json(200, { not: "a list" }))).origin)
+    expect(other).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered" } })
+    const stalled = await search((await serve(() => {})).origin)
+    expect(stalled).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered" } })
+    const nobody = await search("http://127.0.0.1:9")
+    expect(nobody).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered" } })
+  })
 })

@@ -1,5 +1,5 @@
 import { IssueSort } from "../../features/issues/components/IssueSort"
-import { visibleRows } from "../../features/issues/list"
+import { visibleRows, withSearched } from "../../features/issues/list"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { Badge, Button, Card, CardContent, EmptyState, Input, IssuesView, LinkTabs, PageBody } from "@smthrs/ui"
@@ -23,7 +23,7 @@ import {
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
 import { filterWork, withWork, workByIssue } from "../../features/issues/workView"
 import { WORK_FILTER_LABEL } from "../../features/issues/work"
-import { listFailureOf, listProps, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
+import { listFailureOf, type ListRow, listProps, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
 import "./issues-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
@@ -65,10 +65,13 @@ export function IssuesScreen() {
   const navigate = useNavigate()
   const search = useSearch({ from: "/$owner/$repo/issues" })
   const list = listProps(rows ?? [], synced, access, triage !== undefined && !triage.paused)
+  const { data: searched } = useLiveQuery(queries.searched)
   const failure = listFailureOf(access, roles?.find((row) => row.id === repoId(owner, repo))?.failure,
     (list.unknown || !isReady || access?.installed !== true) && about?.view.repoId === repoId(owner, repo) ? about.about : undefined)
-  const visible = listProps(visibleRows(filterWork(filterCommitment(rows ?? [], search.commitment), work, search.work), search), synced, access, triage !== undefined && !triage.paused).issues
   const listSync = listSyncOf(list.unknown, isReady, access)
+  // Until the list has synced, the issues route answers a search; once it has, the device's own rows do.
+  const searchable = listSync === "syncing" ? withSearched(rows ?? [], searched?.[0], repoId(owner, repo), search.q) : rows ?? []
+  const visible = listProps(visibleRows(filterWork(filterCommitment(searchable as ReadonlyArray<ListRow>, search.commitment), work, search.work), search), synced, access, triage !== undefined && !triage.paused).issues
   // Still syncing, with no row of its own to show yet, and no filter: the first paint's rows may stand in.
   const awaitingRows = failure === undefined && listSync === "syncing" && visible.length === 0 &&
     search.q === undefined && search.commitment === undefined && search.work === undefined && search.sort === undefined
@@ -141,7 +144,10 @@ export function IssuesScreen() {
         {(
           <div className="list-search-tools" role="search" aria-label="Search issues">
             <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
-              onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
+              onChange={(event) => {
+                if (listSync === "syncing") actions.search(owner, repo, event.currentTarget.value)
+                void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })
+              }} />
             <IssueSort value={search.sort ?? "updated"}
               onChange={(sort) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
           </div>

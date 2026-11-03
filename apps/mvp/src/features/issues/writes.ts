@@ -28,6 +28,8 @@ export class IssueWrites extends Context.Service<
   {
     readonly sending: Collection.Collection<Sending, string>
     readonly requested: Collection.Collection<Requested, string>
+    /** The client's `search`, for a list that hasn't synced (`IssuesStore`). */
+    readonly search: IssuesClient["Service"]["search"]
   }
 >()("@smthrs/mvp/issues/IssueWrites") {
   /**
@@ -52,7 +54,8 @@ export class IssueWrites extends Context.Service<
         mutations: { [ISSUE_WRITE]: mutation },
         parked: { [ISSUE_WRITE]: (write) => keepParked(requested, write) },
       })
-      return Context.make(IssueWrites, IssueWrites.of({ sending, requested })).pipe(Context.add(OutboxWrites, writes))
+      const { search } = Context.get(context, IssuesClient)
+      return Context.make(IssueWrites, IssueWrites.of({ sending, requested, search })).pipe(Context.add(OutboxWrites, writes))
     }),
   )
 }

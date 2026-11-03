@@ -3,7 +3,7 @@ import { acknowledgeNavigation, admissionReceipt, beginAdmission, identifyAdmiss
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { keep } from "./writes"
 import type { Commitment } from "./lifecycle"
-import { Clock, Effect, Metric, Option } from "effect"
+import { Clock, Effect, Metric, Option, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
 import {
@@ -18,7 +18,7 @@ import {
 } from "./contract"
 import { admissions, pendingActions, submissionFailures } from "./metrics"
 import { recordShapeRetry } from "./shapeSync"
-import { type Draft, type QueuedWrite, VIEW } from "./schema"
+import { type Draft, type QueuedWrite, SEARCHED, VIEW } from "./schema"
 import { IssuesStore } from "./store"
 
 // Issue writes resolve after the device retains their intent and admits them to its durable outbox. Public flows
@@ -35,6 +35,55 @@ export const warm = (owner: string, name: string, number?: number) =>
 export const reconnectShapes = Effect.flatMap(IssuesStore, (store) =>
   Effect.all([store.routed().reconnect, store.writes.reconnect], { discard: true }))
 
+/** How long a search waits for the next keypress before it asks the route. */
+export const SEARCH_AFTER = "150 millis"
+
+/** Whether this tab may ask, or keep, the issues route's answer on repository `id`: it decided this person may read it, and its list hasn't installed. */
+const searchable = (store: IssuesStore["Service"], id: string) =>
+  Effect.gen(function* () {
+    const repo = store.opened(id)
+    if (repo === undefined) return false
+    const rows = yield* repo.accessState.rows.pipe(
+      Stream.filter((rows) => rows[0]?.status !== "unknown"),
+      Stream.runHead,
+    )
+    const row = Option.getOrThrow(rows)[0]!
+    return row.status === "allowed" && row.installed !== true
+  })
+
+/**
+ * A person typed search `q` in a list that hasn't synced yet: the issues route answers it, under the shapes' own rule,
+ * so a search doesn't wait for the whole sync (docs/features/issues.md#the-browser). It asks only once this tab's own
+ * authority on the repository says it may (decision 0110), and keeps the answer, in memory, only if that still holds
+ * and this is still the last search asked. A refusal, another search and another repository forget it (`forgetSearch`).
+ * One log line `issues.search` with the outcome and time; never the search.
+ */
+export const search = (owner: string, name: string, q: string) =>
+  Effect.gen(function* () {
+    const store = yield* IssuesStore
+    const id = repoId(owner, name)
+    const asked = q.trim()
+    yield* store.forgetSearch
+    const generation = store.searches.latest
+    store.searches.repoId = id
+    if (asked === "") return
+    yield* Effect.sleep(SEARCH_AFTER)
+    if (store.searches.latest !== generation || !(yield* searchable(store, id))) return
+    if (store.searches.latest !== generation) return
+    const startedAt = yield* Clock.currentTimeMillis
+    const answer = yield* Effect.result(store.search(owner, name, asked))
+    const fields = { durationMs: (yield* Clock.currentTimeMillis) - startedAt }
+    if (answer._tag === "Failure") {
+      return yield* Effect.logWarning("issues.search").pipe(
+        Effect.annotateLogs({ ...fields, outcome: "failed", status: answer.failure.status ?? 0 }),
+      )
+    }
+    yield* Effect.logInfo("issues.search").pipe(Effect.annotateLogs({ ...fields, outcome: "answered", count: answer.success.length }))
+    if (store.searches.latest !== generation || !(yield* searchable(store, id))) return
+    if (store.searches.latest !== generation) return
+    yield* Effect.orDie(store.searched.insert({ id: SEARCHED, repoId: id, q: asked, issues: answer.success }))
+  }).pipe(Effect.annotateLogs({ feature: "issues" }))
+
 /** A person's Try again on an unavailable direct issue. */
 export const retry = Effect.andThen(reconnectShapes, recordShapeRetry("issue"))
 
@@ -48,6 +97,8 @@ export const open = (owner: string, name: string, number?: number, writeId?: str
     const id = repoId(owner, name)
     yield* store.forRepo(id, number)
     yield* store.route(id, number)
+    // Another repository: what its search answered goes.
+    if (store.searches.repoId !== id) yield* store.forgetSearch
     const intents = yield* Effect.serviceOption(WriteIntents)
     const resumed = Option.isSome(intents) ? intents.value.resumed.get(`${owner}/${name}`) : undefined
     if (typeof writeId === "string" && Option.isSome(intents)) {

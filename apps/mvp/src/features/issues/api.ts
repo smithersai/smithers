@@ -1,8 +1,8 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewalOf, renewed, withBearer, withoutCookie } from "../../flows/bearer"
-import { type TriageDecision, type WriteOp, writesRoute } from "./contract"
-import { WriteTaken } from "./schema"
+import { issuesRoute, type TriageDecision, type WriteOp, writesRoute } from "./contract"
+import { ListedIssue, WriteTaken } from "./schema"
 
 // ChatApi's writes route as the browser calls it (decision 0012 §4, docs/features/issues.md#routes), through Effect's
 // HttpClient, with one deadline covering the whole exchange, its body included.
@@ -85,6 +85,31 @@ export const postWrite = (
     Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new WriteNotTaken({})) }),
   )
 
+/** The issues route didn't answer a search: no whole answer within the deadline (`status` absent), a refusal, or another body. */
+export class SearchNotAnswered extends Data.TaggedError("SearchNotAnswered")<{ readonly status?: number }> {}
+
+const decodeListed = Schema.decodeUnknownEffect(Schema.Array(ListedIssue))
+
+/** `GET /api/repos/<owner>/<name>/issues?state=all&q=`: the first page of issues matching `q`, as the list orders them. */
+export const getSearch = (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string },
+  q: string,
+  within: Duration.Input,
+) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    const url = `${origin}${issuesRoute(repository.owner, repository.name)}?state=all&q=${encodeURIComponent(q)}`
+    const response = yield* client.execute(HttpClientRequest.get(url))
+    if (response.status !== 200) return yield* new SearchNotAnswered({ status: response.status })
+    return yield* decodeListed(yield* response.json)
+  }).pipe(
+    Effect.scoped,
+    Effect.timeoutOption(within),
+    Effect.flatMap(Option.match({ onNone: () => Effect.fail(new SearchNotAnswered({})), onSome: Effect.succeed })),
+    Effect.catch((error) => error instanceof SearchNotAnswered ? Effect.fail(error) : Effect.fail(new SearchNotAnswered({}))),
+  )
+
 /**
  * ChatApi's writes route, as a service: the one way the browser sends a git write. Tests of a route that fails provide
  * a faulty one; every other test uses the real one.
@@ -99,6 +124,8 @@ export class IssuesClient extends Context.Service<
       write: WriteRequest,
       credential?: string,
     ) => Effect.Effect<WriteTaken, WriteNotTaken>
+    /** The issues route's first page for search `q`, for a list that hasn't synced yet. */
+    readonly search: (owner: string, name: string, q: string) => Effect.Effect<ReadonlyArray<ListedIssue>, SearchNotAnswered>
   }
 >()("@smthrs/mvp/issues/IssuesClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
@@ -111,6 +138,8 @@ export class IssuesClient extends Context.Service<
             postWrite(options.origin, { owner, name }, write, options.within, credential).pipe(
               Effect.provideService(HttpClient.HttpClient, client),
             ),
+          search: (owner, name, q) =>
+            getSearch(options.origin, { owner, name }, q, options.within).pipe(Effect.provideService(HttpClient.HttpClient, client)),
         })),
     )
 }

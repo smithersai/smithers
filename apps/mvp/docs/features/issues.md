@@ -177,6 +177,8 @@ Buttons show only to a Member and above of the issue's repository; Run triage ag
 | `actions.ts`, `issues.ts` | `open` (the routes), `warm` (a link's hover: starts the sync), drafts, Create issue and Comment (door `button`), Edit and Discard on a write Not sent |
 | `view.ts` | the props of `IssuesView`, `ItemConversation` and `IssueForm` from the queries' rows |
 
+**Search while the list syncs.** A search typed in a list that hasn't synced is answered by the issues route (`GET /api/repos/<owner>/<name>/issues?state=all&q=`), the shapes' own access rule, first page only, 150 ms after the last keypress (`search`, `actions.ts`). Its answer lives in memory in one row (`issue-searched`), belongs only to the search on screen, goes on a refusal, and adds to the device's rows only until the list has synced. One `issues.search` log line with the outcome and time; never the search.
+
 Screens: `/$owner/$repo/issues`, `/$owner/$repo/issues/new` and `/$owner/$repo/issues/$number` (`src/screens/issues/`), and an Issues link in the repository's header. Each issue shows the TODOs made from it, on its row and in its page's side column, and a Member gets Make TODO in an open issue's `⋯` menu and on its page, key `t`, while none of its TODOs is open ([TODOs from an issue](todos.md#from-an-issue)); the issue routes open the repository's stack for it. The device's outbox is chat's, extended by `OutboxWrites` (`src/outbox.ts`).
 
 ## First paint
