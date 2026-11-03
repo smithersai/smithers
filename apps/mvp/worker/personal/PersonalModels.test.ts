@@ -410,8 +410,8 @@ describe("model/Put and model/Delete", () => {
     const { store, erase } = ModelFlows.steps(unreachable)
     const keyed = <A, E>(effect: Effect.Effect<A, E, any>) =>
       Effect.runPromiseExit(Effect.provideService(effect, Action.CurrentInvocationKey, "step-1") as Effect.Effect<A, E>)
-    const saved = await keyed(store(model))
-    const removed = await keyed(erase({ personId: "person-member" }))
+    const saved = await keyed(store({ ...model, authority: null }))
+    const removed = await keyed(erase({ personId: "person-member", authority: null }))
     for (const exit of [saved, removed]) expect(JSON.stringify(exit)).toContain("@smthrs/mvp/personal/StoreUnavailable")
     expect(ModelFlows.STORE_RETRY).toMatchObject({ expirationMs: 30 * 60_000 })
   })
@@ -419,8 +419,8 @@ describe("model/Put and model/Delete", () => {
   test("a step with no invocation key dies rather than record its change twice", async () => {
     const { store, erase } = ModelFlows.steps(await scratchDatabase())
     const exits = [
-      await Effect.runPromiseExit(store(model) as Effect.Effect<unknown, unknown>),
-      await Effect.runPromiseExit(erase({ personId: "person-member" }) as Effect.Effect<unknown, unknown>),
+      await Effect.runPromiseExit(store({ ...model, authority: null }) as Effect.Effect<unknown, unknown>),
+      await Effect.runPromiseExit(erase({ personId: "person-member", authority: null }) as Effect.Effect<unknown, unknown>),
     ]
     for (const exit of exits) expect(JSON.stringify(exit)).toContain("NoInvocationKey")
     expect(await rows(runtime)).toEqual([])

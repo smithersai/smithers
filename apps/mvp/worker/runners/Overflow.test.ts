@@ -7,7 +7,7 @@ import { AgentRunner } from "@smthrs/agent"
 import { digestSync } from "@smthrs/crypto"
 import { type Flow, FlowRuntime } from "@smthrs/flow"
 import { Scrub } from "@smthrs/secrets"
-import { Context, Effect, Exit, Option, Redacted, Scope } from "effect"
+import { Context, Effect, Exit, Option, Redacted, Scope, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -150,8 +150,6 @@ describe("a replayed overflow action", () => {
     const connectionId = await seedKey()
     expect(await runtime.runPromise(Overflow.set(writeOf(connectionId, "first-profile", "1"), await fenced("overflow-put:base", "put"))))
       .toBe("set")
-    let release = () => {}
-    const released = new Promise<void>((done) => (release = done))
     let locked = () => {}
     const runnerLocked = new Promise<void>((done) => (locked = done))
     let wantOverflow = () => {}
@@ -163,19 +161,25 @@ describe("a replayed overflow action", () => {
         yield* Effect.sync(locked)
         yield* Effect.promise(() => overflowWanted)
         yield* client`SELECT 1 FROM repo_overflow WHERE repo_id = ${REPO} FOR UPDATE`
-        yield* Effect.promise(() => released)
       }))))
     await runnerLocked
+    // Signal the real runner-lock query as it starts. With reversed ordering the new write already owns the
+    // overflow row here, so the old write cannot finish and the new one's fixed lock deadline fails the assertion.
+    const tracer = Tracer.make({ span(options) {
+      const span = new Tracer.NativeSpan(options)
+      const attribute = span.attribute.bind(span)
+      span.attribute = (key, value) => {
+        attribute(key, value)
+        if ((key === "db.query.text" || key === "db.statement") && /SELECT 1 FROM runners\b.*FOR UPDATE/s.test(String(value))) wantOverflow()
+      }
+      return span
+    } })
     const writing = runtime.runPromise(
-      Overflow.set(writeOf(connectionId, "second-profile", "2"), await fenced("overflow-put:during", "put")),
+      Effect.result(Overflow.set(writeOf(connectionId, "second-profile", "2"), await fenced("overflow-put:during", "put"))
+        .pipe(Effect.provideService(Tracer.Tracer, tracer))),
     )
-    // Give the new write time to take whatever it takes first, then let the old one ask for the overflow row.
-    await new Promise((done) => setTimeout(done, 300))
-    wantOverflow()
-    await new Promise((done) => setTimeout(done, 300))
-    release()
-    await old
-    expect(await writing).toBe("set")
+    const [, result] = await Promise.all([old, writing.finally(wantOverflow)])
+    expect(result).toMatchObject({ _tag: "Success", success: "set" })
   })
 
   test("a PUT replayed after a later change, and after its authority ended, changes nothing", async () => {

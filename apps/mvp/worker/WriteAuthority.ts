@@ -41,7 +41,14 @@ export const holds = (session: Session | undefined) => Effect.gen(function* () {
   return row?.live === true
 })
 
-/** A retained session's expiry as a SQL fragment, for the writer's current-clock check and remaining lock budget. */
-export const deadline = (sql: SqlClient.SqlClient, session: Session | null | undefined) => session == null
-  ? sql`'infinity'::timestamptz`
-  : sql`(SELECT expires_at FROM sessions WHERE id::text = ${session.sessionId} AND person_id::text = ${session.personId})`
+/** Fixed database bounds for a short write transaction, installed before its first lock. Postgres 17 owns the cap. */
+export const bound = Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+  SELECT set_config('lock_timeout', '1s', true), set_config('statement_timeout', '2s', true),
+    CASE WHEN current_setting('transaction_timeout')::interval > interval '0s'
+      AND current_setting('transaction_timeout')::interval <= interval '5s'
+      THEN current_setting('transaction_timeout') ELSE set_config('transaction_timeout', '5s', true) END`)
+
+/** Explicit local authority is null; a missing legacy authority fails closed at delayed step execution. */
+export const Admission = Schema.optional(Schema.NullOr(Session))
+export const admitted = (authority: Session | null | undefined) =>
+  authority === undefined ? Effect.succeed(false) : holds(authority ?? undefined)

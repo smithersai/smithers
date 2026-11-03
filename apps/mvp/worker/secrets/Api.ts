@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Binding } from "@smthrs/secrets"
 import { Cause, Clock, Effect, Metric, Option, Redacted, Schema } from "effect"
@@ -125,7 +126,7 @@ export const make = (repository: { readonly id: string }) => Effect.gen(function
       if (op === "delete") {
         const started = yield* starter.start(SecretFlows.Delete, {
           executionId,
-          payload: { repoId: repo, name: route.secret, actorId: actor.value.subject.id },
+          payload: { authority: WriteAuthority.sessionOf(actor.value) ?? null, repoId: repo, name: route.secret, actorId: actor.value.subject.id },
         }).pipe(Effect.result)
         if (started._tag === "Failure") return refuse(503, "unavailable")
         fields.outcome = "deleting"
@@ -151,6 +152,7 @@ export const make = (repository: { readonly id: string }) => Effect.gen(function
       const started = yield* starter.start(SecretFlows.Put, {
         executionId,
         payload: {
+          authority: WriteAuthority.sessionOf(actor.value) ?? null,
           repoId: repo,
           name: route.secret,
           sealed,

@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { AgentRunner } from "@smthrs/agent"
 import { Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
@@ -102,6 +103,7 @@ export const set = (
 ): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
   Store.refusedWhenLate(write.repoId, RUNNER, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       // A replay answers what its action did, before anything is written (decision 0148).
       const before = yield* Store.replayed("runners", write.repoId, RUNNER, by)
       if (before !== undefined) return before
@@ -140,6 +142,7 @@ export const remove = (
 ): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
   Store.refusedWhenLate(write.repoId, RUNNER, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       const before = yield* Store.replayed("runners", write.repoId, RUNNER, by)
       if (before !== undefined) return before
       yield* lockRunnerThenOverflow(write.repoId)

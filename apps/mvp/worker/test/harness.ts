@@ -1,3 +1,4 @@
+import { afterBody } from "../WriteAdmission.ts"
 // ChatApi's real handler for the worker tests, on a test file's own schema of the compose Postgres (`pnpm db:up`,
 // db/TestDatabase.ts). The model is the only stand-in: a scripted `Model` through HostModel. ChatApi starts remote
 // flows through a `FlowStarter` that records each start, unless a test sets one. Every log line, span and metric the
@@ -248,7 +249,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   })
   const handler = HttpEffect.toWebHandler(
     observed(
-      routed.pipe(
+      afterBody(routed).pipe(
         Effect.provideService(Flows.FlowStarter, starter),
         Effect.provide(docsSource),
         Effect.provide(

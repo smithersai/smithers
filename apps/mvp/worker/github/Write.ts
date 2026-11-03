@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { COMMITMENTS, commitmentLabel } from "../../src/features/issues/lifecycle.ts"
 import { triageOf } from "../../src/features/issues/contract.ts"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
@@ -5,6 +6,7 @@ import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import { Clock, Effect, Layer, Metric, Option, type Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
+import { SqlClient } from "effect/sql"
 import {
   ACCEPTED_LABEL,
   agentAttribution,
@@ -198,14 +200,17 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const payload = write.payload
       // Enabling and pausing triage change the repository's settings and nothing on GitHub: no token.
       if (payload.op === "triage/enable" || payload.op === "triage/pause") {
-        return yield* settled(
-          write,
-          "none",
-          { status: "done", itemNumber: null, githubId: null },
-          payload.op === "triage/enable"
-            ? TriageStore.enable(write.repoId, { actorId: write.actorId, login: write.login, dailyTokens: payload.dailyTokens })
-            : TriageStore.pause(write.repoId, "person"),
-        )
+        const sql = yield* SqlClient.SqlClient
+        return yield* sql.withTransaction(Effect.gen(function* () {
+          yield* WriteAuthority.bound
+          if (!(yield* WriteAuthority.admitted(payload.authority))) {
+            return yield* settled(write, "none", { status: "refused", failure: "sign_in_required" })
+          }
+          return yield* settled(write, "none", { status: "done", itemNumber: null, githubId: null },
+            payload.op === "triage/enable"
+              ? TriageStore.enable(write.repoId, { actorId: write.actorId, login: write.login, dailyTokens: payload.dailyTokens })
+              : TriageStore.pause(write.repoId, "person"))
+        }))
       }
       // Run triage again is admitted for `triage/Run`, which settles it; this flow never runs one.
       if (payload.op === "triage/run") return yield* settled(write, "none", { status: "refused", failure: "invalid" })

@@ -99,7 +99,6 @@ export type Applied =
   | { readonly kind: "conflict" }
   /** `holds` answered false: the person's role changed after the route read it; nothing was recorded. */
   | { readonly kind: "stale" }
-  | { readonly kind: "forbidden" }
 
 /**
  * Starts and stops the `todo` runs of the attempts the writer records (decision 0016 §1, "Starting runs"): Track B's
@@ -203,19 +202,19 @@ export const lanesOf = (stack: Stack) => {
  * Applies `change` to its repository's stack in one transaction; `runs` says whether this host runs TODOs (a
  * `TodoRuns` is provided), and without it no TODO starts. A new op applies only while `holds` answers true in the same
  * transaction: on a repository other than the deployment's own, that the person still has the role the route decided
- * with (`RepoRoles.holds`, decision 0079 §6). The admitting session and alias are locked and revalidated through
- * WriteAuthority after those waits; ended sessions answer `forbidden`, without a new role refresh. Records a span `stack.apply`, a log line and a count of `changes` by op
+ * with (`RepoRoles.holds`, decision 0079 §6). The dispatcher establishes session authority after the body; fixed database timeouts bound this transaction. Records a span `stack.apply`, a log line and a count of `changes` by op
  * and outcome, with the repository, op id, number and version: never a title or a prompt.
  */
 export const apply = <E = never, R = never>(
   change: Change,
-  options: { readonly runs: boolean; readonly stoppedAttemptId?: string; readonly holds?: Effect.Effect<boolean, E, R>; readonly session?: WriteAuthority.Session },
+  options: { readonly runs: boolean; readonly stoppedAttemptId?: string; readonly holds?: Effect.Effect<boolean, E, R> },
 ) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const sql = yield* SqlClient.SqlClient
     const hash = payloadHash(change)
     const applied = yield* sql.withTransaction(Effect.tap(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       yield* sql`INSERT INTO stacks (repo_id) VALUES (${change.repoId}) ON CONFLICT (repo_id) DO NOTHING`
       const [locked] = yield* sql<Locked>`
         SELECT next_number AS "nextNumber", lanes, max_open AS "maxOpen", base FROM stacks
@@ -228,7 +227,6 @@ export const apply = <E = never, R = never>(
           : ({ kind: "conflict" } satisfies Applied)
       }
       if (options.holds !== undefined && !(yield* options.holds)) return { kind: "stale" } satisfies Applied
-      if (!(yield* WriteAuthority.holds(options.session))) return { kind: "forbidden" } satisfies Applied
       if (change.op.kind === "attach") return yield* attachIssue(sql, change, change.op, hash)
       const named = change.op.kind === "drop" || change.op.kind === "retry" ? change.op.number : 0
       if (change.op.kind === "retry" && !change.retryAny) {

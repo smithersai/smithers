@@ -5,7 +5,7 @@
 // scripted GitHub's armed answers and the judge's scripts; nothing intercepts a request.
 import { FlowRuntime } from "@smthrs/flow"
 import { ModelError } from "@smthrs/model"
-import { Cause, Effect, Exit, Stream } from "effect"
+import { Cause, Effect, Exit, Redacted, Stream } from "effect"
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import {
@@ -54,6 +54,21 @@ beforeAll(async () => {
 })
 
 beforeEach(() => reset(runtime))
+
+test.each(["triage/enable", "triage/pause"] as const)("delayed %s refuses revoked admission and replay", async (op) => {
+  const who = await signedIn(runtime, { login: "delayed-maintainer", token: Redacted.make("test-token") })
+  await enable()
+  const authority = { personId: who.personId, sessionId: who.sessionId }
+  const payload = op === "triage/enable" ? { op, dailyTokens: 12345, authority } : { op, authority }
+  const id = await admit(runtime, { actorId: who.personId, sessionId: who.sessionId, via: "person", payload })
+  const before = await settings()
+  await sql(runtime, `UPDATE sessions SET revoked_at = now(), revoked_reason = 'sign_out' WHERE id = '${who.sessionId}'`)
+  const host = await services(runtime, repository())
+  const send = Write.steps(host.services).send({ writeId: id })
+  expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
+  expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
+  expect(await settings()).toEqual(before)
+})
 
 const REPO = `${REPOSITORY.owner}/${REPOSITORY.name}`
 

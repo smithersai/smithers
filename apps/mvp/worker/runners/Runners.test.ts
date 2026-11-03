@@ -1140,7 +1140,7 @@ describe("the repository's runners and agents", () => {
     // again, and wrote, once the authority was granted again.
     test("a replay of a refused action answers its recorded refusal, and writes nothing", async () => {
       const write = { repoId: REPO, name: "nyc-replay", tokenSha256: "a".repeat(64), labels: [], capacity: 1, repoAuthorized: true }
-      expect(await query(Store.addRunner(write, fencedBy({ execution: "runners-put:replay", expiresAt: Date.now() - 1 }))))
+      expect(await query(Store.addRunner(write, fencedBy({ execution: "runners-put:replay", expiresAt: 0 }))))
         .toBe("authorization_expired")
       // The same action again, as a replay, now with a fence that would hold.
       expect(await query(Store.addRunner(write, fencedBy({ execution: "runners-put:replay" })))).toBe("authorization_expired")

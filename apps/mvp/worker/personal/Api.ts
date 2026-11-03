@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Classifier, Evaluator, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { Binding } from "@smthrs/secrets"
@@ -390,7 +391,7 @@ export const make = <E, R>(
       const executionId = writeExecutionId(op === "delete" ? "delete" : "put", crypto.randomUUID())
       // Anyone signed in removes their own model, a person who lost their role included.
       if (op === "delete") {
-        const started = yield* starter.start(ModelFlows.Delete, { executionId, payload: { personId } }).pipe(
+        const started = yield* starter.start(ModelFlows.Delete, { executionId, payload: { personId, authority: WriteAuthority.sessionOf(actor.value) ?? null } }).pipe(
           Effect.result,
         )
         if (started._tag === "Failure") return refuse(503, "unavailable")
@@ -430,7 +431,7 @@ export const make = <E, R>(
         )
         const started = yield* starter.start(ModelFlows.CodexLink, {
           executionId: writeExecutionId("link", crypto.randomUUID()),
-          payload: { personId, id: crypto.randomUUID(), generation, ...sealed, keyVersion: version },
+          payload: { authority: WriteAuthority.sessionOf(actor.value) ?? null, personId, id: crypto.randomUUID(), generation, ...sealed, keyVersion: version },
         }).pipe(Effect.result)
         if (started._tag === "Failure") return refuse(503, "unavailable")
         fields.outcome = "linking"
@@ -467,7 +468,7 @@ export const make = <E, R>(
       })
       const started = yield* starter.start(ModelFlows.Put, {
         executionId,
-        payload: { personId, connections: writes },
+        payload: { authority: WriteAuthority.sessionOf(actor.value) ?? null, personId, connections: writes },
       }).pipe(Effect.result)
       if (started._tag === "Failure") return refuse(503, "unavailable")
       fields.outcome = "putting"

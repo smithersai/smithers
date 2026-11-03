@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import type { ModelTier } from "../../src/features/model/contract.ts"
@@ -37,6 +38,7 @@ export interface ConnectionWrite {
 export interface Put {
   readonly personId: string
   readonly connections: ReadonlyArray<ConnectionWrite>
+  readonly authority?: WriteAuthority.Session | null
   readonly invocationKey: string
 }
 
@@ -58,10 +60,10 @@ const repeated = (invocationKey: string) =>
 const holdConnections = (personId: string) => Effect.flatMap(SqlClient.SqlClient, (sql) =>
   sql`SELECT pg_advisory_xact_lock(hashtextextended(${`personal-model:${personId}`}, 0))`)
 
-/** The latest deletion is a durable tombstone: a pending device link cannot undo it, even for an empty list. */
+/** A deletion or list replacement supersedes a pending link: a pending device link cannot undo it, even for an empty list. */
 export const linkGeneration = (personId: string) => Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.map(
   sql<{ readonly generation: string }>`SELECT coalesce(max(id), 0)::text AS generation FROM personal_model_events
-    WHERE person_id = ${personId} AND action = 'delete'`,
+    WHERE person_id = ${personId} AND action IN ('delete', 'replace')`,
   (rows) => rows[0]!.generation,
 ))
 
@@ -76,8 +78,10 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       yield* holdConnections(write.personId)
       if (yield* repeated(write.invocationKey)) return "repeat" as const
+      if (write.authority !== undefined && !(yield* WriteAuthority.admitted(write.authority))) return "stale" as const
       const before = yield* sql<{
         readonly id: string
         readonly kind: string
@@ -138,6 +142,7 @@ export interface Linked {
   readonly personId: string
   readonly id: string
   readonly sealed: Sealed & { readonly keyLast4: string }
+  readonly authority?: WriteAuthority.Session | null
   readonly invocationKey: string
 }
 
@@ -150,8 +155,10 @@ export const link = (write: Linked): Effect.Effect<"set" | "replace" | "repeat" 
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       yield* holdConnections(write.personId)
       if (yield* repeated(write.invocationKey)) return "repeat" as const
+      if (write.authority !== undefined && !(yield* WriteAuthority.admitted(write.authority))) return "stale" as const
       if (write.generation === undefined || (yield* linkGeneration(write.personId)) !== write.generation) return "stale" as const
       const before = yield* sql<{ readonly kind: string }>`
         SELECT kind FROM personal_models WHERE person_id = ${write.personId} FOR UPDATE`
@@ -202,13 +209,16 @@ export const refreshed = (write: {
 /** Deletes a person's connections and records `delete` once: whether any was there, or nothing again (`repeat`). */
 export const remove = (write: {
   readonly personId: string
+  readonly authority?: WriteAuthority.Session | null
   readonly invocationKey: string
-}): Effect.Effect<"deleted" | "missing" | "repeat", unknown, SqlClient.SqlClient> =>
+}): Effect.Effect<"deleted" | "missing" | "repeat" | "stale", unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       yield* holdConnections(write.personId)
       if (yield* repeated(write.invocationKey)) return "repeat" as const
+      if (write.authority !== undefined && !(yield* WriteAuthority.admitted(write.authority))) return "stale" as const
       const deleted = yield* sql`DELETE FROM personal_models WHERE person_id = ${write.personId} RETURNING person_id`
       yield* sql`
         INSERT INTO personal_model_events (person_id, action, invocation_key)

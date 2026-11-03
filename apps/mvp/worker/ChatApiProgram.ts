@@ -1,4 +1,5 @@
 import { withRequestRay } from "./RequestRay.ts"
+import * as WriteAdmission from "./WriteAdmission.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
@@ -405,6 +406,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           const answered = yield* options.door({ executions, database })
           if (Option.isSome(answered)) return answered.value
         }
+        return yield* WriteAdmission.afterBody(Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         const runtime = yield* RuntimeContext
         const limited = yield* Throttle.make({
@@ -527,6 +529,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           Effect.provide(docsSource),
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         )
+        }))
       }).pipe(
         withRequestRay,
         Effect.provideService(Conversations.homeRepositoryNames, homeRepository),

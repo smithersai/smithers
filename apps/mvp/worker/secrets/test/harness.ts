@@ -1,3 +1,4 @@
+import { afterBody } from "../../WriteAdmission.ts"
 // The secrets routes and the sandbox egress (worker/secrets/) for the worker tests, on a test file's own schema of the
 // compose Postgres and through the compose Electric (`pnpm db:up`, db/TestDatabase.ts). `secret/Put` and
 // `secret/Delete` run for real on the Node host's durable engine (worker/test/flowHost.ts), so a write is in Postgres
@@ -71,6 +72,7 @@ export const engine = async (runtime: Runtime, database?: Layer.Layer<SqlClient.
 
 export interface Options {
   /** Who is signed in: nobody unless set. */
+  readonly sessions?: Layer.Layer<Actor.Sessions>
   readonly actor?: Actor.Actor | null
   /** Where flows start: the file's engine unless set. */
   readonly starter?: Flows.FlowStarter["Service"]
@@ -117,11 +119,11 @@ export const secretsHarness = async (runtime: Runtime, starter: Flows.FlowStarte
       Effect.provideService(ConfigProvider.ConfigProvider, config),
     )
   const keys = options.keys === false ? SecretKeys.off : SecretKeys.layer(KEY)
-  const sessions = options.actor === undefined || options.actor === null ? Actor.signedOut : signedIn(options.actor)
+  const sessions = options.sessions ?? (options.actor === undefined || options.actor === null ? Actor.signedOut : signedIn(options.actor))
   const api = await runtime.runPromise(observed(SecretsApi.make({ id: REPO_ID })))
   const handler = HttpEffect.toWebHandler(
     observed(
-      api.fetch.pipe(
+      afterBody(api.fetch).pipe(
         Effect.provideService(Flows.FlowStarter, options.starter ?? starter),
         Effect.provide(keys),
         Effect.provide(sessions),

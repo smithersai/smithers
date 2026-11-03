@@ -1,3 +1,4 @@
+import { afterBody } from "../../WriteAdmission.ts"
 import * as GitHubCreation from "../../branch/GitHubCreation.ts"
 import { BranchRoles } from "../../branch/Access.ts"
 // The git loop's routes (worker/github/Api.ts) for the tests, on a test file's own schema of the compose Postgres and
@@ -228,7 +229,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   }
   const handler = HttpEffect.toWebHandler(
     observed(
-      routes.fetch.pipe(
+      afterBody(routes.fetch).pipe(
         Effect.provide(
           options.sessions ?? (options.actor === null ? Actor.signedOut : signedInAs(options.actor ?? member())),
         ),

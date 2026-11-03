@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Binding } from "@smthrs/secrets"
@@ -33,6 +34,7 @@ export const STORE_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs
 const Sealed = Schema.Struct({ ciphertext: Schema.String, nonce: Schema.String })
 
 const putPayload = {
+  authority: WriteAuthority.Admission,
   repoId: Schema.String,
   name: Binding.Name,
   sealed: Sealed,
@@ -42,12 +44,12 @@ const putPayload = {
   actorId: Schema.String,
 }
 
-const deletePayload = { repoId: Schema.String, name: Binding.Name, actorId: Schema.String }
+const deletePayload = { authority: WriteAuthority.Admission, repoId: Schema.String, name: Binding.Name, actorId: Schema.String }
 
 /** Writes the sealed value and its binding, and records `set` or `replace`. */
 export const Store_ = Action.make("secret/Store", {
   payload: putPayload,
-  success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat"]) }),
+  success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat", "stale"]) }),
   error: StoreUnavailable,
   capabilities: ["db:write:secrets"],
   retryPolicy: STORE_RETRY,
@@ -56,7 +58,7 @@ export const Store_ = Action.make("secret/Store", {
 /** Deletes the secret and records `delete`. */
 export const Erase = Action.make("secret/Erase", {
   payload: deletePayload,
-  success: Schema.Struct({ change: Schema.Literals(["deleted", "missing", "repeat"]) }),
+  success: Schema.Struct({ change: Schema.Literals(["deleted", "missing", "repeat", "stale"]) }),
   error: StoreUnavailable,
   capabilities: ["db:write:secrets"],
   retryPolicy: STORE_RETRY,
@@ -115,7 +117,9 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     Effect.gen(function* () {
       const invocationKey = yield* Action.CurrentInvocationKey
       if (invocationKey === undefined) return yield* Effect.die(new NoInvocationKey())
+      if (write.authority === undefined) return { change: "stale" as const }
       const change = yield* Store.put({
+        authority: write.authority,
         repoId: write.repoId,
         name: write.name,
         ciphertext: write.sealed.ciphertext,
@@ -133,6 +137,7 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     Effect.gen(function* () {
       const invocationKey = yield* Action.CurrentInvocationKey
       if (invocationKey === undefined) return yield* Effect.die(new NoInvocationKey())
+      if (write.authority === undefined) return { change: "stale" as const }
       const change = yield* Store.remove({ ...write, invocationKey }).pipe(
         Effect.provide(database),
         Effect.catch(unavailable),

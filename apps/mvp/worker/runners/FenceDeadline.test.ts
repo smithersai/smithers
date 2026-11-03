@@ -10,12 +10,13 @@ const query = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtim
 const sql = (text: string) => query(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(text)))
 beforeEach(async () => {
   await sql("TRUNCATE runners, runner_changes, admin_generations, admin_receipts, sessions, people, github_repo_roles CASCADE")
-  // A database assertion at the actual mutation, after Store.admit has installed its lock budget. No clock waits,
-  // client mock or testing-only production hook: the live write must have bounded every subsequent lock by authority.
+  // Assert all three fixed bounds at the actual mutation, without clock waits or a client mock.
   await sql(`CREATE OR REPLACE FUNCTION check_authority_budget() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
-      IF current_setting('lock_timeout')::interval > interval '30 seconds' THEN
-        RAISE EXCEPTION 'write lock budget exceeds authority deadline';
+      IF current_setting('lock_timeout')::interval <> interval '1 second'
+        OR current_setting('statement_timeout')::interval <> interval '2 seconds'
+        OR current_setting('transaction_timeout')::interval <> interval '5 seconds' THEN
+        RAISE EXCEPTION 'write transaction is not bounded';
       END IF;
       RETURN NEW;
     END $$`)
@@ -23,7 +24,7 @@ beforeEach(async () => {
   await sql("CREATE TRIGGER authority_budget BEFORE INSERT ON runner_changes FOR EACH ROW EXECUTE FUNCTION check_authority_budget()")
 })
 
-test.each(["session", "repository role", "repository session"] as const)("a runner write bounds lock waits by its earlier %s deadline", async (kind) => {
+test.each(["session", "repository role", "repository session"] as const)("a runner write uses fixed bounds even with an earlier %s deadline", async (kind) => {
   const personId = crypto.randomUUID()
   const sessionId = crypto.randomUUID()
   const repoId = "github/acme/deadline"
@@ -44,7 +45,7 @@ test.each(["session", "repository role", "repository session"] as const)("a runn
     } },
   }).pipe(Effect.provideService(Tracer.Tracer, tracer)))
   expect(change).toBe("set")
-  // The richer deadline is still installed in the existing single SQL round trip.
+  // The fixed bounds are installed in one SQL round trip before locking.
   expect(spans.filter((span) => span.kind === "client" &&
     String(span.attributes.get("db.query.text") ?? span.attributes.get("db.statement") ?? "").includes("set_config('lock_timeout'"))).toHaveLength(1)
   expect(await sql("SELECT name FROM runners")).toEqual([{ name: "deadline" }])

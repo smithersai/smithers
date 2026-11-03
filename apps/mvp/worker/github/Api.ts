@@ -651,8 +651,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               }
             }
           }
-          const payload = payloadOf(write)
-          const payloadHash = digestSync(JSON.stringify({ via, ...payload }))
+          const plain = payloadOf(write)
+          const payload = plain.op === "triage/enable" || plain.op === "triage/pause"
+            ? { ...plain, authority: WriteAuthority.sessionOf(who) ?? null } : plain
+          const payloadHash = digestSync(JSON.stringify({ via, ...plain }))
           const insert = (held: Option.Option<RepoRoles.Held>) =>
             Store.insertWrite({
               id: write.writeId,
@@ -1029,8 +1031,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const post = WorkLinks.decode(text.success)
           const now = yield* Clock.currentTimeMillis
           if (post === undefined || WorkLinks.fromTheFuture(post, now)) return refused(400, "invalid")
-          const written = yield* WorkLinks.write(target.id, named.number, post, source, now, byRunner,
-            Option.isSome(actor.value) ? WriteAuthority.sessionOf(actor.value.value) : undefined).pipe(
+          const written = yield* WorkLinks.write(target.id, named.number, post, source, now, byRunner).pipe(
             Effect.provide(database),
             Effect.result,
           )

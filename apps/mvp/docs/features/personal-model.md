@@ -285,3 +285,11 @@ record only their code through `personal_model.test` and `smithers_web_personal_
 Each model tier has one purpose label and one unique description id: Fast is
 **Chat**, Implement is **Coding**, Hard is **Plans and reviews**. The same text
 visibly labels its model and supplies that input's accessible description.
+
+Writes resolve the session after the complete request body, with a fixed 10-second read deadline.
+`model/Put`, `model/Delete` and `model/CodexLink` retain that session and alias for their final transaction;
+revocation refuses a delayed write as `stale`. Missing legacy admission is refused; local development explicitly
+carries no session. Connection writes have 1-second lock, 2-second statement and 5-second transaction limits.
+Every list replacement, including a PUT removing only Codex, supersedes pending device links through the existing
+audit generation. This conservatively cancels links on other list replacements too, without another query or migration.
+A completed Keep replay never restores a removed credential.

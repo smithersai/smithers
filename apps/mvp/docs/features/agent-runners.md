@@ -32,11 +32,13 @@ judged), then checks that authority, the
 fence's own expiry (5 minutes) by the clock as it stands then, and the generations it was admitted against: the
 runner's or agent's, which a removal doesn't reset, and for an agent, the repository's coding selection's. An action
 refused there writes nothing. Repository fences missing their admitting session identity are refused; local authority
-explicitly has none. The shared WriteAuthority seam checks signed-in writes. Admitted, remaining lock waits use the
-earliest of the fence's five-minute expiry, the sign-in session's expiry and the repository role's freshness deadline
-(`lock_timeout`). The same database-clock deadline is checked after all authority locks and again after generation
-reads, without adding a round trip. Right before commit, after every change, the write checks the deadline once more.
-A write finishing past it rolls back and is refused `authorization_expired`.
+explicitly has none. The dispatcher reads each write's whole body before resolving its session, within 10 seconds.
+Delayed Admin actions retain and check their admitting session and alias in the final transaction.
+Every runner/agent/overflow writing transaction installs `lock_timeout = 1s`, `statement_timeout = 2s` and
+`transaction_timeout = 5s` before its first lock. Nested writes inherit the running transaction timer.
+After all changes, the final database-clock check retains the authority's earliest deadline: a write that has
+outlived its fence, session or repository-role freshness rolls back and is refused `authorization_expired`.
+A database timeout rolls back and the durable step retries.
 Each `202` answers `{ name, execution }`; `GET /api/runners/admin-receipts/<execution>` answers how it ended, for the
 Admin who started it: `set`, `removed`, `missing`, `authorization_expired` (its authority no longer holds, or it
 waited past its expiry, or it was started before fences) or `superseded` (the runner or agent changed since), and

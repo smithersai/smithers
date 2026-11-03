@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { AgentRunner } from "@smthrs/agent"
 import { Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
@@ -136,9 +137,6 @@ const admit = (
     if (coding === "compare" && (yield* generationOf(codingKey(repoId))) !== (fence.coding ?? 0)) {
       return yield* refuse("superseded")
     }
-    // Any remaining lock wait is bounded by the earliest session, role or fence expiry: the transaction fails, and the step's retry is
-    // refused `authorization_expired`.
-    if (!(yield* Fence.untilExpiry(fence))) return yield* refuse("authorization_expired")
     return "admitted" as const
   })
 
@@ -211,6 +209,7 @@ const written = <C extends "set" | "removed" | "missing">(repoId: string, name: 
 export const addRunner = (write: RunnerWrite, by: By): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
   refusedWhenLate(write.repoId, write.name, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       const admitted = yield* admit("runners", write.repoId, write.name, by, "ignore")
       if (admitted !== "admitted") return admitted
       if ((yield* once("runner_changes", "add", write.repoId, write.name, by)) === "repeat") return "repeat" as const
@@ -234,6 +233,7 @@ export const removeRunner = (
 ): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
   refusedWhenLate(write.repoId, write.name, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       const admitted = yield* admit("runners", write.repoId, write.name, by, "ignore")
       if (admitted !== "admitted") return admitted
       if ((yield* once("runner_changes", "remove", write.repoId, write.name, by)) === "repeat") return "repeat" as const
@@ -260,6 +260,7 @@ const codingName = (repoId: string) =>
 export const setAgent = (write: AgentWrite, by: By): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
   refusedWhenLate(write.repoId, write.agent.name, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       const { agent } = write
       const admitted = yield* admit("agents", write.repoId, agent.name, by, "compare")
       if (admitted !== "admitted") return admitted
@@ -293,6 +294,7 @@ export const removeAgent = (
 ): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
   refusedWhenLate(write.repoId, write.name, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       const admitted = yield* admit("agents", write.repoId, write.name, by, "compare")
       if (admitted !== "admitted") return admitted
       if ((yield* once("agent_changes", "remove", write.repoId, write.name, by)) === "repeat") return "repeat" as const

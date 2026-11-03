@@ -541,8 +541,11 @@ describe("POST /api/me/model/codex", () => {
         : undefined
     )
 
-  test.each([false, true])("deleting connections while an approved Codex link waits to store cannot restore a credential (existing: %s)", async (existing) => {
-    if (existing) await seedKeys(runtime, "person-member", [model("openai-chat", { fast: "gpt-test" })])
+  test.each([false, true, "individual"] as const)("deleting connections while an approved Codex link waits to store cannot restore a credential (existing: %s)", async (existing) => {
+    const kept = existing ? await seedKeys(runtime, "person-member", [
+      model("openai-chat", { fast: "gpt-test" }),
+      ...(existing === "individual" ? [{ kind: "codex_subscription" as const, key: JSON.stringify(credentialOf()), active: false }] : []),
+    ]) : []
     const openai = approving()
     const storing = Deferred.makeUnsafe<void>()
     const release = Deferred.makeUnsafe<void>()
@@ -560,12 +563,14 @@ describe("POST /api/me/model/codex", () => {
       await Effect.runPromise(Deferred.await(storing))
       expect(openai.seen.map((seen) => seen.path)).toContain("/oauth/token")
       const normal = await open({ actor: member })
-      expect((await normal.fetch(PERSONAL_MODEL_ROUTE, { method: "DELETE" })).status).toBe(202)
+      expect((await normal.fetch(PERSONAL_MODEL_ROUTE, existing === "individual"
+        ? put([{ kind: "api_key", id: kept[0], ...model("openai-chat", { fast: "gpt-test" }) }]) : { method: "DELETE" })).status).toBe(202)
       await Effect.runPromise(Deferred.succeed(release, undefined))
       expect((await linking).status).toBe(202)
-      expect((await rows(runtime)).map(({ kind, active }) => ({ kind, active }))).toEqual([])
+      expect((await rows(runtime)).map(({ kind, active }) => ({ kind, active }))).toEqual(
+        existing === "individual" ? [{ kind: "api_key", active: true }] : [])
       expect(JSON.stringify(delayed.exits)).toContain('"change":"stale"')
-      expect((await events(runtime)).map((event) => event.action)).toEqual([...(existing ? ["set"] : []), "delete"])
+      expect((await events(runtime)).map((event) => event.action)).toEqual([...(existing ? ["set"] : []), ...(existing === "individual" ? ["replace"] : ["delete"])])
     } finally {
       await Effect.runPromise(Deferred.succeed(release, undefined))
       await linking
@@ -708,6 +713,25 @@ describe("POST /api/me/model/codex", () => {
     expect((await events(runtime)).map((event) => event.action)).toEqual(["set"])
   })
 
+  test("individual Codex removal advances the generation; delayed Keep and replay stay cancelled", async () => {
+    const ids = await seedKeys(runtime, "person-member", [
+      model("openai-chat", { fast: "gpt-test" }),
+      { kind: "codex_subscription", key: JSON.stringify(credentialOf()), active: false },
+    ])
+    const generation = await runtime.runPromise(Store.linkGeneration("person-member"))
+    const write = { authority: null, personId: "person-member", id: crypto.randomUUID(), generation,
+      sealed: { ciphertext: "sealed-test-only", nonce: "nonce-test-only", keyVersion: 1, keyLast4: "abcd" } }
+    const h = await open({ actor: member })
+    expect((await h.fetch(PERSONAL_MODEL_ROUTE, put([{ kind: "api_key", id: ids[0], ...model("openai-chat", { fast: "gpt-test" }) }]))).status).toBe(202)
+    expect((await rows(runtime)).map((row) => row.kind)).toEqual(["api_key"])
+    expect(await runtime.runPromise(Store.linkGeneration("person-member"))).not.toBe(generation)
+    const keep = ModelFlows.keepStep((await scratch()).database)(write).pipe(
+      Effect.provideService(Action.CurrentInvocationKey, "individual-removal-keep"))
+    expect(await runtime.runPromise(keep)).toEqual({ change: "stale" })
+    expect(await runtime.runPromise(keep)).toEqual({ change: "stale" })
+    expect((await rows(runtime)).map((row) => row.kind)).toEqual(["api_key"])
+  })
+
   test("link deletion generations fail closed, remain cancelled on replay, and allow a new link", async () => {
     const generation = await runtime.runPromise(Store.linkGeneration("person-member"))
     const write = { personId: "person-member", id: crypto.randomUUID(), generation,
@@ -761,6 +785,7 @@ describe("POST /api/me/model/codex", () => {
         Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ CODEX_AUTH_ORIGIN })),
       ) as Effect.Effect<A, E>
     const kept = {
+      authority: null,
       personId: payload.personId,
       id: payload.id,
       sealed: { ciphertext: sealed.ciphertext, nonce: sealed.nonce, keyVersion: keys.version, keyLast4: "1234" },

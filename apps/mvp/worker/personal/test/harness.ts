@@ -1,3 +1,4 @@
+import { afterBody } from "../../WriteAdmission.ts"
 // A person's own model's routes (worker/personal/) for the worker tests, on a test file's own schema of the compose
 // Postgres and through the compose Electric (`pnpm db:up`, db/TestDatabase.ts). `model/Put` and `model/Delete` run for
 // real on the Node host's durable engine (worker/test/flowHost.ts), so a write is in Postgres when its request answers;
@@ -105,6 +106,7 @@ export interface Options {
   /** Inject a faulty database while retaining the real sessions and model services. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
   /** Who is signed in: nobody unless set. */
+  readonly sessions?: Layer.Layer<Actor.Sessions>
   readonly actor?: Actor.Actor | null
   /** Where flows start: the file's engine unless set. */
   readonly starter?: Flows.FlowStarter["Service"]
@@ -165,12 +167,12 @@ export const personalHarness = async (
     )
   const keys = options.keys === false ? SecretKeys.off : SecretKeys.layer(KEY)
   const personal = options.personalModels ?? PersonalModels.layer(database).pipe(Layer.provide(keys))
-  const sessions = options.actor === undefined || options.actor === null ? Actor.signedOut : signedIn(options.actor)
+  const sessions = options.sessions ?? (options.actor === undefined || options.actor === null ? Actor.signedOut : signedIn(options.actor))
   const api = await runtime.runPromise(
     observed(PersonalApi.make(database, options.testWithin === undefined ? {} : { testWithin: options.testWithin })),
   )
   const served = observed(
-    api.fetch.pipe(
+    afterBody(api.fetch).pipe(
       Effect.provideService(Flows.FlowStarter, options.starter ?? starter),
       Effect.provide(personal),
       Effect.provide(keys),

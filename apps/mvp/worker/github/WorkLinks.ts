@@ -115,8 +115,7 @@ export type RunnerAccess =
  *
  * With `runner` (a runner's post, by its token's SHA-256), the write is one transaction that first holds the runner
  * current as a claim requires (decision 0148): its row `FOR SHARE` where its token still names it, unremoved and
- * authorized, then the repository's installation row. A person's post instead locks and revalidates its sign-in
- * session and alias through WriteAuthority in this transaction. `none` when authority ended; nothing is written.
+ * authorized, then the repository's installation row. A person's authority is established after its body at the dispatcher. `none` when authority ended; nothing is written.
  */
 export const write = (
   repoId: string,
@@ -125,10 +124,10 @@ export const write = (
   source: string,
   now: number,
   runner?: { readonly tokenSha256: string },
-  session?: WriteAuthority.Session,
 ) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
+      yield* WriteAuthority.bound
       if (runner !== undefined) {
         const [held] = yield* sql`
           SELECT 1 FROM runners
@@ -139,7 +138,6 @@ export const write = (
           SELECT 1 FROM github_repositories WHERE repo_id = ${repoId} AND installation_id IS NOT NULL FOR SHARE`
         if (installed === undefined) return Option.none<{ readonly links: number; readonly changed: number }>()
       }
-      if (!(yield* WriteAuthority.holds(session))) return Option.none<{ readonly links: number; readonly changed: number }>()
       return Option.some(yield* writeLinks(repoId, number, post, source, now))
     })))
 

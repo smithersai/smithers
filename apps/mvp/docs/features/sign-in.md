@@ -366,3 +366,9 @@ Personal settings, repository settings and secrets offer signed-out visitors a s
 A repository that is absent or unavailable also offers visitors sign-in, without claiming that a private repository exists. An upstream outage remains an outage.
 
 The machine boundary includes attaching existing terminals, branch Publish/Update/Resync, and steering a running TODO. Each requires deployment membership in addition to the repository permission; watching a TODO run still uses that repository's role.
+
+For POST, PUT, PATCH and DELETE, ChatApi buffers the complete body before any handler resolves authority.
+The read has one 10-second deadline and an 8-MiB aggregate cap; handlers keep their smaller limits.
+A timed-out body returns `408 body_timeout`, a broken body `400 invalid`, and an oversized body `413 too_large`.
+`write.admission` traces the boundary; `smithers_write_bodies` counts buffering outcomes and `write.body` logs refusals
+by status alone. Neither records content or credentials. Bodyless writes are already at EOF. Reads add no database query.

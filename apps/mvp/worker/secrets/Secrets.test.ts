@@ -209,8 +209,8 @@ describe("PUT and DELETE /api/repos/<owner>/<name>/secrets/<NAME>", () => {
     const keyed = <A, E>(effect: Effect.Effect<A, E, any>) =>
       Effect.runPromiseExit(Effect.provideService(effect, Action.CurrentInvocationKey, "step-1") as Effect.Effect<A, E>)
     const sealed = { ciphertext: "c", nonce: "n" }
-    const put = await keyed(store({ repoId: REPO_ID, name: "K", sealed, keyVersion: 1, hosts: ["a.com"], actorId: "p" }))
-    const removed = await keyed(erase({ repoId: REPO_ID, name: "K", actorId: "p" }))
+    const put = await keyed(store({ authority: null, repoId: REPO_ID, name: "K", sealed, keyVersion: 1, hosts: ["a.com"], actorId: "p" }))
+    const removed = await keyed(erase({ authority: null, repoId: REPO_ID, name: "K", actorId: "p" }))
     for (const exit of [put, removed]) expect(JSON.stringify(exit)).toContain("@smthrs/mvp/secrets/StoreUnavailable")
     expect(SecretFlows.STORE_RETRY).toMatchObject({ expirationMs: 30 * 60_000 })
   })
@@ -220,8 +220,8 @@ describe("PUT and DELETE /api/repos/<owner>/<name>/secrets/<NAME>", () => {
     const { store, erase } = SecretFlows.steps(database)
     const sealed = { ciphertext: "c", nonce: "n" }
     const exits = [
-      await Effect.runPromiseExit(store({ repoId: REPO_ID, name: "K", sealed, keyVersion: 1, hosts: ["a.com"], actorId: "p" }) as Effect.Effect<unknown, unknown>),
-      await Effect.runPromiseExit(erase({ repoId: REPO_ID, name: "K", actorId: "p" }) as Effect.Effect<unknown, unknown>),
+      await Effect.runPromiseExit(store({ authority: null, repoId: REPO_ID, name: "K", sealed, keyVersion: 1, hosts: ["a.com"], actorId: "p" }) as Effect.Effect<unknown, unknown>),
+      await Effect.runPromiseExit(erase({ authority: null, repoId: REPO_ID, name: "K", actorId: "p" }) as Effect.Effect<unknown, unknown>),
     ]
     for (const exit of exits) expect(JSON.stringify(exit)).toContain("NoInvocationKey")
     expect(await rows(runtime)).toEqual([])

@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { fold as foldWriteNotice } from "./WriteFeed.ts"
 import { COMMITMENTS, commitmentOf } from "../../src/features/issues/lifecycle.ts"
 import { GitHub } from "@smthrs/integrations"
@@ -216,8 +217,8 @@ export const WritePayload = Schema.Union([
     reason: Schema.NullOr(Schema.String),
   }),
   Schema.Struct({ op: Schema.Literal("triage/run"), number: Schema.Int }),
-  Schema.Struct({ op: Schema.Literal("triage/enable"), dailyTokens: Schema.Int }),
-  Schema.Struct({ op: Schema.Literal("triage/pause") }),
+  Schema.Struct({ op: Schema.Literal("triage/enable"), authority: WriteAuthority.Admission, dailyTokens: Schema.Int }),
+  Schema.Struct({ op: Schema.Literal("triage/pause"), authority: WriteAuthority.Admission }),
   Schema.Struct({
     op: Schema.Literal("pr/merge"),
     number: Schema.Int,

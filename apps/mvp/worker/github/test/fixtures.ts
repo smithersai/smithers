@@ -104,7 +104,9 @@ export const admit = (
       actorId: write.actorId,
       sessionId: write.sessionId,
       via: write.via,
-      payload: write.payload,
+      payload: write.payload.op === "triage/enable" || write.payload.op === "triage/pause"
+        ? { authority: write.sessionId === null ? null : { personId: write.actorId, sessionId: write.sessionId }, ...write.payload }
+        : write.payload,
       payloadHash: digestSync(JSON.stringify(write.payload)),
     })
     return id

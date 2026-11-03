@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
 import { Clock, type Config, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
@@ -56,9 +57,9 @@ const decodeDevice = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ deviceAuthId: Schema.String, userCode: Schema.String })),
 )
 
-const putPayload = { personId: Schema.String, connections: Schema.Array(ConnectionWrite) }
+const putPayload = { authority: WriteAuthority.Admission, personId: Schema.String, connections: Schema.Array(ConnectionWrite) }
 
-const deletePayload = { personId: Schema.String }
+const deletePayload = { authority: WriteAuthority.Admission, personId: Schema.String }
 
 /** Writes the connections, and records `set` or `replace`. */
 export const Store_ = Action.make("model/Store", {
@@ -72,7 +73,7 @@ export const Store_ = Action.make("model/Store", {
 /** Deletes the model and records `delete`. */
 export const Erase = Action.make("model/Erase", {
   payload: deletePayload,
-  success: Schema.Struct({ change: Schema.Literals(["deleted", "missing", "repeat"]) }),
+  success: Schema.Struct({ change: Schema.Literals(["deleted", "missing", "repeat", "stale"]) }),
   error: StoreUnavailable,
   capabilities: ["db:write:personal_models"],
   retryPolicy: STORE_RETRY,
@@ -118,6 +119,7 @@ export const LINK_RETRY = RetryPolicy.make({
 })
 
 const linkPayload = {
+  authority: WriteAuthority.Admission,
   generation: Schema.optional(Schema.String),
   personId: Schema.String,
   /** The new connection's id, chosen by the route, so a replay writes one row. */
@@ -150,7 +152,7 @@ export const Poll = Action.make("model/CodexPoll", {
 
 /** Puts the sealed credential on the person's list, once. */
 export const Keep = Action.make("model/CodexKeep", {
-  payload: { personId: Schema.String, id: Schema.String, generation: Schema.optional(Schema.String), sealed: SealedCredential },
+  payload: { authority: WriteAuthority.Admission, personId: Schema.String, id: Schema.String, generation: Schema.optional(Schema.String), sealed: SealedCredential },
   success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat", "stale"]) }),
   error: StoreUnavailable,
   capabilities: ["db:write:personal_models"],
@@ -168,7 +170,7 @@ export const CodexLink = Flow.make("model/CodexLink", {
   body: Node.capture({ poll: Poll.name, keep: Keep.name }, (write) =>
     Poll.call(write).pipe(
       Node.bindPlanned(Node.capture({ keep: Keep.name }, (sealed: Planned.Planned<typeof SealedCredential.Type>) =>
-        Keep.call({ personId: write.personId, id: write.id, generation: write.generation, sealed }))),
+        Keep.call({ authority: write.authority, personId: write.personId, id: write.id, generation: write.generation, sealed }))),
     )),
 })
 
@@ -207,7 +209,9 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   const store = (write: typeof Store_.payloadSchema.Type) =>
     Effect.gen(function* () {
       const key = yield* invocationKey
+      if (write.authority === undefined) return { change: "stale" as const }
       const change = yield* Store.put({
+        authority: write.authority,
         personId: write.personId,
         connections: write.connections,
         invocationKey: key,
@@ -218,7 +222,8 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   const erase = (write: typeof Erase.payloadSchema.Type) =>
     Effect.gen(function* () {
       const key = yield* invocationKey
-      const change = yield* Store.remove({ personId: write.personId, invocationKey: key }).pipe(
+      if (write.authority === undefined) return { change: "stale" as const }
+      const change = yield* Store.remove({ authority: write.authority, personId: write.personId, invocationKey: key }).pipe(
         Effect.provide(database),
         Effect.catch(unavailable),
       )
@@ -256,12 +261,15 @@ export const pollStep = (write: typeof Poll.payloadSchema.Type) =>
 export const keepStep = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   (write: typeof Keep.payloadSchema.Type) =>
     Effect.gen(function* () {
+      const key = yield* invocationKey
+      if (write.authority === undefined) return { change: "stale" as const }
       const change = yield* Store.link({
+        authority: write.authority,
         personId: write.personId,
         id: write.id,
         generation: write.generation,
         sealed: write.sealed,
-        invocationKey: yield* invocationKey,
+        invocationKey: key,
       }).pipe(Effect.provide(database), Effect.catch(unavailable))
       return { change }
     }).pipe((effect) => recorded("link", effect))
