@@ -139,9 +139,9 @@
     },
     "./Steering": {
       "types": {
-        "default": "./src/Steering.ts"
+        "default": "./.vibe/declarations/src/Steering.d.vibe.ts"
       },
-      "vibelang-source": "./src/Steering.ts",
+      "vibelang-source": "./src/Steering.vibe",
       "default": "./.vibelang/js/src/Steering.js"
     },
     "./Chain": {
@@ -188,9 +188,9 @@
     },
     "./internal/QuickJsJobs": {
       "types": {
-        "default": "./src/internal/QuickJsJobs.ts"
+        "default": "./.vibe/declarations/src/internal/QuickJsJobs.d.vibe.ts"
       },
-      "vibelang-source": "./src/internal/QuickJsJobs.ts",
+      "vibelang-source": "./src/internal/QuickJsJobs.vibe",
       "default": "./.vibelang/js/src/internal/QuickJsJobs.js"
     },
     "./QuickJsRunner": {

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import * as Author from "../src/Author.ts"
 import * as Catalog from "../src/Catalog.ts"
 import type * as Event from "../src/Event.ts"
-import * as Steering from "../src/Steering.ts"
+import * as Steering from "../src/Steering.vibe"
 import { failChain, flow, runChain } from "./harness.ts"
 
 const doneScript = flow(`return done("ok")`)

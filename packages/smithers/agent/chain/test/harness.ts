@@ -7,7 +7,7 @@ import type * as Event from "../src/Event.ts"
 import * as Journal from "../src/Journal.ts"
 import type * as Outcome from "../src/Outcome.ts"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
-import type * as Steering from "../src/Steering.ts"
+import type * as Steering from "../src/Steering.vibe"
 
 /** Wraps script lines in the one fenced flow block the shape gate expects. */
 export const flow = (...lines: ReadonlyArray<string>): string => ["```flow", ...lines, "```"].join("\n")

@@ -58,7 +58,7 @@ const securityReview = Smithers.SecurityReview({
         "A handle (deferred, scriptHandle, error) used after dispose, or a host exception from a bridge callback escaping as a defect instead of a typed ScriptFailure.",
         "Date or Math.random still reachable in the realm, or a prelude intrinsic read after the script could replace it."
       ],
-      paths: ["src/QuickJsRunner.ts", "src/internal/QuickJsJobs.ts"]
+      paths: ["src/QuickJsRunner.ts", "src/internal/QuickJsJobs.vibe"]
     },
     {
       id: "in-process-runner-trusted-only",
@@ -161,7 +161,7 @@ const securityReview = Smithers.SecurityReview({
         "src/RegistryCatalog.ts",
         "src/Script.ts",
         "src/Author.ts",
-        "src/Steering.ts",
+        "src/Steering.vibe",
         "src/internal/prompts.ts",
         "prompts/**"
       ]
