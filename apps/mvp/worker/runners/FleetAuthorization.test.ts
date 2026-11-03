@@ -93,7 +93,9 @@ describe("the fleet's protected transport", () => {
       repository: repositoryOf("smithersai/smithers"), app: Option.none(), local: true,
       localRoles: () => removed ? null : "maintainer",
     }))
-    const admitted = Promise.withResolvers<void>()
+    // apps/mvp targets ES2022, which has no Promise.withResolvers.
+    let admit!: () => void
+    const admitted = { promise: new Promise<void>((resolve) => { admit = resolve }), resolve: () => admit() }
     const h = await fleetHarness(runtime, { actor: maintainer, roles,
       onElectric: (url) => { if (url.searchParams.get("live") === "true") admitted.resolve() },
     })
