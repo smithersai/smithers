@@ -75,7 +75,7 @@
      "relative": "packages/smithers/agent/memory/src"
     },
     null,
-    "ubPLtYSrgbAHYxVlq2B5B5LrWZ3Z__JTd6ECvaM7Ztg",
+    "XNOn5DA4eQtybHrgQShGDnC-VY-si8_IoEj1ea9laUA",
     [],
     {
      "recursive": true,
@@ -304,15 +304,15 @@
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8845,
-    "hash": "VrF-0613k3AeimFa9sPtlXyjtkJo6YczusrpNEAdImo"
+    "size": 8983,
+    "hash": "HkEsBZn5oE73FkMHp1IVWloRAQivyKChWC6xDwTCWqA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
-    "size": 10177,
-    "hash": "c8DDzn-eAe02bg8GdRdgBqFoqDXPcSGjkqjKHuZ2gNQ"
+    "size": 10315,
+    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
    },
    {
     "path": {
@@ -360,8 +360,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
-    "size": 15033,
-    "hash": "TpVwbO2uX8Kyk01XChbs_dKm-u4RLcUmXdPchEq9YxU"
+    "size": 15173,
+    "hash": "qBNGQuiuQk9YaNARWyOPk6bAl1LksGF7tmjhN14J4mc"
    },
    {
     "path": {
@@ -1867,22 +1867,22 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryError.vibe"
     },
-    "size": 986,
-    "hash": "nYLFM9YakjiChg2aNgUV1MZPODh8C6N5AuR4Tr13RhI"
+    "size": 984,
+    "hash": "kLbdb7sEKzoC0pvJDDvq62Tu5HB3UuVly1sv44pXH0Q"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/Namespace.vibe"
     },
-    "size": 9958,
-    "hash": "NGtGTMANBwS2ORvNirp41sJhwjFsdFeQymo3zvLajn8"
+    "size": 9939,
+    "hash": "q_muCS1YYNfHWMgH3_tJRWcTQ3ybdc00THcXyZguRPo"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/ResolveNamespace.vibe"
     },
-    "size": 2804,
-    "hash": "hgztuchJr7P7iQYE1A035rrKjs8f4Xq6c6900uMrhh4"
+    "size": 2800,
+    "hash": "vnhjSuoDZn66R2pey0BujsTlYXFX1sEG7_RBL4ySJfU"
    },
    {
     "path": {
@@ -2028,8 +2028,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -2217,15 +2217,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -2602,8 +2602,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -2644,8 +2644,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -3295,8 +3295,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -3400,15 +3400,15 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Limits.vibe"
     },
-    "size": 3219,
-    "hash": "CIj4MRtMTMc11jEn1pXnOLibMR1El2LxLzoNrRnOQVI"
+    "size": 3214,
+    "hash": "OFcLpAJzZWsJJ0cybMQ-Srkp_OgQcrWBGg4_w0VT_Lo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Signature.vibe"
     },
-    "size": 16471,
-    "hash": "HNeTROivOMqBJzQGXqsGcTenpxegL4XxK8key3d-2K4"
+    "size": 16444,
+    "hash": "_n53tKqUgjWnQj9oNaOLwRVpIwXRvKOknhBGcnaPi-c"
    },
    {
     "path": {
@@ -3428,8 +3428,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/internal/Compose.vibe"
     },
-    "size": 13052,
-    "hash": "cNT0Yhw-i6HLs0qKl2h3rTnYWxB1wltv-KqsvB88MV0"
+    "size": 13034,
+    "hash": "d7YaPHH89q0LjbvaazizW8Ge4hq-UkD1EG9kHsyR0b0"
    },
    {
     "path": {
@@ -3447,7 +3447,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/patterns/src/Pattern.ts"
+     "relative": "packages/smithers/flows/patterns/src/Pattern.vibe"
     },
     "size": 7009,
     "hash": "B0nGtwg7xZPfjrZsSMXtlZj-wOkDEfXWywzJ6D_-cWs"
@@ -3517,17 +3517,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/Store.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
     },
-    "size": 11779,
-    "hash": "t9ZbhsoyOzuuFAXnN35vHHVEwIP9GC4Wf0IPOR089Hw"
+    "size": 11246,
+    "hash": "iIydbZ6fbwoWnq-WI5XUew74KC_YAB-TRu4GdsmXrlE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
     },
-    "size": 10026,
-    "hash": "2uF2iCz0uTsd8oFj7sVMQZh8zT9H6Km58ahCk-OXiUs"
+    "size": 10028,
+    "hash": "3m-E2DiLMX-qd0hJmtRfBa6kQqv4sV2quZ1t1EaYLHU"
    },
    {
     "path": {
@@ -3540,22 +3540,22 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Notes.ts"
     },
-    "size": 13661,
-    "hash": "dPkP9U_eLGIL1Kmjqdbjbus_Ayyy-taHJghOYt19rmk"
+    "size": 13663,
+    "hash": "P78BMLRuiJR9uaXdOUPgj36ilF3x0nR4mHJ_ENIxB3w"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Search.ts"
     },
-    "size": 9831,
-    "hash": "kFlNxHTMdub40OTdAlnX4wLykNMEU_Rl9diGkDWHXPQ"
+    "size": 9833,
+    "hash": "v9CMwYRKZRckvJ8CMqsUKNbbQz-WDvgtf5jAB8IU-7c"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Threads.ts"
     },
-    "size": 15788,
-    "hash": "zNybfkcuiy_TgvLBEaKx-tEtP_Dgg2R90LssKECHo-g"
+    "size": 15790,
+    "hash": "S5Zwo2WngZCk18rmLIMSJIqQoeKJQMvXNTA15euO6Uk"
    },
    {
     "path": {
@@ -3587,31 +3587,31 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
     },
-    "size": 6611,
-    "hash": "2pjQaw0sf9Gpv68htwtiSQjZ51xfZnNAJLkc-rtwNAs"
+    "size": 6534,
+    "hash": "6bD4iq242UXnt15Rw9JTNW_UsrcaI6po0wo47B4GrwU"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
     },
-    "size": 832,
-    "hash": "sZ43yiXMRpphAZ2CtspiopzdP4f4Zsh3V03ptPHaUIs"
+    "size": 803,
+    "hash": "cEgne4cF1gs_ac3wwUSc3PUSGb7s2ifQIJHK4xUNqfI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/Migrations.ts"
     },
-    "size": 1401,
-    "hash": "qqiV8InJrRc4G-hl0vNyfurCmttdI7x3JrHtFPWVOno"
+    "size": 1405,
+    "hash": "1CMwJPP6tnIfFWf154At-3ufUYfZuLRuH0-hLlsLcOQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryStore.ts"
     },
-    "size": 15964,
-    "hash": "xkkHznDtVpdmOCTf4jUwAeXUe_JeHQi7l2WZsQ0Odls"
+    "size": 15966,
+    "hash": "S0uvN7iXYxn5apIK9r2fwLQBGDPLW9iNpYIdRKllXE4"
    },
    {
     "path": {
@@ -3657,7 +3657,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/patterns/src/Recursion.ts"
+     "relative": "packages/smithers/flows/patterns/src/Recursion.vibe"
     },
     "size": 5899,
     "hash": "fJsuoLSdIFSHbMNop-lH1htvflfzKC7ryQXxyMyt4aM"
@@ -3666,8 +3666,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/Trellis.ts"
     },
-    "size": 28217,
-    "hash": "PfTI9kS2hpZ1of-kFsAQ2TeN1X7a1v_pw5tWW2SvPOE"
+    "size": 28219,
+    "hash": "X3ABU3i_1BU_MhZTyBNgFA7AXWobCcX1GtJ8BtLCWYk"
    },
    {
     "path": {
@@ -3680,8 +3680,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/SnapshotRecorder.vibe"
     },
-    "size": 2293,
-    "hash": "3-AKPiNnUfskzcqio2Fn_9xL28aPh4NN3Q2D46P6V8o"
+    "size": 2290,
+    "hash": "qhtd1VcUbmfYAi-r4aYMqpTRVT4H9UbPKUEmkgVRnMc"
    },
    {
     "path": {
@@ -5356,7 +5356,7 @@
     "relative": "packages/smithers/flows/patterns/src/internal/Decorate.ts"
    },
    {
-    "relative": "packages/smithers/flows/patterns/src/Pattern.ts"
+    "relative": "packages/smithers/flows/patterns/src/Pattern.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/Canonical.ts"
@@ -5386,7 +5386,7 @@
     "relative": "packages/smithers/agent/memory/src/internal/Fts.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/Store.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
@@ -5413,10 +5413,10 @@
     "relative": "packages/smithers/agent/memory/src/internal/MemoryIndexes.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/Migrations.ts"
@@ -5443,7 +5443,7 @@
     "relative": "packages/smithers/flows/patterns/src/internal/Payload.vibe"
    },
    {
-    "relative": "packages/smithers/flows/patterns/src/Recursion.ts"
+    "relative": "packages/smithers/flows/patterns/src/Recursion.vibe"
    },
    {
     "relative": "packages/smithers/flows/patterns/src/Trellis.ts"
@@ -5546,6 +5546,36 @@
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
+    },
+    "line": 21,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
+    },
+    "line": 18,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
+    },
+    "line": 87,
+    "column": 45,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    }
   ],
   "outputs": [
@@ -5555,7 +5585,7 @@
       "relative": "packages/smithers/agent/memory/src/MemoryError.vibe"
      }
     ],
-    "code": "/**\n * Stable memory failures.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable codes returned by memory operations.\n *\n * @category models\n * @since 0.1.0\n */\nexport const MemoryErrorCode = Schema.Literals([\n    \"not_found\",\n    \"fts_not_enabled\",\n    \"invalid_namespace\",\n    \"invalid_tag\",\n    \"invalid_argument\",\n    \"supersede_conflict\",\n    \"idempotency_conflict\",\n    \"compaction_conflict\",\n    \"embedding_unavailable\",\n    \"vector_model_mismatch\",\n    \"store\",\n]);\n/**\n * Error raised by memory validation, storage, search, or projection.\n *\n * @category errors\n * @since 0.1.0\n */\nexport class MemoryError extends Schema.TaggedError()(\"flows/memory/MemoryError\", {\n    code: MemoryErrorCode,\n    message: Schema.String,\n    path: Schema.optional(Schema.Array(Schema.String)),\n    cause: Schema.optional(Schema.Defect()),\n}) {\n}\n",
+    "code": "/**\n * Stable memory failures.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable codes returned by memory operations.\n *\n * @category models\n * @since 0.1.0\n */\nexport const MemoryErrorCode = Schema.Literals([\n    \"not_found\",\n    \"fts_not_enabled\",\n    \"invalid_namespace\",\n    \"invalid_tag\",\n    \"invalid_argument\",\n    \"supersede_conflict\",\n    \"idempotency_conflict\",\n    \"compaction_conflict\",\n    \"embedding_unavailable\",\n    \"vector_model_mismatch\",\n    \"store\"\n]);\n/**\n * Error raised by memory validation, storage, search, or projection.\n *\n * @category errors\n * @since 0.1.0\n */\nexport class MemoryError extends Schema.TaggedError()(\"flows/memory/MemoryError\", {\n    code: MemoryErrorCode,\n    message: Schema.String,\n    path: Schema.optional(Schema.Array(Schema.String)),\n    cause: Schema.optional(Schema.Defect())\n}) {\n}\n",
     "map": {
      "version": 3,
      "file": "MemoryError.js",
@@ -5575,7 +5605,7 @@
       "relative": "packages/smithers/agent/memory/src/Namespace.vibe"
      }
     ],
-    "code": "/**\n * Structured memory namespaces and tag-group matching.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable namespace lifetimes.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Kind = Schema.Literals([\"flow\", \"agent\", \"user\", \"global\"]);\n/**\n * Structured memory namespace.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Namespace = Schema.Struct({\n    kind: Kind,\n    id: Schema.NonEmptyString,\n});\n/**\n * Maximum number of tags accepted on one record or tag-group leaf.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_TAGS = 16;\n/**\n * Maximum root-inclusive depth of one tag-group expression.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_TAG_GROUP_DEPTH = 8;\n/**\n * Maximum number of expression nodes in one tag-group tree.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_TAG_GROUP_NODES = 64;\n/**\n * Stable tag prefixes.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const TagPrefix = Schema.Literals([\"branch:\", \"stream:\", \"source:\", \"scope:\"]);\n/**\n * A vocabulary-constrained memory tag.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Tag = Schema.TemplateLiteral([TagPrefix, Schema.NonEmptyString]);\n/**\n * A bounded collection of memory tags.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Tags = Schema.Array(Tag).pipe(Schema.check(Schema.isMaxLength(MAX_TAGS)), Schema.check(Schema.makeFilter((tags) => new Set(tags).size === tags.length ? undefined : \"invalid_tag: memory tags must be unique\", { identifier: \"invalid_tag\" })));\n/**\n * Tag comparison modes inherited from the Smithers memory contract.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const MatchMode = Schema.Literals([\"any\", \"all\", \"any_strict\", \"all_strict\", \"exact\"]);\nconst TagGroupSchema = Schema.suspend(() => Schema.Union([\n    Schema.Struct({\n        tags: Tags,\n        match: Schema.optional(MatchMode),\n    }),\n    Schema.Struct({\n        and: Schema.Array(TagGroupSchema),\n    }),\n    Schema.Struct({\n        or: Schema.Array(TagGroupSchema),\n    }),\n    Schema.Struct({\n        not: TagGroupSchema,\n    }),\n]));\nconst isTags = Schema.is(Tags);\nconst isMatchMode = Schema.is(MatchMode);\nconst shapeRefusal = { kind: \"shape\" };\nconst depthRefusal = {\n    kind: \"budget\",\n    message: `invalid_tag: tag-group depth exceeds ${MAX_TAG_GROUP_DEPTH}`,\n};\nconst nodesRefusal = {\n    kind: \"budget\",\n    message: `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`,\n};\nconst ignore = () => { };\n/**\n * The one traversal of a tag-group tree.\n *\n * The walk is iterative, so an arbitrarily deep untrusted tree cannot grow the\n * call stack, and it charges every node against {@link MAX_TAG_GROUP_DEPTH} and\n * {@link MAX_TAG_GROUP_NODES} exactly once. The schema preflight, the budget\n * filter and {@link matches} all read their answer from this walk, so none of\n * them can drift from the others on the budget rule or the operator set.\n *\n * `onLeaf` sees each leaf in pre-order; `onOperator` sees each operator after\n * its children, which is the hook {@link matches} folds child values with.\n * Returns the first refusal, or `undefined` for a well-formed tag group within\n * budget.\n */\nconst walkTagGroup = (root, onLeaf, onOperator) => {\n    const pending = [{ close: false, depth: 1, value: root }];\n    let nodes = 0;\n    // Close frames wait on `pending` for their children's values and are never\n    // charged, so the child-count look-ahead counts unvisited frames instead of\n    // `pending.length`.\n    let unvisited = 1;\n    while (pending.length > 0) {\n        const frame = pending.pop();\n        if (frame.close) {\n            onOperator(frame.operator, frame.arity);\n            continue;\n        }\n        const value = frame.value;\n        nodes += 1;\n        unvisited -= 1;\n        if (frame.depth > MAX_TAG_GROUP_DEPTH)\n            return depthRefusal;\n        if (nodes > MAX_TAG_GROUP_NODES)\n            return nodesRefusal;\n        if (typeof value !== \"object\" || value === null)\n            return shapeRefusal;\n        if (\"tags\" in value) {\n            const match = \"match\" in value ? value.match : undefined;\n            if (!isTags(value.tags))\n                return shapeRefusal;\n            if (match !== undefined && !isMatchMode(match))\n                return shapeRefusal;\n            onLeaf({ match: match ?? \"any\", tags: value.tags });\n            continue;\n        }\n        const node = \"and\" in value\n            ? { children: value.and, operator: \"and\" }\n            : \"or\" in value\n                ? { children: value.or, operator: \"or\" }\n                : \"not\" in value\n                    ? { children: [value.not], operator: \"not\" }\n                    : undefined;\n        if (node === undefined)\n            return shapeRefusal;\n        const children = node.children;\n        if (!Array.isArray(children))\n            return shapeRefusal;\n        // `and` and `or` can overrun the ceiling in a single step, so their whole\n        // child array is charged before it is pushed. `not` adds the one node that\n        // the next pop charges, against the depth ceiling first.\n        if (node.operator !== \"not\" && nodes + unvisited + children.length > MAX_TAG_GROUP_NODES)\n            return nodesRefusal;\n        pending.push({ arity: children.length, close: true, operator: node.operator });\n        for (let index = children.length - 1; index >= 0; index--) {\n            pending.push({ close: false, depth: frame.depth + 1, value: children[index] });\n        }\n        unvisited += children.length;\n    }\n    return undefined;\n};\n// A tree over budget is accepted here and refused by the filter below, which is\n// the only place that can report why.\nconst isTagGroupShape = (input) => walkTagGroup(input, ignore, ignore)?.kind !== \"shape\";\nconst tagGroupBudgetIssue = (root) => {\n    const refusal = walkTagGroup(root, ignore, ignore);\n    return refusal?.kind === \"budget\" ? refusal.message : undefined;\n};\nconst TagGroupPreflight = Schema.declare(isTagGroupShape, {\n    identifier: \"TagGroup\",\n}).pipe(Schema.check(Schema.makeFilter(tagGroupBudgetIssue, { identifier: \"invalid_tag\" }, true)));\n/**\n * Recursive Schema for tag-group queries.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const TagGroup = TagGroupPreflight.pipe(Schema.decodeTo(TagGroupSchema));\nconst matchesLeaf = (leaf, tags, actual) => {\n    switch (leaf.match) {\n        case \"all\":\n            return tags.length === 0 || leaf.tags.every((tag) => actual.has(tag));\n        case \"any_strict\":\n            return tags.length > 0 && leaf.tags.some((tag) => actual.has(tag));\n        case \"all_strict\":\n            return tags.length > 0 && leaf.tags.every((tag) => actual.has(tag));\n        case \"exact\":\n            return actual.size === new Set(leaf.tags).size && leaf.tags.every((tag) => actual.has(tag));\n        case \"any\":\n            return tags.length === 0 || leaf.tags.some((tag) => actual.has(tag));\n    }\n};\n/**\n * Evaluates a tag-group against a record's tags.\n *\n * Non-strict `any` and `all` preserve Smithers' wildcard behavior for\n * untagged records. Strict modes require the record to carry at least one tag.\n * Evaluation rides {@link walkTagGroup}, so it shares one budget rule with the\n * schema and returns `false` for an undecoded expression that is malformed or\n * exceeds {@link MAX_TAG_GROUP_DEPTH} or {@link MAX_TAG_GROUP_NODES}, keeping\n * the boolean signature used by store consumers without exposing a defect.\n *\n * @category predicates\n * @since 0.1.0\n */\nexport const matches = (tagGroup, tags) => {\n    const actual = new Set(tags);\n    const values = [];\n    const refusal = walkTagGroup(tagGroup, (leaf) => {\n        values.push(matchesLeaf(leaf, tags, actual));\n    }, (operator, arity) => {\n        const children = values.splice(values.length - arity, arity);\n        values.push(operator === \"and\"\n            ? children.every(Boolean)\n            : operator === \"or\"\n                ? children.some(Boolean)\n                : !children[0]);\n    });\n    return refusal === undefined && values.length === 1 ? values[0] : false;\n};\n",
+    "code": "/**\n * Structured memory namespaces and tag-group matching.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable namespace lifetimes.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Kind = Schema.Literals([\"flow\", \"agent\", \"user\", \"global\"]);\n/**\n * Structured memory namespace.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Namespace = Schema.Struct({\n    kind: Kind,\n    id: Schema.NonEmptyString\n});\n/**\n * Maximum number of tags accepted on one record or tag-group leaf.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_TAGS = 16;\n/**\n * Maximum root-inclusive depth of one tag-group expression.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_TAG_GROUP_DEPTH = 8;\n/**\n * Maximum number of expression nodes in one tag-group tree.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_TAG_GROUP_NODES = 64;\n/**\n * Stable tag prefixes.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const TagPrefix = Schema.Literals([\"branch:\", \"stream:\", \"source:\", \"scope:\"]);\n/**\n * A vocabulary-constrained memory tag.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Tag = Schema.TemplateLiteral([TagPrefix, Schema.NonEmptyString]);\n/**\n * A bounded collection of memory tags.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Tags = Schema.Array(Tag).pipe(Schema.check(Schema.isMaxLength(MAX_TAGS)), Schema.check(Schema.makeFilter((tags) => new Set(tags).size === tags.length ? undefined : \"invalid_tag: memory tags must be unique\", { identifier: \"invalid_tag\" })));\n/**\n * Tag comparison modes inherited from the Smithers memory contract.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const MatchMode = Schema.Literals([\"any\", \"all\", \"any_strict\", \"all_strict\", \"exact\"]);\nconst TagGroupSchema = Schema.suspend(() => Schema.Union([\n    Schema.Struct({\n        tags: Tags,\n        match: Schema.optional(MatchMode)\n    }),\n    Schema.Struct({\n        and: Schema.Array(TagGroupSchema)\n    }),\n    Schema.Struct({\n        or: Schema.Array(TagGroupSchema)\n    }),\n    Schema.Struct({\n        not: TagGroupSchema\n    })\n]));\nconst isTags = Schema.is(Tags);\nconst isMatchMode = Schema.is(MatchMode);\nconst shapeRefusal = { kind: \"shape\" };\nconst depthRefusal = {\n    kind: \"budget\",\n    message: `invalid_tag: tag-group depth exceeds ${MAX_TAG_GROUP_DEPTH}`\n};\nconst nodesRefusal = {\n    kind: \"budget\",\n    message: `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`\n};\nconst ignore = () => { };\n/**\n * The one traversal of a tag-group tree.\n *\n * The walk is iterative, so an arbitrarily deep untrusted tree cannot grow the\n * call stack, and it charges every node against {@link MAX_TAG_GROUP_DEPTH} and\n * {@link MAX_TAG_GROUP_NODES} exactly once. The schema preflight, the budget\n * filter and {@link matches} all read their answer from this walk, so none of\n * them can drift from the others on the budget rule or the operator set.\n *\n * `onLeaf` sees each leaf in pre-order; `onOperator` sees each operator after\n * its children, which is the hook {@link matches} folds child values with.\n * Returns the first refusal, or `undefined` for a well-formed tag group within\n * budget.\n */\nconst walkTagGroup = (root, onLeaf, onOperator) => {\n    const pending = [{ close: false, depth: 1, value: root }];\n    let nodes = 0;\n    // Close frames wait on `pending` for their children's values and are never\n    // charged, so the child-count look-ahead counts unvisited frames instead of\n    // `pending.length`.\n    let unvisited = 1;\n    while (pending.length > 0) {\n        const frame = pending.pop();\n        if (frame.close) {\n            onOperator(frame.operator, frame.arity);\n            continue;\n        }\n        const value = frame.value;\n        nodes += 1;\n        unvisited -= 1;\n        if (frame.depth > MAX_TAG_GROUP_DEPTH)\n            return depthRefusal;\n        if (nodes > MAX_TAG_GROUP_NODES)\n            return nodesRefusal;\n        if (typeof value !== \"object\" || value === null)\n            return shapeRefusal;\n        if (\"tags\" in value) {\n            const match = \"match\" in value ? value.match : undefined;\n            if (!isTags(value.tags))\n                return shapeRefusal;\n            if (match !== undefined && !isMatchMode(match))\n                return shapeRefusal;\n            onLeaf({ match: match ?? \"any\", tags: value.tags });\n            continue;\n        }\n        const node = \"and\" in value\n            ? { children: value.and, operator: \"and\" }\n            : \"or\" in value\n                ? { children: value.or, operator: \"or\" }\n                : \"not\" in value\n                    ? { children: [value.not], operator: \"not\" }\n                    : undefined;\n        if (node === undefined)\n            return shapeRefusal;\n        const children = node.children;\n        if (!Array.isArray(children))\n            return shapeRefusal;\n        // `and` and `or` can overrun the ceiling in a single step, so their whole\n        // child array is charged before it is pushed. `not` adds the one node that\n        // the next pop charges, against the depth ceiling first.\n        if (node.operator !== \"not\" && nodes + unvisited + children.length > MAX_TAG_GROUP_NODES)\n            return nodesRefusal;\n        pending.push({ arity: children.length, close: true, operator: node.operator });\n        for (let index = children.length - 1; index >= 0; index--) {\n            pending.push({ close: false, depth: frame.depth + 1, value: children[index] });\n        }\n        unvisited += children.length;\n    }\n    return undefined;\n};\n// A tree over budget is accepted here and refused by the filter below, which is\n// the only place that can report why.\nconst isTagGroupShape = (input) => walkTagGroup(input, ignore, ignore)?.kind !== \"shape\";\nconst tagGroupBudgetIssue = (root) => {\n    const refusal = walkTagGroup(root, ignore, ignore);\n    return refusal?.kind === \"budget\" ? refusal.message : undefined;\n};\nconst TagGroupPreflight = Schema.declare(isTagGroupShape, {\n    identifier: \"TagGroup\"\n}).pipe(Schema.check(Schema.makeFilter(tagGroupBudgetIssue, { identifier: \"invalid_tag\" }, true)));\n/**\n * Recursive Schema for tag-group queries.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const TagGroup = TagGroupPreflight.pipe(Schema.decodeTo(TagGroupSchema));\nconst matchesLeaf = (leaf, tags, actual) => {\n    switch (leaf.match) {\n        case \"all\":\n            return tags.length === 0 || leaf.tags.every((tag) => actual.has(tag));\n        case \"any_strict\":\n            return tags.length > 0 && leaf.tags.some((tag) => actual.has(tag));\n        case \"all_strict\":\n            return tags.length > 0 && leaf.tags.every((tag) => actual.has(tag));\n        case \"exact\":\n            return actual.size === new Set(leaf.tags).size && leaf.tags.every((tag) => actual.has(tag));\n        case \"any\":\n            return tags.length === 0 || leaf.tags.some((tag) => actual.has(tag));\n    }\n};\n/**\n * Evaluates a tag-group against a record's tags.\n *\n * Non-strict `any` and `all` preserve Smithers' wildcard behavior for\n * untagged records. Strict modes require the record to carry at least one tag.\n * Evaluation rides {@link walkTagGroup}, so it shares one budget rule with the\n * schema and returns `false` for an undecoded expression that is malformed or\n * exceeds {@link MAX_TAG_GROUP_DEPTH} or {@link MAX_TAG_GROUP_NODES}, keeping\n * the boolean signature used by store consumers without exposing a defect.\n *\n * @category predicates\n * @since 0.1.0\n */\nexport const matches = (tagGroup, tags) => {\n    const actual = new Set(tags);\n    const values = [];\n    const refusal = walkTagGroup(tagGroup, (leaf) => {\n        values.push(matchesLeaf(leaf, tags, actual));\n    }, (operator, arity) => {\n        const children = values.splice(values.length - arity, arity);\n        values.push(operator === \"and\"\n            ? children.every(Boolean)\n            : operator === \"or\"\n                ? children.some(Boolean)\n                : !children[0]);\n    });\n    return refusal === undefined && values.length === 1 ? values[0] : false;\n};\n",
     "map": {
      "version": 3,
      "file": "Namespace.js",
@@ -5595,7 +5625,7 @@
       "relative": "packages/smithers/agent/memory/src/internal/ResolveNamespace.vibe"
      }
     ],
-    "code": "/**\n * Shared validating bank and namespace resolution.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effect from \"effect/Effect\";\nimport { MemoryError } from \"../MemoryError.js\";\nimport * as Namespace from \"../Namespace.js\";\n/**\n * Maps a structured namespace to the public bank name recall accepts.\n * {@link namespaceForBank} is its inverse for every prefixed bank.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const bankForNamespace = (namespace) => `${namespace.kind}-${namespace.id}`;\n/**\n * Performs the unvalidated syntactic inverse of {@link bankForNamespace}.\n * Prefixes preserve explicit lifetimes; an unprefixed bank is flow-local.\n * The returned `id` is intentionally typed as `string`, not\n * `Namespace.NonEmptyString`. Use {@link resolveNamespace} at every I/O\n * boundary.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const namespaceForBank = (bank) => {\n    for (const kind of Namespace.Kind.literals) {\n        const prefix = `${kind}-`;\n        if (bank.startsWith(prefix) && bank.length > prefix.length) {\n            return { kind, id: bank.slice(prefix.length) };\n        }\n    }\n    return { kind: \"flow\", id: bank };\n};\n/**\n * Resolves a structured namespace or public bank name.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const resolveNamespace = Effect_1.fnUntraced(runtime.$joinedFrame(function* resolveNamespace(input) {\n    if (typeof input !== \"string\") {\n        return yield* Effect.map(Effect.mapError(Schema.decodeUnknownEffect(Namespace.Namespace)(input), () => new MemoryError({\n            code: \"invalid_namespace\",\n            message: \"memory namespace is invalid\",\n        })), (namespace) => ({ namespace, bank: bankForNamespace(namespace) }));\n    }\n    if (input.length === 0) {\n        return yield* Effect_1.fail(new MemoryError({ code: \"invalid_namespace\", message: \"memory bank must not be empty\" }));\n    }\n    return { namespace: namespaceForBank(input), bank: input };\n}));\n/**\n * Resolves and de-duplicates bank names by structured namespace, preserving\n * the first public spelling for result attribution.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const resolveBanks = (banks) => Effect.map(Effect.forEach(banks, resolveNamespace), (resolved) => {\n    const unique = new Map();\n    for (const entry of resolved) {\n        const identity = `${entry.namespace.kind}\\u0000${entry.namespace.id}`;\n        if (!unique.has(identity))\n            unique.set(identity, entry);\n    }\n    return [...unique.values()];\n});\n",
+    "code": "/**\n * Shared validating bank and namespace resolution.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effect from \"effect/Effect\";\nimport { MemoryError } from \"../MemoryError.js\";\nimport * as Namespace from \"../Namespace.js\";\n/**\n * Maps a structured namespace to the public bank name recall accepts.\n * {@link namespaceForBank} is its inverse for every prefixed bank.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const bankForNamespace = (namespace) => `${namespace.kind}-${namespace.id}`;\n/**\n * Performs the unvalidated syntactic inverse of {@link bankForNamespace}.\n * Prefixes preserve explicit lifetimes; an unprefixed bank is flow-local.\n * The returned `id` is intentionally typed as `string`, not\n * `Namespace.NonEmptyString`. Use {@link resolveNamespace} at every I/O\n * boundary.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const namespaceForBank = (bank) => {\n    for (const kind of Namespace.Kind.literals) {\n        const prefix = `${kind}-`;\n        if (bank.startsWith(prefix) && bank.length > prefix.length) {\n            return { kind, id: bank.slice(prefix.length) };\n        }\n    }\n    return { kind: \"flow\", id: bank };\n};\n/**\n * Resolves a structured namespace or public bank name.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const resolveNamespace = Effect_1.fnUntraced(runtime.$joinedFrame(function* resolveNamespace(input) {\n    if (typeof input !== \"string\") {\n        return yield* Effect.map(Effect.mapError(Schema.decodeUnknownEffect(Namespace.Namespace)(input), () => new MemoryError({\n            code: \"invalid_namespace\",\n            message: \"memory namespace is invalid\"\n        })), (namespace) => ({ namespace, bank: bankForNamespace(namespace) }));\n    }\n    if (input.length === 0) {\n        return yield* Effect_1.fail(new MemoryError({ code: \"invalid_namespace\", message: \"memory bank must not be empty\" }));\n    }\n    return { namespace: namespaceForBank(input), bank: input };\n}));\n/**\n * Resolves and de-duplicates bank names by structured namespace, preserving\n * the first public spelling for result attribution.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const resolveBanks = (banks) => Effect.map(Effect.forEach(banks, resolveNamespace), (resolved) => {\n    const unique = new Map();\n    for (const entry of resolved) {\n        const identity = `${entry.namespace.kind}\\u0000${entry.namespace.id}`;\n        if (!unique.has(identity))\n            unique.set(identity, entry);\n    }\n    return [...unique.values()];\n});\n",
     "map": {
      "version": 3,
      "file": "ResolveNamespace.js",
@@ -5652,6 +5682,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
+     }
+    ],
+    "code": "/**\n * Row shapes, decoders, and validators shared by the memory store domains.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effect from \"effect/Effect\";\nimport { MemoryError } from \"../MemoryError.js\";\nimport * as Namespace from \"../Namespace.js\";\n// An Error is kept whole so its SQL code, message, and nested cause survive:\n// DurableWriter classifies a nested write's retry by walking the cause chain\n// of the domain error a store wraps it in, and an operator reading the failure\n// needs the driver text. Only unstructured values are bounded.\nconst causeSummary = (cause) => {\n    if (cause instanceof Error) {\n        return cause;\n    }\n    if (typeof cause === \"string\") {\n        return cause.slice(0, 1_024);\n    }\n    return { type: cause === null ? \"null\" : typeof cause };\n};\n/**\n * Builds a memory error with a bounded cause.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const error = (code, message, cause, path) => new MemoryError({\n    code,\n    message,\n    ...(path === undefined ? {} : { path }),\n    ...(cause === undefined ? {} : { cause: causeSummary(cause) })\n});\nconst isMemoryError = (cause) => cause instanceof MemoryError;\n/**\n * Wraps a non-memory failure as a `store` error.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const storeError = (message) => (cause) => isMemoryError(cause) ? cause : error(\"store\", message, cause);\n/**\n * Reads the affected-row count from a raw driver result.\n *\n * @category utils\n * @since 0.1.0\n */\nexport const changed = (result) => {\n    if (typeof result !== \"object\" || result === null) {\n        return 0;\n    }\n    const changes = \"changes\" in result ? result.changes : undefined;\n    const rowsAffected = \"rowCount\" in result\n        ? result.rowCount\n        : \"rowsAffected\" in result\n            ? result.rowsAffected\n            : undefined;\n    return typeof changes === \"number\"\n        ? changes\n        : typeof rowsAffected === \"number\"\n            ? rowsAffected\n            : 0;\n};\n/**\n * Validates tags against the memory vocabulary and cap.\n *\n * @category validation\n * @since 0.1.0\n */\nexport const validateTags = (tags) => Effect.mapError(Schema.decodeUnknownEffect(Namespace.Tags)(tags), () => error(\"invalid_tag\", \"memory tags violate the vocabulary or 16-tag cap\"));\n/**\n * Rejects an empty identifier.\n *\n * @category validation\n * @since 0.1.0\n */\nexport const validateNonEmpty = (value, field, path) => value.length > 0\n    ? Effect.succeed(value)\n    : Effect.fail(error(\"invalid_argument\", `${field} must not be empty`, undefined, path));\n/**\n * Rejects a time that is not a non-negative safe integer.\n *\n * @category validation\n * @since 0.1.0\n */\nexport const validateTime = (value, field, path) => Number.isSafeInteger(value) && value >= 0\n    ? Effect.succeed(value)\n    : Effect.fail(error(\"invalid_argument\", `${field} must be a non-negative safe integer`, undefined, path));\n/**\n * Rejects a limit that is not a non-negative safe integer.\n *\n * @category validation\n * @since 0.1.0\n */\nexport const validateLimit = (value, operation) => value === undefined || (Number.isSafeInteger(value) && value >= 0)\n    ? Effect.succeed(value)\n    : Effect.fail(error(\"invalid_argument\", `${operation} limit must be a non-negative safe integer`, undefined, [\"limit\"]));\n/**\n * Encodes a value as JSON or fails `invalid_argument`.\n *\n * @category utils\n * @since 0.1.0\n */\nexport const encodeJson = (value, field, path) => Effect.try({\n    try: () => {\n        const encoded = JSON.stringify(value);\n        if (encoded === undefined) {\n            throw new TypeError(`${field} is not JSON-serializable`);\n        }\n        return encoded;\n    },\n    catch: () => error(\"invalid_argument\", `${field} is not JSON-serializable`, undefined, path)\n});\n/**\n * Decodes stored JSON or fails `store`.\n *\n * @category utils\n * @since 0.1.0\n */\nexport const decodeJson = (value, field) => Effect.try({\n    try: () => JSON.parse(value),\n    catch: (cause) => error(\"store\", `could not decode ${field}`, cause)\n});\nconst decodeProvenance = (value) => Effect.flatMap(decodeJson(value, \"provenance\"), (decoded) => typeof decoded === \"object\" && decoded !== null\n    ? Effect.succeed(decoded)\n    : Effect.fail(error(\"store\", \"stored provenance is not an object\")));\nconst decodeTags = (value) => Effect.flatMap(decodeJson(value, \"tags\"), (decoded) => Effect.mapError(Schema.decodeUnknownEffect(Namespace.Tags)(decoded), (cause) => error(\"invalid_tag\", \"stored tags violate the memory vocabulary\", cause)));\n/**\n * Decodes a fact row.\n *\n * @category utils\n * @since 0.1.0\n */\nexport const decodeFact = (row) => Effect.map(Effect.all({\n    value: decodeJson(row.value_json, \"fact value\"),\n    tags: row.tags_json === null ? Effect.succeed(undefined) : decodeTags(row.tags_json),\n    provenance: decodeProvenance(row.provenance_json)\n}), ({ provenance, tags, value }) => ({\n    namespace: { kind: row.namespace_kind, id: row.namespace_id },\n    key: row.fact_key,\n    value,\n    ...(tags === undefined ? {} : { tags }),\n    ...(row.ttl_ms === null ? {} : { ttlMs: Number(row.ttl_ms) }),\n    provenance,\n    createdAtMs: Number(row.created_at_ms),\n    updatedAtMs: Number(row.updated_at_ms)\n}));\n/**\n * Decodes a note row.\n *\n * @category utils\n * @since 0.1.0\n */\nexport const decodeNote = (row) => Effect.map(Effect.all({\n    tags: decodeTags(row.tags_json),\n    provenance: decodeProvenance(row.provenance_json)\n}), ({ provenance, tags }) => ({\n    namespace: { kind: row.namespace_kind, id: row.namespace_id },\n    id: row.id,\n    text: row.text,\n    tags,\n    provenance,\n    status: row.status,\n    ...(row.status_at_ms == null ? {} : { statusAtMs: Number(row.status_at_ms) }),\n    ...(row.accepted_todo == null ? {} : { acceptedTodo: row.accepted_todo }),\n    createdAtMs: Number(row.created_at_ms)\n}));\n/**\n * Decodes a thread row.\n *\n * @category utils\n * @since 0.1.0\n */\nexport const decodeThread = (row) => Effect.map((row.metadata_json === null\n    ? Effect.succeed(undefined)\n    : decodeJson(row.metadata_json, \"thread metadata\")), (metadata) => ({\n    id: row.thread_id,\n    namespace: { kind: row.namespace_kind, id: row.namespace_id },\n    ...(row.title === null ? {} : { title: row.title }),\n    ...(metadata === undefined ? {} : { metadata }),\n    createdAtMs: Number(row.created_at_ms),\n    updatedAtMs: Number(row.updated_at_ms)\n}));\n/**\n * Rows a tag-filtered note read pulls per round trip.\n *\n * A tag group is evaluated in JavaScript, so a bounded read pages until it has\n * `limit` matching rows instead of taking one oversized window. These two\n * numbers are the page, not the answer: they bound working-set memory and the\n * per-query cost, never how many rows the caller gets back.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const NOTE_PAGE_SIZE = 512;\n/**\n * Smallest page a tag-filtered read pulls.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MIN_NOTE_PAGE_SIZE = 128;\n// Continue from the last examined row, including pages that keep no matches.\n/**\n * Pages until `limit` kept rows or the source runs out.\n *\n * @category utils\n * @since 0.1.0\n */\nexport const collectUntil = Effect_1.fnUntraced(function* collectUntil(limit, pageSize, fetchPage, keep) {\n    const collected = [];\n    let after;\n    while (collected.length < limit) {\n        const rows = yield* fetchPage(pageSize, after);\n        if (rows.length === 0)\n            break;\n        collected.push(...(yield* keep(rows)).slice(0, limit - collected.length));\n        if (rows.length < pageSize)\n            break;\n        after = rows[rows.length - 1];\n    }\n    return collected;\n});\n/**\n * Builds the tag-group predicate of a read.\n *\n * @category utils\n * @since 0.1.0\n */\nexport const tagMatcher = (input) => (tags) => input.tagGroups === undefined || input.tagGroups.every((group) => Namespace.matches(group, tags));\n/**\n * Validates exact search record identities.\n *\n * @category validation\n * @since 0.1.0\n */\nexport const validateRecords = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* validateRecords(records, operation) {\n    if (records === undefined)\n        return;\n    if (records.length > 64) {\n        return yield* Effect_1.fail(error(\"invalid_argument\", `${operation} accepts at most 64 record identities`));\n    }\n    {\n        let pending_1 = runtime.$normal;\n        try {\n            for (const record of records) {\n                try {\n                    {\n                        if (record.kind !== \"fact\" && record.kind !== \"note\") {\n                            return yield* Effect_1.fail(error(\"invalid_argument\", `${operation} record kind must be fact or note`));\n                        }\n                        yield* validateNonEmpty(record.id, \"record id\", [\"records\", \"id\"]);\n                    }\n                }\n                catch (thrown_1) {\n                    pending_1 = thrown_1;\n                    break;\n                }\n            }\n        }\n        catch (thrown_2) {\n            throw runtime.$finallyFailure(pending_1, thrown_2);\n        }\n        if (pending_1 !== runtime.$normal)\n            throw pending_1;\n    }\n})));\n",
+    "map": {
+     "version": 3,
+     "file": "Store.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/memory/src/internal/MemoryIndexes.vibe"
      }
     ],
@@ -5672,10 +5722,50 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
+     }
+    ],
+    "code": "/**\n * The authoritative memory schema, including idempotent pre-release upgrades.\n *\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\nconst compositeMessagePrimaryKey = /PRIMARY\\s+KEY\\s*\\(\\s*thread_id\\s*,\\s*id\\s*\\)/iu;\n/**\n * Creates the memory schema. The shared migrator runs this Effect and records\n * its identity in the same transaction.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const initial = Effect_1.gen(function* initial() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql `CREATE TABLE IF NOT EXISTS memory_facts (\n    namespace_kind TEXT NOT NULL,\n    namespace_id TEXT NOT NULL,\n    fact_key TEXT NOT NULL,\n    value_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `value_json`)}),\n    tags_json TEXT CHECK (tags_json IS NULL OR ${Dialect.jsonValid(sql, sql `tags_json`)}),\n    ttl_ms ${Dialect.integer(sql)},\n    provenance_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `provenance_json`)}),\n    created_at_ms ${Dialect.integer(sql)} NOT NULL,\n    updated_at_ms ${Dialect.integer(sql)} NOT NULL,\n    PRIMARY KEY (namespace_kind, namespace_id, fact_key),\n    CHECK (namespace_kind IN ('flow', 'agent', 'user', 'global')),\n    CHECK (length(namespace_id) > 0),\n    CHECK (length(fact_key) > 0),\n    CHECK (ttl_ms IS NULL OR ttl_ms >= 0)\n  )`;\n    const factColumns = yield* Dialect.columns(sql, \"memory_facts\");\n    if (!factColumns.some((column) => column.name === \"tags_json\")) {\n        yield* sql `ALTER TABLE memory_facts\n      ADD COLUMN tags_json TEXT CHECK (tags_json IS NULL OR ${Dialect.jsonValid(sql, sql `tags_json`)})`;\n    }\n    // The expiry sweep filters on the computed sum, so the index is over that\n    // expression; a plain (updated_at_ms, ttl_ms) index could never serve it.\n    yield* sql `CREATE INDEX IF NOT EXISTS memory_facts_expires_at_idx\n    ON memory_facts ((updated_at_ms + ttl_ms)) WHERE ttl_ms IS NOT NULL`;\n    yield* sql `CREATE TABLE IF NOT EXISTS memory_threads (\n    thread_id TEXT PRIMARY KEY CHECK (length(thread_id) > 0),\n    namespace_kind TEXT NOT NULL,\n    namespace_id TEXT NOT NULL,\n    title TEXT,\n    metadata_json TEXT CHECK (metadata_json IS NULL OR ${Dialect.jsonValid(sql, sql `metadata_json`)}),\n    created_at_ms ${Dialect.integer(sql)} NOT NULL,\n    updated_at_ms ${Dialect.integer(sql)} NOT NULL,\n    CHECK (namespace_kind IN ('flow', 'agent', 'user', 'global')),\n    CHECK (length(namespace_id) > 0)\n  )`;\n    yield* sql `CREATE TABLE IF NOT EXISTS memory_messages (\n    id TEXT NOT NULL CHECK (length(id) > 0),\n    thread_id TEXT NOT NULL,\n    role TEXT NOT NULL,\n    text TEXT NOT NULL,\n    at_ms ${Dialect.integer(sql)} NOT NULL,\n    PRIMARY KEY (thread_id, id),\n    FOREIGN KEY (thread_id) REFERENCES memory_threads (thread_id)\n  )`;\n    const messageTables = Dialect.isPostgres(sql) ?\n        [] : yield* sql `SELECT sql FROM sqlite_master\n    WHERE type = 'table' AND name = 'memory_messages'`;\n    const messageDefinition = messageTables[0]?.sql;\n    if (messageDefinition !== undefined && !compositeMessagePrimaryKey.test(messageDefinition ?? \"\")) {\n        yield* sql `CREATE TABLE memory_messages_v2 (\n      id TEXT NOT NULL CHECK (length(id) > 0),\n      thread_id TEXT NOT NULL,\n      role TEXT NOT NULL,\n      text TEXT NOT NULL,\n      at_ms ${Dialect.integer(sql)} NOT NULL,\n      PRIMARY KEY (thread_id, id),\n      FOREIGN KEY (thread_id) REFERENCES memory_threads (thread_id)\n    )`;\n        yield* sql `INSERT INTO memory_messages_v2 (id, thread_id, role, text, at_ms)\n      SELECT id, thread_id, role, text, at_ms FROM memory_messages`;\n        yield* sql `DROP TABLE memory_messages`;\n        yield* sql `ALTER TABLE memory_messages_v2 RENAME TO memory_messages`;\n    }\n    yield* sql `CREATE INDEX IF NOT EXISTS memory_messages_thread_order_idx\n    ON memory_messages (thread_id, at_ms, id)`;\n    yield* sql `CREATE TABLE IF NOT EXISTS memory_notes (\n    id TEXT PRIMARY KEY CHECK (length(id) > 0),\n    namespace_kind TEXT NOT NULL,\n    namespace_id TEXT NOT NULL,\n    text TEXT NOT NULL,\n    tags_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `tags_json`)}),\n    provenance_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `provenance_json`)}),\n    status TEXT NOT NULL DEFAULT 'accepted',\n    created_at_ms ${Dialect.integer(sql)} NOT NULL,\n    CHECK (namespace_kind IN ('flow', 'agent', 'user', 'global')),\n    CHECK (length(namespace_id) > 0),\n    CHECK (status IN ('pending', 'accepted', 'rejected'))\n  )`;\n    yield* sql `CREATE INDEX IF NOT EXISTS memory_notes_namespace_order_idx\n    ON memory_notes (namespace_kind, namespace_id, created_at_ms, id)`;\n    yield* sql `CREATE TABLE IF NOT EXISTS memory_note_supersedes (\n    superseder_id TEXT NOT NULL,\n    target_id TEXT NOT NULL,\n    created_at_ms ${Dialect.integer(sql)} NOT NULL,\n    PRIMARY KEY (superseder_id, target_id),\n    FOREIGN KEY (superseder_id) REFERENCES memory_notes (id),\n    FOREIGN KEY (target_id) REFERENCES memory_notes (id),\n    CHECK (superseder_id <> target_id)\n  )`;\n    // Default note reads ask \"is this note superseded?\", a lookup by target_id\n    // that the primary key (superseder_id, target_id) cannot answer without a\n    // scan of every edge per candidate row.\n    yield* sql `CREATE INDEX IF NOT EXISTS memory_note_supersedes_target_idx\n    ON memory_note_supersedes (target_id, superseder_id)`;\n    yield* sql `CREATE TABLE IF NOT EXISTS memory_fts_kinds (\n    namespace_kind TEXT PRIMARY KEY,\n    enabled_at_ms ${Dialect.integer(sql)} NOT NULL,\n    CHECK (namespace_kind IN ('flow', 'agent', 'user', 'global'))\n  )`;\n    yield* sql `CREATE TABLE IF NOT EXISTS memory_vectors (\n    ${Dialect.rowId(sql)}\n    record_kind TEXT NOT NULL,\n    record_id TEXT NOT NULL,\n    namespace_kind TEXT NOT NULL,\n    namespace_id TEXT NOT NULL,\n    embedding_model TEXT NOT NULL,\n    content_digest TEXT NOT NULL,\n    dimensions ${Dialect.integer(sql)} NOT NULL,\n    vector_bytes ${sql.literal(Dialect.isPostgres(sql) ? \"BYTEA\" : \"BLOB\")} NOT NULL,\n    updated_at_ms ${Dialect.integer(sql)} NOT NULL,\n    PRIMARY KEY (\n      namespace_kind, namespace_id, record_kind, record_id, embedding_model\n    ),\n    CHECK (record_kind IN ('fact', 'note')),\n    CHECK (namespace_kind IN ('flow', 'agent', 'user', 'global')),\n    CHECK (length(record_id) > 0),\n    CHECK (length(namespace_id) > 0),\n    CHECK (length(embedding_model) > 0),\n    CHECK (length(content_digest) > 0),\n    CHECK (dimensions > 0)\n  )`;\n    yield* sql `CREATE INDEX IF NOT EXISTS memory_vectors_namespace_idx\n    ON memory_vectors (namespace_kind, namespace_id, embedding_model, updated_at_ms)`;\n});\n",
+    "map": {
+     "version": 3,
+     "file": "MemorySchema.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
+     }
+    ],
+    "code": "/**\n * Durable lifecycle metadata for the existing append-only notes.\n *\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/**\n * Adds status-transition time and accepted TODO without changing creation data.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const noteLifecycle = Effect_1.gen(function* noteLifecycle() {\n    const sql = yield* SqlClient.SqlClient;\n    const columns = yield* Dialect.columns(sql, \"memory_notes\");\n    if (!columns.some((column) => column.name === \"status_at_ms\")) {\n        yield* sql `ALTER TABLE memory_notes ADD COLUMN status_at_ms ${Dialect.integer(sql)}`;\n    }\n    if (!columns.some((column) => column.name === \"accepted_todo\")) {\n        yield* sql `ALTER TABLE memory_notes ADD COLUMN accepted_todo TEXT`;\n    }\n});\n",
+    "map": {
+     "version": 3,
+     "file": "NoteLifecycle.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;;GAKG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,a,CAAA,S,CAAA;IAC3B,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAC,GAAG,EAAE,cAAc,CAAC,CAAA;IACxD,IAAI,CAAC,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,cAAc,CAAC,EAAE,CAAC;QAC9D,OAAI,GAAG,CAAA,oDAAoD,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC,EAAE,CAAA;IACnF,CAAC;IACD,IAAI,CAAC,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,eAAe,CAAC,EAAE,CAAC;QAC/D,OAAI,GAAG,CAAA,wDAAwD,CAAA;IACjE,CAAC;AACH,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/memory/src/SnapshotRecorder.vibe"
      }
     ],
-    "code": "/**\n * Optional host boundary for freezing an opening memory snapshot beyond the\n * process that fetched it.\n *\n * The port deliberately knows nothing about engines or journals. A host that\n * can persist a value implements {@link Service.record}; a memory-only\n * composition supplies no service and {@link module:Source} retains its local\n * memo behavior.\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\n/**\n * One row of an opening memory snapshot, unrendered: a note primed from\n * `bank`, or a row recall answered from it. `key` identifies the row to a\n * relevance reading: the note id for a primer, else the digest of its text,\n * and the recall key for a recalled row.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Row = Schema.Struct({\n    origin: Schema.Literals([\"primer\", \"recall\"]),\n    bank: Schema.String,\n    key: Schema.String,\n    text: Schema.String,\n});\n/**\n * The value one opening memory snapshot holds: its rows, in render order.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Snapshot = Schema.Struct({ rows: Schema.Array(Row) });\n/**\n * The optional opening-memory recorder tag.\n *\n * @category services\n * @since 0.1.0\n */\nexport class SnapshotRecorder extends Context.Service()(\"flows/memory/SnapshotRecorder\") {\n}\n/**\n * Provides a snapshot recorder.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = (implementation) => Layer.succeed(SnapshotRecorder)(SnapshotRecorder.of(implementation));\n",
+    "code": "/**\n * Optional host boundary for freezing an opening memory snapshot beyond the\n * process that fetched it.\n *\n * The port deliberately knows nothing about engines or journals. A host that\n * can persist a value implements {@link Service.record}; a memory-only\n * composition supplies no service and {@link module:Source} retains its local\n * memo behavior.\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\n/**\n * One row of an opening memory snapshot, unrendered: a note primed from\n * `bank`, or a row recall answered from it. `key` identifies the row to a\n * relevance reading: the note id for a primer, else the digest of its text,\n * and the recall key for a recalled row.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Row = Schema.Struct({\n    origin: Schema.Literals([\"primer\", \"recall\"]),\n    bank: Schema.String,\n    key: Schema.String,\n    text: Schema.String\n});\n/**\n * The value one opening memory snapshot holds: its rows, in render order.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Snapshot = Schema.Struct({ rows: Schema.Array(Row) });\n/**\n * The optional opening-memory recorder tag.\n *\n * @category services\n * @since 0.1.0\n */\nexport class SnapshotRecorder extends Context.Service()(\"flows/memory/SnapshotRecorder\") {\n}\n/**\n * Provides a snapshot recorder.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = (implementation) => Layer.succeed(SnapshotRecorder)(SnapshotRecorder.of(implementation));\n",
     "map": {
      "version": 3,
      "file": "SnapshotRecorder.js",

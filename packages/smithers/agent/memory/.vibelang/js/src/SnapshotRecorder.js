@@ -26,7 +26,7 @@ export const Row = Schema.Struct({
     origin: Schema.Literals(["primer", "recall"]),
     bank: Schema.String,
     key: Schema.String,
-    text: Schema.String,
+    text: Schema.String
 });
 /**
  * The value one opening memory snapshot holds: its rows, in render order.

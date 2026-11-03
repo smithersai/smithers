@@ -22,7 +22,7 @@ export const MemoryErrorCode = Schema.Literals([
     "compaction_conflict",
     "embedding_unavailable",
     "vector_model_mismatch",
-    "store",
+    "store"
 ]);
 /**
  * Error raised by memory validation, storage, search, or projection.
@@ -34,6 +34,6 @@ export class MemoryError extends Schema.TaggedError()("flows/memory/MemoryError"
     code: MemoryErrorCode,
     message: Schema.String,
     path: Schema.optional(Schema.Array(Schema.String)),
-    cause: Schema.optional(Schema.Defect()),
+    cause: Schema.optional(Schema.Defect())
 }) {
 }

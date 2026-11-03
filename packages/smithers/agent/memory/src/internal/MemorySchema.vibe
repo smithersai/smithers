@@ -17,9 +17,9 @@ const compositeMessagePrimaryKey = /PRIMARY\s+KEY\s*\(\s*thread_id\s*,\s*id\s*\)
  * @category migrations
  * @since 1.0.0
  */
-export const initial = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE TABLE IF NOT EXISTS memory_facts (
+export const initial = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE TABLE IF NOT EXISTS memory_facts (
     namespace_kind TEXT NOT NULL,
     namespace_id TEXT NOT NULL,
     fact_key TEXT NOT NULL,
@@ -35,16 +35,16 @@ export const initial = Effect.gen(function*() {
     CHECK (length(fact_key) > 0),
     CHECK (ttl_ms IS NULL OR ttl_ms >= 0)
   )`
-  const factColumns = yield* Dialect.columns(sql, "memory_facts")
+  const factColumns = try Dialect.columns(sql, "memory_facts")
   if (!factColumns.some((column) => column.name === "tags_json")) {
-    yield* sql`ALTER TABLE memory_facts
+    try sql`ALTER TABLE memory_facts
       ADD COLUMN tags_json TEXT CHECK (tags_json IS NULL OR ${Dialect.jsonValid(sql, sql`tags_json`)})`
   }
   // The expiry sweep filters on the computed sum, so the index is over that
   // expression; a plain (updated_at_ms, ttl_ms) index could never serve it.
-  yield* sql`CREATE INDEX IF NOT EXISTS memory_facts_expires_at_idx
+  try sql`CREATE INDEX IF NOT EXISTS memory_facts_expires_at_idx
     ON memory_facts ((updated_at_ms + ttl_ms)) WHERE ttl_ms IS NOT NULL`
-  yield* sql`CREATE TABLE IF NOT EXISTS memory_threads (
+  try sql`CREATE TABLE IF NOT EXISTS memory_threads (
     thread_id TEXT PRIMARY KEY CHECK (length(thread_id) > 0),
     namespace_kind TEXT NOT NULL,
     namespace_id TEXT NOT NULL,
@@ -55,7 +55,7 @@ export const initial = Effect.gen(function*() {
     CHECK (namespace_kind IN ('flow', 'agent', 'user', 'global')),
     CHECK (length(namespace_id) > 0)
   )`
-  yield* sql`CREATE TABLE IF NOT EXISTS memory_messages (
+  try sql`CREATE TABLE IF NOT EXISTS memory_messages (
     id TEXT NOT NULL CHECK (length(id) > 0),
     thread_id TEXT NOT NULL,
     role TEXT NOT NULL,
@@ -66,11 +66,11 @@ export const initial = Effect.gen(function*() {
   )`
   const messageTables = Dialect.isPostgres(sql) ?
     [] :
-    yield* sql<{ readonly sql: string | null }>`SELECT sql FROM sqlite_master
+    try sql<{ readonly sql: string | null }>`SELECT sql FROM sqlite_master
     WHERE type = 'table' AND name = 'memory_messages'`
   const messageDefinition = messageTables[0]?.sql
   if (messageDefinition !== undefined && !compositeMessagePrimaryKey.test(messageDefinition ?? "")) {
-    yield* sql`CREATE TABLE memory_messages_v2 (
+    try sql`CREATE TABLE memory_messages_v2 (
       id TEXT NOT NULL CHECK (length(id) > 0),
       thread_id TEXT NOT NULL,
       role TEXT NOT NULL,
@@ -79,14 +79,14 @@ export const initial = Effect.gen(function*() {
       PRIMARY KEY (thread_id, id),
       FOREIGN KEY (thread_id) REFERENCES memory_threads (thread_id)
     )`
-    yield* sql`INSERT INTO memory_messages_v2 (id, thread_id, role, text, at_ms)
+    try sql`INSERT INTO memory_messages_v2 (id, thread_id, role, text, at_ms)
       SELECT id, thread_id, role, text, at_ms FROM memory_messages`
-    yield* sql`DROP TABLE memory_messages`
-    yield* sql`ALTER TABLE memory_messages_v2 RENAME TO memory_messages`
+    try sql`DROP TABLE memory_messages`
+    try sql`ALTER TABLE memory_messages_v2 RENAME TO memory_messages`
   }
-  yield* sql`CREATE INDEX IF NOT EXISTS memory_messages_thread_order_idx
+  try sql`CREATE INDEX IF NOT EXISTS memory_messages_thread_order_idx
     ON memory_messages (thread_id, at_ms, id)`
-  yield* sql`CREATE TABLE IF NOT EXISTS memory_notes (
+  try sql`CREATE TABLE IF NOT EXISTS memory_notes (
     id TEXT PRIMARY KEY CHECK (length(id) > 0),
     namespace_kind TEXT NOT NULL,
     namespace_id TEXT NOT NULL,
@@ -99,9 +99,9 @@ export const initial = Effect.gen(function*() {
     CHECK (length(namespace_id) > 0),
     CHECK (status IN ('pending', 'accepted', 'rejected'))
   )`
-  yield* sql`CREATE INDEX IF NOT EXISTS memory_notes_namespace_order_idx
+  try sql`CREATE INDEX IF NOT EXISTS memory_notes_namespace_order_idx
     ON memory_notes (namespace_kind, namespace_id, created_at_ms, id)`
-  yield* sql`CREATE TABLE IF NOT EXISTS memory_note_supersedes (
+  try sql`CREATE TABLE IF NOT EXISTS memory_note_supersedes (
     superseder_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     created_at_ms ${Dialect.integer(sql)} NOT NULL,
@@ -113,14 +113,14 @@ export const initial = Effect.gen(function*() {
   // Default note reads ask "is this note superseded?", a lookup by target_id
   // that the primary key (superseder_id, target_id) cannot answer without a
   // scan of every edge per candidate row.
-  yield* sql`CREATE INDEX IF NOT EXISTS memory_note_supersedes_target_idx
+  try sql`CREATE INDEX IF NOT EXISTS memory_note_supersedes_target_idx
     ON memory_note_supersedes (target_id, superseder_id)`
-  yield* sql`CREATE TABLE IF NOT EXISTS memory_fts_kinds (
+  try sql`CREATE TABLE IF NOT EXISTS memory_fts_kinds (
     namespace_kind TEXT PRIMARY KEY,
     enabled_at_ms ${Dialect.integer(sql)} NOT NULL,
     CHECK (namespace_kind IN ('flow', 'agent', 'user', 'global'))
   )`
-  yield* sql`CREATE TABLE IF NOT EXISTS memory_vectors (
+  try sql`CREATE TABLE IF NOT EXISTS memory_vectors (
     ${Dialect.rowId(sql)}
     record_kind TEXT NOT NULL,
     record_id TEXT NOT NULL,
@@ -142,6 +142,6 @@ export const initial = Effect.gen(function*() {
     CHECK (length(content_digest) > 0),
     CHECK (dimensions > 0)
   )`
-  yield* sql`CREATE INDEX IF NOT EXISTS memory_vectors_namespace_idx
+  try sql`CREATE INDEX IF NOT EXISTS memory_vectors_namespace_idx
     ON memory_vectors (namespace_kind, namespace_id, embedding_model, updated_at_ms)`
-})
+}

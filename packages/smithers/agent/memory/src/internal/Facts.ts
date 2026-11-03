@@ -26,7 +26,7 @@ import {
   validateNonEmpty,
   validateTags,
   validateTime
-} from "./Store.ts"
+} from "./Store.vibe"
 
 const FACT_COLUMNS = "namespace_kind, namespace_id, fact_key, value_json, tags_json, ttl_ms, " +
   "provenance_json, created_at_ms, updated_at_ms"

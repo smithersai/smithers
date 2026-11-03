@@ -20,7 +20,7 @@ export const Kind = Schema.Literals(["flow", "agent", "user", "global"]);
  */
 export const Namespace = Schema.Struct({
     kind: Kind,
-    id: Schema.NonEmptyString,
+    id: Schema.NonEmptyString
 });
 /**
  * Maximum number of tags accepted on one record or tag-group leaf.
@@ -74,28 +74,28 @@ export const MatchMode = Schema.Literals(["any", "all", "any_strict", "all_stric
 const TagGroupSchema = Schema.suspend(() => Schema.Union([
     Schema.Struct({
         tags: Tags,
-        match: Schema.optional(MatchMode),
+        match: Schema.optional(MatchMode)
     }),
     Schema.Struct({
-        and: Schema.Array(TagGroupSchema),
+        and: Schema.Array(TagGroupSchema)
     }),
     Schema.Struct({
-        or: Schema.Array(TagGroupSchema),
+        or: Schema.Array(TagGroupSchema)
     }),
     Schema.Struct({
-        not: TagGroupSchema,
-    }),
+        not: TagGroupSchema
+    })
 ]));
 const isTags = Schema.is(Tags);
 const isMatchMode = Schema.is(MatchMode);
 const shapeRefusal = { kind: "shape" };
 const depthRefusal = {
     kind: "budget",
-    message: `invalid_tag: tag-group depth exceeds ${MAX_TAG_GROUP_DEPTH}`,
+    message: `invalid_tag: tag-group depth exceeds ${MAX_TAG_GROUP_DEPTH}`
 };
 const nodesRefusal = {
     kind: "budget",
-    message: `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`,
+    message: `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`
 };
 const ignore = () => { };
 /**
@@ -176,7 +176,7 @@ const tagGroupBudgetIssue = (root) => {
     return refusal?.kind === "budget" ? refusal.message : undefined;
 };
 const TagGroupPreflight = Schema.declare(isTagGroupShape, {
-    identifier: "TagGroup",
+    identifier: "TagGroup"
 }).pipe(Schema.check(Schema.makeFilter(tagGroupBudgetIssue, { identifier: "invalid_tag" }, true)));
 /**
  * Recursive Schema for tag-group queries.

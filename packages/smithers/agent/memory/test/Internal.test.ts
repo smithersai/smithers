@@ -7,7 +7,7 @@ import * as FactProjection from "../src/internal/FactProjection.ts"
 import * as FtsQuery from "../src/internal/FtsQuery.ts"
 import * as Ranking from "../src/internal/Ranking.ts"
 import * as Bank from "../src/internal/ResolveNamespace.vibe"
-import * as Store from "../src/internal/Store.ts"
+import * as Store from "../src/internal/Store.vibe"
 import * as VectorBytes from "../src/internal/VectorBytes.ts"
 import * as Namespace from "../src/Namespace.vibe"
 
