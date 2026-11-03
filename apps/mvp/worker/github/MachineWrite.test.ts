@@ -145,6 +145,17 @@ describe("a machine token at the route", () => {
     expect((await h.fetch(ROUTE, post(create({ body: "100%25 of the smm_ prefix" })))).status).toBe(202)
   })
 
+  test("the content check is linear: a 65,000-character body is read in well under a second", () => {
+    const started = performance.now()
+    expect(MachineWrite.publicContentProblem(["a".repeat(65_000)])).toBeUndefined()
+    expect(MachineWrite.publicContentProblem([`${"a".repeat(64_000)}://u:p@h`])).toBe("credential")
+    // A scheme after digits or scheme punctuation is still a scheme: the shape refused these before it was made linear.
+    for (const text of ["-https://u:p@h", ".https://u:p@h", "+https://u:p@h", "0https://u:p@h", "%2Dhttps://u:p@h", `${"-a".repeat(32_000)}://u:p@h`]) {
+      expect(MachineWrite.publicContentProblem([text]), text.slice(0, 20)).toBe("credential")
+    }
+    expect(performance.now() - started).toBeLessThan(500)
+  })
+
   test("a write id's casing is the same write", async () => {
     const h = await githubHarness(runtime, { actor: null })
     await issueToken()

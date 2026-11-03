@@ -106,7 +106,9 @@ const CREDENTIAL_SHAPES: ReadonlyArray<RegExp> = [
   /(?:xox[abpr]-|glpat-)[A-Za-z0-9-]{10,}/,
   /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
   /-----BEGIN [A-Z ]*PRIVATE KEY/,
-  /[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i,
+  // A scheme is tried once per run of scheme characters, from where the run starts (digits and `+.-` first are part of
+  // the run), so a long run costs one try, not one from each letter.
+  /(?<![a-z0-9+.-])[0-9+.-]*[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i,
   /(?:authorization|bearer|token|secret|password|api[_-]?key)(?:\s*[:=]\s*|\s+)["']?[A-Za-z0-9_./+=-]{12,}/i,
 ]
 const HOME_PATH = /(?<![\w.~/-])(?:\/(?:Users|home)\/[A-Za-z0-9._-]+|~\/[A-Za-z0-9._-])/
