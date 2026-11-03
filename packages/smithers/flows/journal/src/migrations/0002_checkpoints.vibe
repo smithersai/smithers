@@ -26,10 +26,10 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 0.1.0
  */
-export const checkpoints: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const checkpoints: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
 
-  yield* sql`CREATE TABLE flows_journal_checkpoints (
+  try sql`CREATE TABLE flows_journal_checkpoints (
     run_id TEXT NOT NULL CHECK (length(run_id) > 0),
     seq ${Dialect.integer(sql)} NOT NULL CHECK (${
     Dialect.isInteger(sql, sql`seq`)
@@ -43,4 +43,4 @@ export const checkpoints: Effect.Effect<void, unknown, SqlClient.SqlClient> = Ef
   } AND compacted_at_ms >= 0 AND compacted_at_ms <= 9007199254740991)),
     PRIMARY KEY (run_id, seq)
   )`
-})
+}

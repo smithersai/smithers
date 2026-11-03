@@ -21,10 +21,10 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const consensus: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const consensus: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
 
-  yield* sql`CREATE TABLE flows_consensus_leases (
+  try sql`CREATE TABLE flows_consensus_leases (
     run_id TEXT PRIMARY KEY CHECK (length(run_id) > 0),
     owner_host_id TEXT,
     owner_pid ${Dialect.integer(sql)} CHECK (owner_pid IS NULL OR (${
@@ -47,12 +47,12 @@ export const consensus: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effe
   } AND claimed_at_ms >= 0))
   )`
 
-  const tables = yield* Dialect.tables(sql)
+  const tables = try Dialect.tables(sql)
   if (!tables.some((table) => table.name === "flows_runs")) {
     return
   }
 
-  yield* sql`
+  try sql`
     INSERT INTO flows_consensus_leases (
       run_id,
       owner_host_id,
@@ -80,4 +80,4 @@ export const consensus: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effe
     WHERE status = 'running' OR claim_host_id IS NOT NULL
     ON CONFLICT (run_id) DO NOTHING
   `
-})
+}

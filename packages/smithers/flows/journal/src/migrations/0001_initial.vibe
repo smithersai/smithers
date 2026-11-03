@@ -14,10 +14,10 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 0.1.0
  */
-export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const initial: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
 
-  yield* sql`CREATE TABLE flows_journal_events (
+  try sql`CREATE TABLE flows_journal_events (
     run_id TEXT NOT NULL CHECK (length(run_id) > 0),
     seq ${Dialect.integer(sql)} NOT NULL CHECK (${
     Dialect.isInteger(sql, sql`seq`)
@@ -37,5 +37,5 @@ export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect
     UNIQUE (run_id, source_id, source_seq)
   )`
 
-  yield* sql`CREATE INDEX flows_journal_events_event_type_idx ON flows_journal_events (event_type)`
-})
+  try sql`CREATE INDEX flows_journal_events_event_type_idx ON flows_journal_events (event_type)`
+}
