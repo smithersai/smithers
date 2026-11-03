@@ -15,9 +15,11 @@ describe("the production database's connection budget", () => {
     expect(COMPUTE_MIN_CU).toBeLessThan(COMPUTE_MAX_CU)
   })
 
-  it("stays under the alert share of the smallest compute's connections with every client at its cap", () => {
+  it("stays under the alert share of the range's measured connections with every client at its cap", () => {
     const sum = Object.values(CONNECTION_BUDGET).reduce((total, share) => total + share, 0)
-    expect(sum * 100).toBeLessThanOrEqual(ALERT_PERCENT * maxConnections(COMPUTE_MIN_CU))
+    // `SHOW max_connections` on this range read 450 on 2026-11-03: Neon sizes it by the range's top (decision 0150).
+    expect(maxConnections(COMPUTE_MAX_CU)).toBe(450)
+    expect(sum * 100).toBeLessThanOrEqual(ALERT_PERCENT * maxConnections(COMPUTE_MAX_CU))
   })
 
   it("gives Electric's query pool its share less the replication connection", () => {

@@ -44,10 +44,9 @@ path queued behind it.
    hands the socket over, and the object reads no table to attach it. `worker/DatabaseRoutes.ts` names each consumer's
    config, and the program takes every consumer's config from there. Both configs front the same Neon host, and both
    are created after the migrations run (infra/ChatDatabase.ts `Databases`).
-2. **The budget is split, not raised.** `CONNECTION_BUDGET.hyperdrive` goes from 50 to 20 for the request path, and
-   `CONNECTION_BUDGET.engine` gets 30. The sum stays under 80% of the 0.25 CU compute's 112 connections, so
-   `infra/Connections.test.ts` still holds. The request path carries about 8% of the queries, and 20 connections
-   should give it two slices to itself and the engine three, if Hyperdrive keeps 10 to a slice. An engine burst now queues behind engine work only.
+2. **The request path keeps its 50; the engine gets 30 of its own.** `CONNECTION_BUDGET.hyperdrive` stays 50 and
+   `CONNECTION_BUDGET.engine` is 30. The sum is 119 with Electric, the deploy and Neon's reserve, against the 450
+   `SHOW max_connections` read on this range. An engine burst now queues behind engine work only.
 3. **Saturation alerts, in a new flow version.** `ops/DatabaseLoad/v2` (new step `ops/SampleDatabaseLoad`) also reads Hyperdrive's pools for the 7 minutes ending at each 5-minute
    sample (worker/HyperdrivePool.ts). When more than 10 clients waited at one config's busiest slice for 2 minutes in a
    row, the sample counts as over and the Admins get the existing `Database connections high` alert. The read needs
@@ -61,31 +60,32 @@ path queued behind it.
 
 ## Rollout
 
-Two deploys, in this order:
+1. **Move the engine (live 22:29Z on 2026-11-02).** Create `EngineDatabase` (30) and route the engine and the sandbox
+   objects to it. `ChatDatabase` keeps 50, so a Worker still sending the engine through it during the deploy never meets
+   a smaller pool.
+2. **Shrink the request pool to 20: rejected.** It was planned so the budget would hold at the 0.25 CU floor's 112, but
+   this range has 450 (`SHOW max_connections`, 2026-11-03): 50 + 30, with Electric's 21 and the deploy's 5, is about
+   106, or 24%. Hyperdrive divided a limit across about 5 slices (30 gave 6 a slice, 50 gave 10), and a client stays on
+   one slice (on 2026-11-02 at 19:02Z one slice sat at 1 connection while others had 26 waiting), so 20 would give about
+   4 a slice and risks queueing requests on one slice for no gain. Open connections were 10 a slice through the burst,
+   and above 4 in 473 of the 1,353 slice-minutes after it. `currentPoolSize` counts open connections, so busy connections
+   per slice can't be measured. It landed as 90731498 on 2026-11-03, was never deployed, and was reverted.
 
-1. **Move the engine.** Create `EngineDatabase` (30) and route the engine and the sandbox objects to it. `ChatDatabase`
-   keeps the shared config's 50 (`ROLLOUT_REQUEST_LIMIT`), so a Worker still sending the engine through `ChatDatabase`
-   during the deploy never meets a smaller pool. The connection sum (119) exceeds the budget at the range's bottom (112
-   at 0.25 CU) for this one step. It stays under 80% of what the compute really allows: `SHOW max_connections` read
-   450 on 2026-11-03.
-   Check: `hyperdrivePoolSizesAdaptiveGroups` shows the engine's load on the `EngineDatabase` config, and the
-   request config's `waitingClients` stays at 0 during a TODO burst.
-2. **Shrink the request pool.** Once step 1 is live, `ChatDatabase` takes `CONNECTION_BUDGET.hyperdrive` (20) and
-   `ROLLOUT_REQUEST_LIMIT` goes (its own commit, deployed separately). The budget holds at the range's bottom again.
+   Evidence that would reopen it: a measure of busy connections per slice, together with a real connection shortage on
+   the compute.
 
-Rollback, in reverse:
+   Astra's review put Neon's figure for this range at 419, from Neon's table. `SHOW max_connections` on the compute read
+   450, and the measured number is what the budget uses.
 
-- **Step 2:** redeploy step 1. Raising a limit is safe at any time.
-- **Step 1:** first deploy a revision that routes every consumer back to `ChatDatabase` while still declaring
-  `EngineDatabase`. Once that Worker is live, remove `EngineDatabase` in a later deploy. A single revert would also
-  delete `EngineDatabase` while the Worker that binds it may still be serving. Never roll back step 1 while step 2 is
-  live: the request pool would carry the engine at 20.
+Rollback of step 1: first deploy a revision that routes every consumer back to `ChatDatabase` while still declaring
+`EngineDatabase`. Once that Worker is live, remove `EngineDatabase` in a later deploy. A single revert would also delete
+`EngineDatabase` while the Worker that binds it may still be serving.
 
 ## Alternatives
 
 - **Raise the one config's limit.** It doesn't isolate anything: the engine fills the extra slices too. Neon sizes
-  `max_connections` by the range's top (450 at 1 CU, by `SHOW max_connections`), and Cloudflare's paid plan allows about 100 per config, so
-  raising stays possible later. The budget, though, is sized for the range's bottom.
+  `max_connections` by the range's top (450 at 1 CU, by `SHOW max_connections`), and Cloudflare's paid plan allows
+  about 100 per config, so raising stays possible later.
 - **Raise Neon's minimum compute to 0.5 CU.** That doubles the budget and adds CPU, but costs money, and the pool, not
   Neon's connection count, was the limit. It is deferred until this change's effect is measured.
 - **Cap the engine's concurrency in the host.** That bounds the burst but not the standing contention, and it slows
@@ -107,8 +107,7 @@ Rollback, in reverse:
 
 ## Verification
 
-- `infra/Connections.test.ts`: the split budget stays under the alert share, and the rollout's sum under the alert
-  share of the range's top.
+- `infra/Connections.test.ts`: the budget stays under the alert share of the range's measured 450.
 - `worker/DatabaseRoutes.test.ts`: the routes, and that the program takes each consumer's config from them and that no
   other module opens a config of its own.
 - `worker/flows/DatabaseLoad.test.ts`: runs start on v1 as main declared it before this decision, frozen in
@@ -124,10 +123,8 @@ Rollback, in reverse:
   observe runs, base invalidations and GitHub writes. From 22:33Z to 22:45Z `EngineDatabase` had up to 43 clients
   waiting and 5 s to get a connection, while `ChatDatabase` had 0 waiting and 0 ms. Over 181 minutes since, the request
   config's waiting stayed 0.
-- Step 2's limit: Hyperdrive divided a limit across about 5 slices (30 gave 6 a slice, 50 gave 10), so 20 should give 4.
-  A slice's `currentPoolSize` stays at its cap whether busy or idle, so it can't show demand. The request path's
-  busiest minute (22:37Z: 983 queries at 202 ms) was 3.3 connections busy across all slices, counting query time and
-  not time held between a transaction's statements.
+- The request path's busiest minute in the burst (22:37Z: 983 queries at 202 ms) was 3.3 connections busy across all
+  slices, a minute's average of query time, without time held between a transaction's statements.
 - Neon: `SHOW max_connections` 450. 113 samples of `pg_stat_activity` from 01:41Z to 02:03Z on 2026-11-03, outside the
   burst: at most 78 connections, 9 active, 7 waiting on a lock. During the burst, the two configs' pools summed to at
   most 84, which with Electric's 21 is about 105 of 450, so connections were not the limit. CPU is not measured: Neon's

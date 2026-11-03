@@ -5,7 +5,8 @@
  * The production compute's autoscaling range, in Neon compute units. Neon's default is a fixed 0.25 CU, whose
  * `max_connections` is 112: on 2026-10-22 Hyperdrive's 60 origin connections, Electric's pool and the deploy's own
  * held 91 of them under load, and the compute stopped accepting logins until it was restarted. Neon sizes
- * `max_connections` by the range's top, about 450 per CU, and the compute idles at the bottom.
+ * `max_connections` by the range's top, and the compute idles at the bottom: `SHOW max_connections` read 450 on this
+ * range on 2026-11-03, while the compute was autoscaling.
  */
 export const COMPUTE_MIN_CU = 0.25
 export const COMPUTE_MAX_CU = 1
@@ -22,8 +23,8 @@ export const ALERT_PERCENT = 80
 
 /**
  * The most server connections each client of the production database may hold. Their sum stays under `ALERT_PERCENT`
- * of the `max_connections` of the range's bottom, so the budget holds even if Neon sized by it
- * (docs/infrastructure.md#connections):
+ * of the `max_connections` this range really has, the range's top, measured (docs/infrastructure.md#connections). It
+ * once had to fit the bottom's 112 too, which pushed the request path's pool down to no benefit (decision 0150):
  * - `hyperdrive`: the `ChatDatabase` config's origin connection limit, the request path's: ChatApi's requests (sessions,
  *   roles, repositories, shape access) and the site's.
  * - `engine`: the `EngineDatabase` config's, the durable engine's: every `FlowExecution` alarm and call, whose journal,
@@ -37,8 +38,7 @@ export const ALERT_PERCENT = 80
  * - `deploy`: the deploy's migrations and an operator's `psql`.
  * - `reserved`: what Neon keeps for itself and superusers.
  */
-export const CONNECTION_BUDGET = { hyperdrive: 20, engine: 30, electric: 20 + 1, deploy: 5, reserved: 13 } as const
-
+export const CONNECTION_BUDGET = { hyperdrive: 50, engine: 30, electric: 20 + 1, deploy: 5, reserved: 13 } as const
 
 /** Electric's query pool: the `electric` budget less its replication connection. */
 export const ELECTRIC_POOL_SIZE = CONNECTION_BUDGET.electric - 1
