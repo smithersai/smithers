@@ -42,7 +42,7 @@ import { RunStore } from "@smthrs/run-store"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Read from "./internal/ExecutionSnapshotRead.ts"
-import { RunState } from "./RunState.vibe"
+import { RunState } from "./RunState.ts"
 
 /**
  * The most bytes of UTF-8 one released value holds: 16 KiB.
