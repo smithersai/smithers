@@ -5,6 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
+import * as Stream from "effect/Stream"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { TestScript } from "../RemoteChildProcessSpawner/TestScript.ts"
@@ -14,7 +15,7 @@ import type { TestSessionState } from "./TestSessionState.ts"
 
 const encoder = new TextEncoder()
 
-const scriptedOutput = (text: string | undefined): Stream<Uint8Array, ProviderError> =>
+const scriptedOutput = (text: string | undefined): Stream.Stream<Uint8Array, ProviderError> =>
   text === undefined || text === "" ? Stream.empty : Stream.fromArray([encoder.encode(text)])
 
 /**
@@ -39,7 +40,7 @@ export interface TestSessionOptions {
   readonly script?: ((command: string) => TestScript | undefined) | undefined
   readonly acquireFailure?: ProviderError | undefined
   /** Gives every session a `ping`, backed by this effect. */
-  readonly ping?: (void!ProviderError) | undefined
+  readonly ping?: Effect.Effect<void, ProviderError> | undefined
   /** Guest paths that are credentials: a fork leaves them behind. */
   readonly credentials?: ReadonlyArray<string> | undefined
   /** Fails every `fork` with this error. */
@@ -60,64 +61,66 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
     files: new Map(
       Object.entries(options.files ?? {}).map(([path, content]) => [
         path,
-        typeof content === "string" ? encoder.encode(content) : content.slice(),
-      ]),
+        typeof content === "string" ? encoder.encode(content) : content.slice()
+      ])
     ),
     released: 0,
     forked: [],
-    children: new Map(),
+    children: new Map()
   }
   const resolve = (command: string): TestScript =>
-    options.scripts?.[command] ?? options.script?.(command)
-      ?? { stderr: `command not found: ${command}\n`, exitCode: 127 }
+    options.scripts?.[command] ?? options.script?.(command) ??
+      { stderr: `command not found: ${command}\n`, exitCode: 127 }
   const credentials = new Set(options.credentials ?? [])
   const open = (id: string, remoteId: string, files: Map<string, Uint8Array>): Session => ({
     id,
     remoteId,
     workdir: options.workdir ?? "/sandbox",
-    spawn: effect (command: string, spawnOptions) => {
+    spawn: Effect.fnUntraced(function*(command: string, spawnOptions) {
       state.commands.push(command)
       state.inputs.push(spawnOptions.stdin)
       const script = resolve(command)
-      if (script.failure !== undefined) throw script.failure
+      if (script.failure !== undefined) return yield* Effect.fail(script.failure)
       const process: RemoteProcess = {
         stdout: scriptedOutput(script.stdout),
         stderr: scriptedOutput(script.stderr),
-        exitCode: Effect.succeed(script.exitCode ?? 0),
+        exitCode: Effect.succeed(script.exitCode ?? 0)
       }
       return process
-    },
+    }),
     readFile: (path) =>
-      Effect.suspend(effect () => {
+      Effect.suspend(() => {
         const content = files.get(path)
         return content === undefined
-          ? throw new ProviderError({ code: "not_found", message: `the sandbox holds nothing at ${path}` })
-          : content.slice()
+          ? Effect.fail(
+            new ProviderError({ code: "not_found", message: `the sandbox holds nothing at ${path}` })
+          )
+          : Effect.succeed(content.slice())
       }),
-    writeFile: effect (path, content) =>
-      {
+    writeFile: (path, content) =>
+      Effect.sync(() => {
         files.set(path, content.slice())
-      },
+      }),
     ...options.ping === undefined ? {} : { ping: options.ping },
     fork: (key) =>
       options.forkFailure === undefined
         ? Effect.acquireRelease(
-          effect {
+          Effect.sync(() => {
             const tree = new Map(
               Array.from(files, ([path, content]) => [path, content.slice()] as const)
-                .filter(([path]) => !credentials.has(path)),
+                .filter(([path]) => !credentials.has(path))
             )
             state.forked.push(key)
             state.children.set(key, tree)
             return open(key, `${remoteId}/${key}`, tree)
-          },
-          effect () =>
-            {
+          }),
+          () =>
+            Effect.sync(() => {
               state.children.delete(key)
               state.released += 1
-            },
+            })
         )
-        : throw options.forkFailure,
+        : Effect.fail(options.forkFailure)
   })
   const session = open(options.session ?? "test-session", options.remoteId ?? "test-remote", state.files)
   return {
@@ -125,16 +128,16 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
     acquire: (key) =>
       options.acquireFailure === undefined
         ? Effect.acquireRelease(
-          effect {
+          Effect.sync(() => {
             state.acquired.push(key)
             return session
-          },
-          effect () =>
-            {
+          }),
+          () =>
+            Effect.sync(() => {
               state.released += 1
-            },
+            })
         )
-        : throw options.acquireFailure,
+        : Effect.fail(options.acquireFailure)
   }
 }
 
@@ -148,5 +151,5 @@ const makeTestSession = (options: TestSessionOptions = {}): TestSessionProvider 
  * @since 0.1.0
  */
 export const TestSession = {
-  make: makeTestSession,
+  make: makeTestSession
 } as const
