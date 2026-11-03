@@ -72,7 +72,7 @@
       "default": "./.vibelang/js/src/JsonSchema.js"
     },
     "./Kernel": {
-      "types": "./.vibe/declarations/src/Kernel.d.vibe.ts",
+      "types": "./src/Kernel.ts",
       "vibelang-source": "./src/Kernel.ts",
       "default": "./.vibelang/js/src/Kernel.js"
     },
@@ -102,7 +102,7 @@
       "default": "./.vibelang/js/src/PluginError.js"
     },
     "./Plugins": {
-      "types": "./.vibe/declarations/src/Plugins.d.vibe.ts",
+      "types": "./src/Plugins.ts",
       "vibelang-source": "./src/Plugins.ts",
       "default": "./.vibelang/js/src/Plugins.js"
     },
