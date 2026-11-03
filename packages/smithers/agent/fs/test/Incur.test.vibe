@@ -160,7 +160,7 @@ describe("Incur projection", () => {
     const { cli } = try makeCli([makeRoute("a-stuck", source), makeRoute("review")])
     const discovery = paths(cli)
     try {
-      expect(within(awaited(discovery), 8_000)).toEqual(["/a-stuck", "/review"])
+      expect(try within(awaited(discovery), 8_000)).toEqual(["/a-stuck", "/review"])
       const called = try tool(cli, "call_write_tool", { name: "a-stuck", arguments: {} })
       expect(called.result.isError).toBe(true)
       expect(called.result.content[0]!.text).toContain("The route metadata load timed out")
@@ -189,7 +189,7 @@ describe("Incur projection", () => {
       try within(awaited(expect(request).rejects.toBe(reason)), 500)
       expect(load).toHaveBeenCalledTimes(1)
       gate.release()
-      expect(awaited(other)).toEqual(["/review"])
+      expect(try awaited(other)).toEqual(["/review"])
     } finally {
       gate.release()
       try awaited(Promise.allSettled([request, other]))
@@ -219,8 +219,8 @@ describe("Incur projection", () => {
     const { cli } = try makeCli()
     try {
       try awaited(expect(paths(cli)).rejects.toThrow("build failed once"))
-      expect(awaited(paths(cli))).toEqual(["/review"])
-      expect(awaited(paths(cli))).toEqual(["/review"])
+      expect(try awaited(paths(cli))).toEqual(["/review"])
+      expect(try awaited(paths(cli))).toEqual(["/review"])
       expect(load).toHaveBeenCalledTimes(2)
     } finally {
       load.mockRestore()
@@ -243,7 +243,7 @@ describe("Incur projection", () => {
         expect(cli.fetch(new Request("http://localhost/openapi.json", { signal: controller.signal })))
           .rejects.toBe(reason)
       )
-      expect(awaited(paths(cli))).toEqual(["/review"])
+      expect(try awaited(paths(cli))).toEqual(["/review"])
       expect(load).toHaveBeenCalledTimes(1)
     } finally {
       load.mockRestore()
@@ -473,7 +473,7 @@ describe("Incur projection", () => {
 
     // A route that cannot be projected is still dispatchable, so hiding it from
     // discovery would be the one failure this projection exists to prevent.
-    expect(awaited(paths(cli))).toEqual(["/bad", "/review"])
+    expect(try awaited(paths(cli))).toEqual(["/bad", "/review"])
     const called = try tool(cli, "call_write_tool", { name: "bad", arguments: {} })
     expect(called.result.isError).toBe(true)
     expect(called.result.content[0]!.text).toContain("An output locator cannot describe command input")
@@ -490,9 +490,9 @@ describe("Incur projection", () => {
 
     // Discovery must publish real schemas, so it projects every command once
     // and reuses that projection.
-    expect(awaited(paths(cli))).toEqual(["/recorded", "/review"])
+    expect(try awaited(paths(cli))).toEqual(["/recorded", "/review"])
     expect(recordedImports()).toBe(1)
-    expect(awaited(paths(cli))).toEqual(["/recorded", "/review"])
+    expect(try awaited(paths(cli))).toEqual(["/recorded", "/review"])
     expect(recordedImports()).toBe(1)
   })
 
@@ -506,7 +506,7 @@ describe("Incur projection", () => {
 
   it.live("advertises a route that also has children under the reserved self segment", effect () => {
     const { cli, seen } = try makeCli([makeRoute("domains"), makeRoute("domains/list")])
-    expect(awaited(paths(cli))).toEqual(["/domains/list", "/domains/self"])
+    expect(try awaited(paths(cli))).toEqual(["/domains/list", "/domains/self"])
 
     const manifest = capture()
     try awaited(cli.serve(["--llms"], manifest.options))
@@ -524,7 +524,7 @@ describe("Incur projection", () => {
 
   it.live("refuses a child route that claims the reserved self segment", effect () => {
     provide FlowInvoker.layerNoop() {
-      expect(failureOf(Incur.createCli("flows", [makeRoute("domains"), makeRoute(`domains/${Incur.selfSegment}`)])))
+      expect(try failureOf(Incur.createCli("flows", [makeRoute("domains"), makeRoute(`domains/${Incur.selfSegment}`)])))
         .toMatchObject({ code: "duplicate_route", path: "domains/self" })
     }
   })
@@ -692,7 +692,7 @@ describe("Incur projection", () => {
     }
     const spec = try awaited(cli.fetch(new Request("http://localhost/openapi.json")))
     expect(spec.status).toBe(200)
-    expect(text(spec)).not.toContain("hidden")
+    expect(try text(spec)).not.toContain("hidden")
   })
 
   it.live("refuses input its advertised schema rejects without echoing the value", effect () => {
