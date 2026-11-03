@@ -1,0 +1,146 @@
+/**
+ * The in-process wake bus: durable writes that make a run runnable — a
+ * deferred completed, a durable clock fired, an operator resume — announce
+ * the run id here, and in-process waiters parked on that run resume
+ * immediately instead of waiting out a poll tick.
+ *
+ * The bus is EDGE-TRIGGERED and MISS-TOLERANT by design. A wake published
+ * while nobody waits is dropped, not queued: durable state already records
+ * that the run is runnable, and the engine's suspension polling schedule
+ * (`suspendedRetryPolicy`) remains the bounded fallback that re-drives any
+ * run whose wake the bus missed. Temporal's scheduled task queue takes the
+ * same position — `NotifyNewTasks` is a coalesced, non-blocking channel send
+ * and `MaxPollInterval` bounds the polling fallback (`reference/temporal`
+ * `service/history/queues/queue_scheduled.go`) — because a lossless bus
+ * would have to be durable, and the durable record already exists. Waiter
+ * registration follows opencode's in-process job registry: one `Deferred`
+ * per waiter, succeeded on completion, removed when the waiter's own scope
+ * closes (`reference/opencode` `packages/smithers/flows/core/src/background-job.ts`).
+ *
+ * Cross-process wakes never reach this bus: another process's deferred
+ * completion is observed through the store, on the polling schedule and the
+ * heartbeat sweeps. That split is deliberate v1 scope — an event-driven
+ * cross-process wake needs a committed journal subscription, which is a
+ * separate seam.
+ *
+ * The bus holds no host access at all — a `Map` of `Deferred`s — so it is
+ * browser-safe without a platform layer.
+ *
+ * @since 0.1.0
+ */
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+/**
+ * A run the engine admitted as another run's child, announced to
+ * {@link Admitted} once its row has committed: its flow, its id, and its
+ * payload as stored (encoded).
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Admission {
+    readonly flow: string;
+    readonly executionId: string;
+    readonly payload: unknown;
+}
+/**
+ * What the engine calls once a child run it admitted has committed. The
+ * default does nothing.
+ *
+ * A host that drives each execution in its own place, such as a Cloudflare
+ * Durable Object per execution, provides it to start the child there at once,
+ * while the parent's drive goes on, instead of after the drive parks. The
+ * announcement is a shortcut, never the record: the child's row and its
+ * parent edge are durable before it is made, and a host must still start
+ * children from what the store holds after the drive. So the effect never
+ * fails, and one that is lost or refused delays the child; it loses nothing.
+ * A child admitted inside a transaction whose commit the journal cannot
+ * observe is not announced.
+ *
+ * @category context
+ * @since 1.0.0
+ */
+export declare const Admitted: Context.Reference<(admission: Admission) => Effect.Effect<void>>;
+/**
+ * Wake bus operations.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Service {
+    /**
+     * Announces that a durable write made the run runnable. Every waiter
+     * currently parked on `executionId` resumes; with no waiters the wake is
+     * dropped and the polling fallback covers the run.
+     */
+    readonly wake: (executionId: string) => Effect.Effect<void>;
+    /**
+     * Parks until the next {@link wake} for `executionId`. Registration is
+     * removed when the waiting fiber is interrupted — including scope closure
+     * and losing a race against the polling sleep — so an abandoned wait
+     * leaks nothing.
+     *
+     * The wait is keyed by execution id alone: execution ids are unique
+     * across flows, so the flow tag adds no discrimination.
+     */
+    readonly awaitWake: (executionId: string) => Effect.Effect<void>;
+    /**
+     * How many waiters are currently parked on `executionId`. This is
+     * observability for tests and diagnostics, not a coordination primitive:
+     * a count observed now says nothing about a moment later.
+     */
+    readonly waiters: (executionId: string) => Effect.Effect<number>;
+}
+declare const WakeBus_base: Context.ServiceClass<WakeBus, "@smthrs/engine-store/WakeBus", Service>;
+/**
+ * Service tag for the in-process wake bus.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export declare class WakeBus extends WakeBus_base {
+}
+/**
+ * Constructs a wake bus. Registration and delivery are plain in-memory
+ * operations on the constructing process; nothing is durable.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export declare const makeUnsafe: () => Service;
+/**
+ * Constructs a wake bus effectfully. Prefer this in compositions;
+ * {@link makeUnsafe} exists for construction outside a fiber.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export declare const make: Effect.Effect<Service>;
+/**
+ * A bus that never delivers: wakes are dropped and waiters park forever.
+ * With it in place every resume travels the polling fallback — which is
+ * exactly what a test asserting the fallback provides it for.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export declare const makeNoop: (overrides?: Partial<Service>) => Service;
+/**
+ * Provides a fresh wake bus. An engine composition resolves the bus
+ * optionally, so providing this layer is how a host shares one bus between
+ * the engine and its own wake sources; a composition given none builds a
+ * private bus.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export declare const layer: Layer.Layer<WakeBus>;
+/**
+ * Provides {@link makeNoop}.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export declare const layerNoop: (overrides?: Partial<Service>) => Layer.Layer<WakeBus>;
+export {};

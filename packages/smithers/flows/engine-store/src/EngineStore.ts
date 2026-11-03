@@ -50,7 +50,7 @@ import * as ReplayOnly from "./ReplayOnly.vibe"
 import { RunState } from "./RunState.vibe"
 import * as StepBoundary from "./StepBoundary.ts"
 import * as StepSandbox from "./StepSandbox.ts"
-import * as WakeBus from "./WakeBus.ts"
+import * as WakeBus from "./WakeBus.vibe"
 import * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
 
 /**
