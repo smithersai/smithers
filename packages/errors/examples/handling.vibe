@@ -39,6 +39,6 @@ export effect function raiseFailure(): Effect<never, SmithersError, infer R> {
  * @returns The classified code; nothing escapes.
  * @since 1.0.0
  */
-export function recoverFailure(): Effect<string> {
+export effect function recoverFailure(): Effect<string> {
   return raiseFailure() catch (failure) => `Recovered ${failure.code}`
 }
