@@ -97,8 +97,8 @@
       "default": "./.vibelang/js/src/core/JsonPath.js"
     },
     "./core/OAuthToken": {
-      "types": "./src/core/OAuthToken.ts",
-      "vibelang-source": "./src/core/OAuthToken.ts",
+      "types": "./.vibe/declarations/src/core/OAuthToken.d.vibe.ts",
+      "vibelang-source": "./src/core/OAuthToken.vibe",
       "default": "./.vibelang/js/src/core/OAuthToken.js"
     },
     "./core/Pkce": {
@@ -127,8 +127,8 @@
       "default": "./.vibelang/js/src/core/SourceRecord.js"
     },
     "./core/SourceStore": {
-      "types": "./src/core/SourceStore.ts",
-      "vibelang-source": "./src/core/SourceStore.ts",
+      "types": "./.vibe/declarations/src/core/SourceStore.d.vibe.ts",
+      "vibelang-source": "./src/core/SourceStore.vibe",
       "default": "./.vibelang/js/src/core/SourceStore.js"
     },
     "./core/Sync": {

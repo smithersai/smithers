@@ -68,7 +68,7 @@ export * as Migrations from "./core/Migrations.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as OAuthToken from "./core/OAuthToken.ts"
+export * as OAuthToken from "./core/OAuthToken.vibe"
 
 /**
  * @category constructors
@@ -104,7 +104,7 @@ export * as SourceRecord from "./core/SourceRecord.vibe"
  * @category services
  * @since 1.0.0
  */
-export * as SourceStore from "./core/SourceStore.ts"
+export * as SourceStore from "./core/SourceStore.vibe"
 
 /**
  * @category constructors

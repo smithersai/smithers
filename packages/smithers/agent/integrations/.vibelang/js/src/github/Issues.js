@@ -259,6 +259,15 @@ const markedWith = (item, writeId) => {
     const body = typeof item === "object" && item !== null ? item.body : undefined;
     return typeof body === "string" && writeIdOf(body) === writeId;
 };
+// Whether a listed item, not yet decoded, is by `author`, when one is named.
+// A caller that knows who wrote its own items names it, so a marker someone
+// copied into an item of theirs is never the match.
+const byAuthor = (item, author) => {
+    if (author === undefined)
+        return true;
+    const user = typeof item === "object" && item !== null ? item.user : undefined;
+    return typeof user === "object" && user !== null && user.login === author;
+};
 const isPullRequest = (item) => item.pull_request !== undefined;
 const spanAttributes = (owner, repo, number) => ({
     "github.owner": owner,
@@ -347,8 +356,9 @@ export const createComment = (owner, repo, number, body) => withSpan((Effect_1.g
  * `GET /repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&since=…`.
  * Pull requests are skipped.
  *
- * With more than one match, the earliest created wins. A search that runs out
- * of pages fails `poll-failed` with `incomplete: true`, even with a match:
+ * With more than one match, the earliest created wins. With `author`, only
+ * items that login wrote match, so a copied marker never does. A search that
+ * runs out of pages fails `poll-failed` with `incomplete: true`, even with a match:
  * an older original may lie beyond the page budget.
  *
  * @category getters
@@ -368,8 +378,10 @@ export const findIssueByWrite = (owner, repo, options) => withSpan((Effect_1.gen
         try {
             for (const item of page.items) {
                 try {
-                    if (markedWith(item, writeId) && !isPullRequest(item))
-                        found = item;
+                    {
+                        if (markedWith(item, writeId) && byAuthor(item, options.author) && !isPullRequest(item))
+                            found = item;
+                    }
                 }
                 catch (thrown_1) {
                     pending_1 = thrown_1;
@@ -407,7 +419,7 @@ export const findCommentByWrite = (owner, repo, number, options) => withSpan((Ef
     const path = `/repos/${repository}/issues/${issue}/comments`;
     const page = yield* client.paginate(`${path}${query({ since })}`, { maxPages: RECONCILE_PAGES });
     // Oldest first, so the first match is the earliest created.
-    const found = page.items.find((item) => markedWith(item, writeId));
+    const found = page.items.find((item) => markedWith(item, writeId) && byAuthor(item, options.author));
     if (found === undefined && page.truncated)
         return yield* Effect_1.fail(incomplete("findCommentByWrite"));
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(IssueComment, found, path));

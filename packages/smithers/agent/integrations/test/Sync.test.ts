@@ -4,7 +4,7 @@ import { Effect, Layer, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
-import { layerMemory, SourceStore } from "../src/core/SourceStore.ts"
+import { layerMemory, SourceStore } from "../src/core/SourceStore.vibe"
 import { type Changes, DEFAULT_MAX_PAGES, MAX_PAGES_LIMIT, runSync, type SyncAdapter } from "../src/core/Sync.vibe"
 import { record, runWith, sqlLayer } from "./SourceStoreFixtures.ts"
 
