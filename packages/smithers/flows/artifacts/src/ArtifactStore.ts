@@ -26,7 +26,7 @@ import * as Path from "effect/Path"
 import type { ArtifactCorruption, ArtifactMissing, ArtifactStoreError } from "./ArtifactStoreError.vibe"
 import { type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.ts"
 import { makeMemory } from "./MemoryArtifactStore.ts"
-import { makeNoop } from "./NoopArtifactStore.ts"
+import { makeNoop } from "./NoopArtifactStore.vibe"
 
 export {
   ArtifactCorruption,
@@ -37,7 +37,7 @@ export {
 export { defaultDirectory, type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.ts"
 export { measureBytes } from "./measureBytes.ts"
 export { makeMemory } from "./MemoryArtifactStore.ts"
-export { makeNoop } from "./NoopArtifactStore.ts"
+export { makeNoop } from "./NoopArtifactStore.vibe"
 export { snapshotBytes } from "./snapshotBytes.vibe"
 export { validateDigest } from "./validateDigest.vibe"
 
