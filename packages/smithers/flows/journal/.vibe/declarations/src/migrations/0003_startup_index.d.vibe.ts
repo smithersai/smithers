@@ -3,7 +3,7 @@
  *
  * @since 0.1.0
  */
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 /**
  * Preserves deterministic timestamp/run/sequence ordering without sorting the retained history.
