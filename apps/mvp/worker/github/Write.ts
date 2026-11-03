@@ -23,7 +23,7 @@ import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
 import { fetchIssue, project } from "./Project.ts"
-import { permissionOf } from "./RepoRoles.ts"
+import { CANT_ACT, permissionOf, RoleRefused } from "./RepoRoles.ts"
 import * as Store from "./Store.ts"
 import type { TokenUnavailable } from "./Tokens.ts"
 import * as TriageStore from "./TriageStore.ts"
@@ -120,6 +120,7 @@ export const Write = Flow.make("github/Write", {
 
 /** The wait GitHub asked for, when a failure says so. */
 const retryAfter = (error: unknown): { readonly retryAfterMillis?: number } => {
+  if (error instanceof RoleRefused) return error.retryAfterSeconds === undefined ? {} : { retryAfterMillis: error.retryAfterSeconds * 1000 }
   const classified = classify(error)
   return classified.kind === "retry" && classified.retryAfterMillis !== undefined
     ? { retryAfterMillis: classified.retryAfterMillis }
@@ -201,10 +202,31 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const payload = write.payload
       // Enabling and pausing triage change the repository's settings and nothing on GitHub: no token.
       if (payload.op === "triage/enable" || payload.op === "triage/pause") {
+        let authority = payload.authority
+        const permitted = ["admin", "maintainer"] as const
+        if (authority?.scope?._tag === "Repo" && services.roles !== undefined) {
+          const held = authority.scope.held
+          if (held.personId !== authority.personId || held.role === null || !permitted.some((role) => role === held.role)) {
+            return yield* settled(write, "none", { status: "refused", failure: "not_allowed" })
+          }
+          // Resolve from a fresh row or ask GitHub, with no write transaction/row locks held during the network read.
+          const current = yield* services.roles.resolve({ subject: { kind: "person", id: authority.personId },
+            role: held.role, session: authority.sessionId, ...(authority.alias === undefined ? {} : { alias: authority.alias }) },
+            repositoryOf(held.repoId.replace(/^github\//, ""))).pipe(Effect.result)
+          if (current._tag === "Failure") {
+            if (CANT_ACT.has(current.failure.code)) return yield* settled(write, "none", { status: "refused", failure: "not_allowed" })
+            return yield* current.failure
+          }
+          if (current.success.role === null || !permitted.some((role) => role === current.success.role)) {
+            return yield* settled(write, "none", { status: "refused", failure: "not_allowed" })
+          }
+          authority = { ...authority, scope: Option.isSome(current.success.held)
+            ? { _tag: "Repo", held: current.success.held.value } : { _tag: "Deployment" } }
+        }
         const sql = yield* SqlClient.SqlClient
         return yield* sql.withTransaction(Effect.gen(function* () {
           yield* WriteAuthority.bound
-          if (!(yield* ProtectedAuthority.holds(payload.authority, ["admin", "maintainer"]))) {
+          if (!(yield* ProtectedAuthority.holds(authority, permitted))) {
             return yield* settled(write, "none", { status: "refused", failure: "sign_in_required" })
           }
           return yield* settled(write, "none", { status: "done", itemNumber: null, githubId: null },

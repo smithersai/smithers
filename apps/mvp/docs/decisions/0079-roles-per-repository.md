@@ -94,3 +94,12 @@ including 403 and 429, instead of letting polling swallow them for two minutes.
 ## Rebase onto GitHub write hardening (2026-10-23)
 
 Migration 0051 follows 0048–0050. Decision 0078 is reserved for timeline. The library catalog entries used are `@smthrs/integrations` for GitHub and `@smthrs/flow` for durable writes. `Action.once` retains decision 0077’s keyed recovery; the account and role check wraps only `perform`, so recovery can find an already-created issue or comment after revocation without authorizing a new write. TODO retry keeps its ownership check and stopped-attempt recovery, using the role resolved for its target repository for both admission and Maintainer overrides.
+
+### Deferred protected writes (2026-11-02)
+
+A queued triage settings write requires the person's current Maintainer-or-Admin
+permission, rather than equality with the admitted role. Resolve a fresh repository
+observation outside the final transaction, then lock and validate that observation
+and the live session/alias inside it. A read failure remains retryable through the
+existing durable step policy; only a confirmed loss of permission settles refusal.
+Synchronous admission keeps its existing exact-observation guard. No migration changes.

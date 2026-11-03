@@ -13,7 +13,7 @@ export const holds = (authority: Session | null | undefined, roles: ReadonlyArra
   if (authority.scope._tag === "Repo") {
     const held = authority.scope.held
     return held.personId === authority.personId && held.role !== null && roles.includes(held.role)
-      && (yield* RepoRoles.holds(held)) && (yield* WriteAuthority.holds(authority))
+      && (yield* RepoRoles.holds(held, roles)) && (yield* WriteAuthority.holds(authority))
   }
   const sql = yield* SqlClient.SqlClient
   // SessionStore records all verified role observations under this same person lock.

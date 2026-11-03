@@ -427,3 +427,25 @@ Library catalog: existing Effect timeout/SQL, `@smthrs/flow` retries, and
    comparing Postgres time with the mini's clock. That assertion now brackets the read
    with Postgres timestamps. First green had 60 passed/1 clock failure; corrected green:
    `/tmp/write-seam-1-green-2.log`, PID 95680 slot 2, 61 passed, 0 failed, 0 skipped.
+
+2. Deferred triage: the GitHub flow host supplies `RepoRoles`; queued Enable/Pause
+   resolves a fresh observation outside its transaction, then validates the currently
+   permitted role and session/alias under the final locks. A promotion still permits
+   the write. Stale-at-commit observations and real read failures raise retryable
+   `WriteUnavailable`, retaining Retry-After; confirmed permission loss refuses.
+   Synchronous admission retains exact-role checks.
+   Red: `/tmp/write-seam-2-red-2.log`, PID 97754 slot 3: 7 failed, 3 passed, 0 skipped.
+   Lines 136–154: promoted/stale Maintainers returned refused rather than done
+   (test line 49). Lines 171–199: failed reads settled refusal rather than raising
+   the retryable error (test line 67). Lines 201–215: no refresh was reached.
+   `/tmp/write-seam-2-red.log` timed out awaiting capacity before collecting tests.
+   First broad green: `/tmp/write-seam-2-green.log`, PID 495 slot 2, 159 passed,
+   2 failed, 0 skipped (161 tests): 82 Triage and 4 Host tests passed; the new
+   race fixture passed a Promise instead of the service's `hold` callback. Corrected.
+   The other failure compared a persisted Postgres deadline with the host clock;
+   that regression now uses Postgres time with its original 2.6–3.4 s bounds.
+   Corrected runs: `/tmp/write-seam-2-additional.log`, PID 6607 slot 1, 13 passed;
+   `/tmp/write-seam-2-roles.log`, PID 7586 slot 2, 65 passed. Both: 0 failed, 0 skipped.
+   Added final-transaction promotion/demotion and expiry-after-refresh checks.
+   Full mini typecheck passed: `/tmp/write-seam-typecheck-2.log`, PID 7221 slot 1.
+   Initial `/tmp/write-seam-typecheck.log` failed on the corrected fixture callback type.

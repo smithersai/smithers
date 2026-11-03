@@ -11,6 +11,7 @@ import { readIssue } from "./Project.ts"
 import { readPull } from "./Pulls.ts"
 import * as Store from "./Store.ts"
 import type { GitHubTokens } from "./Tokens.ts"
+import type { RepoRoles } from "./RepoRoles.ts"
 
 // `github/Apply { deliveryId, repo, number, event }` (decision 0012 §2, docs/features/issues.md#the-webhook):
 // a webhook rang the bell for issue `number`; this reads the issue and its comments from GitHub with an installation
@@ -78,6 +79,8 @@ export interface Services<E = unknown, R = never> {
   /** Postgres with the app's tables (not the engine's schema). */
   readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
   readonly tokens: GitHubTokens
+  /** Deferred protected writes refresh repository roles outside their final transaction. */
+  readonly roles?: RepoRoles<R>
   /** How GitHub is reached: Effect's `HttpClient` over `fetch` when deployed, a scripted GitHub in the tests. */
   readonly http: HttpClient.HttpClient
   /** GitHub's REST API (`GITHUB_API_URL`). */

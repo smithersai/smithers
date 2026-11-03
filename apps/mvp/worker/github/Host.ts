@@ -10,6 +10,7 @@ import * as Apply from "./Apply.ts"
 import * as GitHubConfig from "./Config.ts"
 import * as Merge from "./Merge.ts"
 import * as Reconcile from "./Reconcile.ts"
+import * as RepoRoles from "./RepoRoles.ts"
 import * as Tokens from "./Tokens.ts"
 import * as Triage from "./Triage.ts"
 import * as Write from "./Write.ts"
@@ -29,6 +30,7 @@ export interface Ready<E, R> {
   readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
   readonly http: HttpClient.HttpClient
   readonly apiBaseUrl: string
+  readonly roles: RepoRoles.RepoRoles<R>
 }
 
 /**
@@ -46,7 +48,10 @@ export const ready = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       yield* Effect.logError("github.config").pipe(Effect.annotateLogs({ errorCode: codeOf(app.failure) }))
       return Option.none<Ready<E, R>>()
     }
-    return Option.some<Ready<E, R>>({ app: app.success, database, http: yield* HttpClient.HttpClient, apiBaseUrl })
+    const http = yield* HttpClient.HttpClient
+    const roles = yield* RepoRoles.make(database, { repository: configured.value.repository, app: configured,
+      allowed: yield* RepoRoles.allowed, http })
+    return Option.some<Ready<E, R>>({ app: app.success, database, http, apiBaseUrl, roles })
   })
 
 /**
@@ -63,6 +68,7 @@ export const services = <E, R>(
   judge: (enabledBy: string) => Seat,
 ): Triage.Services<E, R> => ({
   database: ready.database,
+  roles: ready.roles,
   http: ready.http,
   apiBaseUrl: ready.apiBaseUrl,
   tokens: Tokens.make({ app: ready.app, keys: sessions.keys, refresh: sessions.refresh }),

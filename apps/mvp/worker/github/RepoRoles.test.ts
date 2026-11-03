@@ -678,18 +678,23 @@ describe("reading an expired row holds no transaction across GitHub", () => {
     const made = await roles(github, { refreshDeadline: "30 seconds" })
     await expire()
     const burst = Promise.all(Array.from({ length: 12 }, () => resolve(made)))
-    await vi.waitFor(() => expect(permissionReads(github)).toBe(1), { timeout: 10_000 })
-    await new Promise((done) => setTimeout(done, 300))
-    // Nobody holds a transaction open or waits on a lock while GitHub answers.
-    // Nobody holds or waits for a lock on this person's role, or holds a transaction open, while GitHub answers.
-    const parked = await sql(runtime, `
-      WITH k AS (SELECT hashtextextended('github_repo_roles:${OTHER.id}:${MAYA}', 0) AS h)
-      SELECT (SELECT count(*)::int FROM pg_locks, k WHERE locktype = 'advisory'
-          AND classid::bigint = ((h >> 32) & 4294967295) AND objid::bigint = (h & 4294967295)) AS locks,
-        (SELECT count(*)::int FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
-          AND state LIKE 'idle in transaction%' AND (query ILIKE '%github_repo_role%' OR query ILIKE '%people%')) AS open`)
-    expect(parked).toEqual([{ locks: 0, open: 0 }])
-    answer()
+    try {
+      await vi.waitFor(() => expect(permissionReads(github)).toBe(1), { timeout: 10_000 })
+      await new Promise((done) => setTimeout(done, 300))
+      // Connections name their isolated schema; other files' transactions are outside this assertion.
+      const parked = await sql(runtime, `
+        WITH k AS (SELECT hashtextextended('github_repo_roles:${OTHER.id}:${MAYA}', 0) AS h)
+        SELECT (SELECT count(*)::int FROM pg_locks, k WHERE locktype = 'advisory'
+            AND pid IN (SELECT pid FROM pg_stat_activity WHERE application_name = current_setting('application_name'))
+            AND classid::bigint = ((h >> 32) & 4294967295) AND objid::bigint = (h & 4294967295)) AS locks,
+          (SELECT count(*)::int FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
+            AND application_name = current_setting('application_name')
+            AND state LIKE 'idle in transaction%' AND (query ILIKE '%github_repo_role%' OR query ILIKE '%people%')) AS open`)
+      expect(parked).toEqual([{ locks: 0, open: 0 }])
+    } finally {
+      answer()
+      await burst
+    }
     const answered12 = await burst
     expect(answered12.map((result) => refusal(result)?.code ?? roleOf(result))).toEqual(Array(12).fill("member"))
     expect(permissionReads(github)).toBe(1)
@@ -803,7 +808,8 @@ describe("claiming the read of an expired row", () => {
     const waiting = Promise.all(Array.from({ length: 5 }, () => resolve(made)))
     await new Promise((done) => setTimeout(done, 400))
     const blocked = await sql(runtime, `SELECT count(*)::int AS n FROM pg_stat_activity
-      WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%github_repo_roles%'`)
+      WHERE datname = current_database() AND application_name = current_setting('application_name')
+        AND wait_event_type = 'Lock' AND query ILIKE '%github_repo_roles%'`)
     const results = await waiting
     const tookMillis = Date.now() - startedAt
     await held
@@ -871,10 +877,12 @@ describe("a rate limit's hold", () => {
         yield* Effect.promise(() => new Promise((done) => setTimeout(done, 1_500)))
       }))), scratch.database))
     await Effect.runPromise(Deferred.await(locked))
-    const refusedAt = Date.now()
+    // Persisted deadlines use Postgres time; the host/container clocks need not agree.
+    const [{ refusedAt }] = await sql(runtime, `SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::float8 AS "refusedAt"`) as Array<{ refusedAt: number }>
+    const started = performance.now()
     refuseNow()
     const answered = refusal(await answering)
-    expect(Date.now() - refusedAt).toBeGreaterThanOrEqual(1_200)
+    expect(performance.now() - started).toBeGreaterThanOrEqual(1_200)
     await held
     // The persisted hold ends 3 s after the refusal, not 3 s after the cleanup got the table.
     const [{ endsAt }] = await sql(runtime, `SELECT (EXTRACT(EPOCH FROM read_until) * 1000)::float8 AS "endsAt" FROM github_repo_roles`) as Array<{ endsAt: number }>

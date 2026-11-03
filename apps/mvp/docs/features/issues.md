@@ -402,3 +402,10 @@ Delayed triage Enable/Pause retain the admitting session/alias and the role's sc
 role row. The final settings transaction locks and checks that role and sign-in identity, requiring Maintainer or
 Admin there. A live session after recorded demotion is refused without changing settings. Legacy protected payloads
 with no role scope fail closed. GitHub writes that use a token keep their existing token and provider checks.
+
+Deferred triage Enable/Pause writes resolve the current repository role before their
+writing transaction, reusing a fresh observation or refreshing an expired one. The
+transaction locks and checks the current role against Maintainer/Admin permission,
+so a promotion still permits the operation. A failed role read leaves the write pending
+for the existing durable retry policy, including GitHub's retry delay; an actual loss
+of permission refuses it. Session and alias liveness are still checked at commit.
