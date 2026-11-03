@@ -6,7 +6,7 @@ import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { jj } from "./numbering.mjs"
 import { diffHash, overrideInbox, requiredMatcher, requireReviews, reviewModel, runReview, verdictOf } from "./review.mjs"
-import { createWorkspace, landWorkspace as land } from "./workspace.mjs"
+import { createWorkspace, landWorkspace as land, syncWorkspace } from "./workspace.mjs"
 
 const fakeCodex = `#!/usr/bin/env node
 const { mkdirSync, writeFileSync } = require("node:fs")
@@ -69,7 +69,7 @@ function fixture(t) {
   createWorkspace(root, lane, "lane")
   const landing = (options = {}) => land(lane, { message: "fix: a lane", validation: "fixture", lockPath: join(directory, "main-push.lock"), ...options })
   const onMain = () => { jj(remote, ["git", "import", "--ignore-working-copy"]); return jj(remote, ["log", "--ignore-working-copy", "-r", "main", "--no-graph", "-T", "description.first_line()"]) }
-  const change = (name, text) => { mkdirSync(dirname(join(lane, name)), { recursive: true }); writeFileSync(join(lane, name), text) }
+  const change = (name, text) => { mkdirSync(dirname(join(lane, name)), { recursive: true }); writeFileSync(join(lane, name), text); jj(lane, ["status"]) }
   const landLog = () => { const file = join(reviews, "land-log.jsonl"); return existsSync(file) ? readFileSync(file, "utf8").trim().split("\n").map((row) => JSON.parse(row)) : [] }
   return { root, lane, remote, reviews, home, inbox, landing, onMain, change, landLog }
 }
@@ -257,12 +257,13 @@ test("land passes after a rebase with the same diff, whatever lands beside it", 
   change("secure/a.txt", "one\ntwo\nthree\n")
   runReview(lane, "@", "Check.")
   const before = at(lane, "commit_id")
-  // Main moves underneath the reviewed commit, so the land's sync rebases it.
+  // Main advances; the caller syncs the reviewed commit before asking land to gate it.
   jj(root, ["new", "main"])
   writeFileSync(join(root, "elsewhere.txt"), "elsewhere\n")
   jj(root, ["commit", "-m", "elsewhere"])
   jj(root, ["bookmark", "set", "main", "-r", "@-"])
   jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main"])
+  syncWorkspace(lane)
   await landing()
   assert.equal(onMain(), "fix: a lane")
   assert.notEqual(jj(lane, ["log", "-r", "main", "--no-graph", "-T", "commit_id"]), before)

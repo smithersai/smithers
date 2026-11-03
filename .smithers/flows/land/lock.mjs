@@ -138,6 +138,9 @@ export function killPublisher(record) {
   try { process.kill(-record.pid, "SIGKILL") } catch (error) { if (error.code !== "ESRCH") throw error }
 }
 export function publicationStopped(directory, now) {
+  // External farm jobs outlive a dead queue owner. Only their owner/host's explicit
+  // completion proof releases exclusion; PID death and lease age are not that proof.
+  if (existsSync(join(directory, "external-work.json")) && !existsSync(join(directory, "external-work-stopped"))) return false
   if (decision(directory) !== "push" || existsSync(join(directory, "publisher-stopped"))) return true
   const bytes = text(join(directory, "publisher.json"))
   if (!bytes) return true // No permission to execute is sent before this record exists.

@@ -4277,6 +4277,14 @@
         "path": ".smithers/flows/land/typecheck.test.mjs"
       },
       {
+        "kind": "file",
+        "path": ".smithers/flows/land/affected.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/land/affected-policy.test.mjs"
+      },
+      {
         "kind": "glob",
         "pattern": ".smithers/flows/**/*.ts",
         "exclude": []

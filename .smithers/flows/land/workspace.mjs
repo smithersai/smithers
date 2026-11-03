@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Source-only jj workspace lifecycle; the shared mkdir lock also coordinates legacy lanes. */
-import { spawnSync } from "node:child_process"
+import { boundedSpawnSync as spawnSync } from "./process.mjs"
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, lstatSync, readlinkSync, copyFileSync, realpathSync, rmSync, symlinkSync } from "node:fs"
 import { homedir } from "node:os"
@@ -14,6 +14,7 @@ import { runProcess } from "./process.mjs"
 import { engineeringGateEnvironment } from "./engineering-gate-environment.mjs"
 import { logLanding, requireReviews } from "./review.mjs"
 import { typecheckApp } from "./typecheck.mjs"
+import { runAffectedGate, requireAffectedReceipt } from "./affected-receipt.mjs"
 
 const marker = ".jj/agent-workspace.json"
 const excluded = new Set([".jj", ".git", "node_modules", ".cache", "dist", "target", ".alchemy", ".wrangler", "coverage", "test-results", "playwright-report", ".venv"])
@@ -246,10 +247,13 @@ export function removeWorkspace(root) {
 
 /**
  * @param {string} root
- * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, noReviewNeeded?: string, afterValidation?: () => void, beforePush?: () => Promise<void>, signal?: AbortSignal, lockPath?: string, lockOptions?: object}} [options]
+ * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, noReviewNeeded?: string, afterValidation?: () => void, beforePush?: () => Promise<void>, signal?: AbortSignal, lockPath?: string, lockOptions?: object, affectedRun?: Function, afterAffectedGate?: Function}} [options]
  */
-export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, noReviewNeeded, afterValidation, beforePush, signal, lockOptions, lockPath = process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock") } = {}) {
+export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, noReviewNeeded, afterValidation, beforePush, signal, lockOptions, affectedRun, afterAffectedGate, lockPath = process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock") } = {}) {
   const reviews = (tip) => requireReviews(root, `(main@origin..${tip}) ~ empty()`, { override: noReviewNeeded })
+  // Test the exact stored commit before admission, without modifying the workspace.
+  const receipt = await runAffectedGate(root, { signal, run: affectedRun })
+  await afterAffectedGate?.(receipt)
   const release = await acquireLock(lockPath, { ...lockOptions, signal })
   try {
     syncWorkspace(root)
@@ -268,9 +272,10 @@ export async function landWorkspace(root, { message, tests = [], validation, req
     if (existsSync(join(root, indexPath))) await regenerateIndex(root, undefined, signal)
     jj(root, ["status"])
     const tested = revision(root, "@")
+    const gate = await requireAffectedReceipt(root, receipt, { base, head: tested })
     // Refuse before spending the tests; the check under the lock below is the one that counts.
     reviews("@")
-    // Keep the same FIFO lease from sync through every validation and the push.
+    // Keep the FIFO lease through bounded validation and publication.
     await typecheckApp(root, { signal })
     for (const command of tests) {
       const result = await runProcess("bash", ["-o", "pipefail", "-c", command], { cwd: root, stream: true, signal, timeoutMs: 40 * 60 * 1000, env: engineeringGateEnvironment(process.env) })
@@ -291,6 +296,7 @@ export async function landWorkspace(root, { message, tests = [], validation, req
     if (!commit || commit.includes("\n")) throw new Error("Landing requires one tip commit")
     if (revision(root, `${commit} & ::main@origin`)) { console.log(`LANDED ${commit} (already present)`); return commit }
     if (!tests.length && !validation) throw new Error("Supply --test <command> or --validated <existing test receipt>; nothing pushed")
+    if (revision(root, `main@origin ~ ::${commit}`)) throw new Error("Remote main is not an ancestor of the publication candidate; sync explicitly before publishing")
     if (revision(root, `main ~ ::${commit}`)) throw new Error("Local main has unpublished work; refusing to move it backwards")
     if (message) {
       if (coAuthor && /[\r\n]/.test(coAuthor)) throw new Error("Co-author must be one trailer value")
@@ -305,7 +311,7 @@ export async function landWorkspace(root, { message, tests = [], validation, req
     // describe was the last snapshot: what is published must be the tree that was tested and typechecked.
     if (jj(root, ["diff", "--ignore-working-copy", "--from", tested, "--to", pushed, "--name-only"]).trim()) throw new Error("Source changed after validation; nothing pushed, rerun land")
     // From the gate to the push nothing snapshots, so an edit made now cannot join what was checked.
-    logLanding(root, pushed, reviews(pushed))
+    logLanding(root, pushed, { ...reviews(pushed), gate })
     jj(root, ["bookmark", "set", "main", "-r", pushed, "--ignore-working-copy"])
     await beforePush?.()
     if (revision(root, "main") !== pushed) throw new Error("main moved after the review gate; nothing pushed, rerun land")
@@ -323,7 +329,7 @@ export async function landWorkspace(root, { message, tests = [], validation, req
 
 export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
   if (args[0] === "--help" || !args.length) {
-    console.log("Usage: node .smithers/flows/land/workspace.mjs create <path> <name> | sync | recover | land [--message <text>] [--test <command>] [--validated <receipt>] [--no-review-needed <reason>] | remove\nRun from the invoking workspace. No installs. Sync, validation and push share a FIFO lease on main-push.lock. Waits are bounded. Ignored data prevents removal. Commits touching review-required.txt paths need a receipt from review.mjs.")
+    console.log("Usage: node .smithers/flows/land/workspace.mjs create <path> <name> | sync | recover | land [--message <text>] [--test <command>] [--validated <receipt>] [--no-review-needed <reason>] | remove\nRun from the invoking workspace. No installs. Validation and push share a FIFO lease on main-push.lock. Waits are bounded. Ignored data prevents removal. Commits touching review-required.txt paths need a receipt from review.mjs.")
     return
   }
   const [command, ...rest] = args

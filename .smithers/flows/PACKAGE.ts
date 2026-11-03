@@ -811,7 +811,9 @@ const land = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/land/lane-gates.test.mjs"),
     Smithers.file("//.smithers/flows/land/lane-prerequisites.test.mjs"),
     Smithers.file("//.smithers/flows/land/review.test.mjs"),
-    Smithers.file("//.smithers/flows/land/typecheck.test.mjs")
+    Smithers.file("//.smithers/flows/land/typecheck.test.mjs"),
+    Smithers.file("//.smithers/flows/land/affected.test.mjs"),
+    Smithers.file("//.smithers/flows/land/affected-policy.test.mjs")
   ]),
   srcs: [sources, ...landSources],
   deps: [repoTargetsPackage.repositoryInputs],

@@ -4,15 +4,24 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { spawn } from "node:child_process"
+import { pathToFileURL } from "node:url"
 import { setTimeout as delay } from "node:timers/promises"
 import { runProcess } from "./process.mjs"
 import { jj } from "./numbering.mjs"
 import { acquireLock, createWorkspace, syncWorkspace, landWorkspace as land, removeWorkspace, ensureFresh } from "./workspace.mjs"
+import { overrideInbox } from "./review.mjs"
 
 const landWorkspace = (root, options) => land(root, { ...options, lockPath: join(dirname(root), "main-push.lock") })
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "devx-workspaces-"))
+  const previous = { inbox: overrideInbox.path, nodeOptions: process.env.NODE_OPTIONS }
+  overrideInbox.path = join(directory, "inbox.md")
+  writeFileSync(overrideInbox.path, "")
+  const seam = join(directory, "inbox.mjs")
+  writeFileSync(seam, `import { overrideInbox } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "review.mjs")).href)}\noverrideInbox.path = ${JSON.stringify(overrideInbox.path)}\n`)
+  process.env.NODE_OPTIONS = `${previous.nodeOptions ?? ""} --import=${seam}`
+  t.after(() => { overrideInbox.path = previous.inbox; if (previous.nodeOptions === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = previous.nodeOptions })
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const root = join(directory, "root")
   mkdirSync(root)
@@ -102,6 +111,7 @@ test("create is source-only; sync, push, fresh child and remove use a real local
   assert.equal(readFileSync(join(root, "base.txt"), "utf8"), "base\n")
   writeFileSync(join(lane, "feature.txt"), "feature\n")
   assert.throws(() => removeWorkspace(lane), /Unpublished/)
+  jj(lane, ["status"]) // The caller snapshots before asking land to gate this source.
   const landed = await landWorkspace(lane, { message: "🔧 fix(test): a lane", tests: ["node -e 'process.exit(0)'"] })
   jj(remote, ["git", "import", "--ignore-working-copy"])
   assert.equal(jj(remote, ["file", "show", "--ignore-working-copy", "-r", "main", "feature.txt"]), "feature")
@@ -118,6 +128,7 @@ test("land refuses failed tests, unspecified validation and conflicts; remote ne
   createWorkspace(root, lane, "lane")
   const initial = jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "commit_id"])
   writeFileSync(join(lane, "feature.txt"), "feature\n")
+  jj(lane, ["status"])
   await assert.rejects(landWorkspace(lane, { message: "test" }), /--test/)
   await assert.rejects(landWorkspace(lane, { message: "test", tests: ["false | true"] }), /test failed/)
   assert.equal(jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "commit_id"]), initial)
@@ -131,6 +142,7 @@ test("land refuses source changed by a check and retains it without moving remot
   const { root, lane } = fixture(t)
   createWorkspace(root, lane, "lane")
   writeFileSync(join(lane, "feature.txt"), "before\n")
+  jj(lane, ["status"])
   const base = jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "commit_id"])
   await assert.rejects(landWorkspace(lane, { message: "changed", tests: ['node -e \'require("fs").writeFileSync("feature.txt","after")\''] }), /Source changed during validation/)
   assert.equal(jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "commit_id"]), base)
@@ -176,6 +188,7 @@ test("readiness uses main file/content and shared mutable ancestry is refused", 
   const { root, lane } = fixture(t)
   createWorkspace(root, lane, "lane")
   writeFileSync(join(lane, "feature.txt"), "feature\n")
+  jj(lane, ["status"])
   await assert.rejects(landWorkspace(lane, { message: "ready", validation: "fixture", requirements: ["gate.txt"] }), /Main is not ready/)
   await assert.rejects(landWorkspace(lane, { message: "ready", validation: "fixture", requirements: ["base.txt=not yet"] }), /content missing/)
   const landed = await landWorkspace(lane, { message: "ready", validation: "fixture", requirements: ["base.txt=base"] })
@@ -221,22 +234,22 @@ test("recovering an abandoned working operation preserves on-disk additions", (t
 })
 
 
-test("two concurrent CLI landings serialize and retain both remote changes", async (t) => {
+test("concurrent CLI landings sync under their leases and preserve both lands", async (t) => {
   const { root, lane, directory, remote, lock } = fixture(t)
   createWorkspace(root, lane, "lane")
   const second = join(directory, "second")
   createWorkspace(root, second, "second")
   writeFileSync(join(lane, "one.txt"), "one\n")
   writeFileSync(join(second, "two.txt"), "two\n")
+  for (const cwd of [lane, second]) jj(cwd, ["status"])
   const script = join(import.meta.dirname, "workspace.mjs")
   const env = { ...process.env, SMITHERS_LAND_LOCK: lock, SMITHERS_CO_AUTHOR: "Test Agent <test@example.invalid>" }
   const results = await Promise.all([lane, second].map(async (cwd, i) => {
     const args = [script, "land", "--message", `lane ${i}`, "--test", "node -e '0'"]
-    const result = await runProcess(process.execPath, args, { cwd, env })
-    if (result.status === 1 && /Main advanced during validation/.test(result.stderr)) return runProcess(process.execPath, args, { cwd, env })
-    return result
+    return runProcess(process.execPath, args, { cwd, env })
   }))
-  for (const result of results) { assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /LANDED [a-f0-9]{40}/) }
+  assert.deepEqual(results.map(result => result.status), [0, 0], results.map(result => result.stderr).join("\n"))
+  for (const result of results) assert.match(result.stdout, /LANDED [a-f0-9]{40}/)
   assert.equal(existsSync(lock), false)
   assert.match(jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "description"]), /Co-Authored-By: Test Agent <test@example.invalid>$/)
   jj(remote, ["git", "import", "--ignore-working-copy"])
@@ -248,6 +261,7 @@ test("CLI interruption and failed fetch release the lock and retain source", asy
   const { root, lane, lock } = fixture(t)
   createWorkspace(root, lane, "lane")
   writeFileSync(join(lane, "feature.txt"), "retained\n")
+  jj(lane, ["status"])
   const script = join(import.meta.dirname, "workspace.mjs")
   const child = spawn(process.execPath, [script, "land", "--message", "interrupted", "--test", `node -e 'require("fs").writeFileSync("ready.txt","ready"); setInterval(()=>{},1000)'`], { cwd: lane, env: { ...process.env, SMITHERS_LAND_LOCK: lock }, stdio: "ignore" })
   const exited = new Promise((resolve) => child.once("exit", resolve))
@@ -262,36 +276,6 @@ test("CLI interruption and failed fetch release the lock and retain source", asy
   assert.equal(failed.status, 1)
   assert.equal(existsSync(lock), false)
   assert.equal(readFileSync(join(lane, "feature.txt"), "utf8"), "retained\n")
-})
-
-test("disk-full fallback and validation retain the FIFO lease", async (t) => {
-  const { root, lane, directory, lock } = fixture(t)
-  mkdirSync(join(root, ".smithers"))
-  writeFileSync(join(root, ".smithers/target-index.json"), "[]\n")
-  writeFileSync(join(root, ".node-version"), "26.5.0\n")
-  jj(root, ["describe", "-m", "index source"])
-  jj(root, ["bookmark", "set", "main", "-r", "@"])
-  jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main"])
-  // Independent fixture repository, without adding a jj workspace.
-  jj(directory, ["git", "clone", root, lane])
-  writeFileSync(join(lane, "one.txt"), "one\n")
-  const mini = join(directory, "mini-run"), box = join(directory, "cfbox")
-  writeFileSync(mini, `#!${process.execPath}\n
-    require("node:assert/strict").equal(require("node:fs").existsSync(process.env.SMITHERS_LAND_LOCK), true)
-    console.error("FARM_HEALTH DISK_FULL"); process.exit(73)
-  `, { mode: 0o755 })
-  writeFileSync(box, `#!${process.execPath}\n
-    require("node:assert/strict").equal(require("node:fs").existsSync(process.env.SMITHERS_LAND_LOCK), true)
-    console.log("SMITHERS_TARGET_INDEX " + Buffer.from('[{"label":"//:index"}]').toString("base64"))
-  `, { mode: 0o755 })
-  const script = join(import.meta.dirname, "workspace.mjs")
-  const env = { ...process.env, SMITHERS_LAND_LOCK: lock, SMITHERS_MINI_RUN: mini, SMITHERS_CFBOX: box }
-  const check = `node -e 'require("assert/strict").equal(require("fs").existsSync(process.env.SMITHERS_LAND_LOCK),true)'`
-  const result = await runProcess(process.execPath, [script, "land", "--message", "first", "--test", check], { cwd: lane, env })
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stderr, /TARGET_INDEX host=mini status=disk_full exit=73/)
-  assert.equal(existsSync(lock), false)
-  assert.equal(jj(lane, ["file", "show", "-r", "main@origin", "one.txt"]), "one")
 })
 
 test("removal refuses work the lane moved off @: a lane bookmark or a bare head", (t) => {

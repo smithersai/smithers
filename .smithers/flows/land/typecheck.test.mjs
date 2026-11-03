@@ -7,6 +7,7 @@ import { test } from "node:test"
 import { jj } from "./numbering.mjs"
 import { command, typecheckApp } from "./typecheck.mjs"
 import { createWorkspace, landWorkspace } from "./workspace.mjs"
+import { overrideInbox } from "./review.mjs"
 
 const names = ["SMITHERS_MINI_RUN", "SMITHERS_LAT_RUN", "SMITHERS_CFBOX", "SMITHERS_CFBOX_VIA", "SMITHERS_CFBOX_RELAY", "PNPM_LOG", "PATH", "SMITHERS_REVIEWS_DIR"]
 
@@ -19,8 +20,12 @@ const client = (path, body = 'dir=$1; shift 2; cd "$MINI_RUN_SRC/$dir" && exec "
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "land-typecheck-"))
+  const previousInbox = overrideInbox.path
+  overrideInbox.path = join(directory, "inbox.md")
+  writeFileSync(overrideInbox.path, "")
   const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]))
   t.after(() => {
+    overrideInbox.path = previousInbox
     for (const name of names) saved[name] === undefined ? delete process.env[name] : process.env[name] = saved[name]
     rmSync(directory, { recursive: true, force: true })
   })
@@ -57,7 +62,8 @@ function fixture(t) {
   process.env.SMITHERS_CFBOX = client(join(directory, "cfbox"), "echo cfbox unavailable; exit 125")
   delete process.env.SMITHERS_CFBOX_VIA
   delete process.env.SMITHERS_CFBOX_RELAY
-  const change = (name, text) => { mkdirSync(dirname(join(lane, name)), { recursive: true }); writeFileSync(join(lane, name), text) }
+  // Caller edits are explicitly stored before any land/typecheck invocation.
+  const change = (name, text) => { mkdirSync(dirname(join(lane, name)), { recursive: true }); writeFileSync(join(lane, name), text); jj(lane, ["status"]) }
   const onMain = () => { jj(remote, ["git", "import", "--ignore-working-copy"]); return jj(remote, ["log", "--ignore-working-copy", "-r", "main", "--no-graph", "-T", "description.first_line()"]) }
   const landing = (options = {}) => landWorkspace(lane, { message: "fix: a lane", validation: "existing receipt", lockPath: join(directory, "main-push.lock"), ...options })
   const calls = (path) => { try { return readFileSync(`${path}.calls`, "utf8").trim().split("\n").length } catch { return 0 } }

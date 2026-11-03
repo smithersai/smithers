@@ -286,7 +286,7 @@ test("commit.mjs queues before executing its validation command", { timeout: 100
   assert.match(stderr, /ACQUIRED landing ticket 2[\s\S]*Test command failed: exit 17/)
 })
 
-test("two concurrent real landers validate and push in ticket order; a third queues without a slot", { timeout: 180000 }, async (t) => {
+test("three real landers validate in ticket order without preparing source", { timeout: 180000 }, async (t) => {
   const { directory, lock } = fixture(t)
   const remote = join(directory, "remote")
   mkdirSync(remote)
@@ -302,6 +302,7 @@ test("two concurrent real landers validate and push in ticket order; a third que
     jj(root, ["config", "set", "--repo", "user.name", "Lock test"])
     jj(root, ["config", "set", "--repo", "user.email", "lock@example.invalid"])
     writeFileSync(join(root, `feature-${i}`), `${i}`)
+    jj(root, ["status"]) // The caller pins its commit; the gate never snapshots it.
     return root
   })
   const entered = deferred(), proceed = deferred(), logs = [], events = new EventEmitter()
@@ -321,7 +322,10 @@ test("two concurrent real landers validate and push in ticket order; a third que
   t.after(() => { console.error = original; proceed.resolve() })
   const landed = [], pending = []
   const run = (i, tests) => {
-    const result = landWorkspace(lanes[i - 1], { lockPath: lock, message: `test: lane ${i}`, tests }).then((id) => { landed.push(i); return id })
+    const result = landWorkspace(lanes[i - 1], { lockPath: lock, message: `test: lane ${i}`, tests: [...tests, "exit 23"] }).then(
+      () => assert.fail("fixture must stop after validation"),
+      error => { assert.match(error.message, /Landing test failed/); landed.push(i) }
+    )
     result.catch(() => {}) // The finally below always observes every concurrent result.
     pending.push(result)
     return result
@@ -343,11 +347,15 @@ test("two concurrent real landers validate and push in ticket order; a third que
   assert.deepEqual(landed, [1, 2, 3])
   assert.doesNotMatch(logs.join("\n"), /Main advanced/)
   jj(remote, ["git", "import", "--ignore-working-copy"])
-  for (let i = 1; i <= 3; i++) assert.equal(jj(remote, ["file", "show", "-r", "main", `feature-${i}`]), `${i}`)
+  for (let i = 1; i <= 3; i++) {
+    assert.equal(jj(remote, ["file", "list", "-r", "main", `feature-${i}`]), "")
+    assert.equal(readFileSync(join(lanes[i - 1], `feature-${i}`), "utf8"), `${i}`)
+  }
   await t.test("a real land that overruns immediately before push leaves remote main unchanged", async () => {
     const c = clock()
     const before = jj(remote, ["log", "-r", "main", "--no-graph", "-T", "commit_id"])
     writeFileSync(join(lanes[0], "too-late"), "never published")
+    jj(lanes[0], ["status"])
     await assert.rejects(landWorkspace(lanes[0], {
       lockPath: lock, lockOptions: options(c), message: "test: expired land", tests: ["true"], beforePush: async () => { c.advance(1001) }
     }), /lost or expired.*refusing to push/)

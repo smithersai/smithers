@@ -59,6 +59,9 @@ hash=$( { echo "$NODE_VERSION"; cat pnpm-lock.yaml pnpm-workspace.yaml .npmrc .p
 } | shasum -a 256 | cut -c1-64)
 stamp=$FARM/slot$SLOT.install
 if [ "$(cat "$stamp" 2>/dev/null)" != "$hash" ]; then
+  # An install that fails or is killed part way must not leave an earlier stamp vouching for its node_modules:
+  # the next run of that same tree would skip the install and run against the broken one (as lat-remote.sh does).
+  rm -f "$stamp"
 # pnpm's optimistic repeat install answers "Already up to date" from mtimes, which rsync preserves, and links nothing new.
   t=$(now); say "slot $SLOT: dependencies changed; pnpm install --frozen-lockfile --prefer-offline"
   if ! "${CLEAN[@]}" pnpm install --frozen-lockfile --prefer-offline --config.optimistic-repeat-install=false --reporter=append-only >"$FARM/slot$SLOT.install.log" 2>&1; then

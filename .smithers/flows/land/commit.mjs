@@ -4,7 +4,8 @@ import { engineeringGateEnvironment, requireEngineeringGateHome } from "./engine
 import { logLanding, requiredPathsFile, requireReviews, requireReviewsGit } from "./review.mjs"
 import { typecheckApp } from "./typecheck.mjs"
 import { acquireLock } from "./workspace.mjs"
-import { spawnSync } from "node:child_process"
+import { runAffectedGate, requireAffectedReceipt } from "./affected-receipt.mjs"
+import { boundedSpawnSync as spawnSync } from "./process.mjs"
 import { createHash } from "node:crypto"
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
@@ -73,9 +74,9 @@ const gitPaths = (withWorkingTree) => {
     ...(withWorkingTree ? names("ls-files", "--others", "--exclude-standard") : [])
   ]
 }
-// What a push would publish now: jj snapshots @; Git stages everything into a private index, leaving the real one alone.
+// Read the stored jj commit; the legacy adapter stages into a private index.
 const snapshot = () => {
-  if (existsSync(join(root, ".jj"))) return run("jj", ["log", "-r", "@", "--no-graph", "-T", "commit_id"], true)
+  if (existsSync(join(root, ".jj"))) return run("jj", ["log", "--ignore-working-copy", "-r", "@", "--no-graph", "-T", "commit_id"], true)
   const directory = mkdtempSync(join(tmpdir(), "smithers-commit-tree-"))
   try {
     const index = join(directory, "index")
@@ -102,13 +103,24 @@ const gitReviews = (withWorkingTree) => {
 }
 
 try {
-  // Queue before validation; no farm capacity is held during admission.
+  // The full gate holds neither a queue ticket nor a lease. Only its receipt
+  // and the existing bounded checks belong inside the FIFO lease.
+  let affectedReceipt, affectedGate
+  if (push) {
+    requireEngineeringGateHome(process.env)
+    affectedReceipt = await runAffectedGate(root)
+  }
   releaseLanding = await acquireLock(process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock"))
   const gateEnvironment = engineeringGateEnvironment(process.env)
   // A home credential store cannot be hidden by changing HOME: absolute reads
   // remain possible. Refuse execution until the invoking checkout is isolated.
   if (push) requireEngineeringGateHome(process.env)
-  if (push) validated = snapshot()
+  if (push) {
+    if (existsSync(join(root, ".jj"))) run("jj", ["status"], true)
+    validated = snapshot()
+    affectedGate = await requireAffectedReceipt(root, affectedReceipt, { head: validated })
+    if (existsSync(join(root, ".jj")) && run("jj", ["log", "--ignore-working-copy", "-r", 'remote_bookmarks(exact:"main", exact:"origin") ~ ::@', "--no-graph", "-T", "commit_id"], true)) throw new Error("Remote main is not an ancestor of the publication candidate; sync explicitly before publishing")
+  }
   for (const command of tests) {
     const result = spawnSync("bash", ["-o", "pipefail", "-c", command], { cwd: root, stdio: "inherit", env: gateEnvironment })
     if (result.error || result.status !== 0) throw new Error(`Test command failed: ${command} (${result.error?.message ?? result.status})`)
@@ -147,7 +159,7 @@ try {
       const sha = run("jj", ["log", "-r", "main", "--no-graph", "-T", "commit_id"], true)
       assertValidated(validated, sha)
       // From this check to the push nothing snapshots, so a later edit cannot join what was checked.
-      logLanding(root, sha, jjReviews(sha))
+      logLanding(root, sha, { ...jjReviews(sha), gate: affectedGate })
       if (run("jj", ["log", "--ignore-working-copy", "-r", "main", "--no-graph", "-T", "commit_id"], true) !== sha) throw new Error("main moved after the review gate; nothing pushed")
       await releaseLanding.push("jj", ["git", "push", "--remote", "origin", "-b", "main", "--ignore-working-copy"], { cwd: root, stream: true })
       run("jj", ["git", "fetch", "--remote", "origin"])
@@ -169,7 +181,7 @@ try {
     if (push) {
       const sha = run("git", ["rev-parse", "main"], true)
       assertValidated(validated, run("git", ["rev-parse", "main^{tree}"], true))
-      logLanding(root, sha, gitReviews(false))
+      logLanding(root, sha, { ...gitReviews(false), gate: affectedGate })
       await releaseLanding.push("git", ["push", "origin", "main"], { cwd: root, stream: true })
       run("git", ["fetch", "origin", "+refs/heads/main:refs/remotes/origin/main"])
       try {

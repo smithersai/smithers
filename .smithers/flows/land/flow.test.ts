@@ -1,6 +1,7 @@
 import "./files.test.mjs"
 import "./farm/farm.test.mjs"
 import "./workspace.test.mjs"
+import "./affected-receipt.test.mjs"
 import "./lock.test.mjs"
 import "./lock-recovery.test.mjs"
 import "./process.test.mjs"

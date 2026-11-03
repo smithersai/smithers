@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
-import { runProcess } from "./process.mjs"
+import { runProcess, boundedSpawnSync, withProcessDeadline } from "./process.mjs"
 
 test("real child output and status are retained without shell interpolation", async () => {
   const result = await runProcess(process.execPath, ["-e", "console.log(process.argv[1]); console.error('err'); process.exit(7)", "$(never run)"])
@@ -21,4 +21,11 @@ test("abort before and during execution stops only the new process group", async
   const running = runProcess(process.execPath, ["-e", "setInterval(()=>{},1000)"], { signal: during.signal })
   setTimeout(() => during.abort(new Error("during")), 50)
   await assert.rejects(running, /during/)
+})
+
+
+test("a synchronous gate deadline bounds descendant-held output pipes", () => {
+  const started = Date.now(), controller = new AbortController()
+  assert.throws(() => withProcessDeadline({ at: started + 150, signal: controller.signal, expired: () => new Error("gate expired") }, () => boundedSpawnSync(process.execPath, ["-e", `const {spawn}=require('node:child_process');spawn(process.execPath,['-e','setTimeout(()=>{},2000)'],{stdio:'inherit'});setInterval(()=>{},1000)`])), /gate expired/)
+  assert.ok(Date.now() - started < 1000, "descendants must not extend the gate deadline")
 })

@@ -227,7 +227,10 @@ const test = Smithers.Shell.Test({
   // the PostgreSQL matrix, and the CLI announces it as an ignored 0.x setting
   // on stderr, so exporting it here changed every spawned command's output.
   env: {
-    SMITHERS_HISTORY_TEST_PG_URL: "postgres://postgres:smithers-history-test@127.0.0.1:55435/smithers_history_test"
+    SMITHERS_HISTORY_TEST_PG_URL: "postgres://postgres:smithers-history-test@127.0.0.1:55435/smithers_history_test",
+    ...(process.env.SMITHERS_TEST_TRACKED_SOURCE_FILE === undefined
+      ? {}
+      : { SMITHERS_TEST_TRACKED_SOURCE_FILE: process.env.SMITHERS_TEST_TRACKED_SOURCE_FILE })
   },
   services: [historyPostgresDatabase],
   sandbox: { network: "loopback" }
