@@ -2,7 +2,6 @@
   "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
     "rootDirs": [".",".vibe/declarations"],
-    "moduleSuffixes": ["", ".d.vibe"],
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "NodeNext",

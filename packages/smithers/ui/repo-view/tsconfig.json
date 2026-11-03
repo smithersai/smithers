@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "moduleSuffixes": ["",".d.vibe"],
     "allowArbitraryExtensions": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
