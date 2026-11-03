@@ -45,8 +45,6 @@
 import { parse } from "@babel/parser"
 import { digestSync } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
-import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { transform } from "sucrase"
 import * as Interactions from "./Interactions.vibe"
@@ -606,7 +604,7 @@ const location = (error: unknown): Pick<Problem, "line" | "column"> => {
  * @category checking
  * @since 0.1.0
  */
-export const check = (source: string, options: CheckOptions): Effect.Effect<CheckedModule, ViewCodeError> =>
+export const check = (source: string, options: CheckOptions): CheckedModule!ViewCodeError =>
   Effect.suspend(() => {
     if (utf8Length(source) > maxSourceBytes) {
       return Effect.fail(fail("too_large", [{ message: `A view module is at most ${maxSourceBytes} bytes` }]))
