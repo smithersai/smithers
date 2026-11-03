@@ -3,7 +3,7 @@
 // run's `RunContent` does: JSON text frames, a replay, `live` with the run's digest, then each event as it is stored. A
 // plain GET of the same route answers as ChatApi's would (426 to a Member, or the refusal). The object's own store is
 // tested in worker/runners/RunContent.test.ts; this tests what the page does with what it sends.
-import { NodeWS } from "@effect/platform-node/NodeSocket"
+import * as NodeWS from "@effect/platform-node/NodeWS"
 import { RetryPolicy } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
