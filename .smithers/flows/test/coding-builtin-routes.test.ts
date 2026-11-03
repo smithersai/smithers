@@ -40,9 +40,9 @@ import { systemFlows } from "./fixtures/system-flows.ts"
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Crypto } from "@smthrs/crypto"
-import * as Command from "../../../packages/smithers/agent/fs/src/Command.ts"
-import * as FileRouter from "../../../packages/smithers/agent/fs/src/FileRouter.ts"
-import * as FlowInvoker from "../../../packages/smithers/agent/fs/src/FlowInvoker.ts"
+import * as Command from "../../../packages/smithers/agent/fs/src/Command.vibe"
+import * as FileRouter from "../../../packages/smithers/agent/fs/src/FileRouter.vibe"
+import * as FlowInvoker from "../../../packages/smithers/agent/fs/src/FlowInvoker.vibe"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 const policy = "a".repeat(64)

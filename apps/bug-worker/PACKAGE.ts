@@ -20,7 +20,7 @@ const cwd = "apps/bug-worker"
 /** The worker, its schema, and the deployment description beside them. */
 const sources = [
   Smithers.glob("//apps/bug-worker/src/**/*.ts"),
-  Smithers.file("//apps/bug-worker/alchemy.run.ts")
+  Smithers.file("//apps/bug-worker/alchemy.run.vibe")
 ]
 
 /** The suite and its in-memory KV double. */

@@ -2,7 +2,7 @@
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer } from "effect"
-import { StackPublication, StackPublicationInput } from "./landing-schema.ts"
+import { StackPublication, StackPublicationInput } from "./landing-schema.vibe"
 import { Landing } from "./landing.ts"
 import { NativeCoding, NativeCodingError, requestIdFor, SourcePublication } from "./native.ts"
 import { CodingError } from "./schema.ts"
