@@ -271,6 +271,7 @@ const routes = async (
         writer: engine.writer,
         schema: engine.schema,
         flows: [Watched, Reviewed, Checked],
+        repositoryRun: (execution) => Effect.succeed(Option.some({ execution, repoId: "github/octo/hello" })),
         stop: options.stop ?? (() => Effect.void),
         transcript: options.transcript ?? ((runId) => Effect.succeed(HttpServerResponse.text(`handed ${runId}`))),
       }, roles)),

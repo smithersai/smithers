@@ -397,9 +397,8 @@ describe("a repository's run on Cloudflare", () => {
   test("a second repository's run syncs live to its device list and remains watchable", async () => {
     const t = await open(undefined, true)
     const ownRun = await Effect.runPromise(t.api.remote.repoRun("own"))
-    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci", "elsewhere/project"))
     await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
-      yield* sql`UPDATE runs SET repo_id = 'github/elsewhere/project' WHERE execution = ${runId}`
       yield* sql`INSERT INTO github_repo_roles (repo_id, person_id, role)
         VALUES ('github/elsewhere/project', 'person-member', 'member')`
     }))))
@@ -441,9 +440,8 @@ describe("a repository's run on Cloudflare", () => {
 
   test.each([null, "guest"])("the deployment's Member role grants no access to a second repository's run with role %s", async (role) => {
     const t = await open()
-    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci", "elsewhere/private"))
     await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
-      yield* sql`UPDATE runs SET repo_id = 'github/elsewhere/private' WHERE execution = ${runId}`
       yield* sql`INSERT INTO github_repo_roles (repo_id, person_id, role)
         VALUES ('github/elsewhere/private', 'person-member', ${role})`
     }))))
@@ -456,9 +454,8 @@ describe("a repository's run on Cloudflare", () => {
 
   test("a Member on the run's repository can watch even with a Guest session role on the deployment", async () => {
     const t = await open("gus")
-    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci", "elsewhere/project"))
     await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.gen(function* () {
-      yield* sql`UPDATE runs SET repo_id = 'github/elsewhere/project' WHERE execution = ${runId}`
       yield* sql`INSERT INTO github_repo_roles (repo_id, person_id, role)
         VALUES ('github/elsewhere/project', 'person-guest', 'member')`
     }))))

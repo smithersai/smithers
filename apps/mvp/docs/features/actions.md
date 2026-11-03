@@ -33,6 +33,8 @@ Stop ─▶ run/cancel { runId, seq, host: "cloud" } ─ step ─▶ POST /api/r
 
 The repository runs routes (`worker/ci/RunsApi.ts`) are for a Member or above on a repository `REPO_FLOWS_REPOSITORIES` allows (decision [0079](../decisions/0079-roles-per-repository.md)), in person or through an agent acting for them. Each start is recorded as a repository run before it starts, under `<flow>:<id>`, so a request sent again starts nothing new. For a manual start or Retry, that row commits only after the execution accepts its own intent; a conflicting intent returns 409 and leaves no ownership row. The admission transaction also locks and rechecks the sign-in session (and alias, if present) and the repository role receipt after the body and GitHub reads. Ended sessions return 401; a changed or expired role receipt returns 403. On the deployment repository, the newest session role receipt decides. Refusals record no run and start no execution. Their refusals are `{ code }`: `invalid` (400), `authentication` (401), `forbidden` (403), `not_found` or `not_manual` (404), `inputs` (422: the inputs don't fit the flow's form, at most 8 KiB as JSON), `nothing_failed`, `not_settled` or `conflict` (409), `rate_limited` (429), `off` or `unavailable` (503).
 
+Stop also reads the execution object's immutable `repo/Run` intent and requires its execution and repository to match the recorded association. Missing intents, other flows and conflicting repositories grant no cancellation, including historical poisoned rows and executions not yet begun by the engine.
+
 The stop route's refusals are `{ code }`, `Cache-Control: no-store`:
 
 | Status | `code` | When |

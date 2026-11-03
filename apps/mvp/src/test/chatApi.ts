@@ -404,7 +404,7 @@ export class TestChatApi extends Context.Service<
       readonly todoRun: (title: string) => Effect.Effect<string>
       readonly startExternal: (runId: string) => Effect.Effect<void>
       /** A repository's run of `flow` recorded on `TEST_REPOSITORY`, as a trigger records one: its execution id. */
-      readonly repoRun: (flow: string) => Effect.Effect<string>
+      readonly repoRun: (flow: string, repository?: string) => Effect.Effect<string>
       /** The run's status in the engine. */
       readonly status: (runId: string) => Effect.Effect<string | undefined>
       readonly progress: (runId: string) => Effect.Effect<number>
@@ -636,6 +636,8 @@ export class TestChatApi extends Context.Service<
           { label: string; ready: Deferred.Deferred<void>; release: Deferred.Deferred<void> }
         >()
         const remoteFibers = new Map<string, Fiber.Fiber<void>>()
+        // Probe flows carry a fixture-owned association independent of the mutable runs projection.
+        const remoteRepositories = new Map<string, RepoRuns.Admitted>()
         const remoteEngine = yield* Effect.cached(
           buildEngine(Layer.mergeAll(Interpreter.layer(Nested, { callbackIdentity: "stable" }), Interpreter.layer(External), TodoSession.registration(database)).pipe(Layer.provideMerge(Pause.registration((label) => Effect.gen(function* () {
             const gate = [...remoteGates.values()].find((gate) => gate.label === label)
@@ -666,6 +668,7 @@ export class TestChatApi extends Context.Service<
           writer: remoteWriter,
           schema: remoteSchema,
           flows: [Pause.Pause, External],
+          repositoryRun: (runId) => Effect.sync(() => Option.fromNullishOr(remoteRepositories.get(runId))),
           // What the run's Durable Object does (`ExecutionObject.make`'s `cancel`): the engine's own interrupt of the run.
           stop: (runId) =>
             Effect.gen(function* () {
@@ -1127,19 +1130,20 @@ export class TestChatApi extends Context.Service<
                 }, { runs: true }).pipe(Effect.provide(database), Effect.orDie)
                 return applied.kind === "applied" ? todoExecutionId(applied.receipt.starts[0]!.attemptId) : ""
               }),
-            repoRun: (flow) =>
+            repoRun: (flow, repository = TEST_REPOSITORY) =>
               Effect.gen(function* () {
                 yield* remoteEngine
                 const execution = `${flow}:${crypto.randomUUID()}`
                 yield* RepoRuns.record({
                   execution,
-                  repoId: `github/${TEST_REPOSITORY}`,
+                  repoId: `github/${repository.toLowerCase()}`,
                   flow,
                   sha: "d".repeat(40),
                   ref: "main",
                   event: "push",
                   launchedBy: "github",
                 }).pipe(Effect.provide(database), Effect.orDie)
+                remoteRepositories.set(execution, { execution, repoId: `github/${repository.toLowerCase()}` })
                 return execution
               }),
             status: (runId) =>

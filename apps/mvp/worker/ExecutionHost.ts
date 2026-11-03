@@ -9,6 +9,7 @@ import { Effect, Exit, Layer, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import * as Dispatch from "./ci/Dispatch.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
+import * as RepoRuns from "./RepoRuns.ts"
 import * as Checks from "./flows/Checks.ts"
 import * as HyperdrivePool from "./HyperdrivePool.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
@@ -456,6 +457,9 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
   )
   return {
     ...object,
+    /** The immutable start intent decides ownership even before the engine has created a run row. */
+    repositoryRun: Effect.map(storage.get<string>(ExecutionObject.intentKey), (raw) =>
+      Option.flatMap(Option.fromNullishOr(raw), (text) => Option.flatMap(decodeIntent(text), RepoRuns.repositoryIntent))),
     /** Persist before waking: a delivery racing the park, or repeated after a crash, is not lost. */
     signal: (deferredName: string) => Effect.scoped(Effect.gen(function* () {
       const raw = yield* storage.get<string>(ExecutionObject.intentKey)

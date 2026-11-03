@@ -664,6 +664,7 @@ describe("steering and stopping a TODO's external agent", { timeout: 240_000 }, 
     const remote = await runtime.runPromise(RemoteRuns.make(ctx.db, {
       schema: ctx.schema, database: ExecutionHost.readDatabase(server, ctx.schema), writer: await engineWriter(ctx.schema),
       flows: [Todo.Todo], transcript: () => Effect.succeed(HttpServerResponse.empty({ status: 426 })),
+      repositoryRun: () => Effect.die("a TODO has attempt ownership"),
       stop: () => Effect.die("a TODO stops its external agent, not its host"),
     }, roles))
     const handler = HttpEffect.toWebHandler(remote.fetch.pipe(Effect.provide(signedIn({ subject: { kind: "person", id: maya.id }, role: "member", login: maya.login })), Effect.provide(FetchHttpClient.layer)))

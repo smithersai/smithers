@@ -1,6 +1,7 @@
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Effect, Layer, Metric, Option } from "effect"
+import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import * as RepoFlow from "./ci/RepoFlow.ts"
 import {
   LINEAGE_DEPTH,
   REPO_RUN_NAMESPACE,
@@ -109,10 +110,19 @@ export const settle = <E, R, FE = never, FR = never>(
     return Option.some(state)
   }).pipe(Effect.withSpan("repo.run.settle"))
 
-/** The recorded repository run a run route's run belongs to: its execution and repository. */
+/** The recorded repository association. A stop also requires the execution object's authoritative intent. */
 export interface Admitted {
   readonly execution: string
   readonly repoId: string
+}
+
+/** A stored execution intent's repository association, never inferred from the runs projection. */
+export const repositoryIntent = (intent: { readonly flow: string; readonly executionId: string; readonly payload: unknown }) => {
+  if (intent.flow !== RepoFlow.Run._tag) return Option.none<Admitted>()
+  return Schema.decodeUnknownOption(RepoFlow.RunRequest)(intent.payload).pipe(
+    Option.filter((request) => request.run === intent.executionId),
+    Option.map((request): Admitted => ({ execution: request.run, repoId: `github/${request.repo.toLowerCase()}` })),
+  )
 }
 
 /**

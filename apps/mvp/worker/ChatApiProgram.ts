@@ -311,6 +311,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       schema: ExecutionHost.ENGINE_SCHEMA,
       flows: [Todo.Todo, RepoFlow.Run, RepoFlow.Jobs, CiJob.CiJob, CiJob.Graph],
       // A repository's run stops on the Durable Object that holds it (docs/features/actions.md#acts).
+      repositoryRun: (runId) => executions.getByName(runId).repositoryRun().pipe(Effect.map(Option.fromNullishOr)),
       stop: (runId) => executions.getByName(runId).cancel(),
       // A TODO run's transcript, on its own Durable Object (worker/RunContent.ts).
       transcript: (runId, admission) => RunContent.connect(runContents, runId, admission),

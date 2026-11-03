@@ -123,6 +123,8 @@ export interface Engine<E, R, RS = never> {
     runId: string,
     admission: SocketAccess.Admission,
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, RS>
+  /** The repository held by the execution's immutable intent, including before engine admission. */
+  readonly repositoryRun: (runId: string) => Effect.Effect<Option.Option<RepoRuns.Admitted>, unknown, RS>
   /**
    * Stops a repository's run on the Durable Object that holds it (`ExecutionObject.make`'s `cancel`): a durable
    * tombstone, then the engine's cancellation of the run and every run it started. A run its object hasn't begun is
@@ -324,6 +326,11 @@ export const make = <E, R, EE, ER, RS>(
           }
           // Only a repository's run itself: a job stops with its run.
           if (Option.isNone(admitted.repoRun) || admitted.repoRun.value.execution !== runId) return refused(404, "not_found")
+          // Old conflicting starts may have left a poisoned projection. It cannot authorize an object's cancellation.
+          const owned = yield* engine.repositoryRun(runId)
+          if (Option.isNone(owned) || owned.value.execution !== runId || owned.value.repoId !== admitted.repoRun.value.repoId) {
+            return refused(404, "not_found")
+          }
           // A run that ended has nothing to stop. One its object hasn't begun is stopped before it starts.
           const status = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
             sql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${runId}`).pipe(

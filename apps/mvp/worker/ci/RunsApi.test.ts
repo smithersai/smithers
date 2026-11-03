@@ -201,6 +201,7 @@ const routes = async (
   return {
     starts,
     starter,
+    storage,
     roles,
     engineSchema: options.engineSchema ?? "flows_none",
     fetch: (path: string, init?: RequestInit) => handler(new Request(`http://chat.test${path}`, init)),
@@ -455,6 +456,7 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
         writer: ExecutionHost.database(server.toString(), engine.schema),
         schema: engine.schema,
         flows: [SandboxCall, RepoFlow.Run],
+        repositoryRun: () => Effect.succeed(Option.none()),
         stop: (execution) => Effect.sync(() => void stopped.push(execution)),
         transcript: () => Effect.die("unused"),
       }, h.roles)
@@ -466,6 +468,54 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
       })
     })))
     expect(await rows(), "conflicting intent must leave no repository ownership").toEqual([])
+  })
+
+  test.each(["sandbox", "other-repository", "missing-intent", "same-repository"] as const)("a preexisting poisoned row grants no cancellation (%s)", async (victim) => {
+    const { github } = repository()
+    const h = await routes(github)
+    const id = uuid()
+    const runId = `sandbox-call:${id}`
+    if (victim === "sandbox") {
+      await runtime.runPromise(h.starter.start(SandboxCall, { executionId: runId, payload: {
+        callId: id, ownerId: GUS,
+        branch: { branchId: uuid(), owner: "acme", name: "private", branch: "main" },
+        call: { tool: "run", command: "true", timeoutSeconds: 1 },
+      } }))
+    } else if (victim !== "missing-intent") {
+      await runtime.runPromise(h.starter.start(RepoFlow.Run, { executionId: runId, payload: {
+        run: runId, repo: victim === "same-repository" ? "acme/widgets" : "acme/private", flow: "sandbox-call", sha: "a".repeat(40),
+        ref: "refs/heads/main", event: "manual", secrets: true,
+      } }))
+    }
+    // Historical corruption is already committed, independent of today's start transaction.
+    await runtime.runPromise(RepoRuns.record({ execution: runId, repoId: REPOSITORY.id, flow: "sandbox-call",
+      sha: "a".repeat(40), ref: "refs/heads/main", event: "manual", launchedBy: MAYA }))
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const { engine } = yield* build(Layer.empty)
+      const scratch = yield* TestDatabase.Scratch
+      const server = yield* TestDatabase.serverUrl
+      const stopped: string[] = []
+      const host = ExecutionHost.make(h.storage(runId), {
+        hostId: runId, database: ExecutionHost.database(server.toString(), engine.schema),
+        flows: { flows: [SandboxCall, RepoFlow.Run], registration: Layer.empty },
+        router: { start: () => Effect.void, wake: () => Effect.void },
+      })
+      const api = yield* RemoteRuns.make(scratch.database, {
+        database: ExecutionHost.readDatabase(server.toString(), engine.schema),
+        writer: ExecutionHost.database(server.toString(), engine.schema), schema: engine.schema,
+        flows: [SandboxCall, RepoFlow.Run],
+        repositoryRun: () => host.repositoryRun,
+        stop: (execution) => Effect.sync(() => void stopped.push(execution)),
+        transcript: () => Effect.die("unused"),
+      }, h.roles)
+      const handler = HttpEffect.toWebHandler(api.fetch.pipe(Effect.provide(signedIn(maya)), Effect.provide(FetchHttpClient.layer)))
+      yield* Effect.promise(async () => {
+        const response = await handler(new Request(`http://chat.test/api/remote-runs/${runId}/stop`, { method: "POST" }))
+        expect(response.status, "poisoned row must not grant cancellation").toBe(victim === "same-repository" ? 202 : 404)
+        expect(stopped).toEqual(victim === "same-repository" ? [runId] : [])
+        expect(await rows()).toHaveLength(1)
+      })
+    })))
   })
 
   test("a host defect refuses a manual start and records unavailable", async () => {

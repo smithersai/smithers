@@ -1,8 +1,8 @@
 ---
 title: Run admission ownership and authority
-status: done
+status: in-progress
 area: access
-owner: retro-runs
+owner: Codex retro-runs follow-up
 updated: 2026-11-02
 links: [../features/actions.md]
 ---
@@ -35,3 +35,11 @@ Reproduction setup receipts are not defect evidence: an initial OAuth status ass
 Production, browser E2E and full coverage were not run. No production data was read, no review was called, and no landing, push or main movement is authorized.
 
 Both findings are fixed in separate private commits. Work is intentionally unlanded and unpushed, as requested. The original main reproduction base is `6d773cefcf4f`; unrelated main updates were not incorporated.
+
+## Follow-up finding 1: historical poisoned rows
+
+The cancellation handler now requires the execution object's authoritative `repo/Run` intent to name the same execution and repository as the recorded association. Its RPC exposes only that association, never the payload. Missing intents, another flow's intent and another repository's intent refuse cancellation even if an old poisoned row is already committed. This is server access infrastructure, not a new plugin feature.
+
+Red farm proof with the ownership guard removed from the isolated snapshot: `a preexisting poisoned row grants no cancellation` failed in all three corrupt cases: `AssertionError: poisoned row must not grant cancellation: expected 202 to be 404`. The valid same-repository intent still passed: 3 failed, 1 passed, 32 filtered skips. The first attempted red run failed farm service setup before executing tests and is not proof.
+
+Fixed-code farm validation: RunsApi, RemoteRuns and RepoRuns, 84 passed, 0 failed, 0 skipped; worker typecheck passed. The count-only, read-only operator query is supplied separately and has not been executed. Its counts distinguish mismatching repository intents, non-repository executions and rows without engine state; it cannot inspect an object that has not reached the engine. Existing Effect services and `@smthrs/platform-cloudflare` storage are retained.

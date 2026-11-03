@@ -64,6 +64,7 @@ export interface FlowExecutionShape {
   readonly start: (
     intent: ExecutionObject.Intent,
   ) => Effect.Effect<void, ExecutionObject.IntentConflict, RuntimeContext>
+  readonly repositoryRun: () => Effect.Effect<RepoRuns.Admitted | null, never, RuntimeContext>
   readonly signal: (deferredName: string) => Effect.Effect<void, never, RuntimeContext>
   readonly wake: () => Effect.Effect<boolean, never, RuntimeContext>
   readonly cancel: () => Effect.Effect<void, import("@smthrs/flow").FlowRuntime.CancelRequestFailed, RuntimeContext>
@@ -449,6 +450,7 @@ const object = <E, R>(
           start: (intent: ExecutionObject.Intent) => host.start(intent).pipe(Effect.provide(logs)),
           signal: (deferredName: string) => host.signal(deferredName).pipe(Effect.provide(logs)),
           wake: () => host.wake().pipe(Effect.provide(logs)),
+          repositoryRun: () => host.repositoryRun.pipe(Effect.map(Option.getOrNull), Effect.provide(logs)),
           cancel: () => host.cancel().pipe(Effect.provide(logs)),
           // A failure still throws, so Cloudflare retries the alarm, and is recorded by its flags and category first
           // (worker/DurableObjectFailure.ts): an instance Cloudflare replaced mid-alarm fails its I/O.
