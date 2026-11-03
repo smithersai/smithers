@@ -22,7 +22,7 @@ import * as Fiber from "effect/Fiber"
 import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
 import * as Queue from "effect/Queue"
-import * as EngineStoreMetrics from "../EngineStoreMetrics.ts"
+import * as EngineStoreMetrics from "../EngineStoreMetrics.vibe"
 import * as StepLogs from "../StepLogs.vibe"
 
 /**

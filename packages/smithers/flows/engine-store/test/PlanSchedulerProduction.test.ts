@@ -33,7 +33,7 @@ import * as PlanScheduler from "../src/PlanScheduler.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as StepSandbox from "../src/StepSandbox.ts"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "plan-host", pid: 55, nonce: "plan-process" }

@@ -18,7 +18,7 @@ import * as TestClock from "effect/testing/TestClock"
 import * as Inconsistency from "../src/Inconsistency.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
-import * as StepCacheFold from "../src/StepCacheFold.ts"
+import * as StepCacheFold from "../src/StepCacheFold.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

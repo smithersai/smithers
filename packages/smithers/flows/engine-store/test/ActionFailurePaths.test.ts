@@ -25,7 +25,7 @@ import type * as ReplayOnly from "../src/ReplayOnly.vibe"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as StepSandbox from "../src/StepSandbox.ts"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 import * as Clocks from "./Clocks.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

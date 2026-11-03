@@ -12,7 +12,7 @@ import { join } from "node:path"
 import * as PlanScheduler from "../src/PlanScheduler.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const owner = { hostId: "tier-test", pid: 1, nonce: "tier-test" }

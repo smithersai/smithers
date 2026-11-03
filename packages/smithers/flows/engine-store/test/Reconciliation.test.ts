@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import * as Reconciliation from "../src/Reconciliation.ts"
+import * as Reconciliation from "../src/Reconciliation.vibe"
 
 const deviate = (paths: ReadonlyArray<string>, declaredBy: Record<string, string>) =>
   Effect.runPromise(

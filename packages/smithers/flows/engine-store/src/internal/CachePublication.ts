@@ -41,8 +41,8 @@ import type { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
-import * as ArtifactSync from "../ArtifactSync.ts"
-import * as CacheSync from "../CacheSync.ts"
+import * as ArtifactSync from "../ArtifactSync.vibe"
+import * as CacheSync from "../CacheSync.vibe"
 import * as StepBoundary from "../StepBoundary.ts"
 
 /** Resolves the configured protocol, defaulting to the single-tier one. */

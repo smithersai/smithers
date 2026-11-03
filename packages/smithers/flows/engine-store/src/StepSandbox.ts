@@ -14,7 +14,7 @@ import * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import * as StepBoundary from "./StepBoundary.ts"
-import * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "./WorkspaceSandbox.vibe"
 
 /**
  * A hermetic body attempted to read a path outside its declared read set.

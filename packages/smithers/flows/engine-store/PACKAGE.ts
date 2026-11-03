@@ -156,7 +156,7 @@ const securityReview = Smithers.SecurityReview({
         "reservedAt comparing `.flows` and `.smithers-workspace-lock` case-sensitively, so `.FLOWS/...` reaches the engine state on a case-insensitive filesystem.",
         "The lease heartbeat's path-based `utimes` being reachable before the confined read proved the lock holds this call's token."
       ],
-      paths: ["src/WorkspaceSandbox.ts", "src/StepSandbox.ts", "src/internal/SandboxedExecution.ts"]
+      paths: ["src/WorkspaceSandbox.vibe", "src/StepSandbox.ts", "src/internal/SandboxedExecution.ts"]
     },
     {
       id: "hermetic-read-enforcement",
@@ -169,7 +169,7 @@ const securityReview = Smithers.SecurityReview({
         "Glob coverage in the write-set matcher treating `*` as crossing `/` or `**` as matching outside its prefix."
       ],
       paths: [
-        "src/WorkspaceSandbox.ts",
+        "src/WorkspaceSandbox.vibe",
         "src/StepSandbox.ts",
         "src/StepBoundary.ts",
         "src/internal/SandboxedExecution.ts",
@@ -190,8 +190,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/CacheAdmission.ts",
         "src/internal/CachePublication.ts",
         "src/internal/CacheOutputPolicy.vibe",
-        "src/CacheSync.ts",
-        "src/ArtifactSync.ts",
+        "src/CacheSync.vibe",
+        "src/ArtifactSync.vibe",
         "src/internal/ActionPersistence.ts"
       ]
     },
@@ -240,7 +240,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/EngineStateSchema.ts",
         "src/internal/RunListing.ts",
         "src/Selection.ts",
-        "src/SelectionStore.ts",
+        "src/SelectionStore.vibe",
         "src/internal/RetentionOps.ts",
         "src/PlanInputStore.ts",
         "src/PlanMergeStore.ts"
@@ -293,7 +293,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/ExecutionSnapshotRead.ts",
         "src/DurableEngineState.ts",
         "src/RunCatalogRead.ts",
-        "src/RunChangeFeed.ts",
+        "src/RunChangeFeed.vibe",
         "src/internal/TypedEvents.ts",
         "src/EngineStore.ts"
       ]
