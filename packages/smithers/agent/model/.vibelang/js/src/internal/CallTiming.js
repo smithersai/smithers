@@ -57,7 +57,7 @@ export const start = (clock) => {
                 sentMs: since(event.sentAt),
                 failedMs: since(event.at),
                 code: event.code,
-                ...(event.httpStatus === undefined ? {} : { httpStatus: event.httpStatus }),
+                ...(event.httpStatus === undefined ? {} : { httpStatus: event.httpStatus })
             });
         },
         headers: () => {
@@ -99,8 +99,8 @@ export const start = (clock) => {
             lastOutputMs,
             completedMs,
             closedMs,
-            failedTries: failedTries.length === 0 ? undefined : [...failedTries],
-        }).filter(([, value]) => value !== undefined)),
+            failedTries: failedTries.length === 0 ? undefined : [...failedTries]
+        }).filter(([, value]) => value !== undefined))
     };
 };
 const snake = (name) => name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
@@ -117,5 +117,5 @@ export const attributes = (timing) => Object.fromEntries(Object.entries(timing).
     ? []
     : [[
             `smithers.model.${snake(name)}`,
-            name === "failedTries" ? value.map((failed) => failed.code) : value,
+            name === "failedTries" ? value.map((failed) => failed.code) : value
         ]]));

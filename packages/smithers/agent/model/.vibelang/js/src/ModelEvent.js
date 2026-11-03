@@ -34,9 +34,9 @@ export const Usage = withStatics(Schema.Struct({
     cacheWriteTokens: Schema.optional(Schema.Number),
     totalTokens: Schema.optional(Schema.Number),
     /** The USD charge the provider itself reported for the call, when it reports one. */
-    costUsd: Schema.optional(Schema.Number),
+    costUsd: Schema.optional(Schema.Number)
 }).annotate({ identifier: "flows/model/Usage" }), {
-    make: (input) => input,
+    make: (input) => input
 });
 /**
  * Opens a text part. Its `id` correlates the later deltas and end event
@@ -74,7 +74,7 @@ export const TextEnd = Schema.Struct({ type: Schema.Literal("text-end"), id: Sch
 export const ThinkingStart = Schema.Struct({
     type: Schema.Literal("thinking-start"),
     id: Schema.String,
-    signature: Schema.optional(Schema.String),
+    signature: Schema.optional(Schema.String)
 });
 /**
  * One incremental chunk of a reasoning part's content.
@@ -86,7 +86,7 @@ export const ThinkingStart = Schema.Struct({
 export const ThinkingDelta = Schema.Struct({
     type: Schema.Literal("thinking-delta"),
     id: Schema.String,
-    text: Schema.String,
+    text: Schema.String
 });
 /**
  * Closes the reasoning part opened by the matching {@link ThinkingStart}.
@@ -106,7 +106,7 @@ export const ThinkingEnd = Schema.Struct({ type: Schema.Literal("thinking-end"),
 export const ToolCallStart = Schema.Struct({
     type: Schema.Literal("tool-call-start"),
     id: Schema.String,
-    name: Schema.String,
+    name: Schema.String
 });
 /**
  * One incremental chunk of a tool call's JSON argument text.
@@ -118,7 +118,7 @@ export const ToolCallStart = Schema.Struct({
 export const ToolCallDelta = Schema.Struct({
     type: Schema.Literal("tool-call-delta"),
     id: Schema.String,
-    arguments: Schema.String,
+    arguments: Schema.String
 });
 /**
  * Closes a tool call. `arguments` repeats the complete argument text when
@@ -131,7 +131,7 @@ export const ToolCallDelta = Schema.Struct({
 export const ToolCallEnd = Schema.Struct({
     type: Schema.Literal("tool-call-end"),
     id: Schema.String,
-    arguments: Schema.optional(Schema.String),
+    arguments: Schema.optional(Schema.String)
 });
 /**
  * The result of an executed tool call, as reported by a harness. Tool output
@@ -146,7 +146,7 @@ export const ToolResult = Schema.Struct({
     type: Schema.Literal("tool-result"),
     id: Schema.String,
     output: Schema.String,
-    isError: Schema.optional(Schema.Boolean),
+    isError: Schema.optional(Schema.Boolean)
 });
 /**
  * Reports token counts mid-stream. The same counters as {@link Usage},
@@ -164,7 +164,7 @@ export const UsageEvent = Schema.Struct({
     cachedInputTokens: Schema.optional(Schema.Number),
     cacheWriteTokens: Schema.optional(Schema.Number),
     totalTokens: Schema.optional(Schema.Number),
-    costUsd: Schema.optional(Schema.Number),
+    costUsd: Schema.optional(Schema.Number)
 });
 /**
  * A bounded model-boundary retry, recorded so run reports can count transport recovery.
@@ -197,7 +197,7 @@ export const Retry = Schema.Struct({
      */
     elapsedMs: Schema.optional(Schema.Number),
     /** The HTTP status that failed the attempt, when a response carried one. */
-    httpStatus: Schema.optional(Schema.Number),
+    httpStatus: Schema.optional(Schema.Number)
 });
 /**
  * One HTTP try of a model call that failed and was tried again inside the
@@ -214,7 +214,7 @@ export const FailedTry = Schema.Struct({
     /** Why: a `ModelError` code, or the code of a kernel permission failure. */
     code: Schema.String,
     /** The HTTP status that failed it, when a response carried one. */
-    httpStatus: Schema.optional(Schema.Number),
+    httpStatus: Schema.optional(Schema.Number)
 });
 /**
  * Where one model call's time went on the wire. Every offset is whole
@@ -263,7 +263,7 @@ export const Timing = Schema.Struct({
     /** The response stream closed. */
     closedMs: Schema.optional(Schema.Number),
     /** The tries that failed before the answered one, oldest first. */
-    failedTries: Schema.optional(Schema.Array(FailedTry)),
+    failedTries: Schema.optional(Schema.Array(FailedTry))
 });
 /**
  * Ends the stream and states why. A stream without one was interrupted.
@@ -287,7 +287,7 @@ export const Settle = Schema.Struct({
      * provider that keeps reasoning server side answers the next request with
      * these ids rather than the text they stand for.
      */
-    itemIds: Schema.optional(Schema.Array(Schema.String)),
+    itemIds: Schema.optional(Schema.Array(Schema.String))
 });
 /**
  * Every event a model stream can emit, tagged by `type`, with a constructor
@@ -310,7 +310,7 @@ export const ModelEvent = Object.assign(Schema.Union([
     ToolResult,
     UsageEvent,
     Retry,
-    Settle,
+    Settle
 ]).pipe(Schema.toTaggedUnion("type")), {
     TextStart: TextStart.make,
     TextDelta: TextDelta.make,
@@ -325,7 +325,7 @@ export const ModelEvent = Object.assign(Schema.Union([
     Usage: (input) => ({ type: "usage", ...input }),
     Retry: Retry.make,
     Settle: Settle.make,
-    settledMessage,
+    settledMessage
 });
 /**
  * Folds a stream into the one durable assistant message. No settlement means
@@ -403,7 +403,7 @@ export function settledMessage(events) {
                     const arguments_ = event.arguments ?? current.arguments;
                     parts[index] = {
                         ...current,
-                        arguments: arguments_,
+                        arguments: arguments_
                     };
                 }
                 break;
@@ -416,11 +416,11 @@ export function settledMessage(events) {
                     cachedInputTokens: event.cachedInputTokens,
                     cacheWriteTokens: event.cacheWriteTokens,
                     totalTokens: event.totalTokens,
-                    costUsd: event.costUsd,
+                    costUsd: event.costUsd
                 };
                 usage = {
                     ...usage,
-                    ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined)),
+                    ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined))
                 };
                 break;
             }
@@ -449,8 +449,8 @@ export function settledMessage(events) {
             content: parts,
             stopReason,
             responseId,
-            itemIds,
+            itemIds
         }),
-        usage,
+        usage
     };
 }

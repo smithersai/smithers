@@ -41,7 +41,7 @@ export class ClassifierError extends Schema.TaggedError()("flows/model/Classifie
     resetAtEpochMillis: Schema.optional(Schema.Number),
     message: Schema.String,
     /** What the reading paid before it failed; see `Evaluator.EvaluatorError.usage`. */
-    usage: Evaluator.EvaluatorError.fields.usage,
+    usage: Evaluator.EvaluatorError.fields.usage
 }) {
 }
 Fault.register("flows/model/ClassifierError", Evaluator.faults);
@@ -116,14 +116,14 @@ export const Answer = Schema.Union([
         value: Schema.Number,
         label: Schema.String,
         probabilities: Schema.Record(Schema.String, Probability),
-        confidence: Probability,
+        confidence: Probability
     }),
     Schema.Struct({ value: Schema.Boolean, probability: Probability }),
     Schema.Struct({
         value: Schema.String,
         probabilities: Schema.Record(Schema.String, Probability),
-        confidence: Probability,
-    }),
+        confidence: Probability
+    })
 ]);
 const invalidAnswer = (id, message) => new ClassifierError({ code: "invalid_answer", message: `Answer to "${id}": ${message}` });
 const isUnitInterval = (value) => Number.isFinite(value) && value >= 0 && value <= 1;
@@ -163,7 +163,7 @@ const decodeOne = (id, question, raw) => {
             return Result.succeed({
                 value: raw.choice,
                 probabilities: probabilities.success,
-                confidence: Math.max(...Object.values(probabilities.success)),
+                confidence: Math.max(...Object.values(probabilities.success))
             });
         }
         case "score": {
@@ -196,7 +196,7 @@ const decodeOne = (id, question, raw) => {
                 value: raw.score,
                 label,
                 probabilities: probabilities.success,
-                confidence: Math.max(...Object.values(probabilities.success)),
+                confidence: Math.max(...Object.values(probabilities.success))
             });
         }
     }
@@ -281,7 +281,7 @@ export const fromEvaluatorError = (error) => new ClassifierError({
     ...(error.status === undefined ? {} : { status: error.status }),
     ...(error.resetAtEpochMillis === undefined ? {} : { resetAtEpochMillis: error.resetAtEpochMillis }),
     message: error.message,
-    ...(error.usage === undefined ? {} : { usage: error.usage }),
+    ...(error.usage === undefined ? {} : { usage: error.usage })
 });
 /**
  * Declares a classifier. The digest is computed here, once, from the id and
@@ -313,7 +313,7 @@ export const make = (id, options) => {
         const response = yield* $catchExpression(() => evaluator.evaluate({
             state: encoded,
             questions,
-            ...(seatNote === undefined ? {} : { seatNote }),
+            ...(seatNote === undefined ? {} : { seatNote })
         }), (e) => Effect_1.suspend(() => { return Effect_1.fail(fromEvaluatorError(e)); }));
         // An answer this classifier cannot decode was still paid for.
         const answers = yield* $catchExpression(() => decodeAnswers(questions, response.answers), (error) => Effect_1.suspend(() => { return Effect_1.fail(response.usage === undefined
@@ -323,7 +323,7 @@ export const make = (id, options) => {
     }))));
     const evaluate = (value) => Effect.map(read(value), (reading) => reading.answers);
     const evaluateAll = (states, all = {}) => Effect.forEach(states, (value) => Effect.result(evaluate(value)), {
-        concurrency: all.concurrency ?? defaultConcurrency,
+        concurrency: all.concurrency ?? defaultConcurrency
     });
     return { id, description, state, questions, digest, evaluate, read, evaluateAll };
 };

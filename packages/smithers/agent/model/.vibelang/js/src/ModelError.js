@@ -39,7 +39,7 @@ export const ModelErrorCode = Schema.Literals([
     "transport",
     "call_timeout",
     "invalid_provider_output",
-    "unknown",
+    "unknown"
 ]);
 /**
  * Wire signals that mean "this request did not fit the model's context window".
@@ -111,7 +111,7 @@ export class ModelError extends Schema.TaggedError()("flows/model/ModelError", {
     quotaScope: Schema.optional(Schema.Literals(["model", "account"])),
     providerCode: Schema.optional(Schema.String),
     requestId: Schema.optional(Schema.String),
-    httpStatus: Schema.optional(Schema.Number),
+    httpStatus: Schema.optional(Schema.Number)
 }) {
     /** @category getters @since 0.1.0 */
     get retryable() {
@@ -129,7 +129,7 @@ const terminalCodes = new Set([
     "content_policy",
     "context_overflow",
     "out_of_credit",
-    "invalid_provider_output",
+    "invalid_provider_output"
 ]);
 const terminalStatuses = new Set([400, 401, 402, 403, 404, 405, 409, 410, 413, 422]);
 /**
@@ -171,6 +171,6 @@ export const faults = {
     transport: "dependency",
     call_timeout: "dependency",
     invalid_provider_output: "dependency",
-    unknown: "dependency",
+    unknown: "dependency"
 };
 Fault.register("flows/model/ModelError", faults);

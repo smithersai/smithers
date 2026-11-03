@@ -28,7 +28,7 @@ export const initial = () => ({ open: [] });
  * @slop
  */
 export const start = (state, call) => ({
-    open: [...state.open.filter((entry) => entry.callId !== call.callId), { ...call, fragments: Chunk.empty() }],
+    open: [...state.open.filter((entry) => entry.callId !== call.callId), { ...call, fragments: Chunk.empty() }]
 });
 /**
  * Appends an argument fragment to an open provider tool call.
@@ -38,7 +38,7 @@ export const start = (state, call) => ({
  * @slop
  */
 export const delta = (state, callId, fragment) => ({
-    open: state.open.map((entry) => entry.callId === callId ? { ...entry, fragments: Chunk.append(entry.fragments, fragment) } : entry),
+    open: state.open.map((entry) => entry.callId === callId ? { ...entry, fragments: Chunk.append(entry.fragments, fragment) } : entry)
 });
 /**
  * Completes a tool call and validates its reassembled argument JSON.
@@ -66,7 +66,7 @@ export const end = (state, callId) => {
     }
     return {
         state: { open: state.open.filter((entry) => entry.callId !== callId) },
-        completed: { callId: call.callId, name: call.name, arguments: arguments_ },
+        completed: { callId: call.callId, name: call.name, arguments: arguments_ }
     };
 };
 /**
@@ -87,8 +87,8 @@ export const flushAborted = (state) => ({
     completed: state.open.map((call) => ({
         callId: call.callId,
         name: call.name,
-        arguments: Chunk.toReadonlyArray(call.fragments).join(""),
-    })),
+        arguments: Chunk.toReadonlyArray(call.fragments).join("")
+    }))
 });
 /**
  * Whether a turn that settled with this reason was cut off before it finished:

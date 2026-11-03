@@ -21,10 +21,9 @@
  * @internal
  */
 
-import { Cause, Effect } from "effect"
 import * as CanonicalJson from "../CanonicalJson.ts"
 import type { Timing, Usage } from "../ModelEvent.vibe"
-import type * as Sink from "../WireTrace.ts"
+import type * as Sink from "../WireTrace.vibe"
 
 interface Traced {
   readonly routeId: string
@@ -95,16 +94,16 @@ export interface TracedCall {
   readonly sink: Sink.WireTrace
 }
 
-const append = (sink: Sink.WireTrace, value: Record<string, unknown>): Effect.Effect<void> => {
+const append = (sink: Sink.WireTrace, value: Record<string, unknown>): void!! => {
   const budget = sink.writeTimeoutMs ?? 1_000
-  return Effect.suspend(() => sink.write(value)).pipe(
-    Effect.timeout(Number.isFinite(budget) && budget > 0 ? budget : 1_000),
-    Effect.catchCause((cause) =>
+  return effect {
+    return try sink.write(value)
+  }
+    |> Effect.timeout(%, Number.isFinite(budget) && budget > 0 ? budget : 1_000)
+    |> Effect.catchCause(%, (cause) =>
       Cause.hasInterrupts(cause)
         ? Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
-        : Effect.logDebug("Model wire trace write failed")
-    )
-  )
+        : Effect.logDebug("Model wire trace write failed"))
 }
 
 /** Numbers traced calls so their two records pair up. */
@@ -118,7 +117,7 @@ let calls = 0
 export const record = (
   prepared: Traced,
   sink: Sink.WireTrace | undefined
-): Effect.Effect<TracedCall | undefined> =>
+): TracedCall | undefined!! =>
   Effect.suspend(() => {
     if (sink === undefined) return Effect.succeed(undefined)
     const id = ++calls
@@ -201,9 +200,8 @@ export const responseLine = (call: number, answered: Answered, at: number): Reco
  * @category tracing
  * @since 1.0.0
  */
-export const recordResponse = (
+export const recordResponse = effect (
   call: TracedCall | undefined,
   answered: () => Answered,
   at: number
-): Effect.Effect<void> =>
-  Effect.suspend(() => call === undefined ? Effect.void : append(call.sink, responseLine(call.id, answered(), at)))
+): void!! => try (call === undefined ? Effect.void : append(call.sink, responseLine(call.id, answered(), at)))

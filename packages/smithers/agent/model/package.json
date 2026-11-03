@@ -162,8 +162,8 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./WireTrace": {
-      "types": "./src/WireTrace.ts",
-      "vibelang-source": "./src/WireTrace.ts",
+      "types": "./.vibe/declarations/src/WireTrace.d.vibe.ts",
+      "vibelang-source": "./src/WireTrace.vibe",
       "default": "./.vibelang/js/src/WireTrace.js"
     }
   },

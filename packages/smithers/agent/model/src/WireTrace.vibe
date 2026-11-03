@@ -5,8 +5,6 @@
  * @since 1.0.0
  */
 
-import { Context, Effect, FileSystem, Layer, Semaphore } from "effect"
-
 /**
  * Receives credential-free request and response records. Sink failures are
  * diagnostic failures and never fail the model call.
@@ -18,7 +16,7 @@ export interface WireTrace {
   /** Maximum wait per cooperative write in milliseconds; nonpositive or nonfinite values use 1,000. */
   readonly writeTimeoutMs?: number | undefined
   /** Writes one record; signed headers and user content are never supplied. */
-  readonly write: (record: Readonly<Record<string, unknown>>) => Effect.Effect<void, unknown>
+  readonly write: (record: Readonly<Record<string, unknown>>) => void!unknown
 }
 
 /**
@@ -40,17 +38,19 @@ export const WireTrace: Context.Service<WireTrace, WireTrace> = Context.Service<
  * @category layers
  * @since 1.0.0
  */
-export const layerFileSystem = (path: string): Layer.Layer<WireTrace, never, FileSystem.FileSystem> =>
+export const layerFileSystem = (path: string): Layer<WireTrace, never, FileSystem.FileSystem> =>
   Layer.effect(
     WireTrace,
-    Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
-      const lock = yield* Semaphore.make(1)
+    effect {
+      const fs = try FileSystem.FileSystem
+      const lock = try Semaphore.make(1)
       return WireTrace.of({
         write: (record) =>
           lock.withPermits(1)(
-            Effect.suspend(() => fs.writeFileString(path, `${JSON.stringify(record)}\n`, { flag: "a" }))
+            effect {
+              return try fs.writeFileString(path, `${JSON.stringify(record)}\n`, { flag: "a" })
+            }
           )
       })
-    })
+    }
   )
