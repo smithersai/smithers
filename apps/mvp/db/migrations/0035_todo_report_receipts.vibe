@@ -1,0 +1,8 @@
+// Terminal event + successor attempts, committed with the lane change. Retrying admission never invents an attempt.
+export default effect {
+  const sql = try SqlClient.SqlClient
+  try sql`ALTER TABLE todo_attempts ADD COLUMN finished_report jsonb
+    CHECK (finished_report IS NULL OR
+      (jsonb_typeof(finished_report) = 'object' AND jsonb_typeof(finished_report->'event') = 'object'
+        AND jsonb_typeof(finished_report->'starts') = 'array'))`
+}

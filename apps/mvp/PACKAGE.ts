@@ -68,7 +68,7 @@ const appSources = [
   ...pluginSources(),
   ...workerSources,
   "db/Database.ts",
-  "db/migrations/*.ts"
+  "db/migrations/*.{ts,vibe}"
 ]
 
 /**
@@ -443,7 +443,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "durable.no-hand-rolled-durability",
-    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "db/Database.ts", "db/migrations/*.ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "db/Database.ts", "db/migrations/*.{ts,vibe}"],
     lookFor: "Does this file implement its own durability machinery: a retry loop, a backoff schedule, a periodic " +
       "sweep or cron job, a background job runner, re-dispatch of stuck work, attempt counters, leases or fencing, " +
       "or a work queue, instead of leaving that to the durable flow engine?",
@@ -498,7 +498,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "sdk.no-dead-code",
-    files: ["src/**/*.ts", "src/**/*.tsx", "worker/**/*.ts", "db/**/*.ts", "e2e/**/*.ts", "bench/**/*.ts"],
+    files: ["src/**/*.ts", "src/**/*.tsx", "worker/**/*.ts", "db/**/*.{ts,vibe}", "e2e/**/*.ts", "bench/**/*.ts"],
     lookFor: "Treat every export as used: other files may import it. Does this file contain dead or duplicate code: " +
       "commented-out code, an unreachable branch, a local declaration or parameter the file never uses, a " +
       "placeholder or TODO stub, or a second implementation of logic the same file already has?",
@@ -530,7 +530,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "effect.wrap-every-library",
-    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "db/Database.ts", "db/migrations/*.ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "db/Database.ts", "db/migrations/*.{ts,vibe}"],
     lookFor: "Does this file call a third-party library's Promise, callback or class API directly in app logic, " +
       "instead of through that library's own Effect API or an Effect wrapper?",
     violation: "App logic calls a third-party library's non-Effect API directly.",

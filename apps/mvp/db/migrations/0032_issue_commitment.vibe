@@ -1,0 +1,9 @@
+/** GitHub remains authoritative; reconciliation backfills labels for existing rows. */
+export default effect {
+  const sql = try SqlClient.SqlClient
+  try sql`ALTER TABLE items ADD COLUMN commitment text CHECK (commitment IN ('now', 'next', 'later', 'none', 'conflict'))`
+  try sql`UPDATE github_sync SET cursor = NULL WHERE stream = 'issues'`
+  try sql`ALTER TABLE github_writes DROP CONSTRAINT github_writes_op_check`
+  try sql`ALTER TABLE github_writes ADD CONSTRAINT github_writes_op_check CHECK (op IN
+    ('issue/create', 'issue/comment', 'issue/triage', 'issue/commitment', 'triage/run', 'triage/enable', 'triage/pause'))`
+}
