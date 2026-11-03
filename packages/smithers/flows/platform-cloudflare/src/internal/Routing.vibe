@@ -16,9 +16,7 @@
 
 import { DurableEngineState, EngineStore, RunState } from "@smthrs/engine-store"
 import { RunStore } from "@smthrs/run-store"
-import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 
 /**
@@ -72,54 +70,53 @@ export const routes = (executionId: string) =>
  * {@link routes}' reads, which it runs as one read transaction: one snapshot of what the drive left, and one
  * transaction's round trips for all of them rather than a transaction for each.
  */
-const read = (executionId: string) =>
-  Effect.gen(function*() {
-    const runs = yield* RunStore.RunStore
-    const engineState = yield* DurableEngineState.DurableEngineState
-    // Read the clock after `nextWake` does: it answers "now" with its own read.
-    const due = (id: string) =>
-      Effect.gen(function*() {
-        const wake = yield* EngineStore.nextWake(id)
-        const nowMs = Math.floor(yield* Clock.currentTimeMillis)
-        return Option.exists(wake, (at) => at <= nowMs)
-      })
+const read = effect (executionId: string) => {
+  const runs = try RunStore.RunStore
+  const engineState = try DurableEngineState.DurableEngineState
+  // Read the clock after `nextWake` does: it answers "now" with its own read.
+  const due = effect (id: string) => {
+    const wake = try EngineStore.nextWake(id)
+    const nowMs = Math.floor(try Clock.currentTimeMillis)
+    return Option.exists(wake, (at) => at <= nowMs)
+  }
 
-    const lineage = yield* runs.lineage(executionId)
-    const index = lineage.findIndex((round) => round.runId === executionId)
-    const self = lineage[index]!
-    const successor = lineage[index + 1]
-    const settled = successor === undefined && RunStore.isTerminalRunStatus(self.status)
+  const lineage = try runs.lineage(executionId)
+  const index = lineage.findIndex((round) => round.runId === executionId)
+  const self = lineage[index]!
+  const successor = lineage[index + 1]
+  const settled = successor === undefined &&
+    (try Effect.orDie(Effect.try({ try: () => RunStore.isTerminalRunStatus(self.status), catch: (error) => error })))
 
-    const linked = new Set<string>()
-    for (const round of settled ? lineage : [self]) {
-      for (const edge of yield* engineState.runChildren(round.runId)) linked.add(edge.childId)
+  const linked = new Set<string>()
+  for (const round of settled ? lineage : [self]) {
+    for (const edge of try engineState.runChildren(round.runId)) linked.add(edge.childId)
+  }
+  const next: Array<RunStore.RunRow> = successor === undefined ? [] : [successor]
+  for (const child of linked) next.push(try runs.latestRound(child))
+  const state = settled ? try decodeState(self.stateJson) : undefined
+  const cancellation = state?.cancellation?.run
+  if (cancellation !== undefined) next.push(try runs.latestRound(cancellation))
+
+  const start: Array<Routes["start"][number]> = []
+  const wake: Array<string> = []
+  for (const row of next) {
+    if (!(try due(row.runId))) continue
+    if (row.status !== "pending") {
+      wake.push(row.runId)
+      continue
     }
-    const next: Array<RunStore.RunRow> = successor === undefined ? [] : [successor]
-    for (const child of linked) next.push(yield* runs.latestRound(child))
-    const state = settled ? yield* decodeState(self.stateJson) : undefined
-    const cancellation = state?.cancellation?.run
-    if (cancellation !== undefined) next.push(yield* runs.latestRound(cancellation))
+    const admitted = try decodeState(row.stateJson)
+    start.push({ flow: admitted.flowName, executionId: row.runId, payload: admitted.payload })
+  }
 
-    const start: Array<Routes["start"][number]> = []
-    const wake: Array<string> = []
-    for (const row of next) {
-      if (!(yield* due(row.runId))) continue
-      if (row.status !== "pending") {
-        wake.push(row.runId)
-        continue
-      }
-      const admitted = yield* decodeState(row.stateJson)
-      start.push({ flow: admitted.flowName, executionId: row.runId, payload: admitted.payload })
+  if (state !== undefined) {
+    const parents = new Set<string>(state.parentExecutionId === undefined ? [] : [state.parentExecutionId])
+    for (const round of lineage) {
+      for (const edge of try engineState.runParents(round.runId)) parents.add(edge.parentId)
     }
-
-    if (state !== undefined) {
-      const parents = new Set<string>(state.parentExecutionId === undefined ? [] : [state.parentExecutionId])
-      for (const round of lineage) {
-        for (const edge of yield* engineState.runParents(round.runId)) parents.add(edge.parentId)
-      }
-      for (const parent of parents) {
-        if (yield* due(parent)) wake.push(parent)
-      }
+    for (const parent of parents) {
+      if (try due(parent)) wake.push(parent)
     }
-    return { start, wake } satisfies Routes
-  })
+  }
+  return { start, wake } satisfies Routes
+}
