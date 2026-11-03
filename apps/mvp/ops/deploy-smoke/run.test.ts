@@ -1,7 +1,10 @@
 // The deploy smoke's command (ops/deploy-smoke/run.ts): it finds the stage's one Neon project, runs every spec whatever
 // the last did, prints a line per spec, and fails on any failure. The specs themselves run against production.
+import { spawnSync } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import { expect, test } from "vitest"
-import { findProject, PROJECTS, ranForReal, run, smoke, SPECS } from "./run.ts"
+import { roleAgeArgs } from "../role-age/command.ts"
+import { findProject, PROJECTS, ranForReal, run, smoke, specArgs, SPECS } from "./run.ts"
 
 const neon = (projects: ReadonlyArray<{ id: string; name: string }>, status = 200) =>
   (async () => new Response(JSON.stringify({ projects }), { status })) as unknown as typeof globalThis.fetch
@@ -58,3 +61,20 @@ test("a spec counts only if it ran for real: a skipped or missing one proves not
   expect(ranForReal(summary("other.spec.ts                 3           ·           ·           ·           ·           ·           ·"), spec)).toBe(false)
   expect(ranForReal("", spec)).toBe(false)
 })
+
+// The smoke's own setup, as the smoke starts it: plain node in apps/mvp, nothing from this test's loader. Each stops at the
+// environment it lacks, past every import, so a module node can't load fails here before a deploy and not on production.
+const plainNode = (args: ReadonlyArray<string>) => {
+  const { status, stderr } = spawnSync("node", [...args], {
+    cwd: fileURLToPath(new URL("../..", import.meta.url)),
+    env: { PATH: process.env.PATH },
+    encoding: "utf8",
+  })
+  return { status, stderr: stderr.trim() }
+}
+
+test("node loads what the smoke starts", () => {
+  expect(plainNode(["ops/deploy-smoke/run.ts"])).toEqual({ status: 2, stderr: "deploy smoke not run: APP_DOMAIN is not set: run under mvp-prod-env" })
+  expect(plainNode(specArgs(SPECS[0]!, PROJECTS[0]!)).status).toBe(2)
+  expect(plainNode(roleAgeArgs("owner/repo", "person", "project"))).toEqual({ status: 1, stderr: "role row not aged: NEON_API_KEY is not set: run under mvp-prod-env" })
+}, 60_000)

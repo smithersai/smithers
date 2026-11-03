@@ -10,6 +10,7 @@
 //   cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/deploy-smoke/run.ts
 import { execFileSync } from "node:child_process"
 import type { Page, Response } from "@playwright/test"
+import { roleAgeArgs } from "../ops/role-age/command"
 import { FIRST_PAINT_DEADLINE_MS } from "../worker/github/FirstPaint"
 import { expect, test } from "./fixtures"
 import { me, requires } from "./target"
@@ -22,8 +23,7 @@ const repo = process.env.E2E_TRACKING_REPOSITORY ?? ""
 const ANSWER_WITHIN_MS = FIRST_PAINT_DEADLINE_MS + 1_500
 
 const ageRole = async () => {
-  const project = process.env.E2E_ROLE_EXPIRE_PROJECT
-  const args = ["ops/role-age/expire.ts", "--repo", repo, "--person", me().personId, ...(project === undefined ? [] : ["--project", project])]
+  const args = [...roleAgeArgs(repo, me().personId, process.env.E2E_ROLE_EXPIRE_PROJECT)]
   // A read's claim or a cooldown holds the row for seconds: it is aged once they end, never out from under them.
   await expect.poll(() => (JSON.parse(execFileSync("node", args, { encoding: "utf8" })) as { readonly state: string }).state, { timeout: 45_000, intervals: [2_000] })
     .not.toBe("busy")

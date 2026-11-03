@@ -12,11 +12,13 @@ import { parseArgs } from "node:util"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../../db/Database.ts"
-import { FRESH_SECONDS } from "../../worker/github/RepoRoles.ts"
 import { neonUri, scrub, secretsOf } from "../feed-barrier/confirm.ts"
 
-/** How far past its life the row goes. */
-const PAST_SECONDS = 60
+/**
+ * How old the row becomes: past worker/github/RepoRoles.ts's five minute life. Its number is written out because importing
+ * it loads the worker, whose app imports plain node can't resolve; expire.test.ts fails if the life outgrows this.
+ */
+const AGED_SECONDS = 6 * 60
 
 /** What aging found: `aged`, past its life; `busy`, a claim or a cooldown holds it, untouched; `none`, no row, as cold. */
 export type Aged = { readonly repoId: string; readonly state: "aged" | "busy" | "none"; readonly ageSeconds: number | null }
@@ -29,7 +31,7 @@ export const expire = (repoId: string, personId: string) =>
       WITH found AS (SELECT repo_id, person_id, read_until IS NOT NULL AND read_until > clock_timestamp() AS held FROM github_repo_roles
         WHERE repo_id = ${repoId} AND person_id = ${personId} FOR UPDATE),
       aged AS (UPDATE github_repo_roles r
-        SET checked_at = LEAST(r.checked_at, clock_timestamp() - make_interval(secs => ${FRESH_SECONDS + PAST_SECONDS}))
+        SET checked_at = LEAST(r.checked_at, clock_timestamp() - make_interval(secs => ${AGED_SECONDS}))
         FROM found WHERE r.repo_id = found.repo_id AND r.person_id = found.person_id AND NOT found.held
         RETURNING r.checked_at)
       SELECT CASE WHEN found.held THEN 'busy' ELSE 'aged' END AS state,

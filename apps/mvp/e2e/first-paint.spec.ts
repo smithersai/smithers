@@ -44,7 +44,9 @@ test("an issue still syncing: its painted title sits in the page, whose links wo
   const [issue] = (await (await request.get(`/api/repos/${repo}/issues?state=all&limit=1`)).json()) as Array<{ number: number }>
   await page.goto(`/${repo}/issues/${issue!.number}`)
   await expect(page.locator("#first-paint[data-placed] h1")).toContainText(`#${issue!.number}`, { timeout: 30_000 })
-  await page.locator("main.issues-screen").getByRole("link", { name: "Issues", exact: true }).click({ timeout: 30_000 })
+  // The screen's back button: every state of the screen has it. The repository header's section link has the same name
+  // and target, and may not be there yet.
+  await page.locator('main.issues-screen a[data-slot="button"]', { hasText: /^Issues$/ }).click({ timeout: 30_000 })
   await expect(page).toHaveURL(new RegExp(`/${repo}/issues$`))
   // Another route: the title it read goes, for that reason and not the 30 s cap.
   await expect(page.locator("#first-paint")).toHaveCount(0)

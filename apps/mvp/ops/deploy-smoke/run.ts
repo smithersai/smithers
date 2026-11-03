@@ -70,13 +70,16 @@ export const ranForReal = (summary: string, spec: string): boolean => {
   return /^[1-9]\d*$/.test(passed!) && rest.every((count) => count === "·")
 }
 
+/** What `node` runs for one spec. */
+export const specArgs = (spec: string, project: string): ReadonlyArray<string> => ["e2e/prod.mjs", spec, `--project=${project}`]
+
 /** One spec through `node e2e/prod.mjs`, its output in a file. A run that exits 0 without running for real fails. */
 const viaProd = (env: NodeJS.ProcessEnv, directory: string) => (spec: string, project: string) =>
   new Promise<{ readonly code: number; readonly log: string; readonly seconds: number }>((resolve, reject) => {
     const log = join(directory, `${project}-${spec.replace(/\W+/g, "-")}.log`)
     const started = Date.now()
     const file = openSync(log, "w")
-    const child = spawn("node", ["e2e/prod.mjs", spec, `--project=${project}`], { env, stdio: ["ignore", file, file] })
+    const child = spawn("node", [...specArgs(spec, project)], { env, stdio: ["ignore", file, file] })
     child.on("error", reject)
     child.on("close", (code) => {
       closeSync(file)
