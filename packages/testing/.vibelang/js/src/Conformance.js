@@ -19,7 +19,7 @@ const coreCases = Object.freeze([
     ...Identity.cases,
     ...Interrupt.cases,
     ...Replay.cases,
-    ...Race.cases,
+    ...Race.cases
 ].map((conformanceCase) => Object.freeze({ ...conformanceCase })));
 /**
  * Builds the mandatory black-box suite every `EngineSubject` must pass:

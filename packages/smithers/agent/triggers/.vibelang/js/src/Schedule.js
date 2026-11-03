@@ -49,7 +49,7 @@ export const Schedule = Schema.Struct({
     timezone: Schema.optional(Schema.NonEmptyString),
     overlap: Overlap.pipe(Schema.withDecodingDefault(Effect.succeed("skip"))),
     catchUp: CatchUp.pipe(Schema.withDecodingDefault(Effect.succeed("none"))),
-    maxCatchUp: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(maxCatchUpLimit)).pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    maxCatchUp: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(maxCatchUpLimit)).pipe(Schema.withDecodingDefault(Effect.succeed(0)))
 });
 /**
  * Refuses a declaration whose cron expression is malformed or which the

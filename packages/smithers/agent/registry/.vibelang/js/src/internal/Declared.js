@@ -26,8 +26,8 @@ export const Declared = Schema.Struct({
             writes: Schema.Array(Schema.String),
             mode: Effects.Mode,
             onConflict: Effects.ConflictStrategy,
-            tier: Schema.optional(Effects.Tier),
-        }),
+            tier: Schema.optional(Effects.Tier)
+        })
     ]),
     flows: Schema.optional(Schema.Array(Schema.String)),
     model: Schema.optional(ModelSelection),
@@ -35,7 +35,7 @@ export const Declared = Schema.Struct({
     budget: Schema.optional(FlowBudget),
     deadline: Schema.optional(BudgetCeiling),
     modelInvocable: Schema.optional(Schema.Boolean),
-    disableModelInvocation: Schema.optional(Schema.Boolean),
+    disableModelInvocation: Schema.optional(Schema.Boolean)
 });
 /**
  * Refuses misspelled fields at every record level.

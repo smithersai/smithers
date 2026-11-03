@@ -10,168 +10,175 @@
   "root": {
    "relative": "packages/smithers/flows/platform-browser"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/flows/platform-browser/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/tsconfig.json"
     },
-    "size": 1454,
-    "hash": "Qi3miZE-DWxLH1zIyMGLuVTTSRHrvEfzFb2ynnEutmI"
+    "size": 1415,
+    "hash": "CQGGkEBWRZqHYtj0LlTgLdLgsLcO6SkyNgBS9k0d9Hs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "fZZaPHDx9zKcQl3ujxM6LxNCzfvN421NxjkwF0Q5s50"
+    "size": 1328,
+    "hash": "B_dtnyKRr02O7BEW_2HMc_MPF0nnGiUuTGVulx4yloI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "kX8q1iNWIj4BmVzY_IUz7VZgBYmXEViKvqcjm5q_7aM"
+    "size": 1328,
+    "hash": "ma5DHvQE48VgxNilZCWgqR7uME4BIWXbdVjvlXaBW2o"
    },
    {
     "path": {
      "relative": "packages/smithers/control/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sync/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/tsconfig.json"
+    },
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    }
   ],
   "directories": [
@@ -349,7 +356,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -374,7 +381,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -396,7 +403,7 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
@@ -410,133 +417,133 @@
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "ChhNRC9WpUe0JlBdu_RF9QYJMOG0J9A3o5IgLYQETzo"
+    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/platform-browser/package.json"
     },
     "size": 6886,
-    "hash": "QYg_cOvJ3Oq86Vk1DLejj90TJ-allite3A7sFf48_gU"
+    "hash": "EADV79TfahTz-aFPpXS9mZMhDmyrLNWAkK7tXWzgbac"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
+    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
+    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "kTwGKJsTp4FVGxmKUOPZg3c06ZLfQDJah4Eo8ALa1HE"
+    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
+    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
-    "size": 17535,
-    "hash": "ptYwS6ZsXv6SWAIC2pOWo-G6DvCscMYdXdnuxPCoknI"
+    "size": 15515,
+    "hash": "iuKcgJBSKOec57LsRqZbOWZhZYYEd7wnDnyJoeyyY_o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "HkEsBZn5oE73FkMHp1IVWloRAQivyKChWC6xDwTCWqA"
+    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/package.json"
     },
-    "size": 6630,
-    "hash": "fM_hrWjB5ISOcj3FwbihVW-PkjMb2srZ81lnfrjRzbk"
+    "size": 6772,
+    "hash": "PDbmtBwaifMg8xo8e8sshgT4DxBUNraaYy17hCyYn9c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "fK0vdi3dDFOTMob0LKiDB1WNp5SxbwEp_tzeMqevZQc"
+    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/package.json"
     },
-    "size": 6950,
-    "hash": "m6akr-kt6yybb951zImjEb8hkDotUVwRe2Pq9qVPdkE"
+    "size": 7088,
+    "hash": "L5fpKGg2FbL-bbpRq_YlefD5Em-og1_ImjXbGxSFdaY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/package.json"
     },
     "size": 9895,
-    "hash": "541OBllASETabq1LtvCA0pogbAptEX0QuskxwdNCaMs"
+    "hash": "LH9WSZ_WGwMEPr0AjiUM6bzlOGw2B20C2fHGXref5dE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/package.json"
     },
     "size": 6254,
-    "hash": "dk5KdO2rBb2mqVBmd5OZWhnEz9zM-lN3Il4Los4LeqI"
+    "hash": "Hea3nMWuvm2_696OsMTMRp-MQ5YyzcV4ceoKKmvwaA4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "BdDRbIPt5QY59jYpdII9ws0c-Hr64YvA6FvaiRCvZII"
+    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan-store/package.json"
     },
     "size": 4083,
-    "hash": "XPv0HUKrAMV7dIHO_K7EBvF_h_BH2_a7OFFqA5DL5Kc"
+    "hash": "vMzRtDOlvzaKisBXUcSGorgpaWYyfeclQeZYPiZhWF8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "O9iDHySpA30BJ4H48_xLoYKtd_38nfhgRWUlLwL8hII"
+    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/package.json"
     },
-    "size": 18573,
-    "hash": "llSxX4JHAbcuRS4x1JEPm5m7DBlgALulgn8j3s_ZtHE"
+    "size": 18741,
+    "hash": "_okrrZpMw_Ji3VBpNIL_klR1Z-UilKWpgxQVyo8hn-I"
    },
    {
     "path": {
@@ -549,29 +556,29 @@
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
-    "size": 15062,
-    "hash": "Ehoav5n_0WiCoUYF2geBfe9CWBxFJmFFbZd4MnMPjks"
+    "size": 15090,
+    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/package.json"
     },
     "size": 8141,
-    "hash": "Q3EwCJGuGWWUzIoXyNqaEnYRl5mtDjBK9jLf-5q7QiU"
+    "hash": "O-3M6m6J761jj3XuevgCMWkZ0TCgCy_P5F6i9Z8fX9g"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "UCLgpI-A-WxW-qbLTBrkIVPiG78MZVE_4OtUN_SdOtE"
+    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
    },
    {
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
     "size": 17630,
-    "hash": "axmRELJfHeQ3NAUZ8A8f7XgQ7M-HhVx3muuJT3XsPN8"
+    "hash": "bxheo6D0sDenep1VXnaAozWM3cs6TXN3tfj6Cfc1obM"
    },
    {
     "path": {
@@ -648,14 +655,14 @@
      "relative": "packages/smithers/flows/sandbox/package.json"
     },
     "size": 16607,
-    "hash": "uRffnir5ANGXRMJ-dlQLK3B3A-zEWO0aHnEzj8NzgTA"
+    "hash": "P7jKyE4biR9cisWhmRF3xXU4alY2DC6K3YP6dyC_ciE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sync/package.json"
     },
-    "size": 14417,
-    "hash": "UuXWPJpetv7HKlmxnTxenABrhYJ66y0Cpw5b7fjzf58"
+    "size": 14547,
+    "hash": "EJwDNO1jWe3hLJu0xRe-3gvPE5MkEsC96QTVPaO3ySE"
    },
    {
     "path": {
@@ -676,14 +683,14 @@
      "relative": "packages/smithers/flows/time-travel/package.json"
     },
     "size": 8808,
-    "hash": "wIysUeZgFxRTvdR6UrHcRDFj6wu4fkhTihqnLdpHkjg"
+    "hash": "eCE_sx9zHiULn8bPh5Mmj9liMTMda7XZ0ahClo6YyOo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/package.json"
     },
     "size": 5182,
-    "hash": "sBRoUEEuFFtpOb_iRz6SnSQvhYr4UCVS0HFQSeT-pl0"
+    "hash": "ODMCrNpjv86vbpRVk6BHpw05F-eAhFwWr_6Gy5f_fK8"
    },
    {
     "path": {
@@ -2231,15 +2238,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -2273,15 +2280,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -2448,8 +2455,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
@@ -3197,8 +3204,8 @@
     "path": {
      "relative": "packages/smithers/flows/step-cache/src/CacheStoreMetrics.vibe"
     },
-    "size": 4517,
-    "hash": "hTNIDUNgFJ9Xy8FK8DqbA7rxp9Ejhu1P0no0M6V3tj0"
+    "size": 4510,
+    "hash": "ddedd35rIVTSgnQM5lpUjqy2XPCl7fbrarVkrfRVYhE"
    },
    {
     "path": {
@@ -3463,15 +3470,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -3512,8 +3519,8 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/Metric.vibe"
     },
-    "size": 2935,
-    "hash": "XXXhfdHsrISiQL-9OYXdun1P5hmUMFMUukdWLG859ss"
+    "size": 2926,
+    "hash": "agxT2sS_fPGrTrYLKC82EdAhmacBoDpXqiBi2IwGa3Q"
    },
    {
     "path": {
@@ -3540,8 +3547,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
     },
-    "size": 5241,
-    "hash": "JO_KokRTYoaAfg_TXfxIkOm2WSWR9EmmsM5E__718es"
+    "size": 5230,
+    "hash": "0LLzrFtd-OyretNOj-AKWa17Kb_79-iCaTcT0zBy-4I"
    },
    {
     "path": {
@@ -3743,8 +3750,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -3827,8 +3834,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -3876,8 +3883,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -3918,8 +3925,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -4359,8 +4366,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -4499,15 +4506,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/Encoded.vibe"
     },
-    "size": 15365,
-    "hash": "ePdnivZA8MDmCtMUVOSeLRLJzoM3dfFwudXpQMMX_5I"
+    "size": 15350,
+    "hash": "pRQXTh_-X81irAiJXXamyVG2X9qXwZjvwXr3fBUSIq4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
     },
-    "size": 2224,
-    "hash": "wU_2S9aIe6CLhOhWz7TsA9p3vINTxD8o4Jh2tnx527A"
+    "size": 2221,
+    "hash": "0b4AvKWi513qOmacbu7zpMSsNZ5Bjscf82CWUZgnpLs"
    },
    {
     "path": {
@@ -4534,8 +4541,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/SnapshotBoundary.vibe"
     },
-    "size": 1488,
-    "hash": "kdlJBqK9sGgXpptwPI6kbpk-9Y3WEpcUrsuy-DYCZZo"
+    "size": 1483,
+    "hash": "RNyG78FFKArZrOc08jPVo0atR2pF7WPQCBEdugoxOyE"
    },
    {
     "path": {
@@ -4702,22 +4709,22 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/StepFact.vibe"
     },
-    "size": 2106,
-    "hash": "4p5BwxZdwwqDTkEe6XaRTdBpC9svUS3xGkJGFphRfmo"
+    "size": 2103,
+    "hash": "b3kkgDyilW3C-FW4fdO4ounbiKeP_KuJRi79-7KoC5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/EventTally.vibe"
     },
-    "size": 801,
-    "hash": "jqNAp8SGRoVgR2UGFcQbDqD4VnG7fA7oCOkc8hwA_Nw"
+    "size": 800,
+    "hash": "_DXFihbOGu_VKm5BvOTjgOjn52C9LseZwxmqEucrkvQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
     },
-    "size": 963,
-    "hash": "h558rP8T8bGGWY1J39KkFj2H_C3ZwzleEC_jdLro1WY"
+    "size": 962,
+    "hash": "MWPlQMr_t56pVGgwDW0MWW24aMFIVC-RYfA3thfgK7w"
    },
    {
     "path": {
@@ -4730,8 +4737,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
     },
-    "size": 4805,
-    "hash": "TV_P427Tpq3T5TcSdUJ13uwDMQgjY6FQgBXaWOQ7ORA"
+    "size": 4800,
+    "hash": "0MAnTLasHh_cI-vlZtI_0FpjmdWsh6Itt25uXOU7e9c"
    },
    {
     "path": {
@@ -4779,8 +4786,8 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
     },
-    "size": 1367,
-    "hash": "KMRUmP-9Pq4fef97WjRMVwdSdKCtuF_hiS_zyvdpojA"
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
    },
    {
     "path": {
@@ -5192,8 +5199,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine-store/src/RunInspection.ts"
     },
-    "size": 37651,
-    "hash": "x7Ypw-foOjcFGIGJ8M34g7E5VcS24_U7Rz6FneaJY94"
+    "size": 37649,
+    "hash": "bs8mQKGPrVSgszWPhkzlK_EtoeCBwwZMb8RAHFPsZAo"
    },
    {
     "path": {
@@ -5458,8 +5465,8 @@
     "path": {
      "relative": "packages/smithers/flows/platform-browser/src/internal/RunReads.vibe"
     },
-    "size": 3529,
-    "hash": "UpMmZdvj2VAQfjwAzTUGj4LcMq83C86g6XfI5QisDWw"
+    "size": 3522,
+    "hash": "nJscJbujPA7Dc-j20Ol0FSo6z-XEBiFMySn18zOpAjg"
    },
    {
     "path": {
@@ -5666,24 +5673,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/StdError.ts"
+     "relative": "packages/smithers/agent/std/src/StdError.vibe"
     },
-    "size": 2137,
-    "hash": "x41D0IAct4fp_DhdY47b5AWJPIYnSfej-z-A8rsWXv0"
+    "size": 2104,
+    "hash": "XVXx5cJhzCrl41Jl5YPF3vrJlOQRnvQCls4kO08VW_I"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/FsFailure.ts"
+     "relative": "packages/smithers/agent/std/src/internal/FsFailure.vibe"
     },
-    "size": 1804,
-    "hash": "gar_VtClX_Pm7Vlho_hm7wxC_B4ouKMApcJuhV3Iw4M"
+    "size": 1806,
+    "hash": "GfgUQFY4QN0n_hsbIjw8QJkG2sLfNkXMPK2i0reL8YY"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/FileMutation.ts"
+     "relative": "packages/smithers/agent/std/src/internal/FileMutation.vibe"
     },
-    "size": 8584,
-    "hash": "ODWlpP_sRje9x7w8aJ9FDqBDbIDz_DcXDW66_R2gz9c"
+    "size": 8216,
+    "hash": "WjbpLmE4NSe-dlFONlWeTolbqdULqLn9vxJL7GKu4To"
    },
    {
     "path": {
@@ -5696,22 +5703,22 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Read.ts"
     },
-    "size": 12303,
-    "hash": "0Pk4Rx7P03cniYmBJpz2hO3Z3FKigjy5MW55j8GQ_3M"
+    "size": 12311,
+    "hash": "YRKcSjTwKiBgJYzI_ErFARYtXqWkIqaQ-6sfav7QhjI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/LanguageServer.vibe"
     },
     "size": 3822,
-    "hash": "iwHe9Uige3SHEB54uNbnh_a_bh6V-RsujsS2YU08F7k"
+    "hash": "cd-9hRbGGACTwvBiNFRCxfjV1zrdLZMDriNArnwxj14"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/Diagnostics.ts"
+     "relative": "packages/smithers/agent/std/src/internal/Diagnostics.vibe"
     },
-    "size": 3807,
-    "hash": "EYkAXgIhm64jc4Ku9XFQMON5eu3G4ykJsFUcql6sWvs"
+    "size": 3731,
+    "hash": "nBZWlWYJhAn0eI3sbIDjGHXVN-JNWsfbSxs6tWjGDCs"
    },
    {
     "path": {
@@ -5724,8 +5731,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Write.ts"
     },
-    "size": 6041,
-    "hash": "9u-kyG2yVSbQTRbQmbvjIbR4vCFUjG2wLsF96fcOk-I"
+    "size": 6049,
+    "hash": "EHKfoSJQtkrcl4NOPGODGNZ0RnnZY8ofgN06GsBhzHE"
    },
    {
     "path": {
@@ -5738,22 +5745,22 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Edit.ts"
     },
-    "size": 13982,
-    "hash": "bCcjALIoZ69VJCTsPTxXBHTiDRKMsIBa2856V5mOCX0"
+    "size": 13990,
+    "hash": "wBQObUlLJXEcKYw2f6G04SAC6_5JxKAcRVR-ar5oiSE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Ls.ts"
     },
-    "size": 7880,
-    "hash": "8jaYEo55kWBVhFy_PYHbyb2xS2Q5yuBvvgSZyKrVAJM"
+    "size": 7884,
+    "hash": "_iXgtVG7paNayd2Nx6Ucke1kZC9LTw71BTldVxEPpq0"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Search.vibe"
     },
-    "size": 4209,
-    "hash": "2rncMUgFJcnZz0rZoF9Qx7-mtO9M4yD5UBSheRr9Q14"
+    "size": 4210,
+    "hash": "9rns3kiK0xL11xkPlLwLRHg1MHNmFU9dw_tPZ_v5VLY"
    },
    {
     "path": {
@@ -5764,17 +5771,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/SearchContract.ts"
+     "relative": "packages/smithers/agent/std/src/internal/SearchContract.vibe"
     },
-    "size": 2639,
-    "hash": "sTkVVjCiTjqNjUPDDyg8BuxHE7mbqeGlpOR_UtpgcnE"
+    "size": 2641,
+    "hash": "n_CUFpUEUZ7_9fBtAtxmUB8IlXubCLl0f1KTOqQUhFE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/Ignore.ts"
     },
-    "size": 4854,
-    "hash": "_xjwRdrTHxmsLND-lhCjzoffpvn-0GPqwgTFPtaRRNs"
+    "size": 4856,
+    "hash": "QfXMoghuXtFybLFLfAbEO69VL0A0Blb0nHlyNRxPy4E"
    },
    {
     "path": {
@@ -5785,38 +5792,38 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/Walk.ts"
+     "relative": "packages/smithers/agent/std/src/internal/Walk.vibe"
     },
-    "size": 6818,
-    "hash": "X7QHApGX8XPNGq5dS4IVnf5hNeX0qki7t_0EbptjVtc"
+    "size": 6909,
+    "hash": "-VoUUXm6Np_mxjnTPiHVC6i7Ft0c7ExCfOhjIZ2JzfM"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/SearchContract.ts"
+     "relative": "packages/smithers/agent/std/src/SearchContract.vibe"
     },
-    "size": 19740,
-    "hash": "eT1_Eprxed6IIt3taKPEXGN86V9xuACGFpVev-Yh9pE"
+    "size": 19459,
+    "hash": "8laLLuJFn09AMA4F4XDVZKacM_21sAOgYNArte8kja4"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Glob.ts"
     },
-    "size": 7412,
-    "hash": "r2pG6mIwxLu3VoK8Z7vJeWITxLe-ZPb-Wdg8yf5T3kI"
+    "size": 7416,
+    "hash": "Q85DX4i2yNvbag2TsIdkV3Mdd1BMHl1dkPfhnlUCI4c"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Grep.ts"
     },
-    "size": 12707,
-    "hash": "GoE3za7dKnehdG5vccjFpNT53mum_lF8wKYHtqhe0XA"
+    "size": 12713,
+    "hash": "nD2vK-tVaPdICtNc4woMfG_hbmwJdrR7eppsQDi6gmo"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/SearchConformance.ts"
+     "relative": "packages/smithers/agent/std/src/SearchConformance.vibe"
     },
-    "size": 10764,
-    "hash": "L8G8-LM64JwqQXG66Wo3eKIWFbhZTDTdaWukOJwaMaA"
+    "size": 10589,
+    "hash": "nmIOmQulQbsP21_rlkDOVJBU2xXivIzquzrsxBQY7Iw"
    },
    {
     "path": {
@@ -5836,22 +5843,22 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/PortableSearch.ts"
     },
-    "size": 11326,
-    "hash": "zjUVA4jIWNqOtDnzssLGYc_wsY8Hm_JqHCkRlFgUnBM"
+    "size": 11334,
+    "hash": "Fg3p3F1YK-vE05z1khA3YOKqKK8Q5HHUJckIkUdNWso"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/Exec.ts"
     },
-    "size": 16169,
-    "hash": "sMJ_lPPW6e5h_hfLGWBQuOoXzP-7KZxaQXbB0GwzSqM"
+    "size": 16171,
+    "hash": "f4l8kLjrSkep2vJx5Y0La17zHNpRDzc6JU1I-2DAeJI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/NativeSearch.ts"
     },
-    "size": 18073,
-    "hash": "fNVUZSiFDSp-O51BGn74vTRxwXS_hIor24Shi179ufU"
+    "size": 18079,
+    "hash": "HYIDGibKsRCfkS5U2uVlNZc9XQb7HxHeMVVA4QvhszA"
    },
    {
     "path": {
@@ -5864,22 +5871,22 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/RemoteTree.vibe"
     },
-    "size": 5492,
-    "hash": "9DzWZUNn3x8FaC_9Qjz1T7KTePWsSOxFHIG9OEBp7AE"
+    "size": 5488,
+    "hash": "zwRae9nnpLEYy42QZWZYzoICQd8TBBGaJhUV3IhmTYk"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/RemoteSearch.ts"
     },
-    "size": 9025,
-    "hash": "zXfOTt42p1fdr-ArPQJv0_FPlZqhsCz_-A66R1TRgzA"
+    "size": 9027,
+    "hash": "3ujW31lzdIhCDfJ493Cs_dy2xheTAsyjA-6PAgc5oL4"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Container.vibe"
     },
-    "size": 7248,
-    "hash": "KZ1RPiIavKNvoei4-nV6kZopMiqK3KjWU-QFTCxn_u4"
+    "size": 7250,
+    "hash": "Rqpk2YHsc85t1WtjVJOqAPIQUEVVJ2TUYy9tuIQocvE"
    },
    {
     "path": {
@@ -5892,8 +5899,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/EnvelopePrecheck.ts"
     },
-    "size": 17805,
-    "hash": "fLIzGocqv4pl2VkEcjlI2Lg8a7Jk-7F_nNHTA0n0Le8"
+    "size": 17807,
+    "hash": "fZuujYpwqZcWCXm4ECUpfdR6ZnDCVWPQL6oA44XqBxQ"
    },
    {
     "path": {
@@ -6144,15 +6151,15 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Limits.vibe"
     },
-    "size": 3219,
-    "hash": "CIj4MRtMTMc11jEn1pXnOLibMR1El2LxLzoNrRnOQVI"
+    "size": 3214,
+    "hash": "OFcLpAJzZWsJJ0cybMQ-Srkp_OgQcrWBGg4_w0VT_Lo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Signature.vibe"
     },
-    "size": 16471,
-    "hash": "HNeTROivOMqBJzQGXqsGcTenpxegL4XxK8key3d-2K4"
+    "size": 16444,
+    "hash": "_n53tKqUgjWnQj9oNaOLwRVpIwXRvKOknhBGcnaPi-c"
    },
    {
     "path": {
@@ -6466,8 +6473,8 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/skillFrontmatter.vibe"
     },
-    "size": 5100,
-    "hash": "JkPsJqXZHDDpRQDbS0e8Zm7nhuNp5OPkbZP_qWhNadA"
+    "size": 5097,
+    "hash": "POYj7x08XrCO954XGJiLpfLZ2Y-_Cxm3zeoxm8ExRM0"
    },
    {
     "path": {
@@ -6501,15 +6508,15 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelEvent.vibe"
     },
-    "size": 18314,
-    "hash": "eOL13_VciDeTo0iNlkIXAmFUugbKekeib4ci8BPEZPs"
+    "size": 18290,
+    "hash": "EM2Wgs3n09Qq5zx2VFOfkjl-HAEFcuMUcUT86SIXfmM"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelError.vibe"
     },
-    "size": 8728,
-    "hash": "wSPjMwN0Cbn18xiMUEWl6WVNKsvJ8I_-NwW9RnxkzAM"
+    "size": 8723,
+    "hash": "zGcY8dlcbHfrNn7DKU23zk9XRa_KITDZljq1K_pXAL8"
    },
    {
     "path": {
@@ -6543,8 +6550,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/internal/CallTiming.vibe"
     },
-    "size": 5055,
-    "hash": "03zZJDLpkCipolLqyh6_vw7-bJ8pM76ZL9U24RRJUBg"
+    "size": 5049,
+    "hash": "m7MdltMdCMjfgMT7s3m6iODwAVH17BcK75IT8cq16PM"
    },
    {
     "path": {
@@ -6557,8 +6564,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Pricing.vibe"
     },
-    "size": 6515,
-    "hash": "Q7ywCOCqjPaB7HvdXI_frhgUjKgiMAT098WeAbn0YZw"
+    "size": 6514,
+    "hash": "a4_mNhjGrGplAxO9L7QXxCq7NHo2aBrYmLsTcsJf49s"
    },
    {
     "path": {
@@ -6578,15 +6585,15 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Classifier.vibe"
     },
-    "size": 20005,
-    "hash": "9TB5l95-0Vi6bJP8wZ5PhA_Y_8BtlptgXaLVTCiTFyQ"
+    "size": 20026,
+    "hash": "qh_rs-6k3bn46d8dUsOS0eqa_vHOYWVdW4Dw_qN7IVg"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Probe.ts"
     },
-    "size": 11483,
-    "hash": "zix1iiSvNKNKgoZjBZCtjcKKeDqJscnLVBLFgtVqfZs"
+    "size": 11485,
+    "hash": "sjB10GKHIQ5psv-SXTRNDgHbnEllLFENgdqefw6GdxQ"
    },
    {
     "path": {
@@ -6599,36 +6606,36 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Bash.ts"
     },
-    "size": 24310,
-    "hash": "Vpszqp7_p0JA8InxWY3N-1BnPh0umH-OqZEzJGD1YzE"
+    "size": 24314,
+    "hash": "5YYwkjyBNH9FkygQf4I0Z_mnuhxdoJh_ra75LT3FAcY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/GitWorktree.ts"
     },
-    "size": 20362,
-    "hash": "PLKw9twBYwGXBDGnHCLMtobooDnmO6vuFWAd7CZrGcg"
+    "size": 20364,
+    "hash": "rCuqSUsFHMRVQNSVfUxG6X7_Pj-7VG16A1LUD4uVNx4"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/TestRunner.ts"
+     "relative": "packages/smithers/agent/std/src/TestRunner.vibe"
     },
-    "size": 3818,
-    "hash": "8gmNrR6rYhC5wL86-sHRSMhjjtX1xlVt3vgALNFebFI"
+    "size": 3744,
+    "hash": "89Vx222YM5ygmfipH8Z8crfOw60eO6EO5Nevj_Znl7w"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Relocate.vibe"
     },
-    "size": 7844,
-    "hash": "MkSwBpwakeDdRyGgXy7WWV5PRsUGLFaL2YzbXzYiTkc"
+    "size": 7841,
+    "hash": "Hsp884LnSU0ycUB6UmM2A2TrPN8fC5pl6w9xZtircsc"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Checkpoints.ts"
     },
-    "size": 24224,
-    "hash": "Y-wi3tklkLb5kxR334v--PdfLrjtfOcafA4Q_Cz-GYI"
+    "size": 24228,
+    "hash": "aMl68TRx6WJuV96VmcF9Tv7FWRx32LqKP725nFfK9Pg"
    },
    {
     "path": {
@@ -6641,12 +6648,12 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/TestRun.ts"
     },
-    "size": 14462,
-    "hash": "jBtaRfLNZzJ639rpiiGr_L8t2t7qWCGPAL2RXjKeTsk"
+    "size": 14466,
+    "hash": "L623aMZGJK8b-dijX96H-iblIFGOM_wUVkrOP1BKpW0"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/ApplyPatch.ts"
+     "relative": "packages/smithers/agent/std/src/internal/ApplyPatch.vibe"
     },
     "size": 19446,
     "hash": "eLfKDUUA3z1-FX0goWalaIcd0hR9C586BaxQyUuMdXA"
@@ -6655,8 +6662,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/ApplyPatch.ts"
     },
-    "size": 16405,
-    "hash": "JPFLWacAlJgeQprld4geDjXT_NanbJRKMImP1fTaKtw"
+    "size": 16415,
+    "hash": "wkRVDEOdg66F7NIIdXCSJM66GbvqQgG2MslfQenEr-4"
    },
    {
     "path": {
@@ -6669,15 +6676,15 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/ShellCommand.ts"
     },
-    "size": 5996,
-    "hash": "Furdu-fRkV8aUcz8cW7mclwe2JSEbfCrTGlxHYx7GrA"
+    "size": 5998,
+    "hash": "gOtKnnxnHqFmUVzvYoFaVBzrlN_tvjXt6dAVmG0aYRQ"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/UpdatePlan.ts"
+     "relative": "packages/smithers/agent/std/src/UpdatePlan.vibe"
     },
-    "size": 4704,
-    "hash": "_jm5repweLI17nybu2Di5KgA4Rp2xtkjFyAUNMJDlWI"
+    "size": 4857,
+    "hash": "9StWeKbTof5O_c9yMmQOE3oDJr1-1kn-730zu0Wwl14"
    },
    {
     "path": {
@@ -6697,15 +6704,15 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/HttpNetwork.ts"
     },
-    "size": 4818,
-    "hash": "lwCEW2kCc8hTqDvEXaiRdCN__9uUZC5hFCKppD1SqX4"
+    "size": 4820,
+    "hash": "Y35cGSob9eyhtc1TyF8iWc-yl5bsohskbgDwLWbgq20"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/Http.ts"
     },
-    "size": 6531,
-    "hash": "g1SJja321ehnEKjbcSZvAEsbsJrCzUsE8qUlFOcr_34"
+    "size": 6533,
+    "hash": "CUzZIPpREDSeEjf-B_VTy-Cmer2tZTzNkSu9m6359iQ"
    },
    {
     "path": {
@@ -6739,15 +6746,15 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/WebFetch.ts"
     },
-    "size": 7397,
-    "hash": "4278z0DAuL1nIcHBGqgCeUxRx2Oby0z-95wUIJbhoSc"
+    "size": 7399,
+    "hash": "HCvjdUit1h5REHye-5S02X-5P6Ax8c_gwrKa0CWrXEY"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/WebSearch.ts"
+     "relative": "packages/smithers/agent/std/src/WebSearch.vibe"
     },
-    "size": 4729,
-    "hash": "QBSOvNfUrbnwc1TF5olcQS-nb4p7y3ZCJsy-4LC7Dzo"
+    "size": 4795,
+    "hash": "42lsug21hLZFCP0nEZPkdpmq42kgcp4wUUnTYFjt4YU"
    },
    {
     "path": {
@@ -6851,29 +6858,29 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/ExaWebSearch.ts"
     },
-    "size": 6405,
-    "hash": "WmtzUkwBN0gcXGU9ARD2paABEk90hit3Tj7jeZ-FqWY"
+    "size": 6409,
+    "hash": "20DFSDu-ts9MSSA5Aio28VAxx9ko0WAc_t2XqkNJ1UU"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Lsp.ts"
     },
-    "size": 6042,
-    "hash": "8I0DSkZ8HmG635ba6Pr0agPhxH9tfLPDgIvqxxQAvN4"
+    "size": 6046,
+    "hash": "IrpJ274qvZmEXZwtZL3IHIp5aUo0uQndt92961ycKsg"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Manifest.ts"
     },
-    "size": 4407,
-    "hash": "rsQlp2ZdNPX7Sk5LYEv_ar825l3Mb-MVfFmpcOBuo7E"
+    "size": 4411,
+    "hash": "gAOEYa-oem5bTsFWti4-FvvuGv5yT49LlAemUdL17zE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/index.ts"
     },
-    "size": 2992,
-    "hash": "t29YFsfG2iQyHdAq3n7aq1tCrA2OCSXANxRtFdNz0UI"
+    "size": 3004,
+    "hash": "E6SZ4q1mKn8SuFrl53oiLckbwQ1cw4eDirokY3kUH6Y"
    },
    {
     "path": {
@@ -7635,15 +7642,15 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/LogFailures.vibe"
     },
-    "size": 8172,
-    "hash": "KZ0DKsnfIZXpT-B1xROygJ2MTtfo01_oQ_LGO16Oz1I"
+    "size": 8231,
+    "hash": "WiHAfm-UTtqtJnlqhn2PJ_lh1HAfCqzhZK7tHVaZrJ4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/src/Logger.vibe"
     },
-    "size": 4057,
-    "hash": "DFOye44VkywJcRTzQrDFNYi8fufFOwSg_-8lhY0sIpo"
+    "size": 4049,
+    "hash": "2Jaz9cbbJkjlBix6Y0fTpBYrBZJpHCWc7-urbA1_lhk"
    },
    {
     "path": {
@@ -8237,8 +8244,8 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/Otel.vibe"
     },
-    "size": 4440,
-    "hash": "pjne_6wE5LEN1pOZBSagtW5u4Qp0RmyBR77tkEnldgo"
+    "size": 4431,
+    "hash": "adzQ1ff3g1rRIOBrwwy2LtuzzMGGi3a9bGxeReD23p0"
    },
    {
     "path": {
@@ -8333,10 +8340,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
     },
-    "size": 1441,
-    "hash": "Mt80obSWTwAk96D4LEcWBG5rmGl0BgFVXZS71S2MfrY"
+    "size": 1331,
+    "hash": "f_84t9-l1obiUyyL1UrGPa_mmWVXAlxVwSGeZ6hvKQY"
    },
    {
     "path": {
@@ -8349,8 +8356,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Healthy.vibe"
     },
-    "size": 339,
-    "hash": "e195Sj5hH7_Ga1G2tvq8FpTESUmpF901N-0Bd0iBNfo"
+    "size": 338,
+    "hash": "rrZHTtdeKmDsO3F3meFyEGfUY4cr84r2wMWEOZ-lbro"
    },
    {
     "path": {
@@ -8363,8 +8370,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/Unhealthy.vibe"
     },
-    "size": 546,
-    "hash": "FHbnFQ1hWnIdbGBE22zC4wV6y3wLweGnccVFCyp4AO4"
+    "size": 545,
+    "hash": "1HJF7D42E_ypjaZ6_jrlvv59LU_SFrnlJQXNDGFcCZ8"
    },
    {
     "path": {
@@ -8384,8 +8391,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/SandboxHealth.vibe"
     },
-    "size": 358,
-    "hash": "95iJWK2gLOwpYQzQi5IeMyZXMXnteaDblzoKemFthZM"
+    "size": 357,
+    "hash": "rGaA_WYZA8rwyzaewcktHTpRXED8T0y14FAF3zqYbfI"
    },
    {
     "path": {
@@ -8447,8 +8454,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.ts"
     },
-    "size": 9344,
-    "hash": "qZE09LhEJmGzVYxMkIokVteEVGGAU1WuiZDRYYlGKaY"
+    "size": 9346,
+    "hash": "QK10g9WSR8cI2Z46_EWgpKj9LOvcbEwe_cpFoJ3-GM0"
    },
    {
     "path": {
@@ -8468,8 +8475,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/Session.vibe"
     },
-    "size": 4827,
-    "hash": "w_3ZpIa5O0iuosDDaa0AEMliP-QXmn7oHOwrAUO-iPA"
+    "size": 4826,
+    "hash": "Ocp-bm33x6VMEpisKUEZNeLZ-dj-aV5BaFPjfdORr0U"
    },
    {
     "path": {
@@ -8578,10 +8585,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.vibe"
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.ts"
     },
-    "size": 5324,
-    "hash": "lCSfio3UrxetUEKmnC5x8rgrBo-D8awyvhVQFGIAavE"
+    "size": 5528,
+    "hash": "beCRCp7jcZEb36QFWV7rtXvR-8B-7jFBP3TWZVlav3g"
    },
    {
     "path": {
@@ -8615,8 +8622,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/index.ts"
     },
-    "size": 2242,
-    "hash": "AZ0pt8KqQq-yi3N43UtXPLdmNAxutT-jrpjdWBvmmTA"
+    "size": 2240,
+    "hash": "GyHQP1itUkaNLMzSIukCmXjZ6qM6JBXrm5nYNq9XlCI"
    },
    {
     "path": {
@@ -8643,43 +8650,43 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
     },
-    "size": 2817,
-    "hash": "g2uaNsEVZhEUfbVDsqwxlt-hc_Unis2J6OXJxyOKE34"
+    "size": 2813,
+    "hash": "YSBjWmDQ2oGbRNcic1vjalrestrGfnFUYzzI-jSfgI4"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
     },
-    "size": 3169,
-    "hash": "Mnrw8ak0JG8dYR-MTa_v-E6nxRMCaQLl2aaqciwK008"
+    "size": 2939,
+    "hash": "fHUPcShTZoopCjbyTVFampnBZh73nZokBkuuB8A62yI"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
     },
-    "size": 3764,
-    "hash": "to9gjIIbfUSG6mEHBPVr-f7VqJe-GIALRxti7xuRhEU"
+    "size": 3617,
+    "hash": "aeWosIXv_PnA-KkLrpf2n73zJGJJzl06j5EsjznRenE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/apply.ts"
     },
-    "size": 11326,
-    "hash": "ZIPx89n0F6vQGsGtONbc2FW5MYuLU1ZO35Wmw--sOMk"
+    "size": 11330,
+    "hash": "LTsJ_PeZEkFUiX91dTydEMmYHJy5yaeZoKfNoKDlQxY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/ApplyAction.vibe"
     },
-    "size": 2366,
-    "hash": "OWAuAX-VNG5E0BRRh9r7ELxganrcJBDjXwgHwu-gbk4"
+    "size": 2361,
+    "hash": "7E7uy730JudwXaJoZadtqo7WTueR9RHmDY_XdsYnzHc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/index.ts"
     },
-    "size": 1342,
-    "hash": "FzsOMfIi_rxvLZEXMPL5ISoQ36MpNS-xRpozBAuJ_OM"
+    "size": 1346,
+    "hash": "UMCqFVlE3_6y6pKYdvh118qtJ75mUDPYoE5bwsvnJYo"
    },
    {
     "path": {
@@ -8699,8 +8706,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxConformance/check.ts"
     },
-    "size": 29368,
-    "hash": "MxhIUE7ciTxBy4-5KsPAYUFd-MwxdKuEzLmkI9dsbGY"
+    "size": 29370,
+    "hash": "ibRuI-0iXdmxIS-LwkjTbyTR6MElK7TEKuOfhXGzem0"
    },
    {
     "path": {
@@ -8711,24 +8718,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.vibe"
     },
-    "size": 2352,
-    "hash": "V3E3Zqk7n56gHaUCPG2q69vuWonFCmR1_aVTJAZ6eCI"
+    "size": 2336,
+    "hash": "OUfItOPflfq3UDUfOIhpocAAhq4CzZs64Po9gDF1k6E"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
     },
-    "size": 2596,
-    "hash": "mTDVZpne4K3u2_Aw5ChQp5Xn13MrSsiTzbAZGVtg-h8"
+    "size": 2537,
+    "hash": "mjwOlSBEeu4NrFA_rcHdIw1lazTqDiCJbqeJ4WN7fKE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts"
     },
-    "size": 12610,
-    "hash": "k_-7n52JkMQ98BUI4hmaYdRDnAa1Y3Eui54T4r9oYGQ"
+    "size": 12614,
+    "hash": "aYNC5pqhZMmvFuV3vSdirQs9ObcoUH2wuwavEWfgrYs"
    },
    {
     "path": {
@@ -8769,22 +8776,22 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/existing.ts"
     },
-    "size": 9496,
-    "hash": "4kLeuIhZ6qxb_hGhkGuj6aH7R-_l4Z8ncOKutbdpAJI"
+    "size": 9500,
+    "hash": "vOAbKsJUn1gTIiHwSzmV4mnluPcM1S8a5qfA2bWarGc"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.vibe"
     },
-    "size": 1032,
-    "hash": "sLHc0o2QBsgdj1JPjLW_uVtkBEQ_aGKI6N4tsDXu5aQ"
+    "size": 1034,
+    "hash": "KFCMlrb2uP0Isy3b3N9ynkwycJjFsMO2golPw0b2tdA"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.vibe"
     },
-    "size": 1105,
-    "hash": "nwCzYUw40z8NjxBP4aeG4LpqREi7dxKCfecaRTSJyq4"
+    "size": 1012,
+    "hash": "zeW_cuDZ3FcKnS65F1Thf8n3jgxHIZpEEGDt781zzM4"
    },
    {
     "path": {
@@ -8797,15 +8804,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/execSession.ts"
     },
-    "size": 11047,
-    "hash": "UIhh4uVtbXRjUr2QRs-dzJq2UhwqSQuAhQEShuSBU88"
+    "size": 11053,
+    "hash": "GeRp00VFUUUsQ8p2iyggzHZ9cyjKnXwoxXuOXoFTbCc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/make.ts"
     },
-    "size": 18419,
-    "hash": "8BXecnlUJ6Dpmw4G5R8HSBWP1Ec-_4xroXPKca0Dw8g"
+    "size": 18427,
+    "hash": "i-LrAtM1qnl2ZGlsYXHE8V0pQFf6PcKXf1DbNTwNQGs"
    },
    {
     "path": {
@@ -8818,8 +8825,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CommandSandbox/make.ts"
     },
-    "size": 12258,
-    "hash": "bi11wTahn4hCtZ-54eMy8blgrrpXjXS9YCBZyHuHayY"
+    "size": 12262,
+    "hash": "o_Q_O8eRMJAdwbLTmS8nPj5Ib49VOD2ix1s1kBDhZ-4"
    },
    {
     "path": {
@@ -8832,8 +8839,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/KubernetesSandbox/make.ts"
     },
-    "size": 21804,
-    "hash": "IiCj_ycAKHSq_vzq3i168kOwQ_71sbDvw3epwcIaVro"
+    "size": 21812,
+    "hash": "kFfwHyLpUDxl106G7csBfGPSrYUyz2h1pVGcXUgvqZ4"
    },
    {
     "path": {
@@ -8853,8 +8860,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/JustBashSandbox/make.ts"
     },
-    "size": 10270,
-    "hash": "o0cBmWmH-Kc08muNOqXxBUR-5kmi782912GNkqEcdTY"
+    "size": 10274,
+    "hash": "rFx3gQDHmsLDsp_jP6A6uLh-PZ-cY5V6rzEa11D_LGY"
    },
    {
     "path": {
@@ -8867,8 +8874,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/GarbageCollector.vibe"
     },
-    "size": 2187,
-    "hash": "N8zt2gZvQqKcHH7jSfSxpIepOXeLa06Nzswi2mmpSO0"
+    "size": 2185,
+    "hash": "MDVNHtqVaWs6-IUjD-VcxN7vYcrdgClJKstn8CvU-eQ"
    },
    {
     "path": {
@@ -8879,10 +8886,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/attempt.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/attempt.vibe"
     },
-    "size": 727,
-    "hash": "8vQ1jvJEm0vfoVw5Se5UUfvMekyZXEpISLyXjc_Et3o"
+    "size": 711,
+    "hash": "2GYfIKqBlnYTBNOvsXjiyIhQ9bDw6coDiixSMemvyao"
    },
    {
     "path": {
@@ -8893,10 +8900,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.vibe"
     },
-    "size": 1342,
-    "hash": "jrU4CNWZ7AzXrS9fMw-l0Zzi6WGe27aw9dGkqCAy-tg"
+    "size": 1329,
+    "hash": "toAFHDviESsNRZYZdeA8PSurjq9gYCa6_D16JlQvqbI"
    },
    {
     "path": {
@@ -8916,29 +8923,29 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/linuxSignals.vibe"
     },
-    "size": 1120,
-    "hash": "OOGXY-0D1CqDzXKRKl4eUa6sUoveH0hZpDGv8GmnCKo"
+    "size": 1119,
+    "hash": "6w_ZfPNlZGxbdfNM3lVL2tiZZ-kCydlYEknfNWBLafA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/teardownWarning.vibe"
     },
-    "size": 738,
-    "hash": "zsfn-_YUEMAyYvyrbECrPoBjz0-Rdaeoa3rQfLrWSR8"
+    "size": 737,
+    "hash": "R5b2pzw492Bz_jwMpOBUw0byPT9v3WZ2nXTr6Vp93as"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"
     },
-    "size": 13581,
-    "hash": "unJCHmRc55FYXonnyqYWHhm5SvSCMs3svctc-ChLSaY"
+    "size": 13583,
+    "hash": "NA-KA6aFeLd2-V8KarQlm8_GEGwMZhB8gdOOpeWPy9Y"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/MicrosandboxReattachRefusal.vibe"
     },
-    "size": 955,
-    "hash": "4bhCLBfBffYTY1euwo_rvXyk1IDzd7cFmnDnXuPcQ08"
+    "size": 953,
+    "hash": "SyUNx7qmNgt0MkiuKg9uDHU5Hj4hpJczm9yHeO_ybCA"
    },
    {
     "path": {
@@ -8951,22 +8958,22 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
     },
-    "size": 38679,
-    "hash": "xRMN9J56XGhslJB7CAoNeit5hdNu25qninA-b-v8nd4"
+    "size": 38687,
+    "hash": "VOczQMtISvJE3i6bOVBLsHz-d63nJsCFXIsj4v50GgQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.ts"
     },
-    "size": 6908,
-    "hash": "Zue6AtzVXanLQi3IdkYTTDbUfeq26LwHz1G_Don1pO4"
+    "size": 6910,
+    "hash": "OBTdBYbjR-0BitXboOpEMrlVXlyoYX5YNAsCEzSyjhY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.vibe"
     },
-    "size": 16592,
-    "hash": "Ew7XOfuE-pLAqOchywoG8KnL7hen3xl5IVmpM4soyNE"
+    "size": 16594,
+    "hash": "9nMofLXBfeKUhzelBMoNw_s-434hf3ZiHC60GpBZOO0"
    },
    {
     "path": {
@@ -8986,8 +8993,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/checkedExit.vibe"
     },
-    "size": 689,
-    "hash": "G07GgpqTvWNjaA5LXP2h6N5ov98oUeXjZJw4GwIK8YA"
+    "size": 688,
+    "hash": "CT2FGidUnyyKIkypbuNN6bVXROIWKaAhhuPbK5JLbOs"
    },
    {
     "path": {
@@ -9000,8 +9007,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/stdinRedirect.ts"
     },
-    "size": 4891,
-    "hash": "ZJRTZKjM276a-34uoyLxVtNQ3fNJ51f4_QeVwvikc3c"
+    "size": 4893,
+    "hash": "Hkk7_L58xSWRBeIQ3A34Y6xbI91PltYS6vuP9l6OoJ8"
    },
    {
     "path": {
@@ -9014,8 +9021,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/VercelSandbox/make.ts"
     },
-    "size": 16608,
-    "hash": "onPo_I6oJnuCGamSkQdSxpL74KkQLIZgHirRrGdd-Us"
+    "size": 16614,
+    "hash": "cF1Sr6FPA3rQ56kGjTC1SLG9RVX97GnW9c2UguShU1I"
    },
    {
     "path": {
@@ -9035,8 +9042,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DaytonaSandbox/make.ts"
     },
-    "size": 14746,
-    "hash": "8tbVPX3oXCA16Ksrxi_ugdOrtk5mpPGhvxiupcAwVyg"
+    "size": 14754,
+    "hash": "7a5rBPqfG_3Hkomr5vOIGPEbsLomZ5vMIlebiWmIzgs"
    },
    {
     "path": {
@@ -9063,8 +9070,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/AwsSandbox/make.ts"
     },
-    "size": 39972,
-    "hash": "k0T1v-h4B4YjgrroHI8l8Dk9ss8ttrcfTCGKePXKa8Q"
+    "size": 39982,
+    "hash": "sGxb3oOsxGKf-7SeQ5ECEBARIe42GNOXPIWaWtFJ6xI"
    },
    {
     "path": {
@@ -9084,8 +9091,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CloudflareSandbox/make.ts"
     },
-    "size": 10165,
-    "hash": "uHy2hl3POWnot1CHdsMH0dv-0tlKEDMHsSd1czo0pmI"
+    "size": 10171,
+    "hash": "j9xkfsyexEcJfnUETyftrTdaN24Nr--OyTaQo0o7-3g"
    },
    {
     "path": {
@@ -9098,15 +9105,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/SandboxUnhealthy.vibe"
     },
-    "size": 1122,
-    "hash": "o79-32FOxsDh8OBY8sKS5wPqdvJCuUBKsJKraQjgOK8"
+    "size": 1120,
+    "hash": "-gD4FIcOJ9azykzUsMeRGsrRcVn5MqD5jUNDZbDEFs8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/Reporter.vibe"
     },
-    "size": 1013,
-    "hash": "Lfkg6dJjU8cyLnS_o78K8uKvf_-TXZdpaFaLhblE3Es"
+    "size": 1011,
+    "hash": "3SweM61inWWjetgKW0JEsFwyeVi6hPLZD3OFvNSeX5Y"
    },
    {
     "path": {
@@ -9700,8 +9707,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/TimeTravelError.vibe"
     },
-    "size": 3639,
-    "hash": "DpdTg1S6trQ7oHOCYU8LHPBrVueC2uFaDag_PWA3VMo"
+    "size": 3637,
+    "hash": "anuv20sOo5yC0RwmLGqxY2OMY6sU42VKppCkI8h4kAU"
    },
    {
     "path": {
@@ -9714,15 +9721,15 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/CompensationHandlers.vibe"
     },
-    "size": 6185,
-    "hash": "jLsJRKT8UH7hFvPgh9BkdxrlLUS0CtXt2bWnWFTXzHg"
+    "size": 6183,
+    "hash": "grEO7yk1xIbBmsm-aN0fbPyzNdYljm0RZBHPr0kfsno"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/Frame.vibe"
     },
-    "size": 4451,
-    "hash": "Dn2Igp6Nu62WhCXXuagpm1GcFupL-sCyNZ9pd0f_Kt0"
+    "size": 4448,
+    "hash": "xm63ypu-BFlt4UMCxXB9E1lJ1sdjv1dx2I3NyeHA6TM"
    },
    {
     "path": {
@@ -9749,29 +9756,29 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/HistoryLimit.vibe"
     },
-    "size": 2168,
-    "hash": "OHh-Qz12fq8hlgmgex2Cv4WW2WNiYjnYpfBAshgsQbk"
+    "size": 2166,
+    "hash": "E87aJ1xVTymqZsTFnAlvwLOa7Gn1PTYmn1wKPwoeh0w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
     },
-    "size": 3851,
-    "hash": "bg2um5O7B6qxJtcwuNDIhuWyZCojkw-eqcJwJrXACpI"
+    "size": 3859,
+    "hash": "p91vkMn3zzGIacmG19Yr9wbaICfMqAeWrqyHOTEoLac"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.ts"
+     "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
     },
-    "size": 704,
-    "hash": "_UbmOoHisGC3Cppj_gbhMDmO_Y85XD1GYnw7CL752Ps"
+    "size": 674,
+    "hash": "JWtYDlq9qz4di5H3ZkEYScie5hhVwqimDKxu2_Zy1ws"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
     },
-    "size": 20625,
-    "hash": "ztR0cn56YS5ucdImv9OOw3k725tuSst-eQlYUPm_qDo"
+    "size": 20627,
+    "hash": "UMtwURlnMHws0YL8wt4HH10TR_tsQAM8EviLGKOjuKg"
    },
    {
     "path": {
@@ -9798,8 +9805,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Rewind.ts"
     },
-    "size": 54169,
-    "hash": "axPAAZxOx74fPs3i6YtCPNcssnaEwUbgmdntmbiKGB4"
+    "size": 54171,
+    "hash": "YPSWF2AZrrdl_P3V04PP0wyv0jdsAM4F-N_lG20yaa4"
    },
    {
     "path": {
@@ -9852,24 +9859,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
     },
-    "size": 6255,
-    "hash": "LrBv501ZspaqIO6wXKeJ5P0WdCF5QtheWYES6ny1SHk"
+    "size": 6205,
+    "hash": "fStKb_KsLbmL0V1eWwWk6UZHGDMKfIuvg0ojQqENQ3Y"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
     },
-    "size": 3459,
-    "hash": "k9r714Vu2fKUSbr4XWEA_xc5dkFtzhpJoHxllS1nTPw"
+    "size": 3395,
+    "hash": "CKZ9tNtoHIXhB6M58NYKVe92R_jho77o95KtxRlssfE"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
     },
-    "size": 1304,
-    "hash": "bUfqz63oQ-X6cqpUuw8LbRFW6Qsq3bXPWuN8MEcFZTY"
+    "size": 1278,
+    "hash": "3wyqIqCTKjTp7lrtlhIWU7tbwmmsAa6jdJbFbRZnyLE"
    },
    {
     "path": {
@@ -9887,17 +9894,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
     },
-    "size": 1077,
-    "hash": "bD_Tr-sTD7Mf41PqpzJhOcrooclcFI8AZIYUBkBhYg8"
+    "size": 1051,
+    "hash": "on_Rs6j67fUrmaGFJW6lB4_r4sGqulnucdbT3gVvJ_Y"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
     },
-    "size": 2304,
-    "hash": "fEItzVC29d01bjRZlFhfnRsxE9HCkxLMpwPhpiWRqJs"
+    "size": 2312,
+    "hash": "WuEQAZSrmp8CtWK1i9iTY_i4hkpEbXtzxFj9yOAQ9YI"
    },
    {
     "path": {
@@ -9915,24 +9922,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/src/internal/RegistryArgs.ts"
+     "relative": "packages/smithers/flows/src/internal/RegistryArgs.vibe"
     },
     "size": 731,
     "hash": "UkGKEYmaT_Kk-8XkNk1Oxh4jMuUXMrmehmromvrCCYo"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/src/internal/RuntimeOptions.ts"
+     "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
     },
-    "size": 12191,
-    "hash": "AOmCDbRquB1M0UalPuKsCJ4JJYOT3r8TfLejo10lZ6s"
+    "size": 12152,
+    "hash": "4C1xNvdBNJosQZynxh5D7n1LWTol7C_7qFMKYizyNBY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/src/Runtime.ts"
     },
-    "size": 8869,
-    "hash": "e2OySTS0zKbiw5ImCPJC99PUUOdw7dlIoBIBwKt-8jQ"
+    "size": 8877,
+    "hash": "Roowlbh2O1s2ocFUbxj86G7gMrIQT2GQK9Umzum6eiQ"
    },
    {
     "path": {
@@ -9966,8 +9973,8 @@
     "path": {
      "relative": "packages/smithers/flows/platform-browser/src/internal/Metrics.vibe"
     },
-    "size": 2239,
-    "hash": "G9JLFthku-LfrU33WBHqdLxhzROnvZCnI4I2oCVZ2LA"
+    "size": 2234,
+    "hash": "xdsEySdCOpEQnBWGTqqRXdIxFyVjL3xZlsREspztbhM"
    },
    {
     "path": {
@@ -12202,13 +12209,13 @@
     "relative": "packages/smithers/agent/std/src/internal/Declaration.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/StdError.ts"
+    "relative": "packages/smithers/agent/std/src/StdError.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/FsFailure.ts"
+    "relative": "packages/smithers/agent/std/src/internal/FsFailure.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/FileMutation.ts"
+    "relative": "packages/smithers/agent/std/src/internal/FileMutation.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/Text.ts"
@@ -12220,7 +12227,7 @@
     "relative": "packages/smithers/agent/std/src/LanguageServer.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/Diagnostics.ts"
+    "relative": "packages/smithers/agent/std/src/internal/Diagnostics.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/Preserve.ts"
@@ -12244,7 +12251,7 @@
     "relative": "packages/smithers/agent/std/src/internal/LinearRegex.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/SearchContract.ts"
+    "relative": "packages/smithers/agent/std/src/internal/SearchContract.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/Ignore.ts"
@@ -12253,10 +12260,10 @@
     "relative": "packages/smithers/agent/std/src/internal/Prune.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/Walk.ts"
+    "relative": "packages/smithers/agent/std/src/internal/Walk.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/SearchContract.ts"
+    "relative": "packages/smithers/agent/std/src/SearchContract.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/Glob.ts"
@@ -12265,7 +12272,7 @@
     "relative": "packages/smithers/agent/std/src/Grep.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/SearchConformance.ts"
+    "relative": "packages/smithers/agent/std/src/SearchConformance.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/Symbols.ts"
@@ -12391,7 +12398,7 @@
     "relative": "packages/smithers/agent/std/src/internal/GitWorktree.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/TestRunner.ts"
+    "relative": "packages/smithers/agent/std/src/TestRunner.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/Relocate.vibe"
@@ -12406,7 +12413,7 @@
     "relative": "packages/smithers/agent/std/src/TestRun.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/ApplyPatch.ts"
+    "relative": "packages/smithers/agent/std/src/internal/ApplyPatch.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/ApplyPatch.ts"
@@ -12418,7 +12425,7 @@
     "relative": "packages/smithers/agent/std/src/ShellCommand.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/UpdatePlan.ts"
+    "relative": "packages/smithers/agent/std/src/UpdatePlan.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/IpAddress.ts"
@@ -12448,7 +12455,7 @@
     "relative": "packages/smithers/agent/std/src/WebFetch.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/WebSearch.ts"
+    "relative": "packages/smithers/agent/std/src/WebSearch.vibe"
    },
    {
     "relative": "packages/smithers/notifications/src/internal/foldCache.ts"
@@ -12619,7 +12626,7 @@
     "relative": "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/describeExit.vibe"
@@ -12724,7 +12731,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSessionProvider.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.vibe"
+    "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSession.ts"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/base64.ts"
@@ -12754,10 +12761,10 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/apply.ts"
@@ -12781,10 +12788,10 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxConformance/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts"
@@ -12808,10 +12815,10 @@
     "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/existing.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/killScript.ts"
@@ -12853,13 +12860,13 @@
     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/labels.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/attempt.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/attempt.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/environmentCommand.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/microsandboxNetwork.ts"
@@ -13084,7 +13091,7 @@
     "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.ts"
+    "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
@@ -13123,13 +13130,13 @@
     "relative": "packages/smithers/flows/time-travel/src/internal/MigrationStep.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/migrations/0004_plan_digest.vibe"
@@ -13138,7 +13145,7 @@
     "relative": "packages/smithers/flows/time-travel/src/migrations/0005_operation_id.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
@@ -13150,10 +13157,10 @@
     "relative": "packages/smithers/flows/time-travel/src/index.vibe"
    },
    {
-    "relative": "packages/smithers/flows/src/internal/RegistryArgs.ts"
+    "relative": "packages/smithers/flows/src/internal/RegistryArgs.vibe"
    },
    {
-    "relative": "packages/smithers/flows/src/internal/RuntimeOptions.ts"
+    "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
    },
    {
     "relative": "packages/smithers/flows/src/Runtime.ts"
@@ -13267,7 +13274,7 @@
       "relative": "packages/smithers/flows/platform-browser/src/internal/RunReads.vibe"
      }
     ],
-    "code": "/**\n * The tab's decoder of the leader's run reads: `@smthrs/engine-store`'s\n * `RunInspection.Inspection` and `RunList`, as they travel on the engine's\n * channel.\n *\n * The tab never loads `@smthrs/engine-store` (its SQL reads and the journal's\n * redactor have no business in a tab bundle), so the wire shape is declared\n * here again. The two type assertions at the bottom tie it to the engine's\n * declaration: a field added there without one here, or of another type,\n * fails this package's typecheck.\n *\n * @since 1.0.0\n */\nimport * as Schema_1 from \"effect/Schema\";\nimport * as Schema from \"effect/Schema\";\nconst Value = Schema_1.Struct({\n    text: Schema_1.String, bytes: Schema_1.Number, clipped: Schema_1.Boolean,\n});\nconst Waiting = Schema.Struct({\n    kind: Schema.Literals([\"timer\", \"signal\", \"approval\", \"quota\", \"human\", \"other\"]),\n    reason: Schema.String,\n    wakeAtMs: Schema.NullOr(Schema.Number),\n});\nconst summary = {\n    runId: Schema.String,\n    flowName: Schema.String,\n    status: Schema.Literals([\"pending\", \"running\", \"suspended\", \"completed\", \"failed\", \"cancelled\"]),\n    createdAtMs: Schema.Number,\n    startedAtMs: Schema.NullOr(Schema.Number),\n    finishedAtMs: Schema.NullOr(Schema.Number),\n    parentRunId: Schema.NullOr(Schema.String),\n    cancelRequestedAtMs: Schema.NullOr(Schema.Number),\n    waiting: Schema.NullOr(Waiting),\n    lastSeq: Schema.Number,\n    origin: Schema.NullOr(Schema.Struct({ door: Schema.String, actor: Schema.String })),\n};\nconst RunSummary = Schema.Struct(summary);\nconst detailed = { ...summary, input: Value, result: Schema.NullOr(Value) };\nconst Attempt = Schema.Struct({\n    attempt: Schema.Number,\n    state: Schema.String,\n    startedAtMs: Schema.Number,\n    finishedAtMs: Schema.NullOr(Schema.Number),\n    outcome: Schema.NullOr(Value),\n    error: Schema.NullOr(Schema.String),\n});\nconst Step = Schema.Struct({\n    nodeId: Schema.String,\n    action: Schema.NullOr(Schema.String),\n    kind: Schema.String,\n    status: Schema.Literals([\"running\", \"completed\", \"failed\", \"waiting\", \"skipped\"]),\n    scheduledAtMs: Schema.Number,\n    settledAtMs: Schema.NullOr(Schema.Number),\n    seq: Schema.Number,\n    output: Schema.NullOr(Value),\n    attempts: Schema.Array(Attempt),\n});\nconst Event = Schema.Struct({\n    seq: Schema.Number,\n    eventType: Schema.String,\n    emittedAtMs: Schema.Number,\n    payload: Value,\n});\n/**\n * One run as `Inspect` reads it.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Inspection = Schema.Struct({\n    run: Schema.Struct(detailed),\n    steps: Schema.Array(Step),\n    children: Schema.Array(Schema.Struct(detailed)),\n    journal: Schema.Struct({\n        events: Schema.Array(Event),\n        afterSeq: Schema.Number,\n        nextSeq: Schema.Number,\n        hasMore: Schema.Boolean,\n    }),\n});\n/**\n * A page of runs as `List` reads it.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const RunList = Schema.Struct({ runs: Schema.Array(RunSummary), cursor: Schema.NullOr(Schema.String) });\nconst sameInspection = true;\nconst sameList = true;\nvoid sameInspection;\nvoid sameList;\n/**\n * Decodes an `Inspect` reply's result.\n *\n * @category decoding\n * @since 1.0.0\n */\nexport const decodeInspection = Schema.decodeUnknownEffect(Inspection);\n/**\n * Decodes a `List` reply's result.\n *\n * @category decoding\n * @since 1.0.0\n */\nexport const decodeRunList = Schema.decodeUnknownEffect(RunList);\n",
+    "code": "/**\n * The tab's decoder of the leader's run reads: `@smthrs/engine-store`'s\n * `RunInspection.Inspection` and `RunList`, as they travel on the engine's\n * channel.\n *\n * The tab never loads `@smthrs/engine-store` (its SQL reads and the journal's\n * redactor have no business in a tab bundle), so the wire shape is declared\n * here again. The two type assertions at the bottom tie it to the engine's\n * declaration: a field added there without one here, or of another type,\n * fails this package's typecheck.\n *\n * @since 1.0.0\n */\nimport * as Schema_1 from \"effect/Schema\";\nimport * as Schema from \"effect/Schema\";\nconst Value = Schema_1.Struct({\n    text: Schema_1.String, bytes: Schema_1.Number, clipped: Schema_1.Boolean,\n});\nconst Waiting = Schema.Struct({\n    kind: Schema.Literals([\"timer\", \"signal\", \"approval\", \"quota\", \"human\", \"other\"]),\n    reason: Schema.String,\n    wakeAtMs: Schema.NullOr(Schema.Number)\n});\nconst summary = {\n    runId: Schema.String,\n    flowName: Schema.String,\n    status: Schema.Literals([\"pending\", \"running\", \"suspended\", \"completed\", \"failed\", \"cancelled\"]),\n    createdAtMs: Schema.Number,\n    startedAtMs: Schema.NullOr(Schema.Number),\n    finishedAtMs: Schema.NullOr(Schema.Number),\n    parentRunId: Schema.NullOr(Schema.String),\n    cancelRequestedAtMs: Schema.NullOr(Schema.Number),\n    waiting: Schema.NullOr(Waiting),\n    lastSeq: Schema.Number,\n    origin: Schema.NullOr(Schema.Struct({ door: Schema.String, actor: Schema.String }))\n};\nconst RunSummary = Schema.Struct(summary);\nconst detailed = { ...summary, input: Value, result: Schema.NullOr(Value) };\nconst Attempt = Schema.Struct({\n    attempt: Schema.Number,\n    state: Schema.String,\n    startedAtMs: Schema.Number,\n    finishedAtMs: Schema.NullOr(Schema.Number),\n    outcome: Schema.NullOr(Value),\n    error: Schema.NullOr(Schema.String)\n});\nconst Step = Schema.Struct({\n    nodeId: Schema.String,\n    action: Schema.NullOr(Schema.String),\n    kind: Schema.String,\n    status: Schema.Literals([\"running\", \"completed\", \"failed\", \"waiting\", \"skipped\"]),\n    scheduledAtMs: Schema.Number,\n    settledAtMs: Schema.NullOr(Schema.Number),\n    seq: Schema.Number,\n    output: Schema.NullOr(Value),\n    attempts: Schema.Array(Attempt)\n});\nconst Event = Schema.Struct({\n    seq: Schema.Number,\n    eventType: Schema.String,\n    emittedAtMs: Schema.Number,\n    payload: Value\n});\n/**\n * One run as `Inspect` reads it.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Inspection = Schema.Struct({\n    run: Schema.Struct(detailed),\n    steps: Schema.Array(Step),\n    children: Schema.Array(Schema.Struct(detailed)),\n    journal: Schema.Struct({\n        events: Schema.Array(Event),\n        afterSeq: Schema.Number,\n        nextSeq: Schema.Number,\n        hasMore: Schema.Boolean\n    })\n});\n/**\n * A page of runs as `List` reads it.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const RunList = Schema.Struct({ runs: Schema.Array(RunSummary), cursor: Schema.NullOr(Schema.String) });\nconst sameInspection = true;\nconst sameList = true;\nvoid sameInspection;\nvoid sameList;\n/**\n * Decodes an `Inspect` reply's result.\n *\n * @category decoding\n * @since 1.0.0\n */\nexport const decodeInspection = Schema.decodeUnknownEffect(Inspection);\n/**\n * Decodes a `List` reply's result.\n *\n * @category decoding\n * @since 1.0.0\n */\nexport const decodeRunList = Schema.decodeUnknownEffect(RunList);\n",
     "map": {
      "version": 3,
      "file": "RunReads.js",
@@ -13347,7 +13354,7 @@
       "relative": "packages/smithers/flows/platform-browser/src/internal/Metrics.vibe"
      }
     ],
-    "code": "/**\n * The leader's metrics, in a module of their own so `BrowserRuntime` exports\n * them without loading the engine.\n *\n * @since 1.0.0\n */\nimport * as Metric from \"effect/Metric\";\n/**\n * Times a worker became leader.\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const leaderships = Metric.counter(\"smithers_browser_runtime_leaderships\", {\n    description: \"Times a browser worker took the engine lock and started the engine\",\n    incremental: true,\n});\n/**\n * Unfinished runs a new leader found, by `outcome`: `settled`, `parked`,\n * `unfinished` or `failed` for a run it drove, `unknown-flow` for one whose\n * flow it was not given.\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const wakes = Metric.counter(\"smithers_browser_runtime_wakes\", {\n    description: \"Unfinished runs a new browser leader drove, by outcome\",\n    incremental: true,\n});\n/**\n * Preparations of the app's shared database a new leader ran before serving\n * it, by `outcome`: `prepared`, `failed`, or `skipped` when the engine serves\n * no app database.\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const preparations = Metric.counter(\"smithers_browser_runtime_preparations\", {\n    description: \"Preparations of the app's shared database a new browser leader ran before serving it, by outcome\",\n    incremental: true,\n});\n/**\n * Follower requests the leader handled, by `request` and `outcome`\n * (`replied` or `refused`).\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const requests = Metric.counter(\"smithers_browser_runtime_requests\", {\n    description: \"Follower requests the browser leader handled, by request and outcome\",\n    incremental: true,\n});\n/**\n * Statements the leader ran on the app's shared database, by `outcome`\n * (`executed`, `failed` or `lost`), statements of a transaction an earlier\n * leader committed with them (`committed`), statements it refused because\n * this build could not prepare the database (`fenced`), and transactions it\n * rolled back because their tab ended (`abandoned`).\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const statements = Metric.counter(\"smithers_browser_runtime_statements\", {\n    description: \"Statements the browser leader ran on the app's shared database, by outcome\",\n    incremental: true,\n});\n",
+    "code": "/**\n * The leader's metrics, in a module of their own so `BrowserRuntime` exports\n * them without loading the engine.\n *\n * @since 1.0.0\n */\nimport * as Metric from \"effect/Metric\";\n/**\n * Times a worker became leader.\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const leaderships = Metric.counter(\"smithers_browser_runtime_leaderships\", {\n    description: \"Times a browser worker took the engine lock and started the engine\",\n    incremental: true\n});\n/**\n * Unfinished runs a new leader found, by `outcome`: `settled`, `parked`,\n * `unfinished` or `failed` for a run it drove, `unknown-flow` for one whose\n * flow it was not given.\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const wakes = Metric.counter(\"smithers_browser_runtime_wakes\", {\n    description: \"Unfinished runs a new browser leader drove, by outcome\",\n    incremental: true\n});\n/**\n * Preparations of the app's shared database a new leader ran before serving\n * it, by `outcome`: `prepared`, `failed`, or `skipped` when the engine serves\n * no app database.\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const preparations = Metric.counter(\"smithers_browser_runtime_preparations\", {\n    description: \"Preparations of the app's shared database a new browser leader ran before serving it, by outcome\",\n    incremental: true\n});\n/**\n * Follower requests the leader handled, by `request` and `outcome`\n * (`replied` or `refused`).\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const requests = Metric.counter(\"smithers_browser_runtime_requests\", {\n    description: \"Follower requests the browser leader handled, by request and outcome\",\n    incremental: true\n});\n/**\n * Statements the leader ran on the app's shared database, by `outcome`\n * (`executed`, `failed` or `lost`), statements of a transaction an earlier\n * leader committed with them (`committed`), statements it refused because\n * this build could not prepare the database (`fenced`), and transactions it\n * rolled back because their tab ended (`abandoned`).\n *\n * @category metrics\n * @since 1.0.0\n */\nexport const statements = Metric.counter(\"smithers_browser_runtime_statements\", {\n    description: \"Statements the browser leader ran on the app's shared database, by outcome\",\n    incremental: true\n});\n",
     "map": {
      "version": 3,
      "file": "Metrics.js",

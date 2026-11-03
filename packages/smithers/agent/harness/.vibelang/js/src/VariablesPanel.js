@@ -57,7 +57,7 @@ export class Binding extends Schema.Class("flows/harness/VariablesPanel/Binding"
      */
     type: Schema.String,
     /** One cheap measure of the value, already rendered; empty when there is none. */
-    size: Schema.String,
+    size: Schema.String
 }) {
 }
 /**
@@ -73,7 +73,7 @@ export class Stamp extends Schema.Class("flows/harness/VariablesPanel/Stamp")({
     /** The frame whose cell last changed the binding's cheap shape. */
     frame: NonNegativeSafeInt,
     /** The frame whose cell first bound the name. */
-    since: NonNegativeSafeInt,
+    since: NonNegativeSafeInt
 }) {
 }
 /**
@@ -138,6 +138,6 @@ export const render = (options) => {
         ...lines,
         ...(uncounted > 0
             ? [`- … and ${uncounted} older name${uncounted === 1 ? "" : "s"} not listed here; they are still bound.`]
-            : []),
+            : [])
     ].join("\n");
 };

@@ -51,7 +51,7 @@ export const Budget = Schema.Struct({
     tokens: Schema.optional(BudgetCeiling),
     milliseconds: Schema.optional(BudgetCeiling),
     usd: Schema.optional(UsdCeiling),
-    onExceeded: Schema.optional(BudgetOnExceeded),
+    onExceeded: Schema.optional(BudgetOnExceeded)
 });
 /**
  * The sandbox providers a flow may name, one per `@smthrs/sandbox` provider
@@ -70,7 +70,7 @@ export const SandboxProvider = Schema.Literals([
     "just-bash",
     "kubernetes",
     "microsandbox",
-    "vercel",
+    "vercel"
 ]);
 /**
  * The sandbox a flow selects: the provider, plus the neutral network policy
@@ -85,9 +85,9 @@ export const SandboxSelection = Schema.Struct({
     provider: SandboxProvider,
     network: Schema.optionalKey(Schema.Union([
         Schema.Literals(["none", "open"]),
-        Schema.Struct({ allow: Schema.Array(Schema.String) }),
+        Schema.Struct({ allow: Schema.Array(Schema.String) })
     ])),
     cpus: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
     memoryMib: Schema.optionalKey(BudgetCeiling),
-    timeoutSecs: Schema.optionalKey(BudgetCeiling),
+    timeoutSecs: Schema.optionalKey(BudgetCeiling)
 });

@@ -53,7 +53,7 @@ export const makeNoop = (overrides = {}) => EngineSubject.of({
     interrupt: () => Effect_1.suspend({ interrupt: () => { return (() => Effect_1.suspend(() => Effect_1.fail(unavailable("interrupt"))))(); } }.interrupt),
     resume: () => Effect_1.suspend({ resume: () => { return (() => Effect_1.suspend(() => Effect_1.fail(unavailable("resume"))))(); } }.resume),
     journal: () => Effect_1.suspend({ journal: () => { return (() => Effect_1.suspend(() => Effect_1.fail(unavailable("journal"))))(); } }.journal),
-    ...overrides,
+    ...overrides
 });
 /**
  * Provides {@link makeNoop}.

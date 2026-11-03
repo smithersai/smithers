@@ -53,7 +53,7 @@ export const makeInstance = (flow, executionId, lineageDeadline) => {
             },
             // Earliest pre-attempt handle; durable drivers recover it via actionSnapshot.
             snapshots: new Map(),
-            keylessInFlight: new Set(),
-        },
+            keylessInFlight: new Set()
+        }
     };
 };

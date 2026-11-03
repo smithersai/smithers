@@ -32,7 +32,7 @@ export const Reason = Schema.Literals([
     "reserved",
     "minimum_below_flow",
     "credential_input",
-    "secret_field",
+    "secret_field"
 ]);
 /**
  * A plugin the loader refused, with the field that refused it.
@@ -49,7 +49,7 @@ export class Refusal extends Schema.TaggedError()("plugin/Refusal", {
     plugin: Schema.optional(Schema.String),
     reason: Reason,
     path: Schema.optional(Schema.String),
-    detail: Schema.String,
+    detail: Schema.String
 }) {
 }
 /**
@@ -78,7 +78,7 @@ export const Point = Schema.Literals([
     "hooks",
     "taps",
     "modelRoles",
-    "records",
+    "records"
 ]);
 /**
  * No plugins, no contributions.

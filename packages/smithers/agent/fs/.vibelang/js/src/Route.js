@@ -114,7 +114,7 @@ const schemaFields = Effect_1.fnUntraced(function* schemaFields(input, required,
             }
             return Object.freeze(output);
         })(input, required, optional, invalidRoute),
-        catch: (cause) => cause instanceof FsError ? cause : invalidRoute("$"),
+        catch: (cause) => cause instanceof FsError ? cause : invalidRoute("$")
     });
 });
 // Inspect foreign Option values inside JavaScript so hostile proxy traps are normalized.
@@ -125,7 +125,7 @@ const inspectOption = (input, path) => Effect_1.suspend({ inspectOption: () => {
             // Reading the payload here also catches a hostile getter.
             return input._tag === "None" ? Option.none() : Option.some(input.value);
         })(input),
-        catch: () => invalidRoute(path),
+        catch: () => invalidRoute(path)
     }); } }.inspectOption);
 const optionText = Effect_1.fnUntraced(function* optionText(input, path, maximum) {
     const option = yield* inspectOption(input, path);
@@ -171,11 +171,11 @@ const effectDeclaration = Effect_1.fnUntraced(function* effectDeclaration(input)
     const data = yield* fields(input, ["reads", "writes", "mode", "onConflict", "tier"]);
     const reads = Boundary.stringArray(data.reads, {
         maxItems: maximumCapabilities,
-        maxLength: maximumPathLength,
+        maxLength: maximumPathLength
     });
     const writes = Boundary.stringArray(data.writes, {
         maxItems: maximumCapabilities,
-        maxLength: maximumPathLength,
+        maxLength: maximumPathLength
     });
     if (!reads.ok)
         return yield* Effect_1.fail(invalidRoute(`$.effects.reads${reads.path.slice(1)}`));
@@ -192,7 +192,7 @@ const effectDeclaration = Effect_1.fnUntraced(function* effectDeclaration(input)
         writes: writes.value,
         mode: data.mode,
         onConflict: data.onConflict,
-        tier: data.tier,
+        tier: data.tier
     });
 });
 const isAbsolutePath = (value) => value.startsWith("file:///") || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
@@ -210,11 +210,11 @@ const copyRoute = Effect_1.fnUntraced(function* copyRoute(input) {
         "effects",
         "modelInvocable",
         "placement",
-        "ui",
+        "ui"
     ]);
     const segments = Boundary.stringArray(data.segments, {
         maxItems: maximumRouteDepth,
-        maxLength: maximumSegmentLength,
+        maxLength: maximumSegmentLength
     });
     if (!segments.ok || segments.value.length === 0
         || segments.value.some((segment) => segment === "." || segment === ".." || segment.includes("/"))) {
@@ -234,7 +234,7 @@ const copyRoute = Effect_1.fnUntraced(function* copyRoute(input) {
         return yield* Effect_1.fail(invalidRoute("$.sourcePath", "Route source paths must be absolute"));
     const capabilities = Boundary.stringArray(data.capabilities, {
         maxItems: maximumCapabilities,
-        maxLength: maximumPathLength,
+        maxLength: maximumPathLength
     });
     if (!capabilities.ok)
         return yield* Effect_1.fail(invalidRoute(`$.capabilities${capabilities.path.slice(1)}`));
@@ -252,7 +252,7 @@ const copyRoute = Effect_1.fnUntraced(function* copyRoute(input) {
         effects: yield* effectDeclaration(data.effects),
         modelInvocable: data.modelInvocable,
         placement: yield* optionPlacement(data.placement),
-        ui: yield* optionText(data.ui, "$.ui", maximumPathLength),
+        ui: yield* optionText(data.ui, "$.ui", maximumPathLength)
     });
 });
 /**
@@ -272,7 +272,7 @@ export const isCommandRoute = (route) => route.kind === "module" && route.modelI
 const loadFailed = (description) => new FsError({
     code: "load_failed",
     method: "Route.load",
-    description,
+    description
 });
 const importFailed = () => loadFailed("The selected flow module could not be imported");
 const exportMissing = () => loadFailed("The selected flow module has no default flow export");
@@ -296,14 +296,14 @@ export function load(arg_1) {
             return yield* Effect_1.fail(new FsError({
                 code: "unsupported_body",
                 method: "Route.load",
-                description: "Only module routes are executable",
+                description: "Only module routes are executable"
             }));
         }
         const specifier = fileSpecifier(route.sourcePath);
         // tryPromise's arguments are plain TypeScript, not VibeLang.
         const module = yield* Effect.tryPromise({
             try: () => import(__rewriteRelativeImportExtension(/* @vite-ignore */ specifier)),
-            catch: importFailed,
+            catch: importFailed
         });
         if (RuntimeFlow.isFlow(module.default)) {
             // Route metadata is caller-owned and can predate an edit that hid the
@@ -316,7 +316,7 @@ export function load(arg_1) {
                 name: module.default._tag,
                 description: module.default.description,
                 input: module.default.payloadSchema,
-                output: module.default.successSchema,
+                output: module.default.successSchema
             };
         }
         if (typeof module.default !== "object" || module.default === null

@@ -10,7 +10,7 @@
 import * as Digest from "@smthrs/core/Digest";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { BodyRefMarkdown, BudgetOnExceeded, deadlineMillis, FlowBodyPrompt, FlowDescriptor, ModelSelection, Placement, SandboxProvider, SchemaRefMarkdownArgs, SchemaRefMarkdownOutput, } from "./Descriptor.js";
+import { BodyRefMarkdown, BudgetOnExceeded, deadlineMillis, FlowBodyPrompt, FlowDescriptor, ModelSelection, Placement, SandboxProvider, SchemaRefMarkdownArgs, SchemaRefMarkdownOutput } from "./Descriptor.js";
 import { narrowDelegation, projectEffects, unprojectableDelegation } from "./internal/Authority.js";
 import * as Frontmatter from "./internal/Frontmatter.js";
 import * as Names from "./internal/Names.js";
@@ -45,7 +45,7 @@ export const fromMarkdown = (options) => {
             code: "missing_description",
             path: options.path,
             name,
-            message: "Markdown flows require a non-empty frontmatter description",
+            message: "Markdown flows require a non-empty frontmatter description"
         });
         return { descriptor: Option.none(), warnings };
     }
@@ -54,7 +54,7 @@ export const fromMarkdown = (options) => {
             code: "invalid_description",
             path: options.path,
             name,
-            message: "Frontmatter description exceeds the 1024-character Agent Skills limit",
+            message: "Frontmatter description exceeds the 1024-character Agent Skills limit"
         });
     }
     validateStandardFields(fields, options.path, warnings);
@@ -77,7 +77,7 @@ export const fromMarkdown = (options) => {
         warnings.push({
             code: "invalid_budget",
             path: options.path,
-            message: "Frontmatter budget must declare at least one ceiling; flow refused",
+            message: "Frontmatter budget must declare at least one ceiling; flow refused"
         });
     }
     if (warnings.some((item) => item.code === "invalid_budget"))
@@ -94,7 +94,7 @@ export const fromMarkdown = (options) => {
             code: "invalid_model",
             path: options.path,
             name,
-            message: "model must be a non-empty list of non-empty seat names",
+            message: "model must be a non-empty list of non-empty seat names"
         });
         return { descriptor: Option.none(), warnings };
     }
@@ -105,7 +105,7 @@ export const fromMarkdown = (options) => {
             code: "invalid_model",
             path: options.path,
             name,
-            message: "Ignoring model; expected a non-empty seat name or a list of them",
+            message: "Ignoring model; expected a non-empty seat name or a list of them"
         });
     }
     const model = validModels ? Option.some(selected) : Option.none();
@@ -118,7 +118,7 @@ export const fromMarkdown = (options) => {
             body: new BodyRefMarkdown({
                 path: options.path,
                 baseDirectory: options.baseDirectory,
-                contentDigest: options.contentDigest ?? Digest.digest(options.text),
+                contentDigest: options.contentDigest ?? Digest.digest(options.text)
             }),
             input: new SchemaRefMarkdownArgs({}),
             output: new SchemaRefMarkdownOutput({}),
@@ -132,9 +132,9 @@ export const fromMarkdown = (options) => {
             ...(budget === undefined ? {} : { budget }),
             path: options.path,
             frontmatter: fields,
-            provenance: options.provenance,
+            provenance: options.provenance
         })),
-        warnings,
+        warnings
     };
 };
 /**
@@ -145,7 +145,7 @@ export const fromMarkdown = (options) => {
  */
 export const loadBody = (text, baseDirectory) => new FlowBodyPrompt({
     text: Frontmatter.split(text).body,
-    baseDirectory,
+    baseDirectory
 });
 /**
  * Renders decoded markdown-flow arguments using the compatible skill convention.
@@ -161,7 +161,7 @@ export const renderPrompt = (body, input) => [
     `- Base directory: ${body.baseDirectory}`,
     "- Resolve relative resource paths from this directory and read only the files you need.",
     "</skill_resources>",
-    ...(input.args === "" ? [] : ["", input.args]),
+    ...(input.args === "" ? [] : ["", input.args])
 ].join("\n");
 /**
  * Projects a registry descriptor into the one authoring value accepted by
@@ -192,7 +192,7 @@ export const toCoreFrontmatter = (descriptor) => {
         modelInvocable: descriptor.modelInvocable,
         ...(Object.keys(ceilings).length === 0 ? {} : { budget: ceilings }),
         ...(deadline === undefined ? {} : { deadline }),
-        ...(descriptor.sandbox === undefined ? {} : { sandbox: descriptor.sandbox }),
+        ...(descriptor.sandbox === undefined ? {} : { sandbox: descriptor.sandbox })
     };
 };
 const deriveName = (options, fields, warnings) => {
@@ -205,7 +205,7 @@ const deriveName = (options, fields, warnings) => {
         warnings.push({
             code: "name_field_ignored",
             path: options.path,
-            message: "Ignoring frontmatter name because this source uses path-derived names",
+            message: "Ignoring frontmatter name because this source uses path-derived names"
         });
     }
     return Option.getOrElse(options.name, () => options.dirBasename);
@@ -217,7 +217,7 @@ const deriveCapabilities = (fields, delegation, path, warnings) => {
             path,
             message: delegation === undefined
                 ? "Markdown authority is not declared; the flow receives every capability"
-                : "Delegated flow authority cannot be projected statically; the flow receives every capability",
+                : "Delegated flow authority cannot be projected statically; the flow receives every capability"
         });
         return delegation?.capabilities ?? ["*"];
     }
@@ -227,7 +227,7 @@ const deriveCapabilities = (fields, delegation, path, warnings) => {
         warnings.push({
             code: "invalid_capabilities",
             path,
-            message: "Frontmatter capabilities should be a string array; accepting the space-separated string",
+            message: "Frontmatter capabilities should be a string array; accepting the space-separated string"
         });
         capabilities = value.split(/\s+/).filter((capability) => capability.length > 0);
     }
@@ -241,7 +241,7 @@ const deriveCapabilities = (fields, delegation, path, warnings) => {
         warnings.push({
             code: "invalid_capabilities",
             path,
-            message: `Frontmatter capabilities must be a string array, got ${JSON.stringify(value)}; the flow is not discovered`,
+            message: `Frontmatter capabilities must be a string array, got ${JSON.stringify(value)}; the flow is not discovered`
         });
         return undefined;
     }
@@ -262,7 +262,7 @@ const deriveFlows = (fields, path, warnings) => {
     warnings.push({
         code: "invalid_allowed_tools",
         path,
-        message: "Ignoring malformed flows; expected a string array or Agent Skills allowed-tools string",
+        message: "Ignoring malformed flows; expected a string array or Agent Skills allowed-tools string"
     });
     return [];
 };
@@ -281,7 +281,7 @@ const deriveModelInvocable = (fields, path, warnings) => {
     warnings.push({
         code: "invalid_model_invocation",
         path,
-        message: "Ignoring disable-model-invocation; expected a boolean",
+        message: "Ignoring disable-model-invocation; expected a boolean"
     });
     return true;
 };
@@ -291,37 +291,37 @@ const effectWarning = (problem, path) => {
             return {
                 code: "invalid_effect_declaration",
                 path,
-                message: "Frontmatter effects must be an object; using conservative effects",
+                message: "Frontmatter effects must be an object; using conservative effects"
             };
         case "unreadableMember":
             return {
                 code: "invalid_effect_declaration",
                 path,
-                message: `Frontmatter effects.${problem.member} must be a string array; using the conservative wildcard`,
+                message: `Frontmatter effects.${problem.member} must be a string array; using the conservative wildcard`
             };
         case "invalidMode":
             return {
                 code: "invalid_effect_declaration",
                 path,
-                message: "Frontmatter effects.mode must be hermetic or expected; using expected",
+                message: "Frontmatter effects.mode must be hermetic or expected; using expected"
             };
         case "invalidOnConflict":
             return {
                 code: "invalid_effect_declaration",
                 path,
-                message: "Frontmatter effects.onConflict must be serialize, lane, or fail; using serialize",
+                message: "Frontmatter effects.onConflict must be serialize, lane, or fail; using serialize"
             };
         case "invalidTier":
             return {
                 code: "invalid_effect_tier",
                 path,
-                message: "Ignoring invalid effects.tier; using irreversible",
+                message: "Ignoring invalid effects.tier; using irreversible"
             };
         case "underClassifiedTier":
             return {
                 code: "invalid_effect_tier",
                 path,
-                message: `Effect tier ${problem.declared} under-classifies declared authority; using ${problem.projected}`,
+                message: `Effect tier ${problem.declared} under-classifies declared authority; using ${problem.projected}`
             };
     }
 };
@@ -355,8 +355,8 @@ const deriveEffects = (fields, capabilities, path, warnings) => {
                     writes: paths("writes"),
                     mode: literal("mode"),
                     onConflict: literal("onConflict"),
-                    tier: literal("tier"),
-                },
+                    tier: literal("tier")
+                }
     });
     for (const problem of projection.problems) {
         warnings.push(effectWarning(problem, path));
@@ -375,7 +375,7 @@ const derivePlacement = (fields, path, warnings) => {
     warnings.push({
         code: "invalid_placement",
         path,
-        message: `Ignoring invalid placement; expected ${placements}`,
+        message: `Ignoring invalid placement; expected ${placements}`
     });
     return Option.none();
 };
@@ -461,7 +461,7 @@ const deriveSandbox = (fields, path, warnings) => {
     return {
         provider,
         ...(network === undefined ? {} : { network }),
-        ...limits,
+        ...limits
     };
 };
 /**
@@ -498,7 +498,7 @@ export const deriveBudget = (fields, path, warnings, label = "Frontmatter budget
         warnings.push({
             code: "invalid_budget",
             path,
-            message: `${label} must be an object of tokens, milliseconds and usd; ignoring it`,
+            message: `${label} must be an object of tokens, milliseconds and usd; ignoring it`
         });
         return undefined;
     }
@@ -520,7 +520,7 @@ export const deriveBudget = (fields, path, warnings, label = "Frontmatter budget
         warnings.push({
             code: "invalid_budget",
             path,
-            message: `${label}.${key} must be a positive safe integer; ignoring it`,
+            message: `${label}.${key} must be a positive safe integer; ignoring it`
         });
         return undefined;
     };
@@ -540,7 +540,7 @@ export const deriveBudget = (fields, path, warnings, label = "Frontmatter budget
         warnings.push({
             code: "invalid_budget",
             path,
-            message: `${label}.usd must be a positive dollar amount; ignoring it`,
+            message: `${label}.usd must be a positive dollar amount; ignoring it`
         });
         return undefined;
     })();
@@ -553,7 +553,7 @@ export const deriveBudget = (fields, path, warnings, label = "Frontmatter budget
         warnings.push({
             code: "invalid_budget",
             path,
-            message: `${label}.onExceeded must be one of ${BudgetOnExceeded.literals.join(", ")}; ignoring it`,
+            message: `${label}.onExceeded must be one of ${BudgetOnExceeded.literals.join(", ")}; ignoring it`
         });
         return undefined;
     };
@@ -567,7 +567,7 @@ export const deriveBudget = (fields, path, warnings, label = "Frontmatter budget
         warnings.push({
             code: "invalid_budget",
             path,
-            message: `${label} has an unknown key: ${key}`,
+            message: `${label} has an unknown key: ${key}`
         });
     }
     if (tokens === undefined && milliseconds === undefined && usd === undefined)
@@ -576,7 +576,7 @@ export const deriveBudget = (fields, path, warnings, label = "Frontmatter budget
         ...(tokens === undefined ? {} : { tokens }),
         ...(milliseconds === undefined ? {} : { milliseconds }),
         ...(usd === undefined ? {} : { usd }),
-        ...(onExceeded === undefined ? {} : { onExceeded }),
+        ...(onExceeded === undefined ? {} : { onExceeded })
     };
 };
 /**
@@ -600,7 +600,7 @@ const deriveDeadline = (fields, path, warnings) => {
     warnings.push({
         code: "invalid_deadline",
         path,
-        message: "Frontmatter deadline must be a positive duration such as 30 minutes, or whole milliseconds; flow refused",
+        message: "Frontmatter deadline must be a positive duration such as 30 minutes, or whole milliseconds; flow refused"
     });
     return undefined;
 };
@@ -609,7 +609,7 @@ const validateStandardFields = (fields, path, warnings) => {
         warnings.push({
             code: "invalid_license",
             path,
-            message: "Frontmatter license must be a string when provided",
+            message: "Frontmatter license must be a string when provided"
         });
     }
     if (Object.hasOwn(fields, "compatibility")) {
@@ -618,7 +618,7 @@ const validateStandardFields = (fields, path, warnings) => {
             warnings.push({
                 code: "invalid_compatibility",
                 path,
-                message: "Frontmatter compatibility must be a string of at most 500 characters",
+                message: "Frontmatter compatibility must be a string of at most 500 characters"
             });
         }
     }
@@ -631,7 +631,7 @@ const validateStandardFields = (fields, path, warnings) => {
             warnings.push({
                 code: "invalid_metadata",
                 path,
-                message: "Frontmatter metadata must be a string-to-string mapping",
+                message: "Frontmatter metadata must be a string-to-string mapping"
             });
         }
     }
@@ -642,7 +642,7 @@ const warnUnsupportedSchema = (fields, path, warnings) => {
             warnings.push({
                 code: "unsupported_input_schema",
                 path,
-                message: `Ignoring unsupported markdown flow ${key} frontmatter`,
+                message: `Ignoring unsupported markdown flow ${key} frontmatter`
             });
         }
     }
@@ -665,7 +665,7 @@ const knownFields = new Set([
     "metadata",
     "disable-model-invocation",
     "input",
-    "schema",
+    "schema"
 ]);
 const warnUnknownFields = (fields, path, warnings) => {
     for (const key of Object.keys(fields)) {
@@ -673,7 +673,7 @@ const warnUnknownFields = (fields, path, warnings) => {
             warnings.push({
                 code: "unknown_frontmatter_key",
                 path,
-                message: `Unknown frontmatter key: ${key}`,
+                message: `Unknown frontmatter key: ${key}`
             });
         }
     }

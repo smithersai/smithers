@@ -14,7 +14,7 @@ import * as Metric from "effect/Metric";
  */
 export const leaderships = Metric.counter("smithers_browser_runtime_leaderships", {
     description: "Times a browser worker took the engine lock and started the engine",
-    incremental: true,
+    incremental: true
 });
 /**
  * Unfinished runs a new leader found, by `outcome`: `settled`, `parked`,
@@ -26,7 +26,7 @@ export const leaderships = Metric.counter("smithers_browser_runtime_leaderships"
  */
 export const wakes = Metric.counter("smithers_browser_runtime_wakes", {
     description: "Unfinished runs a new browser leader drove, by outcome",
-    incremental: true,
+    incremental: true
 });
 /**
  * Preparations of the app's shared database a new leader ran before serving
@@ -38,7 +38,7 @@ export const wakes = Metric.counter("smithers_browser_runtime_wakes", {
  */
 export const preparations = Metric.counter("smithers_browser_runtime_preparations", {
     description: "Preparations of the app's shared database a new browser leader ran before serving it, by outcome",
-    incremental: true,
+    incremental: true
 });
 /**
  * Follower requests the leader handled, by `request` and `outcome`
@@ -49,7 +49,7 @@ export const preparations = Metric.counter("smithers_browser_runtime_preparation
  */
 export const requests = Metric.counter("smithers_browser_runtime_requests", {
     description: "Follower requests the browser leader handled, by request and outcome",
-    incremental: true,
+    incremental: true
 });
 /**
  * Statements the leader ran on the app's shared database, by `outcome`
@@ -63,5 +63,5 @@ export const requests = Metric.counter("smithers_browser_runtime_requests", {
  */
 export const statements = Metric.counter("smithers_browser_runtime_statements", {
     description: "Statements the browser leader ran on the app's shared database, by outcome",
-    incremental: true,
+    incremental: true
 });

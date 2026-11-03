@@ -36,7 +36,7 @@ export const make = (server) => Effect.map(Effect.serviceOption(Diagnostics.Diag
             server,
             source,
             detail: Redacted.make(new TextDecoder().decode(bytes.subarray(0, 16_384), { stream: truncated })),
-            truncated,
+            truncated
         });
     }
     catch {

@@ -39,7 +39,7 @@ export const Author = Schema.Struct({
     /** The provider's stable user or bot id. */
     id: Schema.NonEmptyString,
     /** A display label, when the provider supplied one. Never an identity. */
-    label: Schema.NullOr(Schema.String),
+    label: Schema.NullOr(Schema.String)
 });
 /**
  * The provider's access scope for a record.
@@ -50,7 +50,7 @@ export const Author = Schema.Struct({
 export const Access = Schema.Struct({
     scope: AccessScope,
     /** The container the scope is relative to, or `null` when it names none. */
-    containerId: Schema.NullOr(Schema.NonEmptyString),
+    containerId: Schema.NullOr(Schema.NonEmptyString)
 });
 /**
  * Where a record sits in its conversation or hierarchy.
@@ -64,7 +64,7 @@ export const Thread = Schema.Struct({
     /** The thread root's external id, or `null` outside a thread. */
     threadId: Schema.NullOr(Schema.NonEmptyString),
     /** The direct parent's external id (a comment's issue), or `null`. */
-    parentId: Schema.NullOr(Schema.NonEmptyString),
+    parentId: Schema.NullOr(Schema.NonEmptyString)
 });
 /**
  * One retrieved provider object with its provenance.
@@ -99,7 +99,7 @@ export const SourceRecord = Schema.Struct({
     /** Whether the provider deleted the object. A tombstone carries empty text and payload. */
     deleted: Schema.Boolean,
     /** The provider payload, as delivered. */
-    payload: Schema.Json,
+    payload: Schema.Json
 });
 /**
  * Decodes an unknown value as a {@link SourceRecord}.
@@ -223,7 +223,7 @@ export const tombstone = (of, deletedAtMs, retrievedAtMs = deletedAtMs) => ({
     thread: of.thread,
     text: "",
     deleted: true,
-    payload: null,
+    payload: null
 });
 /**
  * The containers a record lives in: its access container and its thread
@@ -255,7 +255,7 @@ export const Reference = Schema.Struct({
     externalId: Schema.NonEmptyString,
     updatedAtMs: Schema.NullOr(Schema.Number),
     version: Schema.NullOr(Schema.String),
-    retrievedAtMs: Schema.Number,
+    retrievedAtMs: Schema.Number
 });
 /**
  * The reference to `record` as retrieved.
@@ -268,5 +268,5 @@ export const reference = (record) => ({
     externalId: record.externalId,
     updatedAtMs: record.updatedAtMs,
     version: record.version,
-    retrievedAtMs: record.retrievedAtMs,
+    retrievedAtMs: record.retrievedAtMs
 });

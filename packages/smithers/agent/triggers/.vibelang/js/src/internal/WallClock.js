@@ -35,7 +35,7 @@ const formatter = (timeZone) => {
             hour: "numeric",
             minute: "numeric",
             second: "numeric",
-            hourCycle: "h23",
+            hourCycle: "h23"
         });
         formatters.set(timeZone, format);
     }
@@ -83,10 +83,10 @@ export const compile = (cron) => {
                 // Whether day of month and weekday must both match. Effect keeps the
                 // flag off its public type, but `make` takes it and every cron has it.
                 and: cron.and,
-                tz: DateTime.zoneMakeNamedUnsafe("UTC"),
+                tz: DateTime.zoneMakeNamedUnsafe("UTC")
             }),
             offset: offsetOf(cron.tz),
-            everyHour: cron.hours.size === 0 || cron.hours.size === 24,
+            everyHour: cron.hours.size === 0 || cron.hours.size === 24
         };
         compiled.set(cron, wallCron);
     }
@@ -96,7 +96,7 @@ export const compile = (cron) => {
 const near = (cron, instant) => [
     cron.offset(instant - day),
     cron.offset(instant),
-    cron.offset(instant + day),
+    cron.offset(instant + day)
 ];
 /** The instants one matching wall time fires at, earliest first. */
 const resolve = (cron, wall) => {

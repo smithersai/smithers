@@ -10,119 +10,126 @@
   "root": {
    "relative": "packages/smithers/flows/platform-cloudflare"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/flows/platform-cloudflare/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/tsconfig.json"
     },
-    "size": 1454,
-    "hash": "Qi3miZE-DWxLH1zIyMGLuVTTSRHrvEfzFb2ynnEutmI"
+    "size": 1415,
+    "hash": "CQGGkEBWRZqHYtj0LlTgLdLgsLcO6SkyNgBS9k0d9Hs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "fZZaPHDx9zKcQl3ujxM6LxNCzfvN421NxjkwF0Q5s50"
+    "size": 1328,
+    "hash": "B_dtnyKRr02O7BEW_2HMc_MPF0nnGiUuTGVulx4yloI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sync/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/tsconfig.json"
+    },
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    }
   ],
   "directories": [
@@ -300,7 +307,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -325,7 +332,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -354,126 +361,126 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "ChhNRC9WpUe0JlBdu_RF9QYJMOG0J9A3o5IgLYQETzo"
+    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
+    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
+    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "kTwGKJsTp4FVGxmKUOPZg3c06ZLfQDJah4Eo8ALa1HE"
+    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
+    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
     "size": 15515,
-    "hash": "GLTe11R7D_Y-lDK2NQwjyjpFvfA2U1oWShbV7jfHzRA"
+    "hash": "iuKcgJBSKOec57LsRqZbOWZhZYYEd7wnDnyJoeyyY_o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "HkEsBZn5oE73FkMHp1IVWloRAQivyKChWC6xDwTCWqA"
+    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/package.json"
     },
     "size": 6772,
-    "hash": "qy6gKQsD47Ts9JXYNY2jOS59z_0g4SQQXifBZOaOqjk"
+    "hash": "PDbmtBwaifMg8xo8e8sshgT4DxBUNraaYy17hCyYn9c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "fK0vdi3dDFOTMob0LKiDB1WNp5SxbwEp_tzeMqevZQc"
+    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/package.json"
     },
     "size": 7088,
-    "hash": "DPklUsEU_TMdU-FzRQHkBhavAOFMwS-U9QqsoKmCdw0"
+    "hash": "L5fpKGg2FbL-bbpRq_YlefD5Em-og1_ImjXbGxSFdaY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/package.json"
     },
     "size": 9895,
-    "hash": "541OBllASETabq1LtvCA0pogbAptEX0QuskxwdNCaMs"
+    "hash": "LH9WSZ_WGwMEPr0AjiUM6bzlOGw2B20C2fHGXref5dE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/package.json"
     },
     "size": 6254,
-    "hash": "dk5KdO2rBb2mqVBmd5OZWhnEz9zM-lN3Il4Los4LeqI"
+    "hash": "Hea3nMWuvm2_696OsMTMRp-MQ5YyzcV4ceoKKmvwaA4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "BdDRbIPt5QY59jYpdII9ws0c-Hr64YvA6FvaiRCvZII"
+    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan-store/package.json"
     },
     "size": 4083,
-    "hash": "XPv0HUKrAMV7dIHO_K7EBvF_h_BH2_a7OFFqA5DL5Kc"
+    "hash": "vMzRtDOlvzaKisBXUcSGorgpaWYyfeclQeZYPiZhWF8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/platform-cloudflare/package.json"
     },
     "size": 3716,
-    "hash": "XvfmNEQbAtDyFdRbDl4zxBAWUk2YIEgoviIn-m94O8M"
+    "hash": "2-6cxdfd-jW8v341msi00NDU1XSq1mFhHuGG42TQ1c8"
    },
    {
     "path": {
@@ -536,14 +543,14 @@
      "relative": "packages/smithers/flows/sandbox/package.json"
     },
     "size": 16607,
-    "hash": "uRffnir5ANGXRMJ-dlQLK3B3A-zEWO0aHnEzj8NzgTA"
+    "hash": "P7jKyE4biR9cisWhmRF3xXU4alY2DC6K3YP6dyC_ciE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sync/package.json"
     },
     "size": 14547,
-    "hash": "3wmJGewAu4UyRTvTPdHj4VC9y4dhHeupa9ZQhknlDYQ"
+    "hash": "EJwDNO1jWe3hLJu0xRe-3gvPE5MkEsC96QTVPaO3ySE"
    },
    {
     "path": {
@@ -564,14 +571,14 @@
      "relative": "packages/smithers/flows/time-travel/package.json"
     },
     "size": 8808,
-    "hash": "wIysUeZgFxRTvdR6UrHcRDFj6wu4fkhTihqnLdpHkjg"
+    "hash": "eCE_sx9zHiULn8bPh5Mmj9liMTMda7XZ0ahClo6YyOo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/package.json"
     },
     "size": 5182,
-    "hash": "sBRoUEEuFFtpOb_iRz6SnSQvhYr4UCVS0HFQSeT-pl0"
+    "hash": "ODMCrNpjv86vbpRVk6BHpw05F-eAhFwWr_6Gy5f_fK8"
    },
    {
     "path": {
@@ -6730,10 +6737,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
     },
-    "size": 1441,
-    "hash": "Mt80obSWTwAk96D4LEcWBG5rmGl0BgFVXZS71S2MfrY"
+    "size": 1331,
+    "hash": "f_84t9-l1obiUyyL1UrGPa_mmWVXAlxVwSGeZ6hvKQY"
    },
    {
     "path": {
@@ -6844,8 +6851,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.ts"
     },
-    "size": 9344,
-    "hash": "qZE09LhEJmGzVYxMkIokVteEVGGAU1WuiZDRYYlGKaY"
+    "size": 9346,
+    "hash": "QK10g9WSR8cI2Z46_EWgpKj9LOvcbEwe_cpFoJ3-GM0"
    },
    {
     "path": {
@@ -7045,24 +7052,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
     },
-    "size": 3169,
-    "hash": "Mnrw8ak0JG8dYR-MTa_v-E6nxRMCaQLl2aaqciwK008"
+    "size": 2939,
+    "hash": "fHUPcShTZoopCjbyTVFampnBZh73nZokBkuuB8A62yI"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
     },
-    "size": 3764,
-    "hash": "to9gjIIbfUSG6mEHBPVr-f7VqJe-GIALRxti7xuRhEU"
+    "size": 3617,
+    "hash": "aeWosIXv_PnA-KkLrpf2n73zJGJJzl06j5EsjznRenE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/apply.ts"
     },
-    "size": 11326,
-    "hash": "ZIPx89n0F6vQGsGtONbc2FW5MYuLU1ZO35Wmw--sOMk"
+    "size": 11330,
+    "hash": "LTsJ_PeZEkFUiX91dTydEMmYHJy5yaeZoKfNoKDlQxY"
    },
    {
     "path": {
@@ -7075,8 +7082,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/index.ts"
     },
-    "size": 1342,
-    "hash": "FzsOMfIi_rxvLZEXMPL5ISoQ36MpNS-xRpozBAuJ_OM"
+    "size": 1346,
+    "hash": "UMCqFVlE3_6y6pKYdvh118qtJ75mUDPYoE5bwsvnJYo"
    },
    {
     "path": {
@@ -7096,8 +7103,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxConformance/check.ts"
     },
-    "size": 29368,
-    "hash": "MxhIUE7ciTxBy4-5KsPAYUFd-MwxdKuEzLmkI9dsbGY"
+    "size": 29370,
+    "hash": "ibRuI-0iXdmxIS-LwkjTbyTR6MElK7TEKuOfhXGzem0"
    },
    {
     "path": {
@@ -7108,24 +7115,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.vibe"
     },
-    "size": 2352,
-    "hash": "V3E3Zqk7n56gHaUCPG2q69vuWonFCmR1_aVTJAZ6eCI"
+    "size": 2336,
+    "hash": "OUfItOPflfq3UDUfOIhpocAAhq4CzZs64Po9gDF1k6E"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
     },
-    "size": 2596,
-    "hash": "mTDVZpne4K3u2_Aw5ChQp5Xn13MrSsiTzbAZGVtg-h8"
+    "size": 2537,
+    "hash": "mjwOlSBEeu4NrFA_rcHdIw1lazTqDiCJbqeJ4WN7fKE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts"
     },
-    "size": 12610,
-    "hash": "k_-7n52JkMQ98BUI4hmaYdRDnAa1Y3Eui54T4r9oYGQ"
+    "size": 12614,
+    "hash": "aYNC5pqhZMmvFuV3vSdirQs9ObcoUH2wuwavEWfgrYs"
    },
    {
     "path": {
@@ -7166,22 +7173,22 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/existing.ts"
     },
-    "size": 9496,
-    "hash": "4kLeuIhZ6qxb_hGhkGuj6aH7R-_l4Z8ncOKutbdpAJI"
+    "size": 9500,
+    "hash": "vOAbKsJUn1gTIiHwSzmV4mnluPcM1S8a5qfA2bWarGc"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.vibe"
     },
-    "size": 1032,
-    "hash": "sLHc0o2QBsgdj1JPjLW_uVtkBEQ_aGKI6N4tsDXu5aQ"
+    "size": 1034,
+    "hash": "KFCMlrb2uP0Isy3b3N9ynkwycJjFsMO2golPw0b2tdA"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.vibe"
     },
-    "size": 1105,
-    "hash": "nwCzYUw40z8NjxBP4aeG4LpqREi7dxKCfecaRTSJyq4"
+    "size": 1012,
+    "hash": "zeW_cuDZ3FcKnS65F1Thf8n3jgxHIZpEEGDt781zzM4"
    },
    {
     "path": {
@@ -7194,15 +7201,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/execSession.ts"
     },
-    "size": 11047,
-    "hash": "UIhh4uVtbXRjUr2QRs-dzJq2UhwqSQuAhQEShuSBU88"
+    "size": 11053,
+    "hash": "GeRp00VFUUUsQ8p2iyggzHZ9cyjKnXwoxXuOXoFTbCc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/make.ts"
     },
-    "size": 18419,
-    "hash": "8BXecnlUJ6Dpmw4G5R8HSBWP1Ec-_4xroXPKca0Dw8g"
+    "size": 18427,
+    "hash": "i-LrAtM1qnl2ZGlsYXHE8V0pQFf6PcKXf1DbNTwNQGs"
    },
    {
     "path": {
@@ -7215,8 +7222,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CommandSandbox/make.ts"
     },
-    "size": 12258,
-    "hash": "bi11wTahn4hCtZ-54eMy8blgrrpXjXS9YCBZyHuHayY"
+    "size": 12262,
+    "hash": "o_Q_O8eRMJAdwbLTmS8nPj5Ib49VOD2ix1s1kBDhZ-4"
    },
    {
     "path": {
@@ -7229,8 +7236,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/KubernetesSandbox/make.ts"
     },
-    "size": 21804,
-    "hash": "IiCj_ycAKHSq_vzq3i168kOwQ_71sbDvw3epwcIaVro"
+    "size": 21812,
+    "hash": "kFfwHyLpUDxl106G7csBfGPSrYUyz2h1pVGcXUgvqZ4"
    },
    {
     "path": {
@@ -7250,8 +7257,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/JustBashSandbox/make.ts"
     },
-    "size": 10270,
-    "hash": "o0cBmWmH-Kc08muNOqXxBUR-5kmi782912GNkqEcdTY"
+    "size": 10274,
+    "hash": "rFx3gQDHmsLDsp_jP6A6uLh-PZ-cY5V6rzEa11D_LGY"
    },
    {
     "path": {
@@ -7276,10 +7283,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/attempt.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/attempt.vibe"
     },
-    "size": 727,
-    "hash": "8vQ1jvJEm0vfoVw5Se5UUfvMekyZXEpISLyXjc_Et3o"
+    "size": 711,
+    "hash": "2GYfIKqBlnYTBNOvsXjiyIhQ9bDw6coDiixSMemvyao"
    },
    {
     "path": {
@@ -7290,10 +7297,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.ts"
+     "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.vibe"
     },
-    "size": 1342,
-    "hash": "jrU4CNWZ7AzXrS9fMw-l0Zzi6WGe27aw9dGkqCAy-tg"
+    "size": 1329,
+    "hash": "toAFHDviESsNRZYZdeA8PSurjq9gYCa6_D16JlQvqbI"
    },
    {
     "path": {
@@ -7327,8 +7334,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"
     },
-    "size": 13581,
-    "hash": "unJCHmRc55FYXonnyqYWHhm5SvSCMs3svctc-ChLSaY"
+    "size": 13583,
+    "hash": "NA-KA6aFeLd2-V8KarQlm8_GEGwMZhB8gdOOpeWPy9Y"
    },
    {
     "path": {
@@ -7348,22 +7355,22 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
     },
-    "size": 38679,
-    "hash": "xRMN9J56XGhslJB7CAoNeit5hdNu25qninA-b-v8nd4"
+    "size": 38687,
+    "hash": "VOczQMtISvJE3i6bOVBLsHz-d63nJsCFXIsj4v50GgQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.ts"
     },
-    "size": 6908,
-    "hash": "Zue6AtzVXanLQi3IdkYTTDbUfeq26LwHz1G_Don1pO4"
+    "size": 6910,
+    "hash": "OBTdBYbjR-0BitXboOpEMrlVXlyoYX5YNAsCEzSyjhY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.vibe"
     },
-    "size": 16592,
-    "hash": "Ew7XOfuE-pLAqOchywoG8KnL7hen3xl5IVmpM4soyNE"
+    "size": 16594,
+    "hash": "9nMofLXBfeKUhzelBMoNw_s-434hf3ZiHC60GpBZOO0"
    },
    {
     "path": {
@@ -7397,8 +7404,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/internal/stdinRedirect.ts"
     },
-    "size": 4891,
-    "hash": "ZJRTZKjM276a-34uoyLxVtNQ3fNJ51f4_QeVwvikc3c"
+    "size": 4893,
+    "hash": "Hkk7_L58xSWRBeIQ3A34Y6xbI91PltYS6vuP9l6OoJ8"
    },
    {
     "path": {
@@ -7411,8 +7418,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/VercelSandbox/make.ts"
     },
-    "size": 16608,
-    "hash": "onPo_I6oJnuCGamSkQdSxpL74KkQLIZgHirRrGdd-Us"
+    "size": 16614,
+    "hash": "cF1Sr6FPA3rQ56kGjTC1SLG9RVX97GnW9c2UguShU1I"
    },
    {
     "path": {
@@ -7432,8 +7439,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DaytonaSandbox/make.ts"
     },
-    "size": 14746,
-    "hash": "8tbVPX3oXCA16Ksrxi_ugdOrtk5mpPGhvxiupcAwVyg"
+    "size": 14754,
+    "hash": "7a5rBPqfG_3Hkomr5vOIGPEbsLomZ5vMIlebiWmIzgs"
    },
    {
     "path": {
@@ -7460,8 +7467,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/AwsSandbox/make.ts"
     },
-    "size": 39972,
-    "hash": "k0T1v-h4B4YjgrroHI8l8Dk9ss8ttrcfTCGKePXKa8Q"
+    "size": 39982,
+    "hash": "sGxb3oOsxGKf-7SeQ5ECEBARIe42GNOXPIWaWtFJ6xI"
    },
    {
     "path": {
@@ -7481,8 +7488,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CloudflareSandbox/make.ts"
     },
-    "size": 10165,
-    "hash": "uHy2hl3POWnot1CHdsMH0dv-0tlKEDMHsSd1czo0pmI"
+    "size": 10171,
+    "hash": "j9xkfsyexEcJfnUETyftrTdaN24Nr--OyTaQo0o7-3g"
    },
    {
     "path": {
@@ -8207,17 +8214,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.ts"
+     "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
     },
-    "size": 704,
-    "hash": "_UbmOoHisGC3Cppj_gbhMDmO_Y85XD1GYnw7CL752Ps"
+    "size": 674,
+    "hash": "JWtYDlq9qz4di5H3ZkEYScie5hhVwqimDKxu2_Zy1ws"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
     },
-    "size": 20625,
-    "hash": "ztR0cn56YS5ucdImv9OOw3k725tuSst-eQlYUPm_qDo"
+    "size": 20627,
+    "hash": "UMtwURlnMHws0YL8wt4HH10TR_tsQAM8EviLGKOjuKg"
    },
    {
     "path": {
@@ -8244,8 +8251,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Rewind.ts"
     },
-    "size": 54169,
-    "hash": "axPAAZxOx74fPs3i6YtCPNcssnaEwUbgmdntmbiKGB4"
+    "size": 54171,
+    "hash": "YPSWF2AZrrdl_P3V04PP0wyv0jdsAM4F-N_lG20yaa4"
    },
    {
     "path": {
@@ -8298,24 +8305,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
     },
-    "size": 6255,
-    "hash": "LrBv501ZspaqIO6wXKeJ5P0WdCF5QtheWYES6ny1SHk"
+    "size": 6205,
+    "hash": "fStKb_KsLbmL0V1eWwWk6UZHGDMKfIuvg0ojQqENQ3Y"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
     },
-    "size": 3459,
-    "hash": "k9r714Vu2fKUSbr4XWEA_xc5dkFtzhpJoHxllS1nTPw"
+    "size": 3395,
+    "hash": "CKZ9tNtoHIXhB6M58NYKVe92R_jho77o95KtxRlssfE"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
     },
-    "size": 1304,
-    "hash": "bUfqz63oQ-X6cqpUuw8LbRFW6Qsq3bXPWuN8MEcFZTY"
+    "size": 1278,
+    "hash": "3wyqIqCTKjTp7lrtlhIWU7tbwmmsAa6jdJbFbRZnyLE"
    },
    {
     "path": {
@@ -8333,17 +8340,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
     },
-    "size": 1077,
-    "hash": "bD_Tr-sTD7Mf41PqpzJhOcrooclcFI8AZIYUBkBhYg8"
+    "size": 1051,
+    "hash": "on_Rs6j67fUrmaGFJW6lB4_r4sGqulnucdbT3gVvJ_Y"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
     },
-    "size": 2304,
-    "hash": "fEItzVC29d01bjRZlFhfnRsxE9HCkxLMpwPhpiWRqJs"
+    "size": 2312,
+    "hash": "WuEQAZSrmp8CtWK1i9iTY_i4hkpEbXtzxFj9yOAQ9YI"
    },
    {
     "path": {
@@ -8361,24 +8368,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/src/internal/RegistryArgs.ts"
+     "relative": "packages/smithers/flows/src/internal/RegistryArgs.vibe"
     },
     "size": 731,
     "hash": "UkGKEYmaT_Kk-8XkNk1Oxh4jMuUXMrmehmromvrCCYo"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/src/internal/RuntimeOptions.ts"
+     "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
     },
-    "size": 12191,
-    "hash": "AOmCDbRquB1M0UalPuKsCJ4JJYOT3r8TfLejo10lZ6s"
+    "size": 12152,
+    "hash": "4C1xNvdBNJosQZynxh5D7n1LWTol7C_7qFMKYizyNBY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/src/Runtime.ts"
     },
-    "size": 8869,
-    "hash": "e2OySTS0zKbiw5ImCPJC99PUUOdw7dlIoBIBwKt-8jQ"
+    "size": 8877,
+    "hash": "Roowlbh2O1s2ocFUbxj86G7gMrIQT2GQK9Umzum6eiQ"
    },
    {
     "path": {
@@ -10634,7 +10641,7 @@
     "relative": "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/boundedCheck.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/describeExit.vibe"
@@ -10769,10 +10776,10 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Repository.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/apply.ts"
@@ -10796,10 +10803,10 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxConformance/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/environmentNames.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/localProcess.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts"
@@ -10823,10 +10830,10 @@
     "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/existing.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/configurationFingerprint.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/finalizeWithin.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/killScript.ts"
@@ -10868,13 +10875,13 @@
     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/labels.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/attempt.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/attempt.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/environmentCommand.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.ts"
+    "relative": "packages/smithers/flows/sandbox/src/internal/execHandles.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/internal/microsandboxNetwork.ts"
@@ -11099,7 +11106,7 @@
     "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.ts"
+    "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
@@ -11138,13 +11145,13 @@
     "relative": "packages/smithers/flows/time-travel/src/internal/MigrationStep.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/migrations/0004_plan_digest.vibe"
@@ -11153,7 +11160,7 @@
     "relative": "packages/smithers/flows/time-travel/src/migrations/0005_operation_id.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
@@ -11165,10 +11172,10 @@
     "relative": "packages/smithers/flows/time-travel/src/index.vibe"
    },
    {
-    "relative": "packages/smithers/flows/src/internal/RegistryArgs.ts"
+    "relative": "packages/smithers/flows/src/internal/RegistryArgs.vibe"
    },
    {
-    "relative": "packages/smithers/flows/src/internal/RuntimeOptions.ts"
+    "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
    },
    {
     "relative": "packages/smithers/flows/src/Runtime.ts"

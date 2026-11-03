@@ -28,7 +28,7 @@ import * as Metric from "effect/Metric";
  * @since 0.1.0
  */
 export const lookups = Metric.counter("flows_step_cache_lookups", {
-    description: "Step cache lookups by outcome",
+    description: "Step cache lookups by outcome"
 });
 /**
  * `lookups` view counting hits: a row existed for the key digest.
@@ -37,7 +37,7 @@ export const lookups = Metric.counter("flows_step_cache_lookups", {
  * @since 0.1.0
  */
 export const hit = Metric.withAttributes(lookups, {
-    outcome: "hit",
+    outcome: "hit"
 });
 /**
  * `lookups` view counting misses: the lookup had no entry it could serve.
@@ -49,7 +49,7 @@ export const hit = Metric.withAttributes(lookups, {
  * @since 0.1.0
  */
 export const miss = Metric.withAttributes(lookups, {
-    outcome: "miss",
+    outcome: "miss"
 });
 /**
  * Counter over cache recordings, dimensioned by `outcome` (`inserted`,
@@ -73,7 +73,7 @@ export const miss = Metric.withAttributes(lookups, {
  * @since 0.1.0
  */
 export const puts = Metric.counter("flows_step_cache_puts", {
-    description: "Step cache recordings by outcome",
+    description: "Step cache recordings by outcome"
 });
 /**
  * `puts` views keyed by the `PutResult` tag `CacheStore.put` resolves to.
@@ -84,7 +84,7 @@ export const puts = Metric.counter("flows_step_cache_puts", {
 export const put = {
     Inserted: Metric.withAttributes(puts, { outcome: "inserted" }),
     ExistingSame: Metric.withAttributes(puts, { outcome: "existing_same" }),
-    Conflict: Metric.withAttributes(puts, { outcome: "conflict" }),
+    Conflict: Metric.withAttributes(puts, { outcome: "conflict" })
 };
 /**
  * Counter over shared-tier refusals, dimensioned by `operation` (`get` or
@@ -99,7 +99,7 @@ export const put = {
  * @since 1.0.0-rc.0
  */
 export const remoteFailures = Metric.counter("flows_step_cache_remote_failures", {
-    description: "Shared step cache refusals by operation",
+    description: "Shared step cache refusals by operation"
 });
 /**
  * `remoteFailures` views keyed by the refused shared-tier operation.
@@ -109,5 +109,5 @@ export const remoteFailures = Metric.counter("flows_step_cache_remote_failures",
  */
 export const remoteFailure = {
     get: Metric.withAttributes(remoteFailures, { operation: "get" }),
-    put: Metric.withAttributes(remoteFailures, { operation: "put" }),
+    put: Metric.withAttributes(remoteFailures, { operation: "put" })
 };

@@ -10,14 +10,14 @@
   "root": {
    "relative": "packages/smithers/flows/artifacts"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    }
   ],
   "directories": [
@@ -195,7 +195,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -220,7 +220,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -249,14 +249,14 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "ChhNRC9WpUe0JlBdu_RF9QYJMOG0J9A3o5IgLYQETzo"
+    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
    },
    {
     "path": {
@@ -1804,8 +1804,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
@@ -1839,8 +1839,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -1853,15 +1853,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -3026,7 +3026,7 @@
       "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
      }
     ],
-    "code": "/**\n * The artifact store's typed failures: a refusal of the store itself, the\n * typed miss, and a digest mismatch, with the stable codes a refusal carries.\n *\n * @since 1.0.0-rc.0\n */\nimport { Sha256 } from \"@smthrs/crypto\";\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable error codes returned by artifact store operations.\n *\n * @category models\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const ArtifactStoreErrorCode = Schema.Literals([\n    \"digest_failed\",\n    \"invalid_configuration\",\n    \"invalid_digest\",\n    \"unavailable\",\n    \"transport_failed\",\n]);\n/**\n * A typed failure of the store itself: the host or crypto provider refused an\n * operation, the remote tier refused a request, or the caller supplied invalid\n * configuration or an invalid content address.\n *\n * Distinct from {@link ArtifactMissing} and {@link ArtifactCorruption} on\n * purpose. A miss is an ordinary, expected outcome that a second tier may\n * still satisfy; corruption is an integrity violation of the store's strongest\n * invariant. `invalid_configuration` and `invalid_digest` are permanent;\n * retryability of host, crypto, and transport failures depends on the cause.\n *\n * @category errors\n * @since 1.0.0-rc.0\n * @slop\n */\nexport class ArtifactStoreError extends Schema.TaggedError()(\"@smthrs/artifacts/ArtifactStoreError\", {\n    code: ArtifactStoreErrorCode,\n    message: Schema.String,\n    cause: Schema.optional(Schema.Unknown),\n}) {\n}\n/**\n * The typed miss: this tier holds no bytes at the requested address.\n *\n * A miss is not a failure of the store — it is the answer a read-through\n * composition is built to act on, so it is a distinct tag rather than an\n * `unavailable` code that a caller would have to string-match.\n *\n * @category errors\n * @since 1.0.0-rc.0\n * @slop\n */\nexport class ArtifactMissing extends Schema.TaggedError()(\"@smthrs/artifacts/ArtifactMissing\", {\n    code: Schema.Literal(\"artifact_missing\"),\n    digest: Sha256.Digest,\n}) {\n}\n/**\n * Bytes stored at a content address no longer hash to it.\n *\n * Every read is digest-verified, so a truncated blob left by a crashing writer\n * or by disk corruption is refused rather than handed back as if it were the\n * recorded artifact.\n *\n * @category errors\n * @since 1.0.0-rc.0\n * @slop\n */\nexport class ArtifactCorruption extends Schema.TaggedError()(\"@smthrs/artifacts/ArtifactCorruption\", {\n    code: Schema.Literal(\"artifact_corruption\"),\n    recordedDigest: Sha256.Digest,\n    measuredDigest: Sha256.Digest,\n}) {\n}\n",
+    "code": "/**\n * The artifact store's typed failures: a refusal of the store itself, the\n * typed miss, and a digest mismatch, with the stable codes a refusal carries.\n *\n * @since 1.0.0-rc.0\n */\nimport { Sha256 } from \"@smthrs/crypto\";\nimport * as Schema from \"effect/Schema\";\n/**\n * Stable error codes returned by artifact store operations.\n *\n * @category models\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const ArtifactStoreErrorCode = Schema.Literals([\n    \"digest_failed\",\n    \"invalid_configuration\",\n    \"invalid_digest\",\n    \"unavailable\",\n    \"transport_failed\"\n]);\n/**\n * A typed failure of the store itself: the host or crypto provider refused an\n * operation, the remote tier refused a request, or the caller supplied invalid\n * configuration or an invalid content address.\n *\n * Distinct from {@link ArtifactMissing} and {@link ArtifactCorruption} on\n * purpose. A miss is an ordinary, expected outcome that a second tier may\n * still satisfy; corruption is an integrity violation of the store's strongest\n * invariant. `invalid_configuration` and `invalid_digest` are permanent;\n * retryability of host, crypto, and transport failures depends on the cause.\n *\n * @category errors\n * @since 1.0.0-rc.0\n * @slop\n */\nexport class ArtifactStoreError extends Schema.TaggedError()(\"@smthrs/artifacts/ArtifactStoreError\", {\n    code: ArtifactStoreErrorCode,\n    message: Schema.String,\n    cause: Schema.optional(Schema.Unknown)\n}) {\n}\n/**\n * The typed miss: this tier holds no bytes at the requested address.\n *\n * A miss is not a failure of the store — it is the answer a read-through\n * composition is built to act on, so it is a distinct tag rather than an\n * `unavailable` code that a caller would have to string-match.\n *\n * @category errors\n * @since 1.0.0-rc.0\n * @slop\n */\nexport class ArtifactMissing extends Schema.TaggedError()(\"@smthrs/artifacts/ArtifactMissing\", {\n    code: Schema.Literal(\"artifact_missing\"),\n    digest: Sha256.Digest\n}) {\n}\n/**\n * Bytes stored at a content address no longer hash to it.\n *\n * Every read is digest-verified, so a truncated blob left by a crashing writer\n * or by disk corruption is refused rather than handed back as if it were the\n * recorded artifact.\n *\n * @category errors\n * @since 1.0.0-rc.0\n * @slop\n */\nexport class ArtifactCorruption extends Schema.TaggedError()(\"@smthrs/artifacts/ArtifactCorruption\", {\n    code: Schema.Literal(\"artifact_corruption\"),\n    recordedDigest: Sha256.Digest,\n    measuredDigest: Sha256.Digest\n}) {\n}\n",
     "map": {
      "version": 3,
      "file": "ArtifactStoreError.js",
@@ -3046,7 +3046,7 @@
       "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
      }
     ],
-    "code": "/**\n * Standard metric definitions for content-addressed artifact storage.\n *\n * This module only defines the metric handles, following the shape of Effect's\n * `ClusterMetrics`. No exporter ships in this package; provide one — for\n * example `@smthrs/observability` — and these counters appear in it.\n *\n * Only the local `ArtifactStore` implementations, filesystem and memory, update\n * them. `RemoteArtifacts` is deliberately uninstrumented, and the counters carry\n * no tier attribute, so read them as *local artifact store traffic* rather than\n * as artifact operations:\n *\n * - a `CombinedArtifacts` read the local tier serves counts one get;\n * - a read the shared tier serves counts NO get, because no local store\n *   answered it;\n * - the write-back that materializes such a read counts a put, indistinguishable\n *   from a producer publishing new bytes.\n *\n * Attributing operations per tier needs the tier in the metric, which would\n * change the published counter shape; until then this is what the numbers mean.\n *\n * The one shared-tier signal is {@link remoteFailure}: a `CombinedArtifacts`\n * upload or write-back that was refused, or abandoned at its deadline.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Metric from \"effect/Metric\";\n/**\n * Counter over successful artifact puts. A put that deduplicated against an\n * existing verified blob still counts: the caller stored bytes and received\n * an address either way.\n *\n * @category metrics\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const puts = Metric.counter(\"flows_artifact_puts\", {\n    description: \"Successful artifact puts, including deduplicated ones\",\n});\n/**\n * Counter over successful artifact gets. Missing and corrupt reads fail with\n * their typed errors and are deliberately not counted here; they are error\n * evidence, not throughput.\n *\n * @category metrics\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const gets = Metric.counter(\"flows_artifact_gets\", {\n    description: \"Successful artifact gets\",\n});\n/**\n * Counter over opportunistic `CombinedArtifacts` transfers that failed or hit\n * their deadline and were dropped: `put`'s upload to the shared tier and\n * `get`'s write-back into the local tier.\n *\n * Read the attributed views on {@link remoteFailure}: every update carries an\n * `operation` attribute, so this bare handle aggregates nothing and always\n * reads zero.\n *\n * @category metrics\n * @since 1.0.0-rc.1\n */\nexport const remoteFailures = Metric.counter(\"flows_artifact_remote_failures\", {\n    description: \"Dropped combined-artifact transfers by operation\",\n});\n/**\n * `remoteFailures` views keyed by the dropped transfer.\n *\n * @category metrics\n * @since 1.0.0-rc.1\n */\nexport const remoteFailure = {\n    put: Metric.withAttributes(remoteFailures, { operation: \"put\" }),\n    write_back: Metric.withAttributes(remoteFailures, { operation: \"write_back\" }),\n};\n",
+    "code": "/**\n * Standard metric definitions for content-addressed artifact storage.\n *\n * This module only defines the metric handles, following the shape of Effect's\n * `ClusterMetrics`. No exporter ships in this package; provide one — for\n * example `@smthrs/observability` — and these counters appear in it.\n *\n * Only the local `ArtifactStore` implementations, filesystem and memory, update\n * them. `RemoteArtifacts` is deliberately uninstrumented, and the counters carry\n * no tier attribute, so read them as *local artifact store traffic* rather than\n * as artifact operations:\n *\n * - a `CombinedArtifacts` read the local tier serves counts one get;\n * - a read the shared tier serves counts NO get, because no local store\n *   answered it;\n * - the write-back that materializes such a read counts a put, indistinguishable\n *   from a producer publishing new bytes.\n *\n * Attributing operations per tier needs the tier in the metric, which would\n * change the published counter shape; until then this is what the numbers mean.\n *\n * The one shared-tier signal is {@link remoteFailure}: a `CombinedArtifacts`\n * upload or write-back that was refused, or abandoned at its deadline.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Metric from \"effect/Metric\";\n/**\n * Counter over successful artifact puts. A put that deduplicated against an\n * existing verified blob still counts: the caller stored bytes and received\n * an address either way.\n *\n * @category metrics\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const puts = Metric.counter(\"flows_artifact_puts\", {\n    description: \"Successful artifact puts, including deduplicated ones\"\n});\n/**\n * Counter over successful artifact gets. Missing and corrupt reads fail with\n * their typed errors and are deliberately not counted here; they are error\n * evidence, not throughput.\n *\n * @category metrics\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const gets = Metric.counter(\"flows_artifact_gets\", {\n    description: \"Successful artifact gets\"\n});\n/**\n * Counter over opportunistic `CombinedArtifacts` transfers that failed or hit\n * their deadline and were dropped: `put`'s upload to the shared tier and\n * `get`'s write-back into the local tier.\n *\n * Read the attributed views on {@link remoteFailure}: every update carries an\n * `operation` attribute, so this bare handle aggregates nothing and always\n * reads zero.\n *\n * @category metrics\n * @since 1.0.0-rc.1\n */\nexport const remoteFailures = Metric.counter(\"flows_artifact_remote_failures\", {\n    description: \"Dropped combined-artifact transfers by operation\"\n});\n/**\n * `remoteFailures` views keyed by the dropped transfer.\n *\n * @category metrics\n * @since 1.0.0-rc.1\n */\nexport const remoteFailure = {\n    put: Metric.withAttributes(remoteFailures, { operation: \"put\" }),\n    write_back: Metric.withAttributes(remoteFailures, { operation: \"write_back\" })\n};\n",
     "map": {
      "version": 3,
      "file": "ArtifactStoreMetrics.js",
@@ -3066,7 +3066,7 @@
       "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
      }
     ],
-    "code": "/**\n * Snapshotting caller-owned artifact bytes, so a caller that reuses its buffer\n * cannot change what is measured or stored.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { ArtifactStoreError } from \"./ArtifactStoreError.js\";\n/**\n * A refused byte copy is the host declining an allocation, not a crypto\n * failure: the Crypto service has not been consulted when this fires, so\n * reporting `digest_failed` would point an operator diagnosing memory pressure\n * at the wrong subsystem. The message is constant, and the buffer is never\n * attached.\n */\nconst snapshotFailure = (cause) => new ArtifactStoreError({ code: \"unavailable\", message: \"the host could not copy the artifact bytes\", cause });\n/**\n * Copies a caller-owned buffer when the returned Effect begins.\n *\n * A host that refuses the copy — a detached buffer, an allocation past what the\n * runtime will give — fails as `unavailable`, the code for a host refusal.\n *\n * @category utilities\n * @since 1.0.0-rc.0\n */\nexport const snapshotBytes = (bytes) => Effect.try({\n    try: () => new Uint8Array(bytes),\n    catch: (cause) => snapshotFailure(cause),\n});\n",
+    "code": "/**\n * Snapshotting caller-owned artifact bytes, so a caller that reuses its buffer\n * cannot change what is measured or stored.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { ArtifactStoreError } from \"./ArtifactStoreError.js\";\n/**\n * A refused byte copy is the host declining an allocation, not a crypto\n * failure: the Crypto service has not been consulted when this fires, so\n * reporting `digest_failed` would point an operator diagnosing memory pressure\n * at the wrong subsystem. The message is constant, and the buffer is never\n * attached.\n */\nconst snapshotFailure = (cause) => new ArtifactStoreError({ code: \"unavailable\", message: \"the host could not copy the artifact bytes\", cause });\n/**\n * Copies a caller-owned buffer when the returned Effect begins.\n *\n * A host that refuses the copy — a detached buffer, an allocation past what the\n * runtime will give — fails as `unavailable`, the code for a host refusal.\n *\n * @category utilities\n * @since 1.0.0-rc.0\n */\nexport const snapshotBytes = (bytes) => Effect.try({\n    try: () => new Uint8Array(bytes),\n    catch: (cause) => snapshotFailure(cause)\n});\n",
     "map": {
      "version": 3,
      "file": "snapshotBytes.js",
@@ -3086,7 +3086,7 @@
       "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
      }
     ],
-    "code": "/**\n * Validating a content address before any implementation logs it or\n * interpolates it into a path or URL.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { ArtifactStoreError } from \"./ArtifactStoreError.js\";\n/**\n * Refuses anything other than the canonical SHA-256 address representation.\n *\n * Every implementation validates before logging or interpolating an untrusted\n * value into a path or URL. The failure text is constant and bounded, so even a\n * hostile multi-megabyte value cannot be copied into logs or durable errors.\n *\n * @category predicates\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const validateDigest = (digest) => Effect_1.suspend({ validateDigest: () => { return typeof digest === \"string\" && /^[0-9a-f]{64}$/.test(digest)\n        ? Effect_1.succeed(digest)\n        : (() => Effect_1.suspend(() => Effect_1.fail(new ArtifactStoreError({\n            code: \"invalid_digest\",\n            message: \"artifact digest must be exactly 64 lowercase hexadecimal characters\",\n        }))))(); } }.validateDigest);\n",
+    "code": "/**\n * Validating a content address before any implementation logs it or\n * interpolates it into a path or URL.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { ArtifactStoreError } from \"./ArtifactStoreError.js\";\n/**\n * Refuses anything other than the canonical SHA-256 address representation.\n *\n * Every implementation validates before logging or interpolating an untrusted\n * value into a path or URL. The failure text is constant and bounded, so even a\n * hostile multi-megabyte value cannot be copied into logs or durable errors.\n *\n * @category predicates\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const validateDigest = (digest) => Effect_1.suspend({ validateDigest: () => { return typeof digest === \"string\" && /^[0-9a-f]{64}$/.test(digest)\n        ? Effect_1.succeed(digest)\n        : (() => Effect_1.suspend(() => Effect_1.fail(new ArtifactStoreError({\n            code: \"invalid_digest\",\n            message: \"artifact digest must be exactly 64 lowercase hexadecimal characters\"\n        }))))(); } }.validateDigest);\n",
     "map": {
      "version": 3,
      "file": "validateDigest.js",

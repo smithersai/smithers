@@ -29,5 +29,5 @@ import * as Schema from "effect/Schema";
 export const OwnerId = Schema.Struct({
     hostId: Schema.String,
     pid: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-    nonce: Schema.String,
+    nonce: Schema.String
 });

@@ -32,7 +32,7 @@ function execute(arg_1, arg_2) {
             const output = yield* (yield* FlowInvoker.FlowInvoker).invoke(Object.freeze({
                 name: selected.route.name,
                 flow: selected.flow,
-                input,
+                input
             }));
             return yield* SchemaBridge.encodeOutput(selected.flow.output, output);
         }));
@@ -58,7 +58,7 @@ function execute(arg_1, arg_2) {
         return mapError(context, new FsError({
             code: "invocation_unavailable",
             method: "Incur.execute",
-            description: "The flow invocation failed",
+            description: "The flow invocation failed"
         }));
     }).apply(this, arguments);
 }
@@ -78,8 +78,8 @@ function project(arg_3) {
                         code: "load_failed",
                         method: "Incur.project",
                         description: "The route metadata load timed out",
-                        path: route.name,
-                    }))))(); } }.orElse),
+                        path: route.name
+                    }))))(); } }.orElse)
             });
             return { kind: "return", value: { _tag: "Ready", selected } };
         })(), Effect_1.fnUntraced(function* project$catch(error) {
@@ -127,7 +127,7 @@ function groupedRoutes(arg_5) {
                         code: "duplicate_route",
                         method: "Incur.createCli",
                         description: "A child route claims the reserved self segment",
-                        path: `${route.name}/${IncurHost.selfSegment}`,
+                        path: `${route.name}/${IncurHost.selfSegment}`
                     }));
                 }
                 grouped.add(route);
@@ -172,7 +172,7 @@ function hydrate(arg_6, arg_7, arg_8, arg_9) {
             route: resolved.route,
             flow,
             schema,
-            dispatch: Object.freeze(dispatchTokens.slice(0, viaSelf ? consumed + 1 : consumed)),
+            dispatch: Object.freeze(dispatchTokens.slice(0, viaSelf ? consumed + 1 : consumed))
         });
     }).apply(this, arguments);
 }
@@ -215,8 +215,8 @@ export function createCli(arg_14, arg_15) {
                 execute,
                 refuse,
                 projectAll,
-                select: (tokens, dispatchTokens) => Effect_1.suspend({ select: () => { return select(tree, grouped, tokens, dispatchTokens); } }.select),
-            },
+                select: (tokens, dispatchTokens) => Effect_1.suspend({ select: () => { return select(tree, grouped, tokens, dispatchTokens); } }.select)
+            }
         });
     })).apply(this, arguments);
 }

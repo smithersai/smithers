@@ -19,7 +19,7 @@ export const ArtifactStoreErrorCode = Schema.Literals([
     "invalid_configuration",
     "invalid_digest",
     "unavailable",
-    "transport_failed",
+    "transport_failed"
 ]);
 /**
  * A typed failure of the store itself: the host or crypto provider refused an
@@ -39,7 +39,7 @@ export const ArtifactStoreErrorCode = Schema.Literals([
 export class ArtifactStoreError extends Schema.TaggedError()("@smthrs/artifacts/ArtifactStoreError", {
     code: ArtifactStoreErrorCode,
     message: Schema.String,
-    cause: Schema.optional(Schema.Unknown),
+    cause: Schema.optional(Schema.Unknown)
 }) {
 }
 /**
@@ -55,7 +55,7 @@ export class ArtifactStoreError extends Schema.TaggedError()("@smthrs/artifacts/
  */
 export class ArtifactMissing extends Schema.TaggedError()("@smthrs/artifacts/ArtifactMissing", {
     code: Schema.Literal("artifact_missing"),
-    digest: Sha256.Digest,
+    digest: Sha256.Digest
 }) {
 }
 /**
@@ -72,6 +72,6 @@ export class ArtifactMissing extends Schema.TaggedError()("@smthrs/artifacts/Art
 export class ArtifactCorruption extends Schema.TaggedError()("@smthrs/artifacts/ArtifactCorruption", {
     code: Schema.Literal("artifact_corruption"),
     recordedDigest: Sha256.Digest,
-    measuredDigest: Sha256.Digest,
+    measuredDigest: Sha256.Digest
 }) {
 }

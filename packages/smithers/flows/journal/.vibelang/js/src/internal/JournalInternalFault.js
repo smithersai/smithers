@@ -22,7 +22,7 @@ export const JournalInternalFaultCode = Schema.Literals(["compaction_capture_tim
  */
 export class JournalInternalFault extends Schema.TaggedError()("@smthrs/journal/JournalInternalFault", {
     code: JournalInternalFaultCode,
-    message: Schema.String,
+    message: Schema.String
 }) {
     name = "JournalInternalFault";
 }

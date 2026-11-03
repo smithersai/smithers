@@ -74,7 +74,7 @@ export const policy = (runtimeHash) => [
     "worker-src 'none'",
     "manifest-src 'none'",
     "base-uri 'none'",
-    "form-action 'none'",
+    "form-action 'none'"
 ].join("; ");
 /** Keeps a script or style sheet from closing its own element early. */
 const inert = (text, tag) => text.replace(new RegExp(`</(${tag})`, "gi"), "<\\/$1");

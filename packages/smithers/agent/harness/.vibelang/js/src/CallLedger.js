@@ -183,7 +183,7 @@ export class Entry extends Schema.Class("flows/harness/CallLedger/Entry")({
      * earlier one, and it is a digest so the ledger stays small enough to live in
      * journaled controller state.
      */
-    signature: Schema.String.pipe(Schema.withConstructorDefault(Effect.succeed("")), Schema.withDecodingDefaultKey(Effect.succeed(""))),
+    signature: Schema.String.pipe(Schema.withConstructorDefault(Effect.succeed("")), Schema.withDecodingDefaultKey(Effect.succeed("")))
 }) {
 }
 /**
@@ -421,7 +421,7 @@ export const entry = (ordinal, call) => {
         bytes: encoder.encode(whole).byteLength,
         mutates,
         payloadBytes: mutates ? payload(call.input) : 0,
-        signature: mutates ? Digest.digest(CanonicalJson.stringify([call.flow, call.input])) : "",
+        signature: mutates ? Digest.digest(CanonicalJson.stringify([call.flow, call.input])) : ""
     });
 };
 /**

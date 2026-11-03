@@ -23,5 +23,5 @@ export const validateDigest = (digest) => Effect_1.suspend({ validateDigest: () 
         ? Effect_1.succeed(digest)
         : (() => Effect_1.suspend(() => Effect_1.fail(new ArtifactStoreError({
             code: "invalid_digest",
-            message: "artifact digest must be exactly 64 lowercase hexadecimal characters",
+            message: "artifact digest must be exactly 64 lowercase hexadecimal characters"
         }))))(); } }.validateDigest);

@@ -10,182 +10,182 @@
   "root": {
    "relative": "packages/smithers/migrate"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/migrate/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "kX8q1iNWIj4BmVzY_IUz7VZgBYmXEViKvqcjm5q_7aM"
+    "size": 1328,
+    "hash": "ma5DHvQE48VgxNilZCWgqR7uME4BIWXbdVjvlXaBW2o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/tsconfig.json"
     },
-    "size": 1454,
-    "hash": "Qi3miZE-DWxLH1zIyMGLuVTTSRHrvEfzFb2ynnEutmI"
+    "size": 1415,
+    "hash": "CQGGkEBWRZqHYtj0LlTgLdLgsLcO6SkyNgBS9k0d9Hs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/harness/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/tsconfig.json"
     },
-    "size": 1384,
-    "hash": "ZIm2fGhGex1PiOk_SJ4av0pSJVitlShf1hv5eINv5zw"
+    "size": 1345,
+    "hash": "xaASBpq4vV4F53H08M1-HKOF3WW_rG75ZsSbtmxyFtw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/plugin/tsconfig.json"
     },
-    "size": 1384,
-    "hash": "ZIm2fGhGex1PiOk_SJ4av0pSJVitlShf1hv5eINv5zw"
+    "size": 1345,
+    "hash": "xaASBpq4vV4F53H08M1-HKOF3WW_rG75ZsSbtmxyFtw"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/control/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "fZZaPHDx9zKcQl3ujxM6LxNCzfvN421NxjkwF0Q5s50"
+    "size": 1328,
+    "hash": "B_dtnyKRr02O7BEW_2HMc_MPF0nnGiUuTGVulx4yloI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/platform-node/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    }
   ],
   "directories": [
@@ -327,7 +327,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -352,7 +352,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -381,7 +381,7 @@
      "relative": "packages/smithers/migrate/package.json"
     },
     "size": 16505,
-    "hash": "H6YKG2AvXCba42C_qLH7b1UWX2ge3scAJfel2pDlFOA"
+    "hash": "QatSw54ZRIyOOJAxBlwvGdUCxB_0YC31QAFP-Nezv-s"
    },
    {
     "path": {
@@ -395,49 +395,49 @@
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "O9iDHySpA30BJ4H48_xLoYKtd_38nfhgRWUlLwL8hII"
+    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
+    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
+    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
+    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
    },
    {
     "path": {
@@ -451,7 +451,7 @@
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "UCLgpI-A-WxW-qbLTBrkIVPiG78MZVE_4OtUN_SdOtE"
+    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
    },
    {
     "path": {
@@ -633,35 +633,35 @@
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "kTwGKJsTp4FVGxmKUOPZg3c06ZLfQDJah4Eo8ALa1HE"
+    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "HkEsBZn5oE73FkMHp1IVWloRAQivyKChWC6xDwTCWqA"
+    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "fK0vdi3dDFOTMob0LKiDB1WNp5SxbwEp_tzeMqevZQc"
+    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "BdDRbIPt5QY59jYpdII9ws0c-Hr64YvA6FvaiRCvZII"
+    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
-    "size": 15062,
-    "hash": "Ehoav5n_0WiCoUYF2geBfe9CWBxFJmFFbZd4MnMPjks"
+    "size": 15090,
+    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
    },
    {
     "path": {
@@ -675,7 +675,7 @@
      "relative": "packages/smithers/agent/harness/package.json"
     },
     "size": 20352,
-    "hash": "nrt7xT9VLByhTqWYw_IL5Pb0VUTeRvz2p3S1lGUc6i0"
+    "hash": "WdHH54Psx7LmsVGgdyKbD73Ry0-Pj8AAyBFlZNBFSIQ"
    },
    {
     "path": {
@@ -717,7 +717,7 @@
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "ChhNRC9WpUe0JlBdu_RF9QYJMOG0J9A3o5IgLYQETzo"
+    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
    },
    {
     "path": {
@@ -731,98 +731,98 @@
      "relative": "packages/smithers/agent/memory/package.json"
     },
     "size": 12559,
-    "hash": "ML9XnL3gy0S3dMXo2vzWWgXMgkBXXrpbnaJC9soCpgM"
+    "hash": "P3NQBbM0fEq2bZfmVrvEHhct2TFz7xf-jerU0iLAIbA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
-    "size": 15033,
-    "hash": "TpVwbO2uX8Kyk01XChbs_dKm-u4RLcUmXdPchEq9YxU"
+    "size": 15173,
+    "hash": "ON8bl4VMHttJ_CfelahnwFE0Dp-2kNwkvlLdLCseONw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/package.json"
     },
     "size": 9895,
-    "hash": "541OBllASETabq1LtvCA0pogbAptEX0QuskxwdNCaMs"
+    "hash": "LH9WSZ_WGwMEPr0AjiUM6bzlOGw2B20C2fHGXref5dE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/plugin/package.json"
     },
-    "size": 10337,
-    "hash": "7CByfvHpgVZ9k1RWn5a9fU5VQTnlFQAnFRhGPxEyCik"
+    "size": 10333,
+    "hash": "UGt0Jg2fkgLSer-pRP23v5mP32QVHT0MadLvrXFNWCU"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/package.json"
     },
-    "size": 18573,
-    "hash": "llSxX4JHAbcuRS4x1JEPm5m7DBlgALulgn8j3s_ZtHE"
+    "size": 18741,
+    "hash": "_okrrZpMw_Ji3VBpNIL_klR1Z-UilKWpgxQVyo8hn-I"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/package.json"
     },
     "size": 8141,
-    "hash": "Q3EwCJGuGWWUzIoXyNqaEnYRl5mtDjBK9jLf-5q7QiU"
+    "hash": "O-3M6m6J761jj3XuevgCMWkZ0TCgCy_P5F6i9Z8fX9g"
    },
    {
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
     "size": 17630,
-    "hash": "axmRELJfHeQ3NAUZ8A8f7XgQ7M-HhVx3muuJT3XsPN8"
+    "hash": "bxheo6D0sDenep1VXnaAozWM3cs6TXN3tfj6Cfc1obM"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/package.json"
     },
     "size": 19101,
-    "hash": "5BRC6O_2EnTNRtO3vO3hJv5dJtuxbLBnlq853WohZjg"
+    "hash": "MlGtDMwcnCRzMY1hkP8IupBGzN1sCmQGEBYfycpCanQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/package.json"
     },
     "size": 7088,
-    "hash": "DPklUsEU_TMdU-FzRQHkBhavAOFMwS-U9QqsoKmCdw0"
+    "hash": "L5fpKGg2FbL-bbpRq_YlefD5Em-og1_ImjXbGxSFdaY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
-    "size": 17535,
-    "hash": "ptYwS6ZsXv6SWAIC2pOWo-G6DvCscMYdXdnuxPCoknI"
+    "size": 15515,
+    "hash": "iuKcgJBSKOec57LsRqZbOWZhZYYEd7wnDnyJoeyyY_o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/package.json"
     },
     "size": 6772,
-    "hash": "qy6gKQsD47Ts9JXYNY2jOS59z_0g4SQQXifBZOaOqjk"
+    "hash": "PDbmtBwaifMg8xo8e8sshgT4DxBUNraaYy17hCyYn9c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/package.json"
     },
     "size": 6254,
-    "hash": "dk5KdO2rBb2mqVBmd5OZWhnEz9zM-lN3Il4Los4LeqI"
+    "hash": "Hea3nMWuvm2_696OsMTMRp-MQ5YyzcV4ceoKKmvwaA4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan-store/package.json"
     },
     "size": 4083,
-    "hash": "XPv0HUKrAMV7dIHO_K7EBvF_h_BH2_a7OFFqA5DL5Kc"
+    "hash": "vMzRtDOlvzaKisBXUcSGorgpaWYyfeclQeZYPiZhWF8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/platform-node/package.json"
     },
     "size": 7144,
-    "hash": "Q4uP-NRrhOaHbpOC7715p1Q6iLf5mPheFsihSWqw5bs"
+    "hash": "ISXJ3sOeVex8J-y3SGRls6zBVkE4RUWgUFYoXVMtg9o"
    },
    {
     "path": {
@@ -2790,8 +2790,8 @@
     "path": {
      "relative": "packages/smithers/migrate/src/Inventory.vibe"
     },
-    "size": 37659,
-    "hash": "gpmaJccUZoychfvo1lhJSae7jCT3exBBVQonReaBF5g"
+    "size": 37633,
+    "hash": "xf8T4FtQRMVCmfQb_P2bET0xNUr1aASc3mStY5D3SVE"
    },
    {
     "path": {
@@ -2979,8 +2979,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -3112,15 +3112,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -3497,8 +3497,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -3539,8 +3539,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -4190,8 +4190,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -4288,15 +4288,15 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Limits.vibe"
     },
-    "size": 3219,
-    "hash": "CIj4MRtMTMc11jEn1pXnOLibMR1El2LxLzoNrRnOQVI"
+    "size": 3214,
+    "hash": "OFcLpAJzZWsJJ0cybMQ-Srkp_OgQcrWBGg4_w0VT_Lo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Signature.vibe"
     },
-    "size": 16471,
-    "hash": "HNeTROivOMqBJzQGXqsGcTenpxegL4XxK8key3d-2K4"
+    "size": 16444,
+    "hash": "_n53tKqUgjWnQj9oNaOLwRVpIwXRvKOknhBGcnaPi-c"
    },
    {
     "path": {
@@ -4596,8 +4596,8 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/skillFrontmatter.vibe"
     },
-    "size": 5100,
-    "hash": "JkPsJqXZHDDpRQDbS0e8Zm7nhuNp5OPkbZP_qWhNadA"
+    "size": 5097,
+    "hash": "POYj7x08XrCO954XGJiLpfLZ2Y-_Cxm3zeoxm8ExRM0"
    },
    {
     "path": {
@@ -5401,15 +5401,15 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Declared.vibe"
     },
-    "size": 1751,
-    "hash": "34cgDS6_EH_1EkMOHnE6_nJaisImMuCHzllFZWXB6AQ"
+    "size": 1747,
+    "hash": "uKJa4EmBRtlCx_DtDQNIrZrBMyxbWBXXLM6fDQQG2bA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/ModuleMetadata.vibe"
     },
-    "size": 43378,
-    "hash": "21-WakM0o_CV6QicRw2FleF7BdnfxP5qL0-B2Xj_QOQ"
+    "size": 43354,
+    "hash": "-j1rwxLHLFlz-TKpMYUfS1q49e8lTUmmmgkjUVdRLfw"
    },
    {
     "path": {
@@ -5422,29 +5422,29 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Names.vibe"
     },
-    "size": 2285,
-    "hash": "S-VM0xuTkTTvmKRwC0zZfSpaWgNpPkxSVjVWpwWVhyo"
+    "size": 2278,
+    "hash": "N58QLlT5ecYmsWcVOc9S3Qa9LdLrL5vqa84GBazkHqI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/MarkdownFlow.vibe"
     },
-    "size": 27635,
-    "hash": "LmH-9zS2mqqLUOThJ_a8fwbaCVjNxXW6dsK0cOoUrw0"
+    "size": 27581,
+    "hash": "6GqoFcuVy41_AYi_c5y3ujBTHiXEgWTDDq2dOSXTScQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/ModuleFlow.vibe"
     },
-    "size": 6463,
-    "hash": "lLr6mCi40WxUocDU8qK-wqGQccYQQW9TLfKOSy14aa8"
+    "size": 6451,
+    "hash": "2djBZIpwBzyexhd-7cfSz2DVkQKEwTP03Gk9_5YNttA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/RegistryError.vibe"
     },
-    "size": 4329,
-    "hash": "7_18snT3dvkHYGAZBjHFbB5rEgaj1dvf1_ARWw64aYI"
+    "size": 4324,
+    "hash": "cVjx0oNYrfXf6huK-m3fBHVVUdBaFL7t4hvNLDogJBw"
    },
    {
     "path": {
@@ -5709,8 +5709,8 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
     },
-    "size": 1367,
-    "hash": "KMRUmP-9Pq4fef97WjRMVwdSdKCtuF_hiS_zyvdpojA"
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
    },
    {
     "path": {
@@ -5793,15 +5793,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -5961,15 +5961,15 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelEvent.vibe"
     },
-    "size": 18314,
-    "hash": "eOL13_VciDeTo0iNlkIXAmFUugbKekeib4ci8BPEZPs"
+    "size": 18290,
+    "hash": "EM2Wgs3n09Qq5zx2VFOfkjl-HAEFcuMUcUT86SIXfmM"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelError.vibe"
     },
-    "size": 8728,
-    "hash": "wSPjMwN0Cbn18xiMUEWl6WVNKsvJ8I_-NwW9RnxkzAM"
+    "size": 8723,
+    "hash": "zGcY8dlcbHfrNn7DKU23zk9XRa_KITDZljq1K_pXAL8"
    },
    {
     "path": {
@@ -6010,8 +6010,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/StepFact.vibe"
     },
-    "size": 2106,
-    "hash": "4p5BwxZdwwqDTkEe6XaRTdBpC9svUS3xGkJGFphRfmo"
+    "size": 2103,
+    "hash": "b3kkgDyilW3C-FW4fdO4ounbiKeP_KuJRi79-7KoC5s"
    },
    {
     "path": {
@@ -6045,15 +6045,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/EventTally.vibe"
     },
-    "size": 801,
-    "hash": "jqNAp8SGRoVgR2UGFcQbDqD4VnG7fA7oCOkc8hwA_Nw"
+    "size": 800,
+    "hash": "_DXFihbOGu_VKm5BvOTjgOjn52C9LseZwxmqEucrkvQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
     },
-    "size": 963,
-    "hash": "h558rP8T8bGGWY1J39KkFj2H_C3ZwzleEC_jdLro1WY"
+    "size": 962,
+    "hash": "MWPlQMr_t56pVGgwDW0MWW24aMFIVC-RYfA3thfgK7w"
    },
    {
     "path": {
@@ -6066,8 +6066,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
     },
-    "size": 4805,
-    "hash": "TV_P427Tpq3T5TcSdUJ13uwDMQgjY6FQgBXaWOQ7ORA"
+    "size": 4800,
+    "hash": "0MAnTLasHh_cI-vlZtI_0FpjmdWsh6Itt25uXOU7e9c"
    },
    {
     "path": {
@@ -6192,8 +6192,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/internal/CallTiming.vibe"
     },
-    "size": 5055,
-    "hash": "03zZJDLpkCipolLqyh6_vw7-bJ8pM76ZL9U24RRJUBg"
+    "size": 5049,
+    "hash": "m7MdltMdCMjfgMT7s3m6iODwAVH17BcK75IT8cq16PM"
    },
    {
     "path": {
@@ -6206,8 +6206,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Pricing.vibe"
     },
-    "size": 6515,
-    "hash": "Q7ywCOCqjPaB7HvdXI_frhgUjKgiMAT098WeAbn0YZw"
+    "size": 6514,
+    "hash": "a4_mNhjGrGplAxO9L7QXxCq7NHo2aBrYmLsTcsJf49s"
    },
    {
     "path": {
@@ -6591,8 +6591,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Classifier.vibe"
     },
-    "size": 20005,
-    "hash": "9TB5l95-0Vi6bJP8wZ5PhA_Y_8BtlptgXaLVTCiTFyQ"
+    "size": 20026,
+    "hash": "qh_rs-6k3bn46d8dUsOS0eqa_vHOYWVdW4Dw_qN7IVg"
    },
    {
     "path": {
@@ -6808,15 +6808,15 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/CallLedger.vibe"
     },
-    "size": 25247,
-    "hash": "H-0T0hZ9QqDSMIgQb3gzxgXpxTpL5nkkhWqVlrVdbOU"
+    "size": 25240,
+    "hash": "3ugD1cpzRsXW_fODldJ2pP4LNItW61IUin3Z5tWLtJI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/harness/src/VariablesPanel.vibe"
     },
-    "size": 6226,
-    "hash": "jAflhTjKPGkeNbnrDFKn3boF5mfVoRusHWf5Civc9lw"
+    "size": 6221,
+    "hash": "uwFqzJBPA7oew-W-HeVG88j4qwu9BL1cFqhCwJ2RvVw"
    },
    {
     "path": {
@@ -6843,15 +6843,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -6885,15 +6885,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -7123,8 +7123,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/ToolStream.vibe"
     },
-    "size": 5173,
-    "hash": "q78qpzje1IHT39pSPmDJuEDpukf6vZZnml9MUx1vXiE"
+    "size": 5167,
+    "hash": "FgCEbMv-DYHPU1BqyJ3FMJ2LGjwOZhrJioG8A7YsVws"
    },
    {
     "path": {
@@ -7144,15 +7144,15 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Framing.vibe"
     },
-    "size": 5578,
-    "hash": "BZLuOHG89uW6suIxd32wbB794QeFHgsLSJWMszfEQiU"
+    "size": 5570,
+    "hash": "H9r5zYPbjlwaPq6EbEiP8pjJLd8Sv2yQPufCyVMKJQ0"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/src/FailureCopy.vibe"
     },
-    "size": 12850,
-    "hash": "htDARDEMzEC0_r_u5SqUIi_poaoD4TUdk0UioRvXCp4"
+    "size": 12824,
+    "hash": "cNkf89a6wMU2Sm88rSi6W1X3MipUVpRlykKFUIj9Zic"
    },
    {
     "path": {
@@ -7163,17 +7163,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/model/src/WireTrace.ts"
+     "relative": "packages/smithers/agent/model/src/WireTrace.vibe"
     },
-    "size": 1871,
-    "hash": "QqnAhj0oOFse3laKGJjOZ7HD7LcUgfHsjqC0DNmQje4"
+    "size": 1780,
+    "hash": "w3P2pIxy9SMe8gqz6WxN9_PprCDVCmtCi3gWJ5mMydM"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/model/src/internal/WireTrace.ts"
+     "relative": "packages/smithers/agent/model/src/internal/WireTrace.vibe"
     },
-    "size": 6969,
-    "hash": "x90FoUtH9BSQFze0Fdj_DgGFDZs_7Iwo5do6CSuK64k"
+    "size": 6884,
+    "hash": "uOsU5MNpe9TfwcpibMYZU4ihQjeAXB83I6ySsOId_n0"
    },
    {
     "path": {
@@ -7193,8 +7193,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Route.ts"
     },
-    "size": 28169,
-    "hash": "8dL1G_1WroInFDW3smyKKlveSMMtrHSRhY-bDSQAXgw"
+    "size": 28173,
+    "hash": "eDV-QvchQ1bt4ZgITahjSJ9xyeDO--yA0k_Lzt8jM7w"
    },
    {
     "path": {
@@ -7214,8 +7214,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/index.ts"
     },
-    "size": 2452,
-    "hash": "nBReT_h1x51he_CZ5c8PadX1ZM0glrAiFfsfVjbClFk"
+    "size": 2454,
+    "hash": "GwdYBHzVTMRrPRWqAW_R1527RSBYd_cePCQp3Jr7-Dw"
    },
    {
     "path": {
@@ -7249,8 +7249,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/Tokens.vibe"
     },
-    "size": 2974,
-    "hash": "viofe3i6t9-pLLtYHjqXM9_2UqXmra5CSo0C11gVsis"
+    "size": 2968,
+    "hash": "U2uTaPgKNIdTtGQzc40lJZB-Vj2zjwftp8e_dNpcw68"
    },
    {
     "path": {
@@ -7326,8 +7326,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/Monitor.vibe"
     },
-    "size": 17852,
-    "hash": "Flc3gBbItY_DQeu6thxB4okELBh7iNuiw8WWhBiD1hw"
+    "size": 17833,
+    "hash": "NEtjlp3rpp0yTybk3owhjC3sx0skM5LXK4zGVYWBu2c"
    },
    {
     "path": {
@@ -7354,8 +7354,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/TruncatedOutput.vibe"
     },
-    "size": 10500,
-    "hash": "Zi-orCgBwfzGubTNvYrk3R878yfiiKsv46u3qD_BV-E"
+    "size": 10493,
+    "hash": "52U1XPYbUmG_uJ4PWS8690IANBdKFEtxoXC4S-PcAA0"
    },
    {
     "path": {
@@ -7445,8 +7445,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/QuickJSVariant.vibe"
     },
-    "size": 3711,
-    "hash": "LMG-EYkztTT9uzs3qs2Wxpz-7viUEQzGq2RMNXq6eJQ"
+    "size": 3707,
+    "hash": "KhVi5qgw8GhHOWjzPUbEsUkEkhOJWzVcTJI8hTQn5OE"
    },
    {
     "path": {
@@ -7459,8 +7459,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryError.vibe"
     },
-    "size": 986,
-    "hash": "nYLFM9YakjiChg2aNgUV1MZPODh8C6N5AuR4Tr13RhI"
+    "size": 984,
+    "hash": "kLbdb7sEKzoC0pvJDDvq62Tu5HB3UuVly1sv44pXH0Q"
    },
    {
     "path": {
@@ -7473,8 +7473,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/Namespace.vibe"
     },
-    "size": 9958,
-    "hash": "NGtGTMANBwS2ORvNirp41sJhwjFsdFeQymo3zvLajn8"
+    "size": 9939,
+    "hash": "q_muCS1YYNfHWMgH3_tJRWcTQ3ybdc00THcXyZguRPo"
    },
    {
     "path": {
@@ -7515,22 +7515,22 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/ResolveNamespace.vibe"
     },
-    "size": 2804,
-    "hash": "hgztuchJr7P7iQYE1A035rrKjs8f4Xq6c6900uMrhh4"
+    "size": 2800,
+    "hash": "vnhjSuoDZn66R2pey0BujsTlYXFX1sEG7_RBL4ySJfU"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/Store.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
     },
-    "size": 11779,
-    "hash": "t9ZbhsoyOzuuFAXnN35vHHVEwIP9GC4Wf0IPOR089Hw"
+    "size": 11246,
+    "hash": "iIydbZ6fbwoWnq-WI5XUew74KC_YAB-TRu4GdsmXrlE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
     },
-    "size": 10026,
-    "hash": "2uF2iCz0uTsd8oFj7sVMQZh8zT9H6Km58ahCk-OXiUs"
+    "size": 10028,
+    "hash": "3m-E2DiLMX-qd0hJmtRfBa6kQqv4sV2quZ1t1EaYLHU"
    },
    {
     "path": {
@@ -7543,22 +7543,22 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Notes.ts"
     },
-    "size": 13661,
-    "hash": "dPkP9U_eLGIL1Kmjqdbjbus_Ayyy-taHJghOYt19rmk"
+    "size": 13663,
+    "hash": "P78BMLRuiJR9uaXdOUPgj36ilF3x0nR4mHJ_ENIxB3w"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Search.ts"
     },
-    "size": 9831,
-    "hash": "kFlNxHTMdub40OTdAlnX4wLykNMEU_Rl9diGkDWHXPQ"
+    "size": 9833,
+    "hash": "v9CMwYRKZRckvJ8CMqsUKNbbQz-WDvgtf5jAB8IU-7c"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Threads.ts"
     },
-    "size": 15788,
-    "hash": "zNybfkcuiy_TgvLBEaKx-tEtP_Dgg2R90LssKECHo-g"
+    "size": 15790,
+    "hash": "S5Zwo2WngZCk18rmLIMSJIqQoeKJQMvXNTA15euO6Uk"
    },
    {
     "path": {
@@ -7576,31 +7576,31 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
     },
-    "size": 6611,
-    "hash": "2pjQaw0sf9Gpv68htwtiSQjZ51xfZnNAJLkc-rtwNAs"
+    "size": 6534,
+    "hash": "6bD4iq242UXnt15Rw9JTNW_UsrcaI6po0wo47B4GrwU"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
     },
-    "size": 832,
-    "hash": "sZ43yiXMRpphAZ2CtspiopzdP4f4Zsh3V03ptPHaUIs"
+    "size": 803,
+    "hash": "cEgne4cF1gs_ac3wwUSc3PUSGb7s2ifQIJHK4xUNqfI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/Migrations.ts"
     },
-    "size": 1401,
-    "hash": "qqiV8InJrRc4G-hl0vNyfurCmttdI7x3JrHtFPWVOno"
+    "size": 1405,
+    "hash": "1CMwJPP6tnIfFWf154At-3ufUYfZuLRuH0-hLlsLcOQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryStore.ts"
     },
-    "size": 15964,
-    "hash": "xkkHznDtVpdmOCTf4jUwAeXUe_JeHQi7l2WZsQ0Odls"
+    "size": 15966,
+    "hash": "S0uvN7iXYxn5apIK9r2fwLQBGDPLW9iNpYIdRKllXE4"
    },
    {
     "path": {
@@ -7613,8 +7613,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/internal/Compose.vibe"
     },
-    "size": 13052,
-    "hash": "cNT0Yhw-i6HLs0qKl2h3rTnYWxB1wltv-KqsvB88MV0"
+    "size": 13034,
+    "hash": "d7YaPHH89q0LjbvaazizW8Ge4hq-UkD1EG9kHsyR0b0"
    },
    {
     "path": {
@@ -7632,7 +7632,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/patterns/src/Pattern.ts"
+     "relative": "packages/smithers/flows/patterns/src/Pattern.vibe"
     },
     "size": 7009,
     "hash": "B0nGtwg7xZPfjrZsSMXtlZj-wOkDEfXWywzJ6D_-cWs"
@@ -7648,8 +7648,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/SnapshotRecorder.vibe"
     },
-    "size": 2293,
-    "hash": "3-AKPiNnUfskzcqio2Fn_9xL28aPh4NN3Q2D46P6V8o"
+    "size": 2290,
+    "hash": "qhtd1VcUbmfYAi-r4aYMqpTRVT4H9UbPKUEmkgVRnMc"
    },
    {
     "path": {
@@ -7662,8 +7662,8 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/Metric.vibe"
     },
-    "size": 2935,
-    "hash": "XXXhfdHsrISiQL-9OYXdun1P5hmUMFMUukdWLG859ss"
+    "size": 2926,
+    "hash": "agxT2sS_fPGrTrYLKC82EdAhmacBoDpXqiBi2IwGa3Q"
    },
    {
     "path": {
@@ -7690,8 +7690,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/PluginError.vibe"
     },
-    "size": 1648,
-    "hash": "aCPLSIjHVBNE0BjOpZg2afVaLWwzwblbXGSvolWmR-Y"
+    "size": 1646,
+    "hash": "wphey5V2orPPw1zHlx_r_LD-UoniSX0MCY39VsLvgxU"
    },
    {
     "path": {
@@ -7704,8 +7704,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/Hooks.vibe"
     },
-    "size": 5892,
-    "hash": "-WawT6pUeuRQwyInVBi-UNp4-e2S62Iguem0Y9wxwhg"
+    "size": 5891,
+    "hash": "Iu5H6UMJqwD2NvwViJAPfcH-OHCmOoZOLecyScAMQCU"
    },
    {
     "path": {
@@ -7725,8 +7725,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/internal/mergePluginLayers.vibe"
     },
-    "size": 1925,
-    "hash": "GtnLbF1enldpI-x66_8PXkrj6Km1Qm7YNGgONaco2UU"
+    "size": 1920,
+    "hash": "I41G35P2L0LsQqtjs5K5Ad9bXhBK0as234EPOQ7srQU"
    },
    {
     "path": {
@@ -7744,17 +7744,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/plugin/src/Plugins.vibe"
+     "relative": "packages/smithers/agent/plugin/src/Plugins.ts"
     },
-    "size": 9404,
-    "hash": "A9t0-GuIyqyW2N6g3C4TE_htulZQhFVwlCwHzdLO-8o"
+    "size": 10012,
+    "hash": "05thbEMVdGh3DjflHs6SWj7K71ypuF_NkT7Xji-wTgw"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/plugin/src/Kernel.vibe"
+     "relative": "packages/smithers/agent/plugin/src/Kernel.ts"
     },
-    "size": 4280,
-    "hash": "P_l8crW1Ev8BTSMUb2_USF-AiMeIpf3msvcjLi7VaRo"
+    "size": 4419,
+    "hash": "ioNXWGOeP1a_aWTrl_niuunv1ZNyGS1V50xabSyRw6U"
    },
    {
     "path": {
@@ -7774,8 +7774,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/Keys.vibe"
     },
-    "size": 4716,
-    "hash": "oeOBt_5fGKp3UQjPgirHgjZnBMJvZ1vRxDVrSgYe0WY"
+    "size": 4715,
+    "hash": "SLY5nbPyYvW6BiS3zxMQGF1ngJNSZ0ATn56pd_MLe3A"
    },
    {
     "path": {
@@ -7802,15 +7802,15 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/Contribution.vibe"
     },
-    "size": 5802,
-    "hash": "jvg5ruEKnC3VTLdILHoZ04jnrCksz-lN-6aTZq2CAv4"
+    "size": 5799,
+    "hash": "YtSzQIKq1kIDO_Otx9Kb_apLq2aQmACISMwcGcxJycE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/plugin/src/Bind.vibe"
     },
-    "size": 6956,
-    "hash": "-mXjAZdiXGSEH_EqrWDIu4GzczNg4CXYVa-khdFqrDg"
+    "size": 6950,
+    "hash": "PD_mGUNmUPraR4pIfimgOY9OUP_FpXt6PKlr9HVSWEo"
    },
    {
     "path": {
@@ -7830,22 +7830,22 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/index.vibe"
     },
-    "size": 3183,
-    "hash": "F7WdM5tMMqaUoOMF_Qi_n7IPa-kRyeiRlZg47BDcUaw"
+    "size": 3179,
+    "hash": "f3bra3YQGuHrWmiH24FuguTvuq_d64jzTRAT8osP444"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/StdError.ts"
+     "relative": "packages/smithers/agent/std/src/StdError.vibe"
     },
-    "size": 2137,
-    "hash": "x41D0IAct4fp_DhdY47b5AWJPIYnSfej-z-A8rsWXv0"
+    "size": 2104,
+    "hash": "XVXx5cJhzCrl41Jl5YPF3vrJlOQRnvQCls4kO08VW_I"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Container.vibe"
     },
-    "size": 7248,
-    "hash": "KZ1RPiIavKNvoei4-nV6kZopMiqK3KjWU-QFTCxn_u4"
+    "size": 7250,
+    "hash": "Rqpk2YHsc85t1WtjVJOqAPIQUEVVJ2TUYy9tuIQocvE"
    },
    {
     "path": {
@@ -7858,15 +7858,15 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/Exec.ts"
     },
-    "size": 16169,
-    "hash": "sMJ_lPPW6e5h_hfLGWBQuOoXzP-7KZxaQXbB0GwzSqM"
+    "size": 16171,
+    "hash": "f4l8kLjrSkep2vJx5Y0La17zHNpRDzc6JU1I-2DAeJI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/GitWorktree.ts"
     },
-    "size": 20362,
-    "hash": "PLKw9twBYwGXBDGnHCLMtobooDnmO6vuFWAd7CZrGcg"
+    "size": 20364,
+    "hash": "rCuqSUsFHMRVQNSVfUxG6X7_Pj-7VG16A1LUD4uVNx4"
    },
    {
     "path": {
@@ -7884,24 +7884,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/TestRunner.ts"
+     "relative": "packages/smithers/agent/std/src/TestRunner.vibe"
     },
-    "size": 3818,
-    "hash": "8gmNrR6rYhC5wL86-sHRSMhjjtX1xlVt3vgALNFebFI"
+    "size": 3744,
+    "hash": "89Vx222YM5ygmfipH8Z8crfOw60eO6EO5Nevj_Znl7w"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Relocate.vibe"
     },
-    "size": 7844,
-    "hash": "MkSwBpwakeDdRyGgXy7WWV5PRsUGLFaL2YzbXzYiTkc"
+    "size": 7841,
+    "hash": "Hsp884LnSU0ycUB6UmM2A2TrPN8fC5pl6w9xZtircsc"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Checkpoints.ts"
     },
-    "size": 24224,
-    "hash": "Y-wi3tklkLb5kxR334v--PdfLrjtfOcafA4Q_Cz-GYI"
+    "size": 24228,
+    "hash": "aMl68TRx6WJuV96VmcF9Tv7FWRx32LqKP725nFfK9Pg"
    },
    {
     "path": {
@@ -7935,8 +7935,8 @@
     "path": {
      "relative": "packages/smithers/agent/src/internal/FailureJson.vibe"
     },
-    "size": 5393,
-    "hash": "qCDga6dLqkRtMVZTri49k9XkjIdWZjDFOgV9gbgagW4"
+    "size": 5392,
+    "hash": "vKJqBfMDRPTRr1Gaf5V3CfG_tGC2bG1PWpaiCp0nuPQ"
    },
    {
     "path": {
@@ -8348,8 +8348,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
     },
-    "size": 5241,
-    "hash": "JO_KokRTYoaAfg_TXfxIkOm2WSWR9EmmsM5E__718es"
+    "size": 5230,
+    "hash": "0LLzrFtd-OyretNOj-AKWa17Kb_79-iCaTcT0zBy-4I"
    },
    {
     "path": {
@@ -8474,8 +8474,8 @@
     "path": {
      "relative": "packages/smithers/control/src/internal/activeFibers.vibe"
     },
-    "size": 504,
-    "hash": "Ro1pWqDO__6AvALc6QJNmwUlXlbN75-YZXAd2PIJxks"
+    "size": 503,
+    "hash": "7e8njGfAyBf3ZhArPRydoGxyKQdfmWDaeMlYNLSLbNc"
    },
    {
     "path": {
@@ -8593,8 +8593,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/DoneText.vibe"
     },
-    "size": 11989,
-    "hash": "jxb9Nf6x18b8K8N63C7YdI_hmGLyjfay_lKF8pBLWLE"
+    "size": 11987,
+    "hash": "ITfHlYATBZK1hz1QTd-Z4jsbbhiYVj324zG8yuq4DMI"
    },
    {
     "path": {
@@ -8607,8 +8607,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/VacuousVerification.vibe"
     },
-    "size": 14226,
-    "hash": "i6EeEx5OyygjZ1KG-0gQSsa9U84Jvtsa_zepiZqMwSM"
+    "size": 14221,
+    "hash": "YcxZg88wYvFkpUYV3RPOd2YphEyD5ksH5ang-VE3yXs"
    },
    {
     "path": {
@@ -8640,38 +8640,38 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/FsFailure.ts"
+     "relative": "packages/smithers/agent/std/src/internal/FsFailure.vibe"
     },
-    "size": 1804,
-    "hash": "gar_VtClX_Pm7Vlho_hm7wxC_B4ouKMApcJuhV3Iw4M"
+    "size": 1806,
+    "hash": "GfgUQFY4QN0n_hsbIjw8QJkG2sLfNkXMPK2i0reL8YY"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/FileMutation.ts"
+     "relative": "packages/smithers/agent/std/src/internal/FileMutation.vibe"
     },
-    "size": 8584,
-    "hash": "ODWlpP_sRje9x7w8aJ9FDqBDbIDz_DcXDW66_R2gz9c"
+    "size": 8216,
+    "hash": "WjbpLmE4NSe-dlFONlWeTolbqdULqLn9vxJL7GKu4To"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Read.ts"
     },
-    "size": 12303,
-    "hash": "0Pk4Rx7P03cniYmBJpz2hO3Z3FKigjy5MW55j8GQ_3M"
+    "size": 12311,
+    "hash": "YRKcSjTwKiBgJYzI_ErFARYtXqWkIqaQ-6sfav7QhjI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/LanguageServer.vibe"
     },
     "size": 3822,
-    "hash": "iwHe9Uige3SHEB54uNbnh_a_bh6V-RsujsS2YU08F7k"
+    "hash": "cd-9hRbGGACTwvBiNFRCxfjV1zrdLZMDriNArnwxj14"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/Diagnostics.ts"
+     "relative": "packages/smithers/agent/std/src/internal/Diagnostics.vibe"
     },
-    "size": 3807,
-    "hash": "EYkAXgIhm64jc4Ku9XFQMON5eu3G4ykJsFUcql6sWvs"
+    "size": 3731,
+    "hash": "nBZWlWYJhAn0eI3sbIDjGHXVN-JNWsfbSxs6tWjGDCs"
    },
    {
     "path": {
@@ -8684,8 +8684,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Write.ts"
     },
-    "size": 6041,
-    "hash": "9u-kyG2yVSbQTRbQmbvjIbR4vCFUjG2wLsF96fcOk-I"
+    "size": 6049,
+    "hash": "EHKfoSJQtkrcl4NOPGODGNZ0RnnZY8ofgN06GsBhzHE"
    },
    {
     "path": {
@@ -8698,22 +8698,22 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Edit.ts"
     },
-    "size": 13982,
-    "hash": "bCcjALIoZ69VJCTsPTxXBHTiDRKMsIBa2856V5mOCX0"
+    "size": 13990,
+    "hash": "wBQObUlLJXEcKYw2f6G04SAC6_5JxKAcRVR-ar5oiSE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Ls.ts"
     },
-    "size": 7880,
-    "hash": "8jaYEo55kWBVhFy_PYHbyb2xS2Q5yuBvvgSZyKrVAJM"
+    "size": 7884,
+    "hash": "_iXgtVG7paNayd2Nx6Ucke1kZC9LTw71BTldVxEPpq0"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Search.vibe"
     },
-    "size": 4209,
-    "hash": "2rncMUgFJcnZz0rZoF9Qx7-mtO9M4yD5UBSheRr9Q14"
+    "size": 4210,
+    "hash": "9rns3kiK0xL11xkPlLwLRHg1MHNmFU9dw_tPZ_v5VLY"
    },
    {
     "path": {
@@ -8724,52 +8724,52 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/SearchContract.ts"
+     "relative": "packages/smithers/agent/std/src/internal/SearchContract.vibe"
     },
-    "size": 2639,
-    "hash": "sTkVVjCiTjqNjUPDDyg8BuxHE7mbqeGlpOR_UtpgcnE"
+    "size": 2641,
+    "hash": "n_CUFpUEUZ7_9fBtAtxmUB8IlXubCLl0f1KTOqQUhFE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/Ignore.ts"
     },
-    "size": 4854,
-    "hash": "_xjwRdrTHxmsLND-lhCjzoffpvn-0GPqwgTFPtaRRNs"
+    "size": 4856,
+    "hash": "QfXMoghuXtFybLFLfAbEO69VL0A0Blb0nHlyNRxPy4E"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/Walk.ts"
+     "relative": "packages/smithers/agent/std/src/internal/Walk.vibe"
     },
-    "size": 6818,
-    "hash": "X7QHApGX8XPNGq5dS4IVnf5hNeX0qki7t_0EbptjVtc"
+    "size": 6909,
+    "hash": "-VoUUXm6Np_mxjnTPiHVC6i7Ft0c7ExCfOhjIZ2JzfM"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/SearchContract.ts"
+     "relative": "packages/smithers/agent/std/src/SearchContract.vibe"
     },
-    "size": 19740,
-    "hash": "eT1_Eprxed6IIt3taKPEXGN86V9xuACGFpVev-Yh9pE"
+    "size": 19459,
+    "hash": "8laLLuJFn09AMA4F4XDVZKacM_21sAOgYNArte8kja4"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Glob.ts"
     },
-    "size": 7412,
-    "hash": "r2pG6mIwxLu3VoK8Z7vJeWITxLe-ZPb-Wdg8yf5T3kI"
+    "size": 7416,
+    "hash": "Q85DX4i2yNvbag2TsIdkV3Mdd1BMHl1dkPfhnlUCI4c"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Grep.ts"
     },
-    "size": 12707,
-    "hash": "GoE3za7dKnehdG5vccjFpNT53mum_lF8wKYHtqhe0XA"
+    "size": 12713,
+    "hash": "nD2vK-tVaPdICtNc4woMfG_hbmwJdrR7eppsQDi6gmo"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/SearchConformance.ts"
+     "relative": "packages/smithers/agent/std/src/SearchConformance.vibe"
     },
-    "size": 10764,
-    "hash": "L8G8-LM64JwqQXG66Wo3eKIWFbhZTDTdaWukOJwaMaA"
+    "size": 10589,
+    "hash": "nmIOmQulQbsP21_rlkDOVJBU2xXivIzquzrsxBQY7Iw"
    },
    {
     "path": {
@@ -8789,15 +8789,15 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/PortableSearch.ts"
     },
-    "size": 11326,
-    "hash": "zjUVA4jIWNqOtDnzssLGYc_wsY8Hm_JqHCkRlFgUnBM"
+    "size": 11334,
+    "hash": "Fg3p3F1YK-vE05z1khA3YOKqKK8Q5HHUJckIkUdNWso"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/NativeSearch.ts"
     },
-    "size": 18073,
-    "hash": "fNVUZSiFDSp-O51BGn74vTRxwXS_hIor24Shi179ufU"
+    "size": 18079,
+    "hash": "HYIDGibKsRCfkS5U2uVlNZc9XQb7HxHeMVVA4QvhszA"
    },
    {
     "path": {
@@ -8810,29 +8810,29 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/RemoteTree.vibe"
     },
-    "size": 5492,
-    "hash": "9DzWZUNn3x8FaC_9Qjz1T7KTePWsSOxFHIG9OEBp7AE"
+    "size": 5488,
+    "hash": "zwRae9nnpLEYy42QZWZYzoICQd8TBBGaJhUV3IhmTYk"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/RemoteSearch.ts"
     },
-    "size": 9025,
-    "hash": "zXfOTt42p1fdr-ArPQJv0_FPlZqhsCz_-A66R1TRgzA"
+    "size": 9027,
+    "hash": "3ujW31lzdIhCDfJ493Cs_dy2xheTAsyjA-6PAgc5oL4"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/EnvelopePrecheck.ts"
     },
-    "size": 17805,
-    "hash": "fLIzGocqv4pl2VkEcjlI2Lg8a7Jk-7F_nNHTA0n0Le8"
+    "size": 17807,
+    "hash": "fZuujYpwqZcWCXm4ECUpfdR6ZnDCVWPQL6oA44XqBxQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Probe.ts"
     },
-    "size": 11483,
-    "hash": "zix1iiSvNKNKgoZjBZCtjcKKeDqJscnLVBLFgtVqfZs"
+    "size": 11485,
+    "hash": "sjB10GKHIQ5psv-SXTRNDgHbnEllLFENgdqefw6GdxQ"
    },
    {
     "path": {
@@ -8845,8 +8845,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Bash.ts"
     },
-    "size": 24310,
-    "hash": "Vpszqp7_p0JA8InxWY3N-1BnPh0umH-OqZEzJGD1YzE"
+    "size": 24314,
+    "hash": "5YYwkjyBNH9FkygQf4I0Z_mnuhxdoJh_ra75LT3FAcY"
    },
    {
     "path": {
@@ -8859,12 +8859,12 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/TestRun.ts"
     },
-    "size": 14462,
-    "hash": "jBtaRfLNZzJ639rpiiGr_L8t2t7qWCGPAL2RXjKeTsk"
+    "size": 14466,
+    "hash": "L623aMZGJK8b-dijX96H-iblIFGOM_wUVkrOP1BKpW0"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/ApplyPatch.ts"
+     "relative": "packages/smithers/agent/std/src/internal/ApplyPatch.vibe"
     },
     "size": 19446,
     "hash": "eLfKDUUA3z1-FX0goWalaIcd0hR9C586BaxQyUuMdXA"
@@ -8873,8 +8873,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/ApplyPatch.ts"
     },
-    "size": 16405,
-    "hash": "JPFLWacAlJgeQprld4geDjXT_NanbJRKMImP1fTaKtw"
+    "size": 16415,
+    "hash": "wkRVDEOdg66F7NIIdXCSJM66GbvqQgG2MslfQenEr-4"
    },
    {
     "path": {
@@ -8887,15 +8887,15 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/ShellCommand.ts"
     },
-    "size": 5996,
-    "hash": "Furdu-fRkV8aUcz8cW7mclwe2JSEbfCrTGlxHYx7GrA"
+    "size": 5998,
+    "hash": "gOtKnnxnHqFmUVzvYoFaVBzrlN_tvjXt6dAVmG0aYRQ"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/UpdatePlan.ts"
+     "relative": "packages/smithers/agent/std/src/UpdatePlan.vibe"
     },
-    "size": 4704,
-    "hash": "_jm5repweLI17nybu2Di5KgA4Rp2xtkjFyAUNMJDlWI"
+    "size": 4857,
+    "hash": "9StWeKbTof5O_c9yMmQOE3oDJr1-1kn-730zu0Wwl14"
    },
    {
     "path": {
@@ -8915,15 +8915,15 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/HttpNetwork.ts"
     },
-    "size": 4818,
-    "hash": "lwCEW2kCc8hTqDvEXaiRdCN__9uUZC5hFCKppD1SqX4"
+    "size": 4820,
+    "hash": "Y35cGSob9eyhtc1TyF8iWc-yl5bsohskbgDwLWbgq20"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/Http.ts"
     },
-    "size": 6531,
-    "hash": "g1SJja321ehnEKjbcSZvAEsbsJrCzUsE8qUlFOcr_34"
+    "size": 6533,
+    "hash": "CUzZIPpREDSeEjf-B_VTy-Cmer2tZTzNkSu9m6359iQ"
    },
    {
     "path": {
@@ -8957,43 +8957,43 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/WebFetch.ts"
     },
-    "size": 7397,
-    "hash": "4278z0DAuL1nIcHBGqgCeUxRx2Oby0z-95wUIJbhoSc"
+    "size": 7399,
+    "hash": "HCvjdUit1h5REHye-5S02X-5P6Ax8c_gwrKa0CWrXEY"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/WebSearch.ts"
+     "relative": "packages/smithers/agent/std/src/WebSearch.vibe"
     },
-    "size": 4729,
-    "hash": "QBSOvNfUrbnwc1TF5olcQS-nb4p7y3ZCJsy-4LC7Dzo"
+    "size": 4795,
+    "hash": "42lsug21hLZFCP0nEZPkdpmq42kgcp4wUUnTYFjt4YU"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/ExaWebSearch.ts"
     },
-    "size": 6405,
-    "hash": "WmtzUkwBN0gcXGU9ARD2paABEk90hit3Tj7jeZ-FqWY"
+    "size": 6409,
+    "hash": "20DFSDu-ts9MSSA5Aio28VAxx9ko0WAc_t2XqkNJ1UU"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Lsp.ts"
     },
-    "size": 6042,
-    "hash": "8I0DSkZ8HmG635ba6Pr0agPhxH9tfLPDgIvqxxQAvN4"
+    "size": 6046,
+    "hash": "IrpJ274qvZmEXZwtZL3IHIp5aUo0uQndt92961ycKsg"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Manifest.ts"
     },
-    "size": 4407,
-    "hash": "rsQlp2ZdNPX7Sk5LYEv_ar825l3Mb-MVfFmpcOBuo7E"
+    "size": 4411,
+    "hash": "gAOEYa-oem5bTsFWti4-FvvuGv5yT49LlAemUdL17zE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/index.ts"
     },
-    "size": 2992,
-    "hash": "t29YFsfG2iQyHdAq3n7aq1tCrA2OCSXANxRtFdNz0UI"
+    "size": 3004,
+    "hash": "E6SZ4q1mKn8SuFrl53oiLckbwQ1cw4eDirokY3kUH6Y"
    },
    {
     "path": {
@@ -9022,6 +9022,41 @@
     },
     "size": 19130,
     "hash": "GTEXv3myV_MlrAZaS7eIgFc-mYnspHEv-MSi26wVggE"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/engine-store/src/EngineStoreMetrics.ts"
+    },
+    "size": 15846,
+    "hash": "7kr3VDF3aTIUnEjimivLENEvVBqoOVT_6x_7zLkoU1M"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/engine-store/src/internal/FileBoundarySnapshot.ts"
+    },
+    "size": 1284,
+    "hash": "E6t1WyANI8U2g6YGAacpe5al6ALoOf_QZ70NO_s7gSs"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/engine-store/src/internal/FileEnumeration.ts"
+    },
+    "size": 12377,
+    "hash": "UeP7VxCFJConFEIUZPqKI3CjKLRtR92ZA6IqMa26T2s"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/engine-store/src/internal/Ordering.ts"
+    },
+    "size": 348,
+    "hash": "vZGNmzn3t66scWre9iSKDJvDL2ZnDnR1tH5o5anxHws"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/engine-store/src/WorkspaceSandbox.ts"
+    },
+    "size": 67126,
+    "hash": "gM0jnoR562bAo2PyuW79AFwVZZqj7sdc-MEkT9vLUx8"
    },
    {
     "path": {
@@ -9158,27 +9193,6 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/engine-store/src/internal/FileBoundarySnapshot.ts"
-    },
-    "size": 1284,
-    "hash": "E6t1WyANI8U2g6YGAacpe5al6ALoOf_QZ70NO_s7gSs"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/engine-store/src/internal/FileEnumeration.ts"
-    },
-    "size": 12377,
-    "hash": "UeP7VxCFJConFEIUZPqKI3CjKLRtR92ZA6IqMa26T2s"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/engine-store/src/internal/Ordering.ts"
-    },
-    "size": 348,
-    "hash": "vZGNmzn3t66scWre9iSKDJvDL2ZnDnR1tH5o5anxHws"
-   },
-   {
-    "path": {
      "relative": "packages/smithers/flows/engine-store/src/StepBoundary.ts"
     },
     "size": 53279,
@@ -9230,8 +9244,8 @@
     "path": {
      "relative": "packages/smithers/flows/step-cache/src/CacheStoreMetrics.vibe"
     },
-    "size": 4517,
-    "hash": "hTNIDUNgFJ9Xy8FK8DqbA7rxp9Ejhu1P0no0M6V3tj0"
+    "size": 4510,
+    "hash": "ddedd35rIVTSgnQM5lpUjqy2XPCl7fbrarVkrfRVYhE"
    },
    {
     "path": {
@@ -9377,15 +9391,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/Encoded.vibe"
     },
-    "size": 15365,
-    "hash": "ePdnivZA8MDmCtMUVOSeLRLJzoM3dfFwudXpQMMX_5I"
+    "size": 15350,
+    "hash": "pRQXTh_-X81irAiJXXamyVG2X9qXwZjvwXr3fBUSIq4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
     },
-    "size": 2224,
-    "hash": "wU_2S9aIe6CLhOhWz7TsA9p3vINTxD8o4Jh2tnx527A"
+    "size": 2221,
+    "hash": "0b4AvKWi513qOmacbu7zpMSsNZ5Bjscf82CWUZgnpLs"
    },
    {
     "path": {
@@ -9405,8 +9419,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/SnapshotBoundary.vibe"
     },
-    "size": 1488,
-    "hash": "kdlJBqK9sGgXpptwPI6kbpk-9Y3WEpcUrsuy-DYCZZo"
+    "size": 1483,
+    "hash": "RNyG78FFKArZrOc08jPVo0atR2pF7WPQCBEdugoxOyE"
    },
    {
     "path": {
@@ -9543,13 +9557,6 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/engine-store/src/EngineStoreMetrics.ts"
-    },
-    "size": 15846,
-    "hash": "7kr3VDF3aTIUnEjimivLENEvVBqoOVT_6x_7zLkoU1M"
-   },
-   {
-    "path": {
      "relative": "packages/smithers/flows/engine-store/src/EventTypes.ts"
     },
     "size": 983,
@@ -9575,13 +9582,6 @@
     },
     "size": 3425,
     "hash": "L7qxTSsj8MBxxv7z8BaFWciFzwPov6X-cWDWcnsIOlI"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/engine-store/src/WorkspaceSandbox.ts"
-    },
-    "size": 67126,
-    "hash": "gM0jnoR562bAo2PyuW79AFwVZZqj7sdc-MEkT9vLUx8"
    },
    {
     "path": {
@@ -9839,8 +9839,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine-store/src/RunInspection.ts"
     },
-    "size": 37651,
-    "hash": "x7Ypw-foOjcFGIGJ8M34g7E5VcS24_U7Rz6FneaJY94"
+    "size": 37649,
+    "hash": "bs8mQKGPrVSgszWPhkzlK_EtoeCBwwZMb8RAHFPsZAo"
    },
    {
     "path": {
@@ -10112,8 +10112,8 @@
     "path": {
      "relative": "packages/smithers/agent/src/internal/PendingApproval.vibe"
     },
-    "size": 2275,
-    "hash": "OFH7HKWWFiLnOxgkXFmopEtvBmR9fcRz9-41mDmW21A"
+    "size": 2273,
+    "hash": "j28ohSoPqx4rs_3oDRdopo9P2vGQPX1Krhe2lY_lx7U"
    },
    {
     "path": {
@@ -10189,8 +10189,8 @@
     "path": {
      "relative": "packages/smithers/flows/platform-node/src/internal/AtomicHelperFault.vibe"
     },
-    "size": 2411,
-    "hash": "CY-ez8JCkl6EF9duHUxlfzFr2ROKf9ShXDaU_GZsyf8"
+    "size": 2407,
+    "hash": "XznP-GJBTCSqFOLo6dIGhMnqGeFiDOgrzhkvKQPxL0I"
    },
    {
     "path": {
@@ -10203,8 +10203,8 @@
     "path": {
      "relative": "packages/smithers/flows/platform-node/src/internal/AtomicHelperError.vibe"
     },
-    "size": 1362,
-    "hash": "1gdo-qz198ljSPjf9gVldwONkPI90LBgvCI30FhHlmg"
+    "size": 1360,
+    "hash": "YPi6uyrn7PPpHTSbTS9pbz-IJ9oqh2LRwNewXqeNZE0"
    },
    {
     "path": {
@@ -11477,8 +11477,8 @@
     "path": {
      "relative": "packages/smithers/migrate/src/flow/Repair.vibe"
     },
-    "size": 1683,
-    "hash": "iMWBr-BjzQwn22ykC4pwLjxGRTYOyFhQaY3N7X19yDw"
+    "size": 1681,
+    "hash": "B41cQv1f_v_rSlbIt_ouTkJCcUkjXmew095pSP9CKvo"
    },
    {
     "path": {
@@ -12598,10 +12598,10 @@
     "relative": "packages/smithers/agent/model/src/FailureCopy.vibe"
    },
    {
-    "relative": "packages/smithers/agent/model/src/WireTrace.ts"
+    "relative": "packages/smithers/agent/model/src/WireTrace.vibe"
    },
    {
-    "relative": "packages/smithers/agent/model/src/internal/WireTrace.ts"
+    "relative": "packages/smithers/agent/model/src/internal/WireTrace.vibe"
    },
    {
     "relative": "packages/smithers/agent/model/src/OpenAIChatCompletions.ts"
@@ -12748,7 +12748,7 @@
     "relative": "packages/smithers/agent/memory/src/internal/ResolveNamespace.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/Store.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
@@ -12772,10 +12772,10 @@
     "relative": "packages/smithers/agent/memory/src/internal/MemoryIndexes.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/Migrations.ts"
@@ -12796,7 +12796,7 @@
     "relative": "packages/smithers/flows/patterns/src/internal/Decorate.ts"
    },
    {
-    "relative": "packages/smithers/flows/patterns/src/Pattern.ts"
+    "relative": "packages/smithers/flows/patterns/src/Pattern.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/Recall.ts"
@@ -12838,10 +12838,10 @@
     "relative": "packages/smithers/agent/plugin/src/Resolve.vibe"
    },
    {
-    "relative": "packages/smithers/agent/plugin/src/Plugins.vibe"
+    "relative": "packages/smithers/agent/plugin/src/Plugins.ts"
    },
    {
-    "relative": "packages/smithers/agent/plugin/src/Kernel.vibe"
+    "relative": "packages/smithers/agent/plugin/src/Kernel.ts"
    },
    {
     "relative": "packages/smithers/agent/plugin/src/internal/path.ts"
@@ -12877,7 +12877,7 @@
     "relative": "packages/smithers/agent/plugin/src/index.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/StdError.ts"
+    "relative": "packages/smithers/agent/std/src/StdError.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/Container.vibe"
@@ -12898,7 +12898,7 @@
     "relative": "packages/smithers/agent/std/src/internal/Prune.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/TestRunner.ts"
+    "relative": "packages/smithers/agent/std/src/TestRunner.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/Relocate.vibe"
@@ -13168,10 +13168,10 @@
     "relative": "packages/smithers/agent/std/src/internal/Declaration.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/FsFailure.ts"
+    "relative": "packages/smithers/agent/std/src/internal/FsFailure.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/FileMutation.ts"
+    "relative": "packages/smithers/agent/std/src/internal/FileMutation.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/Read.ts"
@@ -13180,7 +13180,7 @@
     "relative": "packages/smithers/agent/std/src/LanguageServer.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/Diagnostics.ts"
+    "relative": "packages/smithers/agent/std/src/internal/Diagnostics.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/Preserve.ts"
@@ -13204,16 +13204,16 @@
     "relative": "packages/smithers/agent/std/src/internal/LinearRegex.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/SearchContract.ts"
+    "relative": "packages/smithers/agent/std/src/internal/SearchContract.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/Ignore.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/Walk.ts"
+    "relative": "packages/smithers/agent/std/src/internal/Walk.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/SearchContract.ts"
+    "relative": "packages/smithers/agent/std/src/SearchContract.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/Glob.ts"
@@ -13222,7 +13222,7 @@
     "relative": "packages/smithers/agent/std/src/Grep.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/SearchConformance.ts"
+    "relative": "packages/smithers/agent/std/src/SearchConformance.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/Symbols.ts"
@@ -13264,7 +13264,7 @@
     "relative": "packages/smithers/agent/std/src/TestRun.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/ApplyPatch.ts"
+    "relative": "packages/smithers/agent/std/src/internal/ApplyPatch.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/ApplyPatch.ts"
@@ -13276,7 +13276,7 @@
     "relative": "packages/smithers/agent/std/src/ShellCommand.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/UpdatePlan.ts"
+    "relative": "packages/smithers/agent/std/src/UpdatePlan.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/IpAddress.ts"
@@ -13306,7 +13306,7 @@
     "relative": "packages/smithers/agent/std/src/WebFetch.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/WebSearch.ts"
+    "relative": "packages/smithers/agent/std/src/WebSearch.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/ExaWebSearch.ts"
@@ -13331,6 +13331,21 @@
    },
    {
     "relative": "packages/smithers/agent/src/WorkspaceObservation.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/engine-store/src/EngineStoreMetrics.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/engine-store/src/internal/FileBoundarySnapshot.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/engine-store/src/internal/FileEnumeration.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/engine-store/src/internal/Ordering.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/engine-store/src/WorkspaceSandbox.ts"
    },
    {
     "relative": "packages/smithers/agent/src/WorkspaceSandbox.ts"
@@ -13388,15 +13403,6 @@
    },
    {
     "relative": "packages/smithers/flows/artifacts/src/ArtifactSweep.ts"
-   },
-   {
-    "relative": "packages/smithers/flows/engine-store/src/internal/FileBoundarySnapshot.ts"
-   },
-   {
-    "relative": "packages/smithers/flows/engine-store/src/internal/FileEnumeration.ts"
-   },
-   {
-    "relative": "packages/smithers/flows/engine-store/src/internal/Ordering.ts"
    },
    {
     "relative": "packages/smithers/flows/engine-store/src/StepBoundary.ts"
@@ -13531,9 +13537,6 @@
     "relative": "packages/smithers/flows/engine/src/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/engine-store/src/EngineStoreMetrics.ts"
-   },
-   {
     "relative": "packages/smithers/flows/engine-store/src/EventTypes.ts"
    },
    {
@@ -13544,9 +13547,6 @@
    },
    {
     "relative": "packages/smithers/flows/engine-store/src/ReplayOnly.ts"
-   },
-   {
-    "relative": "packages/smithers/flows/engine-store/src/WorkspaceSandbox.ts"
    },
    {
     "relative": "packages/smithers/flows/engine-store/src/StepSandbox.ts"
@@ -13874,7 +13874,7 @@
       "relative": "packages/smithers/migrate/src/Inventory.vibe"
      }
     ],
-    "code": "/**\n * The per-file construct inventory.\n *\n * `Detect` says which files matter. This module says what is in them: every\n * JSX element whose tag resolves to a Smithers 0.x component, every `ctx`\n * accessor, every agent constructor, every runtime call, and every named\n * import of the old facade. Each hit carries the props that are present,\n * because a prop is what raises a construct's class (`Mapping.classify`).\n *\n * Resolution is syntactic. A tag counts only when its identifier comes from an\n * old import or from destructuring a `createSmithers` factory, so a workflow\n * written against a foreign authoring API contributes nothing and is reported\n * as `unknown-authoring-api` instead of being mistranslated.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as ts from \"typescript/unstable/ast\";\nimport * as Constructs from \"./Constructs.js\";\nimport * as Detect from \"./Detect.js\";\nimport * as Sort from \"./internal/Sort.js\";\nimport * as Ts from \"./internal/Ts.js\";\n/**\n * The names `createSmithers` destructures into. Anything else in the pattern is\n * project code and is left alone.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const factoryBindings = [\n    \"Approval\",\n    \"ApprovalGate\",\n    \"Branch\",\n    \"ContinueAsNew\",\n    \"HumanTask\",\n    \"Loop\",\n    \"Memory\",\n    \"MergeQueue\",\n    \"Monitor\",\n    \"Panel\",\n    \"Parallel\",\n    \"Ralph\",\n    \"Sandbox\",\n    \"Sequence\",\n    \"Signal\",\n    \"Subflow\",\n    \"Task\",\n    \"Timer\",\n    \"TUI\",\n    \"UI\",\n    \"WaitForEvent\",\n    \"Worktree\",\n    \"Workflow\",\n    \"close\",\n    \"continueAsNew\",\n    \"db\",\n    \"outputs\",\n    \"smithers\",\n    \"tables\",\n    \"useCtx\",\n];\nconst runtimeCalls = new Set(Constructs.byKind(\"runtime\").map((entry) => entry.name).concat(Constructs.byKind(\"store\").map((entry) => entry.name), Constructs.byKind(\"server\").map((entry) => entry.name), [\"defineTool\", \"createHttpTool\", \"createOpenApiTools\"]));\nconst agentNames = new Set(Constructs.byKind(\"agent\").map((entry) => entry.name));\nconst ctxMethods = new Set(Constructs.byKind(\"ctx\").map((entry) => entry.name.slice(\"ctx.\".length)));\n/**\n * The names of local functions that hand back a `createSmithers` result.\n *\n * The old examples wrap the factory (`createExampleSmithers` in\n * `examples/_example-kit.js`), so a scanner that only knows the literal name\n * misses every component in every example. Collecting the wrappers first, from\n * the same file set, resolves them without evaluating anything.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const factoryNames = (sources, parse = Ts.parse) => {\n    const names = new Set([\"createSmithers\", \"createSmithersPostgres\", \"createSmithersCloudflare\"]);\n    for (const [file, text] of sources) {\n        if (!/\\bcreateSmithers\\w*\\s*\\(/.test(text))\n            continue;\n        const parsed = parse(file, text);\n        Ts.forEachNode(parsed, (node) => {\n            if (ts.isFunctionDeclaration(node) && node.name !== undefined && node.body !== undefined) {\n                if (/\\bcreateSmithers\\w*\\s*\\(/.test(node.body.getText()))\n                    names.add(node.name.text);\n                return;\n            }\n            if (ts.isVariableDeclaration(node)\n                && ts.isIdentifier(node.name)\n                && node.initializer !== undefined\n                && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))\n                && /\\bcreateSmithers\\w*\\s*\\(/.test(node.initializer.getText())) {\n                names.add(node.name.text);\n            }\n        });\n    }\n    return names;\n};\nconst attributeDetail = (node, props) => {\n    const detail = {};\n    for (const prop of props) {\n        const text = Ts.attributeText(node, prop);\n        if (text !== undefined)\n            detail[prop] = text;\n    }\n    return detail;\n};\n/** The members a factory binding is read through, by their catalog shape. */\nconst memberConstructs = {\n    outputs: \"outputs.<key>\",\n    tables: \"tables.<key>\",\n    db: \"db.<member>\",\n};\n/** The factory bindings that are called rather than read. */\nconst factoryCalls = new Set([\"smithers\", \"close\", \"useCtx\", \"continueAsNew\"]);\n/** The initializer of every `const` in a file, by the name it binds. */\nconst initializers = (source) => {\n    const found = new Map();\n    Ts.forEachNode(source, (node) => {\n        if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || node.initializer === undefined)\n            return;\n        if (found.has(node.name.text))\n            return;\n        found.set(node.name.text, node.initializer);\n    });\n    return found;\n};\n/** The string a property of an object literal holds, when it holds one. */\nconst stringProperty = (node, name) => {\n    for (const property of node.properties) {\n        if (!ts.isPropertyAssignment(property))\n            continue;\n        if (property.name === undefined || !ts.isIdentifier(property.name) || property.name.text !== name)\n            continue;\n        if (ts.isStringLiteral(property.initializer) || ts.isNoSubstitutionTemplateLiteral(property.initializer)) {\n            return property.initializer.text;\n        }\n    }\n    return undefined;\n};\n/** The value expression a property of an object literal holds. */\nconst property = (node, name) => {\n    for (const item of node.properties) {\n        if (!ts.isPropertyAssignment(item))\n            continue;\n        if (item.name === undefined || !ts.isIdentifier(item.name) || item.name.text !== name)\n            continue;\n        return item.initializer;\n    }\n    return undefined;\n};\n/**\n * The model and provider an agent construction names.\n *\n * `new Agent({ model: anthropic(\"claude-sonnet-5\") })` yields\n * `{ provider: \"anthropic\", model: \"claude-sonnet-5\" }`, and a bare string\n * model yields the model alone. Anything else yields nothing, because a seat\n * the tool cannot read out of the source is a seat it must not write.\n */\nconst agentDetail = (expression) => {\n    const detail = {};\n    const argument = ts.isNewExpression(expression) || ts.isCallExpression(expression)\n        ? expression.arguments?.[0]\n        : undefined;\n    if (argument === undefined || !ts.isObjectLiteralExpression(argument))\n        return detail;\n    const instructions = stringProperty(argument, \"instructions\") ?? stringProperty(argument, \"system\");\n    if (instructions !== undefined)\n        detail[\"agentInstructions\"] = instructions;\n    const model = property(argument, \"model\");\n    if (model === undefined)\n        return detail;\n    if (ts.isStringLiteral(model)) {\n        detail[\"agentModel\"] = model.text;\n        return detail;\n    }\n    if (ts.isCallExpression(model) && ts.isIdentifier(model.expression)) {\n        const first = model.arguments[0];\n        if (first !== undefined && ts.isStringLiteral(first)) {\n            detail[\"agentProvider\"] = model.expression.text;\n            detail[\"agentModel\"] = first.text;\n        }\n    }\n    return detail;\n};\n/** Joins a POSIX-style project path with a relative import specifier. */\nconst resolveRelative = (from, specifier) => {\n    const parts = from.split(\"/\").slice(0, -1);\n    for (const segment of specifier.split(\"/\")) {\n        if (segment === \".\" || segment === \"\")\n            continue;\n        if (segment === \"..\")\n            parts.pop();\n        else\n            parts.push(segment);\n    }\n    return parts.join(\"/\");\n};\nconst entry = (file, source, node, construct, props, detail) => {\n    const position = Ts.positionOf(source, node);\n    const sorted = [...props].sort();\n    return detail === undefined\n        ? { file, ...position, construct, props: sorted }\n        : { file, ...position, construct, props: sorted, detail };\n};\n/**\n * Scans one file and returns its construct hits.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const scanFile = (file, text, options) => {\n    const parse = options.parse ?? Ts.parse;\n    const source = parse(file, text);\n    const hits = [];\n    const locals = initializers(source);\n    // Local name to catalog name, for everything that came from an old import or\n    // from destructuring a factory.\n    const bound = new Map();\n    // The local names a foreign authoring API binds. Plue's `issue-pipeline.tsx`\n    // imports `createSmithers` from `@smithers-ai/workflow` and `Worktree` from\n    // `smithers-orchestrator` in the same file, so the factory has to be judged\n    // by where it came from, not by its name.\n    const foreign = new Set();\n    for (const record of Ts.imports(source)) {\n        if (Detect.foreignAuthoringApis.includes(record.specifier)) {\n            for (const [local] of record.names)\n                foreign.add(local);\n            if (record.namespace !== undefined)\n                foreign.add(record.namespace);\n        }\n    }\n    for (const record of Ts.imports(source)) {\n        const specifier = record.specifier;\n        const old = specifier === \"smthrs\"\n            || specifier === \"smithers\"\n            || specifier === \"smithers-orchestrator\"\n            || specifier.startsWith(\"smthrs/\")\n            || specifier.startsWith(\"smithers/\")\n            || specifier.startsWith(\"smithers-orchestrator/\")\n            || specifier.startsWith(\"@smithers/\")\n            || specifier.startsWith(\"@smthrs/\");\n        // A pack splits the factory across files: one module calls\n        // `createSmithers` and re-exports the bindings, and every workflow imports\n        // them from there. Without this the whole pack scans as zero constructs.\n        const reexported = options.reexports?.(specifier);\n        if (reexported !== undefined) {\n            for (const [local, name] of record.names) {\n                const resolved = reexported.get(name);\n                if (resolved !== undefined)\n                    bound.set(local, resolved);\n            }\n        }\n        if (!old)\n            continue;\n        for (const [local, imported] of record.names)\n            bound.set(local, imported);\n    }\n    // The `createSmithers` output-table schemas, by key, so `output={outputs.x}`\n    // resolves to the zod chain the project actually wrote.\n    const schemas = new Map();\n    Ts.forEachNode(source, (node) => {\n        if (ts.isVariableDeclaration(node)\n            && ts.isObjectBindingPattern(node.name)\n            && node.initializer !== undefined\n            && ts.isCallExpression(node.initializer)\n            && options.factories.has(Ts.calleeName(node.initializer))\n            // A foreign `createSmithers` hands back a foreign `Workflow` and a\n            // foreign `Task`. Binding them would file that project's props against\n            // 0.x components that never declared them.\n            && !foreign.has(Ts.calleeName(node.initializer))) {\n            for (const [local, imported] of Ts.destructuredNames(node.name)) {\n                if (factoryBindings.includes(imported))\n                    bound.set(local, imported);\n            }\n            const first = node.initializer.arguments[0];\n            if (first !== undefined && ts.isObjectLiteralExpression(first)) {\n                for (const item of first.properties) {\n                    if (!ts.isPropertyAssignment(item) || item.name === undefined || !ts.isIdentifier(item.name))\n                        continue;\n                    const value = ts.isIdentifier(item.initializer)\n                        ? locals.get(item.initializer.text)?.getText()\n                        : item.initializer.getText();\n                    if (value !== undefined)\n                        schemas.set(item.name.text, value);\n                }\n            }\n        }\n    });\n    /** The zod chain an `output` prop resolves to, through `outputs.<key>`. */\n    const outputChain = (value) => {\n        if (value === undefined)\n            return undefined;\n        const parts = value.split(\".\");\n        if (parts.length === 2 && bound.get(parts[0] ?? \"\") === \"outputs\")\n            return schemas.get(parts[1] ?? \"\");\n        const local = locals.get(value)?.getText();\n        return local !== undefined && /^z\\s*\\./.test(local) ? local : undefined;\n    };\n    /** The `.mdx` element the children of a task render, when there is one. */\n    const promptElement = (children) => {\n        const specifiers = new Map();\n        for (const record of Ts.imports(source)) {\n            if (!record.specifier.endsWith(\".mdx\"))\n                continue;\n            for (const [local, imported] of record.names) {\n                if (imported === \"default\")\n                    specifiers.set(local, record.specifier);\n            }\n        }\n        const found = [];\n        const visit = (node) => {\n            if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {\n                if (specifiers.has(Ts.tagName(node)))\n                    found.push(node);\n            }\n            node.forEachChild(visit);\n        };\n        for (const child of children)\n            visit(child);\n        return found.length === 1 ? found[0] : undefined;\n    };\n    /** The specifier one prompt element imports its body from. */\n    const promptSpecifier = (element) => {\n        for (const record of Ts.imports(source)) {\n            if (!record.specifier.endsWith(\".mdx\"))\n                continue;\n            for (const [local, imported] of record.names) {\n                if (imported === \"default\" && local === Ts.tagName(element))\n                    return record.specifier;\n            }\n        }\n        return undefined;\n    };\n    /** The zod chain one field of an object chain holds. */\n    const fieldChain = (chain, field) => {\n        if (chain === undefined)\n            return undefined;\n        const parsed = parse(\"chain.ts\", `const value = ${chain}`);\n        let found;\n        Ts.forEachNode(parsed, (node) => {\n            if (found !== undefined || !ts.isPropertyAssignment(node))\n                return;\n            if (node.name === undefined || node.name.getText() !== field)\n                return;\n            found = node.initializer.getText();\n        });\n        return found;\n    };\n    /** The zod chain each key of a `deps` prop resolves to. */\n    const depsChains = (text) => {\n        const found = new Map();\n        if (text === undefined)\n            return found;\n        const parsed = parse(\"deps.ts\", `const value = (${text})`);\n        Ts.forEachNode(parsed, (node) => {\n            if (!ts.isPropertyAssignment(node) || node.name === undefined)\n                return;\n            const chain = outputChain(node.initializer.getText());\n            if (chain !== undefined)\n                found.set(node.name.getText(), chain);\n        });\n        return found;\n    };\n    /**\n     * The payload fields a step reads, as zod chains, or `undefined` when one of\n     * them cannot be resolved from the source.\n     *\n     * A step's payload is not guessed. It is the `deps` the source declared, or,\n     * for a prompt, the value expression behind each prompt prop: `deps.<key>`\n     * fields resolve through the declared output schema and `ctx.input.<field>`\n     * through the factory's `input` schema. Anything else leaves the payload\n     * unresolved, and the hit becomes a guided decision.\n     */\n    const payloadFields = (node, prompt) => {\n        const deps = depsChains(Ts.attributeText(node, \"deps\"));\n        if (prompt === undefined) {\n            const fields = {};\n            for (const [key, chain] of deps)\n                fields[key] = chain;\n            return fields;\n        }\n        const fields = {};\n        for (const name of Ts.attributeNames(prompt)) {\n            if (name === \"...\")\n                return undefined;\n            const value = Ts.attributeText(prompt, name);\n            if (value === undefined)\n                return undefined;\n            const parts = value.split(\".\");\n            const chain = parts.length === 3 && parts[0] === \"deps\"\n                ? fieldChain(deps.get(parts[1] ?? \"\"), parts[2] ?? \"\")\n                : parts.length === 3 && parts[0] === \"ctx\" && parts[1] === \"input\"\n                    ? fieldChain(schemas.get(\"input\"), parts[2] ?? \"\")\n                    : undefined;\n            if (chain === undefined)\n                return undefined;\n            fields[name] = chain;\n        }\n        return fields;\n    };\n    /**\n     * The expression behind each value a step reads, as the source wrote it:\n     * `ctx.input.topic`, or `deps.research.summary`.\n     *\n     * `undefined` when any of them is anything else. {@link payloadFields} gives\n     * the *type* of each value; this gives *where it comes from*, which is what a\n     * group's rewrite needs to thread one step's answer into the next one's call.\n     */\n    const payloadSources = (node, prompt) => {\n        const deps = depsChains(Ts.attributeText(node, \"deps\"));\n        if (prompt === undefined) {\n            const fields = {};\n            for (const key of deps.keys())\n                fields[key] = `deps.${key}`;\n            return fields;\n        }\n        const fields = {};\n        for (const name of Ts.attributeNames(prompt)) {\n            if (name === \"...\")\n                return undefined;\n            const value = Ts.attributeText(prompt, name);\n            if (value === undefined)\n                return undefined;\n            const parts = value.split(\".\");\n            const known = (parts.length === 3 && parts[0] === \"deps\" && deps.has(parts[1] ?? \"\"))\n                || (parts.length === 3 && parts[0] === \"ctx\" && parts[1] === \"input\");\n            if (!known)\n                return undefined;\n            fields[name] = value;\n        }\n        return fields;\n    };\n    /**\n     * The catalog components inside a list of nodes, as `Construct:id` pairs.\n     *\n     * The walk stops at the first component on each path, so a group records its\n     * own steps and not their steps' steps, and it descends through whatever the\n     * source wraps them in: a fragment, a conditional, an array, or a prop\n     * value.\n     */\n    const componentsIn = (nodes) => {\n        const found = [];\n        const visit = (node) => {\n            const opening = ts.isJsxElement(node)\n                ? node.openingElement\n                : ts.isJsxSelfClosingElement(node)\n                    ? node\n                    : undefined;\n            if (opening !== undefined) {\n                const construct = bound.get(Ts.tagName(opening));\n                if (construct !== undefined && Constructs.isComponent(construct)) {\n                    // Only a literal id. An id the source computes — Plue's\n                    // `id={`${id}:review-claude`}` — is not a name this tool may print,\n                    // and the empty string is how the rewrite is told so.\n                    const literal = Ts.attributeLiteral(opening, \"id\") ?? \"\";\n                    const id = /[,:]/.test(literal) ? \"\" : literal;\n                    found.push({\n                        construct,\n                        id,\n                        opening,\n                        children: ts.isJsxElement(node) ? node.children : [],\n                    });\n                    return;\n                }\n            }\n            node.forEachChild(visit);\n        };\n        for (const node of nodes)\n            visit(node);\n        return found;\n    };\n    /** `Construct:id` pairs, the form a hit's detail carries a child list in. */\n    const encodeChildren = (children) => children.map((child) => `${child.construct}:${child.id}`).join(\",\");\n    /** Each named child step's payload sources, as JSON, for a group's rewrite. */\n    const encodePayloads = (children) => {\n        const record = {};\n        let any = false;\n        for (const child of children) {\n            if (child.id === \"\" || !child.construct.startsWith(\"Task\"))\n                continue;\n            any = true;\n            const prompt = promptElement(child.children);\n            // The source expression and the type behind it have to resolve together.\n            // A step reading `ctx.input.topic` where the factory declares no `input`\n            // schema has a source but no payload the rewrite can declare, and a call\n            // filled from it would name a step whose own action was never written.\n            record[child.id] = payloadFields(child.opening, prompt) === undefined\n                ? null\n                : payloadSources(child.opening, prompt) ?? null;\n        }\n        return any ? JSON.stringify(record) : undefined;\n    };\n    /**\n     * Each named child step's declared output schema, as JSON, for a group's\n     * rewrite. `null` for a child whose `output` prop resolves to no zod chain.\n     */\n    const encodeOutputs = (children) => {\n        const record = {};\n        let any = false;\n        for (const child of children) {\n            if (child.id === \"\" || !child.construct.startsWith(\"Task\"))\n                continue;\n            any = true;\n            const declared = Ts.attributeText(child.opening, \"output\") ?? Ts.attributeText(child.opening, \"outputSchema\");\n            record[child.id] = outputChain(declared) ?? null;\n        }\n        return any ? JSON.stringify(record) : undefined;\n    };\n    /** The named child steps that run on an agent. */\n    const agentChildren = (children) => children\n        .filter((child) => child.id !== \"\"\n        && Ts.attributeNames(child.opening).some((name) => name === \"agent\" || name === \"fallbackAgent\"))\n        .map((child) => child.id);\n    /** The value expression of one JSX attribute, when it has one. */\n    const attributeExpression = (node, name) => {\n        for (const item of node.attributes.properties) {\n            if (!ts.isJsxAttribute(item) || item.name.getText() !== name)\n                continue;\n            const initializer = item.initializer;\n            if (initializer === undefined || !ts.isJsxExpression(initializer))\n                return undefined;\n            return initializer.expression;\n        }\n        return undefined;\n    };\n    Ts.forEachNode(source, (node) => {\n        // JSX elements whose tag resolves to a catalog component.\n        if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {\n            const tag = Ts.tagName(node);\n            const resolved = bound.get(tag) ?? bound.get(tag.split(\".\")[0] ?? \"\");\n            const construct = resolved === undefined\n                ? undefined\n                : tag.includes(\".\")\n                    ? `${resolved}.${tag.split(\".\").slice(1).join(\".\")}`\n                    : resolved;\n            if (construct === undefined || !Constructs.isComponent(construct))\n                return;\n            const present = Ts.attributeNames(node).filter((name) => name !== \"...\");\n            const detail = attributeDetail(node, present);\n            const parent = node.parent;\n            const children = ts.isJsxElement(parent) && parent.openingElement === node ? parent.children : undefined;\n            if (children !== undefined) {\n                // A lone `{expression}` child is the step's handler, and the braces are\n                // JSX syntax around it, not part of the expression.\n                const only = children.filter((child) => !(ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces));\n                const single = only.length === 1 ? only[0] : undefined;\n                const body = single !== undefined && ts.isJsxExpression(single) && single.expression !== undefined\n                    ? single.expression.getText()\n                    : children.map((child) => child.getText()).join(\"\").trim();\n                if (body !== \"\")\n                    detail[\"children\"] = body;\n                const named = componentsIn(children);\n                if (named.length > 0) {\n                    detail[\"childConstructs\"] = encodeChildren(named);\n                    const payloads = encodePayloads(named);\n                    if (payloads !== undefined)\n                        detail[\"childPayloads\"] = payloads;\n                    const outputs = encodeOutputs(named);\n                    if (outputs !== undefined)\n                        detail[\"childOutputs\"] = outputs;\n                    const agents = agentChildren(named);\n                    if (agents.length > 0)\n                        detail[\"childAgents\"] = agents.join(\",\");\n                }\n                const prompt = promptElement(children);\n                const specifier = prompt === undefined ? undefined : promptSpecifier(prompt);\n                const text = specifier === undefined ? undefined : options.prompt?.(specifier);\n                if (text !== undefined)\n                    detail[\"promptText\"] = text;\n                // Only a step reads a payload. A group's children are steps, not\n                // values, so recording an empty payload on it would say nothing.\n                const fields = construct.startsWith(\"Task\") ? payloadFields(node, prompt) : undefined;\n                if (fields !== undefined)\n                    detail[\"payloadFields\"] = JSON.stringify(fields);\n            }\n            // A component handed to a prop is a step of its own, and the rewrite has\n            // to name it: `<Branch then={<Task id=\"ship\" />} />`.\n            for (const prop of present) {\n                const value = attributeExpression(node, prop);\n                if (value === undefined)\n                    continue;\n                const named = componentsIn([value]);\n                if (named.length > 0) {\n                    detail[`${prop}Constructs`] = encodeChildren(named);\n                    const payloads = encodePayloads(named);\n                    if (payloads !== undefined)\n                        detail[`${prop}Payloads`] = payloads;\n                }\n            }\n            // The factory's `input` schema is the workflow's payload, and nothing\n            // else's, so only a `<Workflow>` hit carries it.\n            const payload = schemas.get(\"input\");\n            if (construct === \"Workflow\" && payload !== undefined)\n                detail[\"payloadChain\"] = payload;\n            // The registry needs a description and 0.x records prose about a workflow\n            // in exactly one place: the header comments the CLI reads. A `description`\n            // the element itself declared wins, because that came from the element.\n            if (construct === \"Workflow\" && detail[\"description\"] === undefined) {\n                const described = options.headers?.get(\"description\") ?? options.headers?.get(\"display-name\");\n                if (described !== undefined && described.trim() !== \"\")\n                    detail[\"description\"] = described.trim();\n            }\n            const chain = outputChain(detail[\"output\"] ?? detail[\"outputSchema\"]);\n            if (chain !== undefined)\n                detail[\"outputChain\"] = chain;\n            const agent = detail[\"agent\"] ?? detail[\"fallbackAgent\"];\n            const agentInit = agent === undefined ? undefined : locals.get(agent);\n            if (agentInit !== undefined) {\n                detail[\"agentExpression\"] = agentInit.getText();\n                Object.assign(detail, agentDetail(agentInit));\n            }\n            hits.push(entry(file, source, node, construct, present, Object.keys(detail).length === 0 ? undefined : detail));\n            return;\n        }\n        // `ctx.<method>` accessors and reads through a factory binding.\n        if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {\n            const local = node.expression.text;\n            if (local === \"ctx\") {\n                const name = node.name.text;\n                if (ctxMethods.has(name))\n                    hits.push(entry(file, source, node, `ctx.${name}`, []));\n                return;\n            }\n            const member = memberConstructs[bound.get(local) ?? \"\"];\n            if (member === undefined)\n                return;\n            hits.push(entry(file, source, node, member, [], member === \"db.<member>\"\n                ? { member: node.name.text }\n                : { key: node.name.text }));\n            return;\n        }\n        // Agent constructors.\n        if (ts.isNewExpression(node) && ts.isIdentifier(node.expression)) {\n            const resolved = bound.get(node.expression.text);\n            if (resolved !== undefined && agentNames.has(resolved)) {\n                const options = node.arguments?.[0];\n                const props = options !== undefined && ts.isObjectLiteralExpression(options)\n                    ? options.properties.flatMap((property) => \"name\" in property && property.name !== undefined && ts.isIdentifier(property.name)\n                        ? [property.name.text]\n                        : [])\n                    : [];\n                const model = options !== undefined && ts.isObjectLiteralExpression(options)\n                    ? options.properties.find((property) => \"name\" in property && property.name !== undefined && ts.isIdentifier(property.name)\n                        && property.name.text === \"model\")\n                    : undefined;\n                const detail = model !== undefined && ts.isPropertyAssignment(model) && ts.isStringLiteral(model.initializer)\n                    ? { model: model.initializer.text }\n                    : undefined;\n                hits.push(entry(file, source, node, resolved, props, detail));\n            }\n            return;\n        }\n        // Runtime, store, and tool calls.\n        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {\n            const name = node.expression.text;\n            const resolved = bound.get(name) ?? (options.factories.has(name) ? \"createSmithers\" : undefined);\n            if (resolved !== undefined\n                && (runtimeCalls.has(resolved) || agentNames.has(resolved) || factoryCalls.has(resolved))) {\n                hits.push(entry(file, source, node, resolved, []));\n            }\n            return;\n        }\n    });\n    return hits.sort((left, right) => left.line - right.line || left.column - right.column);\n};\n/**\n * The zod schema chains declared in one file, by the name they are bound to.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const zodChains = (file, text, parse = Ts.parse) => {\n    const source = parse(file, text);\n    const chains = [];\n    Ts.forEachNode(source, (node) => {\n        if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || node.initializer === undefined)\n            return;\n        const chain = node.initializer.getText();\n        if (!/^z\\s*\\./.test(chain))\n            return;\n        chains.push({ name: node.name.text, chain });\n    });\n    return chains;\n};\n/**\n * The `.mdx` prompts one file imports, by the local component name.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const mdxImports = (file, text, parse = Ts.parse) => {\n    const source = parse(file, text);\n    const found = [];\n    for (const record of Ts.imports(source)) {\n        if (!record.specifier.endsWith(\".mdx\"))\n            continue;\n        for (const [local, imported] of record.names) {\n            if (imported === \"default\")\n                found.push({ local, specifier: record.specifier });\n        }\n    }\n    return found;\n};\nconst withoutExtension = (file) => file.replace(/\\.(?:[cm]?[jt]sx?)$/, \"\");\n/**\n * The factory bindings each module re-exports, by module path without its\n * extension.\n *\n * A real 0.x pack does not call `createSmithers` in the workflow file. One\n * module calls it and re-exports the bindings (`export const { Workflow, Task,\n * outputs } = createSmithers(...)`), and every workflow imports them from\n * there. A scanner that only reads in-file destructuring records nothing for\n * such a pack.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const factoryReexports = (sources, factories, parse = Ts.parse) => {\n    const modules = new Map();\n    for (const [file, text] of sources) {\n        if (!/\\bcreateSmithers\\w*\\s*\\(/.test(text))\n            continue;\n        const source = parse(file, text);\n        const bindings = new Map();\n        for (const statement of source.statements) {\n            if (!ts.isVariableStatement(statement))\n                continue;\n            const exported = statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);\n            if (exported !== true)\n                continue;\n            for (const declaration of statement.declarationList.declarations) {\n                if (!ts.isObjectBindingPattern(declaration.name) || declaration.initializer === undefined)\n                    continue;\n                if (!ts.isCallExpression(declaration.initializer))\n                    continue;\n                if (!factories.has(Ts.calleeName(declaration.initializer)))\n                    continue;\n                for (const [local, imported] of Ts.destructuredNames(declaration.name)) {\n                    if (factoryBindings.includes(imported))\n                        bindings.set(local, imported);\n                }\n            }\n        }\n        if (bindings.size > 0)\n            modules.set(withoutExtension(file), bindings);\n    }\n    return modules;\n};\n/**\n * Scans every file a migration touches and returns the inventory, sorted by\n * file then position so a report is stable.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const scan = (detection, parse = Ts.parse) => Effect.sync(() => {\n    const factories = factoryNames(detection.sources, parse);\n    const reexports = factoryReexports(detection.sources, factories, parse);\n    const files = [\n        ...detection.workflowFiles.map((workflow) => workflow.path),\n        ...detection.components,\n        ...detection.libs,\n        ...detection.tests,\n        ...detection.uis.filter((ui) => ui.resolved).map((ui) => ui.path),\n    ];\n    const headers = new Map(detection.workflowFiles.map((workflow) => [workflow.path, workflow.headers]));\n    const seen = new Set();\n    const hits = [];\n    for (const file of files) {\n        if (seen.has(file))\n            continue;\n        seen.add(file);\n        const text = detection.sources.get(file);\n        if (text === undefined)\n            continue;\n        const carried = headers.get(file);\n        hits.push(...scanFile(file, text, {\n            factories,\n            parse,\n            prompt: (specifier) => detection.sources.get(resolveRelative(file, specifier)),\n            reexports: (specifier) => specifier.startsWith(\".\") ? reexports.get(withoutExtension(resolveRelative(file, specifier))) : undefined,\n            ...(carried === undefined ? {} : { headers: carried }),\n        }));\n    }\n    return hits.sort((left, right) => Sort.byText(left.file, right.file) || left.line - right.line || left.column - right.column);\n});\n",
+    "code": "/**\n * The per-file construct inventory.\n *\n * `Detect` says which files matter. This module says what is in them: every\n * JSX element whose tag resolves to a Smithers 0.x component, every `ctx`\n * accessor, every agent constructor, every runtime call, and every named\n * import of the old facade. Each hit carries the props that are present,\n * because a prop is what raises a construct's class (`Mapping.classify`).\n *\n * Resolution is syntactic. A tag counts only when its identifier comes from an\n * old import or from destructuring a `createSmithers` factory, so a workflow\n * written against a foreign authoring API contributes nothing and is reported\n * as `unknown-authoring-api` instead of being mistranslated.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as ts from \"typescript/unstable/ast\";\nimport * as Constructs from \"./Constructs.js\";\nimport * as Detect from \"./Detect.js\";\nimport * as Sort from \"./internal/Sort.js\";\nimport * as Ts from \"./internal/Ts.js\";\n/**\n * The names `createSmithers` destructures into. Anything else in the pattern is\n * project code and is left alone.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const factoryBindings = [\n    \"Approval\",\n    \"ApprovalGate\",\n    \"Branch\",\n    \"ContinueAsNew\",\n    \"HumanTask\",\n    \"Loop\",\n    \"Memory\",\n    \"MergeQueue\",\n    \"Monitor\",\n    \"Panel\",\n    \"Parallel\",\n    \"Ralph\",\n    \"Sandbox\",\n    \"Sequence\",\n    \"Signal\",\n    \"Subflow\",\n    \"Task\",\n    \"Timer\",\n    \"TUI\",\n    \"UI\",\n    \"WaitForEvent\",\n    \"Worktree\",\n    \"Workflow\",\n    \"close\",\n    \"continueAsNew\",\n    \"db\",\n    \"outputs\",\n    \"smithers\",\n    \"tables\",\n    \"useCtx\"\n];\nconst runtimeCalls = new Set(Constructs.byKind(\"runtime\").map((entry) => entry.name).concat(Constructs.byKind(\"store\").map((entry) => entry.name), Constructs.byKind(\"server\").map((entry) => entry.name), [\"defineTool\", \"createHttpTool\", \"createOpenApiTools\"]));\nconst agentNames = new Set(Constructs.byKind(\"agent\").map((entry) => entry.name));\nconst ctxMethods = new Set(Constructs.byKind(\"ctx\").map((entry) => entry.name.slice(\"ctx.\".length)));\n/**\n * The names of local functions that hand back a `createSmithers` result.\n *\n * The old examples wrap the factory (`createExampleSmithers` in\n * `examples/_example-kit.js`), so a scanner that only knows the literal name\n * misses every component in every example. Collecting the wrappers first, from\n * the same file set, resolves them without evaluating anything.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const factoryNames = (sources, parse = Ts.parse) => {\n    const names = new Set([\"createSmithers\", \"createSmithersPostgres\", \"createSmithersCloudflare\"]);\n    for (const [file, text] of sources) {\n        if (!/\\bcreateSmithers\\w*\\s*\\(/.test(text))\n            continue;\n        const parsed = parse(file, text);\n        Ts.forEachNode(parsed, (node) => {\n            if (ts.isFunctionDeclaration(node) && node.name !== undefined && node.body !== undefined) {\n                if (/\\bcreateSmithers\\w*\\s*\\(/.test(node.body.getText()))\n                    names.add(node.name.text);\n                return;\n            }\n            if (ts.isVariableDeclaration(node)\n                && ts.isIdentifier(node.name)\n                && node.initializer !== undefined\n                && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))\n                && /\\bcreateSmithers\\w*\\s*\\(/.test(node.initializer.getText())) {\n                names.add(node.name.text);\n            }\n        });\n    }\n    return names;\n};\nconst attributeDetail = (node, props) => {\n    const detail = {};\n    for (const prop of props) {\n        const text = Ts.attributeText(node, prop);\n        if (text !== undefined)\n            detail[prop] = text;\n    }\n    return detail;\n};\n/** The members a factory binding is read through, by their catalog shape. */\nconst memberConstructs = {\n    outputs: \"outputs.<key>\",\n    tables: \"tables.<key>\",\n    db: \"db.<member>\"\n};\n/** The factory bindings that are called rather than read. */\nconst factoryCalls = new Set([\"smithers\", \"close\", \"useCtx\", \"continueAsNew\"]);\n/** The initializer of every `const` in a file, by the name it binds. */\nconst initializers = (source) => {\n    const found = new Map();\n    Ts.forEachNode(source, (node) => {\n        if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || node.initializer === undefined)\n            return;\n        if (found.has(node.name.text))\n            return;\n        found.set(node.name.text, node.initializer);\n    });\n    return found;\n};\n/** The string a property of an object literal holds, when it holds one. */\nconst stringProperty = (node, name) => {\n    for (const property of node.properties) {\n        if (!ts.isPropertyAssignment(property))\n            continue;\n        if (property.name === undefined || !ts.isIdentifier(property.name) || property.name.text !== name)\n            continue;\n        if (ts.isStringLiteral(property.initializer) || ts.isNoSubstitutionTemplateLiteral(property.initializer)) {\n            return property.initializer.text;\n        }\n    }\n    return undefined;\n};\n/** The value expression a property of an object literal holds. */\nconst property = (node, name) => {\n    for (const item of node.properties) {\n        if (!ts.isPropertyAssignment(item))\n            continue;\n        if (item.name === undefined || !ts.isIdentifier(item.name) || item.name.text !== name)\n            continue;\n        return item.initializer;\n    }\n    return undefined;\n};\n/**\n * The model and provider an agent construction names.\n *\n * `new Agent({ model: anthropic(\"claude-sonnet-5\") })` yields\n * `{ provider: \"anthropic\", model: \"claude-sonnet-5\" }`, and a bare string\n * model yields the model alone. Anything else yields nothing, because a seat\n * the tool cannot read out of the source is a seat it must not write.\n */\nconst agentDetail = (expression) => {\n    const detail = {};\n    const argument = ts.isNewExpression(expression) || ts.isCallExpression(expression)\n        ? expression.arguments?.[0]\n        : undefined;\n    if (argument === undefined || !ts.isObjectLiteralExpression(argument))\n        return detail;\n    const instructions = stringProperty(argument, \"instructions\") ?? stringProperty(argument, \"system\");\n    if (instructions !== undefined)\n        detail[\"agentInstructions\"] = instructions;\n    const model = property(argument, \"model\");\n    if (model === undefined)\n        return detail;\n    if (ts.isStringLiteral(model)) {\n        detail[\"agentModel\"] = model.text;\n        return detail;\n    }\n    if (ts.isCallExpression(model) && ts.isIdentifier(model.expression)) {\n        const first = model.arguments[0];\n        if (first !== undefined && ts.isStringLiteral(first)) {\n            detail[\"agentProvider\"] = model.expression.text;\n            detail[\"agentModel\"] = first.text;\n        }\n    }\n    return detail;\n};\n/** Joins a POSIX-style project path with a relative import specifier. */\nconst resolveRelative = (from, specifier) => {\n    const parts = from.split(\"/\").slice(0, -1);\n    for (const segment of specifier.split(\"/\")) {\n        if (segment === \".\" || segment === \"\")\n            continue;\n        if (segment === \"..\")\n            parts.pop();\n        else\n            parts.push(segment);\n    }\n    return parts.join(\"/\");\n};\nconst entry = (file, source, node, construct, props, detail) => {\n    const position = Ts.positionOf(source, node);\n    const sorted = [...props].sort();\n    return detail === undefined\n        ? { file, ...position, construct, props: sorted }\n        : { file, ...position, construct, props: sorted, detail };\n};\n/**\n * Scans one file and returns its construct hits.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const scanFile = (file, text, options) => {\n    const parse = options.parse ?? Ts.parse;\n    const source = parse(file, text);\n    const hits = [];\n    const locals = initializers(source);\n    // Local name to catalog name, for everything that came from an old import or\n    // from destructuring a factory.\n    const bound = new Map();\n    // The local names a foreign authoring API binds. Plue's `issue-pipeline.tsx`\n    // imports `createSmithers` from `@smithers-ai/workflow` and `Worktree` from\n    // `smithers-orchestrator` in the same file, so the factory has to be judged\n    // by where it came from, not by its name.\n    const foreign = new Set();\n    for (const record of Ts.imports(source)) {\n        if (Detect.foreignAuthoringApis.includes(record.specifier)) {\n            for (const [local] of record.names)\n                foreign.add(local);\n            if (record.namespace !== undefined)\n                foreign.add(record.namespace);\n        }\n    }\n    for (const record of Ts.imports(source)) {\n        const specifier = record.specifier;\n        const old = specifier === \"smthrs\"\n            || specifier === \"smithers\"\n            || specifier === \"smithers-orchestrator\"\n            || specifier.startsWith(\"smthrs/\")\n            || specifier.startsWith(\"smithers/\")\n            || specifier.startsWith(\"smithers-orchestrator/\")\n            || specifier.startsWith(\"@smithers/\")\n            || specifier.startsWith(\"@smthrs/\");\n        // A pack splits the factory across files: one module calls\n        // `createSmithers` and re-exports the bindings, and every workflow imports\n        // them from there. Without this the whole pack scans as zero constructs.\n        const reexported = options.reexports?.(specifier);\n        if (reexported !== undefined) {\n            for (const [local, name] of record.names) {\n                const resolved = reexported.get(name);\n                if (resolved !== undefined)\n                    bound.set(local, resolved);\n            }\n        }\n        if (!old)\n            continue;\n        for (const [local, imported] of record.names)\n            bound.set(local, imported);\n    }\n    // The `createSmithers` output-table schemas, by key, so `output={outputs.x}`\n    // resolves to the zod chain the project actually wrote.\n    const schemas = new Map();\n    Ts.forEachNode(source, (node) => {\n        if (ts.isVariableDeclaration(node)\n            && ts.isObjectBindingPattern(node.name)\n            && node.initializer !== undefined\n            && ts.isCallExpression(node.initializer)\n            && options.factories.has(Ts.calleeName(node.initializer))\n            // A foreign `createSmithers` hands back a foreign `Workflow` and a\n            // foreign `Task`. Binding them would file that project's props against\n            // 0.x components that never declared them.\n            && !foreign.has(Ts.calleeName(node.initializer))) {\n            for (const [local, imported] of Ts.destructuredNames(node.name)) {\n                if (factoryBindings.includes(imported))\n                    bound.set(local, imported);\n            }\n            const first = node.initializer.arguments[0];\n            if (first !== undefined && ts.isObjectLiteralExpression(first)) {\n                for (const item of first.properties) {\n                    if (!ts.isPropertyAssignment(item) || item.name === undefined || !ts.isIdentifier(item.name))\n                        continue;\n                    const value = ts.isIdentifier(item.initializer)\n                        ? locals.get(item.initializer.text)?.getText()\n                        : item.initializer.getText();\n                    if (value !== undefined)\n                        schemas.set(item.name.text, value);\n                }\n            }\n        }\n    });\n    /** The zod chain an `output` prop resolves to, through `outputs.<key>`. */\n    const outputChain = (value) => {\n        if (value === undefined)\n            return undefined;\n        const parts = value.split(\".\");\n        if (parts.length === 2 && bound.get(parts[0] ?? \"\") === \"outputs\")\n            return schemas.get(parts[1] ?? \"\");\n        const local = locals.get(value)?.getText();\n        return local !== undefined && /^z\\s*\\./.test(local) ? local : undefined;\n    };\n    /** The `.mdx` element the children of a task render, when there is one. */\n    const promptElement = (children) => {\n        const specifiers = new Map();\n        for (const record of Ts.imports(source)) {\n            if (!record.specifier.endsWith(\".mdx\"))\n                continue;\n            for (const [local, imported] of record.names) {\n                if (imported === \"default\")\n                    specifiers.set(local, record.specifier);\n            }\n        }\n        const found = [];\n        const visit = (node) => {\n            if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {\n                if (specifiers.has(Ts.tagName(node)))\n                    found.push(node);\n            }\n            node.forEachChild(visit);\n        };\n        for (const child of children)\n            visit(child);\n        return found.length === 1 ? found[0] : undefined;\n    };\n    /** The specifier one prompt element imports its body from. */\n    const promptSpecifier = (element) => {\n        for (const record of Ts.imports(source)) {\n            if (!record.specifier.endsWith(\".mdx\"))\n                continue;\n            for (const [local, imported] of record.names) {\n                if (imported === \"default\" && local === Ts.tagName(element))\n                    return record.specifier;\n            }\n        }\n        return undefined;\n    };\n    /** The zod chain one field of an object chain holds. */\n    const fieldChain = (chain, field) => {\n        if (chain === undefined)\n            return undefined;\n        const parsed = parse(\"chain.ts\", `const value = ${chain}`);\n        let found;\n        Ts.forEachNode(parsed, (node) => {\n            if (found !== undefined || !ts.isPropertyAssignment(node))\n                return;\n            if (node.name === undefined || node.name.getText() !== field)\n                return;\n            found = node.initializer.getText();\n        });\n        return found;\n    };\n    /** The zod chain each key of a `deps` prop resolves to. */\n    const depsChains = (text) => {\n        const found = new Map();\n        if (text === undefined)\n            return found;\n        const parsed = parse(\"deps.ts\", `const value = (${text})`);\n        Ts.forEachNode(parsed, (node) => {\n            if (!ts.isPropertyAssignment(node) || node.name === undefined)\n                return;\n            const chain = outputChain(node.initializer.getText());\n            if (chain !== undefined)\n                found.set(node.name.getText(), chain);\n        });\n        return found;\n    };\n    /**\n     * The payload fields a step reads, as zod chains, or `undefined` when one of\n     * them cannot be resolved from the source.\n     *\n     * A step's payload is not guessed. It is the `deps` the source declared, or,\n     * for a prompt, the value expression behind each prompt prop: `deps.<key>`\n     * fields resolve through the declared output schema and `ctx.input.<field>`\n     * through the factory's `input` schema. Anything else leaves the payload\n     * unresolved, and the hit becomes a guided decision.\n     */\n    const payloadFields = (node, prompt) => {\n        const deps = depsChains(Ts.attributeText(node, \"deps\"));\n        if (prompt === undefined) {\n            const fields = {};\n            for (const [key, chain] of deps)\n                fields[key] = chain;\n            return fields;\n        }\n        const fields = {};\n        for (const name of Ts.attributeNames(prompt)) {\n            if (name === \"...\")\n                return undefined;\n            const value = Ts.attributeText(prompt, name);\n            if (value === undefined)\n                return undefined;\n            const parts = value.split(\".\");\n            const chain = parts.length === 3 && parts[0] === \"deps\"\n                ? fieldChain(deps.get(parts[1] ?? \"\"), parts[2] ?? \"\")\n                : parts.length === 3 && parts[0] === \"ctx\" && parts[1] === \"input\"\n                    ? fieldChain(schemas.get(\"input\"), parts[2] ?? \"\")\n                    : undefined;\n            if (chain === undefined)\n                return undefined;\n            fields[name] = chain;\n        }\n        return fields;\n    };\n    /**\n     * The expression behind each value a step reads, as the source wrote it:\n     * `ctx.input.topic`, or `deps.research.summary`.\n     *\n     * `undefined` when any of them is anything else. {@link payloadFields} gives\n     * the *type* of each value; this gives *where it comes from*, which is what a\n     * group's rewrite needs to thread one step's answer into the next one's call.\n     */\n    const payloadSources = (node, prompt) => {\n        const deps = depsChains(Ts.attributeText(node, \"deps\"));\n        if (prompt === undefined) {\n            const fields = {};\n            for (const key of deps.keys())\n                fields[key] = `deps.${key}`;\n            return fields;\n        }\n        const fields = {};\n        for (const name of Ts.attributeNames(prompt)) {\n            if (name === \"...\")\n                return undefined;\n            const value = Ts.attributeText(prompt, name);\n            if (value === undefined)\n                return undefined;\n            const parts = value.split(\".\");\n            const known = (parts.length === 3 && parts[0] === \"deps\" && deps.has(parts[1] ?? \"\"))\n                || (parts.length === 3 && parts[0] === \"ctx\" && parts[1] === \"input\");\n            if (!known)\n                return undefined;\n            fields[name] = value;\n        }\n        return fields;\n    };\n    /**\n     * The catalog components inside a list of nodes, as `Construct:id` pairs.\n     *\n     * The walk stops at the first component on each path, so a group records its\n     * own steps and not their steps' steps, and it descends through whatever the\n     * source wraps them in: a fragment, a conditional, an array, or a prop\n     * value.\n     */\n    const componentsIn = (nodes) => {\n        const found = [];\n        const visit = (node) => {\n            const opening = ts.isJsxElement(node)\n                ? node.openingElement\n                : ts.isJsxSelfClosingElement(node)\n                    ? node\n                    : undefined;\n            if (opening !== undefined) {\n                const construct = bound.get(Ts.tagName(opening));\n                if (construct !== undefined && Constructs.isComponent(construct)) {\n                    // Only a literal id. An id the source computes — Plue's\n                    // `id={`${id}:review-claude`}` — is not a name this tool may print,\n                    // and the empty string is how the rewrite is told so.\n                    const literal = Ts.attributeLiteral(opening, \"id\") ?? \"\";\n                    const id = /[,:]/.test(literal) ? \"\" : literal;\n                    found.push({\n                        construct,\n                        id,\n                        opening,\n                        children: ts.isJsxElement(node) ? node.children : []\n                    });\n                    return;\n                }\n            }\n            node.forEachChild(visit);\n        };\n        for (const node of nodes)\n            visit(node);\n        return found;\n    };\n    /** `Construct:id` pairs, the form a hit's detail carries a child list in. */\n    const encodeChildren = (children) => children.map((child) => `${child.construct}:${child.id}`).join(\",\");\n    /** Each named child step's payload sources, as JSON, for a group's rewrite. */\n    const encodePayloads = (children) => {\n        const record = {};\n        let any = false;\n        for (const child of children) {\n            if (child.id === \"\" || !child.construct.startsWith(\"Task\"))\n                continue;\n            any = true;\n            const prompt = promptElement(child.children);\n            // The source expression and the type behind it have to resolve together.\n            // A step reading `ctx.input.topic` where the factory declares no `input`\n            // schema has a source but no payload the rewrite can declare, and a call\n            // filled from it would name a step whose own action was never written.\n            record[child.id] = payloadFields(child.opening, prompt) === undefined\n                ? null\n                : payloadSources(child.opening, prompt) ?? null;\n        }\n        return any ? JSON.stringify(record) : undefined;\n    };\n    /**\n     * Each named child step's declared output schema, as JSON, for a group's\n     * rewrite. `null` for a child whose `output` prop resolves to no zod chain.\n     */\n    const encodeOutputs = (children) => {\n        const record = {};\n        let any = false;\n        for (const child of children) {\n            if (child.id === \"\" || !child.construct.startsWith(\"Task\"))\n                continue;\n            any = true;\n            const declared = Ts.attributeText(child.opening, \"output\") ?? Ts.attributeText(child.opening, \"outputSchema\");\n            record[child.id] = outputChain(declared) ?? null;\n        }\n        return any ? JSON.stringify(record) : undefined;\n    };\n    /** The named child steps that run on an agent. */\n    const agentChildren = (children) => children\n        .filter((child) => child.id !== \"\"\n        && Ts.attributeNames(child.opening).some((name) => name === \"agent\" || name === \"fallbackAgent\"))\n        .map((child) => child.id);\n    /** The value expression of one JSX attribute, when it has one. */\n    const attributeExpression = (node, name) => {\n        for (const item of node.attributes.properties) {\n            if (!ts.isJsxAttribute(item) || item.name.getText() !== name)\n                continue;\n            const initializer = item.initializer;\n            if (initializer === undefined || !ts.isJsxExpression(initializer))\n                return undefined;\n            return initializer.expression;\n        }\n        return undefined;\n    };\n    Ts.forEachNode(source, (node) => {\n        // JSX elements whose tag resolves to a catalog component.\n        if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {\n            const tag = Ts.tagName(node);\n            const resolved = bound.get(tag) ?? bound.get(tag.split(\".\")[0] ?? \"\");\n            const construct = resolved === undefined\n                ? undefined\n                : tag.includes(\".\")\n                    ? `${resolved}.${tag.split(\".\").slice(1).join(\".\")}`\n                    : resolved;\n            if (construct === undefined || !Constructs.isComponent(construct))\n                return;\n            const present = Ts.attributeNames(node).filter((name) => name !== \"...\");\n            const detail = attributeDetail(node, present);\n            const parent = node.parent;\n            const children = ts.isJsxElement(parent) && parent.openingElement === node ? parent.children : undefined;\n            if (children !== undefined) {\n                // A lone `{expression}` child is the step's handler, and the braces are\n                // JSX syntax around it, not part of the expression.\n                const only = children.filter((child) => !(ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces));\n                const single = only.length === 1 ? only[0] : undefined;\n                const body = single !== undefined && ts.isJsxExpression(single) && single.expression !== undefined\n                    ? single.expression.getText()\n                    : children.map((child) => child.getText()).join(\"\").trim();\n                if (body !== \"\")\n                    detail[\"children\"] = body;\n                const named = componentsIn(children);\n                if (named.length > 0) {\n                    detail[\"childConstructs\"] = encodeChildren(named);\n                    const payloads = encodePayloads(named);\n                    if (payloads !== undefined)\n                        detail[\"childPayloads\"] = payloads;\n                    const outputs = encodeOutputs(named);\n                    if (outputs !== undefined)\n                        detail[\"childOutputs\"] = outputs;\n                    const agents = agentChildren(named);\n                    if (agents.length > 0)\n                        detail[\"childAgents\"] = agents.join(\",\");\n                }\n                const prompt = promptElement(children);\n                const specifier = prompt === undefined ? undefined : promptSpecifier(prompt);\n                const text = specifier === undefined ? undefined : options.prompt?.(specifier);\n                if (text !== undefined)\n                    detail[\"promptText\"] = text;\n                // Only a step reads a payload. A group's children are steps, not\n                // values, so recording an empty payload on it would say nothing.\n                const fields = construct.startsWith(\"Task\") ? payloadFields(node, prompt) : undefined;\n                if (fields !== undefined)\n                    detail[\"payloadFields\"] = JSON.stringify(fields);\n            }\n            // A component handed to a prop is a step of its own, and the rewrite has\n            // to name it: `<Branch then={<Task id=\"ship\" />} />`.\n            for (const prop of present) {\n                const value = attributeExpression(node, prop);\n                if (value === undefined)\n                    continue;\n                const named = componentsIn([value]);\n                if (named.length > 0) {\n                    detail[`${prop}Constructs`] = encodeChildren(named);\n                    const payloads = encodePayloads(named);\n                    if (payloads !== undefined)\n                        detail[`${prop}Payloads`] = payloads;\n                }\n            }\n            // The factory's `input` schema is the workflow's payload, and nothing\n            // else's, so only a `<Workflow>` hit carries it.\n            const payload = schemas.get(\"input\");\n            if (construct === \"Workflow\" && payload !== undefined)\n                detail[\"payloadChain\"] = payload;\n            // The registry needs a description and 0.x records prose about a workflow\n            // in exactly one place: the header comments the CLI reads. A `description`\n            // the element itself declared wins, because that came from the element.\n            if (construct === \"Workflow\" && detail[\"description\"] === undefined) {\n                const described = options.headers?.get(\"description\") ?? options.headers?.get(\"display-name\");\n                if (described !== undefined && described.trim() !== \"\")\n                    detail[\"description\"] = described.trim();\n            }\n            const chain = outputChain(detail[\"output\"] ?? detail[\"outputSchema\"]);\n            if (chain !== undefined)\n                detail[\"outputChain\"] = chain;\n            const agent = detail[\"agent\"] ?? detail[\"fallbackAgent\"];\n            const agentInit = agent === undefined ? undefined : locals.get(agent);\n            if (agentInit !== undefined) {\n                detail[\"agentExpression\"] = agentInit.getText();\n                Object.assign(detail, agentDetail(agentInit));\n            }\n            hits.push(entry(file, source, node, construct, present, Object.keys(detail).length === 0 ? undefined : detail));\n            return;\n        }\n        // `ctx.<method>` accessors and reads through a factory binding.\n        if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {\n            const local = node.expression.text;\n            if (local === \"ctx\") {\n                const name = node.name.text;\n                if (ctxMethods.has(name))\n                    hits.push(entry(file, source, node, `ctx.${name}`, []));\n                return;\n            }\n            const member = memberConstructs[bound.get(local) ?? \"\"];\n            if (member === undefined)\n                return;\n            hits.push(entry(file, source, node, member, [], member === \"db.<member>\"\n                ? { member: node.name.text }\n                : { key: node.name.text }));\n            return;\n        }\n        // Agent constructors.\n        if (ts.isNewExpression(node) && ts.isIdentifier(node.expression)) {\n            const resolved = bound.get(node.expression.text);\n            if (resolved !== undefined && agentNames.has(resolved)) {\n                const options = node.arguments?.[0];\n                const props = options !== undefined && ts.isObjectLiteralExpression(options)\n                    ? options.properties.flatMap((property) => \"name\" in property && property.name !== undefined && ts.isIdentifier(property.name)\n                        ? [property.name.text]\n                        : [])\n                    : [];\n                const model = options !== undefined && ts.isObjectLiteralExpression(options)\n                    ? options.properties.find((property) => \"name\" in property && property.name !== undefined && ts.isIdentifier(property.name)\n                        && property.name.text === \"model\")\n                    : undefined;\n                const detail = model !== undefined && ts.isPropertyAssignment(model) && ts.isStringLiteral(model.initializer)\n                    ? { model: model.initializer.text }\n                    : undefined;\n                hits.push(entry(file, source, node, resolved, props, detail));\n            }\n            return;\n        }\n        // Runtime, store, and tool calls.\n        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {\n            const name = node.expression.text;\n            const resolved = bound.get(name) ?? (options.factories.has(name) ? \"createSmithers\" : undefined);\n            if (resolved !== undefined\n                && (runtimeCalls.has(resolved) || agentNames.has(resolved) || factoryCalls.has(resolved))) {\n                hits.push(entry(file, source, node, resolved, []));\n            }\n            return;\n        }\n    });\n    return hits.sort((left, right) => left.line - right.line || left.column - right.column);\n};\n/**\n * The zod schema chains declared in one file, by the name they are bound to.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const zodChains = (file, text, parse = Ts.parse) => {\n    const source = parse(file, text);\n    const chains = [];\n    Ts.forEachNode(source, (node) => {\n        if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || node.initializer === undefined)\n            return;\n        const chain = node.initializer.getText();\n        if (!/^z\\s*\\./.test(chain))\n            return;\n        chains.push({ name: node.name.text, chain });\n    });\n    return chains;\n};\n/**\n * The `.mdx` prompts one file imports, by the local component name.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const mdxImports = (file, text, parse = Ts.parse) => {\n    const source = parse(file, text);\n    const found = [];\n    for (const record of Ts.imports(source)) {\n        if (!record.specifier.endsWith(\".mdx\"))\n            continue;\n        for (const [local, imported] of record.names) {\n            if (imported === \"default\")\n                found.push({ local, specifier: record.specifier });\n        }\n    }\n    return found;\n};\nconst withoutExtension = (file) => file.replace(/\\.(?:[cm]?[jt]sx?)$/, \"\");\n/**\n * The factory bindings each module re-exports, by module path without its\n * extension.\n *\n * A real 0.x pack does not call `createSmithers` in the workflow file. One\n * module calls it and re-exports the bindings (`export const { Workflow, Task,\n * outputs } = createSmithers(...)`), and every workflow imports them from\n * there. A scanner that only reads in-file destructuring records nothing for\n * such a pack.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const factoryReexports = (sources, factories, parse = Ts.parse) => {\n    const modules = new Map();\n    for (const [file, text] of sources) {\n        if (!/\\bcreateSmithers\\w*\\s*\\(/.test(text))\n            continue;\n        const source = parse(file, text);\n        const bindings = new Map();\n        for (const statement of source.statements) {\n            if (!ts.isVariableStatement(statement))\n                continue;\n            const exported = statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);\n            if (exported !== true)\n                continue;\n            for (const declaration of statement.declarationList.declarations) {\n                if (!ts.isObjectBindingPattern(declaration.name) || declaration.initializer === undefined)\n                    continue;\n                if (!ts.isCallExpression(declaration.initializer))\n                    continue;\n                if (!factories.has(Ts.calleeName(declaration.initializer)))\n                    continue;\n                for (const [local, imported] of Ts.destructuredNames(declaration.name)) {\n                    if (factoryBindings.includes(imported))\n                        bindings.set(local, imported);\n                }\n            }\n        }\n        if (bindings.size > 0)\n            modules.set(withoutExtension(file), bindings);\n    }\n    return modules;\n};\n/**\n * Scans every file a migration touches and returns the inventory, sorted by\n * file then position so a report is stable.\n *\n * @category scanners\n * @since 1.0.0-rc.0\n */\nexport const scan = (detection, parse = Ts.parse) => Effect.sync(() => {\n    const factories = factoryNames(detection.sources, parse);\n    const reexports = factoryReexports(detection.sources, factories, parse);\n    const files = [\n        ...detection.workflowFiles.map((workflow) => workflow.path),\n        ...detection.components,\n        ...detection.libs,\n        ...detection.tests,\n        ...detection.uis.filter((ui) => ui.resolved).map((ui) => ui.path)\n    ];\n    const headers = new Map(detection.workflowFiles.map((workflow) => [workflow.path, workflow.headers]));\n    const seen = new Set();\n    const hits = [];\n    for (const file of files) {\n        if (seen.has(file))\n            continue;\n        seen.add(file);\n        const text = detection.sources.get(file);\n        if (text === undefined)\n            continue;\n        const carried = headers.get(file);\n        hits.push(...scanFile(file, text, {\n            factories,\n            parse,\n            prompt: (specifier) => detection.sources.get(resolveRelative(file, specifier)),\n            reexports: (specifier) => specifier.startsWith(\".\") ? reexports.get(withoutExtension(resolveRelative(file, specifier))) : undefined,\n            ...(carried === undefined ? {} : { headers: carried })\n        }));\n    }\n    return hits.sort((left, right) => Sort.byText(left.file, right.file) || left.line - right.line || left.column - right.column);\n});\n",
     "map": {
      "version": 3,
      "file": "Inventory.js",
@@ -13914,7 +13914,7 @@
       "relative": "packages/smithers/migrate/src/flow/Repair.vibe"
      }
     ],
-    "code": "/**\n * The repair step: one failing verification round, handed back with the\n * contract still in context.\n *\n * A separate action rather than a retry of {@link module:Transform} because the\n * two are asked different questions. Transform is given a unit and the mapping;\n * repair is given a unit, the mapping, and the exact output of the command that\n * refused the rewrite. Keeping them apart also keeps the journal readable: a\n * reader can see how many rounds a unit cost and what each one was told.\n *\n * The brief a repair round receives is re-captured, so the sources it reads are\n * the ones on disk after the previous round edited them, not the ones the unit\n * started with.\n *\n * @since 1.0.0-rc.0\n */\nimport * as AgentAction from \"@smthrs/agent/AgentAction\";\nimport * as Schema from \"effect/Schema\";\nimport * as Report from \"../Report.js\";\nimport * as Contract from \"./Contract.js\";\nimport * as Transform from \"./Transform.js\";\n/**\n * The repair step: the unit, the round, and what failed.\n *\n * @category actions\n * @since 1.0.0-rc.0\n */\nexport const action = AgentAction.make(\"smithers/migrate-v1/Repair\", {\n    payload: {\n        unit: Contract.UnitBrief,\n        round: Schema.Int,\n        failures: Report.VerificationResult,\n    },\n    output: Transform.UnitResult,\n    seat: Transform.seat,\n    system: [Contract.text],\n    prompt: ({ failures, round, unit }) => Contract.unitPrompt(unit, { round, verification: failures }),\n    corrections: 1,\n    maxFrames: Transform.maxFrames,\n});\n/**\n * The repair step's implementation. It is the same agent loop, the same seat,\n * and the same host as the transform step.\n *\n * @category layers\n * @since 1.0.0-rc.0\n */\nexport const layer = action.layer;\n",
+    "code": "/**\n * The repair step: one failing verification round, handed back with the\n * contract still in context.\n *\n * A separate action rather than a retry of {@link module:Transform} because the\n * two are asked different questions. Transform is given a unit and the mapping;\n * repair is given a unit, the mapping, and the exact output of the command that\n * refused the rewrite. Keeping them apart also keeps the journal readable: a\n * reader can see how many rounds a unit cost and what each one was told.\n *\n * The brief a repair round receives is re-captured, so the sources it reads are\n * the ones on disk after the previous round edited them, not the ones the unit\n * started with.\n *\n * @since 1.0.0-rc.0\n */\nimport * as AgentAction from \"@smthrs/agent/AgentAction\";\nimport * as Schema from \"effect/Schema\";\nimport * as Report from \"../Report.js\";\nimport * as Contract from \"./Contract.js\";\nimport * as Transform from \"./Transform.js\";\n/**\n * The repair step: the unit, the round, and what failed.\n *\n * @category actions\n * @since 1.0.0-rc.0\n */\nexport const action = AgentAction.make(\"smithers/migrate-v1/Repair\", {\n    payload: {\n        unit: Contract.UnitBrief,\n        round: Schema.Int,\n        failures: Report.VerificationResult\n    },\n    output: Transform.UnitResult,\n    seat: Transform.seat,\n    system: [Contract.text],\n    prompt: ({ failures, round, unit }) => Contract.unitPrompt(unit, { round, verification: failures }),\n    corrections: 1,\n    maxFrames: Transform.maxFrames\n});\n/**\n * The repair step's implementation. It is the same agent loop, the same seat,\n * and the same host as the transform step.\n *\n * @category layers\n * @since 1.0.0-rc.0\n */\nexport const layer = action.layer;\n",
     "map": {
      "version": 3,
      "file": "Repair.js",

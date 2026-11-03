@@ -10,42 +10,42 @@
   "root": {
    "relative": "packages/smithers/flows/engine"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/flows/engine/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "fZZaPHDx9zKcQl3ujxM6LxNCzfvN421NxjkwF0Q5s50"
+    "size": 1328,
+    "hash": "B_dtnyKRr02O7BEW_2HMc_MPF0nnGiUuTGVulx4yloI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/tsconfig.json"
     },
-    "size": 1323,
-    "hash": "NkWKC1f8V4-uI-TjpJpUYf2m_MSZ57Fawsx37W3cZ78"
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/tsconfig.json"
     },
-    "size": 1155,
-    "hash": "yEdL6QOOZG9iK6ozdm5fJOeDD65zwJdakZoG0P0XHHo"
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
    }
   ],
   "directories": [
@@ -223,7 +223,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -248,7 +248,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -277,56 +277,56 @@
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "ICCiZZchgutmRZAgiFtWv2eJFBKqcUjOHXRXJYUbwK8"
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "EwLDWDx6Z_THuZ6pkpBT69WR46fdDFYpwXm0vb71wXc"
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
-    "size": 10177,
-    "hash": "c8DDzn-eAe02bg8GdRdgBqFoqDXPcSGjkqjKHuZ2gNQ"
+    "size": 10315,
+    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "UR4meWOgUHs9jT6B4V2EdLPJDXsovYTYgxbYIio6EDc"
+    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "tvAQfGprSOvAm9uv1pAANDwnyMCPAtZPBWbwgoCaXQs"
+    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/package.json"
     },
     "size": 6254,
-    "hash": "dk5KdO2rBb2mqVBmd5OZWhnEz9zM-lN3Il4Los4LeqI"
+    "hash": "Hea3nMWuvm2_696OsMTMRp-MQ5YyzcV4ceoKKmvwaA4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 11122,
-    "hash": "HkpKCUONLNsHGL65Ns5SOQCPYagw-2Fni4T8uxQPrII"
+    "size": 11258,
+    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
    },
    {
     "path": {
@@ -2098,8 +2098,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -2287,15 +2287,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -2462,8 +2462,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -2504,8 +2504,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -3155,8 +3155,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -3519,15 +3519,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/Encoded.vibe"
     },
-    "size": 15365,
-    "hash": "ePdnivZA8MDmCtMUVOSeLRLJzoM3dfFwudXpQMMX_5I"
+    "size": 15350,
+    "hash": "pRQXTh_-X81irAiJXXamyVG2X9qXwZjvwXr3fBUSIq4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
     },
-    "size": 2224,
-    "hash": "wU_2S9aIe6CLhOhWz7TsA9p3vINTxD8o4Jh2tnx527A"
+    "size": 2221,
+    "hash": "0b4AvKWi513qOmacbu7zpMSsNZ5Bjscf82CWUZgnpLs"
    },
    {
     "path": {
@@ -3540,8 +3540,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/SnapshotBoundary.vibe"
     },
-    "size": 1488,
-    "hash": "kdlJBqK9sGgXpptwPI6kbpk-9Y3WEpcUrsuy-DYCZZo"
+    "size": 1483,
+    "hash": "RNyG78FFKArZrOc08jPVo0atR2pF7WPQCBEdugoxOyE"
    },
    {
     "path": {
@@ -5238,7 +5238,7 @@
       "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
      }
     ],
-    "code": "/**\n * Construction of the per-execution state an engine hands to a flow run.\n *\n * @since 0.1.0\n */\nimport * as Latch from \"effect/Latch\";\nimport * as Scope from \"effect/Scope\";\nimport * as Lineage from \"./Lineage.js\";\n/**\n * Creates the initial `FlowInstance` state for one flow execution.\n *\n * **When to use**\n *\n * Use when a runtime starts — or restarts, on resume — a flow run and needs\n * the mutable state its suspension, interruption, and action coordination\n * are tracked in.\n *\n * The returned `lineageId` keeps its {@link module:Lineage.JournalLineageId}\n * brand, so it cannot pass for a trampoline root execution id.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeInstance = (flow, executionId, lineageDeadline) => {\n    // Ordinals are counted per allocation scope, not per run: the engine\n    // scopes action dispatches by declaration identity and an optional\n    // structural interpreter site so a permuted fiber interleaving cannot\n    // renumber distinguishable dispatches across a replay (issue #73).\n    const ordinals = new Map();\n    // `satisfies` rather than `FlowInstance.of`, which would widen `lineageId`\n    // to the port's `string` and drop the journal brand.\n    return {\n        executionId,\n        // The run's own root lineage: a subflow is a separate run with a separate\n        // journal, so nesting is a lineage EDGE rather than a longer id here.\n        lineageId: Lineage.root(executionId),\n        flow,\n        ...(lineageDeadline === undefined ? {} : { lineageDeadline }),\n        scope: Scope.makeUnsafe(),\n        suspended: false,\n        interrupted: false,\n        waiting: undefined,\n        handoff: undefined,\n        cause: undefined,\n        actionState: {\n            count: 0,\n            latch: Latch.makeUnsafe(),\n            nextOrdinal: (scope) => {\n                const next = (ordinals.get(scope) ?? 0) + 1;\n                ordinals.set(scope, next);\n                return next;\n            },\n            // Earliest pre-attempt handle; durable drivers recover it via actionSnapshot.\n            snapshots: new Map(),\n            keylessInFlight: new Set(),\n        },\n    };\n};\n",
+    "code": "/**\n * Construction of the per-execution state an engine hands to a flow run.\n *\n * @since 0.1.0\n */\nimport * as Latch from \"effect/Latch\";\nimport * as Scope from \"effect/Scope\";\nimport * as Lineage from \"./Lineage.js\";\n/**\n * Creates the initial `FlowInstance` state for one flow execution.\n *\n * **When to use**\n *\n * Use when a runtime starts — or restarts, on resume — a flow run and needs\n * the mutable state its suspension, interruption, and action coordination\n * are tracked in.\n *\n * The returned `lineageId` keeps its {@link module:Lineage.JournalLineageId}\n * brand, so it cannot pass for a trampoline root execution id.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeInstance = (flow, executionId, lineageDeadline) => {\n    // Ordinals are counted per allocation scope, not per run: the engine\n    // scopes action dispatches by declaration identity and an optional\n    // structural interpreter site so a permuted fiber interleaving cannot\n    // renumber distinguishable dispatches across a replay (issue #73).\n    const ordinals = new Map();\n    // `satisfies` rather than `FlowInstance.of`, which would widen `lineageId`\n    // to the port's `string` and drop the journal brand.\n    return {\n        executionId,\n        // The run's own root lineage: a subflow is a separate run with a separate\n        // journal, so nesting is a lineage EDGE rather than a longer id here.\n        lineageId: Lineage.root(executionId),\n        flow,\n        ...(lineageDeadline === undefined ? {} : { lineageDeadline }),\n        scope: Scope.makeUnsafe(),\n        suspended: false,\n        interrupted: false,\n        waiting: undefined,\n        handoff: undefined,\n        cause: undefined,\n        actionState: {\n            count: 0,\n            latch: Latch.makeUnsafe(),\n            nextOrdinal: (scope) => {\n                const next = (ordinals.get(scope) ?? 0) + 1;\n                ordinals.set(scope, next);\n                return next;\n            },\n            // Earliest pre-attempt handle; durable drivers recover it via actionSnapshot.\n            snapshots: new Map(),\n            keylessInFlight: new Set()\n        }\n    };\n};\n",
     "map": {
      "version": 3,
      "file": "FlowInstance.js",
@@ -5278,7 +5278,7 @@
       "relative": "packages/smithers/flows/engine/src/FlowEngine/SnapshotBoundary.vibe"
      }
     ],
-    "code": "/**\n * The host snapshot boundary compensable actions are executed against.\n *\n * @since 0.1.0\n */\nimport * as runtime from \"vibelang-runtime\";\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\n/**\n * A compensable action was admitted without a snapshot boundary.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class SnapshotBoundaryRequired extends Schema.TaggedError()(\"@smthrs/engine/SnapshotBoundaryRequired\", {\n    code: Schema.Literal(\"snapshot_boundary_required\").pipe(Schema.withConstructorDefault(Effect.succeed(\"snapshot_boundary_required\"))),\n    actionName: Schema.String,\n    message: Schema.String,\n}) {\n}\n/**\n * Minimal host snapshot boundary required by compensable actions.\n *\n * @category services\n * @since 0.1.0\n */\nexport class SnapshotBoundary extends runtime.$service(\"@smthrs/engine/FlowEngine/SnapshotBoundary\") {\n}\n",
+    "code": "/**\n * The host snapshot boundary compensable actions are executed against.\n *\n * @since 0.1.0\n */\nimport * as runtime from \"vibelang-runtime\";\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\n/**\n * A compensable action was admitted without a snapshot boundary.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class SnapshotBoundaryRequired extends Schema.TaggedError()(\"@smthrs/engine/SnapshotBoundaryRequired\", {\n    code: Schema.Literal(\"snapshot_boundary_required\").pipe(Schema.withConstructorDefault(Effect.succeed(\"snapshot_boundary_required\"))),\n    actionName: Schema.String,\n    message: Schema.String\n}) {\n}\n/**\n * Minimal host snapshot boundary required by compensable actions.\n *\n * @category services\n * @since 0.1.0\n */\nexport class SnapshotBoundary extends runtime.$service(\"@smthrs/engine/FlowEngine/SnapshotBoundary\") {\n}\n",
     "map": {
      "version": 3,
      "file": "SnapshotBoundary.js",

@@ -10,21 +10,21 @@
   "root": {
    "relative": "packages/smithers/flows/step-cache"
   },
-  "compiler": "4uw1IxuWVh5XY-Ku5gl9VHlelivTQhT7QPZiYs38jdY",
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
   "configs": [
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/tsconfig.json"
     },
-    "size": 1367,
-    "hash": "f_Uty3UXqgbnsx7wKDKqezs7NCp6lMrHzPB334iDbFA"
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/tsconfig.json"
     },
-    "size": 1454,
-    "hash": "Qi3miZE-DWxLH1zIyMGLuVTTSRHrvEfzFb2ynnEutmI"
+    "size": 1415,
+    "hash": "CQGGkEBWRZqHYtj0LlTgLdLgsLcO6SkyNgBS9k0d9Hs"
    }
   ],
   "directories": [
@@ -202,7 +202,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "r52omaghp2LrhFxQnqu4TGYoxcPVpgZ9wWCMUj6HXa4"
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
    },
    {
     "path": {
@@ -227,7 +227,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "vrfJxPfEr-UMHT3xLORoUBA6rxDvQuccVPOHg5dtd58"
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
    },
    {
     "path": {
@@ -256,21 +256,21 @@
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "HkEsBZn5oE73FkMHp1IVWloRAQivyKChWC6xDwTCWqA"
+    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/package.json"
     },
     "size": 6772,
-    "hash": "qy6gKQsD47Ts9JXYNY2jOS59z_0g4SQQXifBZOaOqjk"
+    "hash": "PDbmtBwaifMg8xo8e8sshgT4DxBUNraaYy17hCyYn9c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "JkLzXYB1QQZ8eSsmh7SFKC33Dbq3w-9RIdaBX_feLso"
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
    },
    {
     "path": {
@@ -1839,8 +1839,8 @@
     "path": {
      "relative": "packages/smithers/flows/step-cache/src/CacheStoreMetrics.vibe"
     },
-    "size": 4517,
-    "hash": "hTNIDUNgFJ9Xy8FK8DqbA7rxp9Ejhu1P0no0M6V3tj0"
+    "size": 4510,
+    "hash": "ddedd35rIVTSgnQM5lpUjqy2XPCl7fbrarVkrfRVYhE"
    },
    {
     "path": {
@@ -3638,7 +3638,7 @@
       "relative": "packages/smithers/flows/step-cache/src/CacheStoreMetrics.vibe"
      }
     ],
-    "code": "/**\n * Standard metric definitions for the content-addressed step result cache.\n *\n * This module only defines the metric handles, following the shape of Effect's\n * `ClusterMetrics`. `CacheStore` updates them as lookups and recordings\n * resolve. No exporter ships in this package; provide one — for example\n * `@smthrs/observability` — and these counters appear in it.\n *\n * @since 0.1.0\n */\nimport * as Metric from \"effect/Metric\";\n/**\n * Counter over cache lookups, dimensioned by `outcome` (`hit` or `miss`).\n *\n * Read the attributed views, {@link hit} and {@link miss}: every update\n * carries an `outcome` attribute, so this bare handle aggregates nothing and\n * always reads zero.\n *\n * These are one host's durable-tier counts. `RemoteCacheStore` updates no\n * counters, so a lookup that `CombinedCacheStore` serves from the shared tier\n * registers one `miss` for the local tier that did not hold it, plus the\n * write-back's {@link put} outcome. A two-tier deployment's hit rate is\n * therefore the rate at which this machine already held the entry, not the\n * rate at which a result was reused.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const lookups = Metric.counter(\"flows_step_cache_lookups\", {\n    description: \"Step cache lookups by outcome\",\n});\n/**\n * `lookups` view counting hits: a row existed for the key digest.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const hit = Metric.withAttributes(lookups, {\n    outcome: \"hit\",\n});\n/**\n * `lookups` view counting misses: the lookup had no entry it could serve.\n *\n * That covers a key digest with no row at all and a row the caller's\n * `maxAgeMs` bound refused, which is a miss rather than a stale hit.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const miss = Metric.withAttributes(lookups, {\n    outcome: \"miss\",\n});\n/**\n * Counter over cache recordings, dimensioned by `outcome` (`inserted`,\n * `existing_same`, or `conflict`). A `conflict` is the signal\n * `Inconsistency` receivers act on: the same key digest recorded a different\n * result.\n *\n * Read the attributed views on {@link put}: every update carries an `outcome`\n * attribute, so this bare handle aggregates nothing and always reads zero.\n *\n * One `CombinedCacheStore.put` can register two outcomes. The local tier\n * records its own, and a shared tier answering `Conflict` adds a `conflict`,\n * because a differing result under one digest on another machine is\n * cross-host divergence that reaches an operator nowhere else. That extra count\n * assumes the shared tier keeps no counters, which is true of the tier this\n * package ships: a `RemoteCacheStore` updates none. Composing a second\n * counter-keeping store as the shared tier instead records the same conflict\n * twice, once from that store's own `put` and once from the composition.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const puts = Metric.counter(\"flows_step_cache_puts\", {\n    description: \"Step cache recordings by outcome\",\n});\n/**\n * `puts` views keyed by the `PutResult` tag `CacheStore.put` resolves to.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const put = {\n    Inserted: Metric.withAttributes(puts, { outcome: \"inserted\" }),\n    ExistingSame: Metric.withAttributes(puts, { outcome: \"existing_same\" }),\n    Conflict: Metric.withAttributes(puts, { outcome: \"conflict\" }),\n};\n/**\n * Counter over shared-tier refusals, dimensioned by `operation` (`get` or\n * `put`). A combined store degrades these refusals to a miss or a successful\n * local recording because the shared tier is only an accelerator.\n *\n * Read the attributed views on {@link remoteFailure}: every update carries an\n * `operation` attribute, so this bare handle aggregates nothing and always\n * reads zero.\n *\n * @category metrics\n * @since 1.0.0-rc.0\n */\nexport const remoteFailures = Metric.counter(\"flows_step_cache_remote_failures\", {\n    description: \"Shared step cache refusals by operation\",\n});\n/**\n * `remoteFailures` views keyed by the refused shared-tier operation.\n *\n * @category metrics\n * @since 1.0.0-rc.0\n */\nexport const remoteFailure = {\n    get: Metric.withAttributes(remoteFailures, { operation: \"get\" }),\n    put: Metric.withAttributes(remoteFailures, { operation: \"put\" }),\n};\n",
+    "code": "/**\n * Standard metric definitions for the content-addressed step result cache.\n *\n * This module only defines the metric handles, following the shape of Effect's\n * `ClusterMetrics`. `CacheStore` updates them as lookups and recordings\n * resolve. No exporter ships in this package; provide one — for example\n * `@smthrs/observability` — and these counters appear in it.\n *\n * @since 0.1.0\n */\nimport * as Metric from \"effect/Metric\";\n/**\n * Counter over cache lookups, dimensioned by `outcome` (`hit` or `miss`).\n *\n * Read the attributed views, {@link hit} and {@link miss}: every update\n * carries an `outcome` attribute, so this bare handle aggregates nothing and\n * always reads zero.\n *\n * These are one host's durable-tier counts. `RemoteCacheStore` updates no\n * counters, so a lookup that `CombinedCacheStore` serves from the shared tier\n * registers one `miss` for the local tier that did not hold it, plus the\n * write-back's {@link put} outcome. A two-tier deployment's hit rate is\n * therefore the rate at which this machine already held the entry, not the\n * rate at which a result was reused.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const lookups = Metric.counter(\"flows_step_cache_lookups\", {\n    description: \"Step cache lookups by outcome\"\n});\n/**\n * `lookups` view counting hits: a row existed for the key digest.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const hit = Metric.withAttributes(lookups, {\n    outcome: \"hit\"\n});\n/**\n * `lookups` view counting misses: the lookup had no entry it could serve.\n *\n * That covers a key digest with no row at all and a row the caller's\n * `maxAgeMs` bound refused, which is a miss rather than a stale hit.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const miss = Metric.withAttributes(lookups, {\n    outcome: \"miss\"\n});\n/**\n * Counter over cache recordings, dimensioned by `outcome` (`inserted`,\n * `existing_same`, or `conflict`). A `conflict` is the signal\n * `Inconsistency` receivers act on: the same key digest recorded a different\n * result.\n *\n * Read the attributed views on {@link put}: every update carries an `outcome`\n * attribute, so this bare handle aggregates nothing and always reads zero.\n *\n * One `CombinedCacheStore.put` can register two outcomes. The local tier\n * records its own, and a shared tier answering `Conflict` adds a `conflict`,\n * because a differing result under one digest on another machine is\n * cross-host divergence that reaches an operator nowhere else. That extra count\n * assumes the shared tier keeps no counters, which is true of the tier this\n * package ships: a `RemoteCacheStore` updates none. Composing a second\n * counter-keeping store as the shared tier instead records the same conflict\n * twice, once from that store's own `put` and once from the composition.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const puts = Metric.counter(\"flows_step_cache_puts\", {\n    description: \"Step cache recordings by outcome\"\n});\n/**\n * `puts` views keyed by the `PutResult` tag `CacheStore.put` resolves to.\n *\n * @category metrics\n * @since 0.1.0\n */\nexport const put = {\n    Inserted: Metric.withAttributes(puts, { outcome: \"inserted\" }),\n    ExistingSame: Metric.withAttributes(puts, { outcome: \"existing_same\" }),\n    Conflict: Metric.withAttributes(puts, { outcome: \"conflict\" })\n};\n/**\n * Counter over shared-tier refusals, dimensioned by `operation` (`get` or\n * `put`). A combined store degrades these refusals to a miss or a successful\n * local recording because the shared tier is only an accelerator.\n *\n * Read the attributed views on {@link remoteFailure}: every update carries an\n * `operation` attribute, so this bare handle aggregates nothing and always\n * reads zero.\n *\n * @category metrics\n * @since 1.0.0-rc.0\n */\nexport const remoteFailures = Metric.counter(\"flows_step_cache_remote_failures\", {\n    description: \"Shared step cache refusals by operation\"\n});\n/**\n * `remoteFailures` views keyed by the refused shared-tier operation.\n *\n * @category metrics\n * @since 1.0.0-rc.0\n */\nexport const remoteFailure = {\n    get: Metric.withAttributes(remoteFailures, { operation: \"get\" }),\n    put: Metric.withAttributes(remoteFailures, { operation: \"put\" })\n};\n",
     "map": {
      "version": 3,
      "file": "CacheStoreMetrics.js",

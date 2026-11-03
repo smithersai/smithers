@@ -125,7 +125,7 @@ export class Pass extends Schema.Class("flows/harness/VacuousVerification/Pass")
     /** The call's identity, as the controller's own signature names it. */
     signature: Schema.String,
     /** The call's input as it was written, clipped, for the observation to quote. */
-    label: Schema.String,
+    label: Schema.String
 }) {
 }
 /**

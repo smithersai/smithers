@@ -36,7 +36,7 @@ export const ExternalEvent = Schema.Struct({
     /** The provider's stable delivery identity, used to drop redeliveries. */
     dedupeKey: Schema.NonEmptyString,
     /** When the event was received, in Unix milliseconds. */
-    receivedAtMs: Schema.Number,
+    receivedAtMs: Schema.Number
 });
 /**
  * Decodes an unknown value as an {@link ExternalEvent}.

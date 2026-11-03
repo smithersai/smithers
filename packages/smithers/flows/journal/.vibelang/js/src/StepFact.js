@@ -17,7 +17,7 @@ export const Step = Schema.Struct({
     attempt: positive,
     ask: Schema.Union([nonnegative, Schema.Literal("repair")]),
     retry: positive,
-    scope: Schema.String,
+    scope: Schema.String
 });
 /** The first recorded observation, including its original generation and time.
  * @category schemas
@@ -33,7 +33,7 @@ export const Fact = Schema.Struct({
     at: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
     eventType: Schema.String.check(Schema.isPattern(/^control\.agent\.[a-z-]+$/)),
     sourceSequence: nonnegative,
-    payload: Schema.Json,
+    payload: Schema.Json
 });
 /** Marks a checkpoint whose saved success is the fact to publish.
  * @category services

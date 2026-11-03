@@ -29,8 +29,8 @@ export const deriveFromFrontmatter = (options) => {
                     code: "missing_name",
                     path: options.path,
                     name: options.dirBasename,
-                    message: "Frontmatter name is missing; using the directory name instead",
-                }],
+                    message: "Frontmatter name is missing; using the directory name instead"
+                }]
         };
     }
     const value = options.fields.name;
@@ -42,7 +42,7 @@ export const deriveFromFrontmatter = (options) => {
                 code: "invalid_name",
                 path: options.path,
                 name,
-                message: "Frontmatter name must be 1-64 lowercase ASCII letters, numbers, or single hyphens with no edge hyphens",
+                message: "Frontmatter name must be 1-64 lowercase ASCII letters, numbers, or single hyphens with no edge hyphens"
             });
         }
         if (name !== options.dirBasename) {
@@ -50,7 +50,7 @@ export const deriveFromFrontmatter = (options) => {
                 code: "directory_name_mismatch",
                 path: options.path,
                 name,
-                message: `Frontmatter name "${name}" does not match skill directory "${options.dirBasename}"`,
+                message: `Frontmatter name "${name}" does not match skill directory "${options.dirBasename}"`
             });
         }
         return { name, warnings };
@@ -61,7 +61,7 @@ export const deriveFromFrontmatter = (options) => {
                 code: "invalid_name",
                 path: options.path,
                 name: options.dirBasename,
-                message: "Ignoring an invalid frontmatter name; using the directory name instead",
-            }],
+                message: "Ignoring an invalid frontmatter name; using the directory name instead"
+            }]
     };
 };

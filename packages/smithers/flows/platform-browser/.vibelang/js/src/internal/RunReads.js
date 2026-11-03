@@ -20,7 +20,7 @@ const Value = Schema_1.Struct({
 const Waiting = Schema.Struct({
     kind: Schema.Literals(["timer", "signal", "approval", "quota", "human", "other"]),
     reason: Schema.String,
-    wakeAtMs: Schema.NullOr(Schema.Number),
+    wakeAtMs: Schema.NullOr(Schema.Number)
 });
 const summary = {
     runId: Schema.String,
@@ -33,7 +33,7 @@ const summary = {
     cancelRequestedAtMs: Schema.NullOr(Schema.Number),
     waiting: Schema.NullOr(Waiting),
     lastSeq: Schema.Number,
-    origin: Schema.NullOr(Schema.Struct({ door: Schema.String, actor: Schema.String })),
+    origin: Schema.NullOr(Schema.Struct({ door: Schema.String, actor: Schema.String }))
 };
 const RunSummary = Schema.Struct(summary);
 const detailed = { ...summary, input: Value, result: Schema.NullOr(Value) };
@@ -43,7 +43,7 @@ const Attempt = Schema.Struct({
     startedAtMs: Schema.Number,
     finishedAtMs: Schema.NullOr(Schema.Number),
     outcome: Schema.NullOr(Value),
-    error: Schema.NullOr(Schema.String),
+    error: Schema.NullOr(Schema.String)
 });
 const Step = Schema.Struct({
     nodeId: Schema.String,
@@ -54,13 +54,13 @@ const Step = Schema.Struct({
     settledAtMs: Schema.NullOr(Schema.Number),
     seq: Schema.Number,
     output: Schema.NullOr(Value),
-    attempts: Schema.Array(Attempt),
+    attempts: Schema.Array(Attempt)
 });
 const Event = Schema.Struct({
     seq: Schema.Number,
     eventType: Schema.String,
     emittedAtMs: Schema.Number,
-    payload: Value,
+    payload: Value
 });
 /**
  * One run as `Inspect` reads it.
@@ -76,8 +76,8 @@ export const Inspection = Schema.Struct({
         events: Schema.Array(Event),
         afterSeq: Schema.Number,
         nextSeq: Schema.Number,
-        hasMore: Schema.Boolean,
-    }),
+        hasMore: Schema.Boolean
+    })
 });
 /**
  * A page of runs as `List` reads it.

@@ -39,7 +39,7 @@ export const GitCommit = Schema.Struct({
     sha: Schema.String,
     message: Schema.String,
     tree: Schema.Struct({ sha: Schema.String }),
-    parents: Schema.Array(Schema.Struct({ sha: Schema.String })),
+    parents: Schema.Array(Schema.Struct({ sha: Schema.String }))
 });
 /**
  * One changed file of a comparison. `patch` is absent for a binary file and
@@ -54,7 +54,7 @@ export const ChangedFile = Schema.Struct({
     additions: Schema.Number,
     deletions: Schema.Number,
     patch: Schema.optionalKey(Schema.String),
-    previous_filename: Schema.optionalKey(Schema.String),
+    previous_filename: Schema.optionalKey(Schema.String)
 });
 /**
  * The most files GitHub lists in one comparison.
@@ -67,24 +67,24 @@ const CompareCommitAnswer = Schema.Struct({
     sha: Schema.String,
     commit: Schema.Struct({
         message: Schema.String,
-        author: Schema.NullOr(Schema.Struct({ date: Schema.optionalKey(Schema.String) })).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+        author: Schema.NullOr(Schema.Struct({ date: Schema.optionalKey(Schema.String) })).pipe(Schema.withDecodingDefault(Effect.succeed(null)))
     }),
-    author: Schema.NullOr(Schema.Struct({ login: Schema.String })).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+    author: Schema.NullOr(Schema.Struct({ login: Schema.String })).pipe(Schema.withDecodingDefault(Effect.succeed(null)))
 });
 const CompareAnswer = Schema.Struct({
     ahead_by: Schema.Number,
     behind_by: Schema.Number,
     total_commits: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
     commits: Schema.Array(CompareCommitAnswer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-    files: Schema.Array(ChangedFile).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+    files: Schema.Array(ChangedFile).pipe(Schema.withDecodingDefault(Effect.succeed([])))
 });
 // A message's first line: everything before its first line break.
 const headlineOf = (message) => /^[^\r\n]*/.exec(message)[0];
 const GraphQLAnswer = Schema.Struct({
     data: Schema.optionalKey(Schema.NullOr(Schema.Struct({
-        createCommitOnBranch: Schema.NullOr(Schema.Struct({ commit: Schema.Struct({ oid: Schema.String }) })),
+        createCommitOnBranch: Schema.NullOr(Schema.Struct({ commit: Schema.Struct({ oid: Schema.String }) }))
     }))),
-    errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) }))),
+    errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) })))
 });
 const SHA = /^[0-9a-f]{40}$/;
 /** The most files one commit may add or delete. */
@@ -107,7 +107,7 @@ const isFilePath = (path) => typeof path === "string" && path.length <= 4096
 const isBase64 = (value) => typeof value === "string" && /^[A-Za-z0-9+/]*={0,2}$/.test(value) && value.length % 4 === 0;
 const spanAttributes = (owner, repo) => ({
     "github.owner": owner,
-    "github.repo": repo,
+    "github.repo": repo
 });
 // A GraphQL error's type or message saying the branch moved since the
 // expected head: the fence refused the commit.
@@ -156,10 +156,10 @@ export const createOnBranch = (owner, repo, input) => Effect.withSpan((Effect_1.
                 message: { headline: input.headline, ...(input.body === undefined ? {} : { body: input.body }) },
                 fileChanges: {
                     additions: input.additions.map((file) => ({ path: file.path, contents: file.contents })),
-                    deletions: input.deletions.map((path) => ({ path })),
-                },
-            },
-        },
+                    deletions: input.deletions.map((path) => ({ path }))
+                }
+            }
+        }
     }, { schema: GraphQLAnswer });
     const commit = answer.data?.createCommitOnBranch?.commit;
     if (answer.errors !== undefined && answer.errors.length > 0 || commit === undefined) {
@@ -193,7 +193,7 @@ export const mergeInto = (owner, repo, input) => Effect.withSpan((Effect_1.gen(f
     const answer = yield* client.request("POST", `/repos/${repository}/merges`, {
         base,
         head,
-        ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage }),
+        ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage })
     }, { schema: MergeIntoAnswer, retryUnsafeWrites: true });
     return answer === null ? { kind: "upToDate" } : { kind: "merged", sha: answer.sha };
 })), "GitHub.Commits.mergeInto", { attributes: spanAttributes(owner, repo) });
@@ -228,13 +228,13 @@ export const compare = (owner, repo, base, head) => Effect.withSpan((Effect_1.ge
     const from = yield* requireSha("base", base);
     const to = yield* requireSha("head", head);
     const answer = yield* client.request("GET", `/repos/${repository}/compare/${from}...${to}`, undefined, {
-        schema: CompareAnswer,
+        schema: CompareAnswer
     });
     const commits = answer.commits.map((commit) => ({
         sha: commit.sha,
         headline: headlineOf(commit.commit.message),
         authorLogin: commit.author?.login ?? null,
-        authoredAt: commit.commit.author?.date ?? null,
+        authoredAt: commit.commit.author?.date ?? null
     }));
     return {
         aheadBy: answer.ahead_by,
@@ -242,6 +242,6 @@ export const compare = (owner, repo, base, head) => Effect.withSpan((Effect_1.ge
         files: answer.files,
         truncated: answer.files.length >= MAX_COMPARE_FILES,
         commits,
-        commitsTruncated: answer.total_commits > commits.length,
+        commitsTruncated: answer.total_commits > commits.length
     };
 })), "GitHub.Commits.compare", { attributes: spanAttributes(owner, repo) });

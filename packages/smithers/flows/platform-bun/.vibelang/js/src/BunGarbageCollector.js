@@ -20,7 +20,7 @@ import * as Layer from "effect/Layer";
  * @since 1.0.0
  */
 export const collector = {
-    collect: Effect.sync({ collect: () => Bun.gc(true) }.collect),
+    collect: Effect.sync({ collect: () => Bun.gc(true) }.collect)
 };
 /**
  * Provides {@link collector}.

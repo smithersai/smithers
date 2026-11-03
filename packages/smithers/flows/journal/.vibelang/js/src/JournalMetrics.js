@@ -32,7 +32,7 @@ import * as EventTally from "./internal/EventTally.js";
  * @since 0.1.0
  */
 export const writes = Metric.counter("flows_journal_writes", {
-    description: "Journal emissions by channel and receipt",
+    description: "Journal emissions by channel and receipt"
 });
 /**
  * `writes` views for the durable channel, keyed by the receipt tag
@@ -43,7 +43,7 @@ export const writes = Metric.counter("flows_journal_writes", {
  */
 export const durable = {
     Accepted: Metric.withAttributes(writes, { channel: "durable", receipt: "accepted" }),
-    Duplicate: Metric.withAttributes(writes, { channel: "durable", receipt: "duplicate" }),
+    Duplicate: Metric.withAttributes(writes, { channel: "durable", receipt: "duplicate" })
 };
 /**
  * `writes` views for the lossy channel, keyed by the receipt tag
@@ -55,7 +55,7 @@ export const durable = {
 export const lossy = {
     Accepted: Metric.withAttributes(writes, { channel: "lossy", receipt: "accepted" }),
     Duplicate: Metric.withAttributes(writes, { channel: "lossy", receipt: "duplicate" }),
-    Dropped: Metric.withAttributes(writes, { channel: "lossy", receipt: "dropped" }),
+    Dropped: Metric.withAttributes(writes, { channel: "lossy", receipt: "dropped" })
 };
 /**
  * Counter over lossy entries the writer admitted and then failed to commit,
@@ -73,7 +73,7 @@ export const lossy = {
  * @since 1.0.0-rc.1
  */
 export const lostEntries = Metric.counter("flows_journal_lost", {
-    description: "Admitted lossy journal entries the writer failed to commit",
+    description: "Admitted lossy journal entries the writer failed to commit"
 });
 /**
  * The {@link lostEntries} view for one `JournalError` code.

@@ -15,7 +15,7 @@ import * as runtime from "vibelang-runtime";
  * @since 1.0.0
  */
 export const Current = Context.Reference("@smthrs/journal/EventTally", {
-    defaultValue: () => [],
+    defaultValue: () => []
 });
 /**
  * Adds `events` committed entries to every open tally.

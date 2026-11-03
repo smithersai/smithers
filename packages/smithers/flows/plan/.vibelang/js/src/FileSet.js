@@ -101,7 +101,7 @@ export const workspaceRelative = (pattern) => {
  */
 export const Glob = Schema.TaggedStruct("Glob", {
     include: Schema.NonEmptyArray(Pattern),
-    exclude: Schema.optional(Schema.Array(Pattern)),
+    exclude: Schema.optional(Schema.Array(Pattern))
 });
 /**
  * A directory output captured and replayed as one tree artifact.
@@ -113,7 +113,7 @@ export const Glob = Schema.TaggedStruct("Glob", {
  * @since 0.1.0
  */
 export const TreeArtifact = Schema.TaggedStruct("TreeArtifact", {
-    path: Pattern,
+    path: Pattern
 });
 /**
  * One leaf declaration: a literal path, a {@link Glob}, or a
@@ -143,7 +143,7 @@ export const ReadEntry = Schema.Union([Pattern, Glob]);
  */
 export const Filegroup = Schema.TaggedStruct("Filegroup", {
     name: Schema.NonEmptyString,
-    entries: Schema.Array(Entry),
+    entries: Schema.Array(Entry)
 });
 /**
  * A {@link Filegroup} restricted to {@link ReadEntry} declarations, for use
@@ -154,7 +154,7 @@ export const Filegroup = Schema.TaggedStruct("Filegroup", {
  */
 export const ReadFilegroup = Schema.TaggedStruct("Filegroup", {
     name: Schema.NonEmptyString,
-    entries: Schema.Array(ReadEntry),
+    entries: Schema.Array(ReadEntry)
 });
 /**
  * Any declaration accepted in a write set: an {@link Entry} or a
@@ -185,7 +185,7 @@ export const ReadDeclaration = Schema.Union([ReadEntry, ReadFilegroup]);
 export const makeFilegroup = (name, entries) => ({
     _tag: "Filegroup",
     name,
-    entries,
+    entries
 });
 /**
  * Replaces each {@link Filegroup} with its entries, in place, and keeps every

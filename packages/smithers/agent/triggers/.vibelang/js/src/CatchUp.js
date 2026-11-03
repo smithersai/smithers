@@ -27,7 +27,7 @@ export const occurrences = Effect_1.fnUntraced(function* occurrences(policy, max
         return yield* Effect_1.fail(new TriggerError({
             code: "catch_up_bound_exceeded",
             message: `maxCatchUp must be a non-negative safe integer, received ${maxCatchUp}`,
-            path: "maxCatchUp",
+            path: "maxCatchUp"
         }));
     }
     if (lastFiredAt === undefined)
@@ -40,14 +40,14 @@ export const occurrences = Effect_1.fnUntraced(function* occurrences(policy, max
             : maxCatchUp < 1
                 ? (() => Effect_1.suspend(() => Effect_1.fail(new TriggerError({
                     code: "catch_up_bound_exceeded",
-                    message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`,
+                    message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`
                 }))))()
                 : Effect.succeed([latest]); }));
     }
     return yield* Effect.flatMap(CronSchedule.occurrencesBetween(cron, lastFiredAt, now, maxCatchUp + 1), (missed) => Effect_1.suspend(() => { return missed.length > maxCatchUp
         ? (() => Effect_1.suspend(() => Effect_1.fail(new TriggerError({
             code: "catch_up_bound_exceeded",
-            message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`,
+            message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`
         }))))()
         : Effect_1.succeed(missed); }));
 });

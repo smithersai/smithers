@@ -29,7 +29,7 @@
 const sharedHooks = Object.create(null);
 Object.defineProperties(sharedHooks, {
     config: { value: "waterfall", enumerable: true },
-    configResolved: { value: "parallel", enumerable: true },
+    configResolved: { value: "parallel", enumerable: true }
 });
 /**
  * Frozen runtime catalog for the shared configuration hooks.

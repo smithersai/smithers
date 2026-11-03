@@ -26,5 +26,5 @@ const snapshotFailure = (cause) => new ArtifactStoreError({ code: "unavailable",
  */
 export const snapshotBytes = (bytes) => Effect.try({
     try: () => new Uint8Array(bytes),
-    catch: (cause) => snapshotFailure(cause),
+    catch: (cause) => snapshotFailure(cause)
 });

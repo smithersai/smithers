@@ -40,8 +40,8 @@ export const makeNoop = (overrides = {}) => {
         invoke: overrides.invoke ?? ((_invocation) => Effect_1.suspend(() => { return withSpan(Effect_1.suspend(() => Effect_1.fail(new FsError({
             code: "invocation_unavailable",
             method: "FlowInvoker.invoke",
-            description: "No flow invoker is installed",
-        }))), "FlowInvoker.invoke"); })),
+            description: "No flow invoker is installed"
+        }))), "FlowInvoker.invoke"); }))
     });
 };
 /**

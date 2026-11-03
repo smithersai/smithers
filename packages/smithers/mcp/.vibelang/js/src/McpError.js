@@ -18,7 +18,7 @@ export const Code = Schema.Literals([
     "protocol_error",
     "tool_not_found",
     "tool_failed",
-    "invalid_response",
+    "invalid_response"
 ]);
 /**
  * A recoverable MCP client or flow-adapter failure.
@@ -38,6 +38,6 @@ export const Code = Schema.Literals([
 export class McpError extends Schema.TaggedError()("flows/mcp/McpError", {
     code: Code,
     message: Schema.String,
-    server: Schema.optional(Schema.String),
+    server: Schema.optional(Schema.String)
 }) {
 }
