@@ -14,31 +14,25 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0-rc.0
  */
-export const dedup: void!unknown!SqlClient.SqlClient = effect {
-  const sql = try SqlClient.SqlClient
-  try Effect.suspend(effect () =>
-    sql`CREATE TABLE flows_journal_dedup (
+export const dedup: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`CREATE TABLE flows_journal_dedup (
     run_id TEXT NOT NULL CHECK (length(run_id) > 0),
     source_id TEXT NOT NULL CHECK (length(source_id) > 0),
-    source_seq ${try Effect.orDie(
-      Effect.try({ try: () => Dialect.integer(sql), catch: (error) => error })
-    )} NOT NULL CHECK (${try Effect.orDie(
-      Effect.try({ try: () => Dialect.isInteger(sql, sql`source_seq`), catch: (error) => error })
-    )} AND source_seq >= 0 AND source_seq <= 9007199254740991),
+    source_seq ${Dialect.integer(sql)} NOT NULL CHECK (${
+    Dialect.isInteger(sql, sql`source_seq`)
+  } AND source_seq >= 0 AND source_seq <= 9007199254740991),
     event_id TEXT NOT NULL UNIQUE CHECK (length(event_id) > 0),
-    seq ${try Effect.orDie(
-      Effect.try({ try: () => Dialect.integer(sql), catch: (error) => error })
-    )} NOT NULL CHECK (${try Effect.orDie(
-      Effect.try({ try: () => Dialect.isInteger(sql, sql`seq`), catch: (error) => error })
-    )} AND seq >= 0 AND seq <= 9007199254740991),
+    seq ${Dialect.integer(sql)} NOT NULL CHECK (${
+    Dialect.isInteger(sql, sql`seq`)
+  } AND seq >= 0 AND seq <= 9007199254740991),
     content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
     PRIMARY KEY (run_id, source_id, source_seq)
   )`
-  )
   // Enforce the same identity constraints after their event rows are removed.
   // RAISE(IGNORE) leaves INSERT ... RETURNING empty, so the existing duplicate
   // path checks the owner fence and then resolves the original receipt.
-  try Dialect.trigger(sql, {
+  yield* Dialect.trigger(sql, {
     name: "flows_journal_dedup_insert_guard",
     table: "flows_journal_events",
     event: "BEFORE INSERT",
@@ -46,4 +40,4 @@ export const dedup: void!unknown!SqlClient.SqlClient = effect {
       OR (run_id = NEW.run_id AND source_id = NEW.source_id AND source_seq = NEW.source_seq))`,
     ignore: true
   })
-}
+})
