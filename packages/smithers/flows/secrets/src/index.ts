@@ -34,7 +34,7 @@ export * as Binding from "./Binding.vibe"
  *
  * @since 0.1.0
  */
-export * as Egress from "./Egress.ts"
+export * as Egress from "./Egress.vibe"
 
 /**
  * Placeholders: derived, recognized and found.

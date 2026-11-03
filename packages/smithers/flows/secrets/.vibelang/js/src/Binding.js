@@ -75,7 +75,7 @@ export const maximumHosts = 16;
 export const Binding = Schema.Struct({
     name: Name,
     hosts: Schema.Array(Host).check(Schema.isMinLength(1), Schema.isMaxLength(maximumHosts)),
-    methods: Schema.optional(Schema.Array(Method).check(Schema.isMinLength(1))),
+    methods: Schema.optional(Schema.Array(Method).check(Schema.isMinLength(1)))
 });
 /**
  * The shortest value, in UTF-8 bytes: 8.
@@ -118,7 +118,7 @@ export const valueProblem = (value) => {
  * @since 0.1.0
  */
 export class ValueInvalid extends Schema.TaggedError()("@smthrs/secrets/Binding/ValueInvalid", {
-    reason: Schema.Literals(["too_short", "too_long", "control_character", "malformed_text"]),
+    reason: Schema.Literals(["too_short", "too_long", "control_character", "malformed_text"])
 }) {
 }
 /**
