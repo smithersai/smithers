@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter, StepIdentity } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
-import { actionKey, ordinalScope } from "../src/FlowEngine/ActionKey.ts"
+import { actionKey, ordinalScope } from "../src/FlowEngine/ActionKey.vibe"
 import { withCrypto } from "./Crypto.ts"
 import { layerDurable, makeLog } from "./DurableLogEngine.ts"
 

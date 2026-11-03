@@ -8,15 +8,13 @@
  *
  * @since 1.0.0
  */
-
-import type * as Placement from "@smthrs/plan/Placement"
-import * as Context from "effect/Context"
-import type * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import type * as Rpc from "effect/rpc/Rpc"
-import type * as RpcGroup from "effect/rpc/RpcGroup"
-import type * as Scope from "effect/Scope"
-
+import type * as Placement from "@smthrs/plan/Placement";
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import type * as Rpc from "effect/rpc/Rpc";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
+import type * as Scope from "effect/Scope";
 /**
  * Where one placement runs.
  *
@@ -30,13 +28,12 @@ import type * as Scope from "effect/Scope"
  * @category models
  * @since 1.0.0
  */
-export type Binding =
-  | { readonly _tag: "Here" }
-  | {
-    readonly _tag: "Proxy"
-    readonly connect: (group: RpcGroup.RpcGroup<Rpc.Any>) => Effect.Effect<unknown, never, Scope.Scope>
-  }
-
+export type Binding = {
+    readonly _tag: "Here";
+} | {
+    readonly _tag: "Proxy";
+    readonly connect: (group: RpcGroup.RpcGroup<Rpc.Any>) => Effect.Effect<unknown, never, Scope.Scope>;
+};
 /**
  * Resolves a flow's placement to a binding.
  *
@@ -44,21 +41,15 @@ export type Binding =
  * @since 1.0.0
  */
 export interface Service {
-  readonly resolve: (placement: Placement.Placement | undefined) => Binding
+    readonly resolve: (placement: Placement.Placement | undefined) => Binding;
 }
-
-const here: Binding = { _tag: "Here" }
-
 /**
  * The placement table. The default runs everything here.
  *
  * @category services
  * @since 1.0.0
  */
-export const Hosts = Context.Reference<Service>("@smthrs/engine/Hosts", {
-  defaultValue: () => ({ resolve: () => here })
-})
-
+export declare const Hosts: Context.Reference<Service>;
 /**
  * A table keyed by placement `target`. `Local` and `Client` placements, an
  * absent placement, and a target the table does not name run `fallback`,
@@ -67,13 +58,4 @@ export const Hosts = Context.Reference<Service>("@smthrs/engine/Hosts", {
  * @category layers
  * @since 1.0.0
  */
-export const layer = (table: Readonly<Record<string, Binding>>, fallback: Binding = here) =>
-  Layer.succeed(Hosts)({
-    resolve: (placement) =>
-      placement === undefined || placement._tag === "flows/core/Placement/Local" ||
-        placement._tag === "flows/core/Placement/Client" || placement.target === undefined
-        ? fallback
-        : Object.hasOwn(table, placement.target)
-        ? table[placement.target]!
-        : fallback
-  })
+export declare const layer: (table: Readonly<Record<string, Binding>>, fallback?: Binding) => Layer.Layer<never, never, never>;

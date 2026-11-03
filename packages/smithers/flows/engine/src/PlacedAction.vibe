@@ -16,7 +16,7 @@ import type * as Placement from "@smthrs/plan/Placement"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
 import { callRemote } from "./FlowEngine/Placed.ts"
-import { Hosts } from "./Hosts.ts"
+import { Hosts } from "./Hosts.vibe"
 
 /** The flows `served` has made, one per declaration, so a caller and a holder in one process share one. */
 const servedFlows = new WeakMap<object, Flow.Any>()
@@ -75,21 +75,19 @@ export const layer = <
 >(
   action: Action.Declared<Tag, Payload, Success, Error, Requires>,
   placement: Placement.Placement,
-  body: (payload: Payload["Type"]) => Effect.Effect<Success["Type"], Error["Type"], R>
+  body: (payload: Payload["Type"]) => Success["Type"]!Error["Type"]!R
 ) =>
-  action.toLayer((payload) =>
-    Effect.gen(function*() {
-      const binding = (yield* Hosts).resolve(placement)
-      if (binding._tag === "Here") return yield* body(payload)
-      const key = yield* Action.CurrentInvocationKey
-      if (key === undefined) {
-        return yield* Effect.die(
-          new Error(`${action.name} is placed elsewhere and was dispatched with no invocation key`)
-        )
-      }
-      return (yield* callRemote(binding, served(action), {
-        executionId: key,
-        payload
-      }))
-    })
-  )
+  action.toLayer(effect (payload) => {
+    const binding = (try Hosts).resolve(placement)
+    if (binding._tag === "Here") return try body(payload)
+    const key = try Action.CurrentInvocationKey
+    if (key === undefined) {
+      return try Effect.die(
+        new Error(`${action.name} is placed elsewhere and was dispatched with no invocation key`)
+      )
+    }
+    return (try callRemote(binding, served(action), {
+      executionId: key,
+      payload
+    }))
+  })

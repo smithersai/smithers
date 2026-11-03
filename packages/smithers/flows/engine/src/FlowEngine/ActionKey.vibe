@@ -13,8 +13,6 @@ import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 
 /**
@@ -109,17 +107,16 @@ const fileBoundary = (
 export const ordinalScope = (
   action: Action.Any,
   site?: string | undefined
-): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto> =>
+): string!Schema.SchemaError!Crypto.Crypto =>
   StepIdentity.allocationScope({
     kind: "action",
     name: action.name,
     idempotency: action.idempotencyKey,
     site
-  }).pipe(Effect.map((scope) =>
+  }) |> Effect.map(%, (scope) =>
     action.implementationVersion === undefined
       ? scope
-      : `${scope}/v:${action.implementationVersion.length}:${action.implementationVersion}`
-  ))
+      : `${scope}/v:${action.implementationVersion.length}:${action.implementationVersion}`)
 
 /**
  * Finds the first rejected field without rendering its value.
@@ -175,16 +172,20 @@ const declarations: Record<Node.RepresentationIdentityVersion, WeakMap<object, W
  * encoding picks the identity version, so a key written before an `effect`
  * upgrade stays derivable.
  */
-const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProps, encoding: KeyEncoding) {
+const declarationDigest = effect (action: Action.AnyWithProps, encoding: 1 | 2 | 3) => {
   const version = identityVersion(encoding)
   const success = version === 1 ? action.successSchema : action.successSchema.ast
   const error = version === 1 ? action.errorSchema : action.errorSchema.ast
   let errors = declarations[version].get(success)
   const cached = errors?.get(error)
   if (cached !== undefined) return cached
-  const digest = yield* Schema.decodeUnknownEffect(DerivedKey)({
-    success: Node.representationIdentity(action.successSchema, version),
-    error: Node.representationIdentity(action.errorSchema, version)
+  const digest = try Schema.decodeUnknownEffect(DerivedKey)({
+    success: try Effect.orDie(
+      Effect.try({ try: () => Node.representationIdentity(action.successSchema, version), catch: (error) => error })
+    ),
+    error: try Effect.orDie(
+      Effect.try({ try: () => Node.representationIdentity(action.errorSchema, version), catch: (error) => error })
+    )
   })
   if (errors === undefined) {
     errors = new WeakMap()
@@ -192,12 +193,12 @@ const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProp
   }
   errors.set(error, digest)
   return digest
-})
+}
 
 const boundaries = new WeakMap<object, { readonly document: string; readonly digest: StoredKey }>()
 
 /** Hash the validated boundary once per distinct metadata document. */
-const boundaryDigest = Effect.fnUntraced(function*(metadata: unknown) {
+const boundaryDigest = effect (metadata: unknown) => {
   const boundary = fileBoundary(metadata)
   if (boundary === undefined) return undefined
   // Metadata is caller-owned and may mutate. The decoded JSON snapshot is a
@@ -206,10 +207,10 @@ const boundaryDigest = Effect.fnUntraced(function*(metadata: unknown) {
   const document = JSON.stringify(boundary)
   const cached = boundaries.get(metadata as object)
   if (cached?.document === document) return cached.digest
-  const digest = yield* Schema.decodeUnknownEffect(DerivedKey)(boundary)
+  const digest = try Schema.decodeUnknownEffect(DerivedKey)(boundary)
   boundaries.set(metadata as object, { document, digest })
   return digest
-})
+}
 
 /**
  * The persisted key an action dispatch is recorded under: a pure cache key
@@ -220,14 +221,17 @@ const boundaryDigest = Effect.fnUntraced(function*(metadata: unknown) {
  * @private
  * @since 0.1.0
  */
-export const actionKey = Effect.fnUntraced(function*(
+export const actionKey = effect (
   action: Action.AnyWithProps & Pick<Action.Any, "annotations">,
   executionId: string,
   ordinal: number,
-  environment: Action.CacheEnvironment | undefined,
+  environment: {
+    readonly layers: readonly string[]
+    readonly capabilities: { readonly [x: string]: readonly string[] }
+  } | undefined,
   scope: string,
-  encoding: KeyEncoding = keyEncodings[0]
-): Effect.fn.Return<StoredKey, Schema.SchemaError, Crypto.Crypto> {
+  encoding: 1 | 2 | 3 = keyEncodings[0]
+): StoredKey!Schema.SchemaError!Crypto.Crypto => {
   if (action.tier === "sealed" && action.idempotencyKey !== undefined) {
     // Skyframe's SkyKey is (functionName, argument): a string idempotencyKey
     // is namespaced by the action name so two distinct actions sharing an
@@ -261,7 +265,7 @@ export const actionKey = Effect.fnUntraced(function*(
       ? {
         action: action.name,
         idempotencyKey: action.idempotencyKey,
-        declaration: yield* declarationDigest(action, encoding)
+        declaration: try declarationDigest(action, encoding)
       }
       : action.idempotencyKey
     // The cacheability-gating boundary descriptor is cache key input
@@ -272,7 +276,7 @@ export const actionKey = Effect.fnUntraced(function*(
     // the read-set material `ActionPersistence` gates cacheability on
     // (issue #57): the descriptor derived from `action.metadata` overrides
     // any caller-supplied `boundary` field.
-    const boundary = yield* boundaryDigest(action.metadata)
+    const boundary = try boundaryDigest(action.metadata)
     // The caller-owned object can carry material canonicalization
     // rejects; the typed `SchemaError` propagates to the dispatch site
     // (issue #151) instead of being discarded through `Result.getOrThrow`.
@@ -285,8 +289,8 @@ export const actionKey = Effect.fnUntraced(function*(
     // remains stable and cannot be turned into a second execution by a ceiling.
     const ceiling = environment === undefined ?
       [] :
-      (yield* Flow.attenuateCapabilities(Flow.capabilityCeilings(action.annotations))(CapabilitySet.current)).groups
-    return yield* Schema.decodeUnknownEffect(DerivedKey)({
+      (try Flow.attenuateCapabilities(Flow.capabilityCeilings(action.annotations))(CapabilitySet.current)).groups
+    return try Schema.decodeUnknownEffect(DerivedKey)({
       // An encoding names itself from 3 on; 2 and 1 were written before keys
       // were versioned and emit nothing, so their bytes stay derivable.
       ...(encoding < 3 ? {} : { keyEncoding: encoding }),
@@ -316,10 +320,10 @@ export const actionKey = Effect.fnUntraced(function*(
   // declarations or structural dispatch sites — distinct names, one name
   // with distinct declared idempotency keys, or distinct interpreter graph
   // nodes; the scope also keeps two identities from sharing the number 1.
-  return yield* StepIdentity.invocationKey({
+  return try StepIdentity.invocationKey({
     runId: executionId,
     parentScope: scope,
     ordinal,
     tier: action.tier === "sealed" ? "unsealed" : action.tier
   })
-})
+}
