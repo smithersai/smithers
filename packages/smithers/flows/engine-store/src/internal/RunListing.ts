@@ -125,7 +125,7 @@ export const make = () =>
           )
         }
         const limit = admitted.limit ?? 100
-        return yield* Dialect.readTransaction(
+        return yield* Read.transaction(
           sql,
           Effect.gen(function*() {
             // Discover optional legacy columns in the watermark statement,

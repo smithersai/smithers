@@ -66,7 +66,7 @@ export const make = (
     Effect.gen(function*() {
       const input = yield* Read.decode(Options, options)
       const cursor = input.cursor === undefined ? null : yield* Read.decode(Cursor, input.cursor)
-      return yield* Dialect.readTransaction(
+      return yield* Read.transaction(
         sql,
         Effect.gen(function*() {
           const at = yield* Read.position(sql)

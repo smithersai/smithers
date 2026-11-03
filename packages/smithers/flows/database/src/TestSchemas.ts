@@ -16,7 +16,10 @@ export const NAME_PATTERN = "^[a-z][a-z0-9_]{0,18}_[1-9][0-9]{9}_[0-9a-f]{32}$"
  */
 export const schemaName = (prefix: string, createdAt = Math.floor(Date.now() / 1_000)): string => {
   const normalized = prefix.replaceAll("-", "_")
-  if (!/^[a-z][a-z0-9_]*(?![\s\S])/.test(normalized) || !Number.isInteger(createdAt) || createdAt < 1_000_000_000 || createdAt > 9_999_999_999) {
+  if (
+    !/^[a-z][a-z0-9_]*(?![\s\S])/.test(normalized) || !Number.isInteger(createdAt) || createdAt < 1_000_000_000 ||
+    createdAt > 9_999_999_999
+  ) {
     throw new Error("Invalid test schema identity")
   }
   return `${normalized.slice(0, 19)}_${createdAt}_${crypto.randomUUID().replaceAll("-", "")}`

@@ -7,8 +7,9 @@
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as Dialect from "@smthrs/database/Dialect"
 import { OwnerId } from "@smthrs/journal/OwnerId"
+import { revisionTriggers } from "@smthrs/run-store/Migrations"
 import { RunStatus, RunStoreError } from "@smthrs/run-store/RunStore"
-import { Cause, Effect, Schema } from "effect"
+import { Cause, Effect, Option, Schema } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type { Batch } from "../ExecutionSnapshot.ts"
 
@@ -88,6 +89,24 @@ export const decode = <S extends Schema.Top>(schema: S, input: unknown) =>
       cause
     })
   ))
+
+/**
+ * Runs `effect` as one read, in its own read transaction or, inside a
+ * caller's transaction, in that one. Once run-store migration 1006 has run,
+ * PostgreSQL bumps run revisions at COMMIT, so a read that joins a writer's
+ * transaction first fires the bumps that writer has queued: its own inserts,
+ * updates and deletes then read back with their new revision, as they do when
+ * the bump runs with each write. On a schema without 1006 the flush finds no
+ * deferrable trigger and changes nothing.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const transaction = <A, E, R>(sql: SqlClient.SqlClient, effect: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(Effect.serviceOption(sql.transactionService), (joined) =>
+    Option.isSome(joined)
+      ? Effect.andThen(Dialect.flushDeferredTriggers(sql, revisionTriggers), effect)
+      : Dialect.readTransaction(sql, effect))
 
 /**
  * Reads the engine database identity and revision.

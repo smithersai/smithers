@@ -4,7 +4,6 @@
  * @since 1.0.0
  */
 
-import * as Dialect from "@smthrs/database/Dialect"
 import { RunStoreError } from "@smthrs/run-store/RunStore"
 import { Context, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -74,13 +73,13 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     return {
-      current: Read.boundary("RunChangeFeed.current", Read.position(sql)),
+      current: Read.boundary("RunChangeFeed.current", Read.transaction(sql, Read.position(sql))),
       changesSince: (options) =>
         Read.boundary(
           "RunChangeFeed.changesSince",
           Effect.gen(function*() {
             const input = yield* Read.decode(Options, options)
-            return yield* Dialect.readTransaction(
+            return yield* Read.transaction(
               sql,
               Effect.gen(function*() {
                 const at = yield* Read.position(sql)

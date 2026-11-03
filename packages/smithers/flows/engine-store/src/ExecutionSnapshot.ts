@@ -125,7 +125,7 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient> =>
             Schema.Array(Read.Identifier).check(Schema.isMaxLength(maximumBatchSize)),
             runIds
           )
-          const batch = yield* Dialect.readTransaction(
+          const batch = yield* Read.transaction(
             sql,
             Effect.gen(function*() {
               const at = yield* Read.position(sql)

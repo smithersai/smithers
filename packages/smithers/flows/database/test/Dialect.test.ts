@@ -7,6 +7,87 @@ import * as TestDatabase from "../src/test/TestDatabase.ts"
 const run = <A, E>(body: Effect.Effect<A, E, SqlClient>) => body.pipe(Effect.provide(TestDatabase.layer))
 
 describe("shared SQL dialect", () => {
+  it.effect("leaves ordinary triggers intact when switching absent or empty deferred trigger sets", () =>
+    run(Effect.gen(function*() {
+      const sql = yield* SqlClient
+      yield* sql`CREATE TABLE sample (value INTEGER)`
+      yield* sql`CREATE TABLE audit (value INTEGER)`
+      yield* Dialect.trigger(sql, {
+        name: "ordinary",
+        table: "sample",
+        event: "AFTER INSERT",
+        body: "INSERT INTO audit VALUES(NEW.value);"
+      })
+      yield* sql.withTransaction(Effect.gen(function*() {
+        const triggers = [["sample", "ordinary"], ["missing", "absent"]] as const
+        yield* Dialect.setTriggerMode(sql, [], "IMMEDIATE")
+        yield* Dialect.flushDeferredTriggers(sql, [])
+        yield* Dialect.setTriggerMode(sql, triggers, "DEFERRED")
+        yield* Dialect.flushDeferredTriggers(sql, triggers)
+        yield* sql`INSERT INTO sample VALUES(7)`
+        expect(yield* sql`SELECT value FROM audit`).toEqual([{ value: 7 }])
+      }))
+      expect(yield* sql`SELECT value FROM sample`).toEqual([{ value: 7 }])
+    })))
+
+  describe.skipIf(process.env.SMITHERS_TEST_PG_URL === undefined)("deferred trigger flush", () => {
+    it.effect("flushes mixed operations in write order and defers subsequent writes again", () =>
+      run(Effect.gen(function*() {
+        const sql = yield* SqlClient
+        yield* sql`CREATE TABLE sample (id INTEGER PRIMARY KEY)`
+        yield* sql`CREATE TABLE audit (seq BIGINT GENERATED ALWAYS AS IDENTITY, operation TEXT, id INTEGER)`
+        yield* sql.unsafe(`CREATE FUNCTION audit_operation() RETURNS trigger LANGUAGE plpgsql AS $f$
+          BEGIN
+            INSERT INTO audit (operation, id) VALUES (TG_OP, CASE WHEN TG_OP = 'DELETE' THEN OLD.id ELSE NEW.id END);
+            RETURN NULL;
+          END $f$`)
+        const operations = ["DELETE", "INSERT", "UPDATE"] as const
+        for (const operation of operations) {
+          yield* sql.unsafe(`CREATE CONSTRAINT TRIGGER audit_${operation.toLowerCase()} AFTER ${operation} ON sample
+            DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION audit_operation()`)
+        }
+        const triggers = operations.map((operation) => ["sample", `audit_${operation.toLowerCase()}`] as const)
+        const audit = sql<{ operation: string; id: number }>`SELECT operation, id FROM audit ORDER BY seq`
+        const expected = [
+          { operation: "INSERT", id: 1 },
+          { operation: "UPDATE", id: 1 },
+          { operation: "DELETE", id: 1 },
+          { operation: "INSERT", id: 2 }
+        ]
+        yield* sql.withTransaction(Effect.gen(function*() {
+          yield* sql`INSERT INTO sample VALUES(1)`
+          yield* sql`UPDATE sample SET id = 1 WHERE id = 1`
+          yield* sql`DELETE FROM sample WHERE id = 1`
+          yield* sql`INSERT INTO sample VALUES(2)`
+          expect(yield* audit).toEqual([])
+          yield* Dialect.flushDeferredTriggers(sql, triggers)
+          expect(yield* audit).toEqual(expected)
+          yield* sql`INSERT INTO sample VALUES(3)`
+          expect(yield* audit).toEqual(expected)
+        }))
+        expect(yield* audit).toEqual([...expected, { operation: "INSERT", id: 3 }])
+      })))
+
+    it.effect("propagates a queued trigger failure at the flush and rolls back its writes", () =>
+      run(Effect.gen(function*() {
+        const sql = yield* SqlClient
+        yield* sql`CREATE TABLE sample (id INTEGER PRIMARY KEY)`
+        yield* sql.unsafe(`CREATE FUNCTION refuse_insert() RETURNS trigger LANGUAGE plpgsql AS $f$
+          BEGIN RAISE EXCEPTION 'refused insert' USING ERRCODE = '23514'; END $f$`)
+        yield* sql.unsafe(`CREATE CONSTRAINT TRIGGER refused AFTER INSERT ON sample
+          DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION refuse_insert()`)
+        let afterFlush = false
+        const exit = yield* Effect.exit(sql.withTransaction(Effect.gen(function*() {
+          yield* sql`INSERT INTO sample VALUES(1)`
+          yield* Dialect.flushDeferredTriggers(sql, [["sample", "refused"]])
+          afterFlush = true
+        })))
+        expect(exit._tag).toBe("Failure")
+        expect(afterFlush).toBe(false)
+        expect(yield* sql`SELECT id FROM sample`).toEqual([])
+      })))
+  })
+
   it.effect("preserves JSON, integer checks, identities, indexes and bound values", () =>
     run(Effect.gen(function*() {
       const sql = yield* SqlClient
