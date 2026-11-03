@@ -159,7 +159,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       const executionId = adminExecutionId(route.kind, op, crypto.randomUUID())
       const actorId = actor.value.subject.id
       const authority = Option.isSome(resolved.held)
-        ? { _tag: "Repo" as const, held: resolved.held.value }
+        ? {
+          _tag: "Repo" as const,
+          held: resolved.held.value,
+          ...(actor.value.session === undefined ? {} : { sessionId: actor.value.session }),
+          ...(actor.value.alias === undefined ? {} : { alias: actor.value.alias }),
+        }
         : actor.value.session === undefined
         ? { _tag: "Local" as const }
         : {

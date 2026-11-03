@@ -26,8 +26,9 @@ and overflow, `PUT` and `DELETE` alike, carries one fence (`worker/runners/Fence
 whole, then who is asking and their authority (the repository's role row, or on the deployment's own repository the
 sign-in session and the alias it came through), and the flow's transaction takes the resource's lock (even for a name
 not written yet), answers a replay with the outcome already recorded before it changes anything (the overflow setting
-included), then locks the rows it writes (the runner's, or the repository's agents) and the authority's rows (the role
-row; or the person, the session and the alias, all locked before any is judged), then checks that authority, the
+included), then locks the rows it writes (the runner's, or the repository's agents) and the authority's rows (the
+person, the session and the alias it came through, and the role row where one admitted it, all locked before any is
+judged), then checks that authority, the
 fence's own expiry (5 minutes) by the clock as it stands then, and the generations it was admitted against: the
 runner's or agent's, which a removal doesn't reset, and for an agent, the repository's coding selection's. An action
 refused there writes nothing. Admitted, any lock the write still waits on gives up at its authority's earliest

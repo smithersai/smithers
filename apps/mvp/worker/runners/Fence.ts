@@ -9,7 +9,8 @@ import { latestRole } from "../SessionStore.ts"
 // action by, and hands the flow:
 //
 // - `authority`: the repository's role row the Admin role came from (`Repo`, checked again with `RepoRoles.holds`);
-//   on the deployment's own repository, or one where Smithers recorded no installation, the sign-in session whose role
+//   with the sign-in session and alias it came through, each still live; on the deployment's own repository, or one
+//   where Smithers recorded no installation, the sign-in session whose role
 //   it was (`Session`: the session, and the alias it came through on another host, still live, and the person's newest
 //   role Admin); with no session, local development's or a test's own person (`Local`), which only the expiry bounds.
 // - `expiresAt`: `FENCE_SECONDS` from admission. An action that runs later writes nothing.
@@ -42,7 +43,12 @@ export const Fence = Schema.Struct({
   generation: Schema.Int,
   coding: Schema.optional(Schema.Int),
   authority: Schema.Union([
-    Schema.TaggedStruct("Repo", { held: Held }),
+    Schema.TaggedStruct("Repo", {
+      held: Held,
+      // The sign-in it came through, which ends what it admitted. Absent on an action admitted before this was carried.
+      sessionId: Schema.optional(Schema.String),
+      alias: Schema.optional(Schema.String),
+    }),
     Schema.TaggedStruct("Session", {
       personId: Schema.String,
       sessionId: Schema.String,
@@ -69,7 +75,9 @@ export const authorityHolds = (fence: Fence) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const held = fence.authority._tag === "Repo"
-      ? yield* RepoRoles.holds(fence.authority.held)
+      ? (fence.authority.sessionId === undefined ||
+          (yield* sessionLive(fence.authority.held.personId, fence.authority.sessionId, fence.authority.alias))) &&
+        (yield* RepoRoles.holds(fence.authority.held))
       : fence.authority._tag === "Session"
       ? yield* sessionHolds(fence.authority.personId, fence.authority.sessionId, fence.authority.alias)
       : true
@@ -86,8 +94,20 @@ export const authorityHolds = (fence: Fence) =>
  */
 const sessionHolds = (personId: string, sessionId: string, alias: string | undefined) =>
   Effect.gen(function* () {
+    if (!(yield* sessionLive(personId, sessionId, alias))) return false
     const sql = yield* SqlClient.SqlClient
-    // Every lock first: judged in the statement that locks it, a session could expire while a later lock waited.
+    const [row] = yield* sql<{ readonly admin: boolean | null }>`
+      SELECT ${latestRole(sql, sql`${personId}::uuid`)} = 'admin' AS admin`
+    return row?.admin === true
+  })
+
+/**
+ * Whether the sign-in session, and the alias it came through, are live. Every row is locked first: judged in the
+ * statement that locks it, a session could expire while a later lock waited.
+ */
+const sessionLive = (personId: string, sessionId: string, alias: string | undefined) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
     const [person] = yield* sql`SELECT 1 FROM people WHERE id::text = ${personId} FOR SHARE`
     if (person === undefined) return false
     const [locked] = yield* sql`
@@ -102,20 +122,16 @@ const sessionHolds = (personId: string, sessionId: string, alias: string | undef
     const [session] = yield* sql<{ readonly live: boolean }>`
       SELECT revoked_at IS NULL AND expires_at > clock_timestamp() AS live FROM sessions WHERE id::text = ${sessionId}`
     if (session?.live !== true) return false
-    if (alias !== undefined) {
-      const [host] = yield* sql<{ readonly live: boolean }>`
-        SELECT revoked_at IS NULL AS live FROM host_sessions WHERE id::text = ${alias}`
-      if (host?.live !== true) return false
-    }
-    const [row] = yield* sql<{ readonly admin: boolean | null }>`
-      SELECT ${latestRole(sql, sql`${personId}::uuid`)} = 'admin' AS admin`
-    return row?.admin === true
+    if (alias === undefined) return true
+    const [host] = yield* sql<{ readonly live: boolean }>`
+      SELECT revoked_at IS NULL AS live FROM host_sessions WHERE id::text = ${alias}`
+    return host?.live === true
   })
 
 /**
  * The earliest moment the fence's authority stops holding by the clock alone: the fence's own expiry; for a `Session`
  * authority, its session's expiry; for a `Repo` authority, the end of its role row's freshness
- * (`RepoRoles.FRESH_SECONDS` after it was read). An SQL expression, read inside the write's transaction, its rows
+ * (`RepoRoles.FRESH_SECONDS` after it was read) and the expiry of the session it came through. An SQL expression, read inside the write's transaction, its rows
  * locked.
  */
 const deadline = (sql: SqlClient.SqlClient, fence: Fence) => {
@@ -125,7 +141,8 @@ const deadline = (sql: SqlClient.SqlClient, fence: Fence) => {
     ? sql`least(${own}, (SELECT expires_at FROM sessions WHERE id::text = ${authority.sessionId}))`
     : authority._tag === "Repo"
     ? sql`least(${own}, (SELECT checked_at + make_interval(secs => ${RepoRoles.FRESH_SECONDS}) FROM github_repo_roles
-        WHERE repo_id = ${authority.held.repoId} AND person_id = ${authority.held.personId}))`
+        WHERE repo_id = ${authority.held.repoId} AND person_id = ${authority.held.personId}),
+        (SELECT expires_at FROM sessions WHERE id::text = ${authority.sessionId ?? ""}))`
     : own
 }
 

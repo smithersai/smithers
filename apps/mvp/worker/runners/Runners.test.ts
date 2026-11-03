@@ -1037,6 +1037,53 @@ describe("the repository's runners and agents", () => {
         .not.toEqual([{ outcome: "set" }])
     })
 
+    // Fable's review of the fences (P3-5): an action admitted by a repository's role row outlived the sign-in that
+    // admitted it, though ending a session or an alias ends what it admitted (Actor.ts).
+    test("an action admitted by a role row ends with the session, or the alias, it came through", async () => {
+      for (const end of ["none", "session", "alias"] as const) {
+        const who = await signedInAdmin()
+        const repoId = "github/acme/private"
+        const [row] = await sql<{ readonly checkedAt: string }>`
+          INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at) VALUES (${repoId}, ${who.person}, 'admin', now())
+          RETURNING checked_at::text AS "checkedAt"`
+        if (end === "session") await sql`UPDATE sessions SET revoked_at = now(), revoked_reason = 'sign_out' WHERE id = ${who.session}::uuid`
+        if (end === "alias") await sql`UPDATE host_sessions SET revoked_at = now() WHERE id = ${who.alias}::uuid`
+        const name = `nyc-role-${end}`
+        const change = await query(Store.addRunner(
+          { repoId, name, tokenSha256: (end === "none" ? "1" : end === "session" ? "2" : "3").repeat(64), labels: [], capacity: 1, repoAuthorized: true },
+          fencedBy({
+            execution: `runners-put:role-${end}`,
+            authority: {
+              _tag: "Repo",
+              held: { repoId, personId: who.person, role: "admin", checkedAt: row!.checkedAt },
+              sessionId: who.session,
+              alias: who.alias,
+            },
+          }),
+        ))
+        expect(change).toBe(end === "none" ? "set" : "authorization_expired")
+        await sql`DELETE FROM github_repo_roles WHERE person_id = ${who.person}`
+      }
+    })
+
+    test("the route carries the session and alias beside the role row it admits by", async () => {
+      await recordInstallation("github/acme/private")
+      const who = await signedInAdmin()
+      await sql`INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at) VALUES ('github/acme/private', ${who.person}, 'admin', now())`
+      const flow = gated()
+      const routes = await fencedRoutes({ ...flow, actor: who.actor })
+      try {
+        const putting = routes.send("runners/nyc-route", "PUT", RUNNER_BODY)
+        await flow.asked
+        await sql`UPDATE host_sessions SET revoked_at = now() WHERE id = ${who.alias}::uuid`
+        flow.release()
+        const answer = await putting
+        expect((await routes.receipt(answer.body!.execution!)).body).toMatchObject({ outcome: "authorization_expired" })
+      } finally {
+        await routes.close()
+      }
+    })
+
     // Astra's review of 29cacd16: a refusal's receipt committed but its acknowledgement lost, the replay was admitted
     // again, and wrote, once the authority was granted again.
     test("a replay of a refused action answers its recorded refusal, and writes nothing", async () => {
