@@ -47,7 +47,7 @@ import * as Bridge from "./Bridge.vibe"
 import type * as Interactions from "./Interactions.vibe"
 import { jsonLength, utf8Length } from "./internal/bytes.ts"
 import { globalName } from "./Presentation.ts"
-import type * as ViewCode from "./ViewCode.ts"
+import type * as ViewCode from "./ViewCode.vibe"
 
 /**
  * The bounds on one realm.
