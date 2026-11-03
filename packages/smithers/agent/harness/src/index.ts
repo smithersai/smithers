@@ -45,7 +45,7 @@ export * as Judgement from "./Judgement.ts"
  * @category controls
  * @since 1.0.0-rc.0
  */
-export * as Relevance from "./Relevance.ts"
+export * as Relevance from "./Relevance.vibe"
 
 /**
  * @category models
@@ -75,7 +75,7 @@ export * as ContextWindow from "./ContextWindow.ts"
  * @category projections
  * @since 0.1.0
  */
-export * as Transcript from "./Transcript.ts"
+export * as Transcript from "./Transcript.vibe"
 
 /**
  * @category projections
@@ -93,7 +93,7 @@ export * as Compaction from "./Compaction.ts"
  * @category steering
  * @since 0.1.0
  */
-export * as Steering from "./Steering.ts"
+export * as Steering from "./Steering.vibe"
 
 /**
  * @category notifications

@@ -7,7 +7,7 @@
  */
 
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
 import type { HarnessError } from "./HarnessError.ts"
 import * as compactionMarks from "./internal/compactionMarks.ts"
@@ -176,19 +176,19 @@ export interface BoundaryInput {
   } | undefined
 }
 
-const SeatChangeRecord = Schema.Struct({
-  _tag: Schema.Literal("SeatChange"),
-  delivery: Schema.Literal("steer"),
-  admittedAt: Schema.Number,
-  seat: Schema.String
-})
+schema SeatChangeRecord {
+  _tag: "SeatChange"
+  delivery: "steer"
+  admittedAt: number
+  seat: string
+}
 
-const ThinkingChangeRecord = Schema.Struct({
-  _tag: Schema.Literal("ThinkingChange"),
-  delivery: Schema.Literal("steer"),
-  admittedAt: Schema.Number,
+schema ThinkingChangeRecord {
+  _tag: "ThinkingChange"
+  delivery: "steer"
+  admittedAt: number
   thinking: ModelRequest.ReasoningEffort
-})
+}
 
 /**
  * The journaled record of one turn-boundary drain.
@@ -341,7 +341,7 @@ export const drainAtClose = (queue: Queue, cutoff: number): Drain => {
  * @slop
  */
 export interface Source {
-  readonly read: () => Effect.Effect<Queue, HarnessError>
+  readonly read: () => Queue!HarnessError
   /**
    * Promotes what one boundary may deliver.
    *
@@ -354,7 +354,7 @@ export interface Source {
    * that promotes afresh each time cannot answer a parked run and will deliver
    * one message many times.
    */
-  readonly drain: (input: BoundaryInput) => Effect.Effect<Drain, HarnessError>
+  readonly drain: (input: BoundaryInput) => Drain!HarnessError
 }
 
 /**
@@ -365,8 +365,8 @@ export interface Source {
  * @slop
  */
 export interface SourceInput {
-  readonly read: () => Effect.Effect<Queue, HarnessError>
-  readonly drain: (input: BoundaryInput) => Effect.Effect<Drain, HarnessError>
+  readonly read: () => Queue!HarnessError
+  readonly drain: (input: BoundaryInput) => Drain!HarnessError
 }
 
 /**

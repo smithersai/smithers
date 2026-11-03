@@ -13,7 +13,7 @@ import type { Notification } from "@smthrs/notifications/Notification"
 import * as SteerPayload from "@smthrs/notifications/SteerPayload"
 import { Effect, Layer, Option } from "effect"
 import { HarnessError } from "./HarnessError.ts"
-import * as Steering from "./Steering.ts"
+import * as Steering from "./Steering.vibe"
 
 /**
  * Which run and lineage this steering source draws notifications for.

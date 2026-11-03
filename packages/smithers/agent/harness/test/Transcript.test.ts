@@ -16,7 +16,7 @@ import * as FailedCall from "../src/FailedCall.ts"
 import * as DemandText from "../src/internal/demandText.ts"
 import { printsObservation } from "../src/internal/printsObservation.ts"
 import * as UnobservedCall from "../src/internal/unobservedCall.ts"
-import * as Transcript from "../src/Transcript.ts"
+import * as Transcript from "../src/Transcript.vibe"
 import { entry, journal } from "./fixtures/journal.ts"
 
 const project = (entries: ReadonlyArray<JournalEvent.Entry>): ReadonlyArray<ModelRequest.Message> =>

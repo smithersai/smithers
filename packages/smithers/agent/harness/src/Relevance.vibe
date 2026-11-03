@@ -22,9 +22,7 @@ import * as Digest from "@smthrs/core/Digest"
 import * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
-import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as AgentEvent from "./AgentEvent.ts"
 import * as bytes from "./internal/bytes.ts"
@@ -181,33 +179,32 @@ export interface Reading {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const judge = (context: Context, items: ReadonlyArray<Item>): Effect.Effect<Reading, Judgement.Unjudged> =>
-  Effect.gen(function*() {
-    const sent = items.map((item) => ({ ...item, text: headKept(item.text, itemBytes) }))
-    const [elapsed, read] = yield* reader.read(context, sent).pipe(Effect.timed)
-    const verdicts = items.map((item, index): Verdict => {
-      const answer = read.answers[index]!.unnecessary
-      return {
-        item,
-        digest: Digest.digest(item.text),
-        p: answer.probability,
-        withheld: bytes.size(item.text) <= itemBytes &&
-          Option.getOrElse(Classifier.confident(answer, confidentAt), () => false)
-      }
-    })
-    const usages = read.asked.flatMap((asked) => asked.usage === undefined ? [] : [asked.usage])
+export const judge = effect (context: Context, items: ReadonlyArray<Item>): Reading!Judgement.Unjudged => {
+  const sent = items.map((item) => ({ ...item, text: headKept(item.text, itemBytes) }))
+  const [elapsed, read] = try (reader.read(context, sent) |> Effect.timed(%))
+  const verdicts = items.map((item, index): Verdict => {
+    const answer = read.answers[index]!.unnecessary
     return {
-      verdicts,
-      asked: read.asked,
-      latencyMs: Math.round(Duration.toMillis(elapsed)),
-      ...(usages.length === 0 ? {} : {
-        usage: {
-          inputTokens: usages.reduce((sum, usage) => sum + usage.inputTokens, 0),
-          outputTokens: usages.reduce((sum, usage) => sum + usage.outputTokens, 0)
-        }
-      })
+      item,
+      digest: Digest.digest(item.text),
+      p: answer.probability,
+      withheld: bytes.size(item.text) <= itemBytes &&
+        Option.getOrElse(Classifier.confident(answer, confidentAt), () => false)
     }
   })
+  const usages = read.asked.flatMap((asked) => asked.usage === undefined ? [] : [asked.usage])
+  return {
+    verdicts,
+    asked: read.asked,
+    latencyMs: Math.round(Duration.toMillis(elapsed)),
+    ...(usages.length === 0 ? {} : {
+      usage: {
+        inputTokens: usages.reduce((sum, usage) => sum + usage.inputTokens, 0),
+        outputTokens: usages.reduce((sum, usage) => sum + usage.outputTokens, 0)
+      }
+    })
+  }
+}
 
 /**
  * The `relevance-settled` row for a reading: ids and digests, never text.

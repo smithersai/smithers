@@ -2,7 +2,7 @@
  * Split an `AGENTS.md` file into the chunks a relevance reading judges, then
  * render the project-instructions block with one bullet withheld.
  */
-import * as Relevance from "../src/Relevance.ts"
+import * as Relevance from "../src/Relevance.vibe"
 
 const agents: Relevance.Document = {
   path: "/repo/AGENTS.md",

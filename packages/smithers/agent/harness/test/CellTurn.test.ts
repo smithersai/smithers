@@ -31,10 +31,10 @@ import { printsObservation } from "../src/internal/printsObservation.ts"
 import * as Monitor from "../src/Monitor.vibe"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
-import * as Steering from "../src/Steering.ts"
+import * as Steering from "../src/Steering.vibe"
 import * as Supervisor from "../src/Supervisor.ts"
 import * as Tokens from "../src/Tokens.vibe"
-import * as Transcript from "../src/Transcript.ts"
+import * as Transcript from "../src/Transcript.vibe"
 import { batchedReply } from "./fixtures/batchedReplies.ts"
 import {
   arrives,

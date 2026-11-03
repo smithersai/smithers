@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/harness"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "oDWXRzqCBM4vyDQjUYg3705VJ2dxXil5D9u_t6ag0j0",
   "configs": [
    {
     "path": {
@@ -110,7 +110,7 @@
      "relative": "packages/smithers/agent/harness/src"
     },
     null,
-    "mcOdl2t-aBhPHXh1HHKjVKZ7NIh4kBjystAAEzH6RGU",
+    "HiPjNnubDsy2ZNidlHNcjMn6PZZmaSqW8QuEboHFHhM",
     [],
     {
      "recursive": true,
@@ -279,7 +279,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Tl95kj_BsjkkH0Oe2GGjSpFJguDayej-HNxHpH7vzXs"
    },
    {
     "path": {
@@ -304,7 +304,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "ynPojIuFuYF19AF8KTHAFYrSfINcXbPNz4ep0VgeHIQ"
    },
    {
     "path": {
@@ -333,49 +333,49 @@
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "UAeiVlu_XM04DsE84vX-lZNTUbrv5hoLjC2N0CGSAlo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "WfYiFTDSIgHOXbvlJC1FmLD45rD1l3wJH2jsptBjSZQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "pw3jwkZ-L60BjMWVfzYeWDAZBqjT0tT8ia6LVyCU3R8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
+    "hash": "jcIi6z-hfSJF2awaZ7-FAkRy35oFQMm5HC7dNGznWVo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "r7klrzKQyLcNYAZZctBzPz5AARbjUYT-vUOXtcFxnfI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "nJKlnXad-SU7SghHDD8bIibTPgXwI3GpaRSq5W0DyTI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "twqlLUHOKnsj3jNwz0sa1yiPlZ9N1RCvF61HlQAzlY0"
    },
    {
     "path": {
@@ -389,49 +389,49 @@
      "relative": "packages/smithers/agent/model/package.json"
     },
     "size": 15090,
-    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
+    "hash": "lWPbL2VWFwwnerLBdJBg8paN_Z9121yfc4xMnn-uFvA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "byfbpgwjvnSSZpDIe88IjlOVXWRBw55AMfCnaXkY8No"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "iLoGBsWSYfbyNXPHokvw02IlsuefNlsgQ0-jVDoK-eI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "Em8aruE90b5w66A0vctxutft_V8WgpHLJx9bejhOPAI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "aiVtCwv8ynESzcLu_w0tZYUjT2ClVc4P260wNKU1KO0"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
+    "hash": "1TixOJ2hUgI8FjbmLTBXCweKdHWI7Pf9CeuePOyUgy8"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/harness/package.json"
     },
-    "size": 20352,
-    "hash": "WdHH54Psx7LmsVGgdyKbD73Ry0-Pj8AAyBFlZNBFSIQ"
+    "size": 20436,
+    "hash": "e49U3gL3C_lx84SEChqFAOkvNKYGThKvG7jlmh_Rhww"
    },
    {
     "path": {
@@ -641,14 +641,14 @@
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
+    "hash": "ghyyFZNzYCykj6xVpEY8xllOGUSOS477gnIfmWj1MyQ"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/package.json"
     },
     "size": 8141,
-    "hash": "O-3M6m6J761jj3XuevgCMWkZ0TCgCy_P5F6i9Z8fX9g"
+    "hash": "Kgl63nTk26bVHlfhyhyPghMHoqATo5b1GQXrA7ZQvvc"
    },
    {
     "path": {
@@ -6415,10 +6415,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/harness/src/internal/cellPrompt.ts"
+     "relative": "packages/smithers/agent/harness/src/internal/cellPrompt.vibe"
     },
-    "size": 26487,
-    "hash": "ef9DJthmd7caGaAKDqvIztz58XnrUwvodSY7372UkDc"
+    "size": 26455,
+    "hash": "-ppn1vfzAWhgVq0eIwZaTccaDI0oX20lIqcChRhVZME"
    },
    {
     "path": {
@@ -6478,24 +6478,395 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/harness/src/Relevance.ts"
+     "relative": "packages/smithers/agent/harness/src/Relevance.vibe"
     },
-    "size": 11182,
-    "hash": "smyz2M5knwAOLmtEC1eI6D1WWBQLje4JyknWjW0xx-U"
+    "size": 11012,
+    "hash": "niVGebDk_WjixidLCaztINrvpYz50tnRKO6UsSB-jxo"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/harness/src/internal/supervision.ts"
     },
-    "size": 32541,
-    "hash": "KCv_FTCcBv-BVzu_xJHQfn376q7KJKJQ6xiYJD5wbnE"
+    "size": 32543,
+    "hash": "6z5KE5UorCBIKwaSqn5fM5n568HULH-qhkNbfS0dgek"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/harness/src/Steering.ts"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityId.d.ts"
     },
-    "size": 14669,
-    "hash": "xx5bF33091y4rX2wlqf9Xzn-8YauNNvgfWPfl0kGIBU"
+    "size": 1452,
+    "hash": "8G6KvjvryXqT0lOzLVz0ddBd34nYGeX5PJ-TUXgxZLw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityType.d.ts"
+    },
+    "size": 1688,
+    "hash": "Pr9kw3NwirstIvug3uhdyEJcxyd3UcZJi_h3_qb_qYk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardId.d.ts"
+    },
+    "size": 3452,
+    "hash": "IRZYtpZiXKDE-crBMSrm0iKOcZS-aoL3MT5s66Ybqng"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityAddress.d.ts"
+    },
+    "size": 3010,
+    "hash": "SZDSwm7j3-YI_9Eh0kkQZVeFTOZr2-lQDTPLmcOrzNo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerAddress.d.ts"
+    },
+    "size": 3040,
+    "hash": "yrFRicKdgra5vnhnDh1zXykc_uaeqp5wmkoGMP0Xfbs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MachineId.d.ts"
+    },
+    "size": 1460,
+    "hash": "bSsSmAAMdM0qkQqMlCis3_mAuVUCx7_mi5YoSxSSVeg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Snowflake.d.ts"
+    },
+    "size": 6636,
+    "hash": "2VBrV_inJwvsXHU3OeEyArFJpjeFrVtkStxHYbLVjYg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterError.d.ts"
+    },
+    "size": 7433,
+    "hash": "HJuVgbkR2eLkp8af7NmcCYHV_lwNlHYdEbfvF8RKdRM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Envelope.d.ts"
+    },
+    "size": 11771,
+    "hash": "1stqdRL93Op15owECroyNwBVzcmXoST5dTEWDkQoHfY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Message.d.ts"
+    },
+    "size": 9872,
+    "hash": "X1umrjOArFnumH98ibH25OmdXXPqYq6ySwge6hJI8c4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Reply.d.ts"
+    },
+    "size": 10360,
+    "hash": "Y8xeHUmrlthiwICskWsLXc9t4OoJ_Pa8_YMyIyzyHX8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingConfig.d.ts"
+    },
+    "size": 18524,
+    "hash": "HL_NI8Jc-1XjO6o0UGXJz3eDhUaIhDQf2Ve2hyyWA4M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Entity.d.ts"
+    },
+    "size": 13096,
+    "hash": "iRHq5o8OmWj3pKEvtSKALC8zQ2mT1MBznsLDOV77j20"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MessageStorage.d.ts"
+    },
+    "size": 34555,
+    "hash": "mKDYRuaIlnF7LPrnOFL2AgOip1mz8lGwGJvzQcneaNQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sTypes.d.ts"
+    },
+    "size": 167852,
+    "hash": "MzaOsujXKwE01wYSdIB_9cJURiZPT6_ZPQRTE3eTq2c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sHttpClient.d.ts"
+    },
+    "size": 3629,
+    "hash": "5Pgx_v1Grrxhdl4IwxaedajTCDYRjx359m6zWULPA1k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runners.d.ts"
+    },
+    "size": 9902,
+    "hash": "i5zZdlh1sG2cuVK0Oy-J9-7Ct2Rug1wG5jJT6oNo-ps"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerHealth.d.ts"
+    },
+    "size": 3568,
+    "hash": "DGmZ-CMQIQW-6ZY-_NaaF8lfdHYoTtR6HKO2NaDpWT0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runner.d.ts"
+    },
+    "size": 3783,
+    "hash": "69XynDbyEGfcXTm_2YEpnkcPG3XNzv76QSfA0iCGKxI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerStorage.d.ts"
+    },
+    "size": 8502,
+    "hash": "k-BpEYMaDbHwjb6RrCmgQt92Pcl88BfX6ylYMQCi9jc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingletonAddress.d.ts"
+    },
+    "size": 1606,
+    "hash": "Jvz0RpNd6mtglj8ut8Cqf8pNg5m2wpcSWVlerpRw1l0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingRegistrationEvent.d.ts"
+    },
+    "size": 2625,
+    "hash": "DzqEGkDybRTSmzt2XBdXczG5cuVaMYl19Z1zPChvEFw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Sharding.d.ts"
+    },
+    "size": 6566,
+    "hash": "mAf9eV5VDjHayYpFIJB69aAJ_OCZWsn9jmq9tmhbMfg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterCron.d.ts"
+    },
+    "size": 3266,
+    "hash": "6oXHUEEOMyMmhYOL1_oUIMZtkuOWQwL95-sxXFdIHsU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterMetrics.d.ts"
+    },
+    "size": 8365,
+    "hash": "mgieQocV1C9i_XWkiaaLX8TI9OV5nTjE7ApoNJhdtxA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterSchema.d.ts"
+    },
+    "size": 6172,
+    "hash": "Xko8-BfThlGviTI6FW7SvVh_4hKZH4-SqWE-IdlNhws"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Workflow.d.ts"
+    },
+    "size": 18929,
+    "hash": "T9ym1nDkGu9D_4BX1TVD2t4tpo9nrcTDwbE4dOaXBTg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableDeferred.d.ts"
+    },
+    "size": 17080,
+    "hash": "0HYeLXjSxTYk2VxmgCR8lsaA7Bq82UNrkpMNKZc0kXg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableClock.d.ts"
+    },
+    "size": 1683,
+    "hash": "acpDCCT8b7Nx7nC7nWDNGg6pktVOgOR57nNFEur5P64"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/WorkflowEngine.d.ts"
+    },
+    "size": 12971,
+    "hash": "4iB3RMXpMelb_0M-FV7m_hX1LXYhTrUzjNOWE7ejhu0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Activity.d.ts"
+    },
+    "size": 6644,
+    "hash": "O94vksRKgyrgx3OpMnXkXv-ze3pAieV5454TvoG64YA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterWorkflowEngine.d.ts"
+    },
+    "size": 4850,
+    "hash": "QmHx8o8GTlbXU_8dolLMcz9IuE0FNXzEvM3sCRv9H8s"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/DeliverAt.d.ts"
+    },
+    "size": 1543,
+    "hash": "Ibq4ocbdh2IG6-2ubhgLC-7utULf4uXp_F5y__Ili5M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStatus.d.ts"
+    },
+    "size": 3210,
+    "hash": "Rm3ULiRjM_JPPOBlrnCzVFmuPHq4e2yHtMfYnqF5dwY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSchema.d.ts"
+    },
+    "size": 33776,
+    "hash": "oRRMtbP_t1NtFNCBVNcTlHmPIiYNmBd58ezmpza039c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiError.d.ts"
+    },
+    "size": 22439,
+    "hash": "Etkv-dnkktQNseuaNP54LHQ72o8ZJHTkp1wHM2AzQ_Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSecurity.d.ts"
+    },
+    "size": 6440,
+    "hash": "q2tAUGBZ_DdM4mtHAL9RI9iNXBdHoUffIzvFbHlvi08"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiMiddleware.d.ts"
+    },
+    "size": 17256,
+    "hash": "EbqaZWiaGwcb7UjXGnqHoS01JqeohAEfBL9GUdFauEY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiGroup.d.ts"
+    },
+    "size": 10492,
+    "hash": "A_KkgwnU5rqDsuZK4IFZ56-mqixiK3W_3mnbcG4ZuFQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiEndpoint.d.ts"
+    },
+    "size": 52343,
+    "hash": "c2mJ-w9tv2gSGS3KkbRh_MVxsAYMtEIijtJ5TvgqLZs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxy.d.ts"
+    },
+    "size": 6091,
+    "hash": "KxDdcwmF-ZTCWCwOTdF6iDpL5VSaHb2J44AsdW9DuMU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApi.d.ts"
+    },
+    "size": 11453,
+    "hash": "FGfWY8p54kEiztH4A3Wx-ERRwxrfWAG8B4eP1c2sQz0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxyServer.d.ts"
+    },
+    "size": 2133,
+    "hash": "bmMHlqj_ihcpQEXaCF3kgP7FAwzNKVbLoZhfVS-XmxE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityResource.d.ts"
+    },
+    "size": 3871,
+    "hash": "mXP4oDVO_i9Z2XGGVEFoEOeAHSoR6LijEePcguUn1XY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/HttpRunner.d.ts"
+    },
+    "size": 7605,
+    "hash": "7IROn5E5L336j0R3t8Z6Wf9pbt2jijPO911OeEy7ff4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerServer.d.ts"
+    },
+    "size": 2766,
+    "hash": "VIRLTgOJbKvN-uKw4a678tWL_BEBXh_N-mbt1RozfE4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingleRunner.d.ts"
+    },
+    "size": 2868,
+    "hash": "dZihTYTMszQrGTTdK09ZbcE861r7u-4aRGLWZ0Xpz6U"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Singleton.d.ts"
+    },
+    "size": 1982,
+    "hash": "-cmWeYzA3_N5yknjp7BQxpXTMRB4a_1aNizeMA7BidY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SocketRunner.d.ts"
+    },
+    "size": 2388,
+    "hash": "jgMC7JfEhtM9wsz0RZGvsYwaGkbRfz8IWOKsC_lUBjg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlMessageStorage.d.ts"
+    },
+    "size": 5399,
+    "hash": "4IhxmO3kZYtbzvxbnUmY5NeXG1izrpH82KGob9Yvpzw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlRunnerStorage.d.ts"
+    },
+    "size": 4301,
+    "hash": "QRDzqXBCqRCTVozYpCJLHrQmtSf8oN6M5XFkd37yaIc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/TestRunner.d.ts"
+    },
+    "size": 1023,
+    "hash": "S7Jp3TeumNcJNeTal7pDVdhK_FHlK5iBI8NKfdbmqA8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/index.d.ts"
+    },
+    "size": 3870,
+    "hash": "TCw4mrTHA5ASw2V2ECEmcvSyCaTQphcrVWlaD_pOQ0Q"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/agent/harness/src/Steering.vibe"
+    },
+    "size": 14475,
+    "hash": "yTtzyWFHbz2R32LZxgI_6Y_xKNwAdd24RSE7pxrXX6Q"
    },
    {
     "path": {
@@ -6506,7 +6877,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/harness/src/Transcript.ts"
+     "relative": "packages/smithers/agent/harness/src/Transcript.vibe"
     },
     "size": 20827,
     "hash": "JnTvzRecOqz-nVA3B6qu26qGri9mnXrpKmwWPvhjxMA"
@@ -6515,8 +6886,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/CellTurn.ts"
     },
-    "size": 215906,
-    "hash": "hqfCUyqnhGPq6fBoKvTwhg2D_5411ewWlMrWKlu5P-s"
+    "size": 215914,
+    "hash": "E3Qq8RwhVWDlVKFRSy8B8x9A4SZfvc8mJRVteeO3LVc"
    },
    {
     "path": {
@@ -6604,13 +6975,6 @@
    },
    {
     "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStatus.d.ts"
-    },
-    "size": 3210,
-    "hash": "Rm3ULiRjM_JPPOBlrnCzVFmuPHq4e2yHtMfYnqF5dwY"
-   },
-   {
-    "path": {
      "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Mime.d.ts"
     },
     "size": 835,
@@ -6683,8 +7047,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/Notifications.ts"
     },
-    "size": 14710,
-    "hash": "MRtd-Ng5PsfA9rFyk7kLwyBaonQhWy-68sJf8lYeoY8"
+    "size": 14712,
+    "hash": "RlITxHJ-FnpmlQn6AdixJrX_j7QBMJTJZEJ3EMhZS0Y"
    },
    {
     "path": {
@@ -6739,8 +7103,8 @@
     "path": {
      "relative": "packages/smithers/agent/harness/src/index.ts"
     },
-    "size": 3833,
-    "hash": "8XId0ND2SONKQQMflDfttf59c-x92W0dQD62DAHubkU"
+    "size": 3839,
+    "hash": "96-X-L1JfA4wfgX3Kmni9T3xYIdaLF4aY_rHuUP9I2g"
    },
    {
     "path": {
@@ -8676,7 +9040,7 @@
     "relative": "packages/smithers/agent/harness/src/Monitor.vibe"
    },
    {
-    "relative": "packages/smithers/agent/harness/src/internal/cellPrompt.ts"
+    "relative": "packages/smithers/agent/harness/src/internal/cellPrompt.vibe"
    },
    {
     "relative": "packages/smithers/agent/harness/src/internal/compactionMarks.ts"
@@ -8703,19 +9067,19 @@
     "relative": "packages/smithers/agent/harness/src/internal/printsObservation.ts"
    },
    {
-    "relative": "packages/smithers/agent/harness/src/Relevance.ts"
+    "relative": "packages/smithers/agent/harness/src/Relevance.vibe"
    },
    {
     "relative": "packages/smithers/agent/harness/src/internal/supervision.ts"
    },
    {
-    "relative": "packages/smithers/agent/harness/src/Steering.ts"
+    "relative": "packages/smithers/agent/harness/src/Steering.vibe"
    },
    {
     "relative": "packages/smithers/agent/harness/src/ExternalTranscript.ts"
    },
    {
-    "relative": "packages/smithers/agent/harness/src/Transcript.ts"
+    "relative": "packages/smithers/agent/harness/src/Transcript.vibe"
    },
    {
     "relative": "packages/smithers/agent/harness/src/CellTurn.ts"
@@ -8816,6 +9180,16 @@
     "category": "warning",
     "code": "EK4831",
     "text": "Variant extends Context.Service; in VibeLang a service is a service declaration: service Variant { … }.\n  No quick fix: its members come from VariantService; write them in the declaration. Keep its key in the declaration: static readonly key = \"@smthrs/harness/QuickJSSandbox/Variant\"."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/harness/src/Transcript.vibe"
+    },
+    "line": 107,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "TranscriptError extends Schema.TaggedError; a schema error declaration, schema error TranscriptError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
    }
   ],
   "outputs": [
@@ -8902,6 +9276,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/harness/src/internal/cellPrompt.vibe"
+     }
+    ],
+    "code": "/**\n * The one contract the cell-first harness teaches a model.\n *\n * This contract is plain JavaScript over `ctx.call`, shaped to look like the\n * Claude Code workflow API, and that is a ruling rather than an accident: will\n * ruled on 2026-08-20 that the model authoring surface stays this shape,\n * because agents perform better on the shape they are trained on. Effect.ts is\n * the language of the code we maintain, not the language the model writes. Do\n * not port this contract onto `Flow`/`Action`/`Node`; that was built out under\n * a 2026-08-12 ruling and reversed. It may be tested later as a benchmark arm\n * and is adopted only if it benchmarks better.\n *\n * There is one contract, and it is the REPL's. The surface it replaced — a cell\n * as the body of its own async function, filing JSON into `state` and choosing\n * its successor's `context` by hand — is recorded as a design error rather than\n * as an arm that lost: it made the model do the realm's job, which is why it\n * never worked like a REPL. will ruled it out on 2026-08-24. The evidence and\n * the ruling are in `../../docs/concepts.md#repl-realm`.\n *\n * The contract comes in two profiles (decision 0003 of `apps/mvp`,\n * 2026-10-19). `workspace` is the contract below, unchanged. `conversation`\n * is the same REPL and rules 1 to 6, byte for byte, without the bug-fix\n * example, rules 7 to 9 and the history fact, for a run whose catalog holds\n * no workspace flows. See {@link Profile}.\n *\n * The teaching here is measured, not preferred, and the measurement has now run\n * both ways. The merged optimal-trace program\n * predicted that more teaching\n * would buy verdicts, and grew the contract it replaced from 8,197 to 11,312\n * characters across changes 2, 9 and 10. The re-run that settles those\n * predictions says it did not:\n * resolved fell 35/45 to 30/45, cost rose 59 %, and five instances spent a whole\n * 1,200 s budget without editing one byte, held there by an unconditional\n * pre-edit reproduction rule. The same wave shows every *tool* change paying.\n * That is why the rules below carry their traces and why a teaching change is\n * made one at a time.\n *\n * The exception rule 8 used to state — \"when the command will not bootstrap,\n * edit on the diagnosis you have and establish the proof afterwards\" — is gone,\n * and it is gone because the thing it was managing no longer exists. It existed\n * to relieve an *ordering*: a baseline had to be taken before the edit, so a\n * baseline that could not be taken yet blocked the edit. Checkpoints remove the\n * ordering outright (will, 2026-08-24). The baseline is now taken after the\n * edit, against `ctx.base`, so there is nothing left to make conditional and a\n * sentence offering relief from a constraint the contract no longer imposes is\n * teaching a shape that is not the shape.\n *\n * The same ruling is why the worked examples put the edit first and the\n * baseline second. That ordering is the whole of the failure it kills: on\n * `sympy__sympy-13878` the r95repl lane applied one byte-identical\n * 4,789-character patch five times, four of those applications preceded by\n * `git checkout -- sympy/stats/crv_types.py`, because a clean fails-before\n * proof required reverting the very work it was meant to prove. Models imitate\n * the example, and the example now shows a run that never gives its work back.\n *\n * The environment facts a host can compute (change 9) stay in full: they cost\n * the agent nothing to read and removed a whole class of archaeology.\n *\n * Each rule below carries the failure it was written against; do not soften one\n * without the trace that says the failure stopped happening, and do not add one\n * without a trace that says teaching — rather than a tool — is the gap.\n *\n * Governing design: `../../docs/concepts.md#model-authoring-surface` (the\n * ruling) and `../../docs/concepts.md#agent-cell-context` (the surface).\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport * as Digest from \"@smthrs/core/Digest\";\nimport * as CanonicalJson from \"@smthrs/model/CanonicalJson\";\nimport * as Monitor from \"../Monitor.js\";\nimport { untrustedData } from \"./untrustedData.js\";\n/**\n * The realm the run writes into, taught by both profiles byte for byte.\n */\nconst realmText = `JavaScript REPL, one cell per turn, alive for the whole run.\n\nEvery reply MUST contain a fenced \\`cell\\` block, JavaScript only. Several blocks in one reply run as ONE program. Yield after inspection when later decisions depend on tool output.\n\nTop-level bindings persist across cells, as in any REPL. \\`console.log\\` output opens your next turn and stays in context; unprinted values stay in their variables.`;\n/**\n * The worked bug-fix example, taught by the workspace profile only: its\n * `grep`, `read`, `edit` and `bash` calls name a workspace catalog.\n */\nconst bugFixExample = `Example bug fix, two cells. Names illustrative; call what \\`ctx.flows\\` lists.\n\n\\`\\`\\`cell\nconst found = await ctx.call(\"grep\", { pattern: \"return value\", root: \"src/units\", limit: 5 })\nconst hit = found.ok === false ? undefined : found.matches[0]\nconst region = hit === undefined ? undefined : await ctx.call(\"read\", { path: hit.file, offset: Math.max(1, hit.line - 20), limit: 40 })\nconsole.log(found.ok === false ? found.error.message : hit === undefined ? \"No matches\" : region.ok === false ? region.error.message : region.content)\n\\`\\`\\`\n\n\\`\\`\\`cell\nconst verification = { flow: \"bash\", input: { command: \"run-tests tests/test_widen.py::test_keeps_unit\" } }\nif (hit !== undefined && region.ok !== false) {\n  const anchor = hit.text\n  const applied = await ctx.call(\"edit\", { path: hit.file, oldString: anchor, newString: anchor.replace(\"return value\", \"return widen(value)\") })\n  if (applied.ok === false) console.log(applied.error.message)\n  else {\n    const before = await ctx.call(verification.flow, verification.input, { at: ctx.base })\n    const after = await ctx.call(verification.flow, verification.input)\n    if (before.ok === false) console.log(before.error.message)\n    else if (after.ok === false) console.log(after.error.message)\n    else {\n      console.log(applied.hunk, before.exitCode, after.exitCode, after.stdout)\n      if (Number.isInteger(before.exitCode) && before.exitCode !== 0 && after.exitCode === 0) ctx.done(\"Widened \" + hit.file + \"; \" + verification.input.command + \" failed before, passes after.\")\n    }\n  }\n}\n\\`\\`\\``;\n/**\n * The batching line and rules 1 to 6, the REPL's own rules, taught by both\n * profiles byte for byte.\n */\nconst replRules = `Many calls per cell; one call per frame wastes turns.\n\nRules:\n\n1. Bindings: \\`ctx\\`, \\`console\\`, earlier cells' names. \\`ctx.call(name, input)\\` runs a flow; \\`ctx.flows\\` lists them. No imports, require, fetch, filesystem, process, Date, Math.random; anything else throws. Strings passed to flows are data (a Python heredoc is fine).\n2. Every effect is a flow: files, commands, memory, questions, subagents.\n3. A failed call does not throw: resolves \\`{ ok: false, error: { code, message, hint } }\\`; test \\`.ok === false\\` where you are unsure. Success resolves the result unwrapped. A throwing cell keeps names already assigned. Long calls spend the flow's budget, not the cell's. Output is capped: a result flagged truncated is a fragment. Restore files with git checkout or git restore; never route file content through captured stdout (a write of bytes a call returned truncated is refused).\n4. Before your first edit, reading is uncapped: print whole files, search results, listings. Each turn opens with your last print, bound names, and one line per settled call (tree writes and repeats flagged). After your first edit, prints are re-paid every turn: print only what you must read; keep the rest in variables; ≤40 lines a cell; never whole listings, search results, files or intermediates; counts and paths first, then only the chosen region. Structures print as JSON; record lists as tables.\n5. Finish by calling. \\`ctx.done(output)\\` ends the run; \\`output\\` is the answer. \\`ctx.park(reason, message)\\` waits durably for a human; reason \"waiting-input\" | \"waiting-event\" | \"waiting-quota\"; refused when nobody listens. Both take effect at that line; later calls in the cell resolve \\`{ ok: false, error: { code: \"run_completed\" } }\\`. Conversational or read-only request: \\`ctx.done(answer)\\` directly; no edit, command, baseline or tree review. \\`console.log\\` alone does not finish. Workspace change: finish behind the deciding check, \\`if (after.exitCode === 0) ctx.done(...)\\`. Let the guard read the tree too: \\`git status --porcelain\\` and \\`git diff\\` in the completing cell; finish silently only when the check passes AND the diff holds exactly the files you meant to change, else \\`console.log\\` that diff. A bare \\`ctx.done\\` is allowed but is a claim nobody checked: say what is unverified. Workspace \\`output\\`, ≤3 lines: what changed and which check passed. A cell calling neither ends the turn.\n6. Resume re-executes cells from the top; settled calls replay recorded results.`;\n/**\n * Rules 7 to 9, the bug-fix evidence and proof rules, taught by the\n * workspace profile only.\n */\nconst workspaceRules = `7. Bug-fix evidence: a command counts only after you SEE it fail on the unmodified tree FOR THE RIGHT REASON (the bug). A probe naming a test, file, module or program that does not exist reproduces nothing; \\`invalidProbe\\` flags some. Fix such a probe before you rely on it. Keep the check as \\`verification = { flow, input }\\`; reuse it unchanged after edits.\n8. Workspace change: read broadly in ONE cell, then edit. Too many frames without a write stop the run; near the limit, edit or \\`ctx.justify(\"<missing evidence, the call that gets it, what changes next>\")\\`. An edit answers with the hunk it applied: print it in the same cell (a bad edit costs one glance there). Then run whatever language-aware checker \\`ctx.flows\\` and this image actually offer (compiler, ruff, eslint/tsc) through the shell flow. Fix undefined names before broad suites. No checker: say so; never regex-guess.\n9. Bug-fix proof, fewest frames: ONE cell edits, runs the baseline at \\`{ at: ctx.base }\\` (opening tree), reruns the identical check. NEVER undo your own edit to re-prove a baseline. \\`ctx.checkpoint()\\` pins the current tree for your own baseline; a checkpoint is read-only, so a flow that writes is refused at one. Let code decide: \\`if (before.exitCode !== 0 && after.exitCode === 0) ctx.done(...)\\`. An already-green suite or a probe that misses its target proves nothing.`;\n/**\n * What happens to a cell that throws or does not parse, taught by both profiles.\n */\nconst parseFailureText = `Cell throws: you are told, next turn. If a cell does not PARSE nothing ran at all; you are asked again inside the SAME frame with the error and line.`;\n/**\n * The contract a `workspace` run is taught.\n *\n * It is the contract that replaced the filing one, and the difference is exactly\n * the difference in the surface: there is no returned object to describe, no\n * `state` to file, no manifest to read, and no `render`/`recall` to name,\n * because the variable is the memory and the print is the summary.\n *\n * Every rule with a trace behind it was carried across byte-similar when the\n * surface changed, and that was deliberate: the r91 rerun grew the old contract\n * from 8,197 to 11,312 characters and dropped resolved from 35/45 to 30/45 at\n * 59 % more cost, which says teaching changes are expensive and must be measured\n * one at a time. A wave that changed the realm *and* re-cut the doctrine could\n * not attribute its own result. Cutting further is its own arm, with its own\n * wave.\n *\n * The second worked example is the golf report's own prescription — its\n * class-(a) finding is that the contract's only worked example is a three-line\n * toy, and models imitate the example.\n *\n * It moved a second time on 2026-08-24, when checkpoints landed: the baseline\n * moved after the edit in the example and rule 9 names `ctx.base`. Both pinned\n * numbers moved with it.\n *\n * The completion teaching first moved after the first REPL wave, and the change\n * is stated rather than smuggled. What died is the see-then-attest rule\n * (\"complete only once you have SEEN that identical command pass\"): it asked for\n * a memory of a result and got one, and `sympy__sympy-13878` ended by claiming\n * in `output` that a suite \"exited 0 and printed its passing test summary\" one\n * frame after its own guarded `ctx.done` had declined to fire because that suite\n * exited 1. What replaces it is the shape the model had already written and\n * abandoned: complete behind a check of the result, `if (after.exitCode === 0)\n * ctx.done(...)`, so the verdict is read from the call rather than remembered\n * across a turn. An unguarded completion stays legal — sometimes nothing in the\n * image can be made to flip — and is named for what it is, a claim nobody\n * checked. That is will's ruling of 2026-08-23, and it is why the pinned length\n * in `test/CellPrompt.test.ts` moved.\n *\n * Task scoping moved on 2026-09-19 after a chat request to answer only A spent\n * twelve frames printing and then looking for an unrelated failing test.\n * The host already taught same-cell completion, but these rules required an\n * edit and a proving command unconditionally. The scoped contract completed\n * the retained natural-language opening in six of six probes, against four\n * of six for the old contract. A seeded six-print loop still did not recover\n * the exact answer; the unchanged read-only cap remains necessary. The edit,\n * baseline and tree-review requirements remain for requested workspace work.\n *\n * Rule 10 and rule 4's `jev` clause moved to the `cell-jev` section on\n * 2026-09-25 (#1929), so a run with no `jev` bound is not taught it.\n *\n * On 2026-09-30 will ruled for token economy: every rule stays, prose becomes\n * fragments, 9,715 → 5,553 characters. No wave has measured this wording yet.\n *\n * Will 2026-10-14: reading before the first edit is not capped; evidence\n * why-codex-won.md. Rule 4's print economy now starts at the first edit.\n *\n * Will 2026-10-14, the same day (#3995): the answer is short. Rule 5 asked a\n * completing run to name each claimed check's exact command and output, and\n * the worked example pasted the applied hunk into `ctx.done`; done text ran\n * 498 tokens per task against stock Codex's 74 (why-more-output.md). Rule 5\n * now asks for what changed and which check passed, in a few lines, and still\n * for what is unverified; the example answers in one sentence.\n *\n * Governing design: `../../docs/concepts.md#repl-realm`.\n */\nconst replContract = `${realmText}\\n\\n${bugFixExample}\\n\\n${replRules}\\n${workspaceRules}\\n\\n${parseFailureText}`;\n/**\n * The contract a `conversation` run is taught: the workspace contract without\n * the bug-fix example and rules 7 to 9.\n *\n * Decision 0003 of `apps/mvp` (2026-10-19): a chat agent's catalog is the\n * app's own flows, so the example's `grep`, `read`, `edit` and `bash` calls\n * name flows it cannot reach, and rules 7 to 9 teach bug-fix evidence for a\n * tree it does not have. The REPL and rules 1 to 6 are kept byte for byte,\n * so Will's 2026-08-20 ruling on the `ctx.call` shape stands. The pinned\n * length and digest in `test/CellPrompt.test.ts` hold it; the agent evals\n * of decision 0004 measure it.\n */\nconst conversationContract = `${realmText}\\n\\n${replRules}\\n\\n${parseFailureText}`;\n/**\n * How a cell uses the `jev` flow, taught only when the catalog binds it.\n *\n * It was rule 10 of the contract and a clause of rule 4 until 2026-09-25, when\n * will asked for Jev to be used strongly in the cells a model writes (#1929).\n * A rule that names a flow the catalog may not hold teaches a call that\n * resolves `unknown_flow`, so the teaching moved into a section of its own\n * that exists exactly when the flow does. It is constant for a run, so it sits\n * between the environment and the catalog without breaking the cached prefix.\n *\n * The floors are the owner's: act on a boolean at probability 0.8, and on a\n * choice or score at the provider's confidence 0.7. A choice's own\n * `.confidence` is the largest probability in its distribution and reads 1\n * when none was sent, so the teaching names the provider's number instead.\n *\n * The one worked example is run verbatim by `test/CellFlows.test.ts` against\n * the real `grep` and `jev` bindings, because a model copies the example.\n *\n * Will 2026-10-14: a command answers what it can check; `jev` judges the rest.\n * navidrome-69e0a266 asked `jev` whether its tests proved the 15x15 case, read\n * p = 0.93 and never ran the case, which was the bug (why-codex-won.md).\n *\n * Will 2026-10-14, the same day: `jev` takes the mechanical decisions over\n * items, each item carrying its evidence, and not reviews of the model's own\n * work (#3992). Of the run's 852 `jev` calls, 55 to 61% reviewed the model's\n * own diff, plan or tests, and Jev said yes at 0.8 or more to 61% of those\n * questions. In a hand-read sample, a test or a grep would have settled 14 of\n * 22 such calls and reading the diff the other 8. The example's evidence is\n * each file's hit lines under the id its question is keyed by. Replayed, 13\n * file picks that sent bare paths scored a gold-patch file above another in\n * 65% of pairs with each id named, and in 76% once each path carried the hit\n * lines the run had already printed.\n */\nconst jevText = `1. Use \\`jev\\` for mechanical decisions over items you would otherwise print and read: pick, filter, classify, match, rank (relevant files by their hit lines, failures by their output, which subtask needs a worker). ONE call: each item's evidence in \\`state:\\` under its id, one question per id. Hundreds take ~300 ms.\n2. Never make one call per item; never ask \\`jev\\` for text, code or quotes, or to review your own diff, plan or tests: read them yourself. When a command can answer the question, run the command; \\`jev\\` is for judgments no command can check.\n3. Failure resolves \\`{ ok: false }\\`: print \\`error.message\\`; do not decide in its place.\n4. Act on booleans when \\`answers[id].probability >= 0.8\\`; on choice or score when \\`judged.confidence?.[id] >= 0.7\\` (provider confidence; absent = uncertain). Never use a choice's own \\`.confidence\\` (reads 1 without a distribution). Print uncertain items; don't decide them.\n\n\\`\\`\\`cell\nconst found = await ctx.call(\"grep\", { pattern: \"timeout\", root: \"src\", limit: 200 })\nconst hits = {}\nfor (const m of found.ok === false ? [] : found.matches) (hits[m.file] ??= []).push(m.text)\nconst files = Object.keys(hits)\nconst judged = await ctx.call(\"jev\", { state: { task: ctx.task, hits }, questions: Object.fromEntries(files.map((f) => [f, { type: \"boolean\", instructions: \"Must this file change?\" }])) })\nconst p = (f) => judged.answers[f].probability\nconst kept = judged.ok === false ? [] : files.filter((f) => p(f) >= 0.8)\nconst uncertain = judged.ok === false ? [] : files.filter((f) => p(f) > 0.2 && p(f) < 0.8)\nconsole.log(found.ok === false ? found.error.message : judged.ok === false ? judged.error.message : { count: files.length, kept, uncertain })\n\\`\\`\\``;\n/**\n * The one line a judged run is taught about its stance: the Monitor mood text,\n * verbatim, so the static stance and the delivered mood never disagree.\n */\nconst stanceText = (stance) => stance === \"paranoid\" ? Monitor.paranoidText : Monitor.carefulText;\nconst historyFact = `the checkout ends at the commit you were given; no branch, tag, stash or reflog here holds a later fix, so \\`git log --all\\` or \\`-S\\` hunting costs a frame and returns nothing. The harness keeps its own attempt and durability snapshots in a repository of its own. A dangling commit is this harness pinning your own tree for a checkpoint: \\`git fsck\\` reports your edit and never a fix. Backwards history pays: \\`git blame\\` or \\`git log -S\\` on a line says what an assertion was written for; given a last-known-good release, \\`git log <tag>..HEAD -- <paths>\\`.`;\n/**\n * The environment section, or nothing when the profile states no fact and the\n * host measured none: a `conversation` run has no checkout to describe.\n */\nconst environmentText = (environment, profile) => {\n    const lines = profile === \"workspace\" ? [`- History: ${historyFact}`] : [];\n    if (environment.locale !== undefined) {\n        lines.push(`- Locale: ${environment.locale}; output and files decode as that.`);\n    }\n    const absent = environment.absentTools === undefined ? [] : [...environment.absentTools].sort();\n    if (absent.length > 0) {\n        lines.push(`- Not installed: ${absent.join(\", \")}. Calls to them fail; use \\`ctx.flows\\`.`);\n    }\n    return lines.length === 0\n        ? undefined\n        : `Harness-computed facts about the checkout and container, not the task.\\n${lines.join(\"\\n\")}`;\n};\nconst digest = (id, text) => Digest.digest(CanonicalJson.stringify({ id, text }));\nconst catalogText = (flows) => {\n    const names = Object.keys(flows).sort();\n    if (names.length === 0) {\n        return \"No flows are callable in this run. Complete or park; ctx.call has nothing to reach.\";\n    }\n    const lines = names.map((name) => {\n        const projection = flows[name];\n        const capabilities = projection.capabilities.length === 0\n            ? \"\"\n            : ` capabilities=${[...projection.capabilities].sort().join(\",\")}`;\n        const origin = JSON.stringify({\n            source: projection.provenance?.source ?? \"unknown\",\n            root: projection.provenance?.root,\n            path: projection.path\n        });\n        const heading = `- ${name} (${projection.tier})${capabilities}: ${projection.description}\\n  provenance: ${origin}`;\n        // The input schema is the difference between choosing a call and guessing\n        // one. A rejected input costs a whole frame, so a catalog that names a\n        // flow without saying what it takes spends the run's frame budget on\n        // trial and error.\n        return Option.isNone(projection.input)\n            ? heading\n            : `${heading}\\n  input: ${JSON.stringify(projection.input.value)}`;\n    });\n    return `Flows callable with ctx.call in this frame:\\n${untrustedData(lines.join(\"\\n\"), \"flow catalog (descriptor provenance follows)\")}`;\n};\n/**\n * Builds the cell-contract teaching sections for one frame.\n *\n * The order is by how often each section changes, because every one of them is\n * a prefix segment and a prefix is only cached up to its first edit: the\n * contract is constant for the life of the binary, the environment and the\n * `jev` teaching for the life of a run, and the catalog can differ frame to\n * frame. The `jev` teaching is rendered only when `flows` binds `jev`.\n *\n * `stance` renders a one-line `cell-stance` section between the contract and\n * the environment. It is constant for the run, so the cached prefix holds;\n * with no stance nothing is rendered and the prompt is unchanged.\n *\n * `environment` carries what the host measured about the container. It is\n * optional because the epoch fact — a checkout has no future in it — holds\n * everywhere and is stated with or without a host that measures anything else.\n *\n * `profile` picks the contract; see {@link Profile}. A `conversation` run is\n * taught no epoch fact, so its environment section is rendered only for facts\n * the host measured.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (flows, environment = {}, stance, profile = \"workspace\") => {\n    const facts = environmentText(environment, profile);\n    const catalog = catalogText(flows);\n    const taught = profile === \"workspace\" ? replContract : conversationContract;\n    const stanced = stance === undefined ? undefined : stanceText(stance);\n    return [\n        { id: \"cell-contract\", text: taught, digest: digest(\"cell-contract\", taught) },\n        ...(stanced === undefined\n            ? []\n            : [{ id: \"cell-stance\", text: stanced, digest: digest(\"cell-stance\", stanced) }]),\n        ...(facts === undefined\n            ? []\n            : [{ id: \"cell-environment\", text: facts, digest: digest(\"cell-environment\", facts) }]),\n        ...(flows.jev === undefined\n            ? []\n            : [{ id: \"cell-jev\", text: jevText, digest: digest(\"cell-jev\", jevText) }]),\n        { id: \"cell-catalog\", text: catalog, digest: digest(\"cell-catalog\", catalog) }\n    ];\n};\n",
+    "map": {
+     "version": 3,
+     "file": "cellPrompt.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/harness/src/internal/cellPrompt.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAkEG;;AAEH,OAAO,KAAK,MAAM,MAAM,qBAAqB,CAAA;AAC7C,OAAO,KAAK,aAAa,MAAM,6BAA6B,CAAA;AAI5D,OAAO,KAAK,OAAO,MAAM,eAAiB,CAAA;AAC1C,OAAO,EAAE,aAAa,EAAE,MAAM,oBAAoB,CAAA;AAoDlD;;GAEG;AACH,MAAM,SAAS,GAAG;;;;qKAImJ,CAAA;AAErK;;;GAGG;AACH,MAAM,aAAa,GAAG;;;;;;;;;;;;;;;;;;;;;;;;;;OA0Bf,CAAA;AAEP;;;GAGG;AACH,MAAM,SAAS,GAAG;;;;;;;;;iFAS+D,CAAA;AAEjF;;;GAGG;AACH,MAAM,cAAc,GAClB;;8dAE4d,CAAA;AAE9d;;GAEG;AACH,MAAM,gBAAgB,GACpB,uJAAuJ,CAAA;AAEzJ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAgEG;AACH,MAAM,YAAY,GAAG,GAAG,SAAS,OAAO,aAAa,OAAO,SAAS,KAAK,cAAc,OAAO,gBAAgB,EAAE,CAAA;AAEjH;;;;;;;;;;;GAWG;AACH,MAAM,oBAAoB,GAAG,GAAG,SAAS,OAAO,SAAS,OAAO,gBAAgB,EAAE,CAAA;AAElF;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAgCG;AACH,MAAM,OAAO,GACX;;;;;;;;;;;;;;;OAeK,CAAA;AAEP;;;GAGG;AACH,MAAM,UAAU,GAAG,CAAC,MAAqC,EAAU,EAAE,CACnE,MAAM,KAAK,UAAU,CAAC,CAAC,CAAC,OAAO,CAAC,YAAY,CAAC,CAAC,CAAC,OAAO,CAAC,WAAW,CAAA;AAEpE,MAAM,WAAW,GACf,mjBAAmjB,CAAA;AAErjB;;;GAGG;AACH,MAAM,eAAe,GAAG,CAAC,WAAwB,EAAE,OAAgB,EAAsB,EAAE;IACzF,MAAM,KAAK,GAAG,OAAO,KAAK,WAAW,CAAC,CAAC,CAAC,CAAC,cAAc,WAAW,EAAE,CAAC,CAAC,CAAC,CAAC,EAAE,CAAA;IAC1E,IAAI,WAAW,CAAC,MAAM,KAAK,SAAS,EAAE,CAAC;QACrC,KAAK,CAAC,IAAI,CACR,aAAa,WAAW,CAAC,MAAM,oCAAoC,CACpE,CAAA;IACH,CAAC;IACD,MAAM,MAAM,GAAG,WAAW,CAAC,WAAW,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,CAAC,GAAG,WAAW,CAAC,WAAW,CAAC,CAAC,IAAI,EAAE,CAAA;IAC/F,IAAI,MAAM,CAAC,MAAM,GAAG,CAAC,EAAE,CAAC;QACtB,KAAK,CAAC,IAAI,CACR,oBAAoB,MAAM,CAAC,IAAI,CAAC,IAAI,CAAC,0CAA0C,CAChF,CAAA;IACH,CAAC;IACD,OAAO,KAAK,CAAC,MAAM,KAAK,CAAC;QACvB,CAAC,CAAC,SAAS;QACX,CAAC,CAAC,2EAA2E,KAAK,CAAC,IAAI,CAAC,IAAI,CAAC,EAAE,CAAA;AACnG,CAAC,CAAA;AAED,MAAM,MAAM,GAAG,CAAC,EAAiB,EAAE,IAAY,EAAU,EAAE,CAAC,MAAM,CAAC,MAAM,CAAC,aAAa,CAAC,SAAS,CAAC,EAAE,EAAE,EAAE,IAAI,EAAE,CAAC,CAAC,CAAA;AAIhH,MAAM,WAAW,GAAG,CAAC,KAAkD,EAAU,EAAE;IACjF,MAAM,KAAK,GAAG,MAAM,CAAC,IAAI,CAAC,KAAK,CAAC,CAAC,IAAI,EAAE,CAAA;IACvC,IAAI,KAAK,CAAC,MAAM,KAAK,CAAC,EAAE,CAAC;QACvB,OAAO,qFAAqF,CAAA;IAC9F,CAAC;IACD,MAAM,KAAK,GAAG,KAAK,CAAC,GAAG,CAAC,CAAC,IAAI,EAAE,EAAE;QAC/B,MAAM,UAAU,GAAG,KAAK,CAAC,IAAI,CAAE,CAAA;QAC/B,MAAM,YAAY,GAAG,UAAU,CAAC,YAAY,CAAC,MAAM,KAAK,CAAC;YACvD,CAAC,CAAC,EAAE;YACJ,CAAC,CAAC,iBAAiB,CAAC,GAAG,UAAU,CAAC,YAAY,CAAC,CAAC,IAAI,EAAE,CAAC,IAAI,CAAC,GAAG,CAAC,EAAE,CAAA;QACpE,MAAM,MAAM,GAAG,IAAI,CAAC,SAAS,CAAC;YAC5B,MAAM,EAAE,UAAU,CAAC,UAAU,EAAE,MAAM,IAAI,SAAS;YAClD,IAAI,EAAE,UAAU,CAAC,UAAU,EAAE,IAAI;YACjC,IAAI,EAAE,UAAU,CAAC,IAAI;SACtB,CAAC,CAAA;QACF,MAAM,OAAO,GAAG,KAAK,IAAI,KAAK,UAAU,CAAC,IAAI,IAAI,YAAY,KAAK,UAAU,CAAC,WAAW,mBAAmB,MAAM,EAAE,CAAA;QACnH,0EAA0E;QAC1E,uEAAuE;QACvE,qEAAqE;QACrE,mBAAmB;QACnB,OAAO,MAAM,CAAC,MAAM,CAAC,UAAU,CAAC,KAAK,CAAC;YACpC,CAAC,CAAC,OAAO;YACT,CAAC,CAAC,GAAG,OAAO,cAAc,IAAI,CAAC,SAAS,CAAC,UAAU,CAAC,KAAK,CAAC,KAAK,CAAC,EAAE,CAAA;IACtE,CAAC,CAAC,CAAA;IACF,OAAO,gDACL,aAAa,CAAC,KAAK,CAAC,IAAI,CAAC,IAAI,CAAC,EAAE,8CAA8C,CAChF,EAAE,CAAA;AACJ,CAAC,CAAA;AAED;;;;;;;;;;;;;;;;;;;;;;;;GAwBG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAClB,KAAkD,EAClD,WAAW,GAAgB,EAAE,EAC7B,MAAsC,EACtC,OAAO,GAAY,WAAW,EACN,EAAE;IAC1B,MAAM,KAAK,GAAG,eAAe,CAAC,WAAW,EAAE,OAAO,CAAC,CAAA;IACnD,MAAM,OAAO,GAAG,WAAW,CAAC,KAAK,CAAC,CAAA;IAClC,MAAM,MAAM,GAAG,OAAO,KAAK,WAAW,CAAC,CAAC,CAAC,YAAY,CAAC,CAAC,CAAC,oBAAoB,CAAA;IAC5E,MAAM,OAAO,GAAG,MAAM,KAAK,SAAS,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAC,UAAU,CAAC,MAAM,CAAC,CAAA;IACrE,OAAO;QACL,EAAE,EAAE,EAAE,eAAe,EAAE,IAAI,EAAE,MAAM,EAAE,MAAM,EAAE,MAAM,CAAC,eAAe,EAAE,MAAM,CAAC,EAAE;QAC9E,GAAG,CAAC,OAAO,KAAK,SAAS;YACvB,CAAC,CAAC,EAAE;YACJ,CAAC,CAAC,CAAC,EAAE,EAAE,EAAE,aAAsB,EAAE,IAAI,EAAE,OAAO,EAAE,MAAM,EAAE,MAAM,CAAC,aAAa,EAAE,OAAO,CAAC,EAAE,CAAC,CAAC;QAC5F,GAAG,CAAC,KAAK,KAAK,SAAS;YACrB,CAAC,CAAC,EAAE;YACJ,CAAC,CAAC,CAAC,EAAE,EAAE,EAAE,kBAA2B,EAAE,IAAI,EAAE,KAAK,EAAE,MAAM,EAAE,MAAM,CAAC,kBAAkB,EAAE,KAAK,CAAC,EAAE,CAAC,CAAC;QAClG,GAAG,CAAC,KAAK,CAAC,GAAG,KAAK,SAAS;YACzB,CAAC,CAAC,EAAE;YACJ,CAAC,CAAC,CAAC,EAAE,EAAE,EAAE,UAAmB,EAAE,IAAI,EAAE,OAAO,EAAE,MAAM,EAAE,MAAM,CAAC,UAAU,EAAE,OAAO,CAAC,EAAE,CAAC,CAAC;QACtF,EAAE,EAAE,EAAE,cAAc,EAAE,IAAI,EAAE,OAAO,EAAE,MAAM,EAAE,MAAM,CAAC,cAAc,EAAE,OAAO,CAAC,EAAE;KAC/E,CAAA;AACH,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/harness/src/TruncatedOutput.vibe"
      }
     ],
@@ -8917,6 +9311,66 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/harness/src/Relevance.vibe"
+     }
+    ],
+    "code": "/**\n * What a run is shown of the human-provided items it could be shown.\n *\n * Memory rows, catalog flows and skills, and chunks of instruction files such\n * as `AGENTS.md` are items. {@link judge} asks Jev one question about each:\n * is it unnecessary for the task as stated? An item is withheld only when Jev\n * says so with probability at or above {@link withholdAt}; everything else is\n * kept. An item longer than {@link itemBytes} is sent head-kept and always\n * kept: Jev cannot be confident about text it was not shown. A reading that\n * cannot be judged keeps everything, and the caller\n * journals `decision-unjudged` for it: keeping is the rule, withholding is\n * the exception Jev must be confident of.\n *\n * Nothing here journals or filters a live catalog. {@link settled} is the row\n * a caller writes for a reading, and {@link render} the instruction block a\n * caller builds from what was kept.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Duration from \"effect/Duration\";\nimport * as Option from \"effect/Option\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Digest from \"@smthrs/core/Digest\";\nimport * as Classifier from \"@smthrs/model/Classifier\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as AgentEvent from \"./AgentEvent.js\";\nimport * as bytes from \"./internal/bytes.js\";\nimport * as elide from \"./internal/elide.js\";\nimport { untrustedData } from \"./internal/untrustedData.js\";\nimport * as Judgement from \"./Judgement.js\";\n/**\n * What an item is.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const Kind = AgentEvent.RelevanceKind;\n/**\n * One human-provided item a run could be shown.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Item = Schema.Struct({ kind: Kind, id: Schema.String, text: Schema.String });\n/**\n * What every reading is told beside its items.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Context = Schema.Struct({\n    task: Schema.String,\n    query: Schema.optionalKey(Schema.String),\n    recent: Schema.optionalKey(Schema.String)\n});\n/**\n * The probability of \"unnecessary\" at or above which an item is withheld.\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const withholdAt = 0.9;\n/**\n * The `Classifier.confident` floor that is {@link withholdAt} for a boolean:\n * its confidence is its distance from even odds, doubled.\n */\nconst confidentAt = (withholdAt - 0.5) * 2;\n/**\n * The most of one item's text a reading carries, in UTF-8 bytes; the head\n * kept.\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const itemBytes = 1024;\n/** The most of a flow's description an item carries, in UTF-8 bytes. */\nconst descriptionBytes = 512;\nconst recall = \"the rest is not shown\";\n/** `text` within `limit` bytes, its head kept and the cut stated. */\nconst headKept = (text, limit) => {\n    const whole = bytes.size(text);\n    if (whole <= limit)\n        return text;\n    // The notice names at most `whole` dropped bytes.\n    return elide.head(text, limit - bytes.size(`… [+${whole}b, ${recall}]`), recall);\n};\n/**\n * The reading: one question per item, `unnecessary_${index}`.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const reader = Judgement.perItem({\n    id: \"relevance/unnecessary\",\n    description: \"Decide which provided items an agent run does not need\",\n    context: Context,\n    item: Item,\n    questions: {\n        unnecessary: (i) => Classifier.boolean({\n            instructions: `Is items[${i}] unnecessary for the task as stated? Read context.task, and context.query or context.recent when present.`,\n            criteria: {\n                true: \"nothing the task, context.query, or a step they plainly imply uses it, needs it, or must follow it\",\n                false: \"the task, context.query, or a step they plainly imply may use it, need it, or must follow it\"\n            }\n        })\n    }\n});\n/**\n * Asks Jev which of `items` the run does not need. Each item's text is sent\n * head-kept to {@link itemBytes}, and an item that was cut is never withheld.\n * No items ask nothing.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const judge = Effect_1.fnUntraced(function* judge(context, items) {\n    const sent = items.map((item) => ({ ...item, text: headKept(item.text, itemBytes) }));\n    const [elapsed, read] = yield* (Effect.timed(reader.read(context, sent)));\n    const verdicts = items.map((item, index) => {\n        const answer = read.answers[index].unnecessary;\n        return {\n            item,\n            digest: Digest.digest(item.text),\n            p: answer.probability,\n            withheld: bytes.size(item.text) <= itemBytes &&\n                Option.getOrElse(Classifier.confident(answer, confidentAt), () => false)\n        };\n    });\n    const usages = read.asked.flatMap((asked) => asked.usage === undefined ? [] : [asked.usage]);\n    return {\n        verdicts,\n        asked: read.asked,\n        latencyMs: Math.round(Duration.toMillis(elapsed)),\n        ...(usages.length === 0 ? {} : {\n            usage: {\n                inputTokens: usages.reduce((sum, usage) => sum + usage.inputTokens, 0),\n                outputTokens: usages.reduce((sum, usage) => sum + usage.outputTokens, 0)\n            }\n        })\n    };\n});\n/**\n * The `relevance-settled` row for a reading: ids and digests, never text.\n *\n * @category conversions\n * @since 1.0.0-rc.0\n */\nexport const settled = (reading, at) => {\n    const row = (verdict) => ({\n        kind: verdict.item.kind,\n        id: verdict.item.id,\n        digest: verdict.digest,\n        p: verdict.p\n    });\n    return new AgentEvent.RelevanceSettled({\n        eventType: AgentEvent.eventType.relevanceSettled,\n        scope: at.scope,\n        frame: at.frame,\n        source: at.source,\n        withholdAt,\n        kept: reading.verdicts.filter((verdict) => !verdict.withheld).map(row),\n        withheld: reading.verdicts.filter((verdict) => verdict.withheld).map(row),\n        latencyMs: reading.latencyMs,\n        ...(reading.usage === undefined ? {} : { usage: reading.usage })\n    });\n};\n/**\n * A catalog entry as an item: a `skill` when its body is markdown, else a\n * `flow`. Its description is untrusted data.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const flowItem = (descriptor) => {\n    const description = untrustedData(headKept(descriptor.description, descriptionBytes), `description of ${descriptor.name}`);\n    const capabilities = descriptor.capabilities.length === 0\n        ? \"\"\n        : `\\ncapabilities: ${[...descriptor.capabilities].sort().join(\",\")}`;\n    return {\n        kind: descriptor.body._tag === \"Markdown\" ? \"skill\" : \"flow\",\n        id: descriptor.name,\n        text: `${descriptor.name}\\n${description}${capabilities}`\n    };\n};\n/**\n * One human-provided instruction file.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const Document = Schema.Struct({ path: Schema.String, text: Schema.String });\nconst heading = /^#{1,6}(?:[ \\t]|$)/;\nconst listItem = /^(?:[-*+] |\\d+\\. )/;\nconst fence = /^[ \\t]*```/;\nconst blank = /^[ \\t]*\\r?$/;\nconst indented = /^[ \\t]/;\nconst split = (document) => {\n    const pieces = [];\n    let fenced = false;\n    // A list item's chunk runs over its indented and wrapped lines, and ends at\n    // the first unindented line after a blank one.\n    let item = false;\n    let afterBlank = false;\n    for (const line of document.text.match(/[^\\n]*\\n|[^\\n]+$/g) ?? []) {\n        const bare = line.endsWith(\"\\n\") ? line.slice(0, -1) : line;\n        const starts = !fenced && pieces.length > 0 && (heading.test(bare) || listItem.test(bare) ||\n            (item && afterBlank && !blank.test(bare) && !indented.test(bare)));\n        if (!fenced && (heading.test(bare) || listItem.test(bare)))\n            item = listItem.test(bare);\n        else if (starts)\n            item = false;\n        if (starts || pieces.length === 0)\n            pieces.push(line);\n        else\n            pieces[pieces.length - 1] += line;\n        if (fence.test(bare))\n            fenced = !fenced;\n        afterBlank = !fenced && blank.test(bare);\n    }\n    return pieces.map((text, n) => ({ id: `${document.path}#${n}`, path: document.path, text }));\n};\n/**\n * Splits instruction files into the chunks a reading judges, in order.\n *\n * A chunk starts at each markdown heading and at each top-level list item,\n * whose indented and wrapped lines are its own. Every other line, blank lines\n * included, joins the chunk before it, and nothing inside a fence is split.\n * A file's chunks concatenate back to the file.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const chunks = (documents) => documents.flatMap(split);\n/**\n * The project-instructions block of every chunk not in `withheld`, in order.\n * A file whose every chunk is withheld is left out, and `\"\"` is returned when\n * nothing is left.\n *\n * @category conversions\n * @since 1.0.0-rc.0\n */\nexport const render = (documents, withheld) => {\n    const blocks = documents.flatMap((document) => {\n        const all = split(document);\n        const kept = all.filter((chunk) => !withheld.has(chunk.id));\n        if (all.length > 0 && kept.length === 0)\n            return [];\n        return [\n            `<project_instructions path=\"${document.path}\">\\n${kept.map((chunk) => chunk.text).join(\"\")}\\n</project_instructions>`\n        ];\n    });\n    return blocks.length === 0 ? \"\" : \"Project-specific instructions and guidelines:\\n\\n\" + blocks.join(\"\\n\\n\");\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Relevance.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/harness/src/Relevance.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/harness/src/Steering.vibe"
+     }
+    ],
+    "code": "/**\n * Turn-boundary steering values and their source contract.\n *\n * Governing design: `../docs/concepts.md#notification-queue`.\n *\n * @since 0.1.0\n */\nimport * as Clock from \"effect/Clock\";\nimport * as Schema_1 from \"effect/Schema\";\nimport * as ModelRequest from \"@smthrs/model/ModelRequest\";\nimport { Context, Effect, Layer, Schema } from \"effect\";\nimport * as AgentEvent from \"./AgentEvent.js\";\nimport * as compactionMarks from \"./internal/compactionMarks.js\";\nimport * as Monitor from \"./Monitor.js\";\nconst SeatChangeRecord = Schema_1.Struct({\n    _tag: Schema_1.Literal(\"SeatChange\"),\n    delivery: Schema_1.Literal(\"steer\"),\n    admittedAt: Schema_1.Number,\n    seat: Schema_1.String,\n});\nconst ThinkingChangeRecord = Schema_1.Struct({\n    _tag: Schema_1.Literal(\"ThinkingChange\"),\n    delivery: Schema_1.Literal(\"steer\"),\n    admittedAt: Schema_1.Number,\n    thinking: ModelRequest.ReasoningEffort,\n});\n/**\n * The journaled record of one turn-boundary drain.\n *\n * A drain consumes host queue state, so it is a nondeterministic read: the\n * controller journals exactly this projection through `EngineLike.record`,\n * keyed on the frame and boundary, and a re-executed frame replays the record\n * instead of draining an already-drained queue. Everything the controller\n * folds into durable state is here; `remaining` is host queue bookkeeping and\n * deliberately is not.\n *\n * @category schemas\n * @since 0.1.0\n * @slop\n */\nexport const DrainRecord = Schema.Struct({\n    /** Personal instructions; absent in legacy records whose inserts are personal messages. */\n    instructions: Schema.optional(Schema.Array(ModelRequest.Message)),\n    inserts: Schema.Array(ModelRequest.Message),\n    notes: Schema.optional(Schema.Array(ModelRequest.Message)),\n    seatChanges: Schema.Array(Schema.Union([SeatChangeRecord, ThinkingChangeRecord])),\n    queued: Schema.Boolean,\n    /**\n     * Messages the run's supervisor delivers at this boundary, kept apart from\n     * `inserts` and their personal-instruction list: the model reads them,\n     * and the completion brake's task never does. Absent from records written\n     * before the supervisor had a field of its own, and from boundaries it\n     * delivered nothing at.\n     */\n    supervisor: Schema.optional(Schema.Array(ModelRequest.Message)),\n    /**\n     * Keys of the memory rows among `supervisor`, which the run has now been\n     * shown. Absent from boundaries that delivered none.\n     */\n    memory: Schema.optional(Schema.Array(Schema.String)),\n    /** The monitor whose message leads `supervisor`, when one was delivered. */\n    monitor: Schema.optional(Schema.String),\n    /** Crossed monitors this boundary withheld, and why. Absent when none was. */\n    suppressed: Schema.optional(Schema.Array(Schema.Struct({ id: Schema.String, reason: AgentEvent.Suppression }))),\n    /**\n     * The monitor ledger after this boundary gated a reading, which the run\n     * carries into its next frame. Absent from boundaries that gated none.\n     */\n    monitorLedger: Schema.optional(Monitor.Ledger),\n    /**\n     * Jev's answers about transcript segments, by digest, which the run stores\n     * for its next compaction. The model is not sent them. Absent from\n     * boundaries that took none, as every boundary of a context at or under\n     * `Compaction.judgedAbove` tokens does.\n     */\n    marks: Schema.optional(Schema.Array(compactionMarks.Marking)),\n    /**\n     * The context triggers the delivered supervisor reading fired, which\n     * compact the run at its next frame. Absent from boundaries that took none:\n     * a reading of a context at or under `Compaction.judgedAbove` tokens\n     * delivers none.\n     */\n    compact: Schema.optional(Schema.Array(AgentEvent.CompactionCause))\n});\n/**\n * Projects a {@link Drain} into its journaled record.\n *\n * @category conversions\n * @since 0.1.0\n * @slop\n */\nexport const drainRecord = (drain) => ({\n    inserts: drain.inserts,\n    ...(drain.instructions === undefined ? {} : { instructions: drain.instructions }),\n    ...(drain.notes === undefined || drain.notes.length === 0 ? {} : { notes: drain.notes }),\n    seatChanges: drain.seatChanges,\n    queued: drain.queued\n});\nconst immutable = (items) => Object.freeze({ items: Object.freeze([...items]) });\nconst immutableItem = (item) => Object.freeze({ ...item });\n/**\n * Creates an empty immutable steering queue.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const empty = () => immutable([]);\n/**\n * Appends an item without mutating the prior queue.\n *\n * @category operations\n * @since 0.1.0\n * @slop\n */\nexport const enqueue = (queue, item) => immutable([...queue.items, immutableItem(item)]);\n/**\n * Drains only items admitted at or before the turn's fixed cutoff.\n *\n * @category operations\n * @since 0.1.0\n * @slop\n */\nexport const drainAtClose = (queue, cutoff) => {\n    const inserts = [];\n    const seatChanges = [];\n    const remaining = [];\n    for (const item of queue.items) {\n        if (item.delivery === \"queue\" || item.admittedAt > cutoff) {\n            remaining.push(item);\n            continue;\n        }\n        switch (item._tag) {\n            case \"Insert\":\n                inserts.push(item.message);\n                break;\n            case \"SeatChange\":\n            case \"ThinkingChange\":\n                seatChanges.push(item);\n                break;\n        }\n    }\n    return {\n        inserts: Object.freeze(inserts),\n        seatChanges: Object.freeze(seatChanges),\n        remaining: immutable(remaining),\n        queued: false,\n        // An in-memory cutoff drain keeps no boundary ledger, so it can never say\n        // it has answered this boundary before.\n        duplicate: false\n    };\n};\n/**\n * Service tag for the external steering queue source.\n *\n * @category services\n * @since 0.1.0\n * @slop\n */\nexport const Source = Context.Service(\"@smthrs/harness/Steering/Source\");\n/**\n * Constructs a steering source service.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (implementation) => Source.of(implementation);\n/**\n * Creates a source that always returns an empty queue.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const makeNoop = (overrides = {}) => make({\n    read: Effect.fn(\"Steering.Source.read\")(() => Effect.succeed(empty())),\n    drain: Effect.fn(\"Steering.Source.drain\")(() => Effect.succeed({\n        inserts: [],\n        seatChanges: [],\n        remaining: empty(),\n        queued: false,\n        duplicate: false\n    })),\n    ...overrides\n});\n/**\n * Provides a steering source as a layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layer = (implementation) => Layer.succeed(Source)(make(implementation));\n/**\n * Provides an empty steering source as a layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerNoop = (overrides = {}) => Layer.succeed(Source)(makeNoop(overrides));\n/**\n * What a run with `budgetMs` to work in is told when `leftMs` of it is left,\n * in whole minutes rounded down.\n *\n * @category conversions\n * @since 1.0.0-rc.17\n */\nexport const timeLeft = (leftMs, budgetMs) => {\n    const total = Math.max(1, Math.round(budgetMs / 60_000));\n    const left = Math.floor(Math.max(0, leftMs) / 60_000);\n    const of = `of your ${total} ${total === 1 ? \"minute\" : \"minutes\"}`;\n    return left === 0\n        ? `Time left: under a minute ${of}. Finish now, or the run ends with nothing.`\n        : `Time left: ${left} ${of}.`;\n};\n/**\n * `source`, with the time a run has left as a note ({@link Drain.notes}) at\n * each boundary the run continues through, so an agent with a deadline can\n * pace itself: `startedAt` is when its `budgetMs` began, by the `Clock`.\n *\n * A boundary that would idle or that parks gets no note, since nothing reads\n * it there and a note must never answer a park. The clock is read inside the\n * drain, which the run records at a boundary it continues through, so a\n * replay delivers the time the first drain told.\n *\n * @category combinators\n * @since 1.0.0-rc.17\n */\nexport const withTimeLeft = (source, options) => make({\n    read: source.read,\n    drain: (input) => input.wouldIdle || input.park !== undefined\n        ? source.drain(input)\n        : Effect.flatMap(source.drain(input), (drained) => Effect.map(Clock.currentTimeMillis, (now) => ({\n            ...drained,\n            notes: [\n                ...(drained.notes ?? []),\n                ModelRequest.Message.user(timeLeft(options.startedAt + options.budgetMs - now, options.budgetMs))\n            ]\n        })))\n});\n",
+    "map": {
+     "version": 3,
+     "file": "Steering.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/harness/src/Steering.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;GAMG;;;AAEH,OAAO,KAAK,YAAY,MAAM,4BAA4B,CAAA;AAC1D,OAAO,EAAE,OAAO,EAAE,MAAM,EAAE,KAAK,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AACvD,OAAO,KAAK,UAAU,MAAM,iBAAiB,CAAA;AAE7C,OAAO,KAAK,eAAe,MAAM,+BAA+B,CAAA;AAChE,OAAO,KAAK,OAAO,MAAM,cAAgB,CAAA;AAqKlC,MAAA,gBAAgB,GAAC,SAAA,MAAA,CAAA;IACtB,IAAI,EAAE,SAAA,OAAA,CAAA,YAAY,CAAA;IAClB,QAAQ,EAAE,SAAA,OAAA,CAAA,OAAO,CAAA;IACjB,UAAU,EAAE,SAAA,MAAA;IACZ,IAAI,EAAE,SAAA,MAAA;CACP,CAAA,CAAA;AAEM,MAAA,oBAAoB,GAAC,SAAA,MAAA,CAAA;IAC1B,IAAI,EAAE,SAAA,OAAA,CAAA,gBAAgB,CAAA;IACtB,QAAQ,EAAE,SAAA,OAAA,CAAA,OAAO,CAAA;IACjB,UAAU,EAAE,SAAA,MAAA;IACZ,QAAQ,EAAE,YAAY,CAAC,eAAe;CACvC,CAAA,CAAA;AAED;;;;;;;;;;;;;GAaG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,MAAM,CAAC,MAAM,CAAC;IACvC,2FAA2F;IAC3F,YAAY,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,KAAK,CAAC,YAAY,CAAC,OAAO,CAAC,CAAC;IACjE,OAAO,EAAE,MAAM,CAAC,KAAK,CAAC,YAAY,CAAC,OAAO,CAAC;IAC3C,KAAK,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,KAAK,CAAC,YAAY,CAAC,OAAO,CAAC,CAAC;IAC1D,WAAW,EAAE,MAAM,CAAC,KAAK,CAAC,MAAM,CAAC,KAAK,CAAC,CAAC,gBAAgB,EAAE,oBAAoB,CAAC,CAAC,CAAC;IACjF,MAAM,EAAE,MAAM,CAAC,OAAO;IACtB;;;;;;OAMG;IACH,UAAU,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,KAAK,CAAC,YAAY,CAAC,OAAO,CAAC,CAAC;IAC/D;;;OAGG;IACH,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,KAAK,CAAC,MAAM,CAAC,MAAM,CAAC,CAAC;IACpD,4EAA4E;IAC5E,OAAO,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;IACvC,8EAA8E;IAC9E,UAAU,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,KAAK,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,EAAE,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,EAAE,UAAU,CAAC,WAAW,EAAE,CAAC,CAAC,CAAC;IAC/G;;;OAGG;IACH,aAAa,EAAE,MAAM,CAAC,QAAQ,CAAC,OAAO,CAAC,MAAM,CAAC;IAC9C;;;;;OAKG;IACH,KAAK,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,KAAK,CAAC,eAAe,CAAC,OAAO,CAAC,CAAC;IAC7D;;;;;OAKG;IACH,OAAO,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,KAAK,CAAC,UAAU,CAAC,eAAe,CAAC,CAAC;CACnE,CAAC,CAAA;AAWF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,CAAC,KAAY,EAAe,EAAE,CAAC,CAAC;IACzD,OAAO,EAAE,KAAK,CAAC,OAAO;IACtB,GAAG,CAAC,KAAK,CAAC,YAAY,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,YAAY,EAAE,KAAK,CAAC,YAAY,EAAE,CAAC;IACjF,GAAG,CAAC,KAAK,CAAC,KAAK,KAAK,SAAS,IAAI,KAAK,CAAC,KAAK,CAAC,MAAM,KAAK,CAAC,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,KAAK,EAAE,KAAK,CAAC,KAAK,EAAE,CAAC;IACxF,WAAW,EAAE,KAAK,CAAC,WAAW;IAC9B,MAAM,EAAE,KAAK,CAAC,MAAM;CACrB,CAAC,CAAA;AAEF,MAAM,SAAS,GAAG,CAAC,KAA0B,EAAS,EAAE,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,KAAK,EAAE,MAAM,CAAC,MAAM,CAAC,CAAC,GAAG,KAAK,CAAC,CAAC,EAAE,CAAC,CAAA;AAE5G,MAAM,aAAa,GAAG,CAAC,IAAU,EAAQ,EAAE,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,GAAG,IAAI,EAAE,CAAC,CAAA;AAEtE;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,GAAU,EAAE,CAAC,SAAS,CAAC,EAAE,CAAC,CAAA;AAE/C;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,CAAC,KAAY,EAAE,IAAU,EAAS,EAAE,CAAC,SAAS,CAAC,CAAC,GAAG,KAAK,CAAC,KAAK,EAAE,aAAa,CAAC,IAAI,CAAC,CAAC,CAAC,CAAA;AAE5G;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAAC,KAAY,EAAE,MAAc,EAAS,EAAE;IAClE,MAAM,OAAO,GAAgC,EAAE,CAAA;IAC/C,MAAM,WAAW,GAAuC,EAAE,CAAA;IAC1D,MAAM,SAAS,GAAgB,EAAE,CAAA;IACjC,KAAK,MAAM,IAAI,IAAI,KAAK,CAAC,KAAK,EAAE,CAAC;QAC/B,IAAI,IAAI,CAAC,QAAQ,KAAK,OAAO,IAAI,IAAI,CAAC,UAAU,GAAG,MAAM,EAAE,CAAC;YAC1D,SAAS,CAAC,IAAI,CAAC,IAAI,CAAC,CAAA;YACpB,SAAQ;QACV,CAAC;QACD,QAAQ,IAAI,CAAC,IAAI,EAAE,CAAC;YAClB,KAAK,QAAQ;gBACX,OAAO,CAAC,IAAI,CAAC,IAAI,CAAC,OAAO,CAAC,CAAA;gBAC1B,MAAK;YACP,KAAK,YAAY,CAAC;YAClB,KAAK,gBAAgB;gBACnB,WAAW,CAAC,IAAI,CAAC,IAAI,CAAC,CAAA;gBACtB,MAAK;QACT,CAAC;IACH,CAAC;IACD,OAAO;QACL,OAAO,EAAE,MAAM,CAAC,MAAM,CAAC,OAAO,CAAC;QAC/B,WAAW,EAAE,MAAM,CAAC,MAAM,CAAC,WAAW,CAAC;QACvC,SAAS,EAAE,SAAS,CAAC,SAAS,CAAC;QAC/B,MAAM,EAAE,KAAK;QACb,0EAA0E;QAC1E,wCAAwC;QACxC,SAAS,EAAE,KAAK;KACjB,CAAA;AACH,CAAC,CAAA;AAuCD;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,MAAM,GAAoC,OAAO,CAAC,OAAO,CAAC,iCAAiC,CAAC,CAAA;AAEzG;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,cAA2B,EAAU,EAAE,CAAC,MAAM,CAAC,EAAE,CAAC,cAAc,CAAC,CAAA;AAEtF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,SAAS,GAAoB,EAAE,EAAU,EAAE,CAClE,IAAI,CAAC;IACH,IAAI,EAAE,MAAM,CAAC,EAAE,CAAC,sBAAsB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,KAAK,EAAE,CAAC,CAAC;IACtE,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,uBAAuB,CAAC,CAAC,GAAG,EAAE,CAC7C,MAAM,CAAC,OAAO,CAAC;QACb,OAAO,EAAE,EAAE;QACX,WAAW,EAAE,EAAE;QACf,SAAS,EAAE,KAAK,EAAE;QAClB,MAAM,EAAE,KAAK;QACb,SAAS,EAAE,KAAK;KACjB,CAAC,CACH;IACD,GAAG,SAAS;CACb,CAAC,CAAA;AAEJ;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,cAA2B,EAAuB,EAAE,CAAC,KAAK,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,IAAI,CAAC,cAAc,CAAC,CAAC,CAAA;AAEtH;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,SAAS,GAAoB,EAAE,EAAuB,EAAE,CAChF,KAAK,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,QAAQ,CAAC,SAAS,CAAC,CAAC,CAAA;AAE5C;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,MAAc,EAAE,QAAgB,EAAU,EAAE;IACnE,MAAM,KAAK,GAAG,IAAI,CAAC,GAAG,CAAC,CAAC,EAAE,IAAI,CAAC,KAAK,CAAC,QAAQ,GAAG,MAAM,CAAC,CAAC,CAAA;IACxD,MAAM,IAAI,GAAG,IAAI,CAAC,KAAK,CAAC,IAAI,CAAC,GAAG,CAAC,CAAC,EAAE,MAAM,CAAC,GAAG,MAAM,CAAC,CAAA;IACrD,MAAM,EAAE,GAAG,WAAW,KAAK,IAAI,KAAK,KAAK,CAAC,CAAC,CAAC,CAAC,QAAQ,CAAC,CAAC,CAAC,SAAS,EAAE,CAAA;IACnE,OAAO,IAAI,KAAK,CAAC;QACf,CAAC,CAAC,6BAA6B,EAAE,6CAA6C;QAC9E,CAAC,CAAC,cAAc,IAAI,IAAI,EAAE,GAAG,CAAA;AACjC,CAAC,CAAA;AAED;;;;;;;;;;;;GAYG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAC1B,MAAc,EACd,OAAkE,EAC1D,EAAE,CACV,IAAI,CAAC;IACH,IAAI,EAAE,MAAM,CAAC,IAAI;IACjB,KAAK,EAAE,CAAC,KAAK,EAAE,EAAE,CACf,KAAK,CAAC,SAAS,IAAI,KAAK,CAAC,IAAI,KAAK,SAAS;QACzC,CAAC,CAAC,MAAM,CAAC,KAAK,CAAC,KAAK,CAAC;QACrB,CAAC,CAAC,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,KAAK,CAAC,KAAK,CAAC,EAAE,CAAC,OAAO,EAAE,EAAE,CAChD,MAAM,CAAC,GAAG,CAAC,KAAK,CAAC,iBAAiB,EAAE,CAAC,GAAG,EAAS,EAAE,CAAC,CAAC;YACnD,GAAG,OAAO;YACV,KAAK,EAAE;gBACL,GAAG,CAAC,OAAO,CAAC,KAAK,IAAI,EAAE,CAAC;gBACxB,YAAY,CAAC,OAAO,CAAC,IAAI,CAAC,QAAQ,CAAC,OAAO,CAAC,SAAS,GAAG,OAAO,CAAC,QAAQ,GAAG,GAAG,EAAE,OAAO,CAAC,QAAQ,CAAC,CAAC;aAClG;SACF,CAAC,CAAC,CAAC;CACX,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/harness/src/Transcript.vibe"
+     }
+    ],
+    "code": "/**\n * Transcript projection from durable journal entries.\n *\n * The transcript grows: what the model saw is what it said plus what the\n * harness answered, in journal order. A `continue` used to be able to replace\n * the whole projection with a list of messages the cell had written for its\n * successor, and that branch is gone with the surface that produced it — a\n * journal from those waves still decodes, and its `context` entries are simply\n * not read.\n *\n * @since 0.1.0\n */\nimport * as Fault from \"@smthrs/flow/Fault\";\nimport { ModelRequest } from \"@smthrs/model\";\nimport { Result, Schema } from \"effect\";\nimport * as AgentEvent from \"./AgentEvent.js\";\nimport * as FailedCall from \"./FailedCall.js\";\nimport { HarnessError } from \"./HarnessError.js\";\nimport * as DemandText from \"./internal/demandText.js\";\nimport { printsObservation } from \"./internal/printsObservation.js\";\nimport * as UnobservedCall from \"./internal/unobservedCall.js\";\n/**\n * Journal and model-key format after summaries became user context.\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const journalVersion = 2;\n/**\n * The event-type namespace a session journals its controller events under.\n *\n * Resume validation reads only the entries under this prefix, and the writer\n * that produces them lives in another package, so the prefix is exported here\n * rather than spelled twice: a writer types its event types as\n * {@link ControlEventType} and a rename fails to compile instead of silently\n * emptying the set {@link validateJournal} inspects.\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const controlEventPrefix = \"control.agent.\";\n/**\n * Refuses history whose replay could address different sealed model steps.\n * Historical display projection is separate from permission to resume.\n *\n * @category validation\n * @since 1.0.0-rc.0\n */\nexport const validateJournal = (entries) => {\n    for (const entry of entries) {\n        if (!entry.eventType.startsWith(controlEventPrefix))\n            continue;\n        const payload = entry.payload;\n        if (payload === null || typeof payload !== \"object\" || payload[\"journalVersion\"] !== journalVersion) {\n            return Result.fail(new HarnessError({\n                code: \"incompatible_journal\",\n                message: `Journal sequence ${entry.seq} predates harness journal format ${journalVersion}; start a new run.`\n            }));\n        }\n    }\n    return Result.succeed(undefined);\n};\n/**\n * Stable failures produced while projecting a durable transcript.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const TranscriptErrorCode = Schema.Literals([\"projection_failed\"]);\n/**\n * Stable failures produced while projecting a durable transcript.\n *\n * @category errors\n * @since 0.1.0\n * @slop\n */\nexport class TranscriptError extends Schema.TaggedError()(\"flows/harness/TranscriptError\", {\n    code: TranscriptErrorCode,\n    message: Schema.String,\n    cause: Schema.optional(Schema.Defect())\n}) {\n}\nFault.register(\"flows/harness/TranscriptError\", { projection_failed: \"bug\" });\n/** The one journal-event-type table; see `AgentEvent.eventType`. */\nconst eventType = AgentEvent.eventType;\nconst projectionFailed = (entry, cause) => new TranscriptError({\n    code: \"projection_failed\",\n    message: `Invalid ${entry.eventType} payload at journal sequence ${entry.seq}`,\n    cause\n});\nconst decode = (decodePayload, entry) => Result.mapError(decodePayload(entry.payload), (cause) => projectionFailed(entry, cause));\nconst ordered = (entries) => [...entries].sort((left, right) => left.seq - right.seq);\nconst decodeModelSettled = Schema.decodeUnknownResult(AgentEvent.ModelSettled);\nconst decodeSteeringDrained = Schema.decodeUnknownResult(AgentEvent.SteeringDrained);\nconst decodeCompactionSettled = Schema.decodeUnknownResult(AgentEvent.CompactionSettled);\nconst decodeCellPrinted = Schema.decodeUnknownResult(AgentEvent.CellPrinted);\nconst decodeCellProduced = Schema.decodeUnknownResult(AgentEvent.CellProduced);\nconst decodeCellCallStarted = Schema.decodeUnknownResult(AgentEvent.CellCallStarted);\nconst decodeCellCallSettled = Schema.decodeUnknownResult(AgentEvent.CellCallSettled);\nconst decodeCellSettled = Schema.decodeUnknownResult(AgentEvent.CellSettled);\nconst decodeTransitionApplied = Schema.decodeUnknownResult(AgentEvent.TransitionApplied);\nconst decodeSuspended = Schema.decodeUnknownResult(AgentEvent.Suspended);\nconst decodeAborted = Schema.decodeUnknownResult(AgentEvent.Aborted);\nconst decodeReadOnlyDemandIssued = Schema.decodeUnknownResult(AgentEvent.ReadOnlyDemandIssued);\nconst decodeRepeatDemanded = Schema.decodeUnknownResult(AgentEvent.RepeatDemanded);\nconst decodeNarrowedDemanded = Schema.decodeUnknownResult(AgentEvent.NarrowedDemanded);\nconst decodeNarrowOnlyDemanded = Schema.decodeUnknownResult(AgentEvent.NarrowOnlyDemanded);\nconst decodeUnmovedDemanded = Schema.decodeUnknownResult(AgentEvent.UnmovedDemanded);\nconst decodeUnresolvedDemanded = Schema.decodeUnknownResult(AgentEvent.UnresolvedDemanded);\nconst decodeFailedCallDemanded = Schema.decodeUnknownResult(AgentEvent.FailedCallDemanded);\nconst decodeUnobservedDemanded = Schema.decodeUnknownResult(AgentEvent.UnobservedDemanded);\nconst decodeOutputDemanded = Schema.decodeUnknownResult(AgentEvent.OutputDemanded);\nconst decodeClaimDemanded = Schema.decodeUnknownResult(AgentEvent.ClaimDemanded);\nconst transcriptMessage = (message) => message.stopReason === \"error\" || message.stopReason === \"aborted\"\n    ? new ModelRequest.AssistantMessage({\n        role: \"assistant\",\n        content: message.content.map((part) => part.type === \"thinking\"\n            ? ModelRequest.ThinkingPart.make({ text: part.text })\n            : part),\n        stopReason: message.stopReason\n    })\n    : message;\n/**\n * Projects journal events into their model-visible transcript state as typed\n * data, preserving malformed payload failures instead of throwing.\n *\n * This rebuilds turn structure, the settlement's own message, and every\n * journaled controller demand. The controller also folds frame-local\n * settled-call salvage and the memory-probe alert into failure notes. A raised\n * cell's `bindingPathMiss` hint is live-only, so the projection rebuilds a\n * shorter note exactly where that hint would name a missed binding.\n *\n * A terminal frame has the opposite skew: `observe` appends no observation\n * once the frame budget is spent, while this projection rebuilds its journaled\n * print and settlement. On a run whose last frame was terminal, it therefore\n * over-reports by one trailing user turn. `AgentEvent.TurnClosed.outcome` is the\n * journaled signal a future projection would key on to drop it: `\"resolved\"`\n * on the terminal frame and `\"continue\"` otherwise.\n *\n * @category projections\n * @since 0.1.0\n * @slop\n */\nexport const projectStateResult = (entries) => {\n    const events = ordered(entries);\n    const produced = [];\n    const printed = [];\n    const prints = new Map();\n    const callsStarted = [];\n    const callsSettled = [];\n    const settledCells = [];\n    const transitions = [];\n    const suspensions = [];\n    const aborts = [];\n    const compactions = new Map();\n    let replaced;\n    // Legacy events replaced everything before themselves. Preserve that\n    // behavior, including skipping obsolete model payloads, for old journals.\n    let legacyBoundary = Number.NEGATIVE_INFINITY;\n    for (const entry of events) {\n        switch (entry.eventType) {\n            case eventType.cellProduced: {\n                const decoded = decode(decodeCellProduced, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                produced.push(decoded.success.cell);\n                break;\n            }\n            case eventType.cellPrinted: {\n                const decoded = decode(decodeCellPrinted, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                printed.push(decoded.success);\n                // Decoded once, here, and read back by sequence below. The payload is\n                // retained so a failed settlement can prove the immediately preceding\n                // print belongs to the same cell before merging the two observations.\n                prints.set(entry.seq, decoded.success);\n                break;\n            }\n            case eventType.cellCallStarted: {\n                const decoded = decode(decodeCellCallStarted, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                callsStarted.push(decoded.success.call);\n                break;\n            }\n            case eventType.cellCallSettled: {\n                const decoded = decode(decodeCellCallSettled, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                callsSettled.push(decoded.success);\n                break;\n            }\n            case eventType.cellSettled: {\n                const decoded = decode(decodeCellSettled, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                settledCells.push(decoded.success);\n                break;\n            }\n            case eventType.transitionApplied: {\n                const decoded = decode(decodeTransitionApplied, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                transitions.push(decoded.success.transition);\n                break;\n            }\n            case eventType.suspended: {\n                const decoded = decode(decodeSuspended, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                suspensions.push(decoded.success.reason);\n                break;\n            }\n            case eventType.aborted: {\n                const decoded = decode(decodeAborted, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                aborts.push(decoded.success.reason);\n                break;\n            }\n            case eventType.compactionSettled: {\n                const decoded = decode(decodeCompactionSettled, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                compactions.set(entry.seq, decoded.success);\n                replaced = decoded.success.replacedPrefixDigest;\n                if (decoded.success.retainedMessageCount === undefined)\n                    legacyBoundary = entry.seq;\n                break;\n            }\n        }\n    }\n    const messages = [];\n    // Set only after emitting a print and cleared whenever another message is\n    // emitted, so presence means the last projected turn is exactly this print.\n    let precedingPrint;\n    const appendDemand = (text) => {\n        messages.push({ kind: \"transcript\", message: ModelRequest.Message.user(text) });\n        precedingPrint = undefined;\n    };\n    for (const entry of events) {\n        if (entry.seq < legacyBoundary)\n            continue;\n        const compaction = compactions.get(entry.seq);\n        if (compaction !== undefined) {\n            // Apply each boundary to the already-projected messages so repeated\n            // compactions replace prior summaries without dropping the recent tail.\n            // A marked compaction carries the replaced messages it kept verbatim\n            // after its summary, and may carry no summary when nothing was squashed.\n            const summary = compaction.summary;\n            messages.splice(0, Math.max(0, messages.length - (compaction.retainedMessageCount ?? 0)), ...(summary === undefined ? [] : [{\n                    kind: \"summary\",\n                    message: summary.role === \"user\"\n                        ? summary\n                        : ModelRequest.Message.user(summary.content.filter((part) => part.type === \"text\"))\n                }]), ...(compaction.kept ?? []).map((message) => ({ kind: \"transcript\", message })));\n            precedingPrint = undefined;\n            continue;\n        }\n        // The print buffer is the context channel: what a cell printed is what the\n        // next model turn read, in the place the journal put it.\n        const print = prints.get(entry.seq);\n        if (print !== undefined) {\n            messages.push({\n                kind: \"transcript\",\n                message: ModelRequest.Message.user(printsObservation(print.text))\n            });\n            precedingPrint = print;\n            continue;\n        }\n        switch (entry.eventType) {\n            case eventType.modelSettled: {\n                const decoded = decode(decodeModelSettled, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                if (decoded.success.message.content.length === 0)\n                    break;\n                messages.push({ kind: \"transcript\", message: transcriptMessage(decoded.success.message) });\n                precedingPrint = undefined;\n                break;\n            }\n            case eventType.steeringDrained: {\n                const decoded = decode(decodeSteeringDrained, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                for (const message of decoded.success.messages) {\n                    messages.push({ kind: \"steering\", message });\n                    precedingPrint = undefined;\n                }\n                break;\n            }\n            case eventType.readOnlyDemandIssued: {\n                const decoded = decode(decodeReadOnlyDemandIssued, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(DemandText.readOnly(decoded.success.cap, decoded.success.streak));\n                break;\n            }\n            case eventType.repeatDemanded: {\n                const decoded = decode(decodeRepeatDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(DemandText.repeat(decoded.success.frames, decoded.success.cap));\n                break;\n            }\n            case eventType.narrowedDemanded: {\n                const decoded = decode(decodeNarrowedDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(DemandText.narrowed(decoded.success.flow, decoded.success.broader, decoded.success.narrower));\n                break;\n            }\n            case eventType.narrowOnlyDemanded: {\n                const decoded = decode(decodeNarrowOnlyDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(DemandText.narrowOnly(decoded.success.flow, decoded.success.check, decoded.success.targets));\n                break;\n            }\n            case eventType.unmovedDemanded: {\n                const decoded = decode(decodeUnmovedDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(DemandText.unmoved(decoded.success.openedDigest, decoded.success.currentDigest));\n                break;\n            }\n            case eventType.unresolvedDemanded: {\n                const decoded = decode(decodeUnresolvedDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(DemandText.unresolved(decoded.success.flow, decoded.success.failed, decoded.success.instead));\n                break;\n            }\n            case eventType.failedCallDemanded: {\n                const decoded = decode(decodeFailedCallDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(FailedCall.demand(decoded.success.failures));\n                break;\n            }\n            case eventType.unobservedDemanded: {\n                const decoded = decode(decodeUnobservedDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(UnobservedCall.demand(decoded.success.calls));\n                break;\n            }\n            case eventType.outputDemanded: {\n                const decoded = decode(decodeOutputDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                appendDemand(decoded.success.note);\n                break;\n            }\n            case eventType.claimDemanded: {\n                const decoded = decode(decodeClaimDemanded, entry);\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                // The reading that let a completion through was journaled too, and it\n                // put nothing in front of the model, so only a firing is replayed.\n                if (decoded.success.demanded) {\n                    appendDemand(DemandText.claim());\n                }\n                break;\n            }\n            case eventType.cellSettled: {\n                const decoded = decode(decodeCellSettled, entry);\n                /* v8 ignore next -- the first pass ran `decodeCellSettled` over every `cellSettled` entry of this same `events` array and returned on failure, and `decode` is a pure function of `entry.payload`, so re-decoding an entry that survived that pass cannot fail; the branch exists because `Result` has no way to carry that proof */\n                if (Result.isFailure(decoded))\n                    return Result.fail(decoded.failure);\n                const outcome = decoded.success.outcome;\n                if (outcome._tag !== \"rejected\" && outcome._tag !== \"raised\")\n                    break;\n                const note = outcome._tag === \"rejected\"\n                    ? outcome.message\n                    : `The cell threw ${outcome.name}: ${outcome.message}. Emit a corrected cell.`;\n                if (precedingPrint !== undefined && precedingPrint.cell === decoded.success.cell) {\n                    messages[messages.length - 1] = {\n                        kind: \"transcript\",\n                        message: ModelRequest.Message.user(`${printsObservation(precedingPrint.text)}\\n\\n${note}`)\n                    };\n                }\n                else {\n                    messages.push({\n                        kind: \"transcript\",\n                        message: ModelRequest.Message.user(note)\n                    });\n                }\n                precedingPrint = undefined;\n                break;\n            }\n        }\n    }\n    return Result.succeed({\n        messages,\n        replaced,\n        cell: {\n            produced,\n            printed,\n            callsStarted,\n            callsSettled,\n            settled: settledCells,\n            transitions,\n            suspensions,\n            aborts\n        }\n    });\n};\n/**\n * Projects model-visible messages in canonical journal sequence order.\n *\n * @category projections\n * @since 0.1.0\n * @slop\n */\nexport const projectResult = (entries) => Result.map(projectStateResult(entries), (state) => state.messages.map((item) => item.message));\n/**\n * Pure external-source decoders; never create executable journal identities.\n * @since 1.0.0-rc.1\n */\nexport { decodeClaude, decodeCodex } from \"./ExternalTranscript.js\";\n",
+    "map": {
+     "version": 3,
+     "file": "Transcript.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/harness/src/Transcript.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {

@@ -142,8 +142,8 @@
       "default": "./.vibelang/js/src/QuickJSSandbox.js"
     },
     "./Relevance": {
-      "types": "./src/Relevance.ts",
-      "vibelang-source": "./src/Relevance.ts",
+      "types": "./.vibe/declarations/src/Relevance.d.vibe.ts",
+      "vibelang-source": "./src/Relevance.vibe",
       "default": "./.vibelang/js/src/Relevance.js"
     },
     "./Sandbox": {
@@ -152,8 +152,8 @@
       "default": "./.vibelang/js/src/Sandbox.js"
     },
     "./Steering": {
-      "types": "./src/Steering.ts",
-      "vibelang-source": "./src/Steering.ts",
+      "types": "./.vibe/declarations/src/Steering.d.vibe.ts",
+      "vibelang-source": "./src/Steering.vibe",
       "default": "./.vibelang/js/src/Steering.js"
     },
     "./StructuredOutput": {
@@ -177,8 +177,8 @@
       "default": "./.vibelang/js/src/Tokens.js"
     },
     "./Transcript": {
-      "types": "./src/Transcript.ts",
-      "vibelang-source": "./src/Transcript.ts",
+      "types": "./.vibe/declarations/src/Transcript.d.vibe.ts",
+      "vibelang-source": "./src/Transcript.vibe",
       "default": "./.vibelang/js/src/Transcript.js"
     },
     "./TruncatedOutput": {

@@ -138,14 +138,14 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/untrustedData.ts",
-        "src/internal/cellPrompt.ts",
+        "src/internal/cellPrompt.vibe",
         "src/internal/printsObservation.ts",
         "src/CallLedger.vibe",
         "src/NarrowedCheck.ts",
         "src/Compaction.ts",
-        "src/Relevance.ts",
+        "src/Relevance.vibe",
         "src/Supervisor.ts",
-        "src/Steering.ts",
+        "src/Steering.vibe",
         "src/Monitor.vibe",
         "src/Notifications.ts",
         "src/CellTurn.ts"
@@ -193,7 +193,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/AgentEvent.ts",
-        "src/Transcript.ts",
+        "src/Transcript.vibe",
         "src/EngineLike.ts",
         "src/FlowBinding.ts",
         "src/HarnessError.ts"
