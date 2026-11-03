@@ -19,7 +19,6 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Registry } from "@smthrs/registry"
 import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 /** The work the detached child does. */
@@ -75,20 +74,20 @@ const controlPlane = Layer.provide(ControlLive.layer, [
   NotificationQueue.layer
 ]).pipe(Layer.orDie)
 
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (filename: string): Summary!! =>
+  effect {
     const summarize = ({ document }: { readonly document: string }) => Effect.succeed(`summary of ${document}`)
 
     const startDigest = ({ document }: { readonly document: string }) =>
-      Effect.gen(function*() {
-        const children = yield* ChildFlows.Children
-        const spawned = yield* children.spawn({
+      effect {
+        const children = try ChildFlows.Children
+        const spawned = try children.spawn({
           flow: Digest._tag,
           input: { document },
           label: "digest"
         })
         return spawned.child
-      }).pipe(Effect.orDie)
+      } |> Effect.orDie(%)
 
     const engine = (hostId: string) =>
       Layer.mergeAll(
@@ -109,29 +108,29 @@ export const main = (filename: string): Effect.Effect<Summary> =>
     // Phase one: the parent spawns the child and finishes. The child keeps
     // going, because `spawn` discarded its result and the engine recorded
     // `onParentExit: "detach"` on the child's own row.
-    const phaseOne = yield* Effect.scoped(
-      Effect.gen(function*() {
-        const child = yield* Triage.execute({ document: "rfc" }, { executionId: "triage-1" })
-        const store = yield* RunStore.RunStore
-        const parentRow = yield* store.get("triage-1")
-        const childRow = yield* store.get(child)
+    const phaseOne = try Effect.scoped(
+      (effect {
+        const child = try Triage.execute({ document: "rfc" }, { executionId: "triage-1" })
+        const store = try RunStore.RunStore
+        const parentRow = try store.get("triage-1")
+        const childRow = try store.get(child)
         return {
           child,
           parentStatus: parentRow.status as string,
           childCancelRequested: childRow.cancelRequestedAtMs !== null
         }
-      }).pipe(Effect.provide(engine("worker-a")))
+      }) |> Effect.provide(%, engine("worker-a"))
     )
 
     // Phase two: a fresh engine, a different owner, no fiber and no map from
     // phase one. What it answers with came out of the run store.
-    const output = yield* Effect.scoped(
-      Effect.gen(function*() {
-        const children = yield* ChildFlows.Children
-        const collected = yield* children.await({ child: phaseOne.child })
+    const output = try Effect.scoped(
+      (effect {
+        const children = try ChildFlows.Children
+        const collected = try children.await({ child: phaseOne.child })
         return collected.output
-      }).pipe(Effect.provide(engine("worker-b")))
+      }) |> Effect.provide(%, engine("worker-b"))
     )
 
     return { ...phaseOne, output }
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)

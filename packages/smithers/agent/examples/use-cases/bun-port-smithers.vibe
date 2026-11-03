@@ -654,12 +654,12 @@ Fix compile errors by preserving Phase A draft bodies where possible. Gate or st
 Round context: ${json(previous)}`
 })
 
-const SurveyedTarget = Schema.Struct({
-  id: Schema.String,
-  crate: Schema.String,
-  file: Schema.String,
-  reason: Schema.String
-})
+schema SurveyedTarget {
+  id: string
+  crate: string
+  file: string
+  reason: string
+}
 
 /** Ports real behavior into one gated or stubbed target. */
 export const ProperPort = AgentAction.make("examples/BunPortSmithers/ProperPort", {
@@ -1122,7 +1122,6 @@ export const Compile = Flow.make("examples/BunPortSmithers/Compile", {
 // Phase 4: ungate / proper port
 // ---------------------------------------------------------------------------
 
-type SurveyedTarget = typeof SurveyedTarget.Type
 type UngateRow = { readonly patch: typeof PatchResult.Type; readonly decision: typeof SpecDecision.Type }
 
 type UngateTag = `examples/BunPortSmithers/${"ProperPort" | "SpecReview" | "SpecDecision"}`

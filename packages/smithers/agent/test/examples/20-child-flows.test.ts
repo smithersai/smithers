@@ -10,7 +10,7 @@ import * as Option from "effect/Option"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Bundle, Compile, compileSource, main, releaseRunId } from "../../examples/20-child-flows.ts"
+import { Bundle, Compile, compileSource, main, releaseRunId } from "../../examples/20-child-flows.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

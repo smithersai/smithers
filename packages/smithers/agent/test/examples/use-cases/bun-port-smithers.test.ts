@@ -10,7 +10,7 @@ import * as Schedule from "effect/Schedule"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { BunPortSmithers, layer, phases, questions } from "../../../examples/use-cases/bun-port-smithers.ts"
+import { BunPortSmithers, layer, phases, questions } from "../../../examples/use-cases/bun-port-smithers.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "bun-port-smithers-"))

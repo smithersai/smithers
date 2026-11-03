@@ -28,20 +28,17 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as Stream from "effect/Stream"
 
-const ResearchResult = Schema.Struct({
-  summary: Schema.String,
-  keyPoints: Schema.Array(Schema.String)
-})
+schema ResearchResult {
+  summary: string
+  keyPoints: ReadonlyArray<string>
+}
 
-const ArticleResult = Schema.Struct({
-  article: Schema.String,
-  wordCount: Schema.Number
-})
+schema ArticleResult {
+  article: string
+  wordCount: number
+}
 
 /** The research step: a model call whose answer must be a `ResearchResult`. */
 export const Research = AgentAction.make("examples/Research", {
@@ -227,14 +224,16 @@ export const defaultResearch: typeof ResearchResult.Type = {
 export const run = (
   research: typeof ResearchResult.Type,
   executionId: string
-): Effect.Effect<Handoff> =>
-  Effect.gen(function*() {
+): Handoff!! =>
+  effect {
     const writerPrompts: Array<string> = []
-    const article = yield* SimpleWorkflow.execute({ topic: "durable workflows" }, { executionId }).pipe(
-      Effect.provide(SimpleWorkflowLayer(scripted(research, (asked) => writerPrompts.push(asked))))
-    )
+    const article = try effect {
+      provide SimpleWorkflowLayer(scripted(research, (asked) => writerPrompts.push(asked))) {
+        return try SimpleWorkflow.execute({ topic: "durable workflows" }, { executionId })
+      }
+    }
     return { article, writerPrompts } satisfies Handoff
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)
 
 /** The default run: the research answer above, handed to the writing step. */
-export const main: Effect.Effect<Handoff> = run(defaultResearch, "agent-step-1")
+export const main: Handoff!! = run(defaultResearch, "agent-step-1")

@@ -35,10 +35,7 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 import type * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as Stream from "effect/Stream"
 
 /** The bank this example's flow tree reads and writes. */
 export const namespace = { kind: "flow", id: "release-notes" } as const
@@ -206,8 +203,8 @@ export interface Summary {
  * Each call is a separate durable execution: its own run row, its own journal,
  * its own frames. The only thing they share is the memory the store holds.
  */
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (filename: string): Summary!! =>
+  (effect {
     const asked: Array<string> = []
 
     // The store and the FTS recall service, over the engine's own database.
@@ -227,22 +224,26 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         )
     })
 
-    const registry = Registry.makeNoop({
-      list: () => Effect.succeed([]),
-      visible: () => Effect.succeed([]),
-      getOption: () => Effect.succeed(Option.none())
-    })
+    const registry = try Effect.orDie(Effect.try({
+      try: () =>
+        Registry.makeNoop({
+          list: () => Effect.succeed([]),
+          visible: () => Effect.succeed([]),
+          getOption: () => Effect.succeed(Option.none())
+        }),
+      catch: (error) => error
+    }))
 
-    return yield* Effect.scoped(
-      Effect.gen(function*() {
-        const store = yield* MemoryStore.MemoryStore
+    return try Effect.scoped(
+      (effect {
+        const store = try MemoryStore.MemoryStore
         // FTS is enabled per namespace kind, by the store, once.
-        yield* store.enableFts("flow")
+        try store.enableFts("flow")
 
         // The services the bindings run their handlers in. A host with a
         // different store composes a different context and the cell sees no
         // difference.
-        const services = yield* Effect.context<MemoryStore.MemoryStore | Recall.Recall>()
+        const services = try Effect.context<MemoryStore.MemoryStore | Recall.Recall>()
 
         /** One durable run of the notebook, under one memory policy. */
         const run = (
@@ -251,60 +252,60 @@ export const main = (filename: string): Effect.Effect<Summary> =>
           note: string,
           policy: WithMemory.Policy = basePolicy
         ) =>
-          Keep.execute({ task, note }, { executionId }).pipe(
-            Effect.provide(
-              Layer.mergeAll(Notebook.layer, Interpreter.layer(Keep)).pipe(
-                Layer.provideMerge(
-                  Layer.mergeAll(
-                    AgentAction.layerHost({
-                      registry,
-                      flows: [memorySource(services, policy)],
-                      limits: { calls: 8 },
-                      capabilityEnvelope: [],
-                      maxFrames: 2
-                    }),
-                    seats,
-                    Agent.layer
-                  )
-                ),
-                // The scripted seat has no provider quota, and these offline
-                // runs have no approved plan envelope to derive a ceiling.
-                // eslint-disable-next-line no-restricted-syntax -- these offline runs have no approved envelope
-                Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
-                Layer.provideMerge(Agent.layerDefaults),
-                // The completion brake judges every claim, and never falls back to
-                // the model. This example scripts the judge the way it scripts the
-                // seat, so it still needs no key. A host with a resolved seat binds
-                // `Evaluator.layerFromSeat(judgeSeat)` instead.
-                Layer.provideMerge(
-                  ScriptedJudge.layer
-                ),
-                Layer.provideMerge(Action.layerImplementations)
-              )
+          Keep.execute({ task, note }, { executionId })
+          |> Effect.provide(
+            %,
+            Layer.mergeAll(Notebook.layer, Interpreter.layer(Keep)).pipe(
+              Layer.provideMerge(
+                Layer.mergeAll(
+                  AgentAction.layerHost({
+                    registry,
+                    flows: [memorySource(services, policy)],
+                    limits: { calls: 8 },
+                    capabilityEnvelope: [],
+                    maxFrames: 2
+                  }),
+                  seats,
+                  Agent.layer
+                )
+              ),
+              // The scripted seat has no provider quota, and these offline
+              // runs have no approved plan envelope to derive a ceiling.
+              // eslint-disable-next-line no-restricted-syntax -- these offline runs have no approved envelope
+              Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
+              Layer.provideMerge(Agent.layerDefaults),
+              // The completion brake judges every claim, and never falls back to
+              // the model. This example scripts the judge the way it scripts the
+              // seat, so it still needs no key. A host with a resolved seat binds
+              // `Evaluator.layerFromSeat(judgeSeat)` instead.
+              Layer.provideMerge(
+                ScriptedJudge.layer
+              ),
+              Layer.provideMerge(Action.layerImplementations)
             )
           )
 
-        const written = yield* run("notes-1", "record", "the three release-note rules")
-        const recalled = yield* run("notes-2", "recall", "release notes")
+        const written = try run("notes-1", "record", "the three release-note rules")
+        const recalled = try run("notes-2", "recall", "release notes")
         // Bind the other namespace explicitly. A policy-scoped handler refuses
         // foreign banks; an empty-bank read must use that bank's own policy.
-        const foreign = yield* run("notes-3", "foreign", "release notes", {
+        const foreign = try run("notes-3", "foreign", "release notes", {
           ...basePolicy,
           banks: ["flow-other-project"]
         })
-        const refused = yield* run("notes-4", "recall", "release notes", {
+        const refused = try run("notes-4", "recall", "release notes", {
           ...basePolicy,
           recall: "none"
         })
-        const dropped = yield* run("notes-5", "forget", "Release notes are written by hand.", {
+        const dropped = try run("notes-5", "forget", "Release notes are written by hand.", {
           ...basePolicy,
           retain: "never"
         })
-        const after = yield* run("notes-6", "recall", "hand")
+        const after = try run("notes-6", "recall", "hand")
 
-        const journal = yield* Journal.Journal
-        yield* journal.flush
-        const page = yield* journal.entries({ runId: "notes-2" as JournalEvent.RunId, limit: 500 })
+        const journal = try Journal.Journal
+        try journal.flush
+        const page = try journal.entries({ runId: "notes-2" as JournalEvent.RunId, limit: 500 })
 
         return {
           written: written.keys,
@@ -316,9 +317,8 @@ export const main = (filename: string): Effect.Effect<Summary> =>
           asked: [...asked],
           eventTypes: [...new Set(page.entries.map((entry) => entry.eventType))]
         } satisfies Summary
-      }).pipe(Effect.provide(base))
+      }) |> Effect.provide(%, base)
     )
-  }).pipe(
-    Effect.provide(Layer.mergeAll(NodeFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
-    Effect.orDie
-  )
+  })
+  |> Effect.provide(%, Layer.mergeAll(NodeFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  |> Effect.orDie(%)
