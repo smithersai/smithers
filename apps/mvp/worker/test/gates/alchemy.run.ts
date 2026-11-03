@@ -9,7 +9,7 @@
  * (worker/test/gates/.alchemy). `alchemy destroy` keeps the Neon project, as production's does: delete it in Neon.
  */
 import * as Alchemy from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Neon from "alchemy/Neon"
 import { Effect, Layer } from "effect"
 import { Databases } from "../../../infra/ChatDatabase.ts"

@@ -3,7 +3,7 @@
 // The stage has no GitHub App, so nothing plans the gate from a webhook or reports a status; the door stands in for
 // `repo/Run`'s plan, and every other hop (FlowExecution, ci/graph, ci/job, the gate machines, the artifacts) is the
 // deployment's own. No deploy of ChatApi (alchemy.run.ts) includes this file.
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { CiJob } from "@smthrs/sandbox"
 import { digestSync } from "@smthrs/crypto"
 import { Config, Effect, Option, Schema } from "effect"
