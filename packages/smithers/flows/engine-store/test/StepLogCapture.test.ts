@@ -15,7 +15,7 @@ import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as References from "effect/References"
-import * as EngineStoreMetrics from "../src/EngineStoreMetrics.ts"
+import * as EngineStoreMetrics from "../src/EngineStoreMetrics.vibe"
 import * as StepLogCapture from "../src/internal/StepLogCapture.ts"
 import * as StepLogs from "../src/StepLogs.vibe"
 

@@ -18,7 +18,7 @@ import type * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import * as StepBoundary from "../StepBoundary.ts"
 import * as StepSandbox from "../StepSandbox.ts"
-import * as WorkspaceSandbox from "../WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../WorkspaceSandbox.vibe"
 
 /**
  * An isolated execution whose diff bundle is now on the host.

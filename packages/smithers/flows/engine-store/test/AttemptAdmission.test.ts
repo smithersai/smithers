@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Deferred, Effect, Exit, Fiber, Ref } from "effect"
-import * as AttemptAdmission from "../src/internal/AttemptAdmission.ts"
+import * as AttemptAdmission from "../src/internal/AttemptAdmission.vibe"
 
 describe("AttemptAdmission", () => {
   it.effect.each(["failure", "defect"] as const)(

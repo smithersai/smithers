@@ -8,7 +8,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { DatabaseSync } from "node:sqlite"
 import * as ExecutionSnapshot from "../src/ExecutionSnapshot.ts"
 import * as Retention from "../src/Retention.ts"
-import * as RunChangeFeed from "../src/RunChangeFeed.ts"
+import * as RunChangeFeed from "../src/RunChangeFeed.vibe"
 import { fixture, onFile, state } from "./ExecutionSnapshotFixture.ts"
 
 describe("execution snapshots", () => {
