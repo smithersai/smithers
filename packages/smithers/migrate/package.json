@@ -36,7 +36,7 @@
     "node": ">=22.19.0"
   },
   "sideEffects": [
-    "./src/flow/bin.ts",
+    "./src/flow/bin.vibe",
     "./dist/esm/flow/bin.js",
     "./dist/cjs/flow/bin.js"
   ],

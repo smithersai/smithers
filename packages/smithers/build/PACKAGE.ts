@@ -17,7 +17,7 @@ import { Smithers } from "@smthrs/targets"
 import { Package as infraPackage } from "./infra/PACKAGE.ts"
 
 const standard = BuildAndCheckTypeScriptPackage({
-  sources: Smithers.glob("{src,examples}/**/*.ts"),
+  sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/build"
 })
 

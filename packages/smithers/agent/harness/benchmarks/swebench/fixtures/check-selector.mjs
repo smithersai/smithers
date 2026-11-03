@@ -87,7 +87,7 @@ try {
       || target === rateCard
       || (dirname(target) === harnessSource && /^[A-Za-z]+\.ts$/u.test(basename(target)))
   }
-  assert.ok(allowed("select-candidate.mjs", "../../src/Sufficiency.ts"))
+  assert.ok(allowed("select-candidate.mjs", "../../src/Sufficiency.vibe"))
   assert.ok(allowed("lib/journal-facts.mjs", "../../../src/NarrowedCheck.vibe"))
   assert.ok(
     allowed("prices.ts", "../../../model/src/internal/prices.generated.ts"),

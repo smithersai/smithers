@@ -1,6 +1,6 @@
 {
   "extends": "../tsconfig.json",
-  "include": ["flow.ts", "src/**/*.ts", "tests/**/*.ts"],
+  "include": ["flow.ts", "src/**/*.ts", "src/**/*.vibe", "tests/**/*.ts"],
   "exclude": ["node_modules"],
   "compilerOptions": { "types": ["node", "bun"] }
 }

@@ -16,11 +16,11 @@ const cwd = "packages/smithers/flows/core"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Smithers.glob("{src,examples}/**/*.ts"),
+  sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd
 })
 
-const bunTest = Smithers.BunSuite({ cwd, sources: Smithers.glob("{src,examples}/**/*.ts") })
+const bunTest = Smithers.BunSuite({ cwd, sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}") })
 
 const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd })
 const reviewDocsAgainstCode = ReviewDocsAgainstCode({
