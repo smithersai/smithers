@@ -207,7 +207,7 @@ setup("the scratch repositories start clean", async () => {
       const name = repository?.toLowerCase()
       if (name === undefined || !scratchRepositoriesOf(process.env).includes(name) || answers[name]?.role !== "admin") continue
       const left = await cleanScratch({ request }, repository!)
-      const found = [...left.runners, ...left.todos]
+      const found = [...left.runners, ...left.agents, ...left.todos]
       if (found.length > 0) console.error(`Cleaned ${repository}, which an earlier run left dirty:\n  ${found.join("\n  ")}`)
       setup.info().annotations.push({ type: "scratch", description: `${repository}: ${found.length === 0 ? "clean" : `${left.runners.length} runners, ${left.todos.length} TODOs cleared`}` })
     }

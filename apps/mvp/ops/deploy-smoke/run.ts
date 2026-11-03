@@ -2,7 +2,7 @@
 //
 //   cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/deploy-smoke/run.ts
 //
-// It runs `SPECS` one after another in each of `PROJECTS` through `node e2e/prod.mjs`, which takes run.lock for each, prints one pass or fail
+// It runs `SPECS` one after another in each of `PROJECTS` (or the one a spec names) through `node e2e/prod.mjs`, which takes run.lock for each, prints one pass or fail
 // line per spec, and exits non-zero on any failure, having run them all. It finds production's Neon project itself: the
 // one in NEON_ORG_ID that Alchemy named for the stage. A spec's own output goes to a file it names, never a secret here.
 import { spawn } from "node:child_process"
@@ -12,13 +12,19 @@ import { join } from "node:path"
 import { projectNamePattern, scrub, secretsOf } from "../feed-barrier/confirm.ts"
 import { refuseUncheckedTls } from "../tls.mjs"
 
+/** A spec, in every one of the smoke's browsers; or, with `project`, in that one alone. */
+export type SmokeSpec = string | { readonly spec: string; readonly project: string }
+
 /** What the smoke runs, in order. Short and fast: each proves a failure that reached production once. */
-export const SPECS: ReadonlyArray<string> = [
+export const SPECS: ReadonlyArray<SmokeSpec> = [
   // A role row past its life: the first paint never 503s the page's own reads (a1d9a5d5, rolled back). Its last visit
   // leaves the row fresh, which the next spec's paint needs.
   "e2e/cold-path.spec.ts",
   // Nothing covers search or New issue while a page syncs (a1d9a5d5).
   "e2e/first-paint.spec.ts",
+  // Registration through the fenced routes (decision 0148). It reads no page, so one browser proves it, and it writes,
+  // so a second run would only repeat the writes.
+  { spec: "e2e/runner-registration.spec.ts", project: "deployment" },
 ]
 
 /** The browsers each spec runs in, one run after the other: each once broke alone. */
@@ -39,23 +45,29 @@ export const findProject = async (
   return matching[0]!.id
 }
 
-/** Runs each spec with `runSpec`, every one whatever the last did; one line each. Answers the exit code. */
+/** Runs each spec with `runSpec`, every one whatever the last did; one line each. Answers the exit code. A spec naming a project the smoke doesn't run is an error, not a spec quietly dropped. */
 export const smoke = async (
-  specs: ReadonlyArray<string>,
+  specs: ReadonlyArray<SmokeSpec>,
   runSpec: (spec: string, project: string) => Promise<{ readonly code: number; readonly log: string; readonly seconds: number; readonly serverErrors?: ReadonlyArray<string> }>,
   out: (line: string) => void,
   projects: ReadonlyArray<string> = PROJECTS,
 ): Promise<number> => {
+  for (const each of specs) {
+    if (typeof each !== "string" && !projects.includes(each.project)) throw new Error(`${each.spec} names project ${each.project}, not one of ${projects.join(", ")}`)
+  }
   let failed = 0
+  let runs = 0
   for (const project of projects) {
-    for (const spec of specs) {
+    for (const each of specs) {
+      if (typeof each !== "string" && each.project !== project) continue
+      const spec = typeof each === "string" ? each : each.spec
+      runs++
       const { code, log, seconds, serverErrors = [] } = await runSpec(spec, project)
       if (code !== 0) failed++
       out(`${code === 0 ? "pass" : "FAIL"}  ${project}  ${spec}  ${seconds} s${code === 0 ? "" : `  exit ${code}, log ${log}`}`)
       for (const line of serverErrors) out(`      ${line}`)
     }
   }
-  const runs = specs.length * projects.length
   out(failed === 0 ? `deploy smoke passed: ${runs} runs` : `deploy smoke FAILED: ${failed} of ${runs} runs`)
   return failed === 0 ? 0 : 1
 }

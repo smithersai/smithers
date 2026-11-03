@@ -17,14 +17,18 @@ const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)))
 const smthrs = join(root, "packages/smithers/bin/smithers.mjs")
 const testAgent = join(root, "packages/smithers/agent/test/fixtures/acp-test-agent.mjs")
 
-/** An Admin's write to the repository's runners or agents, in the signed-in person's session. */
-const adminWrite = async (api: APIRequestContext, repo: string, path: string, method: "PUT" | "DELETE", body?: unknown) => {
+/**
+ * An Admin's write to the repository's runners or agents, in the signed-in person's session. Answers the execution whose
+ * receipt says how it ended: a 202 means only that its flow started.
+ */
+export const adminWrite = async (api: APIRequestContext, repo: string, path: string, method: "PUT" | "DELETE", body?: unknown) => {
   const response = await api.fetch(new URL(`/api/repos/${repo}/${path}`, baseURL).href, {
     method,
     headers: writeHeaders(),
     ...(body === undefined ? {} : { data: body }),
   })
   expect(response.status(), `${method} ${path}`).toBe(202)
+  return ((await response.json()) as { readonly execution: string }).execution
 }
 
 /**

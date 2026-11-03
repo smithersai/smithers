@@ -374,6 +374,12 @@ const needs = {
     met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),
     reason: "it runs TODOs to pull requests: run against a live instance with the GitHub App on a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
   },
+  runnerRegistration: {
+    met: (run) =>
+      run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") &&
+      !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!) && adminOf(run, "E2E_FACTORY_REPOSITORY"),
+    reason: "it registers a runner and an agent and retires both (decision 0148): a deployment, with the App on a scratch repository the test account administers, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
+  },
   agentRunner: {
     met: (run) =>
       run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY", "E2E_RUNNER_MIRROR") &&

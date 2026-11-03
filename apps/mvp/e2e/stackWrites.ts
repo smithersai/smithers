@@ -1,4 +1,6 @@
 import type { Page } from "@playwright/test"
+import { ADMIN_RECEIPTS_ROUTE } from "../src/features/runners/contract"
+import { redactError } from "./redact"
 import { shapeRows } from "./shape"
 import { writeHeaders } from "./target"
 
@@ -47,6 +49,9 @@ export const dropWord = async (page: Pick<Page, "request">, repository: string, 
   for (const todo of await openTodos(page, repository, word)) await dropTodo(page, repository, Number(todo.number))
 }
 
+/** How long a sweep waits for a retirement's receipt. */
+const RETIRES_WITHIN_MS = 60_000
+
 /** A registered machine, as the fleet's shape holds it. */
 type MachineRow = { readonly name: string; readonly removed_at: string | null }
 
@@ -57,14 +62,47 @@ type MachineRow = { readonly name: string; readonly removed_at: string | null }
  * hold the lane from every later test as a 60 s `queued` timeout.
  */
 export const cleanScratch = async (page: Pick<Page, "request">, repository: string) => {
-  const leftRunners = (await shapeRows<MachineRow>(page.request, `/api/shapes/machines?repo=${repository}&log=full`))
+  // Not every caller's test installs redaction (fleet.spec.ts): a request error here would carry the session cookie.
+  try {
+    return await reset(page, repository)
+  } catch (error) {
+    throw redactError(error)
+  }
+}
+
+const reset = async (page: Pick<Page, "request">, repository: string) => {
+  const machines = await shapeRows<MachineRow>(page.request, `/api/shapes/machines?repo=${repository}&log=full`)
+  const leftRunners = machines
     .filter((machine) => machine.removed_at === null && machine.name.startsWith("e2e-"))
     .map((machine) => machine.name)
+  // A retired runner keeps its row, so the deploy smoke's agents stay findable when a write of theirs that never answered
+  // lands after both were retired (e2e/runner-registration.spec.ts). Reads, one per past smoke run; a write only for what's there.
+  const strandedAgents: Array<string> = []
+  for (const machine of machines) {
+    if (machine.removed_at === null || !machine.name.startsWith("e2e-smoke-")) continue
+    const agent = await page.request.get(`/api/repos/${repository}/agents/${machine.name}`)
+    if (agent.status() === 200) strandedAgents.push(machine.name)
+    else if (agent.status() !== 404) throw new Error(`GET agents/${machine.name} answered ${agent.status()}`)
+  }
+  // A 202 only starts a retirement: its receipt says how it ended.
   const remove = async (path: string) => {
     const response = await page.request.delete(`/api/repos/${repository}/${path}`, { headers: writeHeaders() })
     if (response.status() !== 202) throw new Error(`DELETE ${path} answered ${response.status()}`)
+    const { execution } = (await response.json()) as { readonly execution: string }
+    const deadline = Date.now() + RETIRES_WITHIN_MS
+    for (;;) {
+      const receipt = await page.request.get(`${ADMIN_RECEIPTS_ROUTE}${encodeURIComponent(execution)}`)
+      if (receipt.status() === 200) {
+        const { outcome } = (await receipt.json()) as { readonly outcome: string }
+        if (outcome === "removed" || outcome === "missing") return
+        throw new Error(`DELETE ${path} ended ${outcome}`)
+      }
+      if (Date.now() > deadline) throw new Error(`DELETE ${path} has no receipt after ${RETIRES_WITHIN_MS / 1000} s`)
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
   }
-  // The agent first, so nothing new is handed to the runner going away.
+  // The agent first, so nothing new is handed to the runner going away, and its runner stays to find it by if it can't go.
+  for (const name of strandedAgents) await remove(`agents/${name}`)
   for (const name of leftRunners) await remove(`agents/${name}`)
   for (const name of leftRunners) await remove(`runners/${name}`)
   const leftTodos = await openTodos(page, repository)
@@ -76,6 +114,7 @@ export const cleanScratch = async (page: Pick<Page, "request">, repository: stri
   if (configured.status !== 202) throw new Error(`configuring the stack answered ${configured.status} ${configured.body.code ?? ""}`)
   return {
     runners: leftRunners,
+    agents: strandedAgents,
     todos: leftTodos.map((todo) => `T${todo.number} ${todo.state}: ${todo.title}`),
   }
 }

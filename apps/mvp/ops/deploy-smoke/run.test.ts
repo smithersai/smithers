@@ -42,6 +42,33 @@ test("the command refuses TLS checks turned off before any request with the Neon
   expect(errors.join()).toContain("TLS checks are turned off")
 })
 
+test("a spec that names a project runs there alone; the others still run in every project", async () => {
+  const ran: Array<string> = []
+  const lines: Array<string> = []
+  const specs = ["both", { spec: "one", project: "second" }]
+  expect(await smoke(specs, async (spec, project) => {
+    ran.push(`${project} ${spec}`)
+    return { code: 0, log: "", seconds: 1 }
+  }, (line) => lines.push(line), ["first", "second"])).toBe(0)
+  expect(ran).toEqual(["first both", "second both", "second one"])
+  expect(lines.at(-1)).toBe("deploy smoke passed: 3 runs")
+})
+
+test("a spec naming a project the smoke doesn't run is an error, and nothing runs", async () => {
+  const ran: Array<string> = []
+  await expect(smoke(["both", { spec: "nowhere", project: "third" }], async (spec) => {
+    ran.push(spec)
+    return { code: 0, log: "", seconds: 1 }
+  }, () => {}, ["first"])).rejects.toThrow("nowhere names project third, not one of first")
+  expect(ran).toEqual([])
+})
+
+test("the smoke's browser specs still run in both browsers, and only registration names one", () => {
+  expect(PROJECTS).toEqual(["deployment", "webkit"])
+  expect(SPECS.filter((each) => typeof each === "string")).toEqual(["e2e/cold-path.spec.ts", "e2e/first-paint.spec.ts"])
+  expect(SPECS.filter((each) => typeof each !== "string")).toEqual([{ spec: "e2e/runner-registration.spec.ts", project: "deployment" }])
+})
+
 test("the command needs production's environment, finds the project, and hands both to each spec", async () => {
   const errors: Array<string> = []
   const err = (line: string) => void errors.push(line)
@@ -59,7 +86,13 @@ test("the command needs production's environment, finds the project, and hands b
     return { code: 0, log: "", seconds: 0 }
   })
   expect(code).toBe(0)
-  expect(seen).toEqual(PROJECTS.flatMap((project) => SPECS.map((spec) => [project, spec, "https://x.test", "p1"])))
+  expect(seen).toEqual(PROJECTS.flatMap((project) =>
+    SPECS.flatMap((each) =>
+      typeof each === "string"
+        ? [[project, each, "https://x.test", "p1"]]
+        : each.project === project ? [[project, each.spec, "https://x.test", "p1"]] : []
+    )
+  ))
 })
 
 test("every 5xx a spec's report names reaches the smoke's own output, passing or not", async () => {

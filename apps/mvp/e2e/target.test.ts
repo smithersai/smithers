@@ -182,6 +182,7 @@ describe("needs", () => {
       "personalModelKey",
       "hostedModelOff",
       "factoryRepository",
+      "runnerRegistration",
       "agentRunner",
       "fleetStall",
       "fleetTelegram",
@@ -419,10 +420,14 @@ describe("needs", () => {
     const admin = { ...deployedAs("member", env), repository: answered({ "owner/scratch": { role: "admin", synced: true } }) }
     expect(NEEDS.stackAdmin.met(admin)).toBe(true)
     expect(NEEDS.agentRunner.met(admin)).toBe(true)
+    expect(NEEDS.runnerRegistration.met(admin)).toBe(true)
+    // No mirror needed: it starts no runner.
+    expect(NEEDS.runnerRegistration.met({ ...admin, env: { ...env, E2E_RUNNER_MIRROR: "" } })).toBe(true)
     // An Admin of the deployment's own repository is no Admin of the scratch one.
     const member = { ...deployedAs("admin", env), repository: answered({ "owner/scratch": { role: "member", synced: true } }) }
     expect(NEEDS.stackAdmin.met(member)).toBe(false)
     expect(NEEDS.agentRunner.met(member)).toBe(false)
+    expect(NEEDS.runnerRegistration.met(member)).toBe(false)
     // Nothing answered (the setup hasn't asked, or the deployment couldn't say): skipped, never assumed.
     expect(NEEDS.stackAdmin.met(deployedAs("admin", env))).toBe(false)
     expect(NEEDS.agentRunner.met({ ...deployedAs("admin", env), repository: answered({}) })).toBe(false)
