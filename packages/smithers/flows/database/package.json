@@ -37,7 +37,11 @@
     ".": "./src/index.vibe",
     "./internal/*": null,
     "./*/index": null,
-    "./DatabaseMetrics": "./src/DatabaseMetrics.ts",
+    "./DatabaseMetrics": {
+      "types": "./.vibe/declarations/src/DatabaseMetrics.d.vibe.ts",
+      "vibelang-source": "./src/DatabaseMetrics.vibe",
+      "default": "./.vibelang/js/src/DatabaseMetrics.js"
+    },
     "./DurableWriter": "./src/DurableWriter.ts",
     "./Migrations": "./src/Migrations.ts",
     "./UnsupportedBackend": "./src/UnsupportedBackend.ts",
@@ -46,7 +50,11 @@
     "./test/TestDatabase": "./src/test/TestDatabase.ts",
     "./test/SlowNetwork": "./src/test/SlowNetwork.ts",
     "./bun/BunDatabase": "./src/bun/BunDatabase.ts",
-    "./Dialect": "./src/Dialect.ts",
+    "./Dialect": {
+      "types": "./.vibe/declarations/src/Dialect.d.vibe.ts",
+      "vibelang-source": "./src/Dialect.vibe",
+      "default": "./.vibelang/js/src/Dialect.js"
+    },
     "./postgres/PostgresDatabase": "./src/postgres/PostgresDatabase.ts"
   },
   "files": [

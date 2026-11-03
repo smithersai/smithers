@@ -37,7 +37,7 @@ vi.mock("bun:sqlite", async () => {
 vi.mock("../src/internal/BunSqliteClient.ts", () => import("@effect/sql-sqlite-node/SqliteClient"))
 
 import * as BunDatabase from "../src/bun/BunDatabase.ts"
-import * as Dialect from "../src/Dialect.ts"
+import * as Dialect from "../src/Dialect.vibe"
 
 const read = (filename: string) =>
   Effect.runPromiseExit(

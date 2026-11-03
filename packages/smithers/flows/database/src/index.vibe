@@ -27,7 +27,7 @@ export * as DurableWriter from "./DurableWriter.ts"
  * @category metrics
  * @since 0.1.0
  */
-export * as DatabaseMetrics from "./DatabaseMetrics.ts"
+export * as DatabaseMetrics from "./DatabaseMetrics.vibe"
 
 /**
  * @category migrations

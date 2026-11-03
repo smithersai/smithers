@@ -11,12 +11,9 @@
  *
  * @since 0.1.0
  */
-
-import * as Duration from "effect/Duration"
-import * as Effect from "effect/Effect"
-import * as Metric from "effect/Metric"
-import * as Tallies from "./internal/WriteTally.vibe"
-
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as Metric from "effect/Metric";
 /**
  * Counter over write transaction replays. Incremented once per scheduled
  * retry of a recognized transient conflict (`SQLITE_BUSY`, serialization
@@ -27,10 +24,7 @@ import * as Tallies from "./internal/WriteTally.vibe"
  * @category metrics
  * @since 0.1.0
  */
-export const writeRetries = Metric.counter("flows_db_write_retries", {
-  description: "Durable write transaction replays after transient conflicts"
-})
-
+export declare const writeRetries: Metric.Counter<number>;
 /**
  * Timer over how long a PostgreSQL write waited for its writer lock, from
  * its first attempt through timeouts and backoffs to holding the lock. A writable
@@ -46,10 +40,7 @@ export const writeRetries = Metric.counter("flows_db_write_retries", {
  * @category metrics
  * @since 1.0.0
  */
-export const writerLockWait = Metric.timer("flows_db_writer_lock_wait", {
-  description: "Time a PostgreSQL durable write waited for its schema's writer lock"
-})
-
+export declare const writerLockWait: Metric.Histogram<Duration.Duration>;
 /**
  * Counter over PostgreSQL writer-lock waits that reached their client's
  * `writerLockTimeout`. Each such wait rolled its transaction back, letting
@@ -60,11 +51,7 @@ export const writerLockWait = Metric.timer("flows_db_writer_lock_wait", {
  * @category metrics
  * @since 1.0.0
  */
-export const writerLockTimeouts = Metric.counter("flows_db_writer_lock_timeouts", {
-  description: "PostgreSQL writer-lock waits that reached the timeout and released their server connection",
-  incremental: true
-})
-
+export declare const writerLockTimeouts: Metric.Counter<number>;
 /**
  * Timer over how long a `PostgresDatabase` statement or transaction waited
  * for a connection from its pool, one observation per wait. A wait that runs
@@ -75,10 +62,7 @@ export const writerLockTimeouts = Metric.counter("flows_db_writer_lock_timeouts"
  * @category metrics
  * @since 1.0.0
  */
-export const connectionWait = Metric.timer("flows_db_connection_wait", {
-  description: "Time a PostgreSQL statement or transaction waited for a pooled connection"
-})
-
+export declare const connectionWait: Metric.Histogram<Duration.Duration>;
 /**
  * Counter over `PostgresDatabase` connections that would not open or log in:
  * a refused or timed-out connection, or a refused login. Each also logs a
@@ -89,11 +73,7 @@ export const connectionWait = Metric.timer("flows_db_connection_wait", {
  * @category metrics
  * @since 1.0.0
  */
-export const loginFailures = Metric.counter("flows_db_login_failures", {
-  description: "PostgreSQL connections that failed to open or log in",
-  incremental: true
-})
-
+export declare const loginFailures: Metric.Counter<number>;
 /**
  * What the PostgreSQL write transactions inside one {@link tally} cost.
  *
@@ -101,20 +81,19 @@ export const loginFailures = Metric.counter("flows_db_login_failures", {
  * @since 1.0.0
  */
 export interface WriteTally {
-  /** Write transactions that took a writer lock, each retry counted. */
-  readonly transactions: number
-  /**
-   * Those that held the whole schema's lock, from their start or from a
-   * nested write that named no partition: each committed alone, holding up
-   * every other writer.
-   */
-  readonly schemaWide: number
-  /** Their summed {@link writerLockWait}, savepoints' locks included. */
-  readonly lockWait: Duration.Duration
-  /** Longest single client-side acquisition, including its transaction open, retries and transport. */
-  readonly maxLockWait: Duration.Duration
+    /** Write transactions that took a writer lock, each retry counted. */
+    readonly transactions: number;
+    /**
+     * Those that held the whole schema's lock, from their start or from a
+     * nested write that named no partition: each committed alone, holding up
+     * every other writer.
+     */
+    readonly schemaWide: number;
+    /** Their summed {@link writerLockWait}, savepoints' locks included. */
+    readonly lockWait: Duration.Duration;
+    /** Longest single client-side acquisition, including its transaction open, retries and transport. */
+    readonly maxLockWait: Duration.Duration;
 }
-
 /**
  * Runs `effect` and answers what its PostgreSQL write transactions cost: how
  * many took a writer lock, how many of those held the whole schema's, and how
@@ -142,25 +121,4 @@ export interface WriteTally {
  * @category metrics
  * @since 1.0.0
  */
-export const tally = <A, E, R>(
-  effect: Effect.Effect<A, E, R>
-): Effect.Effect<[tally: WriteTally, result: A], E, R> =>
-  Effect.gen(function*() {
-    const accumulator: Tallies.Accumulator = {
-      transactions: 0,
-      schemaWide: 0,
-      lockWait: Duration.zero,
-      maxLockWait: Duration.zero
-    }
-    const open = yield* Tallies.Current
-    const result = yield* Effect.provideService(effect, Tallies.Current, [...open, accumulator])
-    return [
-      {
-        transactions: accumulator.transactions,
-        schemaWide: accumulator.schemaWide,
-        lockWait: accumulator.lockWait,
-        maxLockWait: accumulator.maxLockWait
-      },
-      result
-    ]
-  })
+export declare const tally: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<[tally: WriteTally, result: A], E, R>;
