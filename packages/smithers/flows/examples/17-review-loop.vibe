@@ -13,7 +13,6 @@ import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 /** How many reviews one run may spend. The plan holds exactly this many. */
@@ -124,43 +123,39 @@ export interface Summary {
 export const main = (
   filename: string,
   options: { readonly approveOnRound: number; readonly executionId: string }
-): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+): Summary!! =>
+  effect {
     const reviews: Array<string> = []
     const revisions: Array<string> = []
     let seen = 0
 
     const draft = Draft.toLayer(({ topic }) => Effect.succeed(`draft of ${topic}`))
 
-    const review = Review.toLayer(({ text }) =>
-      Effect.sync(() => {
-        seen += 1
-        const approved = seen >= options.approveOnRound
-        reviews.push(`${text} -> ${approved}`)
-        return { approved, feedback: `tighten round ${seen}` }
-      })
-    )
+    const review = Review.toLayer(effect ({ text }) => {
+      seen += 1
+      const approved = seen >= options.approveOnRound
+      reviews.push(`${text} -> ${approved}`)
+      return { approved, feedback: `tighten round ${seen}` }
+    })
 
-    const revise = Revise.toLayer(({ feedback, text }) =>
-      Effect.sync(() => {
-        const revised = `${text} (${feedback})`
-        revisions.push(revised)
-        return revised
-      })
-    )
+    const revise = Revise.toLayer(effect ({ feedback, text }) => {
+      const revised = `${text} (${feedback})`
+      revisions.push(revised)
+      return revised
+    })
 
     const publish = Publish.toLayer((outcome) => Effect.succeed(outcome))
 
-    const outcome = yield* Effect.scoped(
-      Article.execute({ topic: "durable loops" }, { executionId: options.executionId }).pipe(
-        Effect.provide(
+    const outcome = try Effect.scoped(
+      Article.execute({ topic: "durable loops" }, { executionId: options.executionId })
+        |> Effect.provide(
+          %,
           Layer.mergeAll(draft, review, revise, publish, Interpreter.layer(Article)).pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-review"))
           )
         )
-      )
     )
 
     return { outcome, reviews, revisions } satisfies Summary
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)

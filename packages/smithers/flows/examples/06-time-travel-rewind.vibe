@@ -15,9 +15,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as SqlClient from "effect/sql/SqlClient"
 import { parkRun } from "./park-run.ts"
 
 /** The declared step the flow's body names; the wait lives in its implementation. */
@@ -80,22 +78,21 @@ const Credit = Action.make({
   execute: Effect.succeed(30)
 })
 
-const post = () =>
-  Effect.gen(function*() {
-    const amount = yield* Credit
-    const settlement = yield* DurableDeferred.await(Settlement)
-    return `${amount}:${settlement}`
-  })
+const post = effect () => {
+  const amount = try Credit
+  const settlement = try DurableDeferred.await(Settlement)
+  return `${amount}:${settlement}`
+}
 
 /** The run id both passes below read, typed once. */
 const runId = "ledger-1" as JournalEvent.RunId
 
 /** Executes the run, inspects the middle frame, and rewinds to it. */
 const rewindAtMidpoint = (filename: string) =>
-  Effect.gen(function*() {
+  (effect {
     // Close the private engine and its admitted retries before reading the
     // frame. Only storage and time travel remain open during inspection.
-    yield* parkRun(
+    try parkRun(
       "ledger-1",
       Ledger.execute({}, { executionId: "ledger-1" }),
       Layer.mergeAll(Post.toLayer(post), Interpreter.layer(Ledger)).pipe(
@@ -104,32 +101,30 @@ const rewindAtMidpoint = (filename: string) =>
       )
     )
 
-    const journal = yield* Journal.Journal
-    yield* journal.flush
-    const before = yield* journal.entries({ runId, limit: 200 })
+    const journal = try Journal.Journal
+    try journal.flush
+    const before = try journal.entries({ runId, limit: 200 })
     // Rewind to the middle of what the run recorded.
     const seq = before.entries[Math.floor(before.entries.length / 2)]!.seq
     const position = { runId: "ledger-1", frame: { lineageId, seq } }
 
     // Read-only: count the action attempts the frame covers, folding the
     // engine's own records.
-    const derivedAttempts = yield* TimeTravel.pipe(
-      Effect.flatMap((timeTravel) =>
+    const derivedAttempts = try (TimeTravel
+      |> Effect.flatMap(%, (timeTravel) =>
         timeTravel.inspect(position, {
           initial: 0,
           reduce: (state: number, committed) =>
             committed.eventType === "flows.engine.attempt-started" ? state + 1 : state
-        })
-      )
-    )
+        })))
 
     // Mutating: drop everything after the frame.
-    const timeTravel = yield* TimeTravel
-    const result = yield* timeTravel.rewind(position)
+    const timeTravel = try TimeTravel
+    const result = try timeTravel.rewind(position)
 
-    const remaining = yield* journal.entries({ runId, limit: 200 })
-    const sql = yield* Effect.service(SqlClient.SqlClient)
-    const audits = yield* sql<{ readonly status: string }>`
+    const remaining = try journal.entries({ runId, limit: 200 })
+    const sql = try Effect.service(SqlClient.SqlClient)
+    const audits = try sql<{ readonly status: string }>`
       SELECT status FROM flows_time_travel_audits WHERE id = ${result.auditId}
     `
 
@@ -141,10 +136,9 @@ const rewindAtMidpoint = (filename: string) =>
       remainingSeqs: remaining.entries.map((committed) => committed.seq),
       auditStatus: audits[0]?.status ?? "missing"
     }
-  }).pipe(
-    Effect.provide(layer(filename)),
-    Effect.scoped
-  )
+  })
+  |> Effect.provide(%, layer(filename))
+  |> Effect.scoped(%)
 
 /**
  * Reads the journal back over the same file, from stores opened after the
@@ -152,17 +146,16 @@ const rewindAtMidpoint = (filename: string) =>
  * so the prefix a later process reads is the one the rewind left behind.
  */
 const reopen = (filename: string) =>
-  Effect.gen(function*() {
-    const journal = yield* Journal.Journal
-    const entries = yield* journal.entries({ runId, limit: 200 })
+  (effect {
+    const journal = try Journal.Journal
+    const entries = try journal.entries({ runId, limit: 200 })
     return entries.entries.map((committed) => committed.seq)
-  }).pipe(
-    Effect.provide(TestNodeRuntime.requirements(filename)),
-    Effect.scoped
-  )
+  })
+  |> Effect.provide(%, TestNodeRuntime.requirements(filename))
+  |> Effect.scoped(%)
 
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
-    const rewound = yield* rewindAtMidpoint(filename)
-    return { ...rewound, persistedSeqs: yield* reopen(filename) }
-  }).pipe(Effect.orDie)
+export const main = (filename: string): Summary!! =>
+  effect {
+    const rewound = try rewindAtMidpoint(filename)
+    return { ...rewound, persistedSeqs: try reopen(filename) }
+  } |> Effect.orDie(%)

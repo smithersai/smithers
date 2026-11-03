@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { declaredCalls, main, maxRounds } from "../../examples/17-review-loop.ts"
+import { declaredCalls, main, maxRounds } from "../../examples/17-review-loop.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

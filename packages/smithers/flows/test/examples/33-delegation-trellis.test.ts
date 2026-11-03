@@ -10,7 +10,7 @@ import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DelegateWork, envelope, leafNodesFor, main, plan, RunPlan } from "../../examples/33-delegation-trellis.ts"
+import { DelegateWork, envelope, leafNodesFor, main, plan, RunPlan } from "../../examples/33-delegation-trellis.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 
