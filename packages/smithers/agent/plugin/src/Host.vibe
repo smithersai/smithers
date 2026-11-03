@@ -132,7 +132,7 @@ export type Settled = typeof Settled.Type
  */
 export interface Dispatched {
   readonly runId: string
-  readonly settled: Effect.Effect<Settled>
+  readonly settled: Settled!!
 }
 
 /**
@@ -201,19 +201,19 @@ export interface PluginHost {
    * to the viewer and the plugin. `params` name what a query that takes them
    * is asked for (since 1.2.0).
    */
-  readonly query: <R>(name: string, params?: QueryParams) => Effect.Effect<Live<R>, PluginRefused>
+  readonly query: <R>(name: string, params?: QueryParams) => Live<R>!PluginRefused
   /** The item the person is looking at: the host's action strip acts on it. Must be a row of the view's `reads`. */
-  readonly select: (item: ItemRef) => Effect.Effect<void, PluginRefused>
+  readonly select: (item: ItemRef) => void!PluginRefused
   /** Prefill an event's fields in the action strip. Nothing runs until the person presses. */
-  readonly propose: (event: EventRef, fields: unknown) => Effect.Effect<void, PluginRefused>
+  readonly propose: (event: EventRef, fields: unknown) => void!PluginRefused
   /**
    * Run an event whose flow is not person-only: the host fills `$item` and
    * `$event` and mints the invocation context. Answers once the run started,
    * with its id and `settled`, which waits for its end.
    */
-  readonly dispatch: (event: EventRef, fields: unknown) => Effect.Effect<Dispatched, PluginRefused>
+  readonly dispatch: (event: EventRef, fields: unknown) => Dispatched!PluginRefused
   /** Open a view the manifest declares; a `repository` view opens on `repository`, and without one does nothing. */
-  readonly open: (view: string, repository?: Repository) => Effect.Effect<void>
+  readonly open: (view: string, repository?: Repository) => void!!
   /**
    * The declared local events of `view` the host's keymap delivered, in order
    * (`j`, `k`). Person-only events are never delivered.

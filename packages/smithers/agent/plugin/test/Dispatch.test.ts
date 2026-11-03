@@ -1,12 +1,12 @@
 import { Cause, Deferred, Effect, Exit, Fiber, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Config from "../src/Config.ts"
+import * as Config from "../src/Config.vibe"
 import type { FirstHook, ParallelHook, SequentialHook } from "../src/Hooks.vibe"
 import * as Hooks from "../src/Hooks.vibe"
 import type { FlowsHooks, FlowsPlugin } from "../src/index.vibe"
 import type { PluginError } from "../src/PluginError.vibe"
 import * as Plugins from "../src/Plugins.vibe"
-import * as Resolve from "../src/Resolve.ts"
+import * as Resolve from "../src/Resolve.vibe"
 
 type Decision = "transient" | "permanent" | { readonly shareable: true }
 

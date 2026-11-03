@@ -30,9 +30,9 @@ import {
   type View
 } from "./Contribution.vibe"
 import * as Patterns from "./internal/patterns.ts"
-import * as JsonSchema from "./JsonSchema.ts"
+import * as JsonSchema from "./JsonSchema.vibe"
 import * as Keys from "./Keys.vibe"
-import * as Manifest from "./Manifest.ts"
+import * as Manifest from "./Manifest.vibe"
 import * as When from "./When.vibe"
 
 /**

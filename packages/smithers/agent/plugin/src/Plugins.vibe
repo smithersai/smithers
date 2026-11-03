@@ -23,7 +23,7 @@ import type { ArgsOf, ContextOf, HookKind, KeysOfKind, SuccessOf } from "./Hooks
 import { engineHooks } from "./Hooks.vibe"
 import type { FlowsHooks } from "./index.vibe"
 import { PluginError } from "./PluginError.vibe"
-import { defaultParallelConcurrency, type HandlerRecord, type Resolved } from "./Resolve.ts"
+import { defaultParallelConcurrency, type HandlerRecord, type Resolved } from "./Resolve.vibe"
 
 const empty: ReadonlyArray<HandlerRecord> = Object.freeze([])
 

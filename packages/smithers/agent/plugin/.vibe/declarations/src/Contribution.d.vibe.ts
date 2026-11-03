@@ -9,9 +9,9 @@
  * @since 1.1.0
  */
 import * as Schema from "effect/Schema";
-import type * as JsonSchema from "../../../src/JsonSchema.ts";
+import type * as JsonSchema from "./JsonSchema.vibe";
 import type * as Keys from "./Keys.vibe";
-import type * as Manifest from "../../../src/Manifest.ts";
+import type * as Manifest from "./Manifest.vibe";
 import type * as When from "./When.vibe";
 /**
  * Why a plugin was not loaded. A closed set: a host lists it on the plugin

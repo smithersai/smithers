@@ -7,7 +7,6 @@
 
 import { Action } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
 import type { FlowsPlugin } from "../Plugin.vibe"
 import { PluginError } from "../PluginError.vibe"
 import * as Boundary from "./Boundary.ts"
@@ -27,7 +26,7 @@ const escapePluginIdentityPart = (value: string): string =>
 export const snapshotCacheEnvironment = <H>(
   input: unknown,
   plugins: ReadonlyArray<{ readonly plugin: FlowsPlugin<H>; readonly path: string }>
-): Effect.Effect<Action.CacheEnvironment | undefined, PluginError> => {
+): Action.CacheEnvironment | undefined!PluginError => {
   if (input === undefined) return Effect.succeed(undefined)
   const pluginIdentities: Array<string> = []
   for (const { path, plugin } of plugins) {
@@ -53,15 +52,14 @@ export const snapshotCacheEnvironment = <H>(
       })
     )
   }
-  return Schema.decodeUnknownEffect(Action.CacheEnvironment)(admitted.value).pipe(
-    Effect.mapError(() =>
+  return Schema.decodeUnknownEffect(Action.CacheEnvironment)(admitted.value)
+    |> Effect.mapError(%, () =>
       new PluginError({
         code: "cache_environment_invalid",
         message: "cache environment does not match the complete cache identity schema",
         path: "$options.cacheEnvironment"
-      })
-    ),
-    Effect.map((environment) => {
+      }))
+    |> Effect.map(%, (environment) => {
       const capabilities: Record<string, ReadonlyArray<string>> = {}
       for (const name of Object.keys(environment.capabilities)) {
         Object.defineProperty(capabilities, name, {
@@ -74,5 +72,4 @@ export const snapshotCacheEnvironment = <H>(
         capabilities: Object.freeze(capabilities)
       })
     })
-  )
 }

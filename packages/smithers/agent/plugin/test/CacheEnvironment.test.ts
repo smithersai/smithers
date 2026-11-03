@@ -12,11 +12,11 @@
 import { Action } from "@smthrs/flow"
 import { Context, Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import type * as Config from "../src/Config.ts"
-import * as Kernel from "../src/Kernel.ts"
+import type * as Config from "../src/Config.vibe"
+import * as Kernel from "../src/Kernel.vibe"
 import * as Plugin from "../src/Plugin.vibe"
 import type { PluginError } from "../src/PluginError.vibe"
-import type * as Resolve from "../src/Resolve.ts"
+import type * as Resolve from "../src/Resolve.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
 

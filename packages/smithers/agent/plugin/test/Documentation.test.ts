@@ -4,8 +4,8 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Manifest from "../src/Manifest.ts"
-import * as Resolve from "../src/Resolve.ts"
+import * as Manifest from "../src/Manifest.vibe"
+import * as Resolve from "../src/Resolve.vibe"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
 const read = (file: string) => readFileSync(join(packageRoot, file), "utf8")

@@ -11,8 +11,6 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as SchemaGetter from "effect/SchemaGetter"
-import * as SchemaIssue from "effect/SchemaIssue"
 import * as Boundary from "./internal/Boundary.ts"
 import { PluginError } from "./PluginError.vibe"
 
@@ -195,7 +193,7 @@ export const deepFreeze = <A extends ConfigValue>(value: A): A => {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const snapshot = (config: unknown): Effect.Effect<FlowsConfig, PluginError> =>
+export const snapshot = (config: unknown): FlowsConfig!PluginError =>
   Effect.try({ try: () => snapshotRecord(config), catch: (cause) => cause as PluginError })
 
 /**
@@ -204,4 +202,4 @@ export const snapshot = (config: unknown): Effect.Effect<FlowsConfig, PluginErro
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const resolve = (config: unknown): Effect.Effect<ResolvedConfig, PluginError> => snapshot(config)
+export const resolve = (config: unknown): ResolvedConfig!PluginError => snapshot(config)
