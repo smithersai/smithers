@@ -13,8 +13,11 @@ import { handles } from "./Api.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Metrics from "./Metrics.ts"
 import { MAX_POST_BYTES, parseLinksPath } from "./WorkLinks.ts"
-import { githubHarness, member } from "./test/harness.ts"
-import { REPOSITORY, reset, sql } from "./test/fixtures.ts"
+import { githubHarness as makeGithubHarness, member } from "./test/harness.ts"
+import { REPOSITORY, reset, signedIn, sql } from "./test/fixtures.ts"
+
+const githubHarness = (runtime: Parameters<typeof makeGithubHarness>[0], options: Parameters<typeof makeGithubHarness>[1] = {}) =>
+  makeGithubHarness(runtime, { actor: member(undefined, null), ...options })
 
 const runtime = testFile("github_work_links")
 
@@ -97,6 +100,67 @@ describe("work links", () => {
     expect(h.count(Metrics.workLinkPosts, { outcome: "written", by: "person" })).toBe(9)
     expect(h.line("work.links")[0]!.annotations).toMatchObject({ outcome: "written", links: 2, changed: 2, status: 200 })
     expect(JSON.stringify(h.line("work.links").map((line) => line.annotations))).not.toContain("lane-a")
+  })
+
+  test("commit-time session checks add two round trips, three with an alias, and none to reads", async () => {
+    await seed()
+    const who = await signedIn(runtime, { login: "cost-member", token: Redacted.make("test-only-token") })
+    const alias = crypto.randomUUID()
+    await sql(runtime, `INSERT INTO host_sessions (id, token_digest, parent_id, host)
+      VALUES ('${alias}', 'digest-${alias}', '${who.sessionId}', 'alias.example.test')`)
+    const counts: Array<number> = []
+    const reads: Array<number> = []
+    for (const actor of [member(undefined, null), member(who.personId, who.sessionId), { ...member(who.personId, who.sessionId), alias }]) {
+      const h = await githubHarness(runtime, { actor })
+      const clients = () => h.spans.filter((span) => span.kind === "client").length
+      expect((await h.fetch(route(1), post({ links: [{ kind: "queue", ref: "cost" }] }))).status).toBe(200)
+      counts.push(clients())
+      const before = clients()
+      expect((await h.fetch(`${list}?state=all`)).status).toBe(200)
+      reads.push(clients() - before)
+    }
+    expect(counts.map((count) => count - counts[0]!)).toEqual([0, 2, 3])
+    expect(reads).toEqual([reads[0], reads[0], reads[0]])
+  })
+
+  test.each(["session", "alias", "expiry"] as const)("a Member whose %s ends while the body arrives writes nothing", async (end) => {
+    await seed()
+    const who = await signedIn(runtime, { login: "link-member", token: Redacted.make("test-only-token") })
+    const alias = crypto.randomUUID()
+    await sql(runtime, `INSERT INTO host_sessions (id, token_digest, parent_id, host)
+      VALUES ('${alias}', 'digest-${alias}', '${who.sessionId}', 'alias.example.test')`)
+    const h = await githubHarness(runtime, { actor: { ...member(who.personId, who.sessionId), alias } })
+    let reading = () => {}
+    const read = new Promise<void>((resolve) => { reading = resolve })
+    let finish = () => {}
+    const finished = new Promise<void>((resolve) => { finish = resolve })
+    const text = JSON.stringify({ links: [{ kind: "queue", ref: "late-member" }] })
+    let head = true
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (head) {
+          head = false
+          controller.enqueue(new TextEncoder().encode(text.slice(0, 5)))
+          return
+        }
+        reading()
+        await finished
+        controller.enqueue(new TextEncoder().encode(text.slice(5)))
+        controller.close()
+      },
+    })
+    const posting = h.fetch(route(1), { method: "POST", body, duplex: "half" } as RequestInit)
+    await read
+    try {
+      await sql(runtime, end === "alias"
+        ? `UPDATE host_sessions SET revoked_at = now() WHERE id = '${alias}'`
+        : end === "expiry"
+        ? `UPDATE sessions SET expires_at = clock_timestamp() - interval '1 second' WHERE id = '${who.sessionId}'`
+        : `UPDATE sessions SET revoked_at = now(), revoked_reason = 'sign_out' WHERE id = '${who.sessionId}'`)
+    } finally { finish() }
+    const response = await posting
+    expect([response.status, await response.json()]).toEqual([403, { code: "not_authorized" }])
+    expect(await sql(runtime, `SELECT id FROM work_links`)).toEqual([])
   })
 
   test("a runner registered on the repository posts and reads with its token; any other token is nobody", async () => {

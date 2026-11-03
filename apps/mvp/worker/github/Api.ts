@@ -1,3 +1,4 @@
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { itemShape } from "./ItemShape.ts"
 import * as MirrorRefresh from "../MirrorRefresh.ts"
 import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"
@@ -1028,7 +1029,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const post = WorkLinks.decode(text.success)
           const now = yield* Clock.currentTimeMillis
           if (post === undefined || WorkLinks.fromTheFuture(post, now)) return refused(400, "invalid")
-          const written = yield* WorkLinks.write(target.id, named.number, post, source, now, byRunner).pipe(
+          const written = yield* WorkLinks.write(target.id, named.number, post, source, now, byRunner,
+            Option.isSome(actor.value) ? WriteAuthority.sessionOf(actor.value.value) : undefined).pipe(
             Effect.provide(database),
             Effect.result,
           )
