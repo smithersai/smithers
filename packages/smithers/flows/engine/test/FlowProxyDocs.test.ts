@@ -75,7 +75,7 @@ describe("FlowProxy documentation", () => {
   })
 
   it("does not claim the define-and-run example requires an explicit id", () => {
-    const example = read("../examples/01-define-and-run.vibe")
+    const example = read("../examples/01-define-and-run.ts")
     expect(example).not.toContain("an explicit id is required")
     expect(example).toContain("fresh UUID")
   })
