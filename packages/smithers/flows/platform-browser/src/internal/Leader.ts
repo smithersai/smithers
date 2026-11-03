@@ -32,9 +32,9 @@ import { TabChannel, type TabChannelOverflow } from "../TabChannel.ts"
 import { WebLock } from "../WebLock.ts"
 import { leaderships, requests, statements, wakes } from "./Metrics.vibe"
 import * as Prepare from "./Prepare.ts"
-import * as Protocol from "./Protocol.ts"
+import * as Protocol from "./Protocol.vibe"
 import { type Service as Connection, SqlConnection, TransactionLost, TransactionUndecided } from "./SqlConnection.ts"
-import * as SqlProtocol from "./SqlProtocol.ts"
+import * as SqlProtocol from "./SqlProtocol.vibe"
 
 /**
  * The services {@link serve} reads from the engine it builds.
