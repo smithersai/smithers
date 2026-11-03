@@ -3,11 +3,12 @@ import { assert } from "@effect/vitest"
 import type * as FlowInvoker from "../src/FlowInvoker.vibe"
 import type * as Route from "../src/Route.vibe"
 import { visibleModule } from "./modules.ts"
+import { hostGlobals } from "./hostGlobals.ts"
 
 export { invalidModule, recordedModule, refinedModule, specialModule, visibleModule } from "./modules.ts"
 
 /** How many times the import-recording fixture has been evaluated. */
-export const recordedImports = (): number => (globalThis as { fsRecordedImports?: number }).fsRecordedImports ?? 0
+export const recordedImports = (): number => (hostGlobals as { fsRecordedImports?: number }).fsRecordedImports ?? 0
 
 /**
  * The expected failure a program fails with; a success or a defect fails the

@@ -7,7 +7,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { Command, FileRouter, FlowInvoker, Incur } from "../src/index.ts"
 
 /** The flows tree that ships beside this example. */
-export const flowsRoot = `${import.meta.dirname}/flows`
+export { flowsRoot } from "./agent-command-root.ts"
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
