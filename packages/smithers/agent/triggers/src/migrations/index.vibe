@@ -2,9 +2,9 @@
 
 import * as Layer from "effect/Layer"
 import * as Migrator from "effect/sql/Migrator"
-import { triggers } from "./0001_triggers.ts"
-import { reservationLease } from "./0002_reservation_lease.ts"
-import { schedulerHeartbeat } from "./0003_heartbeat.ts"
+import { triggers } from "./0001_triggers.vibe"
+import { reservationLease } from "./0002_reservation_lease.vibe"
+import { schedulerHeartbeat } from "./0003_heartbeat.vibe"
 import { fireRunIndex } from "./0004_fire_run_index.vibe"
 
 /**

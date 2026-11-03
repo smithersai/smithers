@@ -14,7 +14,7 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 0.1.0
  */
-export const reservationLease: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`ALTER TABLE flows_triggers ADD COLUMN active_claimed_at_ms ${Dialect.integer(sql)}`
-})
+export const reservationLease: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`ALTER TABLE flows_triggers ADD COLUMN active_claimed_at_ms ${Dialect.integer(sql)}`
+}

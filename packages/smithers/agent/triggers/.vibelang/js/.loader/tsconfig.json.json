@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/triggers"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "oDWXRzqCBM4vyDQjUYg3705VJ2dxXil5D9u_t6ag0j0",
   "configs": [
    {
     "path": {
@@ -96,7 +96,7 @@
      "relative": "packages/smithers/agent/triggers/src"
     },
     null,
-    "PPBh6QohzDY8ufMZVY7WgiJEoqS6iNeHK3_59hrautM",
+    "rdIPuHpEW35RbKN6crZ7YBi61PmSQcQ_CtP7kAu0fuU",
     [],
     {
      "recursive": true,
@@ -265,7 +265,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Tl95kj_BsjkkH0Oe2GGjSpFJguDayej-HNxHpH7vzXs"
    },
    {
     "path": {
@@ -290,7 +290,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "ynPojIuFuYF19AF8KTHAFYrSfINcXbPNz4ep0VgeHIQ"
    },
    {
     "path": {
@@ -318,78 +318,78 @@
     "path": {
      "relative": "packages/smithers/agent/triggers/package.json"
     },
-    "size": 9624,
-    "hash": "tjYJmUftsTjVbQc1gLAVGhJCtd2-fmRZE573aNYAXfw"
+    "size": 9708,
+    "hash": "Nwo0YEBU-zXueyHL-ngKJCQfXhxkEen3mv-ymjfXTL4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "Em8aruE90b5w66A0vctxutft_V8WgpHLJx9bejhOPAI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "iLoGBsWSYfbyNXPHokvw02IlsuefNlsgQ0-jVDoK-eI"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/package.json"
     },
     "size": 8141,
-    "hash": "O-3M6m6J761jj3XuevgCMWkZ0TCgCy_P5F6i9Z8fX9g"
+    "hash": "Kgl63nTk26bVHlfhyhyPghMHoqATo5b1GQXrA7ZQvvc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "r7klrzKQyLcNYAZZctBzPz5AARbjUYT-vUOXtcFxnfI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "WfYiFTDSIgHOXbvlJC1FmLD45rD1l3wJH2jsptBjSZQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "twqlLUHOKnsj3jNwz0sa1yiPlZ9N1RCvF61HlQAzlY0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "pw3jwkZ-L60BjMWVfzYeWDAZBqjT0tT8ia6LVyCU3R8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
+    "hash": "jcIi6z-hfSJF2awaZ7-FAkRy35oFQMm5HC7dNGznWVo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "nJKlnXad-SU7SghHDD8bIibTPgXwI3GpaRSq5W0DyTI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "UAeiVlu_XM04DsE84vX-lZNTUbrv5hoLjC2N0CGSAlo"
    },
    {
     "path": {
@@ -403,14 +403,14 @@
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
+    "hash": "1TixOJ2hUgI8FjbmLTBXCweKdHWI7Pf9CeuePOyUgy8"
    },
    {
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
     "size": 17630,
-    "hash": "bxheo6D0sDenep1VXnaAozWM3cs6TXN3tfj6Cfc1obM"
+    "hash": "eTtLMv9MAmDXILb0FeUEJlWiqj-ivxUr1mGt1KJjs_g"
    },
    {
     "path": {
@@ -1914,24 +1914,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/triggers/src/Cron.ts"
+     "relative": "packages/smithers/agent/triggers/src/Cron.vibe"
     },
-    "size": 6773,
-    "hash": "IhJ3Kh5rmWoFXtvdsUm2T4LSDYygUxaiq0JSpkCskj4"
+    "size": 6514,
+    "hash": "unHJfr5T-4ef6CtZ-GvlRJ0C68hX7pyJbVDeuYb9ffU"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/triggers/src/Schedule.vibe"
     },
-    "size": 3096,
-    "hash": "AdeZS9xFzZFF0z4WUfu7WZ_ymbDzwHRSAi6gKgFaqUo"
+    "size": 3098,
+    "hash": "aDK5gQQfzB7RvzD5-_RPJgPDrHit9v95GMfYo6RIzbQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/triggers/src/CatchUp.vibe"
     },
-    "size": 2285,
-    "hash": "KqToBzLUOxjVDS_oIlU_2pxXs-6ABxyqiNpvpVQdJZE"
+    "size": 2289,
+    "hash": "HMfDYUMWdPbDepMU5JVti6lwznnlZHQcL-_zNpdiwXY"
    },
    {
     "path": {
@@ -4112,10 +4112,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/triggers/src/DispatchReader.ts"
+     "relative": "packages/smithers/agent/triggers/src/DispatchReader.vibe"
     },
-    "size": 6913,
-    "hash": "l1rmC6yWlq4yhGtbc0DeVWWDIkMxWv_ZUp-Pmna5kvg"
+    "size": 6638,
+    "hash": "F8DjrK0VwbzkY52DIJeHWJhAkC8Z50asbg8iDEXDyU8"
    },
    {
     "path": {
@@ -4133,38 +4133,38 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/triggers/src/internal/DueOccurrences.ts"
+     "relative": "packages/smithers/agent/triggers/src/internal/DueOccurrences.vibe"
     },
-    "size": 3852,
-    "hash": "oPBaaduT5Plo36NRYhEVTwwwU5sOboKQxwTbuQGOx2Y"
+    "size": 3703,
+    "hash": "B0LwyRUakvAM8PGoVvYzDxMl2rn0MGeF4hVUcN0J3ps"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/triggers/src/Scheduler.ts"
     },
-    "size": 45742,
-    "hash": "Uk7H-ZVlMJjP_I-VxarZxidnQ5aHRcu5Eu_sW01fImk"
+    "size": 45744,
+    "hash": "i0EntwXZQpcKJYPadDd4ttD8r-3tLSCfS3lOLf3_Kcw"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/triggers/src/migrations/0001_triggers.ts"
+     "relative": "packages/smithers/agent/triggers/src/migrations/0001_triggers.vibe"
     },
-    "size": 1611,
-    "hash": "_BA2ueEV7NLtW-ZS_RSekP4QsqAnGGXieZQlyz1IGNg"
+    "size": 1568,
+    "hash": "vRPuAXzN5rniO023yaRFOaddn938yFHCOdaCJfc_MvM"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.ts"
+     "relative": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.vibe"
     },
-    "size": 748,
-    "hash": "HEnf-XKu92hbvEetexER8QfDn8hsHvBu9TM6IP4Hkms"
+    "size": 708,
+    "hash": "spMOxBUxvNUWdo9WZY5m98jQu-GVPMlYmh39qKB91qA"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.ts"
+     "relative": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.vibe"
     },
-    "size": 897,
-    "hash": "DhUr_4_SVslhw3CPSmH5LDqBDcYUcnxOTJaZ5gyngYY"
+    "size": 857,
+    "hash": "W2w35-udDanGLQIGAtiXSH2vIyyYxjFvLgSKLmaduW0"
    },
    {
     "path": {
@@ -4175,17 +4175,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/triggers/src/migrations/index.ts"
+     "relative": "packages/smithers/agent/triggers/src/migrations/index.vibe"
     },
-    "size": 1138,
-    "hash": "-CgRQ0kbMlUSwT3oSNU2TQYJY6EH6yRp5jmjYgDk9rM"
+    "size": 1144,
+    "hash": "VMIMyRXva06mhIdKUrIWEkeptj4Hr-qvAKRFvgh2f8w"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/triggers/src/SqlTriggerStore.ts"
     },
-    "size": 29158,
-    "hash": "enrDw0_ufnZnZ8kt4RzrywXQRiIA_uEUAEMr7_ySkBs"
+    "size": 29160,
+    "hash": "jWXK06clPLkkerTCH87FeIPxWveAIHekyXJJ4eLTQ3E"
    },
    {
     "path": {
@@ -4420,17 +4420,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/triggers/src/Webhook.ts"
+     "relative": "packages/smithers/agent/triggers/src/Webhook.vibe"
     },
-    "size": 10895,
-    "hash": "aszNERrqqvSJqUH9cP-4BZzfzZXsTVo8I68EA8rHyz4"
+    "size": 10758,
+    "hash": "gaL2NT9xL3oo3QfsrKy31Jas9YX_4s9IdoxQaGuufuA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/triggers/src/index.ts"
     },
-    "size": 1116,
-    "hash": "5dTb29YpalTcigceZVCp3TyOiSQPrMHkpw_M4Sd5atY"
+    "size": 1122,
+    "hash": "LJxilKiO1FPTUp3fRgULu4HH4MxkvBZqUtkWHkPOdV8"
    },
    {
     "path": {
@@ -5344,7 +5344,7 @@
     "relative": "packages/smithers/agent/triggers/src/TriggerError.vibe"
    },
    {
-    "relative": "packages/smithers/agent/triggers/src/Cron.ts"
+    "relative": "packages/smithers/agent/triggers/src/Cron.vibe"
    },
    {
     "relative": "packages/smithers/agent/triggers/src/Schedule.vibe"
@@ -6067,7 +6067,7 @@
     "relative": "packages/smithers/control/src/DispatchReader.vibe"
    },
    {
-    "relative": "packages/smithers/agent/triggers/src/DispatchReader.ts"
+    "relative": "packages/smithers/agent/triggers/src/DispatchReader.vibe"
    },
    {
     "relative": "packages/smithers/control/src/Control.ts"
@@ -6076,25 +6076,25 @@
     "relative": "packages/smithers/agent/triggers/src/internal/ActiveRuns.vibe"
    },
    {
-    "relative": "packages/smithers/agent/triggers/src/internal/DueOccurrences.ts"
+    "relative": "packages/smithers/agent/triggers/src/internal/DueOccurrences.vibe"
    },
    {
     "relative": "packages/smithers/agent/triggers/src/Scheduler.ts"
    },
    {
-    "relative": "packages/smithers/agent/triggers/src/migrations/0001_triggers.ts"
+    "relative": "packages/smithers/agent/triggers/src/migrations/0001_triggers.vibe"
    },
    {
-    "relative": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.ts"
+    "relative": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.vibe"
    },
    {
-    "relative": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.ts"
+    "relative": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.vibe"
    },
    {
     "relative": "packages/smithers/agent/triggers/src/migrations/0004_fire_run_index.vibe"
    },
    {
-    "relative": "packages/smithers/agent/triggers/src/migrations/index.ts"
+    "relative": "packages/smithers/agent/triggers/src/migrations/index.vibe"
    },
    {
     "relative": "packages/smithers/agent/triggers/src/SqlTriggerStore.ts"
@@ -6124,7 +6124,7 @@
     "relative": "packages/smithers/control/src/WebhookChannel.vibe"
    },
    {
-    "relative": "packages/smithers/agent/triggers/src/Webhook.ts"
+    "relative": "packages/smithers/agent/triggers/src/Webhook.vibe"
    },
    {
     "relative": "packages/smithers/agent/triggers/src/index.ts"
@@ -6146,6 +6146,66 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/agent/triggers/src/migrations/0001_triggers.vibe"
+    },
+    "line": 17,
+    "column": 47,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/triggers/src/migrations/0001_triggers.vibe"
+    },
+    "line": 18,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.vibe"
+    },
+    "line": 17,
+    "column": 55,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.vibe"
+    },
+    "line": 18,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.vibe"
+    },
+    "line": 18,
+    "column": 57,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.vibe"
+    },
+    "line": 19,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
      "relative": "packages/smithers/agent/triggers/src/migrations/0004_fire_run_index.vibe"
     },
     "line": 18,
@@ -6163,6 +6223,26 @@
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/triggers/src/migrations/index.vibe"
+    },
+    "line": 32,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/Migrator#make` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/triggers/src/migrations/index.vibe"
+    },
+    "line": 32,
+    "column": 57,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/Migrator#fromRecord` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    }
   ],
   "outputs": [
@@ -6209,6 +6289,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/triggers/src/Cron.vibe"
+     }
+    ],
+    "code": "/**\n * Typed wrappers around Effect Cron.\n *\n * Effect's field parser only range-checks each field, so an expression like\n * `0 0 30 2 *` parses and then never matches a calendar date. Its occurrence\n * search answers that by exhausting its bound and throwing, which inside\n * `Effect.gen` is a defect rather than a typed failure: the fiber that owns the\n * search dies instead of reporting. Every search here is wrapped so the\n * exhausted bound arrives as `unsatisfiable_cron`, and {@link parse} probes for\n * one occurrence so an unsatisfiable expression is refused where it is\n * declared rather than at the tick that would have fired it.\n *\n * A satisfiable expression carries the opposite hazard: `* * * * *` across a\n * year is 525,600 occurrences, and materializing them costs seconds and\n * hundreds of megabytes. {@link occurrencesBetween} therefore always searches\n * under a finite cap and reports when an unstated limit would exceed\n * {@link maxOccurrences}.\n *\n * A timezone makes the expression a wall-clock schedule. A wall time that\n * spring forward skips fires at the instant it would have had on the old\n * offset, so a daily 02:30 fires at 03:30 daylight time. A wall time that fall\n * back repeats fires once, at its first instant, unless the hour field is every\n * hour, in which case both passes fire. Occurrences are whole seconds in UTC,\n * whatever the host's zone.\n *\n * @since 0.1.0\n */\nimport * as Clock from \"effect/Clock\";\nimport * as Result from \"effect/Result\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as EffectCron from \"effect/Cron\";\nimport * as Effect from \"effect/Effect\";\nimport * as WallClock from \"./internal/WallClock.js\";\nimport { TriggerError } from \"./TriggerError.js\";\nconst exhausted = (cron, search, cause) => new TriggerError({\n    code: \"unsatisfiable_cron\",\n    message: `cron expression '${cron.expression}' has no ${search} occurrence`,\n    cause\n});\nconst attempt = (cron, search, find) => Effect.try({ try: find, catch: (cause) => exhausted(cron, search, cause) });\nconst invalidDate = (date, path) => Number.isFinite(date.getTime()) ? undefined : new TriggerError({\n    code: \"invalid_options\",\n    message: \"search date must be finite\",\n    path\n});\n/**\n * The first occurrence strictly after `from`.\n *\n * @category getters\n * @since 0.1.0\n */\nexport const next = (cron, from) => Effect.suspend(() => {\n    const error = invalidDate(from, \"from\");\n    return error === undefined\n        ? attempt(cron, \"next\", () => new Date(WallClock.next(WallClock.compile(cron.value), from.getTime())))\n        : Effect.fail(error);\n});\n/**\n * Returns the latest occurrence at or before `at`.\n *\n * @category getters\n * @since 0.1.0\n */\nexport const previousAtOrBefore = (cron, at) => Effect.suspend(() => {\n    const error = invalidDate(at, \"at\");\n    return error === undefined\n        ? attempt(cron, \"previous\", () => new Date(WallClock.previousAtOrBefore(WallClock.compile(cron.value), at.getTime())))\n        : Effect.fail(error);\n});\n/**\n * The greatest number of occurrences one search returns when its caller states\n * no limit of its own.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maxOccurrences = 1000;\n/**\n * The occurrences in `(from, to]`, in order.\n *\n * A stated `limit` caps the result silently and must be a non-negative safe\n * integer. With no stated limit, the search fails with\n * `catch_up_bound_exceeded` when the interval holds more than\n * {@link maxOccurrences}. A caller with its own bound can pass one more than\n * that bound and compare the length, the way `CatchUp.occurrences` does.\n *\n * @category sequencing\n * @since 0.1.0\n */\nexport const occurrencesBetween = (cron, from, to, limit) => Effect.suspend(() => {\n    const dateError = invalidDate(from, \"from\") ?? invalidDate(to, \"to\");\n    if (dateError !== undefined)\n        return Effect.fail(dateError);\n    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) {\n        return Effect.fail(new TriggerError({\n            code: \"invalid_options\",\n            message: `occurrence limit must be a non-negative safe integer, received ${limit}`,\n            path: \"limit\"\n        }));\n    }\n    const searchLimit = limit ?? maxOccurrences + 1;\n    if (searchLimit === 0)\n        return Effect.succeed([]);\n    const search = attempt(cron, \"interval\", () => {\n        const wall = WallClock.compile(cron.value);\n        const occurrences = [];\n        let cursor = from.getTime();\n        while (occurrences.length < searchLimit) {\n            cursor = WallClock.next(wall, cursor);\n            if (cursor > to.getTime())\n                break;\n            occurrences.push(new Date(cursor));\n        }\n        return occurrences;\n    });\n    if (limit !== undefined)\n        return search;\n    return Effect.flatMap(search, (occurrences) => occurrences.length > maxOccurrences\n        ? Effect.fail(new TriggerError({\n            code: \"catch_up_bound_exceeded\",\n            message: `interval contains more than ${maxOccurrences} occurrences; maxOccurrences is ${maxOccurrences}`\n        }))\n        : Effect.succeed(occurrences));\n});\n/**\n * Parses a cron expression in an optional timezone, reporting a malformed one\n * as `invalid_cron` and one the calendar never satisfies as\n * `unsatisfiable_cron`.\n *\n * The satisfiability probe searches forward from the current instant, which is\n * the same search every tick performs, so an expression that survives parsing\n * is one the scheduler can keep answering.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const parse = Effect_1.fnUntraced(runtime.$joinedFrame(function* parse(expression, timezone) {\n    const parsed = EffectCron.parse(expression, timezone);\n    if (Result.isFailure(parsed)) {\n        return yield* Effect_1.fail(new TriggerError({ code: \"invalid_cron\", message: parsed.failure.message, cause: parsed.failure }));\n    }\n    const cron = {\n        expression,\n        ...(timezone === undefined ? {} : { timezone }),\n        value: parsed.success\n    };\n    const now = yield* Clock.currentTimeMillis;\n    yield* next(cron, new Date(now));\n    return cron;\n}));\n",
+    "map": {
+     "version": 3,
+     "file": "Cron.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/triggers/src/Cron.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/triggers/src/Schedule.vibe"
      }
     ],
@@ -6223,7 +6323,7 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;;;GAMG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,IAAI,MAAM,WAAW,CAAA;AACjC,OAAO,EAAE,eAAe,EAAqB,MAAM,mBAAqB,CAAA;AAExE;;;;;GAKG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,MAAM,EAAE,YAAY,EAAE,WAAW,CAAC,CAAC,CAAA;AAU3E;;;;;GAKG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,MAAM,EAAE,KAAK,EAAE,KAAK,CAAC,CAAC,CAAA;AAU9D;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,IAAI,CAAC,cAAc,CAAA;AAElD;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,MAAM,CAAC,MAAM,CAAC;IACpC,IAAI,EAAE,MAAM,CAAC,cAAc;IAC3B,QAAQ,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,cAAc,CAAC;IAChD,OAAO,EAAE,OAAO,CAAC,IAAI,CAAC,MAAM,CAAC,mBAAmB,CAAC,MAAM,CAAC,OAAO,CAAC,MAAe,CAAC,CAAC,CAAC;IAClF,OAAO,EAAE,OAAO,CAAC,IAAI,CAAC,MAAM,CAAC,mBAAmB,CAAC,MAAM,CAAC,OAAO,CAAC,MAAe,CAAC,CAAC,CAAC;IAClF,UAAU,EAAE,MAAM,CAAC,GAAG,CAAC,KAAK,CAC1B,MAAM,CAAC,sBAAsB,CAAC,CAAC,CAAC,EAChC,MAAM,CAAC,mBAAmB,CAAC,eAAe,CAAC,CAC5C,CAAC,IAAI,CAAC,MAAM,CAAC,mBAAmB,CAAC,MAAM,CAAC,OAAO,CAAC,CAAC,CAAC,CAAC,CAAC;CACtD,CAAC,CAAA;AAUF;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CACtB,WAAc,EACE,EAAE,CAAC,MAAM,CAAC,EAAE,CAAC,IAAI,CAAC,KAAK,CAAC,WAAW,CAAC,IAAI,EAAE,WAAW,CAAC,QAAQ,CAAC,EAAE,WAAW,CAAC,CAAA;AAE/F;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,KAAc,EAAyB,EAAE,CAGzD,MAAM,CAAC,OAAO,CADd,MAAM,CAAC,QAAQ,CADlB,MAAM,CAAC,mBAAmB,CAAC,QAAQ,CAAC,CAAC,KAAK,CAAC,EACrB,CAAC,KAAK,EAAE,EAAE,CAAC,eAAe,CAAC,kBAAkB,EAAE,iCAAiC,EAAE,KAAK,CAAC,CAAC,EAC1F,QAAQ,CAAC,CAAA"
+     "mappings": "AAAA;;;;;;GAMG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,IAAI,MAAM,WAAa,CAAA;AACnC,OAAO,EAAE,eAAe,EAAqB,MAAM,mBAAqB,CAAA;AAExE;;;;;GAKG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,MAAM,EAAE,YAAY,EAAE,WAAW,CAAC,CAAC,CAAA;AAU3E;;;;;GAKG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,MAAM,EAAE,KAAK,EAAE,KAAK,CAAC,CAAC,CAAA;AAU9D;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,IAAI,CAAC,cAAc,CAAA;AAElD;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,MAAM,CAAC,MAAM,CAAC;IACpC,IAAI,EAAE,MAAM,CAAC,cAAc;IAC3B,QAAQ,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,cAAc,CAAC;IAChD,OAAO,EAAE,OAAO,CAAC,IAAI,CAAC,MAAM,CAAC,mBAAmB,CAAC,MAAM,CAAC,OAAO,CAAC,MAAe,CAAC,CAAC,CAAC;IAClF,OAAO,EAAE,OAAO,CAAC,IAAI,CAAC,MAAM,CAAC,mBAAmB,CAAC,MAAM,CAAC,OAAO,CAAC,MAAe,CAAC,CAAC,CAAC;IAClF,UAAU,EAAE,MAAM,CAAC,GAAG,CAAC,KAAK,CAC1B,MAAM,CAAC,sBAAsB,CAAC,CAAC,CAAC,EAChC,MAAM,CAAC,mBAAmB,CAAC,eAAe,CAAC,CAC5C,CAAC,IAAI,CAAC,MAAM,CAAC,mBAAmB,CAAC,MAAM,CAAC,OAAO,CAAC,CAAC,CAAC,CAAC,CAAC;CACtD,CAAC,CAAA;AAUF;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CACtB,WAAc,EACE,EAAE,CAAC,MAAM,CAAC,EAAE,CAAC,IAAI,CAAC,KAAK,CAAC,WAAW,CAAC,IAAI,EAAE,WAAW,CAAC,QAAQ,CAAC,EAAE,WAAW,CAAC,CAAA;AAE/F;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,KAAc,EAAyB,EAAE,CAGzD,MAAM,CAAC,OAAO,CADd,MAAM,CAAC,QAAQ,CADlB,MAAM,CAAC,mBAAmB,CAAC,QAAQ,CAAC,CAAC,KAAK,CAAC,EACrB,CAAC,KAAK,EAAE,EAAE,CAAC,eAAe,CAAC,kBAAkB,EAAE,iCAAiC,EAAE,KAAK,CAAC,CAAC,EAC1F,QAAQ,CAAC,CAAA"
     }
    },
    {
@@ -6232,7 +6332,7 @@
       "relative": "packages/smithers/agent/triggers/src/CatchUp.vibe"
      }
     ],
-    "code": "/**\n * Pure catch-up policy decisions.\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport * as CronSchedule from \"./Cron.js\";\nimport { TriggerError } from \"./TriggerError.js\";\n/**\n * The occurrences a trigger owes since it last fired, bounded by\n * `maxCatchUp` and by the policy named in `Schedule.CatchUp`: `none` owes\n * nothing, `one` owes only the most recent, and `all` owes every missed tick.\n *\n * Every policy answers to `maxCatchUp`, `one` included: a bound of zero says\n * no occurrence may be caught up, so a missed occurrence under `one` is\n * `catch_up_bound_exceeded` exactly as three missed occurrences under `all`\n * are. The bound is validated before any policy branch, so an unusable bound\n * is refused even where the policy owes nothing.\n *\n * @category computation\n * @since 0.1.0\n */\nexport const occurrences = Effect_1.fnUntraced(function* occurrences(policy, maxCatchUp, lastFiredAt, now, cron) {\n    if (!Number.isSafeInteger(maxCatchUp) || maxCatchUp < 0) {\n        return yield* Effect_1.fail(new TriggerError({\n            code: \"catch_up_bound_exceeded\",\n            message: `maxCatchUp must be a non-negative safe integer, received ${maxCatchUp}`,\n            path: \"maxCatchUp\"\n        }));\n    }\n    if (lastFiredAt === undefined)\n        return [];\n    if (policy === \"none\")\n        return [];\n    if (policy === \"one\") {\n        return yield* Effect.flatMap(CronSchedule.previousAtOrBefore(cron, now), (latest) => Effect_1.suspend(() => { return latest.getTime() <= lastFiredAt.getTime()\n            ? Effect.succeed([])\n            : maxCatchUp < 1\n                ? (() => Effect_1.suspend(() => Effect_1.fail(new TriggerError({\n                    code: \"catch_up_bound_exceeded\",\n                    message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`\n                }))))()\n                : Effect.succeed([latest]); }));\n    }\n    return yield* Effect.flatMap(CronSchedule.occurrencesBetween(cron, lastFiredAt, now, maxCatchUp + 1), (missed) => Effect_1.suspend(() => { return missed.length > maxCatchUp\n        ? (() => Effect_1.suspend(() => Effect_1.fail(new TriggerError({\n            code: \"catch_up_bound_exceeded\",\n            message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`\n        }))))()\n        : Effect_1.succeed(missed); }));\n});\n",
+    "code": "/**\n * Pure catch-up policy decisions.\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effect from \"effect/Effect\";\nimport * as CronSchedule from \"./Cron.js\";\nimport { TriggerError } from \"./TriggerError.js\";\n/**\n * The occurrences a trigger owes since it last fired, bounded by\n * `maxCatchUp` and by the policy named in `Schedule.CatchUp`: `none` owes\n * nothing, `one` owes only the most recent, and `all` owes every missed tick.\n *\n * Every policy answers to `maxCatchUp`, `one` included: a bound of zero says\n * no occurrence may be caught up, so a missed occurrence under `one` is\n * `catch_up_bound_exceeded` exactly as three missed occurrences under `all`\n * are. The bound is validated before any policy branch, so an unusable bound\n * is refused even where the policy owes nothing.\n *\n * @category computation\n * @since 0.1.0\n */\nexport const occurrences = Effect_1.fnUntraced(runtime.$joinedFrame(function* occurrences(policy, maxCatchUp, lastFiredAt, now, cron) {\n    if (!Number.isSafeInteger(maxCatchUp) || maxCatchUp < 0) {\n        return yield* Effect_1.fail(new TriggerError({\n            code: \"catch_up_bound_exceeded\",\n            message: `maxCatchUp must be a non-negative safe integer, received ${maxCatchUp}`,\n            path: \"maxCatchUp\"\n        }));\n    }\n    if (lastFiredAt === undefined)\n        return [];\n    if (policy === \"none\")\n        return [];\n    if (policy === \"one\") {\n        return yield* Effect.flatMap(CronSchedule.previousAtOrBefore(cron, now), (latest) => Effect_1.suspend(() => { return latest.getTime() <= lastFiredAt.getTime()\n            ? Effect.succeed([])\n            : maxCatchUp < 1\n                ? (() => Effect_1.suspend(() => Effect_1.fail(new TriggerError({\n                    code: \"catch_up_bound_exceeded\",\n                    message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`\n                }))))()\n                : Effect.succeed([latest]); }));\n    }\n    return yield* Effect.flatMap(CronSchedule.occurrencesBetween(cron, lastFiredAt, now, maxCatchUp + 1), (missed) => Effect_1.suspend(() => { return missed.length > maxCatchUp\n        ? (() => Effect_1.suspend(() => Effect_1.fail(new TriggerError({\n            code: \"catch_up_bound_exceeded\",\n            message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`\n        }))))()\n        : Effect_1.succeed(missed); }));\n}));\n",
     "map": {
      "version": 3,
      "file": "CatchUp.js",
@@ -6243,7 +6343,7 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC,OAAO,KAAK,YAAY,MAAM,WAAW,CAAA;AAEzC,OAAO,EAAE,YAAY,EAAE,MAAM,mBAAqB,CAAA;AAElD;;;;;;;;;;;;;GAaG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,0CACzB,MAAc,EACd,UAAkB,EAClB,WAA6B,EAC7B,GAAS,EACT,IAAU;IAEV,IAAI,CAAC,MAAM,CAAC,aAAa,CAAC,UAAU,CAAC,IAAI,UAAU,GAAG,CAAC,EAAE,CAAC;QACxD,4BAAM,IAAI,YAAY,CAAC;YACrB,IAAI,EAAE,yBAAyB;YAC/B,OAAO,EAAE,4DAA4D,UAAU,EAAE;YACjF,IAAI,EAAE,YAAY;SACnB,CAAC,EAAA;IACJ,CAAC;IACD,IAAI,WAAW,KAAK,SAAS;QAAE,OAAO,EAAE,CAAA;IACxC,IAAI,MAAM,KAAK,MAAM;QAAE,OAAO,EAAE,CAAA;IAChC,IAAI,MAAM,KAAK,KAAK,EAAE,CAAC;QACrB,cACS,MAAM,CAAC,OAAO,CADhB,YAAY,CAAC,kBAAkB,CAAC,IAAI,EAAE,GAAG,CAAC,EACtB,CAAQ,MAAM,KACrC,iB,CAAA,O,CAAA,MAAA,MAAM,CAAC,OAAO,EAAE,IAAI,WAAW,CAAC,OAAO,EAAE;YACvC,CAAC,CAAK,MAAM,CAAC,OAAO,CAAsB,EAAE,CAAC;YAC7C,CAAC,CAAC,UAAU,GAAG,CAAC;gBAChB,CAAC,CAAC,C,CAAA,K,CAAA,gB,CAAA,mBAAM,IAAI,YAAY,CAAC;oBACvB,IAAI,EAAE,yBAAyB;oBAC/B,OAAO,EAAE,sCAAsC,UAAU,EAAE;iBAC5D,CAAC,EAAA,CAAA,EAAA;gBACF,CAAC,CAAK,MAAM,CAAC,OAAO,CAAsB,CAAC,MAAM,CAAC,CAAC,IAAA,CAAC,CAAA;IAC5D,CAAC;IACD,cACS,MAAM,CAAC,OAAO,CADhB,YAAY,CAAC,kBAAkB,CAAC,IAAI,EAAE,WAAW,EAAE,GAAG,EAAE,UAAU,GAAG,CAAC,CAAC,EACnD,CAAQ,MAAM,KACrC,iB,CAAA,O,CAAA,MAAA,MAAM,CAAC,MAAM,GAAG,UAAU;QACxB,CAAC,CAAC,C,CAAA,K,CAAA,gB,CAAA,mBAAM,IAAI,YAAY,CAAC;YACvB,IAAI,EAAE,yBAAyB;YAC/B,OAAO,EAAE,UAAU,MAAM,CAAC,MAAM,+BAA+B,UAAU,EAAE;SAC5E,CAAC,EAAA,CAAA,EAAA;QACF,CAAC,CAAC,iBAAA,MAAM,CAAA,IAAA,CAAC,CAAA;AACjB,CAAC,CAAA,CAAA"
+     "mappings": "AAAA;;;;GAIG;;;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC,OAAO,KAAK,YAAY,MAAM,WAAa,CAAA;AAE3C,OAAO,EAAE,YAAY,EAAE,MAAM,mBAAqB,CAAA;AAElD;;;;;;;;;;;;;GAaG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,+DACzB,MAAc,EACd,UAAkB,EAClB,WAA6B,EAC7B,GAAS,EACT,IAAU;IAEV,IAAI,CAAC,MAAM,CAAC,aAAa,CAAC,UAAU,CAAC,IAAI,UAAU,GAAG,CAAC,EAAE,CAAC;QACxD,4BAAM,IAAI,YAAY,CAAC;YACrB,IAAI,EAAE,yBAAyB;YAC/B,OAAO,EAAE,4DAA4D,UAAU,EAAE;YACjF,IAAI,EAAE,YAAY;SACnB,CAAC,EAAA;IACJ,CAAC;IACD,IAAI,WAAW,KAAK,SAAS;QAAE,OAAO,EAAE,CAAA;IACxC,IAAI,MAAM,KAAK,MAAM;QAAE,OAAO,EAAE,CAAA;IAChC,IAAI,MAAM,KAAK,KAAK,EAAE,CAAC;QACrB,cACS,MAAM,CAAC,OAAO,CADhB,YAAY,CAAC,kBAAkB,CAAC,IAAI,EAAE,GAAG,CAAC,EACtB,CAAQ,MAAM,KACrC,iB,CAAA,O,CAAA,MAAA,MAAM,CAAC,OAAO,EAAE,IAAI,WAAW,CAAC,OAAO,EAAE;YACvC,CAAC,CAAK,MAAM,CAAC,OAAO,CAAsB,EAAE,CAAC;YAC7C,CAAC,CAAC,UAAU,GAAG,CAAC;gBAChB,CAAC,CAAC,C,CAAA,K,CAAA,gB,CAAA,mBAAM,IAAI,YAAY,CAAC;oBACvB,IAAI,EAAE,yBAAyB;oBAC/B,OAAO,EAAE,sCAAsC,UAAU,EAAE;iBAC5D,CAAC,EAAA,CAAA,EAAA;gBACF,CAAC,CAAK,MAAM,CAAC,OAAO,CAAsB,CAAC,MAAM,CAAC,CAAC,IAAA,CAAC,CAAA;IAC5D,CAAC;IACD,cACS,MAAM,CAAC,OAAO,CADhB,YAAY,CAAC,kBAAkB,CAAC,IAAI,EAAE,WAAW,EAAE,GAAG,EAAE,UAAU,GAAG,CAAC,CAAC,EACnD,CAAQ,MAAM,KACrC,iB,CAAA,O,CAAA,MAAA,MAAM,CAAC,MAAM,GAAG,UAAU;QACxB,CAAC,CAAC,C,CAAA,K,CAAA,gB,CAAA,mBAAM,IAAI,YAAY,CAAC;YACvB,IAAI,EAAE,yBAAyB;YAC/B,OAAO,EAAE,UAAU,MAAM,CAAC,MAAM,+BAA+B,UAAU,EAAE;SAC5E,CAAC,EAAA,CAAA,EAAA;QACF,CAAC,CAAC,iBAAA,MAAM,CAAA,IAAA,CAAC,CAAA;AACjB,CAAC,EAAA,CAAA"
     }
    },
    {
@@ -6269,6 +6369,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/triggers/src/DispatchReader.vibe"
+     }
+    ],
+    "code": "/**\n * The `@smthrs/control` `DispatchReader` port served from a `TriggerStore`.\n *\n * `Control.list` answers `{ _tag: \"triggers\" }` and `{ _tag: \"fires\" }` through\n * the port declared in `@smthrs/control/DispatchReader`. The port lives there\n * because this package depends on control (the scheduler launches runs through\n * it); the adapter lives here because only this package can read the store.\n * The host composes the two: {@link layer} over the same store the scheduler\n * writes.\n *\n * @see packages/smithers/agent/triggers/docs/api.md\n *\n * @since 1.0.0-rc.0\n */\nimport * as Clock from \"effect/Clock\";\nimport * as Result from \"effect/Result\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport { PersistenceError } from \"@smthrs/control/ControlError\";\nimport { defaultPageSize } from \"@smthrs/control/ControlSchema\";\nimport * as Port from \"@smthrs/control/DispatchReader\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Option from \"effect/Option\";\nimport * as Cron from \"./Cron.js\";\nimport { isReservation, TriggerStore } from \"./TriggerStore.js\";\n/**\n * How many upcoming occurrences a trigger summary carries.\n *\n * @category constants\n * @since 1.0.0-rc.0\n */\nexport const nextOccurrenceCount = 5;\n/**\n * How many ledger rows one `fires` page needs: every row before the page's\n * offset cursor, the page, and one more so `Control.list` can tell a next page\n * exists. A cursor Control will refuse reads nothing extra: it answers\n * `undefined`, and the refusal comes from Control.\n */\nconst firesNeeded = (request) => {\n    const start = request.cursor === undefined ? 0 : Number(request.cursor);\n    const size = request.limit ?? defaultPageSize;\n    return Number.isSafeInteger(start) && start >= 0 && Number.isSafeInteger(size) && size >= 1\n        ? start + size + 1\n        : undefined;\n};\nconst persistence = (operation) => (error) => new PersistenceError({ operation, message: error.message, cause: error });\n/**\n * The next {@link nextOccurrenceCount} occurrences strictly after `now`, as\n * epoch milliseconds in ascending order.\n *\n * @category getters\n * @since 1.0.0-rc.0\n */\nexport const nextOccurrences = Effect_1.fnUntraced(runtime.$joinedFrame(function* nextOccurrences(trigger, now) {\n    const cron = yield* Cron.parse(trigger.cron, trigger.timezone);\n    const occurrences = [];\n    let from = new Date(now);\n    while (occurrences.length < nextOccurrenceCount) {\n        from = yield* Cron.next(cron, from);\n        occurrences.push(from.getTime());\n    }\n    return occurrences;\n}));\n/**\n * Maps one stored trigger and what it holds to the control plane's summary.\n *\n * A launch reservation is not a run the runtime knows about, so it is\n * reported as no active run; the ledger still shows the claimed occurrence.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const toTriggerSummary = (trigger, held, nextOccurrencesMs, schedulerLastTickMs) => ({\n    triggerId: trigger.id,\n    flowId: trigger.flowId,\n    input: trigger.input,\n    cron: trigger.cron,\n    ...(trigger.timezone === undefined ? {} : { timezone: trigger.timezone }),\n    overlap: trigger.overlap,\n    catchUp: trigger.catchUp,\n    maxCatchUp: trigger.maxCatchUp,\n    enabled: trigger.enabled,\n    revision: trigger.revision,\n    ...(trigger.lastFiredAt === undefined ? {} : { lastFiredAtMs: trigger.lastFiredAt }),\n    ...(held.pendingAt === undefined ? {} : { pendingAtMs: held.pendingAt }),\n    ...(held.activeRunId === undefined || isReservation(held.activeRunId) ? {} : { activeRunId: held.activeRunId }),\n    nextOccurrencesMs,\n    ...(Option.isSome(schedulerLastTickMs) ? { schedulerLastTickMs: schedulerLastTickMs.value } : {})\n});\n/**\n * Maps one ledger row to the control plane's fire summary.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const toFireSummary = (record) => ({\n    triggerId: record.triggerId,\n    occurrenceAtMs: record.occurrence,\n    outcome: record.outcome,\n    ...(record.runId === undefined ? {} : { runId: record.runId }),\n    ...(record.error === undefined ? {} : { error: record.error })\n});\n/**\n * Builds the port over the ambient {@link TriggerStore}.\n *\n * `list` answers every trigger the store holds, taking each row's held state\n * from the listing itself; `fires` pushes the request's filters into the\n * ledger query and answers the matching rows newest first, reading only as\n * many as the requested page needs.\n * `Control.list` applies the filters again and pages. A store failure is a\n * `PersistenceError` naming the listing that failed.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const make = Effect_1.gen(function* make() {\n    const store = yield* TriggerStore;\n    return Port.make({\n        list: Effect.fn(\"DispatchReader.list\")(() => Effect.mapError((Effect_1.gen(function* () {\n            const now = yield* Clock.currentTimeMillis;\n            const heartbeat = yield* store.lastHeartbeat();\n            const lastTick = Option.map(heartbeat, (beat) => beat.tickedAt);\n            const listing = yield* store.list();\n            return yield* Effect.forEach(listing, Effect_1.fnUntraced(function* (row) {\n                // A row the store could not decode fails the listing rather than\n                // being reported as a trigger with invented fields; the failure\n                // names the row. The listing already carries what `inspect` reads,\n                // so a summary costs no second read per trigger.\n                if (Result.isFailure(row.trigger))\n                    return yield* Effect_1.fail(row.trigger.failure);\n                const trigger = row.trigger.success;\n                const upcoming = yield* nextOccurrences(trigger, now);\n                return toTriggerSummary(trigger, row, upcoming, lastTick);\n            }));\n        })), persistence(\"triggers\"))),\n        fires: Effect.fn(\"DispatchReader.fires\")((request) => Effect.mapError(Effect.map(store.history({\n            triggerId: request.filters?.triggerId,\n            runId: request.filters?.runId,\n            outcome: request.filters?.outcome,\n            limit: firesNeeded(request)\n        }), (page) => page.items.map(toFireSummary)), persistence(\"fires\")))\n    });\n});\n/**\n * Provides the control plane's `DispatchReader` from the ambient\n * {@link TriggerStore}, so `Control.list` answers `triggers` and `fires` from\n * the store the scheduler writes.\n *\n * @category layers\n * @since 1.0.0-rc.0\n */\nexport const layer = Layer.effect(Port.DispatchReader)(make);\n",
+    "map": {
+     "version": 3,
+     "file": "DispatchReader.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/triggers/src/DispatchReader.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/triggers/src/internal/ActiveRuns.vibe"
      }
     ],
@@ -6289,6 +6409,86 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/triggers/src/internal/DueOccurrences.vibe"
+     }
+    ],
+    "code": "/**\n * Which occurrences one scheduler tick owes a trigger.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effect from \"effect/Effect\";\nimport * as CatchUp from \"../CatchUp.js\";\nimport * as Cron from \"../Cron.js\";\n// A bound the declaration cannot honour is a statement about how much history\n// to replay, not a reason to stop scheduling: the backlog beyond the bound is\n// abandoned, loudly, and the current occurrence still fires.\nconst withinBound = (triggerId, owed) => Effect.catch(owed, (error) => error.code === \"catch_up_bound_exceeded\"\n    ? Effect.as(Effect.annotateLogs(Effect.logWarning(\"A trigger abandoned catch-up work beyond its bound\", error), { triggerId }), [])\n    : Effect.fail(error));\n/**\n * Computes what a trigger owes at `now`, given the watermark this process has\n * already dispatched through, or `undefined` on first sight of the trigger.\n *\n * The answer depends on nothing but its arguments. The watermark is the\n * caller's to keep: it only moves forward, and only past occurrences the\n * caller finished dispatching.\n *\n * @private\n * @since 1.0.0-rc.0\n */\nexport const compute = Effect_1.fnUntraced(runtime.$joinedFrame(function* compute(trigger, now, observed) {\n    const cron = yield* Cron.parse(trigger.cron, trigger.timezone);\n    const current = (yield* Cron.previousAtOrBefore(cron, new Date(now))).getTime();\n    // First sight of this trigger in this process starts from the last fire\n    // the store recorded. A trigger that has never fired starts from here\n    // rather than from whatever occurrence last passed: registering a weekly\n    // trigger on a Sunday evening owes nothing for the Monday six days gone,\n    // which is what `catchUp` says.\n    const since = observed ?? trigger.lastFiredAt;\n    if (since === undefined || current <= since) {\n        return { occurrences: [], watermark: Math.max(current, observed ?? current) };\n    }\n    // A restart and a stall in this process missed the same boundaries, so\n    // both ask the policy about the same interval, the current boundary\n    // included. The stalled poll used to leave the current boundary out, so\n    // `one` fired two runs and a bound of 2 fired three where a restart fired\n    // one.\n    //\n    // When only the boundary that just passed is due, nothing was missed: a\n    // bound of zero has nothing to refuse, so it is read as one. Every other\n    // bound is still validated and searched exactly as stated.\n    // Only a zero bound needs the boundary before this one, so no other tick\n    // pays for that search.\n    const lone = trigger.maxCatchUp === 0 &&\n        (yield* Cron.previousAtOrBefore(cron, new Date(current - 1))).getTime() <= since;\n    const bound = lone ? 1 : trigger.maxCatchUp;\n    const owed = yield* withinBound(trigger.id, CatchUp.occurrences(trigger.catchUp, bound, new Date(since), new Date(now), cron));\n    // The current boundary is owed whatever the policy says about the\n    // backlog. Under `none`, or once the bound abandoned the backlog, a\n    // restart used to skip it.\n    const occurrences = owed.map((occurrence) => occurrence.getTime());\n    if (occurrences.at(-1) !== current)\n        occurrences.push(current);\n    return { occurrences, watermark: current };\n}));\n",
+    "map": {
+     "version": 3,
+     "file": "DueOccurrences.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/triggers/src/internal/DueOccurrences.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,OAAO,MAAM,eAAiB,CAAA;AAC1C,OAAO,KAAK,IAAI,MAAM,YAAc,CAAA;AAgBpC,8EAA8E;AAC9E,8EAA8E;AAC9E,6DAA6D;AAC7D,MAAM,WAAW,GAAG,CAClB,SAAiB,EACjB,IAAsC,EACJ,EAAE,CACpC,MAAM,CAAC,KAAK,CAAC,IAAI,EAAE,CAAC,KAAK,EAAE,EAAE,CAC3B,KAAK,CAAC,IAAI,KAAK,yBAAyB;IACtC,CAAC,CAAC,MAAM,CAAC,EAAE,CACT,MAAM,CAAC,YAAY,CACjB,MAAM,CAAC,UAAU,CAAC,oDAAoD,EAAE,KAAK,CAAC,EAC9E,EAAE,SAAS,EAAE,CACd,EACD,EAAyB,CAC1B;IACD,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,KAAK,CAAC,CAAC,CAAA;AAE3B;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,2DACrB,OAAmB,EACnB,GAAW,EACX,QAA4B;IAE5B,MAAM,IAAI,UAAO,IAAI,CAAC,KAAK,CAAC,OAAO,CAAC,IAAI,EAAE,OAAO,CAAC,QAAQ,CAAC,CAAA;IAC3D,MAAM,OAAO,GAAG,QAAK,IAAI,CAAC,kBAAkB,CAAC,IAAI,EAAE,IAAI,IAAI,CAAC,GAAG,CAAC,CAAC,EAAE,OAAO,EAAE,CAAA;IAC5E,wEAAwE;IACxE,sEAAsE;IACtE,yEAAyE;IACzE,yEAAyE;IACzE,gCAAgC;IAChC,MAAM,KAAK,GAAG,QAAQ,IAAI,OAAO,CAAC,WAAW,CAAA;IAC7C,IAAI,KAAK,KAAK,SAAS,IAAI,OAAO,IAAI,KAAK,EAAE,CAAC;QAC5C,OAAO,EAAE,WAAW,EAAE,EAAE,EAAE,SAAS,EAAE,IAAI,CAAC,GAAG,CAAC,OAAO,EAAE,QAAQ,IAAI,OAAO,CAAC,EAAE,CAAA;IAC/E,CAAC;IACD,uEAAuE;IACvE,oEAAoE;IACpE,wEAAwE;IACxE,0EAA0E;IAC1E,OAAO;IACP,EAAE;IACF,wEAAwE;IACxE,yEAAyE;IACzE,2DAA2D;IAC3D,yEAAyE;IACzE,wBAAwB;IACxB,MAAM,IAAI,GAAG,OAAO,CAAC,UAAU,KAAK,CAAC;QACnC,QAAK,IAAI,CAAC,kBAAkB,CAAC,IAAI,EAAE,IAAI,IAAI,CAAC,OAAO,GAAG,CAAC,CAAC,CAAC,EAAE,OAAO,EAAE,IAAI,KAAK,CAAA;IAC/E,MAAM,KAAK,GAAG,IAAI,CAAC,CAAC,CAAC,CAAC,CAAC,CAAC,CAAC,OAAO,CAAC,UAAU,CAAA;IAC3C,MAAM,IAAI,UAAO,WAAW,CAC1B,OAAO,CAAC,EAAE,EACV,OAAO,CAAC,WAAW,CAAC,OAAO,CAAC,OAAO,EAAE,KAAK,EAAE,IAAI,IAAI,CAAC,KAAK,CAAC,EAAE,IAAI,IAAI,CAAC,GAAG,CAAC,EAAE,IAAI,CAAC,CAClF,CAAA;IACD,kEAAkE;IAClE,oEAAoE;IACpE,2BAA2B;IAC3B,MAAM,WAAW,GAAG,IAAI,CAAC,GAAG,CAAC,CAAC,UAAU,EAAE,EAAE,CAAC,UAAU,CAAC,OAAO,EAAE,CAAC,CAAA;IAClE,IAAI,WAAW,CAAC,EAAE,CAAC,CAAC,CAAC,CAAC,KAAK,OAAO;QAAE,WAAW,CAAC,IAAI,CAAC,OAAO,CAAC,CAAA;IAC7D,OAAO,EAAE,WAAW,EAAE,SAAS,EAAE,OAAO,EAAE,CAAA;AAC5C,CAAC,EAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/triggers/src/migrations/0001_triggers.vibe"
+     }
+    ],
+    "code": "/** @since 0.1.0 */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/**\n * Creates the `flows_triggers` and `flows_trigger_fires` tables.\n *\n * A named export rather than `export default`: the CommonJS build reads a\n * default import of a sibling module as the whole exports object, so the\n * migrator received `{ default }` instead of this Effect.\n *\n * @category migrations\n * @since 0.1.0\n */\nexport const triggers = Effect_1.gen(function* triggers() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql `CREATE TABLE IF NOT EXISTS flows_triggers (\n    trigger_id TEXT PRIMARY KEY,\n    flow_id TEXT NOT NULL,\n    input_json TEXT NOT NULL,\n    cron TEXT NOT NULL,\n    timezone TEXT,\n    overlap TEXT NOT NULL CHECK (overlap IN ('skip', 'buffer-one', 'supersede')),\n    catch_up TEXT NOT NULL CHECK (catch_up IN ('none', 'one', 'all')),\n    max_catch_up ${Dialect.integer(sql)} NOT NULL CHECK (max_catch_up >= 0),\n    enabled ${Dialect.integer(sql)} NOT NULL CHECK (enabled IN (0, 1)),\n    revision ${Dialect.integer(sql)} NOT NULL,\n    last_fired_at_ms ${Dialect.integer(sql)},\n    pending_at_ms ${Dialect.integer(sql)},\n    active_run_id TEXT\n  )`;\n    yield* sql `CREATE TABLE IF NOT EXISTS flows_trigger_fires (\n    trigger_id TEXT NOT NULL,\n    occurrence_at_ms ${Dialect.integer(sql)} NOT NULL,\n    outcome TEXT,\n    run_id TEXT,\n    error TEXT,\n    PRIMARY KEY (trigger_id, occurrence_at_ms),\n    FOREIGN KEY (trigger_id) REFERENCES flows_triggers (trigger_id)\n  )`;\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0001_triggers.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/triggers/src/migrations/0001_triggers.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,mBAAmB;;AAEnB,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAqC,a,CAAA,S,CAAA;IACxD,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAA;;;;;;;;mBAQU,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;cACzB,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;eACnB,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;uBACZ,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;oBACvB,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;;IAEpC,CAAA;IACF,OAAI,GAAG,CAAA;;uBAEc,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;;;;;;IAMvC,CAAA;AACJ,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.vibe"
+     }
+    ],
+    "code": "/** @since 0.1.0 */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/**\n * Adds `active_claimed_at_ms`, the lease start of a launch reservation.\n *\n * A named export rather than `export default`: the CommonJS build reads a\n * default import of a sibling module as the whole exports object, so the\n * migrator received `{ default }` instead of this Effect.\n *\n * @category migrations\n * @since 0.1.0\n */\nexport const reservationLease = Effect_1.gen(function* reservationLease() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql `ALTER TABLE flows_triggers ADD COLUMN active_claimed_at_ms ${Dialect.integer(sql)}`;\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0002_reservation_lease.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,mBAAmB;;AAEnB,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,gBAAgB,GAAqC,a,CAAA,S,CAAA;IAChE,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAA,8DAA8D,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC,EAAE,CAAA;AAC7F,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.vibe"
+     }
+    ],
+    "code": "/** @since 1.0.0-rc.0 */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/**\n * Creates `flows_scheduler_heartbeat`, one row per scheduler host holding the\n * last poll it recorded, so a listing can say whether anything is listening.\n *\n * A named export rather than `export default`: the CommonJS build reads a\n * default import of a sibling module as the whole exports object, so the\n * migrator received `{ default }` instead of this Effect.\n *\n * @category migrations\n * @since 1.0.0-rc.0\n */\nexport const schedulerHeartbeat = Effect_1.gen(function* schedulerHeartbeat() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql `CREATE TABLE IF NOT EXISTS flows_scheduler_heartbeat (\n    host TEXT PRIMARY KEY,\n    ticked_at_ms ${Dialect.integer(sql)} NOT NULL\n  )`;\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0003_heartbeat.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,wBAAwB;;AAExB,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,kBAAkB,GAAqC,a,CAAA,S,CAAA;IAClE,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAA;;mBAEU,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;IACnC,CAAA;AACJ,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/triggers/src/migrations/0004_fire_run_index.vibe"
      }
     ],
@@ -6304,6 +6504,46 @@
      ],
      "names": [],
      "mappings": "AAAA,wBAAwB;;AAExB,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,YAAY,GAAqC,a,CAAA,S,CAAA;IAC5D,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAA,uFAAuF,CAAA;AAChG,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/triggers/src/migrations/index.vibe"
+     }
+    ],
+    "code": "/** @since 0.1.0 */\nimport * as Layer from \"effect/Layer\";\nimport * as Migrator from \"effect/sql/Migrator\";\nimport { triggers } from \"./0001_triggers.js\";\nimport { reservationLease } from \"./0002_reservation_lease.js\";\nimport { schedulerHeartbeat } from \"./0003_heartbeat.js\";\nimport { fireRunIndex } from \"./0004_fire_run_index.js\";\n/**\n * The migration record {@link run} applies, keyed by migration file name.\n *\n * Exported so a test and the release smoke can assert that every entry is the\n * migration Effect itself in both the ESM and the CommonJS build.\n *\n * @category migrations\n * @since 1.0.0-rc.0\n */\nexport const migrations = {\n    \"0001_triggers\": triggers,\n    \"0002_reservation_lease\": reservationLease,\n    \"0003_heartbeat\": schedulerHeartbeat,\n    \"0004_fire_run_index\": fireRunIndex\n};\n/**\n * Applies the triggers schema migrations.\n *\n * @category migrations\n * @since 0.1.0\n */\nexport const run = Migrator.make({})({ loader: Migrator.fromRecord(migrations), table: \"flows_trigger_migrations\" });\n/**\n * Runs {@link run} once as a layer.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = Layer.effectDiscard(run);\n",
+    "map": {
+     "version": 3,
+     "file": "index.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/triggers/src/migrations/index.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,mBAAmB;AAEnB,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,KAAK,QAAQ,MAAM,qBAAqB,CAAA;AAC/C,OAAO,EAAE,QAAQ,EAAE,MAAM,oBAAsB,CAAA;AAC/C,OAAO,EAAE,gBAAgB,EAAE,MAAM,6BAA+B,CAAA;AAChE,OAAO,EAAE,kBAAkB,EAAE,MAAM,qBAAuB,CAAA;AAC1D,OAAO,EAAE,YAAY,EAAE,MAAM,0BAA4B,CAAA;AAEzD;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG;IACxB,eAAe,EAAE,QAAQ;IACzB,wBAAwB,EAAE,gBAAgB;IAC1C,gBAAgB,EAAE,kBAAkB;IACpC,qBAAqB,EAAE,YAAY;CACpC,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,QAAQ,CAAC,IAAI,CAAC,EAAE,CAAC,CAAC,EAAE,MAAM,EAAE,QAAQ,CAAC,UAAU,CAAC,UAAU,CAAC,EAAE,KAAK,EAAE,0BAA0B,EAAE,CAAC,CAAA;AAEpH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,KAAK,CAAC,aAAa,CAAC,GAAG,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/triggers/src/Webhook.vibe"
+     }
+    ],
+    "code": "/**\n * Verified webhook ingestion through the authoritative Control boundary.\n *\n * @see packages/smithers/agent/triggers/docs/api.md\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as ControlChannels from \"@smthrs/control/Channels\";\nimport { InvalidInput, Unauthorized } from \"@smthrs/control/ControlError\";\nimport * as ControlWebhook from \"@smthrs/control/WebhookChannel\";\nimport * as Effect from \"effect/Effect\";\nimport { TriggerError } from \"./TriggerError.js\";\n/**\n * Compares a supplied byte string against the expected one without returning\n * early on a mismatch.\n *\n * The loop runs exactly `expected.length` times, so its iteration count is\n * fixed by the secret side of the comparison and never by the caller's. Reading\n * the longer of the two instead let a caller lengthen its input until the work\n * stopped growing, which reports the expected signature's length. The length\n * difference is folded into the result, so inputs of unequal length always\n * disagree.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const constantTimeEqual = (expected, supplied) => {\n    let difference = expected.length ^ supplied.length;\n    for (const [index, byte] of expected.entries()) {\n        difference |= byte ^ (supplied[index] ?? 0);\n    }\n    return difference === 0;\n};\n/**\n * Copies request bytes into memory nobody else holds.\n *\n * `body.slice()` is not enough: a Node `Buffer` is a `Uint8Array` whose\n * `slice` is an alias of `subarray` and answers with a view over the same\n * memory, so a caller that reused its `Buffer` after handing it over changed\n * what got verified, and a verifier that edited the bytes it was handed edited\n * the caller's. `Uint8Array.from` always allocates, and it copies only the\n * viewed range of an offset view and only a snapshot of a `SharedArrayBuffer`.\n */\nconst ownedCopy = (body) => Uint8Array.from(body);\n/**\n * Reads a header whose name may be spelled in any case.\n *\n * The lowercase form and the declared spelling are tried first, then every\n * other key whose lowercase form matches. HTTP header names are\n * case-insensitive, and a host that keeps the sender's capitalisation used to\n * fail a lowercase declaration.\n */\nconst headerValue = (headers, name) => {\n    const lower = name.toLowerCase();\n    const direct = headers[lower] ?? headers[name];\n    if (direct !== undefined)\n        return direct;\n    for (const [key, value] of Object.entries(headers)) {\n        if (value !== undefined && key.toLowerCase() === lower)\n            return value;\n    }\n    return undefined;\n};\n/**\n * Builds a verifier that compares a signature header in constant time.\n *\n * An absent or empty header is refused before `expected` runs, and an\n * `expected` that answers with zero bytes is refused after it. Neither is a\n * comparison the constant-time equality can decide: it agrees on two empty\n * byte strings, so a request carrying no signature at all would have\n * authenticated against a secret that resolved to the empty string. A\n * zero-length expected signature is a misconfigured credential, never a valid\n * one, so the door stays closed instead of opening for everyone.\n *\n * Every refusal carries the same message, `webhook signature in <header> did\n * not verify`, whatever the reason. A failure raised by `expected` is kept in\n * `cause` only: its message names the credential reference or the resolver\n * that could not produce a secret, which is a host detail, and the refusal\n * that answers a bad signature answers a broken resolver the same way.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeSignatureVerifier = (config) => (raw, credential) => {\n    const refuse = (cause) => Effect.fail(new TriggerError({\n        code: \"verification_failed\",\n        message: `webhook signature in ${config.header} did not verify`,\n        ...(cause === undefined ? {} : { cause })\n    }));\n    return Effect.suspend(() => {\n        const supplied = headerValue(raw.headers, config.header);\n        if (supplied === undefined || supplied.length === 0) {\n            return refuse();\n        }\n        const actual = new TextEncoder().encode(supplied);\n        // The verifier gets its own copy: nothing it does to these bytes can reach\n        // the buffer that is about to be fingerprinted and decoded.\n        return Effect.matchEffect(config.expected(ownedCopy(raw.body), credential), {\n            onFailure: (error) => refuse(error),\n            onSuccess: (expected) => expected.length > 0 && constantTimeEqual(expected, actual)\n                ? Effect.void\n                : refuse()\n        });\n    });\n};\nconst invalidInput = (issue) => new InvalidInput({ issue });\nconst toControlChannel = (config) => {\n    const channel = ControlWebhook.make({\n        name: config.name,\n        schema: config.schema,\n        credential: config.credential,\n        // The message is fixed here rather than forwarded from the verifier: a\n        // custom `verify` may say why it refused, and that reason travels toward\n        // the unauthenticated sender on the same error that answers a bad\n        // signature. `Unauthorized` carries no cause, so nothing else survives\n        // the crossing.\n        verify: (raw, credential) => Effect.mapError(config.verify(raw, credential), () => new Unauthorized({ message: `webhook ${config.name} did not verify the request` })),\n        map: (payload) => {\n            const inbound = config.inbound(payload);\n            if (\"start\" in inbound) {\n                return Effect.succeed({\n                    _tag: \"Start\",\n                    flowId: inbound.start.flowId,\n                    input: inbound.start.input\n                });\n            }\n            return Effect.mapError(Effect.map(Schema.decodeUnknownEffect(Schema.Json)(inbound.signal.value), (value) => ({\n                _tag: \"Signal\",\n                runId: inbound.signal.runId,\n                signal: {\n                    name: inbound.signal.stepId,\n                    payload: value\n                }\n            })), (error) => invalidInput(String(error)));\n        },\n        project: (run) => {\n            if (config.outbound === undefined) {\n                return {\n                    cursor: String(run.updatedAt),\n                    operation: \"noop\",\n                    message: null\n                };\n            }\n            return {\n                cursor: String(run.updatedAt),\n                operation: \"post\",\n                message: config.outbound(run)\n            };\n        }\n    });\n    return channel;\n};\n/**\n * Builds a webhook door whose only dispatch path is the Control channel\n * coordinator.\n *\n * Verification occurs inside `Channels.ingest` before the adapter's JSON or\n * schema decoder and before any Control operation.\n *\n * `ingest` does not register: a channel is registered once, deliberately,\n * through {@link Webhook.register}, so traffic to an unregistered channel is\n * reported as unavailable rather than silently self-registering the door it\n * arrived at.\n *\n * `ingest` also copies `body`, `headers`, and `idempotencyKey` before anything\n * reads them. Verification, delivery fingerprinting, and decoding then all see\n * one private snapshot, so a verifier that edits the bytes it was handed, or a\n * caller that mutates its own object between building this Effect and running\n * it, cannot authenticate one payload and have another decoded. A\n * `SharedArrayBuffer`-backed view is copied out of shared memory by the same\n * step.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = (config) => {\n    const channel = toControlChannel(config);\n    const register = Effect.flatMap(ControlChannels.Channels, (channels) => channels.register(channel));\n    return {\n        name: config.name,\n        register,\n        ingest: (raw) => {\n            // Copied here rather than inside the Effect: the copy has to happen when\n            // the caller hands the request over, not when the returned Effect\n            // eventually runs, or a caller that reuses its own buffer in between\n            // changes what gets authenticated.\n            const snapshot = {\n                body: ownedCopy(raw.body),\n                headers: { ...raw.headers },\n                idempotencyKey: raw.idempotencyKey\n            };\n            return Effect.mapError((Effect_1.gen(function* () {\n                const channels = yield* ControlChannels.Channels;\n                return yield* channels.ingest({ channel: config.name, raw: snapshot });\n            })), (error) => error instanceof Unauthorized\n                ? new TriggerError({\n                    code: \"verification_failed\",\n                    message: `webhook ${config.name} did not verify the request`,\n                    cause: error\n                })\n                : error);\n        }\n    };\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Webhook.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/triggers/src/Webhook.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    }
   ]
