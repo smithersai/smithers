@@ -16,7 +16,7 @@ or opens a database except read only.
 ## Install the scanner API
 
 ```bash
-npm install @smthrs/migrate@next @effect/platform-node@4.1.0 @effect/platform-node-shared@4.1.0 effect@4.1.0
+npm install @smthrs/migrate@next @effect/platform-node@4.1.1 @effect/platform-node-shared@4.1.1 effect@4.1.1
 ```
 
 The package depends on `effect` 4.1.0 exactly, so the line pins `effect` and

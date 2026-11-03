@@ -10,7 +10,7 @@ sidebar:
 Published on npm under the `next` tag. Install it with its `effect` peer:
 
 ```sh
-npm install @smthrs/capability@next effect@4.1.0
+npm install @smthrs/capability@next effect@4.1.1
 ```
 
 Name `@next` explicitly: `latest` still points at an older release candidate.
@@ -22,7 +22,7 @@ CommonJS with TypeScript declarations. It has two runtime dependencies:
 which the modules written in VibeLang import.
 
 [`effect`](https://effect.website) requires the exact peer
-`effect@4.1.0`. It supplies the `Schema`, `Option`, and `PlatformError`
+`effect@4.1.1`. It supplies the `Schema`, `Option`, and `PlatformError`
 types on the exported surface. Install one `effect` at that version: two copies of
 `effect` in one program are two sets of service tags.
 

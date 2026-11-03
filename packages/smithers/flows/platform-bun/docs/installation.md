@@ -29,7 +29,7 @@ Bun installs required peers, so the line above also installs
 `@smthrs/platform-node` at the matching version. Install one `effect` in the
 peer range so the host shares one Effect runtime. `@effect/platform-bun`,
 `@effect/platform-node` and `@effect/platform-node-shared` are bundled
-privately, built from `effect@4.1.0`, so your project installs none of them.
+privately, built from `effect@4.1.1`, so your project installs none of them.
 
 ## Supported runtimes
 
