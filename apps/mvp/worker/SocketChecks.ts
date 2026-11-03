@@ -35,6 +35,7 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
     // A kept lease's window starts when this check started, on this Worker's clock, and runs `LEASE_MS`, never past
     // what the database said was left of the session then (decision 0151 rule 9).
     let until = now + LEASE_MS
+    let capped = false
     let role = admission.role
     if (admission.session !== null) {
       const live = yield* SessionStore.authority(admission.session, admission.alias)
@@ -43,7 +44,9 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
       // Both times are the database's: a Worker clock skewed from it neither stretches nor cuts the freshness.
       if (!roleFresh(live.value.roleVerifiedAt, live.value.serverNow, roleFreshMs)) return "unverified" as const
       role = live.value.role
-      until = now + Math.min(LEASE_MS, live.value.expiresAt - live.value.serverNow)
+      const left = live.value.expiresAt - live.value.serverNow
+      until = now + Math.min(LEASE_MS, left)
+      capped = left <= LEASE_MS
     }
     const actor: Actor = {
       subject: { kind: "person", id: admission.principal },
@@ -63,20 +66,20 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
           ),
         )
         if (Option.isNone(resolved)) return "unverified" as const
-        return mayRead(Option.some({ ...actor, role: resolved.value })) ? ({ verdict: "keep", until } as const) : "revoked" as const
+        return mayRead(Option.some({ ...actor, role: resolved.value })) ? ({ verdict: "keep", until, capped } as const) : "revoked" as const
       }
       case "branch":
       case "terminal": {
         const branch = yield* branchAccess(Option.some(actor), basis.branchId)
         if (branch === undefined || !canView(branch.access)) return "revoked" as const
-        if (basis.kind === "branch") return branch.access === admission.access ? ({ verdict: "keep", until } as const) : "changed" as const
+        if (basis.kind === "branch") return branch.access === admission.access ? ({ verdict: "keep", until, capped } as const) : "changed" as const
         if (!canAsk(actor)) return "revoked" as const
-        return (canEdit(branch.access) ? "write" : "read") === admission.access ? ({ verdict: "keep", until } as const) : "changed" as const
+        return (canEdit(branch.access) ? "write" : "read") === admission.access ? ({ verdict: "keep", until, capped } as const) : "changed" as const
       }
       case "text": {
         const scoped = yield* scopeAccess(Option.some(actor), { run: basis.run })
         if (scoped === undefined || !canView(scoped.access)) return "revoked" as const
-        return scoped.access === admission.access ? ({ verdict: "keep", until } as const) : "changed" as const
+        return scoped.access === admission.access ? ({ verdict: "keep", until, capped } as const) : "changed" as const
       }
     }
   }).pipe(

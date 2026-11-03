@@ -180,12 +180,22 @@ export type Verdict = "keep" | "session" | "revoked" | "changed" | "unverified"
  * `LEASE_MS`, never past what the database said was left of the session (decision 0151 rule 9). A bare `"keep"` is
  * leased from when the renewal ends.
  */
-export type Checked = Verdict | { readonly verdict: "keep"; readonly until: number }
+export type Checked = Verdict | {
+  readonly verdict: "keep"
+  readonly until: number
+  /** Whether the session's end set `until`, not `LEASE_MS`: no renewal can move it, only the end can come. */
+  readonly capped: boolean
+}
 
-/** A renewal's answer for one admission: its verdict, and for a kept lease the window its check measured. */
+/**
+ * A renewal's answer for one admission: its verdict, and for a kept lease the window its check measured. `admission` is
+ * what the host keeps from then on: when the session's end capped the window, it ends at `until`, because two queries
+ * measure that end a few milliseconds apart and the lease is capped whichever measured it first (`capped`, `ended`).
+ */
 export interface Renewed {
   readonly verdict: Verdict
   readonly until?: number
+  readonly admission: Admission
 }
 
 /** The close each ending verdict sends, and a socket from before leases (`legacy`): a code and a reason. */
@@ -247,11 +257,11 @@ export const renew = <RC, R>(
     // A check that answered after the session's end renews nothing: the end is checked again now.
     const after = yield* Clock.currentTimeMillis
     const answers = admissions.map((admission): Renewed => {
-      if (ended(admission, after)) return { verdict: "session" }
+      if (ended(admission, after)) return { verdict: "session", admission }
       const answer = verdicts.get(authorityOf(admission)) ?? "unverified"
-      return typeof answer === "string"
-        ? { verdict: answer }
-        : { verdict: "keep", until: Math.min(answer.until, admission.expiresAt ?? Infinity) }
+      if (typeof answer === "string") return { verdict: answer, admission }
+      const until = Math.min(answer.until, admission.expiresAt ?? Infinity)
+      return { verdict: "keep", until, admission: answer.capped ? { ...admission, expiresAt: until } : admission }
     })
     const counts: Record<Verdict, number> = { keep: 0, session: 0, revoked: 0, changed: 0, unverified: 0 }
     for (const { verdict: outcome } of answers) {

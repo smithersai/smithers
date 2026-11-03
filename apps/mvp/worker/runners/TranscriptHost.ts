@@ -117,7 +117,7 @@ export const make = <R, RC>(ports: Ports<R, RC>) => {
       const renewed: Array<Watcher> = []
       const ending: Array<readonly [SocketAccess.HostSocket, SocketAccess.Closing]> = []
       due.forEach((watcher, index) => {
-        const { verdict, until } = verdicts[index]!
+        const { verdict, until, admission } = verdicts[index]!
         // A socket dropped while its check ran stays dropped.
         if (!decodeKept(watcher.socket.deserializeAttachment<unknown>()).pipe(Option.exists((kept) => "admission" in kept))) {
           return
@@ -125,8 +125,8 @@ export const make = <R, RC>(ports: Ports<R, RC>) => {
         if (verdict === "keep") {
           // The window its check measured, from when that check started (decision 0151 rule 9).
           const leaseUntil = until ?? SocketAccess.leaseFrom(watcher.admission, now)
-          lease(watcher.socket, watcher.admission, leaseUntil)
-          renewed.push({ ...watcher, leaseUntil })
+          lease(watcher.socket, admission, leaseUntil)
+          renewed.push({ ...watcher, admission, leaseUntil })
         } else ending.push([watcher.socket, verdict])
       })
       yield* drop(ending)

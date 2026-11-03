@@ -143,13 +143,13 @@ export const room = <S extends PresenceRoom.RoomSocket<R>, R, RS, RC>(ports: Por
       const renewed = new Set<S>()
       const ending: Array<readonly [S, SocketAccess.Closing]> = []
       due.forEach((member, index) => {
-        const { verdict, until } = verdicts[index]!
+        const { verdict, until, admission } = verdicts[index]!
         // A member who left, or was ended, while the check ran stays out.
         const current = keptOf(member.socket)
         if (current === undefined || (current.leaseUntil ?? 0) === 0) return
         if (verdict !== "keep") return void ending.push([member.socket, verdict])
         // The window its check measured, from when that check started (decision 0151 rule 9).
-        keep(member.socket, { ...current, leaseUntil: until ?? SocketAccess.leaseFrom(member.admission, now) })
+        keep(member.socket, { ...current, admission, leaseUntil: until ?? SocketAccess.leaseFrom(member.admission, now) })
         renewed.add(member.socket)
       })
       yield* end(ending)

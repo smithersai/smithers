@@ -315,7 +315,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           readonly principal: string
           readonly role: Role | null
           readonly access: "write" | "read"
-          readonly admission: SocketAccess.Admission
+          admission: SocketAccess.Admission
           /** Its lease (worker/SocketAccess.ts): every frame, out and in, passes only before `until`. */
           readonly lease: { until: number }
           readonly fiber: Fiber.Fiber<unknown>
@@ -823,12 +823,14 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           const now = yield* Clock.currentTimeMillis
           const ending: Array<readonly [WebSocket, Fiber.Fiber<unknown>, SocketAccess.Closing]> = []
           due.forEach(({ socket, viewer }, index) => {
-            const { verdict, until } = verdicts[index]!
+            const { verdict, until, admission } = verdicts[index]!
             // A socket detached while its check ran stays detached.
             if (attached.get(socket) !== viewer) return
             // The window its check measured, from when that check started (decision 0151 rule 9).
-            if (verdict === "keep") viewer.lease.until = until ?? SocketAccess.leaseFrom(viewer.admission, now)
-            else {
+            if (verdict === "keep") {
+              viewer.lease.until = until ?? SocketAccess.leaseFrom(viewer.admission, now)
+              viewer.admission = admission
+            } else {
               viewer.lease.until = 0
               attached.delete(socket)
               ending.push([socket, viewer.fiber, verdict])
