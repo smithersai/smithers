@@ -174,6 +174,17 @@ describe("declarations", () => {
     expect(declares(session!, of({ kind: "page", text: "503 /api/auth/session" }))).toBe(false)
   })
 
+  it("matches the app's pathname on another origin too, as e2e/builds.ts serves two builds of it on one", () => {
+    const [refs, stack] = declarationsOf([serverErrorAnnotation(503, "/api/repos/*/refs"), serverErrorAnnotation(403, "/api/repos/*/stack")])
+    const front = "https://localhost:51991"
+    const of = (status: number, path: string) =>
+      problemOf(ORIGIN, consoleError(`Failed to load resource: the server responded with a status of ${status} ()`, `${front}${path}`))!
+    expect(declares(refs!, of(503, "/api/repos/octocat/Spoon-Knife/refs"))).toBe(true)
+    expect(declares(stack!, of(403, "/api/repos/octocat/Spoon-Knife/stack"))).toBe(true)
+    expect(declares(stack!, of(403, "/api/repos/octocat/Spoon-Knife/stack/extra"))).toBe(false)
+    expect(declares(refs!, of(500, "/api/repos/octocat/Spoon-Knife/refs"))).toBe(false)
+  })
+
   it("matches a console or page error by the text its line contains; a declaration without text matches nothing", () => {
     const [sync, blank] = declarationsOf([consoleErrorAnnotation("Sync failed"), { type: EXPECTED_CONSOLE_ERROR }])
     const page = problemOf(ORIGIN, { kind: "page", text: "Error: Sync failed at shape" })!

@@ -1,0 +1,70 @@
+{
+  "build": "7df7c2ecb983",
+  "note": "Invented device data in the shapes actually declared at deployed revision 7df7c2ecb983, the build production ran before 446bca4adcb9 (2026-11-03 07:32Z). Derived from that revision's src/device/registry.ts, src/features/todos/schema.ts and schemas.lock.json via jj file show; the fingerprints below are that lock's. It holds only the stores 446bca4adcb9 changed: todo-requested at version 4 (a Requested commit, a commit and a drop refused Not sent) and one todo-sending write at payload version 2, queued offline and unsent. No customer data or real credential is included.",
+  "collections": {
+    "todo-requested": {
+      "kind": "local",
+      "version": 4,
+      "key": "id",
+      "rows": [
+        {
+          "id": "7df7c2ec-0000-4000-8000-0000000000a1",
+          "repo": "octo/hello",
+          "op": "commit",
+          "title": "Retry webhook delivery",
+          "prompt": "Retry a failed delivery three times, then give up.",
+          "acceptance": [
+            "A delivery that fails twice succeeds on the third attempt"
+          ],
+          "number": 0,
+          "repoId": "github/octo/hello",
+          "queuedAt": 1793690000000,
+          "status": "requested",
+          "reason": null,
+          "taken": 17,
+          "answeredAt": 1793690001200
+        },
+        {
+          "id": "7df7c2ec-0000-4000-8000-0000000000a2",
+          "repo": "octo/hello",
+          "op": "commit",
+          "title": "Rename the stack page",
+          "prompt": "Call the stack page Work.",
+          "acceptance": [],
+          "number": 0,
+          "repoId": "github/octo/hello",
+          "queuedAt": 1793690100000,
+          "status": "not_sent",
+          "reason": "forbidden",
+          "taken": null,
+          "answeredAt": 1793690100900
+        },
+        {
+          "id": "7df7c2ec-0000-4000-8000-0000000000a3",
+          "repo": "octo/hello",
+          "op": "drop",
+          "title": "",
+          "prompt": "",
+          "acceptance": [],
+          "number": 12,
+          "repoId": "github/octo/hello",
+          "queuedAt": 1793690200000,
+          "status": "not_sent",
+          "reason": "not_found",
+          "taken": null,
+          "answeredAt": 1793690200400
+        }
+      ]
+    }
+  },
+  "outbox": {
+    "tx:7df7c2ec-0000-4000-8000-0000000000b4": "{\"id\":\"7df7c2ec-0000-4000-8000-0000000000b4\",\"mutationFnName\":\"todo-op\",\"mutations\":[{\"globalKey\":\"KEY::[\\\"todo-sending\\\",\\\"string\\\",\\\"7df7c2ec-0000-4000-8000-0000000000a4\\\"]\",\"type\":\"insert\",\"modified\":{\"id\":\"7df7c2ec-0000-4000-8000-0000000000a4\",\"repo\":\"octo/hello\",\"op\":\"commit\",\"title\":\"Queued offline before the deploy\",\"prompt\":\"Add a line to the README.\",\"acceptance\":[\"The README ends with the line\"],\"number\":0,\"repoId\":\"github/octo/hello\",\"queuedAt\":1793690300000,\"v\":2},\"original\":{},\"changes\":{\"id\":\"7df7c2ec-0000-4000-8000-0000000000a4\",\"repo\":\"octo/hello\",\"op\":\"commit\",\"title\":\"Queued offline before the deploy\",\"prompt\":\"Add a line to the README.\",\"acceptance\":[\"The README ends with the line\"],\"number\":0,\"repoId\":\"github/octo/hello\",\"queuedAt\":1793690300000,\"v\":2},\"collectionId\":\"todo-sending\"}],\"keys\":[\"KEY::[\\\"todo-sending\\\",\\\"string\\\",\\\"7df7c2ec-0000-4000-8000-0000000000a4\\\"]\"],\"idempotencyKey\":\"7df7c2ec-0000-4000-8000-0000000000a4\",\"createdAt\":\"2026-11-03T06:58:20.000Z\",\"retryCount\":2,\"nextAttemptAt\":1793690400000,\"metadata\":{\"queuedAt\":1793690300000,\"versions\":{\"todo-sending\":2}},\"version\":1,\"lastError\":{\"name\":\"OutboxRetry\",\"message\":\"The write didn't get through; it is sent again.\"},\"valueEncoding\":3}"
+  },
+  "schemaLockSha256": "b205ecc9bee9e5b4784379576dd482bc57c54da6fecb6ec12126b65d2e05e908",
+  "schemaFingerprints": {
+    "todo-requested": "3c9220a7796be4b1"
+  },
+  "payloadFingerprints": {
+    "todo-sending": "84684138fa1a48e3"
+  }
+}

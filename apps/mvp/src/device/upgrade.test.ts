@@ -4,10 +4,13 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { Chat } from "../features/chat/chat"
 import { ChatStore } from "../features/chat/store"
 import { IssueWrites } from "../features/issues/writes"
+import { StackWrites } from "../features/todos/writes"
+import { SqlClient } from "effect/sql"
 import { member, nodeDevice, openTab, TestChatApi } from "../test/chatApi"
 import { deviceFrom, type Fixture, prepare } from "../test/deviceFixture"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
+import todoDeployed from "./fixtures/7df7c2ecb983.json" with { type: "json" }
 import { deviceRegistry } from "./registry"
 
 // The deployed build's device, opened by this build's app over the real ChatApi (decision 0021): the leader's
@@ -96,4 +99,29 @@ test("a follower restores a newer payload as Not sent while another tab holds th
   }))
   expect((await server.runPromise(api.rows)).filter(({ id }) => id === QUESTION)).toEqual([])
   expect([...outbox.keys()].filter((name) => name.startsWith("parked:"))).toEqual([])
+}, 60_000)
+
+test("build 7df7c2ecb983's stack changes open in this build: its queued commit is sent once, its Requested and Not sent rows stay", async () => {
+  const fixture = todoDeployed as Fixture
+  const server = ManagedRuntime.make(TestChatApi.layerWith({ actor: member }).pipe(Layer.provideMerge(TestDatabase.layer("test_device_todos"))))
+  runtimes.push(server)
+  const api = await server.runPromise(Effect.service(TestChatApi))
+  const { outbox, path } = await deviceFrom(fixture)
+  await prepare(path, deviceRegistry)
+  const host = nodeDevice({ agent: api, file: path, outboxEntries: outbox })
+  const runtime = openTab(api, { host })
+  runtimes.push(runtime)
+  const writes = await runtime.runPromise(Effect.service(StackWrites))
+  const QUEUED = "7df7c2ec-0000-4000-8000-0000000000a4"
+  const committed = () => server.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql<{ readonly id: string; readonly title: string }>`SELECT id::text, title FROM todos WHERE id = ${QUEUED}::uuid`))
+  // The commit the old build queued offline reaches the stack once, under its own op id, and is Requested here.
+  await until(async () => expect(await committed()).toEqual([{ id: QUEUED, title: "Queued offline before the deploy" }]))
+  await until(async () => expect(Option.getOrUndefined(await runtime.runPromise(writes.requested.get(QUEUED)))).toMatchObject({ status: "requested" }))
+  // The rows the old build kept are as it kept them.
+  for (const row of fixture.collections["todo-requested"]!.rows) {
+    expect(Option.getOrUndefined(await runtime.runPromise(writes.requested.get(String(row.id))))).toMatchObject(row)
+  }
+  expect([...outbox.keys()].filter((key) => key.startsWith("parked:"))).toEqual([])
+  expect(await committed()).toHaveLength(1)
 }, 60_000)

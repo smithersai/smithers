@@ -60,7 +60,20 @@ export const pathOf = (url: string): string => {
   return names.length === 0 ? path : `${path}?${names.join("&")}`
 }
 
-const pathnameOf = (path: string) => path.split("?")[0]!
+/**
+ * A problem's pathname: its place without the query, and without the origin when it is another origin's whole address.
+ * A declaration names a pathname, so it covers the app wherever it is served: e2e/builds.ts serves two builds of it on a
+ * second origin, whose console lines keep that origin.
+ */
+const pathnameOf = (path: string) => {
+  const bare = path.split("?")[0]!
+  if (!/^https?:\/\//.test(bare)) return bare
+  try {
+    return new URL(bare).pathname
+  } catch {
+    return bare
+  }
+}
 
 /** Where a console line points: the app's path, another origin's whole address (as `pathOf`), or `(unknown)`. */
 const placeOf = (origin: string, url: string | undefined) => {

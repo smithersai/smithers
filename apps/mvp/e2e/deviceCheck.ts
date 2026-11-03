@@ -1,0 +1,100 @@
+// The deploy's device check (docs/infrastructure.md#device-data-across-a-deploy): the cross-build tests, against the
+// files of the build this deploy replaces, in Chromium and WebKit. Locally a spec skips when no old build is on disk;
+// here that is a failure, as is any test that didn't run, so the check can't pass without upgrading from that build.
+//
+//   cd apps/mvp && OLD_BUILD_DIR=~/Desktop/smithers-mvp/builds/<build> node e2e/deviceCheck.ts [--replacing <build>]
+//
+// It lives under e2e/ so the Mac mini's runner (mini-run) sees an e2e command and gives it the dev server's settings.
+//
+// The build being replaced is `--replacing`, else what https://$APP_DOMAIN/version.json (smithers.sh) serves now. It
+// prints one line per spec and browser, and exits 1 on any problem, naming OLD_BUILD_DIR and the build.
+import { spawnSync } from "node:child_process"
+import { existsSync, readFileSync, statSync } from "node:fs"
+import { join } from "node:path"
+import { parseArgs } from "node:util"
+
+/** The cross-build specs a deploy must pass. */
+export const SPECS: ReadonlyArray<string> = ["e2e/device-upgrade.spec.ts", "e2e/device-upgrade-todos.spec.ts"]
+
+/** The browsers each runs in: local development's Chromium project, and WebKit. */
+export const PROJECTS: ReadonlyArray<string> = ["local", "webkit"]
+
+const RUNBOOK = "docs/infrastructure.md#device-data-across-a-deploy"
+
+/** Why `dir` can't stand for build `replacing`, or undefined when it can. */
+export const oldBuildProblem = (dir: string | undefined, replacing: string): string | undefined => {
+  const need = `it must hold the files of build ${replacing}, the build this deploy replaces (${RUNBOOK})`
+  if (dir === undefined || dir === "") return `OLD_BUILD_DIR is not set: ${need}`
+  const page = join(dir, "index.html")
+  if (!existsSync(page)) return `OLD_BUILD_DIR ${dir} has no index.html: ${need}`
+  if (statSync(page).size === 0) return `OLD_BUILD_DIR ${dir} has an empty index.html: ${need}`
+  const version = join(dir, "version.json")
+  const build = existsSync(version) ? (JSON.parse(readFileSync(version, "utf8")) as { readonly build?: unknown }).build : undefined
+  if (typeof build !== "string") return `OLD_BUILD_DIR ${dir} has no version.json naming its build: ${need}`
+  if (!build.startsWith(replacing) && !replacing.startsWith(build)) return `OLD_BUILD_DIR holds build ${build}, not ${replacing}: ${need}`
+  return undefined
+}
+
+interface Suite {
+  readonly file?: string
+  readonly specs?: ReadonlyArray<{ readonly tests: ReadonlyArray<{ readonly projectName: string; readonly results: ReadonlyArray<{ readonly status: string }> }> }>
+  readonly suites?: ReadonlyArray<Suite>
+}
+
+/** What is wrong in a Playwright JSON report: each spec and browser that did not run and pass. Empty when all did. */
+export const verdict = (report: { readonly suites?: ReadonlyArray<Suite> }): ReadonlyArray<string> => {
+  const seen = new Map<string, string>()
+  const walk = (suite: Suite, file: string | undefined) => {
+    const here = suite.file ?? file
+    for (const spec of suite.specs ?? []) {
+      for (const each of spec.tests) {
+        const status = each.results.at(-1)?.status ?? "did not run"
+        // Playwright names a file from its test directory; the check names it from apps/mvp.
+        const key = `${here?.startsWith("e2e/") ? here : `e2e/${here}`} [${each.projectName}]`
+        if (seen.get(key) !== "failed") seen.set(key, status === "passed" ? "passed" : status === "skipped" ? "skipped" : "failed")
+      }
+    }
+    for (const child of suite.suites ?? []) walk(child, here)
+  }
+  for (const suite of report.suites ?? []) walk(suite, undefined)
+  return SPECS.flatMap((spec) => PROJECTS.flatMap((project) => {
+    const key = `${spec} [${project}]`
+    const status = seen.get(key)
+    return status === "passed" ? [] : [`${key} ${status ?? "did not run"}`]
+  }))
+}
+
+/** The build production serves now. */
+const deployed = async (domain: string) => {
+  const response = await fetch(`https://${domain}/version.json`, { headers: { "cache-control": "no-cache" } })
+  if (!response.ok) throw new Error(`https://${domain}/version.json answered ${response.status}; pass --replacing <build>`)
+  return ((await response.json()) as { readonly build: string }).build
+}
+
+const main = async () => {
+  const { values } = parseArgs({ options: { replacing: { type: "string" } } })
+  const replacing = values.replacing ?? await deployed(process.env.APP_DOMAIN ?? "smithers.sh")
+  const problem = oldBuildProblem(process.env.OLD_BUILD_DIR, replacing)
+  if (problem !== undefined) {
+    console.error(`device check FAILED: ${problem}`)
+    return 1
+  }
+  const output = join(process.env.TMPDIR ?? "/tmp", `device-check-${process.pid}.json`)
+  spawnSync("pnpm", ["exec", "playwright", "test", ...SPECS, ...PROJECTS.map((project) => `--project=${project}`), "--reporter=json,line"], {
+    stdio: "inherit",
+    env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: output },
+  })
+  const problems = existsSync(output) ? verdict(JSON.parse(readFileSync(output, "utf8"))) : ["no Playwright report was written"]
+  for (const spec of SPECS) for (const project of PROJECTS) {
+    const failure = problems.find((line) => line.startsWith(`${spec} [${project}]`))
+    console.log(`${failure === undefined ? "pass" : "FAIL"}  ${project}  ${spec}${failure === undefined ? "" : `  ${failure.slice(spec.length + project.length + 4)}`}`)
+  }
+  if (problems.length > 0) {
+    console.error(`device check FAILED upgrading from ${replacing} (OLD_BUILD_DIR ${process.env.OLD_BUILD_DIR}): ${problems.join("; ")}`)
+    return 1
+  }
+  console.log(`device check passed: every cross-build test ran from ${replacing} and passed`)
+  return 0
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) process.exit(await main())

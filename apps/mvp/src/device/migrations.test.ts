@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { Asking, Message } from "../features/chat/schema"
 import { Sending as IssueSending } from "../features/issues/schema"
+import { Requested as TodoRequestedRow, Sending as TodoSendingRow } from "../features/todos/schema"
 import { Repository } from "../features/repo/schema"
 import { View } from "../features/views/schema"
 import {
@@ -14,12 +15,14 @@ import {
   prepare,
   syncedCollection
 } from "../test/deviceFixture"
+import { TodoRequestedV4, TodoSendingV2 } from "./history"
 import { RepositoryV3 } from "./repo-history"
 import { RunV1 } from "./runs-history"
 import { ViewV2 } from "./views-history"
 import { MessageV3 } from "./messages-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
+import todoDeployed from "./fixtures/7df7c2ecb983.json" with { type: "json" }
 import {
   FlowFormStore,
   FlowAnswersStore,
@@ -392,4 +395,46 @@ test("a queued TODO v1 write upgrades to the latest version without losing its r
   const write = JSON.parse(result.value)
   expect(write.mutations[0].modified).toEqual({ ...source.mutations[0].modified, v: 3 })
   expect(write.metadata.versions).toEqual({ "todo-sending": 3 })
+})
+
+// 446bca4adcb9 moved two stores a version (decision 0153): todo-requested 4 to 5, and the todo-sending payload 2 to 3. The
+// fixture is the build production ran before it, in that build's shapes.
+describe("the device build 7df7c2ecb983 left", () => {
+  const fixture = todoDeployed as Fixture
+
+  test("is in that build's recorded shapes", () => {
+    expect(Migrations.fingerprint(TodoRequestedV4)).toBe(todoDeployed.schemaFingerprints["todo-requested"])
+    expect(Migrations.fingerprint(TodoSendingV2)).toBe(todoDeployed.payloadFingerprints["todo-sending"])
+    for (const row of rowsOf(fixture, "todo-requested")) expect(Schema.is(TodoRequestedV4)(row)).toBe(true)
+    for (const stored of Object.values(fixture.outbox)) {
+      expect(Schema.is(TodoSendingV2)(JSON.parse(stored).mutations[0].modified)).toBe(true)
+    }
+  })
+
+  test("its Requested and Not sent changes open at version 5, each row as it was", async () => {
+    const { path } = await deviceFrom(fixture)
+    const report = await prepare(path, deviceRegistry)
+    expect(report.collections.map(({ collection, outcome, from, to, migrated, kept }) =>
+      `${collection} ${outcome} ${from}→${to} migrated ${migrated} kept ${kept}`)).toEqual([
+      "todo-requested migrated 4→5 migrated 3 kept 0",
+    ])
+    const kept = [...await opened(path, TodoRequestedStore)].sort((a: any, b: any) => (a.id < b.id ? -1 : 1))
+    expect(kept).toEqual(rowsOf(fixture, "todo-requested"))
+    expect(TodoRequestedStore.schemaVersion).toBe(5)
+    expect(kept.every(Schema.is(TodoRequestedRow))).toBe(true)
+    expect(await keptRows(path)).toEqual([])
+  })
+
+  test("its unsent change is upgraded to payload version 3, the same change", () => {
+    const [stored] = Object.values(fixture.outbox)
+    const result = outboxUpgrade.write(stored!)
+    expect(result._tag).toBe("Upgraded")
+    if (result._tag !== "Upgraded") throw new Error(JSON.stringify(result))
+    const before = JSON.parse(stored!)
+    const after = JSON.parse(result.value)
+    expect(after.mutations[0].modified).toEqual({ ...before.mutations[0].modified, v: 3 })
+    expect(Schema.is(TodoSendingRow)(after.mutations[0].modified)).toBe(true)
+    expect(after.metadata.versions).toEqual({ "todo-sending": 3 })
+    expect({ ...after, mutations: undefined, metadata: undefined }).toEqual({ ...before, mutations: undefined, metadata: undefined })
+  })
 })

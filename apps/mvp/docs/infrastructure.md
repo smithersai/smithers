@@ -315,7 +315,24 @@ Once the device's owner is checked, the new build brings the device's OPFS store
 
 1. `pnpm test` passes `src/device/schemas.test.ts`: every persisted collection and outbox payload is declared in `src/device/registry.ts` at the version its schema has. A schema that changed needs a new version (a synced store bumps `version`, and its rows sync again; a local store or payload appends its new schema and a migration), then `UPDATE_DEVICE_SCHEMAS=1 pnpm vitest run src/device/schemas.test.ts` records it in `schemas.lock.json`. Old shapes live in `src/device/history.ts`. The lock stores sorted schema history without an epoch; `deviceRegistry.epoch` remains derived from the declared versions, so there is no counter to bump.
 2. `src/device/migrations.test.ts` and `src/device/upgrade.test.ts` pass against the fixture of the build production runs now (`src/device/fixtures/<build>.json`). A deploy that changes a store adds its build's fixture, written in that build's shapes. These prove schema migration under authorized ownership; the real browser test also exercises the activation policy. Retain earlier fixtures when adding the currently deployed build's fixture.
-3. `e2e/device-upgrade.spec.ts` passes against the deployed build's files: its synced message, queued question and draft are its owner's in the new build (the question sent once, the draft kept), and the owner's new draft and queued question survive reopening, each question sent once. To supply the old build, mirror its files from the site before the deploy replaces them (every path in its `sw.js` precache list, plus `sw.js`, its `workbox-*.js` and `assets/wa-sqlite-*.wasm`) into `~/Desktop/smithers-mvp/builds/<build>`, and run the spec with `OLD_BUILD_DIR` pointing there. The site answers `/index.html` with a redirect, so take `index.html` from `/app`, and check that its MD5 is the revision `sw.js` precaches for it.
+3. The cross-build tests pass against the files of the build the deploy replaces, in Chromium and WebKit. `e2e/device-upgrade.spec.ts` covers a synced message, a queued question and a draft (the question sent once, the draft kept, and the owner's new ones surviving reopening). `e2e/device-upgrade-todos.spec.ts` covers the stack's stores: a commit queued offline is sent once, and the Requested and Not sent changes still show. Run them through the deploy's check, from `apps/mvp` at the new revision on the Mac mini (which hosts the dev server):
+
+   ```sh
+   MINI_RUN_SRC=<checkout> ~/.smithers-lead/mini-run apps/mvp -- \
+     sh -c 'OLD_BUILD_DIR=$HOME/Desktop/smithers-mvp/builds/<build> node e2e/deviceCheck.ts --replacing <build>'
+   ```
+
+   `<build>` is what `https://smithers.sh/version.json` serves before the deploy. Each spec skips locally without an old build; `e2e/deviceCheck.ts` fails instead, on a missing or different `OLD_BUILD_DIR` (its `version.json` must name `<build>`) and on any test in either spec that skipped or didn't run, naming `OLD_BUILD_DIR` and the build. "1 passed, 2 skipped" is a failed check.
+
+   **Getting the old build.** Before the deploy, mirror it from the site: every path in its `sw.js` precache list, plus `sw.js`, its `workbox-*.js` and `assets/wa-sqlite-*.wasm`, into `~/Desktop/smithers-mvp/builds/<build>`. The site answers `/index.html` with a redirect, so take `index.html` from `/app`, and check that its MD5 is the revision `sw.js` precaches for it. Once production has moved on, the site no longer serves it: build it from its revision instead, on the mini, and copy `dist` to that path on both machines:
+
+   ```sh
+   jj new <build>   # in a workspace of your own
+   MINI_RUN_ARTIFACTS=1 MINI_RUN_SRC=<that workspace> ~/.smithers-lead/mini-run -e SMITHERS_BUILD=<build> apps/mvp -- \
+     sh -c 'pnpm build && rm -rf test-results/old-build && cp -R dist test-results/old-build'
+   ```
+
+   The files arrive under `~/.smithers-lead/scratchpad-mirror/mini-farm/results/slot<n>/test-results/old-build`; their `version.json` names `<build>`. A rebuild is the same revision's code, not the bytes production served, so say which one a check used.
 
 After the deploy, each device's engine leader runs `device/prepare` once: Workers Logs from the browser show `device.migrate` per collection and `browser.runtime.prepare`, and `device_migrations` and `device_rows_kept` count them. A row that couldn't be brought forward stays in the device's `device_kept` table; a queued write that couldn't is parked and shows Not sent.
 

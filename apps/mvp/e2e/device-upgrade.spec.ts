@@ -5,6 +5,7 @@ import { serveBuilds } from "./builds"
 import { serverRows } from "./devices"
 import { expect, QUEUED, step, test } from "./fixtures"
 import { oldBuildDir, requires } from "./target"
+import { expectConsoleError, expectOfflineErrors, expectServerError } from "./watch"
 
 // A deploy, on one device (decisions 0021 and 0023): the build production ran before it (its files, mirrored from
 // production, in OLD_BUILD_DIR) makes a synced message, a question queued offline and a draft while signed in. Then
@@ -18,6 +19,22 @@ import { oldBuildDir, requires } from "./target"
 const OLD_BUILD = oldBuildDir(process.env)
 
 test.use({ serviceWorkers: "block" })
+
+/** WebKit's generic texts for requests the test ends on purpose: declared only once every assertion passed (see below). */
+const WEBKIT_ENDED = [
+  "Failed to load resource: Could not connect to the server.",
+  "Failed to load resource: WebKit encountered an internal error",
+  "Failed to load resource: The network connection was lost.",
+  "due to access control checks.",
+]
+
+
+// What the test causes on purpose (2026-11-03, each read from the server's own answers): the dev server has no summary
+// model (409 no_route), and locally every spec asks in one shared conversation, so an answer read while another run's
+// goes first is 409 not_your_turn (playwright.config.ts TAKES_TURNS).
+expectServerError(409, "/api/model/summary")
+expectServerError(409, "/api/answers/*")
+expectOfflineErrors()
 
 test(
   "deploy: the deployed build's synced message, queued question and draft are its owner's in this build, and stay",
@@ -144,7 +161,14 @@ test(
         expect(await stored()).toEqual([synced, queued, ownedQueued])
         await sentOnce([queuedId, ownedQueuedId])
       })
+      // WebKit logs each request the test ends (offline, navigation away, aborted holds, teardown) as one of these generic
+      // texts. e2e/problems.ts can't scope a declaration to a step: it counts problems by line, with no time, and is
+      // read once the test ends. So they are declared here, after the last assertion: a run that fails before this
+      // lists them, and only a run whose every step passed excuses them.
+      for (const text of WEBKIT_ENDED) expectConsoleError(text)
     } finally {
+      // Off the front before it closes, so no request of the page's dies with it.
+      await page.goto("about:blank").catch(() => undefined)
       await builds.close()
     }
   }
