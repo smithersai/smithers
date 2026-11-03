@@ -54,6 +54,9 @@ export const ROLE_RECHECK_MINUTES = 60
 /** How often a session whose role GitHub hasn't confirmed lately starts another check, at most. */
 export const UNCONFIRMED_RECHECK_MS = 60_000
 
+/** Maximum wait to record a role-check start; the live session read can then answer. */
+export const ROLE_CHECK_START_DEADLINE: Duration.Input = "1 second"
+
 /** How long a sign-in may take, from the button to GitHub's callback. */
 export const SIGN_IN_TTL_SECONDS = 600
 
@@ -405,7 +408,14 @@ export const make = <E, R>(
       const unconfirmed = live.value.roleVerifiedAt === null || now - live.value.roleVerifiedAt >= recheckAfterMs
       if (checkedAgo >= recheckAfterMs || (unconfirmed && checkedAgo >= UNCONFIRMED_RECHECK_MS)) {
         // An alias session's role is its home session's, so the check is the home session's.
-        yield* (yield* RoleChecks).start(live.value.home ?? live.value.id, live.value.roleCheckedAt)
+        yield* (yield* RoleChecks).start(live.value.home ?? live.value.id, live.value.roleCheckedAt).pipe(
+          Effect.timeoutOrElse({ duration: ROLE_CHECK_START_DEADLINE, orElse: () =>
+            Effect.logWarning("auth.role_check").pipe(
+              Effect.annotateLogs({ sessionId: live.value.home ?? live.value.id, outcome: "not_started", errorCode: "start_timeout" }),
+              Effect.andThen(Metric.update(Metric.withAttributes(requests, { route: "role_check", outcome: "not_started", reason: "start_timeout" }), 1)),
+            ),
+          }),
+        )
       }
       // An alias session acts as its home session, which holds the person's GitHub tokens and role (decision 0130).
       return Option.some<Signed>({

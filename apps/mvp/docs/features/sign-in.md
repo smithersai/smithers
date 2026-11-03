@@ -372,3 +372,5 @@ The read has one 10-second deadline and an 8-MiB aggregate cap; handlers keep th
 A timed-out body returns `408 body_timeout`, a broken body `400 invalid`, and an oversized body `413 too_large`.
 `write.admission` traces the boundary; `smithers_write_bodies` counts buffering outcomes and `write.body` logs refusals
 by status alone. Neither records content or credentials. Bodyless writes are already at EOF. Reads add no database query.
+
+A session read waits at most one second for the role-check start acknowledgment. A timeout cancels that wait, records `auth.role_check` with `start_timeout` and counts it, then returns the live session. A later request can start the same idempotent execution.

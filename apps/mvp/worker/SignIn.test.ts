@@ -3,7 +3,7 @@
 // cases run ChatApi's real handler (worker/test/harness.ts) with sign-in's sessions.
 import { credentialRoute } from "../src/flows/contract.ts"
 import { ModelRequest } from "@smthrs/model"
-import { ConfigProvider, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { ConfigProvider, Deferred, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
@@ -277,9 +277,10 @@ describe("the callback", () => {
     const { cookies } = await h.signInAs()
     const [row] = await query((sql) =>
       sql<{ readonly expiresAt: string }>`SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt" FROM sessions`)
-    const before = Date.now()
+    const databaseNow = async () => Number((await query((sql) => sql<{ now: string }>`SELECT (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS now`))[0]!.now)
+    const before = await databaseNow()
     const answer = await h.session(cookies) as SessionState & { readonly expiresAt?: number; readonly serverNow?: number }
-    const after = Date.now()
+    const after = await databaseNow()
     expect(answer).toMatchObject({ signedIn: true, expiresAt: Number(row!.expiresAt) })
     expect(answer.serverNow).toBeGreaterThanOrEqual(before)
     expect(answer.serverNow).toBeLessThanOrEqual(after)
@@ -584,6 +585,38 @@ describe("roles", () => {
     const h = await signInHarness(runtime, { config: { ...configured, GITHUB_REPOSITORY: "acme/widgets" } })
     await h.signInAs()
     expect(h.github.repositories).toEqual(["acme/widgets"])
+  })
+
+  test.each(["stale", "unconfirmed"])("a stalled %s role-check start cannot hold a live session read", async (age) => {
+    const release = Deferred.makeUnsafe<void>()
+    let starts = 0
+    let interrupted = false
+    const h = await signInHarness(runtime, { roleChecks: SignIn.RoleChecks.of({
+      start: () => Effect.sync(() => { starts++ }).pipe(
+        Effect.andThen(Deferred.await(release)),
+        Effect.onInterrupt(() => Effect.sync(() => { interrupted = true })),
+      ),
+    }) })
+    const { cookies } = await h.signInAs()
+    await query((sql) => age === "stale"
+      ? sql`UPDATE sessions SET role_checked_at = now() - interval '61 minutes'`
+      : sql`UPDATE sessions SET role_checked_at = now() - interval '90 seconds', role_verified_at = NULL`)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const pending = h.session(cookies)
+    try {
+      const result = await Promise.race([pending, new Promise<"unbounded">((resolve) => {
+        timer = setTimeout(() => resolve("unbounded"), 2000)
+      })])
+      expect(result).toMatchObject({ signedIn: true, login: "octocat", role: "member" })
+      expect(starts).toBe(1)
+      expect(interrupted).toBe(true)
+      expect(h.line("auth.role_check").at(-1)?.annotations).toMatchObject({ outcome: "not_started", errorCode: "start_timeout" })
+      expect(h.count({ route: "role_check", outcome: "not_started", reason: "start_timeout" })).toBe(1)
+    } finally {
+      clearTimeout(timer)
+      await Effect.runPromise(Deferred.succeed(release, undefined))
+      await pending
+    }
   })
 
   test("a role over an hour old starts a role check named after the check it replaces; a fresh one doesn't", async () => {

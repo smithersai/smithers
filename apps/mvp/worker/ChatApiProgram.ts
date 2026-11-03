@@ -370,7 +370,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
 
     /**
      * Starts `auth/RecheckRole` on its own Durable Object, one execution per session and the check it replaces, so one
-     * check of a session runs at a time; it never waits.
+     * check of a session runs at a time; session resolution bounds the start acknowledgment.
      */
     const roleChecks = Effect.gen(function* () {
       const runtime = yield* RuntimeContext

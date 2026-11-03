@@ -1,8 +1,8 @@
 ---
 title: Commit-time write authority
-status: completed
+status: in-progress
 area: access
-owner: Codex / final transaction liveness
+owner: Codex / write seam follow-ups
 updated: 2026-11-02
 links: []
 ---
@@ -411,3 +411,19 @@ before executing checks. No reservation was removed or stolen. All logs are in
 Full `pnpm typecheck` in apps/mvp passed (exit 0), including app, worker, infra and evals configs:
 `retro-liveness-typecheck-mini-7.log`, mini execution PID `88145`, slot 2. Tests and typecheck ran only on the mini.
 No coverage, production or external-review evidence is claimed; no local installation or repository copy was made.
+
+### Write seam follow-ups (2026-11-02)
+
+Three requested corrections, one commit each, red first; then rebase onto `main@origin`.
+No landing, pushing, review, published-migration edits or local installs/copies.
+Library catalog: existing Effect timeout/SQL, `@smthrs/flow` retries, and
+`@smthrs/integrations` GitHub permission reads; no new dependency.
+
+1. Role-check start: `SignIn.resolve` bounds its start acknowledgment to one second, cancels a
+   stalled start and logs/counts `start_timeout` before returning the live session.
+   Red: `/tmp/write-seam-1-red.log`, mini PID 91525 slot 2, lines 140–160:
+   `expected 'unbounded' to match object`, test line 609 (both stale and unconfirmed).
+   Counts: 58 passed, 3 failed, 0 skipped; the third failure was an existing test
+   comparing Postgres time with the mini's clock. That assertion now brackets the read
+   with Postgres timestamps. First green had 60 passed/1 clock failure; corrected green:
+   `/tmp/write-seam-1-green-2.log`, PID 95680 slot 2, 61 passed, 0 failed, 0 skipped.
