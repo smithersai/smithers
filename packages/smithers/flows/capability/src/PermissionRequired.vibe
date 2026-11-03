@@ -9,7 +9,7 @@
 
 import { Capability, EffectTier } from "./Capability.ts"
 import { capabilitySnapshot } from "./internal/capabilitySnapshot.ts"
-import { permissionMetaSnapshot } from "./internal/permissionMetaSnapshot.ts"
+import { permissionMetaSnapshot } from "./internal/permissionMetaSnapshot.vibe"
 
 const PermissionMeta = Schema.Record(Schema.String, Schema.Json)
 

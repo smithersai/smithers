@@ -40,7 +40,11 @@
     "./Capability": "./src/Capability.ts",
     "./Permission": "./src/Permission.ts",
     "./index": "./src/index.ts",
-    "./CapabilitySet": "./src/CapabilitySet.ts"
+    "./CapabilitySet": {
+      "types": "./.vibe/declarations/src/CapabilitySet.d.vibe.ts",
+      "vibelang-source": "./src/CapabilitySet.vibe",
+      "default": "./.vibelang/js/src/CapabilitySet.js"
+    }
   },
   "files": [
     "src/**/*.ts",

@@ -4,7 +4,6 @@
  * @since 1.0.0-rc.0
  */
 
-import { Option } from "effect"
 import { Capability } from "./Capability.ts"
 import {
   GrantStoreError,
@@ -24,7 +23,7 @@ import {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const decodePermissionError = (input: unknown): Option.Option<PermissionError> => {
+export const decodePermissionError = (input: unknown): Option<PermissionError> => {
   try {
     if (!isPermissionError(input)) return Option.none()
     switch (input._tag) {

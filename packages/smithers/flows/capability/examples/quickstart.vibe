@@ -5,7 +5,6 @@
  * @since 1.0.0
  */
 import { Capability, Permission } from "@smthrs/capability"
-import { Option } from "effect"
 
 /**
  * Reads one configured pattern into a rule, refusing text the grammar rejects
