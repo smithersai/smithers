@@ -20,7 +20,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import type { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { RunState } from "../RunState.vibe"
+import { RunState } from "../RunState.ts"
 
 /** Paged lookup retains only the matching record, including unexpected event types.
  * @category accessors

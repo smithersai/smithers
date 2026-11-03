@@ -27,7 +27,7 @@ import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WakeBus from "../src/WakeBus.vibe"
+import * as WakeBus from "../src/WakeBus.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({

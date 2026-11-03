@@ -39,7 +39,7 @@ import { Flow, Graph } from "@smthrs/flow"
 import { EngineEvent, Redaction } from "@smthrs/journal"
 import { Node, Planned } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Read from "./internal/ExecutionSnapshotRead.ts"
 import { RunState } from "./RunState.vibe"
@@ -280,7 +280,7 @@ export interface Service {
   readonly inspect: (
     runId: string,
     options?: { readonly afterSeq?: number; readonly limit?: number }
-  ) => Inspection!RunNotFound | RunStore.RunStoreError
+  ) => Effect.Effect<Inspection, RunNotFound | RunStore.RunStoreError>
   /**
    * Runs newest first, `limit` at a time (default 50, at most
    * {@link maximumListPage}), from `cursor`. `roots`, the default, keeps the
@@ -298,7 +298,7 @@ export interface Service {
       readonly runIds?: ReadonlyArray<string>
       readonly flows?: ReadonlyArray<string>
     }
-  ) => RunList!RunStore.RunStoreError
+  ) => Effect.Effect<RunList, RunStore.RunStoreError>
   /**
    * The run's flow and its payload exactly as the engine stored it: encoded
    * and unredacted. It exists to run the same flow again inside the engine,
@@ -306,7 +306,7 @@ export interface Service {
    */
   readonly payload: (
     runId: string
-  ) => { readonly flowName: string; readonly payload: unknown }!RunNotFound | RunStore.RunStoreError
+  ) => Effect.Effect<{ readonly flowName: string; readonly payload: unknown }, RunNotFound | RunStore.RunStoreError>
 }
 
 /**
@@ -623,19 +623,19 @@ const AttemptRow = Schema.Struct({
   outcome_json: Schema.NullOr(Schema.String)
 })
 
-schema EventRow {
-  seq: Read.Natural
-  event_type: Schema.NonEmptyString
-  emitted_at_ms: Read.Natural
-  payload_json: string
-}
+const EventRow = Schema.Struct({
+  seq: Read.Natural,
+  event_type: Schema.NonEmptyString,
+  emitted_at_ms: Read.Natural,
+  payload_json: Schema.String
+})
 
 const NodeScheduled = Schema.Struct({
   nodeId: Schema.NonEmptyString,
   kind: Schema.String,
   action: Schema.optionalKey(Schema.String)
 })
-schema NodeResult { preview: string; bytes: number; truncated: boolean }
+const NodeResult = Schema.Struct({ preview: Schema.String, bytes: Schema.Number, truncated: Schema.Boolean })
 const NodeSettled = Schema.Struct({
   nodeId: Schema.NonEmptyString,
   outcome: Schema.Literals(["built", "clean", "failed", "skipped", "deferred"]),
@@ -807,19 +807,17 @@ export interface Options {
  * @category constructors
  * @since 1.0.0
  */
-export const make = (options: Options = {}): Service!never!SqlClient.SqlClient =>
-  effect {
-    const sql = try SqlClient.SqlClient
+export const make = (options: Options = {}): Effect.Effect<Service, never, SqlClient.SqlClient> =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
     const schemas = options.flows === undefined ? noSchemas : schemasOf(options.flows)
     const decode = <S extends Schema.Top>(schema: S, rows: ReadonlyArray<unknown>) =>
       Effect.forEach(rows, (row) => Read.decode(schema, row))
 
     const runRow = (runId: string) =>
-      Dialect.query(sql, `SELECT ${runColumns} FROM flows_runs r WHERE r.run_id = ?`, [runId])
-      |> Effect.flatMap(%, (rows) => decode(RunRow, rows))
-      |> Effect.flatMap(
-        %,
-        ([row]) => row === undefined ? Effect.fail(new RunNotFound({ runId })) : Effect.succeed(row)
+      Dialect.query(sql, `SELECT ${runColumns} FROM flows_runs r WHERE r.run_id = ?`, [runId]).pipe(
+        Effect.flatMap((rows) => decode(RunRow, rows)),
+        Effect.flatMap(([row]) => row === undefined ? Effect.fail(new RunNotFound({ runId })) : Effect.succeed(row))
       )
 
     const inspect: Service["inspect"] = (runId, options = {}) => {
@@ -829,33 +827,33 @@ export const make = (options: Options = {}): Service!never!SqlClient.SqlClient =
         "RunInspection.inspect",
         Dialect.readTransaction(
           sql,
-          effect {
-            const row = try runRow(runId)
-            const attempts = try (Dialect.query(
+          Effect.gen(function*() {
+            const row = yield* runRow(runId)
+            const attempts = yield* Dialect.query(
               sql,
               `SELECT step_key_digest, attempt, state, started_at_ms, finished_at_ms, error_json, outcome_json
             FROM flows_attempts WHERE run_id = ? ORDER BY started_at_ms, step_key_digest, attempt`,
               [runId]
-            ) |> Effect.flatMap(%, (rows) => decode(AttemptRow, rows)))
-            const nodes = try (Dialect.query(
+            ).pipe(Effect.flatMap((rows) => decode(AttemptRow, rows)))
+            const nodes = yield* Dialect.query(
               sql,
               `SELECT seq, event_type, emitted_at_ms, payload_json FROM flows_journal_events
             WHERE run_id = ? AND event_type IN (?, ?) ORDER BY seq`,
               [runId, EngineEvent.nodeEventTypes.nodeScheduled, EngineEvent.nodeEventTypes.nodeSettled]
-            ) |> Effect.flatMap(%, (rows) => decode(EventRow, rows)))
-            const children = try (Dialect.query(
+            ).pipe(Effect.flatMap((rows) => decode(EventRow, rows)))
+            const children = yield* Dialect.query(
               sql,
               `SELECT ${runColumns} FROM flows_runs r
             WHERE r.parent_run_id = ? OR r.run_id IN (SELECT child_id FROM flows_run_parents WHERE parent_id = ?)
             ORDER BY r.created_at_ms, r.run_id LIMIT ${maximumChildren}`,
               [runId, runId]
-            ) |> Effect.flatMap(%, (rows) => decode(RunRow, rows)))
-            const page = try (Dialect.query(
+            ).pipe(Effect.flatMap((rows) => decode(RunRow, rows)))
+            const page = yield* Dialect.query(
               sql,
               `SELECT seq, event_type, emitted_at_ms, payload_json FROM flows_journal_events
             WHERE run_id = ? AND seq > ? ORDER BY seq LIMIT ${limit + 1}`,
               [runId, afterSeq]
-            ) |> Effect.flatMap(%, (rows) => decode(EventRow, rows)))
+            ).pipe(Effect.flatMap((rows) => decode(EventRow, rows)))
 
             const attemptsOf = new Map<string, Array<typeof AttemptRow.Type>>()
             for (const attempt of attempts) {
@@ -894,9 +892,9 @@ export const make = (options: Options = {}): Service!never!SqlClient.SqlClient =
                 hasMore: page.length > limit
               }
             } satisfies Inspection
-          }
+          })
         )
-      ) |> rethrowNotFound(%)
+      ).pipe(rethrowNotFound)
     }
 
     const list: Service["list"] = (options = {}) => {
@@ -904,15 +902,17 @@ export const make = (options: Options = {}): Service!never!SqlClient.SqlClient =
       const roots = options.roots ?? true
       return Read.boundary(
         "RunInspection.list",
-        effect {
-          const after = options.cursor === undefined ? undefined : (decodeCursor(options.cursor) catch effect (cause) => {
-            throw new RunStore.RunStoreError({
-              method: "RunInspection.list",
-              code: "invalid_run",
-              message: "run list cursor is malformed",
-              cause
-            })
-          })
+        Effect.gen(function*() {
+          const after = options.cursor === undefined ? undefined : yield* decodeCursor(options.cursor).pipe(
+            Effect.mapError((cause) =>
+              new RunStore.RunStoreError({
+                method: "RunInspection.list",
+                code: "invalid_run",
+                message: "run list cursor is malformed",
+                cause
+              })
+            )
+          )
           const { flows, runIds } = options
           const tooMany = () =>
             new RunStore.RunStoreError({
@@ -921,8 +921,8 @@ export const make = (options: Options = {}): Service!never!SqlClient.SqlClient =
               message: `at most ${maximumListPage} run ids and ${maximumListFlows} flows per list`,
               cause: null
             })
-          if (runIds !== undefined && runIds.length > maximumListPage) throw tooMany()
-          if (flows !== undefined && flows.length > maximumListFlows) throw tooMany()
+          if (runIds !== undefined && runIds.length > maximumListPage) return yield* tooMany()
+          if (flows !== undefined && flows.length > maximumListFlows) return yield* tooMany()
           if (runIds?.length === 0 || flows?.length === 0) return { runs: [], cursor: null } satisfies RunList
           const placeholders = (values: ReadonlyArray<string>) => values.map(() => "?").join(", ")
           // The flow's tag lives in the run's state, read the same way on either store.
@@ -941,14 +941,14 @@ export const make = (options: Options = {}): Service!never!SqlClient.SqlClient =
             ...(after === undefined ? [] : [after.createdAtMs, after.createdAtMs, after.runId])
           ]
           const where = conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`
-          const rows = try Dialect.readTransaction(
+          const rows = yield* Dialect.readTransaction(
             sql,
             Dialect.query(
               sql,
               `SELECT ${runColumns} FROM flows_runs r ${where}
             ORDER BY r.created_at_ms DESC, r.run_id DESC LIMIT ${limit + 1}`,
               values
-            ) |> Effect.flatMap(%, (rows) => decode(RunRow, rows))
+            ).pipe(Effect.flatMap((rows) => decode(RunRow, rows)))
           )
           const runs = rows.slice(0, limit).map(summaryOf)
           const last = runs[runs.length - 1]!
@@ -956,19 +956,20 @@ export const make = (options: Options = {}): Service!never!SqlClient.SqlClient =
             runs,
             cursor: rows.length > limit ? encodeCursor({ createdAtMs: last.createdAtMs, runId: last.runId }) : null
           } satisfies RunList
-        }
+        })
       )
     }
 
     const payload: Service["payload"] = (runId) =>
       Read.boundary(
         "RunInspection.payload",
-        Dialect.readTransaction(sql, runRow(runId))
-          |> Effect.map(%, (row) => ({ flowName: row.state_json.flowName, payload: row.state_json.payload }))
-      ) |> rethrowNotFound(%)
+        Dialect.readTransaction(sql, runRow(runId)).pipe(
+          Effect.map((row) => ({ flowName: row.state_json.flowName, payload: row.state_json.payload }))
+        )
+      ).pipe(rethrowNotFound)
 
     return { inspect, list, payload }
-  }
+  })
 
 /** Parsed JSON, or the text itself when it is not JSON. */
 const parseOr = (text: string): unknown => {
@@ -984,8 +985,8 @@ const parseOr = (text: string): unknown => {
  * its own error, which travels as that error's cause.
  */
 const rethrowNotFound = <A, R>(
-  effect: A!RunStore.RunStoreError!R
-): A!RunNotFound | RunStore.RunStoreError!R =>
+  effect: Effect.Effect<A, RunStore.RunStoreError, R>
+): Effect.Effect<A, RunNotFound | RunStore.RunStoreError, R> =>
   Effect.catch(effect, (error) => Effect.fail(error.cause instanceof RunNotFound ? error.cause : error))
 
 /**

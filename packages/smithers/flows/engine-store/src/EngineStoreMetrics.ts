@@ -17,10 +17,13 @@
  *
  * @since 0.1.0
  */
-import type * as Duration from "effect/Duration";
-import * as Effect from "effect/Effect";
-import type * as Exit from "effect/Exit";
-import * as Metric from "effect/Metric";
+
+import * as Cause from "effect/Cause"
+import type * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
+import type * as Exit from "effect/Exit"
+import * as Metric from "effect/Metric"
+
 /**
  * How an instrumented effect exited: `Success`, `Failure` (any non-interrupt
  * cause), or `Interrupt` (an interrupt-only cause — in this store that is the
@@ -29,14 +32,30 @@ import * as Metric from "effect/Metric";
  * @category models
  * @since 0.1.0
  */
-export type ExitTag = "Success" | "Failure" | "Interrupt";
+export type ExitTag = "Success" | "Failure" | "Interrupt"
+
+/** Rewrites an outcome tag (`HeartbeatFresh`) as an attribute value (`heartbeat_fresh`). */
+const attributeValue = (tag: string): string => tag.replace(/(?<=[a-z0-9])(?=[A-Z])/g, "_").toLowerCase()
+
+/** Builds the tag-keyed record of attributed counter views for one operation. */
+const byOutcome = <const Tags extends ReadonlyArray<string>>(
+  metric: Metric.Metric<number, Metric.CounterState<number>>,
+  attributes: Readonly<Record<string, string>>,
+  tags: Tags
+): { readonly [Tag in Tags[number]]: Metric.Metric<number, Metric.CounterState<number>> } =>
+  Object.fromEntries(
+    tags.map((tag) => [tag, Metric.withAttributes(metric, { ...attributes, outcome: attributeValue(tag) })])
+  ) as { [Tag in Tags[number]]: Metric.Metric<number, Metric.CounterState<number>> }
+
 /**
  * Classifies an exit for an {@link ExitTag}-keyed counter record.
  *
  * @category accessors
  * @since 0.1.0
  */
-export declare const exitTag: <A, E>(exit: Exit.Exit<A, E>) => ExitTag;
+export const exitTag = <A, E>(exit: Exit.Exit<A, E>): ExitTag =>
+  exit._tag === "Success" ? "Success" : Cause.hasInterruptsOnly(exit.cause) ? "Interrupt" : "Failure"
+
 /**
  * Observes an effect with a duration timer and an exit-outcome counter.
  *
@@ -50,10 +69,23 @@ export declare const exitTag: <A, E>(exit: Exit.Exit<A, E>) => ExitTag;
  * @category combinators
  * @since 0.1.0
  */
-export declare const observe: (instruments: {
-    readonly timer: Metric.Histogram<Duration.Duration>;
-    readonly counter: { readonly [Tag in ExitTag]: Metric.Metric<number, Metric.CounterState<number>>; };
-}) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+export const observe = (instruments: {
+  readonly timer: Metric.Histogram<Duration.Duration>
+  readonly counter: { readonly [Tag in ExitTag]: Metric.Metric<number, Metric.CounterState<number>> }
+}) =>
+<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  effect.pipe(
+    Effect.trackDuration(instruments.timer),
+    Effect.onExit((exit) => {
+      const tag = exitTag(exit)
+      return Effect.annotateCurrentSpan({ outcome: attributeValue(tag) }).pipe(
+        Effect.andThen(Metric.update(instruments.counter[tag], 1))
+      )
+    })
+  )
+
+const exitTags = ["Success", "Failure", "Interrupt"] as const
+
 /**
  * Counter over durable action dispatches through
  * `internal/ActionPersistence`, dimensioned by exit `outcome` (`success`,
@@ -63,7 +95,10 @@ export declare const observe: (instruments: {
  * @category metrics
  * @since 0.1.0
  */
-export declare const dispatches: Metric.Counter<number>;
+export const dispatches = Metric.counter("flows_engine_dispatches", {
+  description: "Durable action dispatches by exit outcome"
+})
+
 /**
  * Latency histogram over durable action dispatches, from admission through
  * settlement (cache verification, execution, copy-back, and the terminal
@@ -72,18 +107,18 @@ export declare const dispatches: Metric.Counter<number>;
  * @category metrics
  * @since 0.1.0
  */
-export declare const dispatchDuration: Metric.Histogram<Duration.Duration>;
+export const dispatchDuration = Metric.timer("flows_engine_dispatch_duration", {
+  description: "Durable action dispatch duration"
+})
+
 /**
  * `dispatches` views keyed by {@link ExitTag}.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const dispatch: {
-    readonly Failure: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Interrupt: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Success: Metric.Metric<number, Metric.CounterState<number>>;
-};
+export const dispatch = byOutcome(dispatches, {}, exitTags)
+
 /**
  * Counter over scheduler admission passes that launched work. The
  * completion-driven scheduler re-computes the ready set after every terminal
@@ -94,7 +129,10 @@ export declare const dispatch: {
  * @category metrics
  * @since 0.1.0
  */
-export declare const schedulerAdmissions: Metric.Counter<number>;
+export const schedulerAdmissions = Metric.counter("flows_engine_scheduler_admissions", {
+  description: "Plan scheduler admission passes that launched at least one dispatch"
+})
+
 /**
  * Latency histogram over one scheduler dispatch, admission through terminal
  * event: measurement, keying, the durable-action seam, and every rebase turn
@@ -103,7 +141,10 @@ export declare const schedulerAdmissions: Metric.Counter<number>;
  * @category metrics
  * @since 0.1.0
  */
-export declare const schedulerDispatchDuration: Metric.Histogram<Duration.Duration>;
+export const schedulerDispatchDuration = Metric.timer("flows_engine_scheduler_dispatch_duration", {
+  description: "Duration of one scheduler dispatch, admission through terminal event"
+})
+
 /**
  * Counter over plan node settlements, dimensioned by the scheduler `outcome`
  * (`built`, `clean`, `failed`, `skipped`, or `deferred`) — the per-node
@@ -112,20 +153,22 @@ export declare const schedulerDispatchDuration: Metric.Histogram<Duration.Durati
  * @category metrics
  * @since 0.1.0
  */
-export declare const schedulerNodes: Metric.Counter<number>;
+export const schedulerNodes = Metric.counter("flows_engine_scheduler_nodes", {
+  description: "Plan node settlements by evaluation outcome"
+})
+
 /**
  * `schedulerNodes` views keyed by `PlanScheduler.Outcome`.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const node: {
-    readonly built: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly clean: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly deferred: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly failed: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly skipped: Metric.Metric<number, Metric.CounterState<number>>;
-};
+export const node = byOutcome(
+  schedulerNodes,
+  {},
+  ["built", "clean", "failed", "skipped", "deferred"] as const
+)
+
 /**
  * Counter over isolated workspace executions (`WorkspaceSandbox.execute`),
  * dimensioned by exit `outcome`. An `Invalidated` verdict is a `success`
@@ -134,25 +177,28 @@ export declare const node: {
  * @category metrics
  * @since 0.1.0
  */
-export declare const sandboxExecutions: Metric.Counter<number>;
+export const sandboxExecutions = Metric.counter("flows_engine_sandbox_executions", {
+  description: "Isolated workspace executions by exit outcome"
+})
+
 /**
  * `sandboxExecutions` views keyed by {@link ExitTag}.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const sandboxExecution: {
-    readonly Failure: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Interrupt: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Success: Metric.Metric<number, Metric.CounterState<number>>;
-};
+export const sandboxExecution = byOutcome(sandboxExecutions, {}, exitTags)
+
 /**
  * Latency histogram over isolated workspace executions.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const sandboxExecutionDuration: Metric.Histogram<Duration.Duration>;
+export const sandboxExecutionDuration = Metric.timer("flows_engine_sandbox_execution_duration", {
+  description: "Isolated workspace execution duration"
+})
+
 /**
  * Counter over sandbox materializations (`WorkspaceSandbox.materialize` —
  * the one host write), dimensioned by exit `outcome`.
@@ -160,25 +206,28 @@ export declare const sandboxExecutionDuration: Metric.Histogram<Duration.Duratio
  * @category metrics
  * @since 0.1.0
  */
-export declare const sandboxMaterializations: Metric.Counter<number>;
+export const sandboxMaterializations = Metric.counter("flows_engine_sandbox_materializations", {
+  description: "Sandbox copy-back materializations by exit outcome"
+})
+
 /**
  * `sandboxMaterializations` views keyed by {@link ExitTag}.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const materialization: {
-    readonly Failure: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Interrupt: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Success: Metric.Metric<number, Metric.CounterState<number>>;
-};
+export const materialization = byOutcome(sandboxMaterializations, {}, exitTags)
+
 /**
  * Latency histogram over sandbox materializations.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const materializationDuration: Metric.Histogram<Duration.Duration>;
+export const materializationDuration = Metric.timer("flows_engine_sandbox_materialization_duration", {
+  description: "Sandbox copy-back materialization duration"
+})
+
 /**
  * Counter over copy-back compare-and-set refusals: the preflight found host
  * state that moved after the transaction's base snapshot. The engine answers
@@ -188,7 +237,10 @@ export declare const materializationDuration: Metric.Histogram<Duration.Duration
  * @category metrics
  * @since 0.1.0
  */
-export declare const materializationConflicts: Metric.Counter<number>;
+export const materializationConflicts = Metric.counter("flows_engine_sandbox_conflicts", {
+  description: "Sandbox copy-back compare-and-set refusals"
+})
+
 /**
  * Counter over action attempts interrupted because the engine's store was
  * unavailable while the attempt was admitted, run or recorded: a lost
@@ -199,7 +251,10 @@ export declare const materializationConflicts: Metric.Counter<number>;
  * @category metrics
  * @since 1.0.0
  */
-export declare const storageUnavailable: Metric.Counter<number>;
+export const storageUnavailable = Metric.counter("flows_engine_storage_unavailable", {
+  description: "Action attempts interrupted because the engine store was unavailable"
+})
+
 /**
  * Counter over hosted drives that spent their budget (`EngineStore.drive`'s
  * `budgetMs`) and yielded at a step boundary. Each one releases its run for a
@@ -209,7 +264,11 @@ export declare const storageUnavailable: Metric.Counter<number>;
  * @category metrics
  * @since 1.0.0
  */
-export declare const driveYields: Metric.Counter<number>;
+export const driveYields = Metric.counter("flows_engine_drive_yields", {
+  description: "Hosted drives that spent their budget and yielded at a step boundary",
+  incremental: true
+})
+
 /**
  * Counter over hosted drives that drove their run again themselves: it parked
  * on a wake due within the drive's `holdMs` (`EngineStore.drive`), such as a
@@ -219,7 +278,11 @@ export declare const driveYields: Metric.Counter<number>;
  * @category metrics
  * @since 1.0.0
  */
-export declare const heldDrives: Metric.Counter<number>;
+export const heldDrives = Metric.counter("flows_engine_held_drives", {
+  description: "Hosted drives that drove their run again for a wake due soon after it parked",
+  incremental: true
+})
+
 /**
  * Counter over rounds that read their replay seed: the run's attempt rows and
  * journal entries, read at once before a resumed run replays them, so a
@@ -228,7 +291,11 @@ export declare const heldDrives: Metric.Counter<number>;
  * @category metrics
  * @since 1.0.0
  */
-export declare const replaySeeds: Metric.Counter<number>;
+export const replaySeeds = Metric.counter("flows_engine_replay_seeds", {
+  description: "Rounds that read their run's attempt rows and journal entries at once to replay from",
+  incremental: true
+})
+
 /**
  * Counter over retries from a step (`FlowRuntime.retryFrom`), dimensioned by
  * `outcome`: `admitted` for a new run, `joined` for a repeated request,
@@ -238,7 +305,11 @@ export declare const replaySeeds: Metric.Counter<number>;
  * @category metrics
  * @since 1.0.0
  */
-export declare const retriesFrom: Metric.Counter<number>;
+export const retriesFrom = Metric.counter("flows_engine_retries_from", {
+  description: "Retries from a step by outcome",
+  incremental: true
+})
+
 /**
  * Counter over the source attempts retries from a step copied into their new
  * runs, which replay instead of executing.
@@ -246,7 +317,11 @@ export declare const retriesFrom: Metric.Counter<number>;
  * @category metrics
  * @since 1.0.0
  */
-export declare const retrySeededAttempts: Metric.Counter<number>;
+export const retrySeededAttempts = Metric.counter("flows_engine_retry_seeded_attempts", {
+  description: "Source step attempts copied into retries from a step, to replay",
+  incremental: true
+})
+
 /**
  * Counter over step-boundary settlements at the dispatch seam, dimensioned by
  * `outcome`: `clean` evidence, an `expected`-mode `deviation`, or a hard
@@ -256,19 +331,22 @@ export declare const retrySeededAttempts: Metric.Counter<number>;
  * @category metrics
  * @since 0.1.0
  */
-export declare const boundarySettlements: Metric.Counter<number>;
+export const boundarySettlements = Metric.counter("flows_engine_boundary_settlements", {
+  description: "Step boundary settlements by outcome"
+})
+
 /**
  * `boundarySettlements` views keyed by settlement classification.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const boundarySettlement: {
-    readonly Clean: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Deviation: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Refused: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Violation: Metric.Metric<number, Metric.CounterState<number>>;
-};
+export const boundarySettlement = byOutcome(
+  boundarySettlements,
+  {},
+  ["Clean", "Deviation", "Violation", "Refused"] as const
+)
+
 /**
  * Counter over the EFFECTIVE step-boundary cache decisions at the dispatch
  * seam, dimensioned by `outcome`. `flows_step_cache_lookups` counts raw row
@@ -290,21 +368,22 @@ export declare const boundarySettlement: {
  * @category metrics
  * @since 0.1.0
  */
-export declare const stepCacheDecisions: Metric.Counter<number>;
+export const stepCacheDecisions = Metric.counter("flows_engine_step_cache_decisions", {
+  description: "Effective step-boundary cache decisions at the dispatch seam"
+})
+
 /**
  * `stepCacheDecisions` views keyed by decision.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const stepCacheDecision: {
-    readonly Miss: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly ReplayFailed: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly StaleReadSet: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Unmeasurable: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly UnverifiableEvidence: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly VerifiedHit: Metric.Metric<number, Metric.CounterState<number>>;
-};
+export const stepCacheDecision = byOutcome(
+  stepCacheDecisions,
+  {},
+  ["VerifiedHit", "Miss", "UnverifiableEvidence", "Unmeasurable", "StaleReadSet", "ReplayFailed"] as const
+)
+
 /**
  * Counter over the run driver's claim-and-activate decisions, dimensioned by
  * `outcome`. These are the engine-level decisions taken BEFORE or AFTER the
@@ -316,27 +395,32 @@ export declare const stepCacheDecision: {
  * @category metrics
  * @since 0.1.0
  */
-export declare const claims: Metric.Counter<number>;
+export const claims = Metric.counter("flows_engine_claims", {
+  description: "Run driver claim-and-activate decisions by outcome"
+})
+
 /**
  * `claims` views keyed by driver decision.
  *
  * @category metrics
  * @since 0.1.0
  */
-export declare const claim: {
-    readonly Activated: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly ActivationLost: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly ClaimLost: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly HeartbeatFresh: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly StealRefusedOwnerAlive: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Terminal: Metric.Metric<number, Metric.CounterState<number>>;
-};
+export const claim = byOutcome(
+  claims,
+  {},
+  ["Activated", "Terminal", "HeartbeatFresh", "StealRefusedOwnerAlive", "ClaimLost", "ActivationLost"] as const
+)
+
 /** Confirmed ownership heartbeat receipts, by outcome (completed, skipped, failed).
  * External receipts are bounded and never block the ownership writer.
  * @category metrics
  * @since 1.0.0
  */
-export declare const heartbeatReceipts: Metric.Counter<number>;
+export const heartbeatReceipts = Metric.counter("flows_engine_heartbeat_receipts", {
+  description: "External run heartbeat receipts by outcome",
+  incremental: true
+})
+
 /**
  * Counter over the log records action attempt bodies emitted at or above the
  * ambient minimum level, dimensioned by what became of each (`outcome`):
@@ -350,18 +434,18 @@ export declare const heartbeatReceipts: Metric.Counter<number>;
  * @category metrics
  * @since 1.0.0
  */
-export declare const stepLogs: Metric.Counter<number>;
+export const stepLogs = Metric.counter("flows_engine_step_logs", {
+  description: "Log records action attempt bodies emitted, by outcome"
+})
+
 /**
  * `stepLogs` views keyed by outcome.
  *
  * @category metrics
  * @since 1.0.0
  */
-export declare const stepLog: {
-    readonly DroppedFlush: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly DroppedJournal: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly DroppedLimit: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly DroppedQueue: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Failed: Metric.Metric<number, Metric.CounterState<number>>;
-    readonly Journaled: Metric.Metric<number, Metric.CounterState<number>>;
-};
+export const stepLog = byOutcome(
+  stepLogs,
+  {},
+  ["Journaled", "DroppedLimit", "DroppedQueue", "DroppedJournal", "DroppedFlush", "Failed"] as const
+)

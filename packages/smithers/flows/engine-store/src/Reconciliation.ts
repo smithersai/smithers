@@ -115,8 +115,8 @@ export type Verdict = typeof Verdict.Type
  * @category models
  */
 export interface Service {
-  readonly onDeviation: (deviation: Deviation) => Verdict!!
-  readonly onConflict: (conflict: Conflict) => Verdict!!
+  readonly onDeviation: (deviation: Deviation) => Effect.Effect<Verdict>
+  readonly onConflict: (conflict: Conflict) => Effect.Effect<Verdict>
 }
 
 /**

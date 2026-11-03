@@ -105,7 +105,7 @@ export interface Service {
    */
   readonly publish: (
     digests: ReadonlyArray<string>
-  ) => void!ArtifactPublicationFailed!Crypto.Crypto
+  ) => Effect.Effect<void, ArtifactPublicationFailed, Crypto.Crypto>
   /**
    * Fetches the digests this host is missing from the shared tier and writes
    * them into the local store, reporting whether every digest is now locally
@@ -117,7 +117,7 @@ export interface Service {
    */
   readonly hydrate: (
     digests: ReadonlyArray<string>
-  ) => boolean!never!Crypto.Crypto
+  ) => Effect.Effect<boolean, never, Crypto.Crypto>
 }
 
 /**
@@ -175,85 +175,86 @@ export const make = (options: {
     cause?: ArtifactStore.ArtifactStoreError | ArtifactStore.ArtifactMissing | ArtifactStore.ArtifactCorruption
   ) => new ArtifactPublicationFailed({ code: "artifact_publication_failed", digests, message, cause })
   return {
-    publish: effect (digests) =>
-      try withSpan(
-        effect {
-          if (digests.length === 0) return
-          const missing = remote.findMissing(digests) catch effect (cause) => {
-            throw publicationFailed(digests, "the shared tier refused a probe", cause)
-          }
-          for (const digest of missing) {
-            const bytes = try (local.get(digest)
-              |> Effect.mapError(%, (cause) =>
-                // The blob is referenced by evidence this host just produced, so
-                // it should be in this host's own store. If it is not, the
-                // evidence is not publishable — and saying so is far better than
-                // publishing an entry nobody can replay.
-                publicationFailed([digest], "this host cannot read the artifact it recorded", cause)))
-            remote.put(bytes) catch effect (cause) => {
-              throw publicationFailed([digest], "the shared tier refused an upload", cause)
-            }
-          }
-          if (missing.length === 0) return
-          // The confirming re-probe is not paranoia: a tier that accepted the
-          // upload but did not durably store it is exactly the state that makes a
-          // published entry unreplayable, and it is cheap to rule out — one
-          // batched round trip over the set we just wrote.
-          const stillMissing = remote.findMissing(missing) catch effect (cause) => {
-            throw publicationFailed(missing, "the shared tier refused a probe", cause)
-          }
-          if (stillMissing.length > 0) {
-            throw publicationFailed(stillMissing, "the shared tier did not retain the uploaded artifacts")
-          }
-        },
-        "ArtifactSync.publish"
-      ),
-    hydrate: effect (digests) =>
-      try withSpan(
-        effect {
-          // Every refusal below falls back to re-executing the step, which is
-          // correct and silent. The warning is the operator's only signal that a
-          // tier stopped serving replays.
-          const fallBack = (message: string, digests: ReadonlyArray<string>) => (cause: { readonly message: string }) =>
-            Effect.logWarning(`artifact hydration falls back to re-execution: ${message}: ${digests.join(", ")}`)
-            |> Effect.annotateLogs({ reason: cause.message })(%)
-          const missing = try (local.findMissing(digests)
-            |> Effect.tapError(%, fallBack("the local tier refused a probe", digests))
-            |> Effect.option(%))
-          if (missing._tag === "None") return false
-          if (downloadPolicy !== "all") {
-            if (missing.value.length === 0) return true
-            // One batched probe, no body transfer: the answer these policies owe
-            // the caller is "can this replay be satisfied", and `findMissing`
-            // answers exactly that. A tier that refuses the probe is
-            // indistinguishable from one that holds nothing, so the replay is
-            // refused either way.
-            const elsewhere = try (remote.findMissing(missing.value)
-              |> Effect.tapError(%, fallBack("the shared tier refused a probe", missing.value))
-              |> Effect.option(%))
-            return elsewhere._tag === "Some" && elsewhere.value.length === 0
-          }
-          for (const digest of missing.value) {
-            // Read-through, one artifact at a time and only on demand: the remote
-            // read is digest-verified by `RemoteArtifacts`, and the local `put`
-            // re-addresses the bytes, so a tier serving wrong content cannot get
-            // them written into this workspace.
-            const written = try (remote.get(digest)
-              |> Effect.flatMap(%, (bytes) => local.put(bytes))
-              // A custom tier may skip that verification; the address `put`
-              // returned is the proof the requested blob is now local.
-              |> Effect.flatMap(%, (address) =>
-                address === digest ?
-                  Effect.void :
-                  Effect.fail({ message: `the shared tier served the bytes of ${address}` }))
-              |> Effect.tapError(%, fallBack("the artifact could not be fetched", [digest]))
-              |> Effect.option(%))
-            if (written._tag === "None") return false
-          }
-          return true
-        },
-        "ArtifactSync.hydrate"
+    publish: Effect.fn("ArtifactSync.publish")(function*(digests) {
+      if (digests.length === 0) return
+      const missing = yield* remote.findMissing(digests).pipe(
+        Effect.mapError((cause) => publicationFailed(digests, "the shared tier refused a probe", cause))
       )
+      for (const digest of missing) {
+        const bytes = yield* local.get(digest).pipe(
+          Effect.mapError((cause) =>
+            // The blob is referenced by evidence this host just produced, so
+            // it should be in this host's own store. If it is not, the
+            // evidence is not publishable — and saying so is far better than
+            // publishing an entry nobody can replay.
+            publicationFailed([digest], "this host cannot read the artifact it recorded", cause)
+          )
+        )
+        yield* remote.put(bytes).pipe(
+          Effect.mapError((cause) => publicationFailed([digest], "the shared tier refused an upload", cause))
+        )
+      }
+      if (missing.length === 0) return
+      // The confirming re-probe is not paranoia: a tier that accepted the
+      // upload but did not durably store it is exactly the state that makes a
+      // published entry unreplayable, and it is cheap to rule out — one
+      // batched round trip over the set we just wrote.
+      const stillMissing = yield* remote.findMissing(missing).pipe(
+        Effect.mapError((cause) => publicationFailed(missing, "the shared tier refused a probe", cause))
+      )
+      if (stillMissing.length > 0) {
+        return yield* Effect.fail(
+          publicationFailed(stillMissing, "the shared tier did not retain the uploaded artifacts")
+        )
+      }
+    }),
+    hydrate: Effect.fn("ArtifactSync.hydrate")(function*(digests) {
+      // Every refusal below falls back to re-executing the step, which is
+      // correct and silent. The warning is the operator's only signal that a
+      // tier stopped serving replays.
+      const fallBack = (message: string, digests: ReadonlyArray<string>) => (cause: { readonly message: string }) =>
+        Effect.logWarning(`artifact hydration falls back to re-execution: ${message}: ${digests.join(", ")}`).pipe(
+          Effect.annotateLogs({ reason: cause.message })
+        )
+      const missing = yield* local.findMissing(digests).pipe(
+        Effect.tapError(fallBack("the local tier refused a probe", digests)),
+        Effect.option
+      )
+      if (missing._tag === "None") return false
+      if (downloadPolicy !== "all") {
+        if (missing.value.length === 0) return true
+        // One batched probe, no body transfer: the answer these policies owe
+        // the caller is "can this replay be satisfied", and `findMissing`
+        // answers exactly that. A tier that refuses the probe is
+        // indistinguishable from one that holds nothing, so the replay is
+        // refused either way.
+        const elsewhere = yield* remote.findMissing(missing.value).pipe(
+          Effect.tapError(fallBack("the shared tier refused a probe", missing.value)),
+          Effect.option
+        )
+        return elsewhere._tag === "Some" && elsewhere.value.length === 0
+      }
+      for (const digest of missing.value) {
+        // Read-through, one artifact at a time and only on demand: the remote
+        // read is digest-verified by `RemoteArtifacts`, and the local `put`
+        // re-addresses the bytes, so a tier serving wrong content cannot get
+        // them written into this workspace.
+        const written = yield* remote.get(digest).pipe(
+          Effect.flatMap((bytes) => local.put(bytes)),
+          // A custom tier may skip that verification; the address `put`
+          // returned is the proof the requested blob is now local.
+          Effect.flatMap((address) =>
+            address === digest ?
+              Effect.void :
+              Effect.fail({ message: `the shared tier served the bytes of ${address}` })
+          ),
+          Effect.tapError(fallBack("the artifact could not be fetched", [digest])),
+          Effect.option
+        )
+        if (written._tag === "None") return false
+      }
+      return true
+    })
   }
 }
 
@@ -268,17 +269,17 @@ export const make = (options: {
  * @category layers
  */
 export const layer = <E, R>(
-  remote: ArtifactStore.Service!E!R,
+  remote: Effect.Effect<ArtifactStore.Service, E, R>,
   options?: { readonly downloadPolicy?: DownloadPolicy | undefined } | undefined
 ): Layer.Layer<ArtifactSync, E, ArtifactStore.ArtifactStore | R> =>
   Layer.effect(ArtifactSync)(
-    effect {
-      const local = try ArtifactStore.ArtifactStore
-      const shared = try remote
+    Effect.gen(function*() {
+      const local = yield* ArtifactStore.ArtifactStore
+      const shared = yield* remote
       return make({
         local,
         remote: shared,
         ...(options?.downloadPolicy === undefined ? {} : { downloadPolicy: options.downloadPolicy })
       })
-    }
+    })
   )

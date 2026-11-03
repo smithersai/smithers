@@ -19,7 +19,14 @@
  *
  * @since 0.1.0
  */
-import * as Effect from "effect/Effect";
+
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as RcMap from "effect/RcMap"
+import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
+
 /**
  * The single operation the admission mutex exposes: run something while
  * holding a key's exclusive permit.
@@ -32,13 +39,16 @@ import * as Effect from "effect/Effect";
  * @category services
  */
 export interface Service {
-    /**
-     * Runs `effect` while holding this process's exclusive permit for `key`.
-     * Concurrent same-key callers wait; the permit is released on any exit,
-     * including interruption.
-     */
-    readonly withPermit: (key: string) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+  /**
+   * Runs `effect` while holding this process's exclusive permit for `key`.
+   * Concurrent same-key callers wait; the permit is released on any exit,
+   * including interruption.
+   */
+  readonly withPermit: (
+    key: string
+  ) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
+
 /**
  * Constructs the keyed admission mutex synchronously.
  *
@@ -49,4 +59,18 @@ export interface Service {
  * @since 0.1.0
  * @category constructors
  */
-export declare const makeUnsafe: () => Service;
+export const makeUnsafe = (): Service => {
+  // One layer identity per incarnation; each operation borrows its owner
+  // through a shared memo map, so the last operation releases the RcMap.
+  const Locks = Context.Service<RcMap.RcMap<string, Semaphore.Semaphore>>("AttemptAdmission/Locks")
+  const layer = Layer.effect(Locks, RcMap.make({ lookup: (_key: string) => Semaphore.make(1) }))
+  const owners = Layer.makeMemoMapUnsafe()
+  return {
+    withPermit: (key) => (effect) =>
+      Effect.scoped(Effect.gen(function*() {
+        const services = yield* Layer.buildWithMemoMap(layer, owners, yield* Scope.Scope)
+        const lock = yield* RcMap.get(Context.get(services, Locks), key)
+        return yield* lock.withPermit(effect)
+      }))
+  }
+}

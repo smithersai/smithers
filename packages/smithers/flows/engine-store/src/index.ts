@@ -14,13 +14,13 @@ export * as ArtifactGc from "./ArtifactGc.ts"
  * @since 0.1.0
  * @category services
  */
-export * as ArtifactSync from "./ArtifactSync.vibe"
+export * as ArtifactSync from "./ArtifactSync.ts"
 
 /**
  * @since 0.1.0
  * @category services
  */
-export * as CacheSync from "./CacheSync.vibe"
+export * as CacheSync from "./CacheSync.ts"
 
 /**
  * @since 0.1.0
@@ -44,7 +44,7 @@ export * as EngineStore from "./EngineStore.ts"
  * @since 0.1.0
  * @category metrics
  */
-export * as EngineStoreMetrics from "./EngineStoreMetrics.vibe"
+export * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
 
 /**
  * Public engine observation exports.
@@ -60,7 +60,7 @@ export * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
  * @since 1.0.0
  * @category services
  */
-export * as RunChangeFeed from "./RunChangeFeed.vibe"
+export * as RunChangeFeed from "./RunChangeFeed.ts"
 
 /**
  * One run as a person debugging it reads it: redacted, bounded values, steps,
@@ -69,7 +69,7 @@ export * as RunChangeFeed from "./RunChangeFeed.vibe"
  * @since 1.0.0
  * @category services
  */
-export * as RunInspection from "./RunInspection.vibe"
+export * as RunInspection from "./RunInspection.ts"
 
 /**
  * @since 0.1.0
@@ -97,7 +97,7 @@ export * as PlanScheduler from "./PlanScheduler.ts"
  * @since 0.1.0
  * @category services
  */
-export * as Reconciliation from "./Reconciliation.vibe"
+export * as Reconciliation from "./Reconciliation.ts"
 
 /**
  * @since 0.1.0
@@ -109,7 +109,7 @@ export * as Selection from "./Selection.ts"
  * @since 0.1.0
  * @category services
  */
-export * as SelectionStore from "./SelectionStore.vibe"
+export * as SelectionStore from "./SelectionStore.ts"
 
 /**
  * @since 0.1.0
@@ -127,7 +127,7 @@ export * as DeferredClockFold from "./DeferredClockFold.ts"
  * @category folds
  * @since 1.0.0
  */
-export * as StepCacheFold from "./StepCacheFold.vibe"
+export * as StepCacheFold from "./StepCacheFold.ts"
 
 /**
  * @since 0.1.0
@@ -139,13 +139,13 @@ export * as StepSandbox from "./StepSandbox.ts"
  * @since 0.1.0
  * @category services
  */
-export * as WakeBus from "./WakeBus.vibe"
+export * as WakeBus from "./WakeBus.ts"
 
 /**
  * @since 0.1.0
  * @category services
  */
-export * as WorkspaceSandbox from "./WorkspaceSandbox.vibe"
+export * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
 
 /**
  * @since 0.1.0
@@ -163,19 +163,19 @@ export * as OwnerIdentity from "./OwnerIdentity.ts"
  * @since 1.0.0
  * @category services
  */
-export * as ReplayOnly from "./ReplayOnly.vibe"
+export * as ReplayOnly from "./ReplayOnly.ts"
 
 /**
  * @since 1.0.0
  * @category services
  */
-export * as StepLogs from "./StepLogs.vibe"
+export * as StepLogs from "./StepLogs.ts"
 
 /**
  * @since 0.1.0
  * @category schemas
  */
-export * as RunState from "./RunState.vibe"
+export * as RunState from "./RunState.ts"
 
 /**
  * @since 0.1.0
