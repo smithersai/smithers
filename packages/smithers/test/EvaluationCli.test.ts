@@ -180,7 +180,7 @@ describe("evaluation CLI", () => {
       ["agent/agent", "../agent/regression/agent.eval.ts"],
       [
         "review-seeded-bugs/review-seeded-bugs",
-        "../../../.smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.ts"
+        "../../../.smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.vibe"
       ]
     ] as const
     for (const [name, source] of shipped) {

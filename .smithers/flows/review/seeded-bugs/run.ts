@@ -42,12 +42,12 @@ const liveSeats = () => NativeEquipment.layerSeatResolver(process.env).pipe(
   Layer.provide(FetchHttpClient.layer)
 );
 import Review from "../flow.ts";
-import { layerMemory } from "./host.ts";
+import { layerMemory } from "./host.vibe";
 import { type Baseline, baselineFrom, drift, type FixtureOutcome } from "./baseline.ts";
 import { answerReview } from "./deterministicReviewer.ts";
 import { materializeFixture } from "./fixtureRepo.ts";
 import { loadCorpus, type PlantedBugLabel } from "./labels.ts";
-import { scriptedSeats } from "./scriptedSeats.ts";
+import { scriptedSeats } from "./scriptedSeats.vibe";
 import { scoreCorpus, type CorpusScore, type ReviewFinding } from "./score.ts";
 
 const corpusDir = join(import.meta.dirname, "corpus");
