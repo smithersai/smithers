@@ -287,6 +287,37 @@ describe("a transcript's watchers", () => {
     expect(socket.closed).toEqual({ code: 4401, reason: "session ended" })
   })
 
+  // The admission's query and the renewal's take different times, so a renewal can measure the session's end a little
+  // before the admission did. The lease is capped by the session all the same: no check in its last seconds, one alarm
+  // at that end, and the socket closes there with no query.
+  test("a renewal that measures the session's end just before the admission did schedules no more checks", async () => {
+    let asked = 0
+    const check = await checks()
+    const ending = await signIn("member", 90)
+    const socket = new Socket()
+    const { storage, fire, alarm } = memoryStorage()
+    const host = transcriptHost(storage, [socket], (admission) => Effect.suspend(() => (asked++, check(admission))))
+    const admission = await admit(ending)
+    await onTestClock(Effect.gen(function* () {
+      yield* host.join(socket, admission, -1)
+      // The test's database doesn't run on the test clock: its row moves by the time the clock will move, and 41 ms
+      // more, the renewal query's latency the admission's didn't have.
+      const elapsed = alarm()! - admission.admittedAt
+      yield* Effect.promise(() =>
+        sql`UPDATE sessions SET expires_at = expires_at - make_interval(secs => ${(elapsed + 41) / 1000}) WHERE id = ${ending.session!}`
+      )
+      yield* fire(host.alarm)
+      expect(asked).toBe(1)
+      const until = alarm()!
+      expect(until).toBeLessThan(admission.expiresAt!)
+      expect(until - (yield* now)).toBeGreaterThan(SocketAccess.RENEW_AHEAD_MS)
+      expect(socket.closed).toBeUndefined()
+      yield* fire(host.alarm)
+    }))
+    expect(asked).toBe(1)
+    expect(socket.closed).toEqual({ code: 4401, reason: "session ended" })
+  })
+
   test("a lease never runs past the session's end: no event after it, and 4401 with no query", async () => {
     let asked = 0
     const check = await checks()
