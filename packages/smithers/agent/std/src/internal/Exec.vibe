@@ -17,9 +17,7 @@
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/process/ChildProcess"
 import * as Schema from "effect/Schema"
-import * as Stream from "effect/Stream"
 import * as StdError from "../StdError.vibe"
 import { elideMiddle } from "./Text.ts"
 
@@ -230,25 +228,24 @@ const decodeEnds = (state: Ends): Capture => {
 }
 
 const boundedTail = <E>(
-  stream: Stream.Stream<Uint8Array, E>,
+  stream: Stream<Uint8Array, E>,
   maxBytes: number,
   overflow: Overflow | undefined
-): Effect.Effect<Capture, E> =>
+): Capture!E =>
   Stream.runFold(stream, emptyTail, (state, chunk) => {
     keepTail(state, chunk, maxBytes)
     return state
-  }).pipe(Effect.map((state) =>
+  }) |> Effect.map(%, (state) =>
     overflow === "refuse" && state.dropped > 0
       ? { text: "", droppedBytes: state.dropped }
-      : decodeTail(state)
-  ))
+      : decodeTail(state))
 
 /**
  * Keeps the first half of the bound and the last half. The head fills first,
  * and every byte after it passes through the tail, which drops from its front:
  * what falls out of the tail is the middle.
  */
-const boundedEnds = <E>(stream: Stream.Stream<Uint8Array, E>, maxBytes: number): Effect.Effect<Capture, E> => {
+const boundedEnds = <E>(stream: Stream<Uint8Array, E>, maxBytes: number): Capture!E => {
   const headBytes = Math.floor(maxBytes / 2)
   return Stream.runFold(stream, (): Ends => ({ head: [], headBytes: 0, tail: emptyTail() }), (state, chunk) => {
     const taken = Math.min(headBytes - state.headBytes, chunk.byteLength)
@@ -258,14 +255,14 @@ const boundedEnds = <E>(stream: Stream.Stream<Uint8Array, E>, maxBytes: number):
     }
     keepTail(state.tail, chunk.subarray(taken), maxBytes - headBytes)
     return state
-  }).pipe(Effect.map(decodeEnds))
+  }) |> Effect.map(%, decodeEnds)
 }
 
 const capture = <E>(
-  stream: Stream.Stream<Uint8Array, E>,
+  stream: Stream<Uint8Array, E>,
   maxBytes: number | undefined,
   overflow: Overflow | undefined
-): Effect.Effect<Capture, E> =>
+): Capture!E =>
   maxBytes === undefined
     ? Effect.map(Stream.mkString(Stream.decodeText(stream)), (text) => ({ text, droppedBytes: 0 }))
     : overflow === "ends"
@@ -292,35 +289,37 @@ const argumentsTooLong = (error: { readonly cause?: unknown }): ExecError | unde
 const unbounded = (
   command: string,
   options: ExecOptions
-): Effect.Effect<ExecResult, ExecError, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+): ExecResult!ExecError!ChildProcessSpawner.ChildProcessSpawner =>
+  (effect {
+    const spawner = try ChildProcessSpawner.ChildProcessSpawner
     const settings: ChildProcess.CommandOptions = {
       ...(options.args === undefined ? { shell: true } : {}),
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      env: ChildProcessEnvironment.make(ChildProcessSpawner.ambientEnvironment(), options.env),
+      env: try Effect.orDie(Effect.try({
+        try: () => ChildProcessEnvironment.make(ChildProcessSpawner.ambientEnvironment(), options.env),
+        catch: (error) => error
+      })),
       extendEnv: false,
       // No input is /dev/null, never an open pipe nothing writes to: a
       // command that reads standard input sees end of file at once instead
       // of waiting on it until its timeout.
       stdin: options.stdin === undefined ? "ignore" : Stream.make(new TextEncoder().encode(options.stdin))
     }
-    const handle = yield* spawner.spawn(
+    const handle = try (spawner.spawn(
       options.args === undefined
         ? ChildProcess.make(command, settings)
         : ChildProcess.make(command, [...options.args], settings)
-    ).pipe(
+    )
       // Node's `spawn` throws E2BIG instead of emitting `error`, and Effect's
       // raw Node spawner calls it unguarded, so there it arrives as a defect.
-      Effect.catchDefect((defect) => {
+      |> Effect.catchDefect(%, (defect) => {
         const refused = argumentsTooLong({ cause: defect })
         return refused === undefined ? Effect.die(defect) : Effect.fail(refused)
-      })
-    )
+      }))
     // stdout, stderr, and the exit code have to be consumed concurrently: a
     // command that fills a pipe blocks until the pipe is drained, so waiting
     // for exit first would deadlock on any output larger than the buffer.
-    const [stdout, stderr, exitCode] = yield* Effect.all(
+    const [stdout, stderr, exitCode] = try Effect.all(
       [
         capture(handle.stdout, options.maxCaptureBytes, options.overflow),
         capture(handle.stderr, options.maxCaptureBytes, options.overflow),
@@ -335,14 +334,12 @@ const unbounded = (
       ]
         .filter((stream): stream is string => stream !== undefined)
       if (overflowed.length > 0) {
-        return yield* Effect.fail(
-          new ExecError({
-            code: "capture_overflow",
-            message: `${command} ${
-              overflowed.join(" and ")
-            } exceeded the ${options.maxCaptureBytes}-byte capture cap; refusing partial output`
-          })
-        )
+        throw new ExecError({
+          code: "capture_overflow",
+          message: `${command} ${
+            overflowed.join(" and ")
+          } exceeded the ${options.maxCaptureBytes}-byte capture cap; refusing partial output`
+        })
       }
     }
     return {
@@ -352,15 +349,13 @@ const unbounded = (
       stdoutDroppedBytes: stdout.droppedBytes,
       stderrDroppedBytes: stderr.droppedBytes
     }
-  }).pipe(
-    Effect.scoped,
-    Effect.mapError((error) =>
-      error instanceof ExecError ? error : argumentsTooLong(error) ?? new ExecError({
-        code: "spawn_error",
-        message: `exec: ${command}: ${error.message}`
-      })
-    )
-  )
+  })
+  |> Effect.scoped(%)
+  |> Effect.mapError(%, (error) =>
+    error instanceof ExecError ? error : argumentsTooLong(error) ?? new ExecError({
+      code: "spawn_error",
+      message: `exec: ${command}: ${error.message}`
+    }))
 
 /**
  * Runs a command line through the platform shell and buffers its output.
@@ -375,7 +370,7 @@ const unbounded = (
 export const exec = (
   command: string,
   options: ExecOptions = {}
-): Effect.Effect<ExecResult, ExecError, ChildProcessSpawner.ChildProcessSpawner> =>
+): ExecResult!ExecError!ChildProcessSpawner.ChildProcessSpawner =>
   options.timeoutMs === undefined
     ? unbounded(command, options)
     : Effect.timeoutOrElse(unbounded(command, options), {

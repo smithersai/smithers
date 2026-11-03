@@ -19,7 +19,7 @@ import * as Path from "effect/Path"
 import * as PlatformError from "effect/PlatformError"
 import * as Bash from "../src/Bash.ts"
 import * as Container from "../src/Container.vibe"
-import * as Exec from "../src/internal/Exec.ts"
+import * as Exec from "../src/internal/Exec.vibe"
 
 const host = Layer.provide(
   NodeChildProcessSpawner.layer,
