@@ -73,7 +73,7 @@
     },
     "./Kernel": {
       "types": "./.vibe/declarations/src/Kernel.d.vibe.ts",
-      "vibelang-source": "./src/Kernel.vibe",
+      "vibelang-source": "./src/Kernel.ts",
       "default": "./.vibelang/js/src/Kernel.js"
     },
     "./Keys": {
