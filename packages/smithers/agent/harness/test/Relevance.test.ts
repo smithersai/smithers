@@ -9,7 +9,7 @@ import { Effect, Layer, Option, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as bytes from "../src/internal/bytes.ts"
-import * as Relevance from "../src/Relevance.ts"
+import * as Relevance from "../src/Relevance.vibe"
 
 const context: Relevance.Context = { task: "Fix the failing parser test." }
 

@@ -8,7 +8,7 @@ import { Cause, Effect, Exit, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import { HarnessError } from "../src/HarnessError.ts"
-import * as Steering from "../src/Steering.ts"
+import * as Steering from "../src/Steering.vibe"
 
 describe("Steering", () => {
   it("keeps an item admitted after the close cutoff for the next turn", () => {
