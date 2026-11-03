@@ -40,8 +40,16 @@
     "./internal/*": null,
     "./*/index": null,
     "./FlowProxy": "./src/FlowProxy.ts",
-    "./Hosts": "./src/Hosts.ts",
-    "./PlacedAction": "./src/PlacedAction.ts",
+    "./Hosts": {
+      "types": "./.vibe/declarations/src/Hosts.d.vibe.ts",
+      "vibelang-source": "./src/Hosts.vibe",
+      "default": "./.vibelang/js/src/Hosts.js"
+    },
+    "./PlacedAction": {
+      "types": "./.vibe/declarations/src/PlacedAction.d.vibe.ts",
+      "vibelang-source": "./src/PlacedAction.vibe",
+      "default": "./.vibelang/js/src/PlacedAction.js"
+    },
     "./FlowProxyServer": "./src/FlowProxyServer.ts",
     "./index": "./src/index.ts"
   },

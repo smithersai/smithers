@@ -20,7 +20,6 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { deriveKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 /**
@@ -53,13 +52,13 @@ export interface Summary {
   readonly stepKey: string
 }
 
-export const main: Effect.Effect<Summary, never, Crypto.Crypto> = Effect.gen(function*() {
-  const result = yield* Compile.execute({ target: "web" })
+export const main: Summary!never!Crypto.Crypto = (effect {
+  const result = try Compile.execute({ target: "web" })
 
-  const key = yield* deriveKey({
+  const key = try deriveKey({
     body: "examples/compile/v1",
     target: "web"
   })
 
   return { result, stepKey: key }
-}).pipe(Effect.provide(CompileLayer), Effect.orDie)
+}) |> Effect.provide(%, CompileLayer) |> Effect.orDie(%)

@@ -116,14 +116,14 @@ export const initial = <Id extends string>(executionId: Id extends JournalLineag
  * @since 0.1.0
  * @category constructors
  */
-export const executionId = (round: Round): Effect.Effect<string, InvalidRound, Crypto.Crypto> =>
+export const executionId = (round: Round): string!InvalidRound!Crypto.Crypto =>
   Effect.suspend(() => {
     const refusal = validate(round)
     if (refusal !== undefined) return Effect.fail(refusal)
     if (round.ordinal === 0) return Effect.succeed<string>(round.rootExecutionId)
     return Schema.decodeUnknownEffect(Sha256)(
       JSON.stringify(["flow-round/v2", round.rootExecutionId, round.ordinal])
-    ).pipe(Effect.orDie)
+    ) |> Effect.orDie(%)
   })
 
 /** The refusal of a lineage that asked for a round past its budget. */
@@ -160,24 +160,19 @@ const budgetRefusal = (maxRounds: number | undefined): InvalidRound | undefined 
  * @since 0.1.0
  * @category constructors
  */
-export const next = (round: Round, options: {
+export const next = effect (round: Round, options: {
   readonly flowName: string
   readonly maxRounds: number | undefined
-}): Effect.Effect<
-  { readonly round: Round; readonly executionId: string },
-  Flow.MaxRoundsExceeded | InvalidRound,
-  Crypto.Crypto
-> =>
-  Effect.gen(function*() {
-    const budget = options.maxRounds
-    const refusal = validate(round) ?? budgetRefusal(budget)
-    if (refusal !== undefined) return yield* Effect.fail(refusal)
-    if (round.ordinal === Number.MAX_SAFE_INTEGER) {
-      return yield* Effect.fail(invalid("Round ordinal cannot be advanced beyond Number.MAX_SAFE_INTEGER"))
-    }
-    const advanced: Round = { rootExecutionId: round.rootExecutionId, ordinal: round.ordinal + 1 }
-    if (budget !== undefined && advanced.ordinal >= budget) {
-      return yield* Effect.fail(roundsExceeded(options.flowName, advanced, budget))
-    }
-    return { round: advanced, executionId: yield* executionId(advanced) }
-  })
+}): { readonly round: Round; readonly executionId: string }!Flow.MaxRoundsExceeded | InvalidRound!Crypto.Crypto => {
+  const budget = options.maxRounds
+  const refusal = validate(round) ?? budgetRefusal(budget)
+  if (refusal !== undefined) throw refusal
+  if (round.ordinal === Number.MAX_SAFE_INTEGER) {
+    throw invalid("Round ordinal cannot be advanced beyond Number.MAX_SAFE_INTEGER")
+  }
+  const advanced: Round = { rootExecutionId: round.rootExecutionId, ordinal: round.ordinal + 1 }
+  if (budget !== undefined && advanced.ordinal >= budget) {
+    throw roundsExceeded(options.flowName, advanced, budget)
+  }
+  return { round: advanced, executionId: try executionId(advanced) }
+}

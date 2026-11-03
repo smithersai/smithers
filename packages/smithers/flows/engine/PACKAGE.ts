@@ -177,7 +177,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/FlowEngine/layerMemory.ts",
         "src/FlowEngine/make.ts",
-        "src/FlowEngine/Round.ts",
+        "src/FlowEngine/Round.vibe",
         "src/FlowEngine/Trampoline.ts"
       ]
     },
@@ -191,7 +191,7 @@ const securityReview = Smithers.SecurityReview({
         "A cache-kind key that omits the environment, declaration digest, boundary digest, implementationVersion, or nondeterministic flag it is documented to include.",
         "A WeakMap cache in ActionKey.ts that returns a digest for mutated metadata without re-checking the JSON snapshot."
       ],
-      paths: ["src/FlowEngine/ActionKey.ts", "src/FlowEngine/Dispatch.ts"]
+      paths: ["src/FlowEngine/ActionKey.vibe", "src/FlowEngine/Dispatch.ts"]
     },
     {
       id: "replay-decode-before-trust",

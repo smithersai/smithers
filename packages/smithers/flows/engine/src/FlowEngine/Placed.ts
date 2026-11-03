@@ -18,7 +18,7 @@ import { RpcClientError } from "effect/rpc/RpcClientError"
 import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
 import * as FlowProxy from "../FlowProxy.ts"
-import { type Binding, Hosts } from "../Hosts.ts"
+import { type Binding, Hosts } from "../Hosts.vibe"
 import { requestedAuthority } from "./Authority.vibe"
 
 /**

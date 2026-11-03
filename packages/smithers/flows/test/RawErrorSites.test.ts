@@ -37,7 +37,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
   ["engine-store/src/internal/ExecutionSnapshotRead.ts", 1, wrappedCause],
   ["engine-store/src/internal/RunDriver.ts", 1, invariantDefect],
   ["engine/src/FlowEngine/Placed.ts", 1, invariantDefect],
-  ["engine/src/PlacedAction.ts", 1, invariantDefect],
+  ["engine/src/PlacedAction.vibe", 1, invariantDefect],
   [
     "flow/src/Fault.ts",
     1,

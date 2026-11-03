@@ -22,7 +22,7 @@ import { bindHostCeiling, joinable, requestedAuthority } from "./Authority.vibe"
 import type { ActionExecuteOptions, Encoded } from "./Encoded.vibe"
 import { makeInstance } from "./FlowInstance.vibe"
 import { makeUnsafe } from "./make.ts"
-import type * as Round from "./Round.ts"
+import type * as Round from "./Round.vibe"
 import { FlowNotRegistered } from "./Trampoline.ts"
 
 export { ExecutionIdentityConflict } from "@smthrs/flow/FlowRuntime"
