@@ -67,7 +67,7 @@
     "./DeferredClockFold": "./src/DeferredClockFold.ts",
     "./StepCacheFold": "./src/StepCacheFold.ts",
     "./StepSandbox": "./src/StepSandbox.ts",
-    "./WakeBus": "./src/WakeBus.ts",
+    "./WakeBus": "./src/WakeBus.vibe",
     "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
     "./index": "./src/index.ts",
     "./test/TestStores": "./src/test/TestStores.ts",
