@@ -229,6 +229,8 @@ A repository's Cloudflare overflow runner is registered again by turning the ove
 
 ## Turning the route on
 
+**Do not run the cutover yet.** It doesn't establish the cutoff it assumes ([decision 0148](../decisions/0148-runner-git-credential.md)): its check doesn't bind each Worker to the release or prove Durable Objects drained; admitted intents in Durable Object storage and concurrent writes escape it; and overflow containers keep cached credentials, which marking an overflow doesn't revoke. Finishing it needs real admission-generation machinery. The route stays off until then.
+
 Nothing here applies until the git-credential route is turned on, and nothing changes for anyone until then. Registrations and settings written before the fenced release can't be told apart from good ones, so none is kept:
 
 1. Deploy the fenced release with the route off (`GIT_CREDENTIAL_ON = false`).

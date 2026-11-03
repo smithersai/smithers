@@ -1,5 +1,14 @@
-// The runner cutover (decision 0148, docs/features/agent-runners.md#turning-the-route-on): run once, by the deploy owner,
-// before the git-credential route is turned on. Until then nothing it does applies, and nothing changes for anyone.
+// DO NOT RUN THIS YET: it doesn't establish the cutoff it assumes (Codex Astra's review of 375dbf14, decision 0148):
+//
+// 1. Its check doesn't bind each Worker to the release, or prove Durable Objects drained: an old reader or writer can
+//    outlive it.
+// 2. Admitted intents in Durable Object storage, not yet in Postgres, and writes concurrent with it escape its checks.
+// 3. Overflow containers keep cached credentials: marking an overflow revokes nothing they already hold.
+//
+// Finishing it needs real admission-generation machinery; the git-credential route stays off until then.
+//
+// The runner cutover (decision 0148, docs/features/agent-runners.md#turning-the-route-on): meant to run once, by the
+// deploy owner, before the git-credential route is turned on. Until then nothing it does applies.
 //
 // Registrations and settings written before the fenced release can't be told apart from good ones, so none is kept. The
 // command checks that only the fenced release can be writing or reading them, then, in one transaction, clears every
