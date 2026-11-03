@@ -16,7 +16,7 @@ export * as PatternError from "./PatternError.vibe"
  * @category builders
  * @since 0.1.0
  */
-export * as Pattern from "./Pattern.ts"
+export * as Pattern from "./Pattern.vibe"
 
 /**
  * @category patterns
@@ -40,7 +40,7 @@ export * as Escalation from "./Escalation.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as ReviewLoop from "./ReviewLoop.ts"
+export * as ReviewLoop from "./ReviewLoop.vibe"
 
 /**
  * @category patterns
@@ -52,7 +52,7 @@ export * as MapReduce from "./MapReduce.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Recursion from "./Recursion.ts"
+export * as Recursion from "./Recursion.vibe"
 
 /**
  * @category patterns
@@ -64,7 +64,7 @@ export * as Bounded from "./Bounded.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Quarantine from "./Quarantine.ts"
+export * as Quarantine from "./Quarantine.vibe"
 
 /**
  * @category patterns
@@ -130,7 +130,7 @@ export * as Optimizer from "./Optimizer.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Runbook from "./Runbook.ts"
+export * as Runbook from "./Runbook.vibe"
 
 /**
  * @category patterns

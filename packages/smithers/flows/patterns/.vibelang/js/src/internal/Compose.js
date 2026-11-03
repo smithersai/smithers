@@ -43,7 +43,7 @@ export const safeIntegerPriorityRefusal = (pattern, member, value) => typeof val
     ? undefined
     : new PatternError({
         code: "invalid_decorator",
-        message: `${pattern} priority for member "${member}" must be a safe integer, received ${value}`,
+        message: `${pattern} priority for member "${member}" must be a safe integer, received ${value}`
     });
 /**
  * Refuses a width bound that is not a positive safe integer.
@@ -59,7 +59,7 @@ export const safeIntegerPriorityRefusal = (pattern, member, value) => typeof val
  */
 export const concurrencyRefusal = (pattern, concurrency) => Number.isSafeInteger(concurrency) && concurrency >= 1 ? undefined : new PatternError({
     code: "invalid_decorator",
-    message: `${pattern} concurrency must be a positive safe integer, received ${concurrency}`,
+    message: `${pattern} concurrency must be a positive safe integer, received ${concurrency}`
 });
 /**
  * Refuses a member record a pattern cannot compose because it holds nothing.
@@ -99,7 +99,7 @@ export const sequencedBoundRefusal = (pattern, option, value, callsPerUnit) => {
     const limit = Math.floor((Graph.maximumGraphDepth - 1) / callsPerUnit) - 1;
     return value <= limit ? undefined : new PatternError({
         code: "invalid_decorator",
-        message: `${pattern} ${option} must be at most ${limit} to stay inside the plan depth limit, received ${value}`,
+        message: `${pattern} ${option} must be at most ${limit} to stay inside the plan depth limit, received ${value}`
     });
 };
 const normalized = (values) => [...new Set(values)].sort();
@@ -120,7 +120,7 @@ const intersectPaths = (template, supplied) => {
 const tierRank = {
     sealed: 0,
     compensable: 1,
-    irreversible: 2,
+    irreversible: 2
 };
 const tierOf = (declaration) => declaration.tier ?? "sealed";
 /**
@@ -137,7 +137,7 @@ export const intersectEffects = (template, supplied) => {
             reads: supplied.reads,
             writes: supplied.writes,
             mode: supplied.mode === "expected",
-            tier: tierOf(supplied) !== "sealed",
+            tier: tierOf(supplied) !== "sealed"
         };
     }
     if (Effects.narrow(template, supplied).ok) {
@@ -153,14 +153,14 @@ export const intersectEffects = (template, supplied) => {
         writes,
         mode: template.mode === "hermetic" || supplied.mode === "hermetic" ? "hermetic" : "expected",
         onConflict: template.onConflict,
-        tier: narrowedTier,
+        tier: narrowedTier
     });
     return {
         declaration,
         reads: supplied.reads.filter((path) => !reads.includes(path)),
         writes: supplied.writes.filter((path) => !writes.includes(path)),
         mode: supplied.mode !== declaration.mode,
-        tier: suppliedTier !== narrowedTier,
+        tier: suppliedTier !== narrowedTier
     };
 };
 /**
@@ -217,7 +217,7 @@ const incompatible = (side, expected, actual, path) => {
         side,
         expectedTag,
         actualTag,
-        path: expectedTag === actualTag ? path : undefined,
+        path: expectedTag === actualTag ? path : undefined
     };
 };
 const compareSchemas = (side, expected, actual) => {
@@ -272,5 +272,5 @@ export const label = (kind, fields, options) => ({
         .filter(([, value]) => value !== undefined)
         .map(([key, value]) => `${key}=${labelValue(value)}`)
         .join(", ")})`,
-    description: options.description,
+    description: options.description
 });

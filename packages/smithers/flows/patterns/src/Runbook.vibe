@@ -19,10 +19,10 @@ import * as Compose from "./internal/Compose.vibe"
 import * as Decorate from "./internal/Decorate.ts"
 import * as Failure from "./internal/Failure.vibe"
 import { OpaqueInput } from "./internal/Payload.vibe"
-import * as Pattern from "./Pattern.ts"
+import * as Pattern from "./Pattern.vibe"
 import { PatternError } from "./PatternError.vibe"
 
-const ApprovalInput = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
+schema ApprovalInput { input: Schema.Unknown; reason: string; scope: string }
 
 const DEFAULT_REASON = "run the step"
 
@@ -102,7 +102,7 @@ export interface Request<I, Out> {
 export interface RuntimeStep<I, Out, E, R> {
   readonly id: string
   readonly risk: Risk
-  readonly run: (args: Request<I, Out>) => Effect.Effect<Out, E, R>
+  readonly run: (args: Request<I, Out>) => Out!E!R
 }
 
 /**
@@ -120,7 +120,7 @@ export interface RuntimeStep<I, Out, E, R> {
  */
 export interface RuntimeOptions<I, Out, E, R, E2, R2> {
   readonly steps: ReadonlyArray<RuntimeStep<I, Out, E, R>>
-  readonly approve: (request: Request<I, Out>) => Effect.Effect<unknown, E2, R2>
+  readonly approve: (request: Request<I, Out>) => unknown!E2!R2
   readonly onDeny: OnDeny
 }
 
@@ -308,7 +308,7 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
 export const run = <I, Out, E = never, R = never, E2 = never, R2 = never>(
   input: I,
   options: RuntimeOptions<I, Out, E, R, E2, R2>
-): Effect.Effect<Result<Out>, E | E2 | PatternError | Schema.SchemaError, R | R2> => {
+): Result<Out>!E | E2 | PatternError | Schema.SchemaError!R | R2 => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the array, a step record, or the option object in between must
   // not reach it.
@@ -321,7 +321,7 @@ export const run = <I, Out, E = never, R = never, E2 = never, R2 = never>(
   if (!identities(steps.map((step) => step.id))) {
     return Effect.fail(new PatternError({ code: "invalid_decorator", message: "Runbook step ids must be unique" }))
   }
-  return Effect.gen(function*() {
+  return effect {
     const outputs = new Map<string, Out>()
     const ran: Array<string> = []
     const skipped: Array<string> = []
@@ -335,20 +335,20 @@ export const run = <I, Out, E = never, R = never, E2 = never, R2 = never>(
         previous
       }
       if (gated(step.risk)) {
-        const answer = decide(yield* approve(request))
+        const answer = decide(try approve(request))
         const decision: Pattern.Approved | "denied" = onDeny === "skip"
-          ? yield* Effect.catch(answer, () => Effect.succeed("denied" as const))
-          : yield* answer
+          ? (answer catch () => "denied" as const)
+          : try answer
         if (decision === "denied") {
           skipped.push(step.id)
           continue
         }
       }
-      const output = yield* step.run(request)
+      const output = try step.run(request)
       outputs.set(step.id, output)
       ran.push(step.id)
       previous = output
     }
     return { outputs: Object.fromEntries(outputs), ran, skipped }
-  })
+  }
 }

@@ -217,32 +217,32 @@ export function all(
  * @since 1.0.0
  */
 export function run<A, E, R>(
-  members: Readonly<Record<string, Effect.Effect<A, E, R>>>,
+  members: Readonly<Record<string, A!E!R>>,
   options: RuntimeOptions & { readonly policy: "quarantine" }
-): Effect.Effect<Readonly<Record<string, Settled<A, E>>>, PatternError, R>
+): Readonly<Record<string, Settled<A, E>>>!PatternError!R
 export function run<A, E, R>(
-  members: Readonly<Record<string, Effect.Effect<A, E, R>>>,
+  members: Readonly<Record<string, A!E!R>>,
   options: RuntimeOptions & { readonly policy: "halt" }
-): Effect.Effect<Readonly<Record<string, A>>, E | PatternError, R>
+): Readonly<Record<string, A>>!E | PatternError!R
 export function run<A, E, R>(
-  members: Readonly<Record<string, Effect.Effect<A, E, R>>>,
+  members: Readonly<Record<string, A!E!R>>,
   options: RuntimeOptions
-): Effect.Effect<Readonly<Record<string, A | Settled<A, E>>>, E | PatternError, R> {
+): Readonly<Record<string, A | Settled<A, E>>>!E | PatternError!R {
   // Snapshots taken at the call, ahead of the suspend: the effect may run
   // later, and a caller's edit to the record or the option object in between
   // must not reach it. Own entries only, so a prototype-shaped member name
   // stays a data property.
-  const declared: Readonly<Record<string, Effect.Effect<A, E, R>>> = Object.fromEntries(Object.entries(members))
+  const declared: Readonly<Record<string, A!E!R>> = Object.fromEntries(Object.entries(members))
   const policy = options.policy
   const concurrency = options.concurrency ?? "unbounded"
-  return Effect.suspend((): Effect.Effect<Readonly<Record<string, A | Settled<A, E>>>, E | PatternError, R> => {
+  return Effect.suspend((): Readonly<Record<string, A | Settled<A, E>>>!E | PatternError!R => {
     const names = Object.keys(declared)
     const refusal = nonEmptyRefusal(names) ?? widthRefusal(concurrency)
     if (refusal !== undefined) return Effect.fail(refusal)
     return Effect.map(
       Effect.forEach(
         names,
-        (member): Effect.Effect<readonly [string, A | Settled<A, E>], E, R> =>
+        (member): readonly [string, A | Settled<A, E>]!E!R =>
           policy === "halt"
             ? Effect.map(declared[member]!, (value) => [member, value] as const)
             : Effect.match(declared[member]!, {
@@ -275,7 +275,7 @@ export function run<A, E, R>(
  */
 export const settle = <A, E>(
   result: Readonly<Record<string, Settled<A, E>>>
-): Effect.Effect<Readonly<Record<string, A>>, PatternError> => {
+): Readonly<Record<string, A>>!PatternError => {
   const names = Object.keys(result)
   const invalid = names.filter((member) => !isQuarantined(result[member]) && !isSucceeded(result[member]))
   if (invalid.length > 0) {

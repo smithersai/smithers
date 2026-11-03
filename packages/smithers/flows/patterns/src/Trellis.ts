@@ -27,7 +27,7 @@ import * as Compose from "./internal/Compose.vibe"
 import * as FailureSchema from "./internal/Failure.vibe"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
-import type * as Recursion from "./Recursion.ts"
+import type * as Recursion from "./Recursion.vibe"
 
 /**
  * Stable Trellis failure codes.
