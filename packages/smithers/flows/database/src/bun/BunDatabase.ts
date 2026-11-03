@@ -9,7 +9,7 @@ import { Effect, Layer } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { statSync } from "node:fs"
 import * as BunSqliteClient from "../internal/BunSqliteClient.ts"
-import * as PostgresSelection from "../internal/PostgresSelection.ts"
+import * as PostgresSelection from "../internal/PostgresSelection.vibe"
 import * as SqliteOpen from "../internal/SqliteOpen.ts"
 
 export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.vibe"
