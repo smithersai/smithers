@@ -70,6 +70,8 @@ export interface NativeOptions {
   readonly sourcePublication?: "cloud" | "local-only"
 }
 
+/** The helper's point-read protocol takes this many change IDs per request; `read` spans longer lists. */
+const readBatch = 100
 const failure = (code: NativeCode, message: string, recovery?: typeof FileRecovery.Type) =>
   new NativeCodingError({ code, message, ...(recovery === undefined ? {} : { recovery }) })
 const capture = <E>(stream: Stream.Stream<Uint8Array, E>, limit: number) =>
@@ -271,18 +273,32 @@ export const nativeLayer = (options: NativeOptions) =>
           )
         ),
       read: (changeIds: ReadonlyArray<string> = [], historyLimit?: number) =>
-        invoke({
-          operation: "read",
-          changeIds,
-          ...(historyLimit === undefined ? {} : { historyLimit })
-        }).pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(ReadResult)),
-          Effect.mapError((error) =>
-            error instanceof NativeCodingError
-              ? error
-              : failure("invalid_receipt", "Native read returned an invalid revision")
-          )
-        ),
+        Effect.gen(function*() {
+          const request = (ids: ReadonlyArray<string>, limit?: number) =>
+            invoke({
+              operation: "read",
+              changeIds: ids,
+              ...(limit === undefined ? {} : { historyLimit: limit })
+            }).pipe(
+              Effect.flatMap(Schema.decodeUnknownEffect(ReadResult)),
+              Effect.mapError((error) =>
+                error instanceof NativeCodingError
+                  ? error
+                  : failure("invalid_receipt", "Native read returned an invalid revision")
+              )
+            )
+          const first = yield* request(changeIds.slice(0, readBatch), historyLimit)
+          const revisions = [...first.revisions]
+          for (let offset = readBatch; offset < changeIds.length; offset += readBatch) {
+            const next = yield* request(changeIds.slice(offset, offset + readBatch))
+            // One answer describes one repository state, however many requests it took.
+            if (next.operationId !== first.operationId) {
+              return yield* failure("workspace_busy", "The repository moved during a long native read; retry it")
+            }
+            revisions.push(...next.revisions)
+          }
+          return { ...first, revisions }
+        }),
       createSource: (request: typeof CreateSource.Type) =>
         Effect.gen(function*() {
           const input = yield* Schema.decodeUnknownEffect(CreateSource)(request).pipe(

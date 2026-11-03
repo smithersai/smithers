@@ -302,3 +302,106 @@ test("malformed import collections still return their named refusal", async (t) 
   assert.match(error.message, /source_refused: native_import_identity_invalid/)
   assert.deepEqual(await readdir(root), ["helper"])
 })
+
+/** A helper that enforces the protocol's 100-ID bound and answers from a counter file. */
+const pointReadHelper = async (t: TestContext, moveOperationAfter?: number) => {
+  const root = await mkdtemp(join(tmpdir(), "coding-native-read-batches-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const helper = join(root, "helper")
+  await writeFile(
+    helper,
+    `#!${process.execPath}
+const fs = require("node:fs")
+const request = JSON.parse(fs.readFileSync(0, "utf8"))
+const calls = (fs.existsSync("calls") ? Number(fs.readFileSync("calls", "utf8")) : 0) + 1
+fs.writeFileSync("calls", String(calls))
+if (request.changeIds.length > 100) {
+  console.log(JSON.stringify({ error: { code: "invalid_request", message: "read accepts at most 100 change IDs" } }))
+  process.exit(1)
+}
+const moved = ${moveOperationAfter ?? "Infinity"}
+const operationId = (calls > moved ? "b" : "a").repeat(128)
+const revision = (changeId, hex) => ({
+  kind: "resolved", changeId, operationId, commitId: hex.repeat(40), treeId: hex.repeat(40), parentCommitIds: []
+})
+console.log(JSON.stringify({
+  status: "read",
+  operationId,
+  head: revision("k".repeat(32), "0"),
+  revisions: request.changeIds.map((id) => revision(id, "1")),
+  ...(request.historyLimit === undefined ? {} : { history: [], historyComplete: calls === 1 })
+}))
+`,
+    { mode: 0o700 }
+  )
+  const layer = nativeLayer({ repositoryPath: root, helperPath: helper, sourcePublication: "local-only" }).pipe(
+    Layer.provide(NodeServices.layer)
+  )
+  return { root, layer }
+}
+const changeIdsOf = (count: number) =>
+  Array.from(
+    { length: count },
+    (_, index) =>
+      "k".repeat(28) + [...index.toString(16).padStart(4, "0")].map((digit) =>
+        "klmnopqrstuvwxyz"[parseInt(digit, 16)]
+      ).join("")
+  )
+
+test("a native read of more change IDs than one helper request answers every one, in order", async (t) => {
+  const { root, layer } = await pointReadHelper(t)
+  const changeIds = changeIdsOf(493)
+  const read = await Effect.runPromise(
+    Effect.flatMap(NativeCoding, (native) => native.read(changeIds, 3)).pipe(Effect.provide(layer))
+  )
+  assert.deepEqual(read.revisions.map((revision) => revision.changeId), changeIds)
+  assert.equal(read.historyComplete, true, "history comes from the first request only")
+  assert.equal(await readFile(join(root, "calls"), "utf8"), "5")
+})
+
+test("a native read at the protocol bound takes one request", async (t) => {
+  const { root, layer } = await pointReadHelper(t)
+  const read = await Effect.runPromise(
+    Effect.flatMap(NativeCoding, (native) => native.read(changeIdsOf(100))).pipe(Effect.provide(layer))
+  )
+  assert.equal(read.revisions.length, 100)
+  assert.equal(await readFile(join(root, "calls"), "utf8"), "1")
+})
+
+test("a repository that moves during a long native read refuses the read as busy", async (t) => {
+  const { layer } = await pointReadHelper(t, 2)
+  const error = await Effect.runPromise(
+    Effect.flip(Effect.flatMap(NativeCoding, (native) => native.read(changeIdsOf(250)))).pipe(Effect.provide(layer))
+  )
+  assert.ok(error instanceof NativeCodingError)
+  assert.equal(error.code, "workspace_busy")
+})
+
+test("packaged helper reads a stack longer than one request", {
+  skip: helper === undefined ? "Build the workspace helper and set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" : false,
+  timeout: 120_000
+}, async (t) => {
+  assert.ok(helper)
+  const repo = await mkdtemp(join(tmpdir(), "coding-native-long-read-"))
+  t.after(() => rm(repo, { recursive: true, force: true }))
+  const jj = (...args: Array<string>) =>
+    execFileSync("jj", ["--no-pager", "--color=never", ...args], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, JJ_USER: "Smithers Test", JJ_EMAIL: "smithers@example.test", JJ_CONFIG: "/dev/null" }
+    })
+  jj("git", "init")
+  for (let index = 0; index < 101; index++) jj("new", "-m", `c${index}`)
+  const changeIds = jj("log", "--no-graph", "-r", "::@- ~ root()", "-T", "change_id ++ \"\\n\"").split("\n").filter(Boolean)
+  assert.equal(changeIds.length, 101)
+  const read = await Effect.runPromise(
+    Effect.flatMap(NativeCoding, (native) => native.read(changeIds)).pipe(
+      Effect.provide(
+        nativeLayer({ repositoryPath: repo, helperPath: helper, sourcePublication: "local-only" }).pipe(
+          Layer.provide(NodeServices.layer)
+        )
+      )
+    )
+  )
+  assert.deepEqual(read.revisions.map((revision) => revision.changeId), changeIds)
+})
