@@ -145,11 +145,11 @@ came from.
 
 ## What the setting controls
 
-| Path                                       | Written by                                                           |
-| ------------------------------------------ | -------------------------------------------------------------------- |
-| `<cacheDirectory>/cache/<xx>/<key>.json`   | The result cache                                                     |
-| `<cacheDirectory>/knip-<fingerprint>.json` | `DepsLint`, when its ignore lists are non-empty and the tool is knip |
-| `<cacheDirectory>/sandbox/<run>`           | A confined run's private temporary directory, removed with the run   |
+| Path                                      | Written by                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------- |
+| `<cacheDirectory>/cache/<xx>/<key>.json`  | The result cache                                                     |
+| `<cacheDirectory>/knip-<fingerprint>.mjs` | `DepsLint`, when its ignore lists are non-empty and the tool is knip |
+| `<cacheDirectory>/sandbox/<run>`          | A confined run's private temporary directory, removed with the run   |
 
 It does not control package-manager stores. Those stay at
 `.flows/store/<manager>` because fetch declares that fixed path as its

@@ -68,11 +68,11 @@ no commit should carry.
 
 ## What lives in the cache directory
 
-| Path                                       | Written by                                                                       |
-| ------------------------------------------ | -------------------------------------------------------------------------------- |
-| `<cacheDirectory>/cache/<xx>/<key>.json`   | The result cache, one JSON file per stored target result                         |
-| `<cacheDirectory>/knip-<fingerprint>.json` | `DepsLint`, when its ignore lists are non-empty and the tool is knip             |
-| `<cacheDirectory>/sandbox/<run>`           | A confined run's private temporary directory and home; removed when the run ends |
+| Path                                      | Written by                                                                       |
+| ----------------------------------------- | -------------------------------------------------------------------------------- |
+| `<cacheDirectory>/cache/<xx>/<key>.json`  | The result cache, one JSON file per stored target result                         |
+| `<cacheDirectory>/knip-<fingerprint>.mjs` | `DepsLint`, when its ignore lists are non-empty and the tool is knip             |
+| `<cacheDirectory>/sandbox/<run>`          | A confined run's private temporary directory and home; removed when the run ends |
 
 Package-manager stores are not controlled by this setting. They stay at
 `.flows/store/<manager>` because fetch declares those fixed paths as

@@ -47,7 +47,7 @@ export type Attrs = typeof Attrs.Type
 /**
  * The `node -e` program that materializes the generated knip configuration.
  * It creates the parent directory of the path in `argv[1]` and writes the
- * JSON text in `argv[2]` to it.
+ * text in `argv[2]` to it.
  */
 const writeProgram = [
   "const fs=require(\"node:fs\");",
@@ -66,6 +66,24 @@ const knipConfig = (attrs: Attrs): string => {
   if (attrs.ignoreDependencies.length > 0) config["ignoreDependencies"] = attrs.ignoreDependencies
   return JSON.stringify(config)
 }
+
+/**
+ * The module knip loads for `--config`: the generated ignores over the package's
+ * own `knip.config.ts`, if it has one. Knip takes a compiler such as `vibelang/knip`
+ * only from code, so a JSON file here would drop it, and knip would not read the
+ * files it compiles.
+ */
+const knipModule = (config: string): string =>
+  [
+    "import { existsSync } from \"node:fs\"",
+    "import { join } from \"node:path\"",
+    "import { pathToFileURL } from \"node:url\"",
+    "export default async () => {",
+    "  const own = join(process.cwd(), \"knip.config.ts\")",
+    "  const base = existsSync(own) ? (await import(pathToFileURL(own).href)).default : {}",
+    `  return { ...base, ...${config} }`,
+    "}"
+  ].join("\n")
 
 /**
  * Deterministic SHA-256 hex fingerprint naming the generated knip
@@ -87,8 +105,10 @@ const fingerprint = (text: string): string => createHash("sha256").update(text, 
  * accidentally turn unused files or exports into additional gates. Knip
  * accepts ignores only through configuration, so when either list is non-empty
  * the plan first writes a derived knip config under the resolved workspace
- * cache directory and passes it to knip with `--config`, replacing ambient
- * knip configuration; with no ignores knip runs under its own config discovery.
+ * cache directory and passes it to knip with `--config`. It keeps the settings
+ * of the package's `knip.config.ts`, such as a compiler, under those ignores; any
+ * other ambient knip configuration is replaced. With no ignores knip runs under
+ * its own config discovery.
  * The plan uses {@link Exec.cacheDirectoryToken}; the
  * exec layer substitutes the resolved host path immediately before spawn, so
  * the directory stays out of attrs and every step key.
@@ -123,8 +143,8 @@ export const DepsLint = Target.make("DepsLint", {
         argv: PackageManager.exec(attrs.packageManager, ["knip", "--dependencies"])
       })
     }
-    const config = knipConfig(attrs)
-    const configPath = `${Exec.cacheDirectoryToken}/knip-${fingerprint(config)}.json`
+    const config = knipModule(knipConfig(attrs))
+    const configPath = `${Exec.cacheDirectoryToken}/knip-${fingerprint(config)}.mjs`
     return Exec.runTool({
       cwd: ".",
       argv: Runtime.evaluate(attrs.runtime, writeProgram, [configPath, config])

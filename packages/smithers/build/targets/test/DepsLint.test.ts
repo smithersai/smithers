@@ -48,16 +48,16 @@ describe("DepsLint", () => {
     const configIndex = lint.argv.indexOf("--config")
     expect(configIndex).toBeGreaterThan(-1)
     const configPath = lint.argv[configIndex + 1]!
-    const result = await Effect.runPromise(Exec.run({ workspaceRoot: root }, {
-      ...lint,
-      argv: [
-        "node",
-        "-e",
-        `process.stdout.write(require('node:fs').readFileSync(process.argv[1], 'utf8'))`,
-        configPath
-      ]
-    }))
-    expect(JSON.parse(result.stdout)).toEqual({
+    const load =
+      `import(require("node:url").pathToFileURL(require("node:path").resolve(process.argv[1])).href).then(async (m) => process.stdout.write(JSON.stringify(await m.default())))`
+    const loaded = async () =>
+      JSON.parse(
+        (await Effect.runPromise(Exec.run({ workspaceRoot: root }, {
+          ...lint,
+          argv: ["node", "-e", load, configPath]
+        }))).stdout
+      )
+    expect(await loaded()).toEqual({
       ignoreBinaries: ["optional-binary"],
       ignoreDependencies: ["optional-package"]
     })
@@ -67,5 +67,16 @@ describe("DepsLint", () => {
       configPath.slice(Exec.cacheDirectoryToken.length + 1)
     ])
     expect(await Fs.readdir(NodePath.join(root, "packages/example"))).toEqual([])
+
+    // The package's own configuration, which can hold a compiler as JSON cannot, stays under the ignores.
+    await Fs.writeFile(
+      NodePath.join(root, "packages/example/knip.config.ts"),
+      `export default { compilers: { vibe: true }, ignoreDependencies: ["replaced"] }\n`
+    )
+    expect(await loaded()).toEqual({
+      compilers: { vibe: true },
+      ignoreBinaries: ["optional-binary"],
+      ignoreDependencies: ["optional-package"]
+    })
   })
 })
