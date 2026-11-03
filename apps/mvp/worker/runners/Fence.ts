@@ -113,15 +113,48 @@ const sessionHolds = (personId: string, sessionId: string, alias: string | undef
   })
 
 /**
- * Inside an admitted write's transaction: every lock it still waits on gives up at the fence's expiry
- * (`lock_timeout`), so the transaction fails rather than writing late.
+ * The earliest moment the fence's authority stops holding by the clock alone: the fence's own expiry; for a `Session`
+ * authority, its session's expiry; for a `Repo` authority, the end of its role row's freshness
+ * (`RepoRoles.FRESH_SECONDS` after it was read). An SQL expression, read inside the write's transaction, its rows
+ * locked.
+ */
+const deadline = (sql: SqlClient.SqlClient, fence: Fence) => {
+  const own = sql`to_timestamp(${fence.expiresAt}::float8 / 1000)`
+  const authority = fence.authority
+  return authority._tag === "Session"
+    ? sql`least(${own}, (SELECT expires_at FROM sessions WHERE id::text = ${authority.sessionId}))`
+    : authority._tag === "Repo"
+    ? sql`least(${own}, (SELECT checked_at + make_interval(secs => ${RepoRoles.FRESH_SECONDS}) FROM github_repo_roles
+        WHERE repo_id = ${authority.held.repoId} AND person_id = ${authority.held.personId}))`
+    : own
+}
+
+/**
+ * Inside an admitted write's transaction: every lock it still waits on gives up at the authority's earliest deadline
+ * (`deadline`, as `lock_timeout`), so the transaction fails rather than writing late.
  */
 export const untilExpiry = (fence: Fence) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`
       SELECT set_config('lock_timeout',
-        greatest(1, floor(extract(epoch FROM to_timestamp(${fence.expiresAt}::float8 / 1000) - clock_timestamp()) * 1000))::bigint
-          || 'ms', true)`)
+        greatest(1, floor(extract(epoch FROM ${deadline(sql, fence)} - clock_timestamp()) * 1000))::bigint || 'ms', true)`)
+
+/**
+ * A write that finished after its authority's earliest deadline: its transaction is rolled back, and the action is
+ * refused `authorization_expired`. Each wait after admission is bounded (`untilExpiry`); this bounds their sum.
+ */
+export class LateCommit extends Schema.TaggedError<LateCommit>()("@smthrs/mvp/runners/LateCommit", {}) {}
+
+/**
+ * Right before an admitted write commits, every change made: whether the authority's earliest deadline (`deadline`)
+ * hasn't passed by the clock as it stands now.
+ */
+export const stillHolds = (fence: Fence) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    Effect.map(
+      sql<{ readonly live: boolean }>`SELECT coalesce(clock_timestamp() < ${deadline(sql, fence)}, false) AS live`,
+      (rows) => rows[0]?.live === true,
+    ))
 
 /** Records how an Admin action ended, once per execution. */
 export const receipt = (

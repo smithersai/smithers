@@ -925,18 +925,21 @@ describe("the repository's runners and agents", () => {
 
     /** Holds the rows `lock` locks in another connection until `release`: a write that needs them waits. */
     const holdRows = async (lock: (client: SqlClient.SqlClient) => Effect.Effect<unknown, unknown>) => {
-      let release = () => {}
-      const released = new Promise<void>((done) => (release = done))
+      let release = (_abort: boolean) => {}
+      const released = new Promise<boolean>((done) => (release = done))
       let locked = () => {}
       const locking = new Promise<void>((done) => (locked = done))
       const holder = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
         client.withTransaction(Effect.gen(function* () {
           yield* lock(client)
           yield* Effect.sync(locked)
-          yield* Effect.promise(() => released)
-        }))))
+          // Aborted, the transaction rolls back: what it wrote was never there.
+          if (yield* Effect.promise(() => released)) return yield* Effect.fail("abort")
+        })))).catch((error: unknown) => {
+          if (error !== "abort" && !String(error).includes("abort")) throw error
+        })
       await locking
-      return { release: async () => (release(), await holder) }
+      return { release: async () => (release(false), await holder), abort: async () => (release(true), await holder) }
     }
 
     // Astra's review of 6b13eb85: the session's expiry was judged in the statement that locked it, before the write
@@ -980,6 +983,58 @@ describe("the repository's runners and agents", () => {
         expect(await sql`SELECT token_sha256 AS sha, removed_at IS NULL AS live FROM runners WHERE name = ${name}`)
           .toEqual([{ sha, live: true }])
       }
+    })
+
+    // Astra's review of f7b3de5f and 281a40d4 (route-on 1): a write admitted while its authority held could wait on a
+    // lock after admission, past the earliest of the fence's expiry, the session's and the role row's freshness, and
+    // still commit. A new resource has no row to lock first: its token's unique index waits on another transaction.
+    test("a write whose session ends while its new runner's token waits on another transaction writes nothing", async () => {
+      const who = await signedInAdmin()
+      await sql`UPDATE sessions SET expires_at = clock_timestamp() + interval '600 milliseconds' WHERE id = ${who.session}::uuid`
+      const token = "e".repeat(64)
+      const held = await holdRows((client) =>
+        client`INSERT INTO runners (repo_id, name, labels, capacity, token_sha256, added_by)
+          VALUES (${REPO}, 'nyc-holder', '{}', 1, ${token}, 'person-admin')`)
+      const writing = query(Effect.exit(Store.addRunner(
+        { repoId: REPO, name: "nyc-token-wait", tokenSha256: token, labels: [], capacity: 1, repoAuthorized: true },
+        fencedBy({
+          execution: "runners-put:token-wait",
+          authority: { _tag: "Session", personId: who.person, sessionId: who.session, alias: who.alias },
+        }),
+      )))
+      await new Promise((done) => setTimeout(done, 1_200))
+      // The holder gives the token up (rolls back), after the session ended.
+      await held.abort()
+      const exit = await writing
+      expect(Exit.isSuccess(exit) ? exit.value : "failed").not.toBe("set")
+      expect(await sql`SELECT count(*)::int AS n FROM runners WHERE name = 'nyc-token-wait'`).toEqual([{ n: 0 }])
+    })
+
+    test("waits after admission that add up past the fence's expiry, each shorter than it, write nothing", async () => {
+      const name = "nyc-cumulative"
+      const write = { repoId: REPO, name, tokenSha256: "f".repeat(64), labels: [], capacity: 1, repoAuthorized: true }
+      expect(await query(Store.addRunner(write, { actorId: "person-admin", invocationKey: crypto.randomUUID() }))).toBe("set")
+      const key = Store.resourceKey("runners", REPO, name)
+      const generation = await query(Store.generationOf(key))
+      const execution = "runners-put:cumulative"
+      // Two holders, each released after 700 ms of the write's wait on it: 1.4 s in all, against a 1 s fence.
+      const generationRow = await holdRows((client) => client`UPDATE admin_generations SET generation = generation WHERE key = ${key}`)
+      const receiptRow = await holdRows((client) =>
+        client`INSERT INTO admin_receipts (execution, repo_id, kind, name, op, outcome, actor_id)
+          VALUES (${execution}, ${REPO}, 'runners', ${name}, 'put', 'set', 'person-other')`)
+      const writing = query(Effect.exit(Store.addRunner(
+        { ...write, labels: ["moved"] },
+        fencedBy({ execution, expiresAt: Date.now() + 1_000, generation }),
+      )))
+      await new Promise((done) => setTimeout(done, 700))
+      await generationRow.release()
+      await new Promise((done) => setTimeout(done, 700))
+      await receiptRow.abort()
+      const exit = await writing
+      expect(Exit.isSuccess(exit) ? exit.value : "failed").not.toBe("set")
+      expect(await sql`SELECT labels FROM runners WHERE name = ${name}`).toEqual([{ labels: [] }])
+      expect(await sql`SELECT outcome FROM admin_receipts WHERE execution = ${execution}`)
+        .not.toEqual([{ outcome: "set" }])
     })
 
     // Astra's review of 29cacd16: a refusal's receipt committed but its acknowledgement lost, the replay was admitted

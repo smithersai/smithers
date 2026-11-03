@@ -162,6 +162,33 @@ export const replayed = (table: "runners" | "agents", repoId: string, name: stri
     ? Effect.succeed(undefined)
     : Effect.andThen(lockKeys([resourceKey(table, repoId, name)]), Fence.recorded(by.fenced.fence.execution))
 
+/**
+ * Last in a fenced write's transaction, every change made: fails `Fence.LateCommit` when the authority's earliest
+ * deadline passed while the write waited (`Fence.stillHolds`), which rolls the transaction back.
+ */
+export const commitWithin = (by: By) =>
+  by.fenced === undefined
+    ? Effect.void
+    : Effect.flatMap(Fence.stillHolds(by.fenced.fence), (live) => live ? Effect.void : Effect.fail(new Fence.LateCommit()))
+
+/**
+ * `write` (a whole transaction), refused `authorization_expired` when it failed `Fence.LateCommit`: its changes rolled
+ * back, the refusal is recorded as the action's receipt.
+ */
+export const refusedWhenLate = <A, E, R>(
+  repoId: string,
+  name: string,
+  by: By,
+  write: Effect.Effect<A, E | Fence.LateCommit, R>,
+): Effect.Effect<A | "authorization_expired", E | unknown, R | SqlClient.SqlClient> =>
+  Effect.catchTag(write as Effect.Effect<A, Fence.LateCommit, R>, "@smthrs/mvp/runners/LateCommit", () =>
+    by.fenced === undefined
+      ? Effect.die(new Error("a write without a fence can't be late"))
+      : Effect.as(
+        Fence.receipt(by.fenced.fence.execution, { repoId, kind: by.fenced.kind, name }, by.fenced.op, "authorization_expired", by.actorId),
+        "authorization_expired" as const,
+      ))
+
 /** Records a write's change once: `repeat` when this invocation already did, which the caller answers with. */
 const once = (table: "runner_changes" | "agent_changes", op: string, repoId: string, name: string, by: By) =>
   Effect.map(record(table, op, repoId, name, by), (recorded) => recorded ? "recorded" as const : "repeat" as const)
@@ -182,7 +209,7 @@ const written = <C extends "set" | "removed" | "missing">(repoId: string, name: 
  * GitHub gives on the repository; else it is cleared. Fenced, only as `admit` allows.
  */
 export const addRunner = (write: RunnerWrite, by: By): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  refusedWhenLate(write.repoId, write.name, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
       const admitted = yield* admit("runners", write.repoId, write.name, by, "ignore")
       if (admitted !== "admitted") return admitted
@@ -195,15 +222,17 @@ export const addRunner = (write: RunnerWrite, by: By): Effect.Effect<Change, unk
           token_sha256 = EXCLUDED.token_sha256, added_by = EXCLUDED.added_by, added_at = now(), seen_at = NULL,
           removed_at = NULL, repo_authorized_at = EXCLUDED.repo_authorized_at`
       yield* bump(resourceKey("runners", write.repoId, write.name))
-      return yield* written(write.repoId, write.name, by, "set")
-    })))
+      const change = yield* written(write.repoId, write.name, by, "set")
+      yield* commitWithin(by)
+      return change
+    }))))
 
 /** Retires runner `name`: its token is refused from now on. Its jobs keep their rows. Fenced, only as `admit` allows. */
 export const removeRunner = (
   write: { readonly repoId: string; readonly name: string },
   by: By,
 ): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  refusedWhenLate(write.repoId, write.name, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
       const admitted = yield* admit("runners", write.repoId, write.name, by, "ignore")
       if (admitted !== "admitted") return admitted
@@ -212,8 +241,10 @@ export const removeRunner = (
         UPDATE runners SET removed_at = now()
         WHERE repo_id = ${write.repoId} AND name = ${write.name} AND removed_at IS NULL RETURNING id`
       yield* bump(resourceKey("runners", write.repoId, write.name))
-      return yield* written(write.repoId, write.name, by, rows.length > 0 ? "removed" : "missing")
-    })))
+      const change = yield* written(write.repoId, write.name, by, rows.length > 0 ? "removed" : "missing")
+      yield* commitWithin(by)
+      return change
+    }))))
 
 /** The repository's coding agent's name, if any. */
 const codingName = (repoId: string) =>
@@ -227,7 +258,7 @@ const codingName = (repoId: string) =>
  * coding selection's generation included.
  */
 export const setAgent = (write: AgentWrite, by: By): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  refusedWhenLate(write.repoId, write.agent.name, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
       const { agent } = write
       const admitted = yield* admit("agents", write.repoId, agent.name, by, "compare")
@@ -246,8 +277,10 @@ export const setAgent = (write: AgentWrite, by: By): Effect.Effect<Change, unkno
           updated_by = EXCLUDED.updated_by, updated_at = now()`
       yield* bump(resourceKey("agents", write.repoId, agent.name))
       if ((yield* codingName(write.repoId)) !== coding) yield* bump(codingKey(write.repoId))
-      return yield* written(write.repoId, agent.name, by, "set")
-    })))
+      const change = yield* written(write.repoId, agent.name, by, "set")
+      yield* commitWithin(by)
+      return change
+    }))))
 
 /**
  * Removes agent `name`; a repository whose coding agent it was codes with Smithers' own again. Its generation stays,
@@ -258,7 +291,7 @@ export const removeAgent = (
   write: { readonly repoId: string; readonly name: string },
   by: By,
 ): Effect.Effect<Change, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  refusedWhenLate(write.repoId, write.name, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
       const admitted = yield* admit("agents", write.repoId, write.name, by, "compare")
       if (admitted !== "admitted") return admitted
@@ -267,8 +300,10 @@ export const removeAgent = (
         DELETE FROM agents WHERE repo_id = ${write.repoId} AND name = ${write.name} RETURNING coding`
       yield* bump(resourceKey("agents", write.repoId, write.name))
       if (rows[0]?.coding === true) yield* bump(codingKey(write.repoId))
-      return yield* written(write.repoId, write.name, by, rows.length > 0 ? "removed" : "missing")
-    })))
+      const change = yield* written(write.repoId, write.name, by, rows.length > 0 ? "removed" : "missing")
+      yield* commitWithin(by)
+      return change
+    }))))
 
 const decodeAgent = Schema.decodeUnknownEffect(AgentRunner.Agent)
 

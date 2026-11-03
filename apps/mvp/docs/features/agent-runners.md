@@ -30,8 +30,10 @@ included), then locks the rows it writes (the runner's, or the repository's agen
 row; or the person, the session and the alias, all locked before any is judged), then checks that authority, the
 fence's own expiry (5 minutes) by the clock as it stands then, and the generations it was admitted against: the
 runner's or agent's, which a removal doesn't reset, and for an agent, the repository's coding selection's. An action
-refused there writes nothing. Admitted, any lock the write still waits on gives up at the fence's expiry
-(`lock_timeout`), and the flow's retry is refused `authorization_expired`.
+refused there writes nothing. Admitted, any lock the write still waits on gives up at its authority's earliest
+deadline (`lock_timeout`): the fence's expiry, the session's, or the end of the role row's five-minute freshness. Right
+before it commits, every change made, the write checks that deadline again: waits that add up past it roll the whole
+write back, and the action is refused `authorization_expired`.
 Each `202` answers `{ name, execution }`; `GET /api/runners/admin-receipts/<execution>` answers how it ended, for the
 Admin who started it: `set`, `removed`, `missing`, `authorization_expired` (its authority no longer holds, or it
 waited past its expiry, or it was started before fences) or `superseded` (the runner or agent changed since), and

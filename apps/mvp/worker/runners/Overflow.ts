@@ -100,7 +100,7 @@ export const set = (
   write: Overflow & { readonly tokenSha256: string; readonly repoAuthorized: boolean },
   by: Store.By,
 ): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  Store.refusedWhenLate(write.repoId, RUNNER, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
       // A replay answers what its action did, before anything is written (decision 0148).
       const before = yield* Store.replayed("runners", write.repoId, RUNNER, by)
@@ -128,15 +128,17 @@ export const set = (
           min_queued_seconds = EXCLUDED.min_queued_seconds, capacity = EXCLUDED.capacity,
           token_ciphertext = EXCLUDED.token_ciphertext, token_nonce = EXCLUDED.token_nonce,
           key_version = EXCLUDED.key_version, updated_by = EXCLUDED.updated_by, updated_at = now()`
+      // The setting's own write may have waited too: still within the authority's deadline, or none of it holds.
+      yield* Store.commitWithin(by)
       return change
-    })))
+    }))))
 
 /** Turns overflow off: the overflow runner's token is refused from now on, and the sealed token is gone. */
 export const remove = (
   write: { readonly repoId: string },
   by: Store.By,
 ): Effect.Effect<Store.Change, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+  Store.refusedWhenLate(write.repoId, RUNNER, by, Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
       const before = yield* Store.replayed("runners", write.repoId, RUNNER, by)
       if (before !== undefined) return before
@@ -145,8 +147,9 @@ export const remove = (
       // Written again, or refused by its fence: the setting stays as it is.
       if (change !== "removed" && change !== "missing") return change
       yield* sql`DELETE FROM repo_overflow WHERE repo_id = ${write.repoId}`
+      yield* Store.commitWithin(by)
       return change
-    })))
+    }))))
 
 interface Row {
   readonly repoId: string
