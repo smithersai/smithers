@@ -15,9 +15,9 @@ import { step } from "../internal/MigrationStep.vibe"
  * @since 0.1.0
  * @private
  */
-export const initial = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* step(
+export const initial = effect {
+  const sql = try SqlClient.SqlClient
+  try step(
     "flows_time_travel_audits",
     sql`CREATE TABLE IF NOT EXISTS flows_time_travel_audits (
     ${Dialect.rowId(sql)}
@@ -32,12 +32,12 @@ export const initial = Effect.gen(function*() {
     detail_json TEXT CHECK (detail_json IS NULL OR ${Dialect.jsonValid(sql, sql`detail_json`)})
   )`
   )
-  yield* step(
+  try step(
     "flows_time_travel_audits_status_idx on flows_time_travel_audits",
     sql`CREATE INDEX IF NOT EXISTS flows_time_travel_audits_status_idx
     ON flows_time_travel_audits (status)`
   )
-  yield* step(
+  try step(
     "flows_time_travel_receipts",
     sql`CREATE TABLE IF NOT EXISTS flows_time_travel_receipts (
     id TEXT PRIMARY KEY CHECK (length(id) > 0),
@@ -46,7 +46,7 @@ export const initial = Effect.gen(function*() {
     receipt_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql`receipt_json`)})
   )`
   )
-  yield* step(
+  try step(
     "flows_time_travel_snapshots",
     sql`CREATE TABLE IF NOT EXISTS flows_time_travel_snapshots (
     run_id TEXT NOT NULL CHECK (length(run_id) > 0),
@@ -61,12 +61,12 @@ export const initial = Effect.gen(function*() {
   // The frame address is `(lineageId, seq)`, and every engine record carries
   // its lineage in the open `meta` envelope. Indexing it out of `meta_json`
   // keeps a lineage-filtered replay from degenerating into a full run scan.
-  yield* step(
+  try step(
     "flows_journal_events_lineage_idx on flows_journal_events",
     sql`CREATE INDEX IF NOT EXISTS flows_journal_events_lineage_idx
     ON flows_journal_events (run_id, ${Dialect.jsonText(sql, sql`meta_json`, "$.lineageId")}, seq)`
   )
-  yield* step(
+  try step(
     "flows_time_travel_edges",
     sql`CREATE TABLE IF NOT EXISTS flows_time_travel_edges (
     ${Dialect.rowId(sql)}
@@ -80,7 +80,7 @@ export const initial = Effect.gen(function*() {
     CHECK (parent_run_id <> child_run_id)
   )`
   )
-  yield* step(
+  try step(
     "flows_time_travel_edges_parent_idx on flows_time_travel_edges",
     sql`CREATE INDEX IF NOT EXISTS flows_time_travel_edges_parent_idx
     ON flows_time_travel_edges (parent_run_id, parent_seq)`
@@ -90,7 +90,7 @@ export const initial = Effect.gen(function*() {
   // durable trace of a process that died between the two; it keeps its
   // ordinal taken (`reclaimed_at_ms` marks it handed back) so a retry never
   // asks jj for the lane name the leftover on disk already holds.
-  yield* step(
+  try step(
     "flows_time_travel_fork_intents",
     sql`CREATE TABLE IF NOT EXISTS flows_time_travel_fork_intents (
     child_run_id TEXT PRIMARY KEY CHECK (length(child_run_id) > 0),
@@ -109,12 +109,12 @@ export const initial = Effect.gen(function*() {
     )
   )`
   )
-  yield* step(
+  try step(
     "flows_time_travel_fork_intents_parent_idx on flows_time_travel_fork_intents",
     sql`CREATE INDEX IF NOT EXISTS flows_time_travel_fork_intents_parent_idx
     ON flows_time_travel_fork_intents (parent_run_id, parent_seq)`
   )
-  yield* step(
+  try step(
     "flows_time_travel_archive",
     sql`CREATE TABLE IF NOT EXISTS flows_time_travel_archive (
     run_id TEXT NOT NULL CHECK (length(run_id) > 0),
@@ -138,4 +138,4 @@ export const initial = Effect.gen(function*() {
     PRIMARY KEY (run_id, seq)
   )`
   )
-})
+}

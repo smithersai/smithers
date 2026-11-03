@@ -49,7 +49,7 @@ export const TimeTravelErrorCode = Schema.Literals([
     "irreversible",
     "fence_lost",
     "limit_exceeded",
-    "unknown",
+    "unknown"
 ]);
 /**
  * A refused time-travel operation, carrying the {@link TimeTravelErrorCode}
@@ -62,7 +62,7 @@ export const TimeTravelErrorCode = Schema.Literals([
 export class TimeTravelError extends Schema.TaggedError()("@smthrs/time-travel/TimeTravelError", {
     code: TimeTravelErrorCode,
     message: Schema.String,
-    cause: Schema.optional(Schema.Unknown),
+    cause: Schema.optional(Schema.Unknown)
 }) {
 }
 /**

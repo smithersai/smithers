@@ -16,9 +16,9 @@ import { error, type TimeTravelError } from "../TimeTravelError.vibe"
  */
 export const run = <Step extends string>(
   verb: string,
-  hook: ((step: Step) => Effect.Effect<void, unknown>) | undefined,
+  hook: ((step: Step) => void!unknown) | undefined,
   step: Step
-): Effect.Effect<void, TimeTravelError> =>
+): void!TimeTravelError =>
   hook === undefined
     ? Effect.void
-    : hook(step).pipe(Effect.mapError((cause) => error("unknown", `${verb} failed at ${step}`, cause)))
+    : (hook(step) |> Effect.mapError(%, (cause) => error("unknown", `${verb} failed at ${step}`, cause)))

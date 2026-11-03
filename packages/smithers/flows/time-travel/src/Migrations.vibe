@@ -13,12 +13,12 @@
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as EngineStoreMigrations from "@smthrs/engine-store/Migrations"
 import * as Layer from "effect/Layer"
-import { initial } from "./migrations/0001_initial.ts"
-import { archiveGeneration } from "./migrations/0002_archive_generation.ts"
-import { lineageProbes } from "./migrations/0003_lineage_probes.ts"
+import { initial } from "./migrations/0001_initial.vibe"
+import { archiveGeneration } from "./migrations/0002_archive_generation.vibe"
+import { lineageProbes } from "./migrations/0003_lineage_probes.vibe"
 import { planDigest } from "./migrations/0004_plan_digest.vibe"
 import { operationId } from "./migrations/0005_operation_id.vibe"
-import { forkIntentForgotten } from "./migrations/0006_fork_intent_forgotten.ts"
+import { forkIntentForgotten } from "./migrations/0006_fork_intent_forgotten.vibe"
 
 /**
  * Time travel's namespaced migration set.

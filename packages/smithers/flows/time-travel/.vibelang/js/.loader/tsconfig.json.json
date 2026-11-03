@@ -96,7 +96,7 @@
      "relative": "packages/smithers/flows/time-travel/src"
     },
     null,
-    "BnOvdviF95Ma-MtSeCafv6Mw4I-cvHGbGGvoXVObKMc",
+    "lnqsH5plgY8E_3_torxG6lFfKWaPrkghEduscj9Mcgg",
     [],
     {
      "recursive": true,
@@ -311,8 +311,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
-    "size": 17535,
-    "hash": "ptYwS6ZsXv6SWAIC2pOWo-G6DvCscMYdXdnuxPCoknI"
+    "size": 15515,
+    "hash": "GLTe11R7D_Y-lDK2NQwjyjpFvfA2U1oWShbV7jfHzRA"
    },
    {
     "path": {
@@ -1965,15 +1965,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -1993,8 +1993,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/TimeTravelError.vibe"
     },
-    "size": 3639,
-    "hash": "DpdTg1S6trQ7oHOCYU8LHPBrVueC2uFaDag_PWA3VMo"
+    "size": 3637,
+    "hash": "anuv20sOo5yC0RwmLGqxY2OMY6sU42VKppCkI8h4kAU"
    },
    {
     "path": {
@@ -2007,15 +2007,15 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/CompensationHandlers.vibe"
     },
-    "size": 6185,
-    "hash": "jLsJRKT8UH7hFvPgh9BkdxrlLUS0CtXt2bWnWFTXzHg"
+    "size": 6183,
+    "hash": "grEO7yk1xIbBmsm-aN0fbPyzNdYljm0RZBHPr0kfsno"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/Frame.vibe"
     },
-    "size": 4451,
-    "hash": "Dn2Igp6Nu62WhCXXuagpm1GcFupL-sCyNZ9pd0f_Kt0"
+    "size": 4448,
+    "hash": "xm63ypu-BFlt4UMCxXB9E1lJ1sdjv1dx2I3NyeHA6TM"
    },
    {
     "path": {
@@ -2056,8 +2056,8 @@
     "path": {
      "relative": "packages/smithers/flows/observability/src/Metric.vibe"
     },
-    "size": 2935,
-    "hash": "XXXhfdHsrISiQL-9OYXdun1P5hmUMFMUukdWLG859ss"
+    "size": 2926,
+    "hash": "agxT2sS_fPGrTrYLKC82EdAhmacBoDpXqiBi2IwGa3Q"
    },
    {
     "path": {
@@ -2098,8 +2098,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
     },
-    "size": 5241,
-    "hash": "JO_KokRTYoaAfg_TXfxIkOm2WSWR9EmmsM5E__718es"
+    "size": 5230,
+    "hash": "0LLzrFtd-OyretNOj-AKWa17Kb_79-iCaTcT0zBy-4I"
    },
    {
     "path": {
@@ -2637,8 +2637,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -2819,15 +2819,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -2987,8 +2987,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -3029,8 +3029,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -3680,8 +3680,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -3799,15 +3799,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/Encoded.vibe"
     },
-    "size": 15365,
-    "hash": "ePdnivZA8MDmCtMUVOSeLRLJzoM3dfFwudXpQMMX_5I"
+    "size": 15350,
+    "hash": "pRQXTh_-X81irAiJXXamyVG2X9qXwZjvwXr3fBUSIq4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
     },
-    "size": 2224,
-    "hash": "wU_2S9aIe6CLhOhWz7TsA9p3vINTxD8o4Jh2tnx527A"
+    "size": 2221,
+    "hash": "0b4AvKWi513qOmacbu7zpMSsNZ5Bjscf82CWUZgnpLs"
    },
    {
     "path": {
@@ -3834,8 +3834,8 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/SnapshotBoundary.vibe"
     },
-    "size": 1488,
-    "hash": "kdlJBqK9sGgXpptwPI6kbpk-9Y3WEpcUrsuy-DYCZZo"
+    "size": 1483,
+    "hash": "RNyG78FFKArZrOc08jPVo0atR2pF7WPQCBEdugoxOyE"
    },
    {
     "path": {
@@ -4133,10 +4133,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
     },
-    "size": 6255,
-    "hash": "LrBv501ZspaqIO6wXKeJ5P0WdCF5QtheWYES6ny1SHk"
+    "size": 6205,
+    "hash": "fStKb_KsLbmL0V1eWwWk6UZHGDMKfIuvg0ojQqENQ3Y"
    },
    {
     "path": {
@@ -4147,17 +4147,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
     },
-    "size": 3459,
-    "hash": "k9r714Vu2fKUSbr4XWEA_xc5dkFtzhpJoHxllS1nTPw"
+    "size": 3395,
+    "hash": "CKZ9tNtoHIXhB6M58NYKVe92R_jho77o95KtxRlssfE"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
     },
-    "size": 1304,
-    "hash": "bUfqz63oQ-X6cqpUuw8LbRFW6Qsq3bXPWuN8MEcFZTY"
+    "size": 1278,
+    "hash": "3wyqIqCTKjTp7lrtlhIWU7tbwmmsAa6jdJbFbRZnyLE"
    },
    {
     "path": {
@@ -4175,17 +4175,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.ts"
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
     },
-    "size": 1077,
-    "hash": "bD_Tr-sTD7Mf41PqpzJhOcrooclcFI8AZIYUBkBhYg8"
+    "size": 1051,
+    "hash": "on_Rs6j67fUrmaGFJW6lB4_r4sGqulnucdbT3gVvJ_Y"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
     },
-    "size": 2304,
-    "hash": "fEItzVC29d01bjRZlFhfnRsxE9HCkxLMpwPhpiWRqJs"
+    "size": 2312,
+    "hash": "WuEQAZSrmp8CtWK1i9iTY_i4hkpEbXtzxFj9yOAQ9YI"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/engine-store/src/RunState.ts"
+    },
+    "size": 6823,
+    "hash": "dg4o69veFSUv-zx5n0UVikLeO6ZEf5WMJ2ndSntxo9Y"
    },
    {
     "path": {
@@ -4240,8 +4247,8 @@
     "path": {
      "relative": "packages/smithers/flows/step-cache/src/CacheStoreMetrics.vibe"
     },
-    "size": 4517,
-    "hash": "hTNIDUNgFJ9Xy8FK8DqbA7rxp9Ejhu1P0no0M6V3tj0"
+    "size": 4510,
+    "hash": "ddedd35rIVTSgnQM5lpUjqy2XPCl7fbrarVkrfRVYhE"
    },
    {
     "path": {
@@ -4282,29 +4289,29 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/HistoryLimit.vibe"
     },
-    "size": 2168,
-    "hash": "OHh-Qz12fq8hlgmgex2Cv4WW2WNiYjnYpfBAshgsQbk"
+    "size": 2166,
+    "hash": "E87aJ1xVTymqZsTFnAlvwLOa7Gn1PTYmn1wKPwoeh0w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
     },
-    "size": 3851,
-    "hash": "bg2um5O7B6qxJtcwuNDIhuWyZCojkw-eqcJwJrXACpI"
+    "size": 3859,
+    "hash": "p91vkMn3zzGIacmG19Yr9wbaICfMqAeWrqyHOTEoLac"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.ts"
+     "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
     },
-    "size": 704,
-    "hash": "_UbmOoHisGC3Cppj_gbhMDmO_Y85XD1GYnw7CL752Ps"
+    "size": 674,
+    "hash": "JWtYDlq9qz4di5H3ZkEYScie5hhVwqimDKxu2_Zy1ws"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
     },
-    "size": 20625,
-    "hash": "ztR0cn56YS5ucdImv9OOw3k725tuSst-eQlYUPm_qDo"
+    "size": 20627,
+    "hash": "UMtwURlnMHws0YL8wt4HH10TR_tsQAM8EviLGKOjuKg"
    },
    {
     "path": {
@@ -4331,8 +4338,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Rewind.ts"
     },
-    "size": 54169,
-    "hash": "axPAAZxOx74fPs3i6YtCPNcssnaEwUbgmdntmbiKGB4"
+    "size": 54171,
+    "hash": "YPSWF2AZrrdl_P3V04PP0wyv0jdsAM4F-N_lG20yaa4"
    },
    {
     "path": {
@@ -6042,16 +6049,16 @@
     "relative": "packages/smithers/flows/time-travel/src/internal/MigrationStep.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/JournalGeneration.ts"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/migrations/0004_plan_digest.vibe"
@@ -6060,10 +6067,13 @@
     "relative": "packages/smithers/flows/time-travel/src/migrations/0005_operation_id.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.ts"
+    "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/engine-store/src/RunState.ts"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/SqlTimeTravelStore.ts"
@@ -6111,7 +6121,7 @@
     "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
    },
    {
-    "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.ts"
+    "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
    },
    {
     "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
@@ -6177,6 +6187,36 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
+    },
+    "line": 19,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
+    },
+    "line": 21,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
+    },
+    "line": 19,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/time-travel/src/migrations/0004_plan_digest.vibe"
     },
     "line": 19,
@@ -6194,6 +6234,16 @@
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
+    },
+    "line": 20,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    }
   ],
   "outputs": [
@@ -6203,7 +6253,7 @@
       "relative": "packages/smithers/flows/time-travel/src/TimeTravelError.vibe"
      }
     ],
-    "code": "/**\n * The single failure type every time-travel operation can fail with.\n *\n * Inspect, fork, and rewind all fail as `TimeTravelError`, discriminated by a\n * `code` rather than by a family of tags: the callers that matter — a UI\n * offering \"retry\", a driver deciding whether to back off — branch on *why*\n * the operation was refused, and a closed code list keeps that branch\n * exhaustive. The tag itself is wire format, so it stays\n * `@smthrs/time-travel/TimeTravelError` even as the code list grows.\n *\n * @since 0.1.0\n */\nimport * as Cause from \"effect/Cause\";\nimport * as Schema from \"effect/Schema\";\n/**\n * Why a time-travel operation was refused.\n *\n * `busy`: another rewind holds the run. `live_parent` and `live_child`: the\n * run, an ancestor, or one of its descendants is still executing, so its\n * history is not settled enough to branch from or truncate. `not_found`: the\n * run or frame does not exist. `invalid`: a caller-supplied option is\n * malformed, refused before the operation touches anything. `already_crossed`:\n * the effect already recorded a durable `intended` boundary, so executing it a\n * second time was refused; it is a re-armed effect, never a contended run,\n * which is why it is not `busy`. `rate_limited`: the rewind rate limiter\n * rejected the attempt. `compensation_failed`: a side effect's rollback\n * handler failed, so the rewind stopped rather than leave the world\n * half-reverted. `irreversible`: an effect in the truncated range cannot be\n * undone at all. `fence_lost`: the caller's ownership of the run was\n * superseded before a mutation committed, so the mutation was refused rather\n * than written behind the live owner. `limit_exceeded`: the history the\n * operation would have to read is longer than the configured\n * `maxHistoryEntries`, so it stopped before materializing it. `unknown`: the\n * store or an unmapped host failure.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const TimeTravelErrorCode = Schema.Literals([\n    \"busy\",\n    \"live_parent\",\n    \"live_child\",\n    \"not_found\",\n    \"invalid\",\n    \"already_crossed\",\n    \"rate_limited\",\n    \"compensation_failed\",\n    \"irreversible\",\n    \"fence_lost\",\n    \"limit_exceeded\",\n    \"unknown\",\n]);\n/**\n * A refused time-travel operation, carrying the {@link TimeTravelErrorCode}\n * that says why, a human-readable message, and the underlying `cause` when one\n * exists.\n *\n * @since 0.1.0\n * @category errors\n */\nexport class TimeTravelError extends Schema.TaggedError()(\"@smthrs/time-travel/TimeTravelError\", {\n    code: TimeTravelErrorCode,\n    message: Schema.String,\n    cause: Schema.optional(Schema.Unknown),\n}) {\n}\n/**\n * Creates a {@link TimeTravelError}, omitting `cause` entirely when none is\n * supplied so an absent cause never encodes as an explicit `undefined`.\n *\n * @since 0.1.0\n * @category constructors\n */\nexport const error = (code, message, cause) => new TimeTravelError({ code, message, ...(cause === undefined ? {} : { cause }) });\n/**\n * The {@link TimeTravelError} a failed cause carries, or an `unknown` one\n * wrapping it when the cause squashes to anything else.\n *\n * @since 0.1.0\n * @category constructors\n */\nexport const fromCause = (cause) => {\n    const squashed = Cause.squash(cause);\n    return squashed instanceof TimeTravelError\n        ? squashed\n        : error(\"unknown\", squashed instanceof Error ? squashed.message : String(squashed), cause);\n};\n",
+    "code": "/**\n * The single failure type every time-travel operation can fail with.\n *\n * Inspect, fork, and rewind all fail as `TimeTravelError`, discriminated by a\n * `code` rather than by a family of tags: the callers that matter — a UI\n * offering \"retry\", a driver deciding whether to back off — branch on *why*\n * the operation was refused, and a closed code list keeps that branch\n * exhaustive. The tag itself is wire format, so it stays\n * `@smthrs/time-travel/TimeTravelError` even as the code list grows.\n *\n * @since 0.1.0\n */\nimport * as Cause from \"effect/Cause\";\nimport * as Schema from \"effect/Schema\";\n/**\n * Why a time-travel operation was refused.\n *\n * `busy`: another rewind holds the run. `live_parent` and `live_child`: the\n * run, an ancestor, or one of its descendants is still executing, so its\n * history is not settled enough to branch from or truncate. `not_found`: the\n * run or frame does not exist. `invalid`: a caller-supplied option is\n * malformed, refused before the operation touches anything. `already_crossed`:\n * the effect already recorded a durable `intended` boundary, so executing it a\n * second time was refused; it is a re-armed effect, never a contended run,\n * which is why it is not `busy`. `rate_limited`: the rewind rate limiter\n * rejected the attempt. `compensation_failed`: a side effect's rollback\n * handler failed, so the rewind stopped rather than leave the world\n * half-reverted. `irreversible`: an effect in the truncated range cannot be\n * undone at all. `fence_lost`: the caller's ownership of the run was\n * superseded before a mutation committed, so the mutation was refused rather\n * than written behind the live owner. `limit_exceeded`: the history the\n * operation would have to read is longer than the configured\n * `maxHistoryEntries`, so it stopped before materializing it. `unknown`: the\n * store or an unmapped host failure.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const TimeTravelErrorCode = Schema.Literals([\n    \"busy\",\n    \"live_parent\",\n    \"live_child\",\n    \"not_found\",\n    \"invalid\",\n    \"already_crossed\",\n    \"rate_limited\",\n    \"compensation_failed\",\n    \"irreversible\",\n    \"fence_lost\",\n    \"limit_exceeded\",\n    \"unknown\"\n]);\n/**\n * A refused time-travel operation, carrying the {@link TimeTravelErrorCode}\n * that says why, a human-readable message, and the underlying `cause` when one\n * exists.\n *\n * @since 0.1.0\n * @category errors\n */\nexport class TimeTravelError extends Schema.TaggedError()(\"@smthrs/time-travel/TimeTravelError\", {\n    code: TimeTravelErrorCode,\n    message: Schema.String,\n    cause: Schema.optional(Schema.Unknown)\n}) {\n}\n/**\n * Creates a {@link TimeTravelError}, omitting `cause` entirely when none is\n * supplied so an absent cause never encodes as an explicit `undefined`.\n *\n * @since 0.1.0\n * @category constructors\n */\nexport const error = (code, message, cause) => new TimeTravelError({ code, message, ...(cause === undefined ? {} : { cause }) });\n/**\n * The {@link TimeTravelError} a failed cause carries, or an `unknown` one\n * wrapping it when the cause squashes to anything else.\n *\n * @since 0.1.0\n * @category constructors\n */\nexport const fromCause = (cause) => {\n    const squashed = Cause.squash(cause);\n    return squashed instanceof TimeTravelError\n        ? squashed\n        : error(\"unknown\", squashed instanceof Error ? squashed.message : String(squashed), cause);\n};\n",
     "map": {
      "version": 3,
      "file": "TimeTravelError.js",
@@ -6223,7 +6273,7 @@
       "relative": "packages/smithers/flows/time-travel/src/CompensationHandlers.vibe"
      }
     ],
-    "code": "/**\n * The registration door for compensation handlers.\n *\n * Handlers could arrive through one of two doors: a construction argument on `TimeTravel.layer`, or\n * handlers contributed by the engine composition that owns the effect boundary\n * — either way without re-exposing `EffectHandlerRegistry`, which is machinery\n * and stays under `internal/`.\n *\n * **The pick is the contribution door.** The adapter that performed a tier-3\n * effect owns its compensation (`docs/guides/compensate-an-effect.md`), and the composition that wires that adapter is the only place that can close\n * over the services its `revert` needs. A construction argument on\n * `TimeTravel.layer` would have put that knowledge on whoever assembles the\n * app, one layer away from the boundary it describes. This service is\n * therefore OPTIONAL: a composition with no irreversible adapters provides\n * nothing and every crossed effect still assesses as blocking, which is the\n * pre-existing, safe behaviour.\n *\n * What stays hidden is the registry, not the handler. A caller writes a\n * {@link Handler} and provides {@link layer}; it never sees `HashMap`,\n * `register`, or the immutable-service dance behind them.\n *\n * ```ts\n * import { CompensationHandlers } from \"@smthrs/time-travel\"\n * import * as Effect from \"effect/Effect\"\n *\n * const refund = CompensationHandlers.layer([{\n *   kind: \"billing/charge\",\n *   tier: \"irreversible\",\n *   residue: (effect) => `Charge ${effect.id} was refunded, not un-charged.`,\n *   revert: (effect) => Effect.succeed({ refunded: effect.id }),\n *   rollback: () => Effect.void\n * }])\n * ```\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\n/**\n * A handler's preflight verdict on one crossed effect: `revertible` means the\n * rewind compensates it, `warning` means it stands and the rewind discloses\n * it, `blocking` means the rewind is refused.\n *\n * @since 0.1.0\n * @category models\n */\nexport const Classification = Schema.Literals([\"revertible\", \"warning\", \"blocking\"]);\n/**\n * A handler's preflight result: the {@link Classification}, why, and the\n * operator-facing `residue` that remains outside the journal if the boundary\n * is crossed.\n *\n * A custom `assess` is decoded against this schema before a rewind acts on\n * it. A result that does not decode assesses as `blocking`, so a handler bug\n * can refuse a rewind but never let one through.\n *\n * @since 0.1.0\n * @category models\n */\nexport const Assessment = Schema.Struct({\n    classification: Classification,\n    reason: Schema.String,\n    residue: Schema.String,\n});\n/**\n * The handlers a composition contributes to time travel.\n *\n * @since 0.1.0\n * @category services\n */\nexport class CompensationHandlers extends Context.Service()(\"@smthrs/time-travel/CompensationHandlers\") {\n}\n/**\n * Provides a set of handlers.\n *\n * @since 0.1.0\n * @category layers\n */\nexport const layer = (handlers) => Layer.succeed(CompensationHandlers)(handlers);\n/**\n * Provides no handlers — the default, and what a composition with no\n * irreversible adapters wants.\n *\n * @since 0.1.0\n * @category layers\n */\nexport const layerNoop = layer([]);\n",
+    "code": "/**\n * The registration door for compensation handlers.\n *\n * Handlers could arrive through one of two doors: a construction argument on `TimeTravel.layer`, or\n * handlers contributed by the engine composition that owns the effect boundary\n * — either way without re-exposing `EffectHandlerRegistry`, which is machinery\n * and stays under `internal/`.\n *\n * **The pick is the contribution door.** The adapter that performed a tier-3\n * effect owns its compensation (`docs/guides/compensate-an-effect.md`), and the composition that wires that adapter is the only place that can close\n * over the services its `revert` needs. A construction argument on\n * `TimeTravel.layer` would have put that knowledge on whoever assembles the\n * app, one layer away from the boundary it describes. This service is\n * therefore OPTIONAL: a composition with no irreversible adapters provides\n * nothing and every crossed effect still assesses as blocking, which is the\n * pre-existing, safe behaviour.\n *\n * What stays hidden is the registry, not the handler. A caller writes a\n * {@link Handler} and provides {@link layer}; it never sees `HashMap`,\n * `register`, or the immutable-service dance behind them.\n *\n * ```ts\n * import { CompensationHandlers } from \"@smthrs/time-travel\"\n * import * as Effect from \"effect/Effect\"\n *\n * const refund = CompensationHandlers.layer([{\n *   kind: \"billing/charge\",\n *   tier: \"irreversible\",\n *   residue: (effect) => `Charge ${effect.id} was refunded, not un-charged.`,\n *   revert: (effect) => Effect.succeed({ refunded: effect.id }),\n *   rollback: () => Effect.void\n * }])\n * ```\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\n/**\n * A handler's preflight verdict on one crossed effect: `revertible` means the\n * rewind compensates it, `warning` means it stands and the rewind discloses\n * it, `blocking` means the rewind is refused.\n *\n * @since 0.1.0\n * @category models\n */\nexport const Classification = Schema.Literals([\"revertible\", \"warning\", \"blocking\"]);\n/**\n * A handler's preflight result: the {@link Classification}, why, and the\n * operator-facing `residue` that remains outside the journal if the boundary\n * is crossed.\n *\n * A custom `assess` is decoded against this schema before a rewind acts on\n * it. A result that does not decode assesses as `blocking`, so a handler bug\n * can refuse a rewind but never let one through.\n *\n * @since 0.1.0\n * @category models\n */\nexport const Assessment = Schema.Struct({\n    classification: Classification,\n    reason: Schema.String,\n    residue: Schema.String\n});\n/**\n * The handlers a composition contributes to time travel.\n *\n * @since 0.1.0\n * @category services\n */\nexport class CompensationHandlers extends Context.Service()(\"@smthrs/time-travel/CompensationHandlers\") {\n}\n/**\n * Provides a set of handlers.\n *\n * @since 0.1.0\n * @category layers\n */\nexport const layer = (handlers) => Layer.succeed(CompensationHandlers)(handlers);\n/**\n * Provides no handlers — the default, and what a composition with no\n * irreversible adapters wants.\n *\n * @since 0.1.0\n * @category layers\n */\nexport const layerNoop = layer([]);\n",
     "map": {
      "version": 3,
      "file": "CompensationHandlers.js",
@@ -6243,7 +6293,7 @@
       "relative": "packages/smithers/flows/time-travel/src/Frame.vibe"
      }
     ],
-    "code": "/**\n * The coordinate system time travel addresses history with.\n *\n * Every time-travel operation names a point in a run's past as a `Frame` —\n * a lineage plus a journal sequence number — and every operation that creates\n * a new run from that point records a `LineageEdge` back to it. Together they\n * are the whole addressing scheme: a frame says *where*, an edge says *what\n * came from there*, and the two are what `docs/concepts/frames-and-lineage.md`\n * calls the lineage tree.\n *\n * A lineage is not a run. A fork or a continuation starts a new run but may\n * keep walking the same lineage, which is why `Frame` carries `lineageId`\n * rather than `runId`: the run that a frame belongs to is a property of the\n * lineage tree, not of the coordinate.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * A point in one lineage's history: the journal sequence number `seq` within\n * lineage `lineageId`.\n *\n * `seq` is the zero-based journal sequence of the last record the frame\n * includes: frame `n` covers every record with `seq <= n`, so frame `0` is the\n * state after the first record. `replay` and `inspect` refuse any frame of an\n * empty history `not_found`; `rewind` accepts frame `0` there, with nothing to\n * truncate.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const Frame = Schema.Struct({\n    lineageId: Schema.NonEmptyString,\n    seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),\n});\n/**\n * Why a child lineage exists, and therefore what its parent may still assume\n * about it.\n *\n * `child` is an ordinary nested run the parent spawned; `fork` is a\n * time-travel branch that copied a prefix of the parent's journal and now runs\n * alongside it; `continuation` is the parent carrying on under a new run id\n * after a rewind truncated it. Only `fork` produces two live runs sharing a\n * past, which is why rewind treats forked descendants differently from the\n * other two.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const LineageEdgeKind = Schema.Literals([\"child\", \"fork\", \"continuation\"]);\n/**\n * One parent→child link in the lineage tree, anchored at the parent frame the\n * child branched from.\n *\n * `attached` distinguishes the two states a descendant can be in when its\n * parent rewinds past `parentSeq`: an attached child still depends on the\n * history being truncated and must be dealt with, a detached one has been cut\n * loose and survives the rewind as an independent run. It is the flag the\n * rewind's detached-child policy reads.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const LineageEdge = Schema.Struct({\n    parentRunId: Schema.NonEmptyString,\n    parentSeq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),\n    childRunId: Schema.NonEmptyString,\n    kind: LineageEdgeKind,\n    attached: Schema.Boolean,\n});\n/**\n * The journal event type marking a run as fork-created.\n *\n * A forked run says so on its own journal, so a cross-fork timeline can start from any child and walk back\n * without consulting the edge table. The record sits directly above the copied\n * prefix and carries `(parentRunId, forkJournalOffset)`.\n *\n * @since 0.1.0\n * @category constants\n */\nexport const forkCreatedEventType = \"flows.time-travel.fork-created\";\n/**\n * The payload of a {@link forkCreatedEventType} record: which run this one was\n * forked from, and how much of that run's journal was copied.\n *\n * `forkJournalOffset` is the parent `seq` the fork was taken at, so the child's\n * copied prefix includes that offset. The fork-created marker is at\n * forkJournalOffset + 1; subsequent child records start at forkJournalOffset + 2.\n * Copied records retain their parent's sequence numbers.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const ForkCreated = Schema.Struct({\n    parentRunId: Schema.NonEmptyString,\n    forkJournalOffset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),\n    childRunId: Schema.NonEmptyString,\n});\n",
+    "code": "/**\n * The coordinate system time travel addresses history with.\n *\n * Every time-travel operation names a point in a run's past as a `Frame` —\n * a lineage plus a journal sequence number — and every operation that creates\n * a new run from that point records a `LineageEdge` back to it. Together they\n * are the whole addressing scheme: a frame says *where*, an edge says *what\n * came from there*, and the two are what `docs/concepts/frames-and-lineage.md`\n * calls the lineage tree.\n *\n * A lineage is not a run. A fork or a continuation starts a new run but may\n * keep walking the same lineage, which is why `Frame` carries `lineageId`\n * rather than `runId`: the run that a frame belongs to is a property of the\n * lineage tree, not of the coordinate.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * A point in one lineage's history: the journal sequence number `seq` within\n * lineage `lineageId`.\n *\n * `seq` is the zero-based journal sequence of the last record the frame\n * includes: frame `n` covers every record with `seq <= n`, so frame `0` is the\n * state after the first record. `replay` and `inspect` refuse any frame of an\n * empty history `not_found`; `rewind` accepts frame `0` there, with nothing to\n * truncate.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const Frame = Schema.Struct({\n    lineageId: Schema.NonEmptyString,\n    seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))\n});\n/**\n * Why a child lineage exists, and therefore what its parent may still assume\n * about it.\n *\n * `child` is an ordinary nested run the parent spawned; `fork` is a\n * time-travel branch that copied a prefix of the parent's journal and now runs\n * alongside it; `continuation` is the parent carrying on under a new run id\n * after a rewind truncated it. Only `fork` produces two live runs sharing a\n * past, which is why rewind treats forked descendants differently from the\n * other two.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const LineageEdgeKind = Schema.Literals([\"child\", \"fork\", \"continuation\"]);\n/**\n * One parent→child link in the lineage tree, anchored at the parent frame the\n * child branched from.\n *\n * `attached` distinguishes the two states a descendant can be in when its\n * parent rewinds past `parentSeq`: an attached child still depends on the\n * history being truncated and must be dealt with, a detached one has been cut\n * loose and survives the rewind as an independent run. It is the flag the\n * rewind's detached-child policy reads.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const LineageEdge = Schema.Struct({\n    parentRunId: Schema.NonEmptyString,\n    parentSeq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),\n    childRunId: Schema.NonEmptyString,\n    kind: LineageEdgeKind,\n    attached: Schema.Boolean\n});\n/**\n * The journal event type marking a run as fork-created.\n *\n * A forked run says so on its own journal, so a cross-fork timeline can start from any child and walk back\n * without consulting the edge table. The record sits directly above the copied\n * prefix and carries `(parentRunId, forkJournalOffset)`.\n *\n * @since 0.1.0\n * @category constants\n */\nexport const forkCreatedEventType = \"flows.time-travel.fork-created\";\n/**\n * The payload of a {@link forkCreatedEventType} record: which run this one was\n * forked from, and how much of that run's journal was copied.\n *\n * `forkJournalOffset` is the parent `seq` the fork was taken at, so the child's\n * copied prefix includes that offset. The fork-created marker is at\n * forkJournalOffset + 1; subsequent child records start at forkJournalOffset + 2.\n * Copied records retain their parent's sequence numbers.\n *\n * @since 0.1.0\n * @category schemas\n */\nexport const ForkCreated = Schema.Struct({\n    parentRunId: Schema.NonEmptyString,\n    forkJournalOffset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),\n    childRunId: Schema.NonEmptyString\n});\n",
     "map": {
      "version": 3,
      "file": "Frame.js",
@@ -6275,6 +6325,66 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,KAAK,EAAE,MAAM,uBAAyB,CAAA;AAE/C;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAU,MAAc,EAAE,SAAgB,EAAE,EAAE,CAE7D,MAAM,CAAC,QAAQ,CADlB,SAAS,EACa,CAAC,KAAK,EAAE,EAAE,CAAC,KAAK,CAAC,SAAS,EAAE,yCAAyC,MAAM,EAAE,EAAE,KAAK,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
+     }
+    ],
+    "code": "/**\n * Initial time-travel schema. Keep this rung frozen.\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\nimport { step } from \"../internal/MigrationStep.js\";\n/**\n * Creates the original time-travel tables and indexes.\n *\n * @since 0.1.0\n * @private\n */\nexport const initial = Effect_1.gen(function* initial() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* step(\"flows_time_travel_audits\", sql `CREATE TABLE IF NOT EXISTS flows_time_travel_audits (\n    ${Dialect.rowId(sql)}\n    id TEXT PRIMARY KEY CHECK (length(id) > 0),\n    run_id TEXT NOT NULL CHECK (length(run_id) > 0),\n    lineage_id TEXT NOT NULL CHECK (length(lineage_id) > 0),\n    seq ${Dialect.integer(sql)} NOT NULL CHECK (${Dialect.isInteger(sql, sql `seq`)} AND seq >= 0 AND seq <= 9007199254740991),\n    status TEXT NOT NULL CHECK (status IN ('in_progress', 'completed', 'failed')),\n    rate_limit_json TEXT CHECK (rate_limit_json IS NULL OR ${Dialect.jsonValid(sql, sql `rate_limit_json`)}),\n    detail_json TEXT CHECK (detail_json IS NULL OR ${Dialect.jsonValid(sql, sql `detail_json`)})\n  )`);\n    yield* step(\"flows_time_travel_audits_status_idx on flows_time_travel_audits\", sql `CREATE INDEX IF NOT EXISTS flows_time_travel_audits_status_idx\n    ON flows_time_travel_audits (status)`);\n    yield* step(\"flows_time_travel_receipts\", sql `CREATE TABLE IF NOT EXISTS flows_time_travel_receipts (\n    id TEXT PRIMARY KEY CHECK (length(id) > 0),\n    audit_id TEXT NOT NULL CHECK (length(audit_id) > 0),\n    effect_id TEXT NOT NULL CHECK (length(effect_id) > 0),\n    receipt_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `receipt_json`)})\n  )`);\n    yield* step(\"flows_time_travel_snapshots\", sql `CREATE TABLE IF NOT EXISTS flows_time_travel_snapshots (\n    run_id TEXT NOT NULL CHECK (length(run_id) > 0),\n    lineage_id TEXT NOT NULL CHECK (length(lineage_id) > 0),\n    seq ${Dialect.integer(sql)} NOT NULL CHECK (${Dialect.isInteger(sql, sql `seq`)} AND seq >= 0 AND seq <= 9007199254740991),\n    change_id TEXT NOT NULL CHECK (length(change_id) > 0),\n    PRIMARY KEY (run_id, lineage_id, seq)\n  )`);\n    // The frame address is `(lineageId, seq)`, and every engine record carries\n    // its lineage in the open `meta` envelope. Indexing it out of `meta_json`\n    // keeps a lineage-filtered replay from degenerating into a full run scan.\n    yield* step(\"flows_journal_events_lineage_idx on flows_journal_events\", sql `CREATE INDEX IF NOT EXISTS flows_journal_events_lineage_idx\n    ON flows_journal_events (run_id, ${Dialect.jsonText(sql, sql `meta_json`, \"$.lineageId\")}, seq)`);\n    yield* step(\"flows_time_travel_edges\", sql `CREATE TABLE IF NOT EXISTS flows_time_travel_edges (\n    ${Dialect.rowId(sql)}\n    parent_run_id TEXT NOT NULL CHECK (length(parent_run_id) > 0),\n    parent_seq ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `parent_seq`)} AND parent_seq >= 0 AND parent_seq <= 9007199254740991\n    ),\n    child_run_id TEXT NOT NULL UNIQUE CHECK (length(child_run_id) > 0),\n    kind TEXT NOT NULL CHECK (kind IN ('child', 'fork', 'continuation')),\n    attached ${Dialect.integer(sql)} NOT NULL CHECK (attached IN (0, 1)),\n    CHECK (parent_run_id <> child_run_id)\n  )`);\n    yield* step(\"flows_time_travel_edges_parent_idx on flows_time_travel_edges\", sql `CREATE INDEX IF NOT EXISTS flows_time_travel_edges_parent_idx\n    ON flows_time_travel_edges (parent_run_id, parent_seq)`);\n    // A minted fork id, reserved before the child's workspace is provisioned\n    // and consumed when the fork commits. A row that outlives its fork is the\n    // durable trace of a process that died between the two; it keeps its\n    // ordinal taken (`reclaimed_at_ms` marks it handed back) so a retry never\n    // asks jj for the lane name the leftover on disk already holds.\n    yield* step(\"flows_time_travel_fork_intents\", sql `CREATE TABLE IF NOT EXISTS flows_time_travel_fork_intents (\n    child_run_id TEXT PRIMARY KEY CHECK (length(child_run_id) > 0),\n    parent_run_id TEXT NOT NULL CHECK (length(parent_run_id) > 0),\n    parent_seq ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `parent_seq`)} AND parent_seq >= 0 AND parent_seq <= 9007199254740991\n    ),\n    reserved_at_ms ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `reserved_at_ms`)} AND reserved_at_ms >= 0 AND reserved_at_ms <= 9007199254740991\n    ),\n    reclaimed_at_ms ${Dialect.integer(sql)} CHECK (\n      reclaimed_at_ms IS NULL\n      OR (${Dialect.isInteger(sql, sql `reclaimed_at_ms`)} AND reclaimed_at_ms >= 0 AND reclaimed_at_ms <= 9007199254740991)\n    )\n  )`);\n    yield* step(\"flows_time_travel_fork_intents_parent_idx on flows_time_travel_fork_intents\", sql `CREATE INDEX IF NOT EXISTS flows_time_travel_fork_intents_parent_idx\n    ON flows_time_travel_fork_intents (parent_run_id, parent_seq)`);\n    yield* step(\"flows_time_travel_archive\", sql `CREATE TABLE IF NOT EXISTS flows_time_travel_archive (\n    run_id TEXT NOT NULL CHECK (length(run_id) > 0),\n    seq ${Dialect.integer(sql)} NOT NULL CHECK (${Dialect.isInteger(sql, sql `seq`)} AND seq >= 0 AND seq <= 9007199254740991),\n    event_id TEXT NOT NULL CHECK (length(event_id) > 0),\n    source_id TEXT NOT NULL CHECK (length(source_id) > 0),\n    source_seq ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `source_seq`)} AND source_seq >= 0 AND source_seq <= 9007199254740991\n    ),\n    emitted_at_ms ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `emitted_at_ms`)} AND emitted_at_ms >= 0 AND emitted_at_ms <= 9007199254740991\n    ),\n    event_type TEXT NOT NULL CHECK (length(event_type) > 0),\n    payload_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `payload_json`)}),\n    meta_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `meta_json`)}),\n    archived_at_ms ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `archived_at_ms`)} AND archived_at_ms >= 0 AND archived_at_ms <= 9007199254740991\n    ),\n    PRIMARY KEY (run_id, seq)\n  )`);\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0001_initial.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/time-travel/src/migrations/0001_initial.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AACjD,OAAO,EAAE,IAAI,EAAE,MAAM,8BAAgC,CAAA;AAErD;;;;;GAKG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,a,CAAA,S,CAAA;IACrB,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,IAAI,CACN,0BAA0B,EAC1B,GAAG,CAAA;MACD,OAAO,CAAC,KAAK,CAAC,GAAG,CAAC;;;;UAId,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC,oBACxB,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,KAAK,CACjC;;6DAEyD,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,iBAAiB,CAAC;qDACpD,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,aAAa,CAAC;IACzF,CACD,CAAA;IACD,OAAI,IAAI,CACN,iEAAiE,EACjE,GAAG,CAAA;yCACkC,CACtC,CAAA;IACD,OAAI,IAAI,CACN,4BAA4B,EAC5B,GAAG,CAAA;;;;wCAIiC,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,cAAc,CAAC;IAC7E,CACD,CAAA;IACD,OAAI,IAAI,CACN,6BAA6B,EAC7B,GAAG,CAAA;;;UAGG,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC,oBACxB,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,KAAK,CACjC;;;IAGA,CACD,CAAA;IACD,2EAA2E;IAC3E,0EAA0E;IAC1E,0EAA0E;IAC1E,OAAI,IAAI,CACN,0DAA0D,EAC1D,GAAG,CAAA;uCACgC,OAAO,CAAC,QAAQ,CAAC,GAAG,EAAE,GAAG,CAAA,WAAW,EAAE,aAAa,CAAC,QAAQ,CAChG,CAAA;IACD,OAAI,IAAI,CACN,yBAAyB,EACzB,GAAG,CAAA;MACD,OAAO,CAAC,KAAK,CAAC,GAAG,CAAC;;iBAEP,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QAC7B,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,YAAY,CAAC;;;;eAIhC,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;;IAE/B,CACD,CAAA;IACD,OAAI,IAAI,CACN,+DAA+D,EAC/D,GAAG,CAAA;2DACoD,CACxD,CAAA;IACD,yEAAyE;IACzE,0EAA0E;IAC1E,qEAAqE;IACrE,0EAA0E;IAC1E,gEAAgE;IAChE,OAAI,IAAI,CACN,gCAAgC,EAChC,GAAG,CAAA;;;iBAGU,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QAC7B,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,YAAY,CAAC;;qBAE1B,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QACjC,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,gBAAgB,CAAC;;sBAE7B,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;;YAGpC,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,iBAAiB,CAC7C;;IAEA,CACD,CAAA;IACD,OAAI,IAAI,CACN,6EAA6E,EAC7E,GAAG,CAAA;kEAC2D,CAC/D,CAAA;IACD,OAAI,IAAI,CACN,2BAA2B,EAC3B,GAAG,CAAA;;UAEG,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC,oBACxB,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,KAAK,CACjC;;;iBAGa,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QAC7B,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,YAAY,CAAC;;oBAE3B,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QAChC,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,eAAe,CAAC;;;wCAGV,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,cAAc,CAAC;qCAC5C,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,WAAW,CAAC;qBACtD,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QACjC,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,gBAAgB,CAAC;;;IAG/C,CACD,CAAA;AACH,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
+     }
+    ],
+    "code": "/**\n * Generation-aware archive upgrade.\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as JournalGeneration from \"@smthrs/journal/JournalGeneration\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\nimport { step } from \"../internal/MigrationStep.js\";\n/**\n * Rekeys archived records by journal generation.\n *\n * @since 0.1.0\n * @private\n */\nexport const archiveGeneration = Effect_1.gen(function* archiveGeneration() {\n    yield* JournalGeneration.initialize;\n    const sql = yield* SqlClient.SqlClient;\n    // Sequences are reused after truncation; the archive key includes the\n    // journal generation observed inside the archive transaction.\n    const createArchive = sql `CREATE TABLE IF NOT EXISTS flows_time_travel_archive (\n    run_id TEXT NOT NULL CHECK (length(run_id) > 0),\n    generation ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `generation`)} AND generation >= 0 AND generation <= 9007199254740991\n    ),\n    seq ${Dialect.integer(sql)} NOT NULL CHECK (${Dialect.isInteger(sql, sql `seq`)} AND seq >= 0 AND seq <= 9007199254740991),\n    event_id TEXT NOT NULL CHECK (length(event_id) > 0),\n    source_id TEXT NOT NULL CHECK (length(source_id) > 0),\n    source_seq ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `source_seq`)} AND source_seq >= 0 AND source_seq <= 9007199254740991\n    ),\n    emitted_at_ms ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `emitted_at_ms`)} AND emitted_at_ms >= 0 AND emitted_at_ms <= 9007199254740991\n    ),\n    event_type TEXT NOT NULL CHECK (length(event_type) > 0),\n    payload_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `payload_json`)}),\n    meta_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql `meta_json`)}),\n    archived_at_ms ${Dialect.integer(sql)} NOT NULL CHECK (\n      ${Dialect.isInteger(sql, sql `archived_at_ms`)} AND archived_at_ms >= 0 AND archived_at_ms <= 9007199254740991\n    ),\n    PRIMARY KEY (run_id, generation, seq)\n  )`;\n    yield* step(\"flows_time_travel_archive\", createArchive);\n    yield* step(\"the flows_time_travel_archive generation rebuild\", sql.withTransaction(Effect_1.gen(function* () {\n        const columns = yield* Dialect.columns(sql, \"flows_time_travel_archive\");\n        if (columns.some((column) => column.name === \"generation\"))\n            return;\n        // Legacy rows have no recoverable generation. Reserve zero for them.\n        // Older databases may also predate durable journal generations.\n        yield* sql `ALTER TABLE flows_time_travel_archive RENAME TO flows_time_travel_archive_legacy`;\n        yield* createArchive;\n        yield* sql `INSERT INTO flows_time_travel_archive\n        (run_id, generation, seq, event_id, source_id, source_seq, emitted_at_ms,\n         event_type, payload_json, meta_json, archived_at_ms)\n        SELECT run_id, 0, seq, event_id, source_id, source_seq, emitted_at_ms,\n               event_type, payload_json, meta_json, archived_at_ms\n        FROM flows_time_travel_archive_legacy`;\n        yield* sql `INSERT INTO flows_journal_generations (run_id, generation, after_seq)\n        SELECT DISTINCT legacy.run_id, 1,\n          COALESCE((SELECT MAX(seq) FROM flows_journal_events WHERE run_id = legacy.run_id), -1)\n        FROM flows_time_travel_archive_legacy AS legacy WHERE true\n        ON CONFLICT (run_id) DO NOTHING`;\n        yield* sql `DROP TABLE flows_time_travel_archive_legacy`;\n    })));\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0002_archive_generation.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/time-travel/src/migrations/0002_archive_generation.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,iBAAiB,MAAM,mCAAmC,CAAA;AACtE,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AACjD,OAAO,EAAE,IAAI,EAAE,MAAM,8BAAgC,CAAA;AAErD;;;;;GAKG;AACH,MAAM,CAAC,MAAM,iBAAiB,GAAG,a,CAAA,S,CAAA;IAC/B,OAAI,iBAAiB,CAAC,UAAU,CAAA;IAChC,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,sEAAsE;IACtE,8DAA8D;IAC9D,MAAM,aAAa,GAAG,GAAG,CAAA;;iBAEV,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QAC7B,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,YAAY,CAAC;;UAErC,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC,oBAC1B,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,KAAK,CACjC;;;iBAGe,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QAC7B,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,YAAY,CAAC;;oBAE3B,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QAChC,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,eAAe,CAAC;;;wCAGV,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,cAAc,CAAC;qCAC5C,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,WAAW,CAAC;qBACtD,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;QACjC,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,gBAAgB,CAAC;;;IAG/C,CAAA;IAEF,OAAI,IAAI,CAAC,2BAA2B,EAAE,aAAa,CAAC,CAAA;IACpD,OAAI,IAAI,CACN,kDAAkD,EAClD,GAAG,CAAC,eAAe,CAAC,a,CAAA;QAClB,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAC,GAAG,EAAE,2BAA2B,CAAC,CAAA;QACrE,IAAI,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,YAAY,CAAC;YAAE,OAAM;QAClE,qEAAqE;QACrE,gEAAgE;QAChE,OAAI,GAAG,CAAA,kFAAkF,CAAA;QACzF,OAAI,aAAa,CAAA;QACjB,OAAI,GAAG,CAAA;;;;;8CAKiC,CAAA;QACxC,OAAI,GAAG,CAAA;;;;wCAI2B,CAAA;QAClC,OAAI,GAAG,CAAA,6CAA6C,CAAA;IACtD,CAAC,CAAA,CAAC,CACH,CAAA;AACH,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
+     }
+    ],
+    "code": "/**\n * Run-scoped journal lineage indexes.\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\nimport { step } from \"../internal/MigrationStep.js\";\n/**\n * Indexes journal records that produce lineage edges.\n *\n * @since 0.1.0\n * @private\n */\nexport const lineageProbes = Effect_1.gen(function* lineageProbes() {\n    const sql = yield* SqlClient.SqlClient;\n    // These partial indexes contain only lineage-producing journal records.\n    // Keep their predicates identical to the literal predicates in edgesUnder.\n    yield* step(\"flows_journal_events_child_spawn_idx on flows_journal_events\", sql `CREATE INDEX IF NOT EXISTS flows_journal_events_child_spawn_idx\n    ON flows_journal_events (run_id, seq)\n    WHERE event_type = 'flows.time-travel.effect-boundary'\n      AND ${Dialect.jsonText(sql, sql `payload_json`, \"$.effect.kind\")} = 'flows/engine-store/child-spawn'`);\n    yield* step(\"flows_journal_events_handoff_idx on flows_journal_events\", sql `CREATE INDEX IF NOT EXISTS flows_journal_events_handoff_idx\n    ON flows_journal_events (run_id, seq)\n    WHERE event_type = 'flows.engine.run-decision'\n      AND ${Dialect.jsonText(sql, sql `payload_json`, \"$.decision\")} = 'handed-off'`);\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0003_lineage_probes.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/time-travel/src/migrations/0003_lineage_probes.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AACjD,OAAO,EAAE,IAAI,EAAE,MAAM,8BAAgC,CAAA;AAErD;;;;;GAKG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,a,CAAA,S,CAAA;IAC3B,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,wEAAwE;IACxE,2EAA2E;IAC3E,OAAI,IAAI,CACN,8DAA8D,EAC9D,GAAG,CAAA;;;YAGK,OAAO,CAAC,QAAQ,CAAC,GAAG,EAAE,GAAG,CAAA,cAAc,EAAE,eAAe,CAAC,qCAAqC,CACvG,CAAA;IACD,OAAI,IAAI,CACN,0DAA0D,EAC1D,GAAG,CAAA;;;YAGK,OAAO,CAAC,QAAQ,CAAC,GAAG,EAAE,GAAG,CAAA,cAAc,EAAE,YAAY,CAAC,iBAAiB,CAChF,CAAA;AACH,CAAC,CAAA,CAAA"
     }
    },
    {
@@ -6320,6 +6430,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
+     }
+    ],
+    "code": "/**\n * Retryable fork intent reclamation.\n *\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\nimport { step } from \"../internal/MigrationStep.js\";\n/**\n * Records completed lane removal separately from claiming an abandoned intent.\n * Older reclaimed rows remain pending until their lane is forgotten again.\n *\n * @since 1.0.0\n * @private\n */\nexport const forkIntentForgotten = Effect_1.gen(function* forkIntentForgotten() {\n    const sql = yield* SqlClient.SqlClient;\n    const columns = yield* Dialect.columns(sql, \"flows_time_travel_fork_intents\");\n    if (columns.some((column) => column.name === \"forgotten_at_ms\"))\n        return;\n    yield* step(\"the flows_time_travel_fork_intents forgotten_at_ms column\", sql `ALTER TABLE flows_time_travel_fork_intents ADD COLUMN forgotten_at_ms ${Dialect.integer(sql)} CHECK (\n      forgotten_at_ms IS NULL OR (${Dialect.isInteger(sql, sql `forgotten_at_ms`)} AND forgotten_at_ms >= 0 AND forgotten_at_ms <= 9007199254740991)\n    )`);\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0006_fork_intent_forgotten.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/time-travel/src/migrations/0006_fork_intent_forgotten.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AACjD,OAAO,EAAE,IAAI,EAAE,MAAM,8BAAgC,CAAA;AAErD;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,mBAAmB,GAAG,a,CAAA,S,CAAA;IACjC,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAC,GAAG,EAAE,gCAAgC,CAAC,CAAA;IAC1E,IAAI,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,iBAAiB,CAAC;QAAE,OAAM;IACvE,OAAI,IAAI,CACN,2DAA2D,EAC3D,GAAG,CAAA,yEAAyE,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC;oCAE9F,OAAO,CAAC,SAAS,CAAC,GAAG,EAAE,GAAG,CAAA,iBAAiB,CAC7C;MACE,CACH,CAAA;AACH,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/time-travel/src/Migrations.vibe"
      }
     ],
@@ -6334,7 +6464,7 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;;;;;;;GAUG;AAEH,OAAO,KAAK,kBAAkB,MAAM,6BAA6B,CAAA;AACjE,OAAO,KAAK,qBAAqB,MAAM,iCAAiC,CAAA;AACxE,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,EAAE,OAAO,EAAE,MAAM,8BAA8B,CAAA;AACtD,OAAO,EAAE,iBAAiB,EAAE,MAAM,yCAAyC,CAAA;AAC3E,OAAO,EAAE,aAAa,EAAE,MAAM,qCAAqC,CAAA;AACnE,OAAO,EAAE,UAAU,EAAE,MAAM,kCAAoC,CAAA;AAC/D,OAAO,EAAE,WAAW,EAAE,MAAM,mCAAqC,CAAA;AACjE,OAAO,EAAE,mBAAmB,EAAE,MAAM,4CAA4C,CAAA;AAEhF;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,GAAG,GAAoC;IAClD,SAAS,EAAE,aAAa;IACxB,QAAQ,EAAE,kBAAkB,CAAC,OAAO,GAAG,CAAC;IACxC,UAAU,EAAE;QACV,cAAc,EAAE,OAAO;QACvB,yBAAyB,EAAE,iBAAiB;QAC5C,qBAAqB,EAAE,aAAa;QACpC,kBAAkB,EAAE,UAAU;QAC9B,mBAAmB,EAAE,WAAW;QAChC,4BAA4B,EAAE,mBAAmB;KAClD;CACF,CAAA;AAED;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAmD;IAClE,GAAG,qBAAqB,CAAC,IAAI;IAC7B,GAAG;CACJ,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,kBAAkB,CAAC,GAAG,CAAC,IAAI,CAAC,CAAA;AAE/C;;;;;GAKG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,KAAK,CAAC,aAAa,CAAC,GAAG,CAAC,CAAA"
+     "mappings": "AAAA;;;;;;;;;;GAUG;AAEH,OAAO,KAAK,kBAAkB,MAAM,6BAA6B,CAAA;AACjE,OAAO,KAAK,qBAAqB,MAAM,iCAAiC,CAAA;AACxE,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,EAAE,OAAO,EAAE,MAAM,8BAAgC,CAAA;AACxD,OAAO,EAAE,iBAAiB,EAAE,MAAM,yCAA2C,CAAA;AAC7E,OAAO,EAAE,aAAa,EAAE,MAAM,qCAAuC,CAAA;AACrE,OAAO,EAAE,UAAU,EAAE,MAAM,kCAAoC,CAAA;AAC/D,OAAO,EAAE,WAAW,EAAE,MAAM,mCAAqC,CAAA;AACjE,OAAO,EAAE,mBAAmB,EAAE,MAAM,4CAA8C,CAAA;AAElF;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,GAAG,GAAoC;IAClD,SAAS,EAAE,aAAa;IACxB,QAAQ,EAAE,kBAAkB,CAAC,OAAO,GAAG,CAAC;IACxC,UAAU,EAAE;QACV,cAAc,EAAE,OAAO;QACvB,yBAAyB,EAAE,iBAAiB;QAC5C,qBAAqB,EAAE,aAAa;QACpC,kBAAkB,EAAE,UAAU;QAC9B,mBAAmB,EAAE,WAAW;QAChC,4BAA4B,EAAE,mBAAmB;KAClD;CACF,CAAA;AAED;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAmD;IAClE,GAAG,qBAAqB,CAAC,IAAI;IAC7B,GAAG;CACJ,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,kBAAkB,CAAC,GAAG,CAAC,IAAI,CAAC,CAAA;AAE/C;;;;;GAKG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,KAAK,CAAC,aAAa,CAAC,GAAG,CAAC,CAAA"
     }
    },
    {
@@ -6363,7 +6493,7 @@
       "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
      }
     ],
-    "code": "/**\n * The one journal paging loop every time-travel read drives.\n *\n * Replay, the snapshot projector, fork, and both rewind scans page\n * `journal.entries` the same way, and each used to carry its own copy of the\n * cursor bookkeeping and its own idea of what a malformed page means. The\n * copies drifted: the destructive rewind reads refused a page that claims\n * more and delivers nothing, while the fork's copy took it for the end of\n * history and committed a child whose disclosed effects were incomplete.\n *\n * FAIL CLOSED, once, here. A page that claims `hasMore` and delivers no\n * entries is `invalid`; so is a page whose highest seq does not move the\n * cursor forward, which is the shape a journal double that ignores `after`\n * produces and would otherwise spin forever. A page without `hasMore` ends\n * the read whatever it holds.\n *\n * @since 0.1.0\n */\nimport { $catchExpression } from \"vibelang-runtime\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { error } from \"../TimeTravelError.js\";\n/**\n * What {@link forEachPage} returns from a page callback to end the read\n * before the journal does: replay past its frame, the projector past its\n * bound.\n *\n * @since 0.1.0\n * @category models\n */\nexport const Stop = Symbol.for(\"@smthrs/time-travel/JournalPages/Stop\");\n/**\n * Pages a run's journal from `options.after` until the journal reports no\n * more, `onPage` returns {@link Stop}, or a page is malformed.\n *\n * `onPage` sees each page's entries exactly as the journal delivered them;\n * the cursor for the next page is the highest seq the page held, so a caller\n * that sorts or deduplicates within a page never disagrees with the cursor.\n *\n * @since 0.1.0\n * @category constructors\n */\nexport const forEachPage = Effect_1.fnUntraced(function* forEachPage(journal, options, onPage) {\n    let after = options.after;\n    while (true) {\n        const page = yield* $catchExpression(() => journal.entries({\n            runId: options.runId,\n            ...(after === undefined ? {} : { after: after }),\n            ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),\n            limit: options.pageSize,\n        }), (cause) => Effect_1.suspend(() => { return Effect_1.fail(error(\"unknown\", options.readFailure, cause)); }));\n        if ((yield* onPage(page.entries)) === Stop)\n            return;\n        if (!page.hasMore)\n            return;\n        if (page.entries.length === 0) {\n            return yield* Effect_1.fail(error(\"invalid\", `${options.label} returned an empty continuation page for ${options.runId}`));\n        }\n        const previous = after ?? -1;\n        const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, previous);\n        if (next <= previous) {\n            return yield* Effect_1.fail(error(\"invalid\", `${options.label} pagination did not advance for ${options.runId}`));\n        }\n        after = next;\n    }\n});\n",
+    "code": "/**\n * The one journal paging loop every time-travel read drives.\n *\n * Replay, the snapshot projector, fork, and both rewind scans page\n * `journal.entries` the same way, and each used to carry its own copy of the\n * cursor bookkeeping and its own idea of what a malformed page means. The\n * copies drifted: the destructive rewind reads refused a page that claims\n * more and delivers nothing, while the fork's copy took it for the end of\n * history and committed a child whose disclosed effects were incomplete.\n *\n * FAIL CLOSED, once, here. A page that claims `hasMore` and delivers no\n * entries is `invalid`; so is a page whose highest seq does not move the\n * cursor forward, which is the shape a journal double that ignores `after`\n * produces and would otherwise spin forever. A page without `hasMore` ends\n * the read whatever it holds.\n *\n * @since 0.1.0\n */\nimport { $catchExpression } from \"vibelang-runtime\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport { error } from \"../TimeTravelError.js\";\n/**\n * What {@link forEachPage} returns from a page callback to end the read\n * before the journal does: replay past its frame, the projector past its\n * bound.\n *\n * @since 0.1.0\n * @category models\n */\nexport const Stop = Symbol.for(\"@smthrs/time-travel/JournalPages/Stop\");\n/**\n * Pages a run's journal from `options.after` until the journal reports no\n * more, `onPage` returns {@link Stop}, or a page is malformed.\n *\n * `onPage` sees each page's entries exactly as the journal delivered them;\n * the cursor for the next page is the highest seq the page held, so a caller\n * that sorts or deduplicates within a page never disagrees with the cursor.\n *\n * @since 0.1.0\n * @category constructors\n */\nexport const forEachPage = Effect_1.fnUntraced(function* forEachPage(journal, options, onPage) {\n    let after = options.after;\n    while (true) {\n        const page = yield* $catchExpression(() => journal.entries({\n            runId: options.runId,\n            ...(after === undefined ? {} : { after: after }),\n            ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),\n            limit: options.pageSize\n        }), (cause) => Effect_1.suspend(() => { return Effect_1.fail(error(\"unknown\", options.readFailure, cause)); }));\n        if ((yield* onPage(page.entries)) === Stop)\n            return;\n        if (!page.hasMore)\n            return;\n        if (page.entries.length === 0) {\n            return yield* Effect_1.fail(error(\"invalid\", `${options.label} returned an empty continuation page for ${options.runId}`));\n        }\n        const previous = after ?? -1;\n        const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, previous);\n        if (next <= previous) {\n            return yield* Effect_1.fail(error(\"invalid\", `${options.label} pagination did not advance for ${options.runId}`));\n        }\n        after = next;\n    }\n});\n",
     "map": {
      "version": 3,
      "file": "JournalPages.js",
@@ -6374,7 +6504,27 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;;;;;;;;;;;;;;GAiBG;;;AAIH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,KAAK,EAAwB,MAAM,uBAAyB,CAAA;AAErE;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,IAAI,GAAkB,MAAM,CAAC,GAAG,CAAC,uCAAuC,CAAC,CAAA;AAkCtF;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,0CACzB,OAAwB,EACxB,OAAoB,EACpB,MAAqE;IAErE,IAAI,KAAK,GAAG,OAAO,CAAC,KAAK,CAAA;IACzB,OAAO,IAAI,EAAE,CAAC;QACZ,MAAM,IAAI,UAKP,gBAAK,C,CAAA,EALK,EAAD,C,CAAC,MAAO,CAAC,OAAO,CAAC;YAC3B,KAAK,EAAE,OAAO,CAAC,KAA2B;YAC1C,GAAG,CAAC,KAAK,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,KAAK,EAAE,KAAyB,EAAE,CAAC;YACpE,GAAG,CAAC,OAAO,CAAC,UAAU,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,UAAU,EAAE,OAAO,CAAC,UAAU,EAAE,CAAC;YAC/E,KAAK,EAAE,OAAO,CAAC,QAAQ;SACxB,CAAC,EAAO,CAAQ,KAAK,sB,CAAA,O,CAAA,oBAAa,KAAK,CAAC,SAAS,EAAE,OAAO,CAAC,WAAW,EAAE,KAAK,CAAC,KAAE,CAAA,CAAA;QACjF,IAAI,QAAK,MAAM,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC,KAAK,IAAI;YAAE,OAAM;QAC/C,IAAI,CAAC,IAAI,CAAC,OAAO;YAAE,OAAM;QACzB,IAAI,IAAI,CAAC,OAAO,CAAC,MAAM,KAAK,CAAC,EAAE,CAAC;YAC9B,4BAAM,KAAK,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,KAAK,4CAA4C,OAAO,CAAC,KAAK,EAAE,CAAC,EAAA;QACrG,CAAC;QACD,MAAM,QAAQ,GAAG,KAAK,IAAI,CAAC,CAAC,CAAA;QAC5B,MAAM,IAAI,GAAG,IAAI,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,IAAI,EAAE,KAAK,EAAE,EAAE,CAAC,KAAK,CAAC,GAAG,GAAG,IAAI,CAAC,CAAC,CAAC,KAAK,CAAC,GAAG,CAAC,CAAC,CAAC,IAAI,EAAE,QAAQ,CAAC,CAAA;QAChG,IAAI,IAAI,IAAI,QAAQ,EAAE,CAAC;YACrB,4BAAM,KAAK,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,KAAK,mCAAmC,OAAO,CAAC,KAAK,EAAE,CAAC,EAAA;QAC5F,CAAC;QACD,KAAK,GAAG,IAAI,CAAA;IACd,CAAC;AACH,CAAC,CAAA,CAAA"
+     "mappings": "AAAA;;;;;;;;;;;;;;;;;GAiBG;;;AAIH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,KAAK,EAAwB,MAAM,uBAAyB,CAAA;AAErE;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,IAAI,GAAkB,MAAM,CAAC,GAAG,CAAC,uCAAuC,CAAC,CAAA;AAkCtF;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,0CACzB,OAAwB,EACxB,OAAoB,EACpB,MAAqE;IAErE,IAAI,KAAK,GAAG,OAAO,CAAC,KAAK,CAAA;IACzB,OAAO,IAAI,EAAE,CAAC;QACZ,MAAM,IAAI,UAKP,gBAAK,C,CAAA,EALK,EAAD,C,CAAC,MAAO,CAAC,OAAO,CAAC;YAC3B,KAAK,EAAE,OAAO,CAAC,KAA2B;YAC1C,GAAG,CAAC,KAAK,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,KAAK,EAAE,KAAyB,EAAE,CAAC;YACpE,GAAG,CAAC,OAAO,CAAC,UAAU,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,UAAU,EAAE,OAAO,CAAC,UAAU,EAAE,CAAC;YAC/E,KAAK,EAAE,OAAO,CAAC,QAAQ;SACxB,CAAC,EAAO,CAAQ,KAAK,sB,CAAA,O,CAAA,oBACd,KAAK,CAAC,SAAS,EAAE,OAAO,CAAC,WAAW,EAAE,KAAK,CAAC,KACnD,CAAA,CAAA;QACD,IAAI,QAAK,MAAM,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC,KAAK,IAAI;YAAE,OAAM;QAC/C,IAAI,CAAC,IAAI,CAAC,OAAO;YAAE,OAAM;QACzB,IAAI,IAAI,CAAC,OAAO,CAAC,MAAM,KAAK,CAAC,EAAE,CAAC;YAC9B,4BAAM,KAAK,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,KAAK,4CAA4C,OAAO,CAAC,KAAK,EAAE,CAAC,EAAA;QACrG,CAAC;QACD,MAAM,QAAQ,GAAG,KAAK,IAAI,CAAC,CAAC,CAAA;QAC5B,MAAM,IAAI,GAAG,IAAI,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,IAAI,EAAE,KAAK,EAAE,EAAE,CAAC,KAAK,CAAC,GAAG,GAAG,IAAI,CAAC,CAAC,CAAC,KAAK,CAAC,GAAG,CAAC,CAAC,CAAC,IAAI,EAAE,QAAQ,CAAC,CAAA;QAChG,IAAI,IAAI,IAAI,QAAQ,EAAE,CAAC;YACrB,4BAAM,KAAK,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,KAAK,mCAAmC,OAAO,CAAC,KAAK,EAAE,CAAC,EAAA;QAC5F,CAAC;QACD,KAAK,GAAG,IAAI,CAAA;IACd,CAAC;AACH,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
+     }
+    ],
+    "code": "/**\n * The fault-injection hook fork and rewind run before each named step.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { error } from \"../TimeTravelError.js\";\n/**\n * Runs `hook` for `step`, if there is one, reporting its failure as `unknown`\n * with `\"<verb> failed at <step>\"`.\n *\n * @since 0.1.0\n * @category combinators\n */\nexport const run = (verb, hook, step) => hook === undefined\n    ? Effect.void\n    : (Effect.mapError(hook(step), (cause) => error(\"unknown\", `${verb} failed at ${step}`, cause)));\n",
+    "map": {
+     "version": 3,
+     "file": "StepHook.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/time-travel/src/internal/StepHook.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,KAAK,EAAwB,MAAM,uBAAyB,CAAA;AAErE;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,CACjB,IAAY,EACZ,IAAgD,EAChD,IAAU,EACY,EAAE,CACxB,IAAI,KAAK,SAAS;IAChB,CAAC,CAAC,MAAM,CAAC,IAAI;IACb,CAAC,CAAC,CAAe,MAAM,CAAC,QAAQ,CAA7B,IAAI,CAAC,IAAI,CAAC,EAAuB,CAAC,KAAK,EAAE,EAAE,CAAC,KAAK,CAAC,SAAS,EAAE,GAAG,IAAI,cAAc,IAAI,EAAE,EAAE,KAAK,CAAC,CAAC,CAAC,CAAA"
     }
    },
    {
@@ -6394,7 +6544,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    },
    {

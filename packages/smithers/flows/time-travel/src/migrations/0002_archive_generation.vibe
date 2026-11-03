@@ -16,9 +16,9 @@ import { step } from "../internal/MigrationStep.vibe"
  * @since 0.1.0
  * @private
  */
-export const archiveGeneration = Effect.gen(function*() {
-  yield* JournalGeneration.initialize
-  const sql = yield* SqlClient.SqlClient
+export const archiveGeneration = effect {
+  try JournalGeneration.initialize
+  const sql = try SqlClient.SqlClient
   // Sequences are reused after truncation; the archive key includes the
   // journal generation observed inside the archive transaction.
   const createArchive = sql`CREATE TABLE IF NOT EXISTS flows_time_travel_archive (
@@ -46,28 +46,28 @@ export const archiveGeneration = Effect.gen(function*() {
     PRIMARY KEY (run_id, generation, seq)
   )`
 
-  yield* step("flows_time_travel_archive", createArchive)
-  yield* step(
+  try step("flows_time_travel_archive", createArchive)
+  try step(
     "the flows_time_travel_archive generation rebuild",
-    sql.withTransaction(Effect.gen(function*() {
-      const columns = yield* Dialect.columns(sql, "flows_time_travel_archive")
+    sql.withTransaction(effect {
+      const columns = try Dialect.columns(sql, "flows_time_travel_archive")
       if (columns.some((column) => column.name === "generation")) return
       // Legacy rows have no recoverable generation. Reserve zero for them.
       // Older databases may also predate durable journal generations.
-      yield* sql`ALTER TABLE flows_time_travel_archive RENAME TO flows_time_travel_archive_legacy`
-      yield* createArchive
-      yield* sql`INSERT INTO flows_time_travel_archive
+      try sql`ALTER TABLE flows_time_travel_archive RENAME TO flows_time_travel_archive_legacy`
+      try createArchive
+      try sql`INSERT INTO flows_time_travel_archive
         (run_id, generation, seq, event_id, source_id, source_seq, emitted_at_ms,
          event_type, payload_json, meta_json, archived_at_ms)
         SELECT run_id, 0, seq, event_id, source_id, source_seq, emitted_at_ms,
                event_type, payload_json, meta_json, archived_at_ms
         FROM flows_time_travel_archive_legacy`
-      yield* sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq)
+      try sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq)
         SELECT DISTINCT legacy.run_id, 1,
           COALESCE((SELECT MAX(seq) FROM flows_journal_events WHERE run_id = legacy.run_id), -1)
         FROM flows_time_travel_archive_legacy AS legacy WHERE true
         ON CONFLICT (run_id) DO NOTHING`
-      yield* sql`DROP TABLE flows_time_travel_archive_legacy`
-    }))
+      try sql`DROP TABLE flows_time_travel_archive_legacy`
+    })
   )
-})
+}

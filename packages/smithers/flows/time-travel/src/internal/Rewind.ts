@@ -28,7 +28,7 @@ import * as JournalPages from "./JournalPages.vibe"
 import * as Lease from "./Lease.ts"
 import { LineageMetadata } from "./LineageMetadata.vibe"
 import * as RunRow from "./RunRow.ts"
-import * as StepHook from "./StepHook.ts"
+import * as StepHook from "./StepHook.vibe"
 
 /**
  * The eight fault-injection points pinned by the rewind parity suite.

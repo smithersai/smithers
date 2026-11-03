@@ -26,7 +26,7 @@ import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.vibe"
 import * as JournalPages from "./JournalPages.vibe"
-import * as StepHook from "./StepHook.ts"
+import * as StepHook from "./StepHook.vibe"
 
 /**
  * What a fork needs to know: which parent frame to branch from, and which lane
