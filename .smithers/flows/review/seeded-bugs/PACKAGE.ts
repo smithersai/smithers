@@ -24,7 +24,7 @@ const cwd = ".smithers/flows/review/seeded-bugs"
 
 /** The suite's own sources, the corpus it reads, and the baseline it gates on. */
 const sources = [
-  Smithers.glob("//.smithers/flows/review/seeded-bugs/*.ts"),
+  Smithers.glob("//.smithers/flows/review/seeded-bugs/*.{ts,vibe}"),
   Smithers.glob("//.smithers/flows/review/seeded-bugs/corpus/**/*"),
   Smithers.file("//.smithers/flows/review/seeded-bugs/baseline.json")
 ]
@@ -86,7 +86,7 @@ const check = Smithers.Typecheck({
  */
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["*.ts", "corpus/**", "baseline.json", ".gitignore"],
+  include: ["*.{ts,vibe}", "corpus/**", "baseline.json", ".gitignore"],
   checks: [
     {
       id: "fixture-git-isolation",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "existingCode or content in reviewDiff carrying a ``` sequence from the diff that terminates the cell fence early.",
         "readPrompt trusting a 'Current file path:' line that diff content, not the prompt template, supplies."
       ],
-      paths: ["scriptedSeats.ts", "deterministicReviewer.ts"]
+      paths: ["scriptedSeats.vibe", "deterministicReviewer.ts"]
     },
     {
       id: "live-report-leak",

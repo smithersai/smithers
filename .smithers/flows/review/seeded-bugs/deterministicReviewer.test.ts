@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import * as SeatResolver from "../../../../packages/smithers/agent/src/SeatResolver.ts";
 import { addedLines, readPrompt, replacedLines, reviewDiff } from "./deterministicReviewer.ts";
 import { loadCorpus } from "./labels.ts";
-import { scriptedModel, scriptedSeats } from "./scriptedSeats.ts";
+import { scriptedModel, scriptedSeats } from "./scriptedSeats.vibe";
 
 describe("scriptedSeats", () => {
   test("preserves distinct seat aliases while sharing one scripted model identity", async () => {
