@@ -14,9 +14,9 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0-rc.0
  */
-export const dedup: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE TABLE flows_journal_dedup (
+export const dedup: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE TABLE flows_journal_dedup (
     run_id TEXT NOT NULL CHECK (length(run_id) > 0),
     source_id TEXT NOT NULL CHECK (length(source_id) > 0),
     source_seq ${Dialect.integer(sql)} NOT NULL CHECK (${
@@ -32,7 +32,7 @@ export const dedup: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.g
   // Enforce the same identity constraints after their event rows are removed.
   // RAISE(IGNORE) leaves INSERT ... RETURNING empty, so the existing duplicate
   // path checks the owner fence and then resolves the original receipt.
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: "flows_journal_dedup_insert_guard",
     table: "flows_journal_events",
     event: "BEFORE INSERT",
@@ -40,4 +40,4 @@ export const dedup: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.g
       OR (run_id = NEW.run_id AND source_id = NEW.source_id AND source_seq = NEW.source_seq))`,
     ignore: true
   })
-})
+}
