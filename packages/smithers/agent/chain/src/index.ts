@@ -181,7 +181,7 @@ export * as ScriptRunner from "./ScriptRunner.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Steering from "./Steering.ts"
+export * as Steering from "./Steering.vibe"
 
 /**
  * Sub-agents as an ordinary recursive catalog entry.

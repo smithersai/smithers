@@ -26,7 +26,7 @@ import * as Observation from "./Observation.vibe"
 import * as Outcome from "./Outcome.ts"
 import * as Script from "./Script.ts"
 import * as ScriptRunner from "./ScriptRunner.ts"
-import * as Steering from "./Steering.ts"
+import * as Steering from "./Steering.vibe"
 
 /**
  * A chain that cannot proceed: a replayed link diverged from its journal,

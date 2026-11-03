@@ -16,7 +16,7 @@ import * as ScriptRunner from "../ScriptRunner.ts"
  * @private
  * @since 0.1.0
  */
-export const check = (jobs: ExecutePendingJobsResult): Effect.Effect<void, ScriptRunner.ScriptFailure> => {
+export const check = (jobs: ExecutePendingJobsResult): void!ScriptRunner.ScriptFailure => {
   if (jobs.error === undefined) {
     jobs.dispose()
     return Effect.void

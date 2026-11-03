@@ -117,7 +117,7 @@
      "relative": "packages/smithers/agent/chain/src"
     },
     null,
-    "IvLCauf4rUAPn8dRAzxIvgcooOf5hIBxCE3U-e0beFs",
+    "duYOZg9-ft-h_2-vpkI70emqwxg73bKq0RW0uMb6Kzo",
     [],
     {
      "recursive": true,
@@ -332,15 +332,15 @@
     "path": {
      "relative": "packages/smithers/agent/chain/package.json"
     },
-    "size": 8591,
-    "hash": "J-_n42F601mnobV4Nt0yobXbI9Vrwnxn5kbdw2koelA"
+    "size": 8647,
+    "hash": "IKnclx2LHSGe88iYeEZrpNu_4gVAO5SswWQwu8d6rnI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 4856,
-    "hash": "05C_GJibNEAnuMVpPZn9UYwGc94uX-f5blMYHfANe-U"
+    "size": 5792,
+    "hash": "tclGin2j7J1-1euvTEo7n3UUHL7pm4M_063wLVWOaoM"
    },
    {
     "path": {
@@ -353,8 +353,8 @@
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
-    "size": 7279,
-    "hash": "V7zfkQJyUfLAVrbrHGTHxXkzRgl3Jgs8VFj5Q7JBLiE"
+    "size": 7573,
+    "hash": "_UzuX1bu3eFd_Xr--f1qPyMTXOHkwH2YIMn5lu6qmXo"
    },
    {
     "path": {
@@ -374,15 +374,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
-    "size": 9119,
-    "hash": "7YuFXWmqh3flZ1P4zWMFQOR3457joJXOVf8tpybF5Vs"
+    "size": 10177,
+    "hash": "HVzQHdlCGoRJ7BNjX20MIWjfqqwKwpcOYGB1797MYvs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
-    "size": 13470,
-    "hash": "ggt6Vc_8djm71tMyGMemGQ0MRL76nXfxvZOa-6byjvo"
+    "size": 13976,
+    "hash": "qcvi_3wmI6ce7NbCetMP6LKzZ3o5_w1_EAy1aNA8kiQ"
    },
    {
     "path": {
@@ -395,43 +395,43 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
-    "size": 14715,
-    "hash": "oUxwyFU6fHWoLekZ6z8yh598RroSQaLLiKpuel-85ZM"
+    "size": 15033,
+    "hash": "a_ih1Y8br756CcdiJVQM-e4zam3B82Vkg1HZUFEac3I"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/package.json"
     },
-    "size": 9831,
-    "hash": "vI79kcvFE3KYj9Vfcw4eyfMdbR7b5VJOUYKY3mpFkoU"
+    "size": 12425,
+    "hash": "CcJi2ePrmwI1T_1zCeNkqEGlwrJHsdyGCX3qL47IMt0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8565,
-    "hash": "RyBivdXW2YwvwGcm-3XzNIb5iWbJXXP471JAqiHyR_Y"
+    "size": 8845,
+    "hash": "S2xrkx_X-GtYsWRSTS0YYRAAk4wCvt9XotDFizAGeZM"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
-    "size": 14022,
-    "hash": "Z8xbOA6bXZWBswp-02vyyPabM4ZqV5r_-q8SIUvh3gA"
+    "size": 15062,
+    "hash": "tB6dMRn77O4ZHVfBCOw1pqLh2Lw0Wjbk4lsw8dSwUW4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 10516,
-    "hash": "6vpTFScAhbXGxHmFFlcwYvqsB_yar6xEehR1E7j4Dmw"
+    "size": 11122,
+    "hash": "R9pPiv0vb3cdcG18_Rxkz5BXWBkGLYKOSc42WDs479k"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
-    "size": 11492,
-    "hash": "AeYIWpZsmYbKCYUI0lf8zj32TrM55Kp3i8EqqYXLjsE"
+    "size": 14108,
+    "hash": "C7LdBvOYkz_eX0aXQzyI4fkhwPDxzWaSTAdUDcgrq5I"
    },
    {
     "path": {
@@ -472,8 +472,8 @@
     "path": {
      "relative": "packages/smithers/agent/registry/package.json"
     },
-    "size": 9092,
-    "hash": "pRVxdQxObC1bbmilPE8Ff9x5u_hh6ckCNy44rF1bZhQ"
+    "size": 9702,
+    "hash": "6K-hOCKbKxxHQyXbDgmJNziUXVAX_ZHxXGmGSE9Q-Z8"
    },
    {
     "path": {
@@ -647,8 +647,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 5833,
-    "hash": "2nZYeTBU95Z536EDecEZCO0mZUVdDadh8CtdGI97kuQ"
+    "size": 7099,
+    "hash": "vf1VHC1ghlZnUX9dTqXUQa8-bXBBF9s-jjBJgsMgsQw"
    },
    {
     "path": {
@@ -2691,17 +2691,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/Steering.ts"
+     "relative": "packages/smithers/agent/chain/src/Steering.vibe"
     },
-    "size": 3569,
-    "hash": "Ga39unKSHp4h0axj4-L-FfXPkJg9tTiT2dUHxEpHJi8"
+    "size": 3443,
+    "hash": "GQfRHheiOxP_YL7uZD_jDuNRoWv6po_QzaC0rS4y094"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/Chain.ts"
     },
-    "size": 30597,
-    "hash": "DwHZo4AVRij-JMQF26ArTfJh_fl5ONnSbPJuYWxNT2U"
+    "size": 30599,
+    "hash": "_iOM0BgIXju5hgncXPigSjAJAWQOffNEkpi59Du2aPI"
    },
    {
     "path": {
@@ -4525,17 +4525,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/internal/QuickJsJobs.ts"
+     "relative": "packages/smithers/agent/chain/src/internal/QuickJsJobs.vibe"
     },
-    "size": 868,
-    "hash": "4X8JY6PT-1Jcih8Fl4x5CeDAgT94eFU2yjCZPnVm4xk"
+    "size": 852,
+    "hash": "-f4BgWdr3ECyOO1tCZYGqZgR8Ltqj_aLKBa1dqXGyyw"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/QuickJsRunner.ts"
     },
-    "size": 28809,
-    "hash": "jyPv042Xw2dD-o7yMx22x9T0lp0cP24BK355c9MofNI"
+    "size": 28811,
+    "hash": "eEfUEKmeCqGTemA38n_BCHaHcoRgOH-p6_c839zLclo"
    },
    {
     "path": {
@@ -5829,8 +5829,8 @@
     "path": {
      "relative": "packages/smithers/agent/chain/src/index.ts"
     },
-    "size": 3945,
-    "hash": "XbnHBxW107SoyaNGLCrq2MPKSDZ2qOIV40eFA10P_ac"
+    "size": 3947,
+    "hash": "ZyBVu-P_N1OaMznW1q2nc6ge-8CrW0qxyifBmoWYQT0"
    },
    {
     "path": {
@@ -6968,7 +6968,7 @@
     "relative": "packages/smithers/agent/chain/src/ScriptRunner.ts"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/Steering.ts"
+    "relative": "packages/smithers/agent/chain/src/Steering.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/Chain.ts"
@@ -7637,7 +7637,7 @@
     "relative": "packages/smithers/agent/chain/src/Prompt.ts"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/internal/QuickJsJobs.ts"
+    "relative": "packages/smithers/agent/chain/src/internal/QuickJsJobs.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/QuickJsRunner.ts"
@@ -7757,6 +7757,26 @@
   "warnings": [
    {
     "file": {
+     "relative": "packages/smithers/agent/chain/src/Steering.vibe"
+    },
+    "line": 21,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "SteeringError extends Schema.TaggedError; a schema error declaration, schema error SteeringError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/Steering.vibe"
+    },
+    "line": 55,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "Steering extends Context.Service; in VibeLang a service is a service declaration: service Steering { … }.\n  No quick fix: its members come from Service; write them in the declaration. Keep its key in the declaration: static readonly key = \"/chain/Steering\"."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/agent/chain/src/internal/ChildRunError.vibe"
     },
     "line": 20,
@@ -7825,6 +7845,46 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG;AAGH,OAAO,KAAK,OAAO,MAAM,eAAe,CAAA;AAGxC;;;;;GAKG;AACH,MAAM,OAAO,aAAc,SAAQ,OAAO,CAAC,SAAS;IACzC,KAAK,CAA4C;IAE1D,YAAY,KAAiD;QAC3D,KAAK,CAAC,EAAE,KAAK,EAAE,KAAK,CAAC,IAAI,EAAE,OAAO,EAAE,GAAG,KAAK,CAAC,IAAI,KAAK,KAAK,CAAC,OAAO,EAAE,EAAE,IAAI,EAAE,OAAO,EAAE,CAAC,CAAA;QACvF,IAAI,CAAC,KAAK,GAAG,KAAK,CAAA;IACpB,CAAC;CACF"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/Steering.vibe"
+     }
+    ],
+    "code": "/**\n * The steering port: messages from outside the chain, drained at link\n * boundaries into author-call context.\n *\n * The port is shaped so the notifications package's durable queue slots\n * in as the production binding when the engine mounts; the in-memory\n * layer is the stand-in. Chains that provide no steering service run\n * unchanged and journal identically — the chain looks the service up\n * optionally (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Ref from \"effect/Ref\";\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\n/**\n * A steering queue that cannot be admitted to or drained.\n *\n * @category errors\n * @since 0.1.0\n * @slop\n */\nexport class SteeringError extends Schema.TaggedError()(\"/chain/SteeringError\", {\n    code: Schema.Literal(\"steering_unavailable\").pipe(Schema.withConstructorDefault(Effect.succeed(\"steering_unavailable\"))),\n    message: Schema.String\n}) {\n}\n/**\n * The steering service tag.\n *\n * @category services\n * @since 0.1.0\n * @slop\n */\nexport class Steering extends Context.Service()(\"/chain/Steering\") {\n}\n/**\n * Builds a steering port from an implementation.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (implementation) => Steering.of(implementation);\nconst unavailable = (operation) => new SteeringError({ message: `${operation} is unavailable` });\n/**\n * A steering port whose every operation fails as unavailable, with\n * per-operation overrides — the default a test starts from.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const makeNoop = (overrides = {}) => make({\n    admit: Effect.fn(\"Steering.admit\")(() => Effect.fail(unavailable(\"admit\"))),\n    drain: Effect.fn(\"Steering.drain\")(() => Effect.fail(unavailable(\"drain\"))),\n    ...overrides\n});\n/**\n * The unavailable steering port as a layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerNoop = (overrides = {}) => Layer.succeed(Steering)(makeNoop(overrides));\n/**\n * An in-memory steering queue: `admit` appends, `drain` takes everything.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerMemory = (initial = []) => {\n    // Snapshot now, not when the lazy layer is later built: a caller may\n    // mutate its seed after constructing the layer but before providing it.\n    const snapshot = [...initial];\n    return Layer.effect(Steering)(Effect_1.gen(function* () {\n        const ref = yield* Ref.make(snapshot);\n        return make({\n            admit: Effect.fn(\"Steering.admit\")((message) => Ref.update(ref, (queue) => [...queue, message])),\n            drain: Effect.fn(\"Steering.drain\")(() => Ref.getAndSet(ref, []))\n        });\n    }));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Steering.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/Steering.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;;;GAWG;;;;;;;AAEH;;;;;;GAMG;AACH,MAAM,OAAO,aAAc,SAAQ,MAAM,CAAC,WAAW,EAAiB,CAAC,sBAAsB,EAAE;IAC7F,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,sBAAsB,CAAC,CAAC,IAAI,CAC/C,MAAM,CAAC,sBAAsB,CAAC,MAAM,CAAC,OAAO,CAAC,sBAAsB,CAAC,CAAC,CACtE;IACD,OAAO,EAAE,MAAM,CAAC,MAAM;CACvB,CAAC;CAAG;AAsBL;;;;;;GAMG;AACH,MAAM,OAAO,QAAS,SAAQ,OAAO,CAAC,OAAO,EAAqB,CAAC,iBAAiB,CAAC;CAAG;AAExF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,cAAuB,EAAW,EAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,cAAc,CAAC,CAAA;AAErF,MAAM,WAAW,GAAG,CAAC,SAAiB,EAAiB,EAAE,CAAC,IAAI,aAAa,CAAC,EAAE,OAAO,EAAE,GAAG,SAAS,iBAAiB,EAAE,CAAC,CAAA;AAEvH;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAW,EAAE,CACpE,IAAI,CAAC;IACH,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,gBAAgB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,CAAC,OAAO,CAAC,CAAC,CAAC;IAC3E,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,gBAAgB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,CAAC,OAAO,CAAC,CAAC,CAAC;IAC3E,GAAG,SAAS;CACb,CAAC,CAAA;AAEJ;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAmB,EAAE,CAC7E,KAAK,CAAC,OAAO,CAAC,QAAQ,CAAC,CAAC,QAAQ,CAAC,SAAS,CAAC,CAAC,CAAA;AAE9C;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,CAAC,OAAO,GAA0B,EAAE,EAAmB,EAAE;IAClF,qEAAqE;IACrE,wEAAwE;IACxE,MAAM,QAAQ,GAAG,CAAC,GAAG,OAAO,CAAC,CAAA;IAC7B,OAAO,KAAK,CAAC,MAAM,CAAC,QAAQ,CAAC,CAC3B,a,CAAA;QACE,MAAM,GAAG,UAAO,GAAG,CAAC,IAAI,CAAwB,QAAQ,CAAC,CAAA;QACzD,OAAO,IAAI,CAAC;YACV,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,gBAAgB,CAAC,CAAC,CAAC,OAAO,EAAE,EAAE,CAAC,GAAG,CAAC,MAAM,CAAC,GAAG,EAAE,CAAC,KAAK,EAAE,EAAE,CAAC,CAAC,GAAG,KAAK,EAAE,OAAO,CAAC,CAAC,CAAC;YAChG,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,gBAAgB,CAAC,CAAC,GAAG,EAAE,CAAC,GAAG,CAAC,SAAS,CAAC,GAAG,EAAE,EAAE,CAAC,CAAC;SACjE,CAAC,CAAA;IACJ,CAAC,CAAA,CACF,CAAA;AACH,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/internal/QuickJsJobs.vibe"
+     }
+    ],
+    "code": "/**\n * Disposal and failure translation for QuickJS's pending-job result.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as JsonBoundary from \"../JsonBoundary.js\";\nimport * as ScriptRunner from \"../ScriptRunner.js\";\n/**\n * Disposes a pending-job result and translates its live error handle before\n * disposal when execution failed.\n *\n * @private\n * @since 0.1.0\n */\nexport const check = (jobs) => {\n    if (jobs.error === undefined) {\n        jobs.dispose();\n        return Effect.void;\n    }\n    const dumped = jobs.error.context.dump(jobs.error);\n    jobs.dispose();\n    return Effect.fail(new ScriptRunner.ScriptFailure({\n        code: \"runtime\",\n        message: JsonBoundary.failureMessage(dumped)\n    }));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "QuickJsJobs.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/internal/QuickJsJobs.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC,OAAO,KAAK,YAAY,MAAM,oBAAoB,CAAA;AAClD,OAAO,KAAK,YAAY,MAAM,oBAAoB,CAAA;AAElD;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,IAA8B,EAAmC,EAAE;IACvF,IAAI,IAAI,CAAC,KAAK,KAAK,SAAS,EAAE,CAAC;QAC7B,IAAI,CAAC,OAAO,EAAE,CAAA;QACd,OAAO,MAAM,CAAC,IAAI,CAAA;IACpB,CAAC;IACD,MAAM,MAAM,GAAG,IAAI,CAAC,KAAK,CAAC,OAAO,CAAC,IAAI,CAAC,IAAI,CAAC,KAAK,CAAC,CAAA;IAClD,IAAI,CAAC,OAAO,EAAE,CAAA;IACd,OAAO,MAAM,CAAC,IAAI,CAChB,IAAI,YAAY,CAAC,aAAa,CAAC;QAC7B,IAAI,EAAE,SAAS;QACf,OAAO,EAAE,YAAY,CAAC,cAAc,CAAC,MAAM,CAAC;KAC7C,CAAC,CACH,CAAA;AACH,CAAC,CAAA"
     }
    }
   ]
