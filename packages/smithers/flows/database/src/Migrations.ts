@@ -41,7 +41,7 @@ import * as Ref from "effect/Ref"
 import * as Migrator from "effect/sql/Migrator"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
-import * as WriteRetry from "./internal/WriteRetry.ts"
+import * as WriteRetry from "./internal/WriteRetry.vibe"
 
 /**
  * The single table every Smithers package records its applied migrations in.

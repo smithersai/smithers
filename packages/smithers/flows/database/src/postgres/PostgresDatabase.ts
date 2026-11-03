@@ -42,12 +42,12 @@ import type { Compiler } from "effect/sql/Statement"
 import * as DatabaseMetrics from "../DatabaseMetrics.ts"
 import * as ReadOnly from "../internal/ReadOnly.vibe"
 import * as ReadTransaction from "../internal/ReadTransaction.vibe"
-import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.ts"
+import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.vibe"
 import * as WriteLock from "../internal/WriteLock.vibe"
 import * as WriteTally from "../internal/WriteTally.vibe"
 import { qualify } from "./QualifiedRead.ts"
 
-export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
+export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.vibe"
 
 /**
  * The `@effect/sql-pg` modules this adapter drives. Pass the package itself:

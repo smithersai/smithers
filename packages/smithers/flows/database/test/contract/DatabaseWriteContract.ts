@@ -29,7 +29,7 @@ import type * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import type * as DurableWriter from "../../src/DurableWriter.ts"
 import { affectedRows } from "../../src/DurableWriter.ts"
-import * as WriteRetry from "../../src/internal/WriteRetry.ts"
+import * as WriteRetry from "../../src/internal/WriteRetry.vibe"
 
 /**
  * One connection's client paired with its durable writer.

@@ -17,7 +17,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import * as CommitScope from "./internal/CommitScope.ts"
 import * as WriteLock from "./internal/WriteLock.vibe"
-import * as WriteRetry from "./internal/WriteRetry.ts"
+import * as WriteRetry from "./internal/WriteRetry.vibe"
 
 /**
  * Configuration for durable write retries.
