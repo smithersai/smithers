@@ -113,7 +113,7 @@ export type Input = (Omit<Questioned, keyof Budget> | Omit<Derived, keyof Budget
 export const budgets: Readonly<Record<Kind, Budget>> = {
   lint: { at: 0.8, consecutive: 1, cooldownFrames: 6, limit: 2, priority: 30 },
   mood: { at: 0.8, consecutive: 2, cooldownFrames: 6, limit: 2, priority: 20 },
-  skill: { at: 0.85, consecutive: 1, cooldownFrames: 6, limit: 1, priority: 10 },
+  skill: { at: 0.85, consecutive: 1, cooldownFrames: 6, limit: 1, priority: 10 }
 }
 
 /**
@@ -149,7 +149,7 @@ export const make = (input: Input): Monitor => ({ ...budgets[input.kind], ...inp
  */
 export class InvalidMonitor extends Schema.TaggedError<InvalidMonitor>()("@smthrs/harness/Monitor/InvalidMonitor", {
   id: Schema.String,
-  message: Schema.String,
+  message: Schema.String
 }) {}
 Fault.register("@smthrs/harness/Monitor/InvalidMonitor", "bug")
 
@@ -179,7 +179,7 @@ const invalid = (monitor: Monitor, seen: ReadonlySet<string>): string | undefine
  * @since 1.0.0-rc.0
  */
 export const validate = (
-  monitors: ReadonlyArray<Monitor>,
+  monitors: ReadonlyArray<Monitor>
 ): ReadonlyArray<Monitor>!InvalidMonitor =>
   Effect.suspend(effect () => {
     const seen = new Set<string>()
@@ -210,8 +210,8 @@ export const lint = (): ReadonlyArray<Monitor> => [
     limit: Number.MAX_SAFE_INTEGER,
     priority: 30,
     score: (reading) => Supervisor.crosses(reading) ? 1 : 0,
-    say: Supervisor.nudge,
-  }),
+    say: Supervisor.nudge
+  })
 ]
 
 /**
@@ -250,7 +250,7 @@ const mood = (
   id: string,
   text: string,
   fires: (reading: Supervisor.Reading, snapshot: Supervisor.Snapshot) => boolean,
-  budget: Partial<Budget> = {},
+  budget: Partial<Budget> = {}
 ): Monitor =>
   make({
     _tag: "Derived",
@@ -258,7 +258,7 @@ const mood = (
     kind: "mood",
     ...budget,
     score: (reading, snapshot) => fires(reading, snapshot) ? 1 : 0,
-    say: () => text,
+    say: () => text
   })
 
 /**
@@ -281,15 +281,15 @@ export const moods = (): ReadonlyArray<Monitor> => [
     paranoidText,
     (reading, snapshot) =>
       reading.emotions.confident === "strong"
-      && snapshot.frames.some((frame) => frame.transition === "complete"),
+      && snapshot.frames.some((frame) => frame.transition === "complete")
   ),
   mood(
     "careful",
     carefulText,
-    (reading) => reading.emotions.scared === "strong" || reading.needsHelp === "risky_action",
+    (reading) => reading.emotions.scared === "strong" || reading.needsHelp === "risky_action"
   ),
   mood("step_back", stepBackText, (reading) => reading.emotions.frustrated === "strong", { consecutive: 2 }),
-  mood("clarify", clarifyText, (reading) => reading.emotions.confused === "strong"),
+  mood("clarify", clarifyText, (reading) => reading.emotions.confused === "strong")
 ]
 
 /**
@@ -309,8 +309,8 @@ const skillQuestion = (index: number): Classifier.BooleanQuestion =>
     criteria: {
       true:
         `the newest frames do the work skills[${index}] describes without having read it, or violate what it prescribes`,
-      false: "unrelated, or the run already follows it",
-    },
+      false: "unrelated, or the run already follows it"
+    }
   })
 
 const skillId = (name: string): string =>
@@ -358,8 +358,8 @@ const useJevQuestion = Classifier.boolean({
     "Do the newest frames print lists of items (files, hits, failures, candidates) and then choose among them by hand?",
   criteria: {
     true: "a frame prints several items and a later cell or its prose picks among them without a jev call",
-    false: "no list is chosen from by hand, or the choice was a jev call",
-  },
+    false: "no list is chosen from by hand, or the choice was a jev call"
+  }
 })
 
 /**
@@ -378,7 +378,7 @@ export const useJev = (): Monitor =>
     limit: 2,
     question: useJevQuestion,
     applies: (snapshot) => snapshot.jevAvailable,
-    say: () => useJevText,
+    say: () => useJevText
   })
 
 /**
@@ -390,14 +390,14 @@ export const useJev = (): Monitor =>
  */
 export const questions = (
   monitors: ReadonlyArray<Monitor>,
-  snapshot: Supervisor.Snapshot,
+  snapshot: Supervisor.Snapshot
 ): Supervisor.MonitorQuestions =>
   Object.fromEntries(
     monitors.flatMap((monitor) =>
       monitor._tag === "Questioned" && (monitor.applies === undefined || monitor.applies(snapshot))
         ? [[questionId(monitor.id), monitor.question] as const]
         : []
-    ),
+    )
   )
 
 /**
@@ -465,7 +465,7 @@ export const evaluate = (input: {
         kind: monitor.kind,
         priority: monitor.priority,
         p,
-        text: monitor.say(input.snapshot, input.reading),
+        text: monitor.say(input.snapshot, input.reading)
       })
     }
   }
@@ -481,7 +481,7 @@ export const evaluate = (input: {
 export const Entry = Schema.Struct({
   streak: NonNegativeSafeInt.annotate({ description: "Consecutive readings that crossed" }),
   delivered: NonNegativeSafeInt.annotate({ description: "Deliveries so far" }),
-  lastFrame: Schema.Int.annotate({ description: "The frame of the last delivery; -1 never" }),
+  lastFrame: Schema.Int.annotate({ description: "The frame of the last delivery; -1 never" })
 })
 
 /**

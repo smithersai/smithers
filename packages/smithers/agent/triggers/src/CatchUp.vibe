@@ -29,13 +29,13 @@ export const occurrences = effect (
   maxCatchUp: number,
   lastFiredAt: Date | undefined,
   now: Date,
-  cron: Cron,
+  cron: Cron
 ): ReadonlyArray<Date>!TriggerError => {
   if (!Number.isSafeInteger(maxCatchUp) || maxCatchUp < 0) {
     throw new TriggerError({
       code: "catch_up_bound_exceeded",
       message: `maxCatchUp must be a non-negative safe integer, received ${maxCatchUp}`,
-      path: "maxCatchUp",
+      path: "maxCatchUp"
     })
   }
   if (lastFiredAt === undefined) return []
@@ -48,7 +48,7 @@ export const occurrences = effect (
           : maxCatchUp < 1
           ? throw new TriggerError({
             code: "catch_up_bound_exceeded",
-            message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`,
+            message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`
           })
           : try Effect.succeed<ReadonlyArray<Date>>([latest]))
   }
@@ -57,7 +57,7 @@ export const occurrences = effect (
       missed.length > maxCatchUp
         ? throw new TriggerError({
           code: "catch_up_bound_exceeded",
-          message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`,
+          message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`
         })
         : missed)
 }

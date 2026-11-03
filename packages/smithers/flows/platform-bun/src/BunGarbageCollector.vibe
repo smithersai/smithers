@@ -23,7 +23,9 @@ declare const Bun: { readonly gc: (force: boolean) => void }
  * @since 1.0.0
  */
 export const collector: MicrosandboxSandbox.GarbageCollector = {
-  collect: effect { return Bun.gc(true) },
+  collect: effect {
+    return Bun.gc(true)
+  }
 }
 
 /**
@@ -33,5 +35,5 @@ export const collector: MicrosandboxSandbox.GarbageCollector = {
  * @since 1.0.0
  */
 export const layer: Layer.Layer<MicrosandboxSandbox.GarbageCollector> = Layer.succeed(
-  MicrosandboxSandbox.GarbageCollector,
+  MicrosandboxSandbox.GarbageCollector
 )(collector)

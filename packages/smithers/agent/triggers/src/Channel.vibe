@@ -81,7 +81,7 @@ export type Inbound = Start | Signal
  */
 export type Verify = (
   raw: RawInbound,
-  credential: Redacted.Redacted<CredentialRef>,
+  credential: Redacted.Redacted<CredentialRef>
 ) => void!TriggerError
 
 /**
@@ -117,5 +117,5 @@ export interface Config<Payload, Run = never, Outbound = never> extends Channel<
  * @since 0.1.0
  */
 export const make = <Payload, Run = never, Outbound = never>(
-  config: Channel<Payload, Run, Outbound>,
+  config: Channel<Payload, Run, Outbound>
 ): Channel<Payload, Run, Outbound> => config

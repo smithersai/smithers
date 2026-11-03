@@ -39,8 +39,8 @@ const coreCases: ReadonlyArray<ConformanceCase> = Object.freeze(
     ...Identity.cases,
     ...Interrupt.cases,
     ...Replay.cases,
-    ...Race.cases,
-  ].map((conformanceCase) => Object.freeze({ ...conformanceCase })),
+    ...Race.cases
+  ].map((conformanceCase) => Object.freeze({ ...conformanceCase }))
 )
 
 /**

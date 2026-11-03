@@ -63,7 +63,7 @@ describe("Command surface", () => {
       const source: { mutable number: number } = { number: 1 }
       // Start the call before mutating its source, as runPromise would: the
       // fiber runs until route loading suspends it.
-      const pending = fork(surface.call("nested/visible", source), { startImmediately: true })
+      const pending = fork (surface.call("nested/visible", source), { startImmediately: true })
       source.number = 2
 
       expect(try surface.call("nested/visible", { number: 1 })).toEqual({ accepted: true, number: 1 })

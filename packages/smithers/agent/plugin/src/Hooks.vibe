@@ -178,7 +178,7 @@ export type ContextOf<T> = ReturnOf<T> extends Effect.Effect<any, any, infer R> 
 const sharedHooks: { config: "waterfall"; configResolved: "parallel" } = Object.create(null)
 Object.defineProperties(sharedHooks, {
   config: { value: "waterfall", enumerable: true },
-  configResolved: { value: "parallel", enumerable: true },
+  configResolved: { value: "parallel", enumerable: true }
 })
 /**
  * Frozen runtime catalog for the shared configuration hooks.

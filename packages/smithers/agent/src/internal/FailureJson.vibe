@@ -3,7 +3,6 @@
  * @since 1.0.0
  */
 
-
 /**
  * How deep the walk follows a failure before it calls the value unrenderable.
  */

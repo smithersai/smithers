@@ -17,7 +17,7 @@ import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 export const checked = effect <R extends { readonly exitCode: number }>(
   result: R,
   code: ProviderError["code"],
-  message: string,
+  message: string
 ): R!ProviderError =>
   result.exitCode === 0
     ? result

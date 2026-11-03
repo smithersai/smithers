@@ -52,7 +52,7 @@ export interface CommandSurface {
   /** Validates decoded input and output for an exact named route. */
   call: <N extends Route.Name>(
     name: N,
-    input: Route.Input<N>,
+    input: Route.Input<N>
   ) => Effect<Route.Output<N>, FsError, FlowInvoker.FlowInvoker>
 }
 
@@ -72,7 +72,7 @@ effect function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer 
     throw new FsError({
       code: "decode_failed",
       method: "Command.call",
-      description: "The decoded flow value did not satisfy the boundary",
+      description: "The decoded flow value did not satisfy the boundary"
     })
   }
   return admitted.value
@@ -81,16 +81,18 @@ effect function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer 
 effect function validateDecoded(
   schema: Schema.Top,
   value: unknown,
-  field: "input" | "output",
+  field: "input" | "output"
 ): Effect<unknown, FsError, infer R> {
   const decoded = try SchemaBridge.recover(
-    effect { return try Schema.decodeUnknownEffect(Schema.toType(schema))(try snapshotDecoded(value)) },
+    effect {
+      return try Schema.decodeUnknownEffect(Schema.toType(schema))(try snapshotDecoded(value))
+    },
     effect () =>
       new FsError({
         code: "decode_failed",
         method: "Command.call",
-        description: `The decoded flow ${field} did not satisfy its schema`,
-      }),
+        description: `The decoded flow ${field} did not satisfy its schema`
+      })
   )
   return try snapshotDecoded(decoded)
 }
@@ -132,9 +134,9 @@ export effect function make(routes: ReadonlyArray<Route.Route>): Effect<CommandS
     CommandTree.traverse(tree).map((route) =>
       Object.freeze({
         name: route.name,
-        description: route.description.getOrUndefined(),
+        description: route.description.getOrUndefined()
       })
-    ),
+    )
   )
 
   const surface: CommandSurface = {
@@ -149,7 +151,7 @@ export effect function make(routes: ReadonlyArray<Route.Route>): Effect<CommandS
           const { flow, input, route } = try prepare(commandString)
           return try SchemaBridge.encodeOutput(flow.output, try invoke(route, flow, input))
         },
-        "Command.execute",
+        "Command.execute"
       ),
     call: effect <N extends Route.Name>(name: N, candidate: Route.Input<N>) =>
       try withSpan(
@@ -162,8 +164,8 @@ export effect function make(routes: ReadonlyArray<Route.Route>): Effect<CommandS
           const output = try invoke(route, flow, decoded)
           return (try validateDecoded(flow.output, output, "output")) as Route.Output<N>
         },
-        "Command.call",
-      ),
+        "Command.call"
+      )
   }
   return Object.freeze(surface)
 }

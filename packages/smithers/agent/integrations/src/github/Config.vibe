@@ -109,11 +109,11 @@ const firstNonEmpty = (candidates: ReadonlyArray<string | undefined>): string | 
  */
 export const resolve = (
   config: GitHubConfig = {},
-  env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment(),
+  env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
 ): ResolvedGitHubConfig => ({
   token: config.token === undefined
     ? firstNonEmpty([env["SMITHERS_GITHUB_TOKEN"], env["GITHUB_TOKEN"]])
     : firstNonEmpty([config.token]),
   apiBaseUrl: firstNonEmpty([config.apiBaseUrl, env["SMITHERS_GITHUB_API_BASE_URL"]]) ?? DEFAULT_API_BASE_URL,
-  requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT,
+  requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT
 })

@@ -86,7 +86,7 @@ export const start = (clock: Clock.Clock): CallTiming => {
         sentMs: since(event.sentAt),
         failedMs: since(event.at),
         code: event.code,
-        ...(event.httpStatus === undefined ? {} : { httpStatus: event.httpStatus }),
+        ...(event.httpStatus === undefined ? {} : { httpStatus: event.httpStatus })
       })
     },
     headers: () => {
@@ -130,9 +130,9 @@ export const start = (clock: Clock.Clock): CallTiming => {
           lastOutputMs,
           completedMs,
           closedMs,
-          failedTries: failedTries.length === 0 ? undefined : [...failedTries],
-        }).filter(([, value]) => value !== undefined),
-      ),
+          failedTries: failedTries.length === 0 ? undefined : [...failedTries]
+        }).filter(([, value]) => value !== undefined)
+      )
   }
 }
 
@@ -154,7 +154,7 @@ export const attributes = (timing: Timing): Record<string, unknown> =>
         ? []
         : [[
           `smithers.model.${snake(name)}`,
-          name === "failedTries" ? (value as ReadonlyArray<FailedTry>).map((failed) => failed.code) : value,
+          name === "failedTries" ? (value as ReadonlyArray<FailedTry>).map((failed) => failed.code) : value
         ]]
-    ),
+    )
   )

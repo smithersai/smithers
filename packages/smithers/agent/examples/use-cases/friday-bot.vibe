@@ -25,7 +25,7 @@ const seat = "anthropic:claude-sonnet-5-5"
 export const ScheduleContext = Schema.Struct({
   periodLabel: Schema.String.annotate({ description: "e.g. 'Week of 2026-03-23' or '2026-03-28'" }),
   isWeekly: Schema.Boolean,
-  cutoffISO: Schema.String.annotate({ description: "ISO-8601 timestamp for the lookback window" }),
+  cutoffISO: Schema.String.annotate({ description: "ISO-8601 timestamp for the lookback window" })
 })
 
 /** GitHub activity since the cutoff. */
@@ -33,7 +33,7 @@ export const GithubDigest = Schema.Struct({
   mergedPRs: Schema.Number,
   openPRs: Schema.Number,
   notableCommits: Schema.Array(Schema.String),
-  stalePRs: Schema.Array(Schema.Struct({ number: Schema.Number, title: Schema.String, author: Schema.String })),
+  stalePRs: Schema.Array(Schema.Struct({ number: Schema.Number, title: Schema.String, author: Schema.String }))
 })
 
 /** Linear activity since the cutoff. */
@@ -41,14 +41,14 @@ export const LinearDigest = Schema.Struct({
   completedIssues: Schema.Number,
   inProgressIssues: Schema.Number,
   blockedIssues: Schema.Array(Schema.Struct({ id: Schema.String, title: Schema.String, blocker: Schema.String })),
-  topLabels: Schema.Array(Schema.String),
+  topLabels: Schema.Array(Schema.String)
 })
 
 /** Slack activity since the cutoff. */
 export const SlackDigest = Schema.Struct({
   activeThreads: Schema.Number,
   topTopics: Schema.Array(Schema.String),
-  unresolvedQuestions: Schema.Array(Schema.Struct({ channel: Schema.String, question: Schema.String })),
+  unresolvedQuestions: Schema.Array(Schema.Struct({ channel: Schema.String, question: Schema.String }))
 })
 
 /** The team update. */
@@ -58,17 +58,17 @@ export const Summary = Schema.Struct({
   actionItems: Schema.Array(Schema.Struct({
     action: Schema.String,
     owner: Schema.optional(Schema.String),
-    priority: Schema.Literals(["high", "medium", "low"]),
+    priority: Schema.Literals(["high", "medium", "low"])
   })),
   risks: Schema.Array(Schema.String),
-  metrics: Schema.Struct({ prsShipped: Schema.Number, issuesClosed: Schema.Number, blockers: Schema.Number }),
+  metrics: Schema.Struct({ prsShipped: Schema.Number, issuesClosed: Schema.Number, blockers: Schema.Number })
 })
 
 /** Where the update went. The flow settles with it. */
 export const PublishResult = Schema.Struct({
   destination: Schema.String,
   messageId: Schema.optional(Schema.String),
-  success: Schema.Boolean,
+  success: Schema.Boolean
 })
 
 /** Collector inputs: the period the scheduler chose. */
@@ -81,10 +81,10 @@ export const Schedule = AgentAction.make("examples/FridayBot/Schedule", {
   seat,
   system: [
     `You determine the current reporting period. Figure out if today
-is Friday (weekly) or another day (daily) and compute the lookback cutoff.`,
+is Friday (weekly) or another day (daily) and compute the lookback cutoff.`
   ],
   prompt: ({ forceWeekly, timezone }) =>
-    `Determine the reporting period.\n\nTimezone: ${timezone}\nForce weekly: ${forceWeekly}`,
+    `Determine the reporting period.\n\nTimezone: ${timezone}\nForce weekly: ${forceWeekly}`
 })
 
 /** Collects GitHub activity. */
@@ -95,10 +95,10 @@ export const CollectGithub = AgentAction.make("examples/FridayBot/CollectGithub"
   system: [
     `You collect GitHub activity for the reporting period. Use the
 GitHub CLI (gh) or API to gather merged PRs, open PRs, notable commits, and
-stale PRs. Be precise with counts.`,
+stale PRs. Be precise with counts.`
   ],
   prompt: ({ cutoff, periodLabel, repo }) =>
-    `Collect GitHub activity for ${periodLabel}.\n\nRepository: ${repo}\nSince: ${cutoff}`,
+    `Collect GitHub activity for ${periodLabel}.\n\nRepository: ${repo}\nSince: ${cutoff}`
 })
 
 /** Collects Linear activity. */
@@ -108,10 +108,10 @@ export const CollectLinear = AgentAction.make("examples/FridayBot/CollectLinear"
   seat,
   system: [
     `You collect Linear project-tracking data for the reporting period.
-Gather completed issues, in-progress work, blockers, and top labels.`,
+Gather completed issues, in-progress work, blockers, and top labels.`
   ],
   prompt: ({ cutoff, periodLabel, teamId }) =>
-    `Collect Linear activity for ${periodLabel}.\n\nTeam: ${teamId}\nSince: ${cutoff}`,
+    `Collect Linear activity for ${periodLabel}.\n\nTeam: ${teamId}\nSince: ${cutoff}`
 })
 
 /** Collects Slack activity. */
@@ -121,10 +121,10 @@ export const CollectSlack = AgentAction.make("examples/FridayBot/CollectSlack", 
   seat,
   system: [
     `You collect Slack activity highlights. Identify active threads,
-trending topics, and unresolved questions from key channels.`,
+trending topics, and unresolved questions from key channels.`
   ],
   prompt: ({ channels, cutoff, periodLabel }) =>
-    `Collect Slack activity for ${periodLabel}.\n\nChannels: ${JSON.stringify(channels)}\nSince: ${cutoff}`,
+    `Collect Slack activity for ${periodLabel}.\n\nChannels: ${JSON.stringify(channels)}\nSince: ${cutoff}`
 })
 
 /** Turns the three digests into the update. */
@@ -134,19 +134,19 @@ export const Summarize = AgentAction.make("examples/FridayBot/Summarize", {
     isWeekly: Schema.Boolean,
     github: GithubDigest,
     linear: LinearDigest,
-    slack: SlackDigest,
+    slack: SlackDigest
   },
   output: Summary,
   seat,
   system: [
     `You synthesize data from GitHub, Linear, and Slack into a concise
 team digest. Prioritize actionable insights — blockers, risks, and wins. Keep
-the headline punchy and the action items specific.`,
+the headline punchy and the action items specific.`
   ],
   prompt: ({ github, isWeekly, linear, periodLabel, slack }) =>
     `Summarize the ${isWeekly ? "weekly" : "daily"} activity for ${periodLabel}.\n\nGitHub: ${
       JSON.stringify(github)
-    }\nLinear: ${JSON.stringify(linear)}\nSlack: ${JSON.stringify(slack)}`,
+    }\nLinear: ${JSON.stringify(linear)}\nSlack: ${JSON.stringify(slack)}`
 })
 
 /** Delivers the update. */
@@ -157,10 +157,10 @@ export const Publish = AgentAction.make("examples/FridayBot/Publish", {
   system: [
     `You publish the final summary to the configured destination
 (Slack channel, email, Notion page, etc.). Confirm delivery and return
-the message ID if available.`,
+the message ID if available.`
   ],
   prompt: ({ channel, destination, summary }) =>
-    `Publish this summary.\n\nDestination: ${destination}\nChannel: ${channel}\nSummary: ${JSON.stringify(summary)}`,
+    `Publish this summary.\n\nDestination: ${destination}\nChannel: ${channel}\nSummary: ${JSON.stringify(summary)}`
 })
 
 /** The flow: schedule, collect in parallel, summarize, publish. */
@@ -172,7 +172,7 @@ export const FridayBot = Flow.make("examples/FridayBot", {
     linearTeamId: Schema.optional(Schema.String),
     slackChannels: Schema.optional(Schema.Array(Schema.String)),
     publishTo: Schema.optional(Schema.String),
-    slackChannel: Schema.optional(Schema.String),
+    slackChannel: Schema.optional(Schema.String)
   },
   success: PublishResult,
   error: AgentAction.AgentFailure,
@@ -183,7 +183,7 @@ export const FridayBot = Flow.make("examples/FridayBot", {
     repo = "",
     slackChannel = "#team-updates",
     slackChannels = [],
-    timezone = "America/Los_Angeles",
+    timezone = "America/Los_Angeles"
   }) =>
     Node.bindPlanned(
       Schedule.call({ timezone, forceWeekly }),
@@ -193,7 +193,7 @@ export const FridayBot = Flow.make("examples/FridayBot", {
         const collected = Node.all({
           github: CollectGithub.call({ repo, ...period }),
           linear: CollectLinear.call({ teamId: linearTeamId, ...period }),
-          slack: CollectSlack.call({ channels: slackChannels, ...period }),
+          slack: CollectSlack.call({ channels: slackChannels, ...period })
         })
         return Node.bindPlanned(collected, (digests) =>
           Node.bindPlanned(
@@ -202,13 +202,13 @@ export const FridayBot = Flow.make("examples/FridayBot", {
               isWeekly: schedule.isWeekly,
               github: digests.github,
               linear: digests.linear,
-              slack: digests.slack,
+              slack: digests.slack
             }),
             (summary: Planned.Planned<typeof Summary.Type>) =>
-              Publish.call({ destination: publishTo, channel: slackChannel, summary }),
+              Publish.call({ destination: publishTo, channel: slackChannel, summary })
           ))
-      },
-    ),
+      }
+    )
 })
 
 /** Every step the flow calls. */
@@ -218,5 +218,5 @@ export const layer = Layer.mergeAll(
   CollectLinear.layer,
   CollectSlack.layer,
   Summarize.layer,
-  Publish.layer,
+  Publish.layer
 )

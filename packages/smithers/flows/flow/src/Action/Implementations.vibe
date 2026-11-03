@@ -134,12 +134,10 @@ export const layerImplementations: Layer.Layer<Implementations> = Layer.effect(I
           const entry = { implementation }
           entries.push(entry)
           registered.set(implementation.name, entries)
-          return Effect.addFinalizer(effect () =>
-            {
-              entries.splice(entries.indexOf(entry), 1)
-              if (entries.length === 0) registered.delete(implementation.name)
-            }
-          )
+          return Effect.addFinalizer(effect () => {
+            entries.splice(entries.indexOf(entry), 1)
+            if (entries.length === 0) registered.delete(implementation.name)
+          })
         }),
       get: effect (name) => Option.fromNullishOr(registered.get(name)?.at(-1)?.implementation)
     })

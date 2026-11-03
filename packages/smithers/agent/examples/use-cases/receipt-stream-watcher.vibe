@@ -30,7 +30,7 @@ export const minFieldsForRouting = 3
 /** One extracted field and how sure the extractor is of it. */
 export const FieldConfidence = Schema.Struct({
   value: Schema.NullOr(Schema.String),
-  confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
 })
 
 /** The extractor's answer. */
@@ -41,7 +41,7 @@ export const PartialExtraction = Schema.Struct({
   currency: FieldConfidence,
   lineItems: Schema.optional(Schema.Array(Schema.Struct({ description: Schema.String, amount: Schema.Number }))),
   iterationsUsed: Schema.Number,
-  complete: Schema.Boolean,
+  complete: Schema.Boolean
 })
 
 /** The consumer's verdict on the extraction. */
@@ -52,7 +52,7 @@ export const ConsumeResult = Schema.Struct({
   currency: Schema.NullOr(Schema.String),
   highConfidenceCount: Schema.Number,
   readyForRouting: Schema.Boolean,
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Where the receipt goes. */
@@ -63,7 +63,7 @@ export const RoutingDecision = Schema.Struct({
   currency: Schema.String,
   date: Schema.String,
   reasoning: Schema.String,
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** What the flow settles with. `routing` is null when the receipt was not ready. */
@@ -74,7 +74,7 @@ export const Extract = AgentAction.make("examples/ReceiptStreamWatcher/Extract",
   payload: {
     file: Schema.NullOr(Schema.String),
     text: Schema.NullOr(Schema.String),
-    confidenceThreshold: Schema.Number,
+    confidenceThreshold: Schema.Number
   },
   output: PartialExtraction,
   seat,
@@ -82,12 +82,12 @@ export const Extract = AgentAction.make("examples/ReceiptStreamWatcher/Extract",
     `You are a receipt extraction agent. Read the provided receipt file or
 text and extract structured fields (merchant, total, date, currency, line items).
 For each field, assign a confidence score between 0 and 1. Stream partial results
-as you identify each field — you do not need every field to produce output.`,
+as you identify each field — you do not need every field to produce output.`
   ],
   prompt: ({ confidenceThreshold, file, text }) =>
     `Extract the receipt's fields, each with a confidence.\n\nFile: ${JSON.stringify(file)}\nText: ${
       JSON.stringify(text)
-    }\nConfidence threshold: ${confidenceThreshold}`,
+    }\nConfidence threshold: ${confidenceThreshold}`
 })
 
 /** Decides whether enough fields are confident to route. */
@@ -99,12 +99,12 @@ export const Consume = AgentAction.make("examples/ReceiptStreamWatcher/Consume",
     `You are a partial-state consumer. Evaluate the extracted fields and
 their confidence scores. Determine whether enough high-confidence fields are present
 to route the receipt downstream. A field is "high confidence" if its score is >= ${confidenceThreshold}.
-At least ${minFieldsForRouting} high-confidence fields are needed for routing.`,
+At least ${minFieldsForRouting} high-confidence fields are needed for routing.`
   ],
   prompt: ({ extraction, minFields, threshold }) =>
     `Decide whether this receipt is ready for routing.\n\nThreshold: ${threshold}\nMinimum fields: ${minFields}\nExtraction: ${
       JSON.stringify(extraction)
-    }`,
+    }`
 })
 
 /** Picks the downstream process for a ready receipt. */
@@ -114,7 +114,7 @@ export const Route = AgentAction.make("examples/ReceiptStreamWatcher/Route", {
     total: Schema.NullOr(Schema.String),
     currency: Schema.NullOr(Schema.String),
     date: Schema.NullOr(Schema.String),
-    highConfidenceCount: Schema.Number,
+    highConfidenceCount: Schema.Number
   },
   output: RoutingDecision,
   seat,
@@ -122,12 +122,12 @@ export const Route = AgentAction.make("examples/ReceiptStreamWatcher/Route", {
     `You are a receipt routing agent. Based on the extracted and validated
 fields, decide which downstream process should handle this receipt: expense-report
 (standard business expense), reimbursement (employee out-of-pocket), audit-review
-(high-value or flagged), or manual-review (insufficient data).`,
+(high-value or flagged), or manual-review (insufficient data).`
   ],
   prompt: ({ currency, date, highConfidenceCount, merchant, total }) =>
     `Route this receipt.\n\nFields: ${
       JSON.stringify({ merchant, total, currency, date })
-    }\nHigh-confidence fields: ${highConfidenceCount}`,
+    }\nHigh-confidence fields: ${highConfidenceCount}`
 })
 
 /** The flow: extract, judge readiness, and route only a ready receipt. */
@@ -148,13 +148,13 @@ export const ReceiptStreamWatcher = Flow.make("examples/ReceiptStreamWatcher", {
                 total: extraction.total.value,
                 currency: extraction.currency.value,
                 date: extraction.date.value,
-                highConfidenceCount: consumed.highConfidenceCount,
+                highConfidenceCount: consumed.highConfidenceCount
               }),
-              (routing: Planned.Planned<typeof RoutingDecision.Type>) => Node.succeed({ consumed, routing }),
+              (routing: Planned.Planned<typeof RoutingDecision.Type>) => Node.succeed({ consumed, routing })
             ),
-          else: (consumed) => Node.succeed({ consumed, routing: null }),
-        }),
-    ),
+          else: (consumed) => Node.succeed({ consumed, routing: null })
+        })
+    )
 })
 
 /** Every step the flow calls. */

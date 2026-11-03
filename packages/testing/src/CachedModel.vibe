@@ -70,7 +70,7 @@ const asModelError = (failure: ModelErrorLike): ModelError =>
     quotaScope: failure.quotaScope,
     providerCode: failure.providerCode,
     requestId: failure.requestId,
-    httpStatus: failure.httpStatus,
+    httpStatus: failure.httpStatus
   })
 
 const replay = (call: RecordedCall): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure> => {
@@ -87,8 +87,8 @@ const unscripted = (request: ModelRequestLike): Stream.Stream<never> =>
     new UnscriptedModelError({
       modelId: request.modelId,
       messageCount: request.messages.length,
-      toolNames: request.tools.map((tool) => tool.name),
-    }),
+      toolNames: request.tools.map((tool) => tool.name)
+    })
   )
 
 /**
@@ -118,10 +118,10 @@ export const make = (options: Options): Model.Model => {
               Option.flatMap(loaded, (fixture) => hit(fixture, normalize(recordedRequest(request)))),
               {
                 onNone: () => miss(request),
-                onSome: replay,
-              },
-            )),
-      ),
+                onSome: replay
+              }
+            ))
+      )
   })
 }
 
