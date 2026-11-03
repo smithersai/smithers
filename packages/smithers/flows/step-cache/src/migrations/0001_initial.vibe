@@ -32,10 +32,10 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 0.1.0
  */
-export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const initial: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
 
-  yield* sql`CREATE TABLE flows_step_cache (
+  try sql`CREATE TABLE flows_step_cache (
     key_digest TEXT PRIMARY KEY CHECK (length(key_digest) > 0),
     result_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql`result_json`)}),
     meta_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql`meta_json`)}),
@@ -51,7 +51,7 @@ export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect
       recorded_event_seq <= 9007199254740991
     )
   )`
-  yield* sql`CREATE TABLE flows_step_cache_recorded (
+  try sql`CREATE TABLE flows_step_cache_recorded (
     key_digest TEXT NOT NULL CHECK (length(key_digest) > 0),
     result_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql`result_json`)}),
     meta_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql`meta_json`)}),
@@ -68,4 +68,4 @@ export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect
     ),
     PRIMARY KEY (key_digest, recorded_run_id, recorded_event_seq)
   )`
-})
+}

@@ -28,10 +28,10 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { CacheStore } from "../src/CacheStore.ts"
-import * as CacheStoreLive from "../src/CacheStore.ts"
-import * as CombinedCacheStore from "../src/CombinedCacheStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import { CacheStore } from "../src/CacheStore.vibe"
+import * as CacheStoreLive from "../src/CacheStore.vibe"
+import * as CombinedCacheStore from "../src/CombinedCacheStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 const entry: CacheStoreLive.CacheEntry = {
   keyDigest: "durable-digest",

@@ -38,11 +38,27 @@
     "./migrations/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./CacheStore": "./src/CacheStore.ts",
+    "./CacheStore": {
+      "types": "./.vibe/declarations/src/CacheStore.d.vibe.ts",
+      "vibelang-source": "./src/CacheStore.vibe",
+      "default": "./.vibelang/js/src/CacheStore.js"
+    },
     "./CacheStoreMetrics": "./src/CacheStoreMetrics.vibe",
-    "./CombinedCacheStore": "./src/CombinedCacheStore.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./RemoteCacheStore": "./src/RemoteCacheStore.ts",
+    "./CombinedCacheStore": {
+      "types": "./.vibe/declarations/src/CombinedCacheStore.d.vibe.ts",
+      "vibelang-source": "./src/CombinedCacheStore.vibe",
+      "default": "./.vibelang/js/src/CombinedCacheStore.js"
+    },
+    "./Migrations": {
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./RemoteCacheStore": {
+      "types": "./.vibe/declarations/src/RemoteCacheStore.d.vibe.ts",
+      "vibelang-source": "./src/RemoteCacheStore.vibe",
+      "default": "./.vibelang/js/src/RemoteCacheStore.js"
+    },
     "./index": "./src/index.ts",
     "./test/TestCacheStore": "./src/test/TestCacheStore.ts"
   },

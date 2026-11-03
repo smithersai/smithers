@@ -9,9 +9,9 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
-import * as Initial from "../src/migrations/0001_initial.ts"
-import * as CreatedAtIndex from "../src/migrations/0002_created_at_index.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import * as Initial from "../src/migrations/0001_initial.vibe"
+import * as CreatedAtIndex from "../src/migrations/0002_created_at_index.vibe"
 
 interface SqliteMasterRow {
   readonly name: string

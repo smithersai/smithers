@@ -38,7 +38,7 @@ const securityReview = Smithers.SecurityReview({
         "A fenced lookup accepting a remote entry whose provenance mismatches recordedBy and serving it where the local ledger row was refused or expired.",
         "A remote refusal or malformed body that turns into a hit instead of a miss."
       ],
-      paths: ["src/RemoteCacheStore.ts", "src/CombinedCacheStore.ts"]
+      paths: ["src/RemoteCacheStore.vibe", "src/CombinedCacheStore.vibe"]
     },
     {
       id: "remote-credential-exposure",
@@ -51,7 +51,7 @@ const securityReview = Smithers.SecurityReview({
         "A CacheStoreError message or span attribute that includes the URL, request, header values, or free-form transport cause text.",
         "A configured header name missing from Headers.CurrentRedactedNames, or a client that follows redirects to another origin with the headers attached."
       ],
-      paths: ["src/RemoteCacheStore.ts"]
+      paths: ["src/RemoteCacheStore.vibe"]
     },
     {
       id: "cache-key-namespace",
@@ -63,7 +63,7 @@ const securityReview = Smithers.SecurityReview({
         "An acUrl or DELETE issued before validateKey runs on the key.",
         "Run id or event seq placed in the URL path instead of percent-encoded query parameters."
       ],
-      paths: ["src/internal/CacheEntry.ts", "src/internal/CacheAdmission.ts", "src/RemoteCacheStore.ts"]
+      paths: ["src/internal/CacheEntry.vibe", "src/internal/CacheAdmission.vibe", "src/RemoteCacheStore.vibe"]
     },
     {
       id: "bounded-untrusted-json",
@@ -77,7 +77,7 @@ const securityReview = Smithers.SecurityReview({
         "A maxResponseBytes, requestTimeout, or depth/node limit that a caller can set above the documented maximum or to a non-finite value.",
         "snapshotEntry reading accessors or prototype properties instead of own data descriptors, so a getter runs during admission."
       ],
-      paths: ["src/RemoteCacheStore.ts", "src/internal/CacheAdmission.ts", "src/internal/SqlCacheStore.ts"]
+      paths: ["src/RemoteCacheStore.vibe", "src/internal/CacheAdmission.vibe", "src/internal/SqlCacheStore.ts"]
     },
     {
       id: "sql-parameterization-and-fences",

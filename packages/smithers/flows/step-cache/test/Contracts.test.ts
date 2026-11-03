@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join, posix, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
-import * as CacheStore from "../src/CacheStore.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
 import * as Root from "../src/index.ts"
 
 const sourceRoot = fileURLToPath(new URL("../src", import.meta.url))

@@ -16,10 +16,10 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import { CacheStore } from "../src/CacheStore.ts"
-import * as CacheStoreLive from "../src/CacheStore.ts"
-import * as CombinedCacheStore from "../src/CombinedCacheStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import { CacheStore } from "../src/CacheStore.vibe"
+import * as CacheStoreLive from "../src/CacheStore.vibe"
+import * as CombinedCacheStore from "../src/CombinedCacheStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 const layers = Layer.mergeAll(
   CacheStoreLive.layer,

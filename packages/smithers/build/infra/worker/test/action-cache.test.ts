@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import * as Effect from "effect/Effect"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
-import type * as CacheStore from "../../../../flows/step-cache/src/CacheStore.ts"
+import type * as CacheStore from "../../../../flows/step-cache/src/CacheStore.vibe"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeActionCache, readTouchDays } from "../D1ActionCache.ts"
 import { pruneStaleEntries, retentionBudgetMs, retentionDays } from "../RetentionSweep.ts"
@@ -578,7 +578,7 @@ describe("hosted result-only contract (build-infra/api-design/1)", () => {
     // Load the Node client at runtime: importing its implementation into the
     // Workers typecheck mixes incompatible TextDecoder ambient declarations.
     // The shared CacheStore service still types every operation below.
-    const { make } = await import(new URL("../../../../flows/step-cache/src/RemoteCacheStore.ts", import.meta.url).href) as {
+    const { make } = await import(new URL("../../../../flows/step-cache/src/RemoteCacheStore.vibe", import.meta.url).href) as {
       readonly make: (options: {
         readonly endpoint: string
         readonly headers: Readonly<Record<string, string>>
