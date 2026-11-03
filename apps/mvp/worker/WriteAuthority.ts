@@ -40,3 +40,8 @@ export const holds = (session: Session | undefined) => Effect.gen(function* () {
     FROM sessions s WHERE s.id::text = ${session.sessionId} AND s.person_id::text = ${session.personId}`
   return row?.live === true
 })
+
+/** A retained session's expiry as a SQL fragment, for the writer's current-clock check and remaining lock budget. */
+export const deadline = (sql: SqlClient.SqlClient, session: Session | null | undefined) => session == null
+  ? sql`'infinity'::timestamptz`
+  : sql`(SELECT expires_at FROM sessions WHERE id::text = ${session.sessionId} AND person_id::text = ${session.personId})`

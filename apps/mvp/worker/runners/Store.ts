@@ -136,9 +136,9 @@ const admit = (
     if (coding === "compare" && (yield* generationOf(codingKey(repoId))) !== (fence.coding ?? 0)) {
       return yield* refuse("superseded")
     }
-    // Any lock the write still waits on gives up at the fence's expiry: the transaction fails, and the step's retry is
+    // Any remaining lock wait is bounded by the earliest session, role or fence expiry: the transaction fails, and the step's retry is
     // refused `authorization_expired`.
-    yield* Fence.untilExpiry(fence)
+    if (!(yield* Fence.untilExpiry(fence))) return yield* refuse("authorization_expired")
     return "admitted" as const
   })
 

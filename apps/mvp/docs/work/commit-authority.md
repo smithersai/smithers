@@ -1,6 +1,6 @@
 ---
 title: Commit-time write authority
-status: in-progress
+status: completed
 area: access
 owner: Codex GPT-6.1 Sol
 updated: 2026-11-02
@@ -25,3 +25,20 @@ lock. No schema migration or new read-path query. Legacy links fail closed. Fixe
 0 skipped, including cancellation replay, new admission after deletion, and previously committed Keep replay after
 deletion. SQL spans measure +1 admission query, +1 per-person transaction lock on Put/Delete/Keep, and +1 generation
 query on Keep. Existing stale metrics and logs record cancelled links without credential contents.
+
+Finding 4 reproduced on the unchanged main implementation: `Caused by: Error: write lock budget exceeds authority
+deadline` (2 failed, 0 skipped). The regression uses a Postgres trigger at the actual Store mutation to assert its
+remaining lock budget, with no clock waits: the session or role has at most 30 seconds remaining, while the old fence
+installed nearly five minutes. The fixed deadline is the minimum of fence, session and role freshness. It is checked
+after authority locks and again while installing lock_timeout after generation reads, in the same existing queries.
+Fixed Runners + FenceDeadline suites: 63 passed, 0 skipped; SQL spans assert exactly one lock-budget installation
+statement, so this finding adds zero round trips. Three deadline cases cover session, repository role and a session
+retained by a repository fence. The regression checks the budget at mutation rather than waiting out real time.
+
+Worker typecheck (`vibelang -p worker/tsconfig.json`) passed after all five fixes. The app TypeScript check fails in untouched integration
+dependencies around the unresolved @smthrs/errors/SmithersError import; it is not claimed passing. Focused tests run
+without coverage instrumentation; no coverage, production or live-provider claim is made.
+
+All five findings have failing-before and passing-after regression receipts. Five local commits are retained for the
+requested human decision; nothing is landed or pushed, and no review was requested or claimed. The session seam adds
+no read-path query. No local installation or tree copy was made; remote test synchronization excludes both VCS stores.

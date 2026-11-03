@@ -21,7 +21,8 @@ import { latestRole } from "../SessionStore.ts"
 // The writing transaction (worker/runners/Store.ts) takes the resource's lock (an advisory lock on its key, so even one
 // not yet written serializes), answers a replay with the outcome already recorded before it changes anything, then
 // locks the rows it writes and the authority's rows, checks the authority and the expiry by the clock as it stands then,
-// and the generations; only then does it write, and any lock it still waits on gives up at the expiry.
+// and the generations; only then does it write, and remaining lock waits are bounded by the earliest session, role
+// or fence expiry.
 // Refused, it writes nothing and records why, `authorization_expired` or `superseded`, under the execution id, which
 // the route answered with its 202. A payload with no fence (an action started before fences) is
 // `authorization_expired`. A Worker still on the release before fences writes unfenced until it is replaced.
@@ -83,7 +84,7 @@ export const authorityHolds = (fence: Fence) =>
       : true
     if (!held) return false
     const [now] = yield* sql<{ readonly live: boolean }>`
-      SELECT clock_timestamp() < to_timestamp(${fence.expiresAt}::float8 / 1000) AS live`
+      SELECT clock_timestamp() < ${deadline(sql, fence)} AS live`
     return now!.live
   })
 
@@ -103,44 +104,35 @@ const sessionHolds = (personId: string, sessionId: string, alias: string | undef
     return row?.admin === true
   })
 
-/**
- * The earliest moment the fence's authority stops holding by the clock alone: the fence's own expiry; for a `Session`
- * authority, its session's expiry; for a `Repo` authority, the end of its role row's freshness
- * (`RepoRoles.FRESH_SECONDS` after it was read) and the expiry of the session it came through. An SQL expression, read inside the write's transaction, its rows
- * locked.
- */
+/** The earliest authority deadline, read in the database's clock from the rows this transaction holds. */
 const deadline = (sql: SqlClient.SqlClient, fence: Fence) => {
-  const own = sql`to_timestamp(${fence.expiresAt}::float8 / 1000)`
-  const authority = fence.authority
-  return authority._tag === "Session"
-    ? sql`least(${own}, (SELECT expires_at FROM sessions WHERE id::text = ${authority.sessionId}))`
-    : authority._tag === "Repo"
-    ? sql`least(${own}, (SELECT checked_at + make_interval(secs => ${RepoRoles.FRESH_SECONDS}) FROM github_repo_roles
-        WHERE repo_id = ${authority.held.repoId} AND person_id = ${authority.held.personId}),
-        (SELECT expires_at FROM sessions WHERE id::text = ${authority.session?.sessionId ?? ""}))`
-    : own
+  const session = fence.authority._tag === "Session" ? fence.authority
+    : fence.authority._tag === "Repo" ? fence.authority.session : undefined
+  const role = fence.authority._tag === "Repo" ? fence.authority.held : undefined
+  return sql`least(to_timestamp(${fence.expiresAt}::float8 / 1000),
+    ${WriteAuthority.deadline(sql, session)},
+    ${role === undefined ? sql`'infinity'::timestamptz` : sql`(
+      SELECT checked_at + make_interval(secs => ${RepoRoles.FRESH_SECONDS}) FROM github_repo_roles
+      WHERE repo_id = ${role.repoId} AND person_id = ${role.personId})`})`
 }
 
 /**
- * Inside an admitted write's transaction: every lock it still waits on gives up at the authority's earliest deadline
- * (`deadline`, as `lock_timeout`), so the transaction fails rather than writing late.
+ * Inside an admitted write's transaction: bound remaining lock waits by the earliest of fence expiry, session expiry
+ * and repository-role freshness. Also judge that deadline now, after generation reads, without another round trip.
  */
-export const untilExpiry = (fence: Fence) =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`
-      SELECT set_config('lock_timeout',
-        greatest(1, floor(extract(epoch FROM ${deadline(sql, fence)} - clock_timestamp()) * 1000))::bigint || 'ms', true)`)
+export const untilExpiry = (fence: Fence) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const [row] = yield* sql<{ readonly live: boolean }>`
+    SELECT set_config('lock_timeout',
+      greatest(1, floor(extract(epoch FROM ${deadline(sql, fence)} - clock_timestamp()) * 1000))::bigint || 'ms', true),
+      clock_timestamp() < ${deadline(sql, fence)} AS live`
+  return row?.live === true
+})
 
-/**
- * A write that finished after its authority's earliest deadline: its transaction is rolled back, and the action is
- * refused `authorization_expired`. Each wait after admission is bounded (`untilExpiry`); this bounds their sum.
- */
+/** A write finishing after its authority deadline rolls back and is refused. */
 export class LateCommit extends Schema.TaggedError<LateCommit>()("@smthrs/mvp/runners/LateCommit", {}) {}
 
-/**
- * Right before an admitted write commits, every change made: whether the authority's earliest deadline (`deadline`)
- * hasn't passed by the clock as it stands now.
- */
+/** Final check after all writes, against the same earliest authority deadline. */
 export const stillHolds = (fence: Fence) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     Effect.map(

@@ -23,18 +23,20 @@ Registering a runner, naming an agent or turning overflow on hands a machine the
 App's recorded installation on the repository and the Admin role GitHub gives there; the deployment's own role never
 stands in for it ([decision 0148](../decisions/0148-runner-git-credential.md)). Every Admin action on a repository's runners, agents
 and overflow, `PUT` and `DELETE` alike, carries one fence (`worker/runners/Fence.ts`): the route reads the body
-whole, then who is asking and their authority (the repository's role row, or on the deployment's own repository the
-sign-in session and the alias it came through), and the flow's transaction takes the resource's lock (even for a name
+whole, then who is asking and their authority (the repository's role row together with the sign-in session and alias,
+or on the deployment's own repository the sign-in session and alias), and the flow's transaction takes the resource's lock (even for a name
 not written yet), answers a replay with the outcome already recorded before it changes anything (the overflow setting
 included), then locks the rows it writes (the runner's, or the repository's agents) and the authority's rows (the
 person, the session and the alias it came through, and the role row where one admitted it, all locked before any is
 judged), then checks that authority, the
 fence's own expiry (5 minutes) by the clock as it stands then, and the generations it was admitted against: the
 runner's or agent's, which a removal doesn't reset, and for an agent, the repository's coding selection's. An action
-refused there writes nothing. Admitted, any lock the write still waits on gives up at its authority's earliest
-deadline (`lock_timeout`): the fence's expiry, the session's, or the end of the role row's five-minute freshness. Right
-before it commits, every change made, the write checks that deadline again: waits that add up past it roll the whole
-write back, and the action is refused `authorization_expired`.
+refused there writes nothing. Repository fences missing their admitting session identity are refused; local authority
+explicitly has none. The shared WriteAuthority seam checks signed-in writes. Admitted, remaining lock waits use the
+earliest of the fence's five-minute expiry, the sign-in session's expiry and the repository role's freshness deadline
+(`lock_timeout`). The same database-clock deadline is checked after all authority locks and again after generation
+reads, without adding a round trip. Right before commit, after every change, the write checks the deadline once more.
+A write finishing past it rolls back and is refused `authorization_expired`.
 Each `202` answers `{ name, execution }`; `GET /api/runners/admin-receipts/<execution>` answers how it ended, for the
 Admin who started it: `set`, `removed`, `missing`, `authorization_expired` (its authority no longer holds, or it
 waited past its expiry, or it was started before fences) or `superseded` (the runner or agent changed since), and
