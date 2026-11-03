@@ -105,7 +105,7 @@
     "miniflare": "5.20261019.0-beta",
     "minimatch": "10.2.6",
     "typescript": "^5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-9e7138cd99aa.tgz",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
     "vibelang-unplugin": "file:../../.vibelang-toolchain/vibelang-unplugin-0.0.11-45a3600458c6.tgz",
     "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vite": "8.3.4",
