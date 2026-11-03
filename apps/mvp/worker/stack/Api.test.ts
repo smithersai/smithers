@@ -36,7 +36,7 @@ import { OWN_REPOSITORY, runs, stackHarness, type StackHarness } from "./test/st
 const runtime = testFile("stack_api")
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, github_repo_roles, github_repositories`))
+    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, github_repo_roles, github_repositories`))
 )
 
 const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member", login: "maya" }

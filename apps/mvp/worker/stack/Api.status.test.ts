@@ -11,7 +11,7 @@ import { OWN_REPOSITORY, stackHarness } from "./test/stack.ts"
 // A current TODO read through the real route and compose Postgres. The test's Sessions layer injects access failures.
 const runtime = testFile("stack_status_api")
 beforeEach(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-  sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, github_repo_roles, github_repositories`)))
+  sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, github_repo_roles, github_repositories`)))
 
 const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member", login: "maya" }
 const guest: Actor = { subject: { kind: "person", id: "person-guest" }, role: "guest", login: "gus" }

@@ -21,6 +21,7 @@ import {
 } from "../../src/features/issues/contract.ts"
 import { CHECKS_SHAPE_ROUTE, compareRoute, PULL_COMMITS_SHAPE_ROUTE, PULL_RECEIPT_HEADER, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import { WORK_LINKS_SHAPE_ROUTE } from "../../src/features/issues/work.ts"
+import { TODO_LEAF_COLUMNS, TODO_LEAVES_SHAPE_ROUTE } from "../../src/features/todos/leaves.ts"
 import { ACTIONS_SHAPE_ROUTE } from "../../src/features/actions/contract.ts"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type Role, type SessionState } from "../../src/features/auth/contract.ts"
 import * as Actor from "../Actor.ts"
@@ -46,7 +47,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await reset(runtime)
-  await sql(runtime, `TRUNCATE repo_about`)
+  await sql(runtime, `TRUNCATE repo_about, todo_leaves, todos, stacks CASCADE`)
 })
 
 // The deployment's own repository, a second one it acts on, and one GITHUB_ALLOWED_REPOSITORIES leaves out.
@@ -161,6 +162,13 @@ const seed = async (cell: Cell) => {
     VALUES ('${repo.id}/comment/70', '${repo.id}', '${repo.id}#7', 70, 'Seventy', now(), now(), now(), now())`,
   )
   await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${repo.id}', 1, ${cell.visibility === "private"})`)
+  // A TODO under issue 7, with its title, SHAs and people; its readable leaf follows at commit (decision 0153).
+  await sql(runtime, `INSERT INTO stacks (repo_id) VALUES ('${repo.id}')`)
+  await sql(
+    runtime,
+    `INSERT INTO todos (id, repo_id, number, title, state, position, created_by, created_login, issue_number, pr_number, head_sha)
+    VALUES ('00000000-0000-4000-8000-0000000000a1', '${repo.id}', 3, 'Secret TODO title', 'in_review', 1, 'person-maya', 'maya', 7, 9, '${"b".repeat(40)}')`,
+  )
   if (cell.appAbsent === true) {
     await sql(runtime, `INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('${repo.id}', now() + interval '1 hour')`)
   }
@@ -234,7 +242,7 @@ const answerOf = async (response: Response) => {
  * One shape read as a device's Electric client makes it: the route's answer, the same request again when it answers
  * `409 must-refetch`.
  */
-const readShape = async (h: Awaited<ReturnType<typeof harnessFor>>, path: string, headers: Record<string, string>) => {
+const readShape = async (h: Pick<Awaited<ReturnType<typeof harnessFor>>, "fetch">, path: string, headers: Record<string, string>) => {
   let next = path
   for (let attempt = 0;; attempt++) {
     const response = await h.fetch(next, { headers })
@@ -277,6 +285,7 @@ const shapeReaders = (cell: Cell): ReadonlyArray<Reader> => {
     { reader: "reviews", path: at(REVIEWS_SHAPE_ROUTE), table: "reviews" },
     { reader: "checks", path: at(CHECKS_SHAPE_ROUTE), table: "runs" },
     { reader: "work links", path: at(WORK_LINKS_SHAPE_ROUTE), table: "work_links" },
+    { reader: "todo leaves", path: at(TODO_LEAVES_SHAPE_ROUTE), table: "todo_leaves" },
     { reader: "issue item", path: at(ITEMS_SHAPE_ROUTE, `&number=${number}`), table: "items", numbered: true },
     { reader: "issue comments", path: at(COMMENTS_SHAPE_ROUTE, `&number=${number}`), table: "comments", numbered: true },
     { reader: "refresh pull commits", path: at(PULL_COMMITS_SHAPE_ROUTE, `&refresh=${number}`), table: "pull_commits", refresh: true, numbered: true },
@@ -424,6 +433,12 @@ describe("one access matrix for every reader of a repository's issues", () => {
       expect(values(bodies["summaries"]!).map((row) => row.title)).toEqual(["Seven"])
       expect(values(bodies["issue item"]!).map((row) => [row.number, row.title, row.body])).toEqual([["7", "Seven", "Body"]])
       expect(values(bodies["issue comments"]!).map((row) => row.body)).toEqual(["Seventy"])
+      // A leaf carries its state and validation only: exactly the allowlist, never a title, prompt, SHA or person.
+      const leaves = values(bodies["todo leaves"]!)
+      expect(leaves.map((row) => Object.keys(row).sort())).toEqual([[...TODO_LEAF_COLUMNS].sort()])
+      expect(leaves.map((row) => [row.number, row.issue_number, row.state, row.validation, row.pr_number, row.executor, row.proof_source, row.reported_at]))
+        .toEqual([["3", "7", "in_review", "no_criteria", "9", "smithers", null, null]])
+      expect(bodies["todo leaves"]).not.toMatch(/Secret TODO title|maya|person-maya|bbbbbbbb/)
     }
   }, 60_000)
 })
@@ -682,5 +697,33 @@ describe("a pull's refresh is authorized once, before both the refresh and the r
     expect(refused.answer).toBe("403 forbidden")
     expect(reads).toBe(2)
     expect(h.starts.filter((start) => start.flow === "github/Apply")).toHaveLength(1)
+  }, 60_000)
+})
+
+// Decision 0153: a TODO's leaf is read under the repository's own authorization, at every request. A Member whose role
+// is revoked reads nothing more: the next request answers 403 and serves no row.
+describe("a TODO's leaves follow the reader's role at each request", () => {
+  test("a Member reads them, and after the role is revoked the next read is 403", async () => {
+    const cell: Cell = { name: "own private", repo: OWN, visibility: "private", viewer: { ...person, role: "member" }, shapes: "200", list: "200" }
+    await seed(cell)
+    let role: Role | null = "member"
+    const roles: RepoRoles.RepoRoles<never> = {
+      repository: OWN,
+      resolve: (actor, target) => Effect.sync(() => ({
+        role,
+        held: role === null ? Option.none() : Option.some({ repoId: target.id, personId: actor.subject.id, role }),
+      })),
+    }
+    const github = scriptedGitHub(OWN.owner, OWN.name)
+    github.private = true
+    const h = await githubHarness(runtime, { own: OWN, github, allowed: ACTED_ON, roles })
+    const path = `${TODO_LEAVES_SHAPE_ROUTE}?${repoParam(OWN)}&offset=-1`
+    const read = await answerOf(await readShape(h, path, {}))
+    expect(read.answer).toBe("200")
+    expect(values(read.body).map((row) => row.number)).toEqual(["3"])
+    role = null
+    const revoked = await answerOf(await readShape(h, path, {}))
+    expect(revoked.answer).toBe("403 forbidden")
+    expect(revoked.body).not.toContain("in_review")
   }, 60_000)
 })

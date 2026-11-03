@@ -175,6 +175,8 @@ Every engine statement is a round trip from an execution's Durable Object to Pos
 
 `ChatMigrations` is an Alchemy action that applies `db/migrations` with `Database.migrate`, the same migrations `pnpm db:migrate` applies locally. It runs from the deploying machine against the project's direct host during `pnpm run deploy`, whenever the database or the list of migration files changed. The Hyperdrive config waits for it, so ChatApi never deploys against an unmigrated database. `pnpm plan` lists it as `run` when it will run.
 
+A migration runs while older Workers still serve, and a rollback brings them back. Data every Worker must keep in step across that window belongs in a trigger, not in Worker code. The first is `todo_leaves_project` ([0153](decisions/0153-issues-are-a-tree-todos-are-its-leaves.md)): deferred, per row, taking only its own row's lock, because a shared lock in a commit-time trigger queues every writer behind it.
+
 ### Electric
 
 - `ElectricGateway` (`infra/ElectricGateway.ts`) is a Worker with no public URL: `workersDev` and its previews are off, and it has no domain or route. ChatApi reaches it only through its service binding `ELECTRIC_GATEWAY`. It answers only `GET /v1/shape` (`infra/ElectricAccess.ts`), by forwarding the request to one Durable Object, which starts the `Electric` container and forwards it to Electric's port; any other path is 404, before the container starts. ChatApi has authorized the person and fixed the shape before it calls, so no secret is needed on the hop: until 2026-10-26 the gateway sat at its `workers.dev` URL and checked a generated `ElectricSecret` sent as a bearer token.

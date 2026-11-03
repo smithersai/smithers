@@ -18,7 +18,7 @@ import * as Todo from "./Todo.ts"
 
 const runtime = testFile("todo_recovery")
 beforeEach(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-  sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks`)))
+  sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks`)))
 
 const Settlement = Flow.make("probe/TodoSettlement", {
   payload: Todo.Settle.payloadSchema, success: Todo.Ran, error: Todo.TodoUnavailable,

@@ -62,7 +62,7 @@ interface Trial {
 const trial = async (real: HostModel["Service"]): Promise<Trial> => {
   const started = Date.now()
   await reset(runtime)
-  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs, model_usage")
+  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, pulls, pull_commits, reviews, runs, model_usage")
   const word = `w${Date.now().toString(36)}`
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.files.set("README.md", README)

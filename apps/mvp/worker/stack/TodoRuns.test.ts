@@ -17,7 +17,7 @@ import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { testFile } from "../test/harness.ts"
 
 const runtime = testFile("todo_admission")
-beforeEach(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks`)))
+beforeEach(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks`)))
 const change = () => ({ opId: crypto.randomUUID(), repoId: "github/test/repo", actor: { id: "person", login: "person" }, via: "person" as const,
   op: { kind: "commit" as const, title: "private", prompt: "private", acceptance: [] } })
 

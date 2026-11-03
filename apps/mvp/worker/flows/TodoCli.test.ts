@@ -29,7 +29,7 @@ import * as TodoCli from "./TodoCli.ts"
 const runtime = testFile("todo_cli_edges")
 beforeEach(() => runtime.runPromise(Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
-  yield* sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, personal_models CASCADE`
+  yield* sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, personal_models CASCADE`
 })))
 const repoId = "github/acme/widgets"
 const ownerId = "person-coder"

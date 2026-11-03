@@ -42,7 +42,7 @@ import { eventually, recorded, signedIn, testFile, uuid } from "./test/harness.t
 const runtime = testFile("remote_runs")
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, runs`))
+    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, runs`))
 )
 
 const member: Actor.Actor = { subject: { kind: "person", id: "person-member" }, role: "member", login: "maya" }

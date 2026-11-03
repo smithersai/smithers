@@ -55,7 +55,7 @@ const boxes = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-todo-box-")))
 afterAll(() => rmSync(boxes, { recursive: true, force: true }))
 beforeEach(async () => {
   await reset(runtime)
-  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs")
+  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, pulls, pull_commits, reviews, runs")
   await sql(runtime, "TRUNCATE model_usage, model_budget_days")
   await sql(runtime, "TRUNCATE agent_jobs, agents, agent_changes RESTART IDENTITY CASCADE")
   await resetModels(runtime)

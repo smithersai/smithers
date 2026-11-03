@@ -1,0 +1,57 @@
+// TODO leaves (decision 0153): a TODO is a leaf under exactly one issue, and everyone who may read the issue's
+// repository reads the leaf's state and validation, never its title, prompt, acceptance criteria, SHAs or people.
+// Members join a leaf to its title through `todos` by `todo_id`. A deferred trigger on `todos` is the table's one writer (migration 0100).
+import { Schema } from "effect"
+
+/** Electric's shape of a repository's TODO leaves: `GET ?repo=<owner>/<name>`, authorized like its issues. */
+export const TODO_LEAVES_SHAPE_ROUTE = "/api/shapes/todo-leaves"
+export const TODO_LEAVES_TABLE = "todo_leaves"
+
+/**
+ * The transport allowlist: every column the table has, and the only ones a reader ever receives. A column added to the
+ * table stays on the server until it is named here, and it must never be a title, prompt, criterion, SHA or person.
+ */
+export const TODO_LEAF_COLUMNS = [
+  "todo_id",
+  "repo_id",
+  "number",
+  "issue_number",
+  "state",
+  "validation",
+  "pr_number",
+  "executor",
+  "proof_source",
+  "reported_at",
+  "updated_at",
+] as const
+
+/**
+ * What the server says of a leaf's proof. `none`: a TODO from before the projection, never proven. `no_criteria`: its
+ * current revision has no acceptance criteria. `pending`: it has criteria and no proof for its current head, revision
+ * and attempt. `passed`, `failed` and `stale` arrive with proof (rollout step 6b); nothing writes them yet.
+ */
+export const TODO_VALIDATIONS = ["none", "pending", "passed", "failed", "stale", "no_criteria"] as const
+export type TodoValidation = (typeof TODO_VALIDATIONS)[number]
+
+/** Who does a leaf's work, and who proved it. */
+export const TODO_EXECUTORS = ["smithers", "external"] as const
+export const TODO_PROOF_SOURCES = ["smithers", "lane"] as const
+
+/** One row of `todo_leaves` as a device reads it. */
+export const TodoLeafRow = Schema.Struct({
+  todoId: Schema.String,
+  repoId: Schema.String,
+  number: Schema.Number,
+  issueNumber: Schema.Number,
+  state: Schema.String,
+  validation: Schema.Literals(TODO_VALIDATIONS),
+  prNumber: Schema.NullOr(Schema.Number),
+  /** Who does the work: a Smithers run, for every leaf until work outside the stack has leaves. */
+  executor: Schema.Literals(TODO_EXECUTORS),
+  /** Who proved it: none until proof exists. */
+  proofSource: Schema.NullOr(Schema.Literals(TODO_PROOF_SOURCES)),
+  /** When the work outside the stack last reported: none for a Smithers run. */
+  reportedAt: Schema.NullOr(Schema.String),
+  updatedAt: Schema.String,
+})
+export type TodoLeafRow = typeof TodoLeafRow.Type

@@ -74,7 +74,7 @@ const agent = { name: "coder", labels: ["linux"], profile: "acp-test", maxHours:
 
 beforeEach(async () => {
   await reset(runtime)
-  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs")
+  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, pulls, pull_commits, reviews, runs")
   await sql(runtime, "TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes, repo_overflow, secret_events RESTART IDENTITY CASCADE")
   await resetModels(runtime)
   await sql(runtime, "TRUNCATE agent_runs, fleet_alerts, notifications, alert_channels, alert_deliveries, github_repo_roles")

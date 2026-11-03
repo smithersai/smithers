@@ -4,7 +4,7 @@ import { TestSchemas } from "@smthrs/database"
 import { execFile } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { Effect, Logger, ManagedRuntime, Redacted, References } from "effect"
+import { Effect, Exit, Logger, ManagedRuntime, Redacted, References } from "effect"
 import { Migrator, SqlClient } from "effect/sql"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { digestSync } from "@smthrs/crypto"
@@ -1981,4 +1981,156 @@ describe("0087_flow_draft_receipts", () => {
       expect(refused).toBe("refused")
       expect(await on(through("0087"))).toEqual([])
     }))
+})
+
+describe("0100_todo_leaves", () => {
+  test("backfills one readable leaf per TODO with an issue, never proven, and holds a leaf to its rules", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      const refused = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      await on(through("0099"))
+      const ids = Array.from({ length: 3 }, () => crypto.randomUUID())
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`INSERT INTO stacks (repo_id, next_number) VALUES ('github/a/b', 4)`))
+      // T1 merged from issue 12 with its pull request, T2 queued from issue 12, T3 from no issue.
+      const rows: ReadonlyArray<readonly [string, number, string, number | null, number | null, number | null]> = [
+        [ids[0]!, 1, "merged", null, 12, 7],
+        [ids[1]!, 2, "queued", 1, 12, null],
+        [ids[2]!, 3, "queued", 2, null, null],
+      ]
+      for (const [id, number, state, position, issue, pr] of rows) {
+        await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO todos (id, repo_id, number, title, state, position, created_by, created_login, settled_at,
+            issue_number, pr_number, head_sha)
+          VALUES (${id}::uuid, 'github/a/b', ${number}, 'Secret title', ${state}, ${position}, 'p', 'p',
+            ${position === null ? new Date() : null}, ${issue}, ${pr}, ${"b".repeat(40)})`))
+      }
+      expect((await on(through("0100"))).map(([id, name]) => `${id}_${name}`)).toEqual(["100_todo_leaves"])
+      const leaves = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<Record<string, unknown>>`
+        SELECT * FROM todo_leaves ORDER BY number`))
+      // Historical TODOs were never proven: validation `none`. The leaf holds no title, prompt, SHA or person.
+      expect(leaves.map(({ updated_at: _, ...leaf }) => leaf)).toEqual([
+        { todo_id: ids[0], repo_id: "github/a/b", number: 1, issue_number: 12, state: "merged", validation: "none", pr_number: 7, executor: "smithers", proof_source: null, reported_at: null },
+        { todo_id: ids[1], repo_id: "github/a/b", number: 2, issue_number: 12, state: "queued", validation: "none", pr_number: null, executor: "smithers", proof_source: null, reported_at: null },
+      ])
+      expect(leaves.every((leaf) => leaf.updated_at instanceof Date)).toBe(true)
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE todo_leaves SET validation = 'proven'`)))
+        .toBe("refused")
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE todo_leaves SET validation = 'passed'`)))
+        .toBe("taken")
+      // No foreign key to `todos`: a leaf of work outside the stack (v1.1) has no `todos` row. Its executor is Smithers by
+      // default, and its executor and proof source are closed lists.
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO todo_leaves (todo_id, repo_id, number, issue_number, state, validation, updated_at)
+        VALUES (gen_random_uuid(), 'github/a/b', 9, 12, 'queued', 'none', now())`))).toBe("taken")
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE todo_leaves SET executor = 'someone'`))).toBe("refused")
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE todo_leaves SET proof_source = 'someone'`))).toBe("refused")
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE todo_leaves SET proof_source = 'lane'`))).toBe("taken")
+      expect(await on(through("0100"))).toEqual([])
+    }))
+})
+
+describe("0100_todo_leaves' trigger", () => {
+  test("a writer holding todos stops the migration within its bound, and it runs once that writer ends", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0099"))
+      let open = () => {}
+      const released = new Promise<void>((resolve) => { open = resolve })
+      let ready = () => {}
+      const locked = new Promise<void>((resolve) => { ready = resolve })
+      const holder = runtime.runPromise(Effect.scoped(
+        Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+          yield* sql`LOCK TABLE todos IN ROW EXCLUSIVE MODE`
+          ready()
+          yield* Effect.promise(() => released)
+        }))).pipe(Effect.provide(database)),
+      ))
+      await locked
+      const startedAt = Date.now()
+      const stopped = await runtime.runPromise(Effect.exit(Effect.provide(through("0100"), database)))
+      expect(Exit.isFailure(stopped)).toBe(true)
+      expect(Date.now() - startedAt).toBeLessThan(15_000)
+      open()
+      await holder
+      expect((await on(through("0100"))).map(([id, name]) => `${id}_${name}`)).toEqual(["100_todo_leaves"])
+    }), 60_000)
+})
+
+describe("0099_todo_attach", () => {
+  test("waits a bounded time for the table's lock and leaves its checks to validate later", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0098"))
+      // A stack op in flight holds the table: the deploy gives up within lock_timeout and can be run again.
+      let open = () => {}
+      const released = new Promise<void>((resolve) => { open = resolve })
+      let ready = () => {}
+      const locked = new Promise<void>((resolve) => { ready = resolve })
+      const holder = runtime.runPromise(Effect.scoped(
+        Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+          yield* sql`LOCK TABLE stack_ops IN ACCESS SHARE MODE`
+          ready()
+          yield* Effect.promise(() => released)
+        }))).pipe(Effect.provide(database)),
+      ))
+      await locked
+      const startedAt = Date.now()
+      const stopped = await runtime.runPromise(Effect.exit(Effect.provide(through("0099"), database)))
+      expect(Exit.isFailure(stopped)).toBe(true)
+      expect(Date.now() - startedAt).toBeLessThan(15_000)
+      open()
+      await holder
+      expect((await on(through("0099"))).map(([id, name]) => `${id}_${name}`)).toEqual(["99_todo_attach"])
+      const checks = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly name: string; readonly valid: boolean }>`
+        SELECT conname AS name, convalidated AS valid FROM pg_constraint
+        WHERE conname IN ('stack_ops_op_check', 'stack_ops_outcome_check') AND conrelid = 'stack_ops'::regclass ORDER BY conname`))
+      expect(checks).toEqual([{ name: "stack_ops_op_check", valid: false }, { name: "stack_ops_outcome_check", valid: false }])
+      const option = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly lock: string }>`SELECT current_setting('lock_timeout') AS lock`))
+      expect(option).toEqual([{ lock: "0" }])
+    }), 60_000)
+})
+
+describe("0099 and 0100 pending together", () => {
+  // An older Worker's `apply`: it reads stack_ops for its receipt, then writes todos, then stack_ops. The migrations
+  // apply in one transaction and take those tables in that order, so 0099 touches stack_ops and 0100 todos: the other
+  // order deadlocks with that Worker.
+  test("an older Worker's transaction in flight ends well, and so do the migrations, whose backfill sees its TODO", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0098"))
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`INSERT INTO stacks (repo_id, next_number) VALUES ('github/a/b', 2)`))
+      let writeTodo = () => {}
+      const writing = new Promise<void>((resolve) => { writeTodo = resolve })
+      let ready = () => {}
+      const readReceipt = new Promise<void>((resolve) => { ready = resolve })
+      const todo = crypto.randomUUID()
+      const worker = runtime.runPromise(Effect.exit(Effect.provide(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+        yield* sql`SELECT id FROM stack_ops WHERE id = ${todo}::uuid`
+        ready()
+        yield* Effect.promise(() => writing)
+        yield* sql`
+          INSERT INTO todos (id, repo_id, number, title, state, position, created_by, created_login, issue_number)
+          VALUES (${todo}::uuid, 'github/a/b', 1, 'T', 'queued', 1, 'p', 'p', 12)`
+      }))), database)))
+      await readReceipt
+      const migrating = runtime.runPromise(Effect.exit(Effect.provide(through("0100"), database)))
+      // The migrations are stopped by the Worker's read of stack_ops, whatever they already hold.
+      const waiting = () => on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly n: number }>`
+        SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND relation = 'stack_ops'::regclass`))
+      for (let [row] = await waiting(); row!.n === 0; [row] = await waiting());
+      writeTodo()
+      expect(Exit.isSuccess(await worker)).toBe(true)
+      expect(Exit.isSuccess(await migrating)).toBe(true)
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT number, validation FROM todo_leaves`)))
+        .toEqual([{ number: 1, validation: "none" }])
+    }), 60_000)
 })

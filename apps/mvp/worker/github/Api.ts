@@ -49,6 +49,7 @@ import {
 } from "../../src/features/issues/contract.ts"
 import { mayAsk } from "../../src/features/auth/contract.ts"
 import { WORK_LINK_COLUMNS, WORK_LINKS_SHAPE_ROUTE, WORK_LINKS_TABLE } from "../../src/features/issues/work.ts"
+import { TODO_LEAF_COLUMNS, TODO_LEAVES_SHAPE_ROUTE, TODO_LEAVES_TABLE } from "../../src/features/todos/leaves.ts"
 import { ACTION_COLUMNS, ACTIONS_SHAPE_ROUTE } from "../../src/features/actions/contract.ts"
 import {
   CHECK_COLUMNS,
@@ -150,6 +151,8 @@ const REPOSITORY_SHAPES: Readonly<Record<string, { readonly table: string; reado
   [CHECKS_SHAPE_ROUTE]: { table: RUNS_TABLE, columns: CHECK_COLUMNS, where: "repo_id = $1 AND sha IS NOT NULL AND execution IS NULL" },
   // What links each issue to the work on it (decision 0147, docs/features/work-links.md).
   [WORK_LINKS_SHAPE_ROUTE]: { table: WORK_LINKS_TABLE, columns: WORK_LINK_COLUMNS, where: "repo_id = $1" },
+  // A TODO's leaf under its issue (decision 0153): state and validation only, read by whoever reads the issues.
+  [TODO_LEAVES_SHAPE_ROUTE]: { table: TODO_LEAVES_TABLE, columns: TODO_LEAF_COLUMNS, where: "repo_id = $1" },
 }
 
 const refuse = (status: number, code: WriteRefusal | "not_configured" | "invalid_signature", retryAfterSeconds?: number) =>
@@ -313,6 +316,7 @@ const SHAPES: ReadonlySet<string> = new Set([
   CHECKS_SHAPE_ROUTE,
   ACTIONS_SHAPE_ROUTE,
   WORK_LINKS_SHAPE_ROUTE,
+  TODO_LEAVES_SHAPE_ROUTE,
 ])
 
 /** Whether ChatApi routes `path` here. */

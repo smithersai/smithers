@@ -823,6 +823,7 @@ export const descendants = (stop: AttemptStop & { readonly baseClosed?: boolean 
     RETURNING id`
   if (held.length > 0) {
     yield* sql`UPDATE stacks SET version = version + 1, updated_at = now() WHERE repo_id = ${root.repoId}`
+    yield* linkWork(root.repoId)
     yield* Metric.update(Metric.withAttributes(transitions, { from: "queued", to: "failed" }), held.length)
   }
   return yield* sql<AttemptStart & { prNumber: number | null }>`

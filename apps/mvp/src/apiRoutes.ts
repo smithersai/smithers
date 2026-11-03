@@ -15,7 +15,7 @@ export const ROUTE_WORDS: ReadonlySet<string> = new Set([
   "preview", "pull-commits", "pulls", "questions", "raw", "refs", "remote-runs", "renderer", "repos", "repositories",
   "review", "reviews", "room", "run", "runners", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "shapes", "shares",
   "sign-in", "sign-out", "source", "spend-alerts", "stack", "stamp", "state", "steers", "stop", "summaries",
-  "telemetry", "terminals", "test", "texts", "timeline", "todo-requests", "todos", "traces", "tree", "triage-settings",
+  "telemetry", "terminals", "test", "texts", "timeline", "todo-leaves", "todo-requests", "todos", "traces", "tree", "triage-settings",
   "v1", "views", "watches", "web", "webhook", "work-links", "write", "writes",
 ])
 

@@ -15,7 +15,7 @@ import { workStatusOf } from "../../src/features/issues/work.ts"
 const runtime = testFile("stack_writer")
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks`))
+    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks`))
 )
 
 const REPO = "github/octo/hello"
@@ -615,7 +615,7 @@ describe("concurrent writers", () => {
         rounds,
         (history) =>
           Effect.promise(async () => {
-            await sql(`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks`)
+            await sql(`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks`)
             const committed = new Set<string>()
             const dropped = new Set<number>()
             for (const round of history) {
@@ -1097,5 +1097,77 @@ describe("a TODO made from an issue links its work to the issue", () => {
     expect(await links()).toEqual([{ kind: "session", ref: "TODO #1", state: "closed", url: null, source: "todo:1" }])
     await applyOn(commit())
     expect(await sql(`SELECT count(*)::int AS n FROM work_links`)).toEqual([{ n: 1 }])
+  })
+})
+
+// Decision 0153: a TODO is a leaf under one issue, and everyone who may read the issue reads the leaf's state, never its
+// title. A deferred trigger keeps `todo_leaves` in the transaction of every change to a TODO with an issue. Validation is
+// `no_criteria` or `pending` until proof exists: nothing here claims a TODO passed.
+describe("the readable leaf projection (todo_leaves)", () => {
+  const leaves = () =>
+    sql<{ number: number; issue: number; state: string; validation: string; pr: number | null }>(`
+      SELECT l.number, l.issue_number AS issue, l.state, l.validation, l.pr_number AS pr
+      FROM todo_leaves l WHERE l.repo_id = '${REPO}' ORDER BY l.number`)
+  const fromIssue = (acceptance: ReadonlyArray<string> = [], after?: number | null) =>
+    commit({ op: { kind: "commit", title: "Secret title", prompt: "Secret prompt", acceptance, issue: 12, ...(after === undefined ? {} : { after }) } })
+  const reportAs = (attempt: Stack.RunAttempt, event: Stack.RunEvent) =>
+    runtime.runPromise(Effect.gen(function* () {
+      const { database } = yield* TestDatabase.Scratch
+      return yield* Stack.report(attempt, event, { runs: true }).pipe(Effect.provide(database))
+    }))
+
+  test("a commit from an issue writes its leaf; criteria make it pending, none make it no_criteria; no issue, no leaf", async () => {
+    await applyOn(fromIssue())
+    await applyOn(fromIssue(["429 has Retry-After"]))
+    await applyOn(commit())
+    expect(await leaves()).toEqual([
+      { number: 1, issue: 12, state: "queued", validation: "no_criteria", pr: null },
+      { number: 2, issue: 12, state: "queued", validation: "pending", pr: null },
+    ])
+    // A leaf changes in the transaction that changed its TODO, and says when.
+    expect(await sql(`SELECT count(*)::int AS n FROM todo_leaves l JOIN todos t ON t.id = l.todo_id
+      WHERE l.updated_at <> t.updated_at`)).toEqual([{ n: 0 }])
+  })
+
+  test("the leaf follows each report: working, in review with its pull request, merged; never passed", async () => {
+    const committed = await applyOn(fromIssue(["criterion"]), true)
+    if (committed.kind !== "applied") throw new Error("not applied")
+    const start = committed.receipt.starts[0]!
+    const attempt = { attemptId: start.attemptId, todoId: start.todoId, repoId: REPO, ordinal: start.ordinal }
+    expect(await leaves()).toEqual([{ number: 1, issue: 12, state: "working", validation: "pending", pr: null }])
+    await reportAs(attempt, { kind: "published", headSha: "b".repeat(40), prNumber: 7, draft: false })
+    expect(await leaves()).toEqual([{ number: 1, issue: 12, state: "in_review", validation: "pending", pr: 7 }])
+    await reportAs(attempt, { kind: "finished", state: "merged", note: "merged_on_github", mergeSha: "c".repeat(40) })
+    expect(await leaves()).toEqual([{ number: 1, issue: 12, state: "merged", validation: "pending", pr: 7 }])
+  })
+
+  test("a drop and a closed base each reach the leaf", async () => {
+    await sql(`TRUNCATE work_links`)
+    await applyOn(configure(1, "independent"), true)
+    const made = await applyOn(fromIssue(), true)
+    if (made.kind !== "applied") throw new Error("commit refused")
+    const first = made.receipt.starts[0]!
+    await applyOn(fromIssue([], 1), true)
+    await applyOn(fromIssue(), true)
+    await runtime.runPromise(Stack.report(first, { kind: "branch", branch: "smithers/t1", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
+    // T1 is Working on its branch, T2 is stacked on it and Queued. T1's base closes: T2 fails base_closed.
+    expect(await runtime.runPromise(Stack.descendants({ ...first, baseClosed: true }))).toEqual([])
+    await applyOn(drop(3))
+    expect(await leaves()).toEqual([
+      { number: 1, issue: 12, state: "working", validation: "no_criteria", pr: null },
+      { number: 2, issue: 12, state: "failed", validation: "no_criteria", pr: null },
+      { number: 3, issue: 12, state: "dropped", validation: "no_criteria", pr: null },
+    ])
+    // The closed base's failure reaches the issue's work links too, as every other ending does.
+    expect(await sql(`SELECT state FROM work_links WHERE repo_id = '${REPO}' AND number = 12 AND ref = 'TODO #2'`))
+      .toEqual([{ state: "failed" }])
+  })
+
+  test("a repeated op changes no leaf", async () => {
+    const op = fromIssue()
+    await applyOn(op)
+    const [before] = await sql<{ at: string }>(`SELECT updated_at::text AS at FROM todo_leaves`)
+    expect(await applyOn(op)).toMatchObject({ kind: "repeated" })
+    expect(await sql(`SELECT updated_at::text AS at FROM todo_leaves`)).toEqual([before])
   })
 })

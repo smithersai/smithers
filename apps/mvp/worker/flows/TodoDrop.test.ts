@@ -16,7 +16,7 @@ const runtime = testFile("todo_drop")
 const actor = { id: "person-maya", login: "maya" }
 beforeEach(async () => {
   await reset(runtime)
-  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs")
+  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, pulls, pull_commits, reviews, runs")
 })
 
 test.each(["unknown", "wrong-todo", "working", "stale", "no-pr"] as const)(

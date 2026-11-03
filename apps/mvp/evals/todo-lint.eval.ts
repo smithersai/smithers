@@ -108,7 +108,7 @@ const trial = async (real: HostModel["Service"], installed: boolean): Promise<Tr
   const FILES = filesOf(installed)
   const started = Date.now()
   await reset(runtime)
-  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs, model_usage")
+  await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, pulls, pull_commits, reviews, runs, model_usage")
   const scratch = mkdtempSync(join(tmpdir(), "todo-lint-"))
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.push("main", FILES, "maya")
