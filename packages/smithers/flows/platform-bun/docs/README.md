@@ -42,7 +42,7 @@ bun add @smthrs/platform-bun@1.0.0-rc.16 effect
 ```
 
 `effect` is a required peer at exactly `4.1.0`. `@effect/platform-bun` is
-bundled privately, built from `effect@4.1.0`. The filesystem slot runs the
+bundled privately, built from `effect@4.1.1`. The filesystem slot runs the
 `smithers-jj-export` helper that the required peer `@smthrs/platform-node`
 ships. The `Jj` slot needs jj 0.39.0 or later, checked on its first operation;
 every bundle builds without jj. [Installation](./installation.md) covers all

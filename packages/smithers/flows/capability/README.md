@@ -17,7 +17,7 @@ The package holds no state. It reads no files, opens no sockets, and enforces
 nothing. Its runtime dependencies are
 [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
 `vibelang-runtime`, which the modules written in VibeLang import, and
-[`effect`](https://effect.website) is a peer in the range `effect@4.1.0`.
+[`effect`](https://effect.website) is a peer in the range `effect@4.1.1`.
 It bundles for a browser unchanged. Enforcement, the grant store, the layers
 that decorate host services, and the journal live in
 [`@smthrs/kernel`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs).
@@ -27,7 +27,7 @@ that decorate host services, and the journal live in
 Published on npm under the `next` tag. Install it with its `effect` peer:
 
 ```sh
-npm install @smthrs/capability@next effect@4.1.0
+npm install @smthrs/capability@next effect@4.1.1
 ```
 
 Name `@next` explicitly: `latest` still points at an older release candidate.

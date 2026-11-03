@@ -6,7 +6,7 @@ description: "The packages a Cloudflare flow host needs, the Worker's compatibil
 ## Install the package
 
 ```bash
-npm install @smthrs/platform-cloudflare@next @smthrs/flow@next @smthrs/database@next @effect/sql-pg@4.1.0 effect@4.1.0
+npm install @smthrs/platform-cloudflare@next @smthrs/flow@next @smthrs/database@next @effect/sql-pg@4.1.1 effect@4.1.1
 ```
 
 - `@smthrs/flow` declares the flows and actions the object runs.

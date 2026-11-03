@@ -11,7 +11,7 @@ Published on npm under the `next` tag. Name `@next` explicitly: `latest`
 still points at 0.35.0, an older release.
 
 ```bash
-pnpm add @smthrs/gateway@next effect@4.1.0
+pnpm add @smthrs/gateway@next effect@4.1.1
 ```
 
 ## Requirements

@@ -16,10 +16,10 @@ The mounts, the bind and credential policy, the projections and their rows, the 
 
 Published on npm under the `next` tag. Name `@next` explicitly: `latest` still points at 0.35.0, an older release.
 
-Node 22.19.0 or later is required. `effect@4.1.0` is a required peer.
+Node 22.19.0 or later is required. `effect@4.1.1` is a required peer.
 
 ```bash
-pnpm add @smthrs/gateway@next effect@4.1.0
+pnpm add @smthrs/gateway@next effect@4.1.1
 ```
 
 ## Public API
