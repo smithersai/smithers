@@ -12,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest"
 import { CursorStore, layerSql as cursorLayerSql } from "../src/core/CursorStore.vibe"
 import { integrationCursors } from "../src/core/IntegrationCursorMigration.ts"
 import * as Migrations from "../src/core/Migrations.ts"
-import { layerSql, SourceStore } from "../src/core/SourceStore.ts"
+import { layerSql, SourceStore } from "../src/core/SourceStore.vibe"
 import { record, runWith, sqlLayer } from "./SourceStoreFixtures.ts"
 
 const run = runWith(sqlLayer)

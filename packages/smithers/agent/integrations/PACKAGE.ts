@@ -136,7 +136,7 @@ const securityReview = Smithers.SecurityReview({
         "A token endpoint request that follows redirects, or accepts a non-https tokenUrl for a non-loopback host.",
         "A token response body echoed into an error without stripping access_token, refresh_token, or client_secret."
       ],
-      paths: ["src/core/Pkce.ts", "src/core/AuthorizationUrl.ts", "src/core/OAuthToken.ts", "src/core/AccessToken.vibe"]
+      paths: ["src/core/Pkce.ts", "src/core/AuthorizationUrl.ts", "src/core/OAuthToken.vibe", "src/core/AccessToken.vibe"]
     },
     {
       id: "source-store-grants",
@@ -150,7 +150,7 @@ const securityReview = Smithers.SecurityReview({
         "SQL built with sql.literal or string concatenation from a query, kind, or id instead of a bound parameter."
       ],
       paths: [
-        "src/core/SourceStore.ts",
+        "src/core/SourceStore.vibe",
         "src/core/SourceRecord.vibe",
         "src/core/CursorStore.vibe",
         "src/core/Sync.vibe"

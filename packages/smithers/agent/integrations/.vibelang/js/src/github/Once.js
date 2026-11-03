@@ -154,23 +154,26 @@ export const pull = (owner, repo, input) => Action.keyed({
  * An issue whose body carries the write's marker. The lookup reads the issues
  * updated since `since`, which must be a time before the write's first
  * attempt that every attempt agrees on, such as when the write was admitted.
+ * With `author`, the acting account's login, only issues it wrote match, so a
+ * marker someone copied into an issue of theirs is never the match.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const issue = (owner, repo, input) => Action.keyed({
-    find: (key) => Issues.findIssueByWrite(owner, repo, { writeId: key, since: input.since }),
+    find: (key) => Issues.findIssueByWrite(owner, repo, { writeId: key, since: input.since, author: input.author }),
     perform: (key) => Issues.createIssue(owner, repo, { title: input.title, body: Issues.withWriteMarker(input.body, key) })
 });
 /**
  * A comment on issue or pull request `number` whose body carries the write's
- * marker. The lookup reads the whole thread.
+ * marker. The lookup reads the whole thread. With `author`, only comments that
+ * login wrote match.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const comment = (owner, repo, number, body) => Action.keyed({
-    find: (key) => Issues.findCommentByWrite(owner, repo, number, { writeId: key }),
+export const comment = (owner, repo, number, body, options = {}) => Action.keyed({
+    find: (key) => Issues.findCommentByWrite(owner, repo, number, { writeId: key, author: options.author }),
     perform: (key) => Issues.createComment(owner, repo, number, Issues.withWriteMarker(body, key))
 });
 /**

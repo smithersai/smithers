@@ -40,7 +40,7 @@
  */
 
 import { affectedRows, DurableWriter } from "@smthrs/database/DurableWriter"
-import { Context, Effect, Layer, Option, Ref, Schema, Semaphore } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { Fragment } from "effect/sql/Statement"
 import * as CursorStore from "./CursorStore.vibe"
@@ -214,31 +214,31 @@ export interface CommitReport extends ApplyReport {
  */
 export interface SourceStore {
   /** Applies records monotonically in one transaction. */
-  readonly apply: (records: ReadonlyArray<SourceRecord.SourceRecord>) => Effect.Effect<ApplyReport, IntegrationError>
+  readonly apply: (records: ReadonlyArray<SourceRecord.SourceRecord>) => ApplyReport!IntegrationError
   /** The stored copy, unfiltered. Host code only: this is not an authorized read. */
-  readonly get: (connectionId: string, externalId: string) => Effect.Effect<Option.Option<Stored>, IntegrationError>
+  readonly get: (connectionId: string, externalId: string) => Option.Option<Stored>!IntegrationError
   /** Readable, live, unrevoked records the grants cover, filtered before any text is read. */
-  readonly retrieve: (query: Query) => Effect.Effect<ReadonlyArray<SourceRecord.SourceRecord>, IntegrationError>
+  readonly retrieve: (query: Query) => ReadonlyArray<SourceRecord.SourceRecord>!IntegrationError
   /** Whether each reference is still the readable copy it names. */
   readonly validate: (options: {
     readonly allowed: ReadonlyArray<Grant>
     readonly references: ReadonlyArray<SourceRecord.Reference>
-  }) => Effect.Effect<ReadonlyArray<Validation>, IntegrationError>
+  }) => ReadonlyArray<Validation>!IntegrationError
   /** Withdraws a connection: purges its records and refuses content from later syncs. Returns records purged. */
-  readonly revokeConnection: (connectionId: string) => Effect.Effect<number, IntegrationError>
+  readonly revokeConnection: (connectionId: string) => number!IntegrationError
   /** Withdraws one container of a connection. Returns records purged. */
-  readonly revokeContainer: (connectionId: string, containerId: string) => Effect.Effect<number, IntegrationError>
+  readonly revokeContainer: (connectionId: string, containerId: string) => number!IntegrationError
   /** Removes one revocation marker; `containerId` omitted removes the connection-wide one. */
-  readonly reinstate: (connectionId: string, containerId?: string | undefined) => Effect.Effect<void, IntegrationError>
+  readonly reinstate: (connectionId: string, containerId?: string | undefined) => void!IntegrationError
   /** Whether the connection, or the named container of it, is revoked. */
   readonly isRevoked: (
     connectionId: string,
     containerId?: string | undefined
-  ) => Effect.Effect<boolean, IntegrationError>
+  ) => boolean!IntegrationError
   /** The committed cursor of one stream, or `null` before its first page. */
-  readonly cursor: (connectionId: string, stream: string) => Effect.Effect<string | null, IntegrationError>
+  readonly cursor: (connectionId: string, stream: string) => string | null!IntegrationError
   /** Applies one page, sweeps a completed full listing, and advances the cursor, in one transaction. */
-  readonly commit: (page: Page) => Effect.Effect<CommitReport, IntegrationError>
+  readonly commit: (page: Page) => CommitReport!IntegrationError
 }
 
 /**
@@ -273,27 +273,26 @@ const invalid = (message: string, details: Record<string, unknown>): Integration
   new IntegrationError("invalid-config", message, { ...details, retryable: false })
 
 /** Validates a record before anything is written, so a bad one fails the whole batch untouched. */
-const admit = (record: SourceRecord.SourceRecord): Effect.Effect<SourceRecord.SourceRecord, IntegrationError> =>
-  decodeRecord(record).pipe(
-    Effect.mapError((cause) =>
+const admit = (record: SourceRecord.SourceRecord): SourceRecord.SourceRecord!IntegrationError =>
+  decodeRecord(record)
+  |> Effect.mapError(%, (cause) =>
+    new IntegrationError(
+      "decode-failed",
+      "A source record does not match the SourceRecord schema.",
+      { externalId: typeof record?.externalId === "string" ? record.externalId.slice(0, 128) : null },
+      { cause }
+    ))
+  |> Effect.filterOrFail(
+    %,
+    (decoded) =>
+      finiteOrNull(decoded.createdAtMs) && finiteOrNull(decoded.updatedAtMs) &&
+      Number.isFinite(decoded.retrievedAtMs),
+    (decoded) =>
       new IntegrationError(
         "decode-failed",
-        "A source record does not match the SourceRecord schema.",
-        { externalId: typeof record?.externalId === "string" ? record.externalId.slice(0, 128) : null },
-        { cause }
+        "A source record carries a time that is not a finite number of milliseconds.",
+        { externalId: decoded.externalId.slice(0, 128) }
       )
-    ),
-    Effect.filterOrFail(
-      (decoded) =>
-        finiteOrNull(decoded.createdAtMs) && finiteOrNull(decoded.updatedAtMs) &&
-        Number.isFinite(decoded.retrievedAtMs),
-      (decoded) =>
-        new IntegrationError(
-          "decode-failed",
-          "A source record carries a time that is not a finite number of milliseconds.",
-          { externalId: decoded.externalId.slice(0, 128) }
-        )
-    )
   )
 
 const purge = (record: SourceRecord.SourceRecord): SourceRecord.SourceRecord => ({
@@ -363,128 +362,123 @@ interface StreamState {
 
 /** The storage port the shared rules run against, inside one transaction. */
 interface Tables {
-  readonly read: (connectionId: string, externalId: string) => Effect.Effect<Current | undefined, IntegrationError>
+  readonly read: (connectionId: string, externalId: string) => Current | undefined!IntegrationError
   /** Writes a copy the rules decided on; a written copy is never swept. */
-  readonly write: (stored: Stored) => Effect.Effect<void, IntegrationError>
+  readonly write: (stored: Stored) => void!IntegrationError
   readonly mark: (
     connectionId: string,
     externalId: string,
     stream: string,
     generation: number
-  ) => Effect.Effect<void, IntegrationError>
-  readonly markers: (connectionId: string) => Effect.Effect<ReadonlySet<string>, IntegrationError>
-  readonly stream: (connectionId: string, stream: string) => Effect.Effect<StreamState, IntegrationError>
+  ) => void!IntegrationError
+  readonly markers: (connectionId: string) => ReadonlySet<string>!IntegrationError
+  readonly stream: (connectionId: string, stream: string) => StreamState!IntegrationError
   readonly setStream: (
     connectionId: string,
     stream: string,
     state: StreamState,
     nowMs: number
-  ) => Effect.Effect<void, IntegrationError>
+  ) => void!IntegrationError
   readonly sweep: (
     connectionId: string,
     stream: string,
     generation: number,
     nowMs: number
-  ) => Effect.Effect<number, IntegrationError>
-  readonly setCursor: (key: string, cursor: string) => Effect.Effect<void, IntegrationError>
+  ) => number!IntegrationError
+  readonly setCursor: (key: string, cursor: string) => void!IntegrationError
 }
 
 const emptyReport: ApplyReport = { inserted: 0, updated: 0, unchanged: 0, tombstoned: 0 }
 
-const applyAll = (
+const applyAll = effect (
   tables: Tables,
   records: ReadonlyArray<SourceRecord.SourceRecord>,
   mark?: { readonly stream: string; readonly generation: number }
-): Effect.Effect<ApplyReport, IntegrationError> =>
-  Effect.gen(function*() {
-    const markers = new Map<string, ReadonlySet<string>>()
-    let report = emptyReport
-    for (const record of records) {
-      let connectionMarkers = markers.get(record.connectionId)
-      if (connectionMarkers === undefined) {
-        connectionMarkers = yield* tables.markers(record.connectionId)
-        markers.set(record.connectionId, connectionMarkers)
-      }
-      const revokedNow = isRevokedIn(connectionMarkers, record)
-      const candidate = record.deleted || revokedNow ? purge(record) : record
-      const current = yield* tables.read(record.connectionId, record.externalId)
-      const decision = decide(current, candidate, revokedNow)
-      if (decision !== "keep") {
-        yield* tables.write({ record: candidate, revoked: revokedNow, stream: current?.stored.stream ?? null })
-      }
-      if (mark !== undefined) yield* tables.mark(record.connectionId, record.externalId, mark.stream, mark.generation)
-      report = {
-        inserted: report.inserted + (decision === "insert" ? 1 : 0),
-        updated: report.updated + (decision === "replace" ? 1 : 0),
-        unchanged: report.unchanged + (decision === "keep" ? 1 : 0),
-        tombstoned: report.tombstoned + (decision !== "keep" && candidate.deleted ? 1 : 0)
-      }
+): ApplyReport!IntegrationError => {
+  const markers = new Map<string, ReadonlySet<string>>()
+  let report = emptyReport
+  for (const record of records) {
+    let connectionMarkers = markers.get(record.connectionId)
+    if (connectionMarkers === undefined) {
+      connectionMarkers = try tables.markers(record.connectionId)
+      markers.set(record.connectionId, connectionMarkers)
     }
-    return report
-  })
+    const revokedNow = isRevokedIn(connectionMarkers, record)
+    const candidate = record.deleted || revokedNow ? purge(record) : record
+    const current = try tables.read(record.connectionId, record.externalId)
+    const decision = decide(current, candidate, revokedNow)
+    if (decision !== "keep") {
+      try tables.write({ record: candidate, revoked: revokedNow, stream: current?.stored.stream ?? null })
+    }
+    if (mark !== undefined) try tables.mark(record.connectionId, record.externalId, mark.stream, mark.generation)
+    report = {
+      inserted: report.inserted + (decision === "insert" ? 1 : 0),
+      updated: report.updated + (decision === "replace" ? 1 : 0),
+      unchanged: report.unchanged + (decision === "keep" ? 1 : 0),
+      tombstoned: report.tombstoned + (decision !== "keep" && candidate.deleted ? 1 : 0)
+    }
+  }
+  return report
+}
 
 const admitAll = (records: ReadonlyArray<SourceRecord.SourceRecord>) => Effect.forEach(records, admit)
 
-const checkConnectionId = (connectionId: string): Effect.Effect<void, IntegrationError> =>
+const checkConnectionId = (connectionId: string): void!IntegrationError =>
   typeof connectionId === "string" && connectionId.length > 0 && !connectionId.includes(":")
     ? Effect.void
     : Effect.fail(invalid("A connection id must be a non-empty string with no colon.", { connectionId }))
 
-const checkContainerId = (containerId: string): Effect.Effect<void, IntegrationError> =>
+const checkContainerId = (containerId: string): void!IntegrationError =>
   typeof containerId === "string" && containerId.length > 0 && containerId !== WILDCARD
     ? Effect.void
     : Effect.fail(
       invalid("A container id must be a non-empty string other than the connection-wide \"*\".", { containerId })
     )
 
-const admitPage = (page: Page): Effect.Effect<ReadonlyArray<SourceRecord.SourceRecord>, IntegrationError> =>
-  Effect.gen(function*() {
-    yield* checkConnectionId(page.connectionId)
-    if (typeof page.stream !== "string" || page.stream.length === 0) {
-      return yield* Effect.fail(invalid("A sync stream must be a non-empty string.", { stream: page.stream }))
-    }
-    const records = yield* admitAll(page.changes.records)
-    // An adapter bound to one connection must not write into another one's
-    // records: that would move data across a grant boundary.
-    const foreign = records.find((record) =>
-      record.connectionId !== page.connectionId || record.provider !== page.provider
-    )
-    if (foreign !== undefined) {
-      return yield* Effect.fail(
-        invalid("A sync page carries a record from another connection or provider.", {
-          connectionId: page.connectionId,
-          provider: page.provider,
-          recordConnectionId: foreign.connectionId,
-          recordProvider: foreign.provider
-        })
-      )
-    }
-    return records
-  })
+const admitPage = effect (page: Page): ReadonlyArray<SourceRecord.SourceRecord>!IntegrationError => {
+  try checkConnectionId(page.connectionId)
+  if (typeof page.stream !== "string" || page.stream.length === 0) {
+    throw invalid("A sync stream must be a non-empty string.", { stream: page.stream })
+  }
+  const records = try admitAll(page.changes.records)
+  // An adapter bound to one connection must not write into another one's
+  // records: that would move data across a grant boundary.
+  const foreign = records.find((record) =>
+    record.connectionId !== page.connectionId || record.provider !== page.provider
+  )
+  if (foreign !== undefined) {
+    throw invalid("A sync page carries a record from another connection or provider.", {
+      connectionId: page.connectionId,
+      provider: page.provider,
+      recordConnectionId: foreign.connectionId,
+      recordProvider: foreign.provider
+    })
+  }
+  return records
+}
 
-const commitPage = (
+const commitPage = effect (
   tables: Tables,
   page: Page,
   records: ReadonlyArray<SourceRecord.SourceRecord>,
   nowMs: number
-): Effect.Effect<CommitReport, IntegrationError> =>
-  Effect.gen(function*() {
-    const previous = yield* tables.stream(page.connectionId, page.stream)
-    const state: StreamState = page.changes.reset
-      ? { generation: previous.generation + 1, sweeping: true }
-      : previous
-    const applied = yield* applyAll(tables, records, { stream: page.stream, generation: state.generation })
-    const sweep = state.sweeping && page.changes.done
-    const swept = sweep ? yield* tables.sweep(page.connectionId, page.stream, state.generation, nowMs) : 0
-    yield* tables.setStream(page.connectionId, page.stream, {
-      generation: state.generation,
-      sweeping: !sweep && state.sweeping
-    }, nowMs)
-    if (page.changes.cursor !== null) {
-      yield* tables.setCursor(cursorKey(page.connectionId, page.stream), page.changes.cursor)
-    }
-    return { ...applied, swept, sweeping: !sweep && state.sweeping }
-  })
+): CommitReport!IntegrationError => {
+  const previous = try tables.stream(page.connectionId, page.stream)
+  const state: StreamState = page.changes.reset
+    ? { generation: previous.generation + 1, sweeping: true }
+    : previous
+  const applied = try applyAll(tables, records, { stream: page.stream, generation: state.generation })
+  const sweep = state.sweeping && page.changes.done
+  const swept = sweep ? try tables.sweep(page.connectionId, page.stream, state.generation, nowMs) : 0
+  try tables.setStream(page.connectionId, page.stream, {
+    generation: state.generation,
+    sweeping: !sweep && state.sweeping
+  }, nowMs)
+  if (page.changes.cursor !== null) {
+    try tables.setCursor(cursorKey(page.connectionId, page.stream), page.changes.cursor)
+  }
+  return { ...applied, swept, sweeping: !sweep && state.sweeping }
+}
 
 const classify = (
   stored: Stored | undefined,
@@ -503,7 +497,7 @@ const classify = (
     : "changed"
 }
 
-const checkLimit = (limit: number): Effect.Effect<number, IntegrationError> =>
+const checkLimit = (limit: number): number!IntegrationError =>
   Number.isSafeInteger(limit) && limit >= 1 && limit <= MAX_RETRIEVE_LIMIT
     ? Effect.succeed(limit)
     : Effect.fail(invalid(`A retrieve limit must be an integer between 1 and ${MAX_RETRIEVE_LIMIT}.`, { limit }))
@@ -553,46 +547,41 @@ const cloneState = (state: MemoryState): MemoryState => ({
 })
 
 const memoryTables = (draft: MemoryState): Tables => ({
-  read: (connectionId, externalId) =>
-    Effect.sync(() => {
-      const row = draft.records.get(pair(connectionId, externalId))
-      return row === undefined ? undefined : { stored: row.stored, swept: row.swept }
-    }),
-  write: (stored) =>
-    Effect.sync(() => {
-      const key = pair(stored.record.connectionId, stored.record.externalId)
-      draft.records.set(key, { stored, seenGeneration: draft.records.get(key)?.seenGeneration ?? 0, swept: false })
-    }),
-  mark: (connectionId, externalId, stream, generation) =>
-    Effect.sync(() => {
-      const key = pair(connectionId, externalId)
-      const row = draft.records.get(key)!
-      draft.records.set(key, { ...row, stored: { ...row.stored, stream }, seenGeneration: generation })
-    }),
-  markers: (connectionId) => Effect.sync(() => new Set(draft.revocations.get(connectionId) ?? [])),
-  stream: (connectionId, stream) =>
-    Effect.sync(() => draft.streams.get(pair(connectionId, stream)) ?? { generation: 0, sweeping: false }),
-  setStream: (connectionId, stream, state) =>
-    Effect.sync(() => void draft.streams.set(pair(connectionId, stream), state)),
-  sweep: (connectionId, stream, generation, nowMs) =>
-    Effect.sync(() => {
-      let swept = 0
-      for (const [key, row] of draft.records) {
-        const record = row.stored.record
-        if (
-          record.connectionId !== connectionId || row.stored.stream !== stream || record.deleted ||
-          row.seenGeneration >= generation
-        ) continue
-        draft.records.set(key, {
-          ...row,
-          stored: { ...row.stored, record: { ...purge(record), deleted: true, retrievedAtMs: nowMs } },
-          swept: true
-        })
-        swept += 1
-      }
-      return swept
-    }),
-  setCursor: (key, cursor) => Effect.sync(() => void draft.cursors.set(key, cursor))
+  read: effect (connectionId, externalId) => {
+    const row = draft.records.get(pair(connectionId, externalId))
+    return row === undefined ? undefined : { stored: row.stored, swept: row.swept }
+  },
+  write: effect (stored) => {
+    const key = pair(stored.record.connectionId, stored.record.externalId)
+    draft.records.set(key, { stored, seenGeneration: draft.records.get(key)?.seenGeneration ?? 0, swept: false })
+  },
+  mark: effect (connectionId, externalId, stream, generation) => {
+    const key = pair(connectionId, externalId)
+    const row = draft.records.get(key)!
+    draft.records.set(key, { ...row, stored: { ...row.stored, stream }, seenGeneration: generation })
+  },
+  markers: effect (connectionId) => new Set(draft.revocations.get(connectionId) ?? []),
+  stream: effect (connectionId, stream) =>
+    draft.streams.get(pair(connectionId, stream)) ?? { generation: 0, sweeping: false },
+  setStream: effect (connectionId, stream, state) => void draft.streams.set(pair(connectionId, stream), state),
+  sweep: effect (connectionId, stream, generation, nowMs) => {
+    let swept = 0
+    for (const [key, row] of draft.records) {
+      const record = row.stored.record
+      if (
+        record.connectionId !== connectionId || row.stored.stream !== stream || record.deleted ||
+        row.seenGeneration >= generation
+      ) continue
+      draft.records.set(key, {
+        ...row,
+        stored: { ...row.stored, record: { ...purge(record), deleted: true, retrievedAtMs: nowMs } },
+        swept: true
+      })
+      swept += 1
+    }
+    return swept
+  },
+  setCursor: effect (key, cursor) => void draft.cursors.set(key, cursor)
 })
 
 /**
@@ -602,45 +591,43 @@ const memoryTables = (draft: MemoryState): Tables => ({
  * @category constructors
  * @since 1.0.0
  */
-export const makeMemory: Effect.Effect<SourceStore> = Effect.gen(function*() {
-  const state = yield* Ref.make<MemoryState>({
+export const makeMemory: SourceStore!! = effect {
+  const state = try Ref.make<MemoryState>({
     records: new Map(),
     streams: new Map(),
     revocations: new Map(),
     cursors: new Map()
   })
-  const lock = yield* Semaphore.make(1)
+  const lock = try Semaphore.make(1)
 
   // A draft copy stands in for the transaction: it is published only when the
   // whole body succeeds, so a failure leaves the store exactly as it was.
-  const transact = <A>(body: (tables: Tables, draft: MemoryState) => Effect.Effect<A, IntegrationError>) =>
-    lock.withPermit(Effect.gen(function*() {
-      const draft = cloneState(yield* Ref.get(state))
-      const result = yield* body(memoryTables(draft), draft)
-      yield* Ref.set(state, draft)
+  const transact = <A>(body: (tables: Tables, draft: MemoryState) => A!IntegrationError) =>
+    lock.withPermit(effect {
+      const draft = cloneState(try Ref.get(state))
+      const result = try body(memoryTables(draft), draft)
+      try Ref.set(state, draft)
       return result
-    }))
+    })
 
   const markedIn = (current: MemoryState, record: SourceRecord.SourceRecord): boolean =>
     isRevokedIn(current.revocations.get(record.connectionId) ?? new Set(), record)
 
   const revoke = (connectionId: string, containerId: string) =>
-    transact((_, draft) =>
-      Effect.sync(() => {
-        const markers = draft.revocations.get(connectionId) ?? new Set<string>()
-        markers.add(containerId)
-        draft.revocations.set(connectionId, markers)
-        let purged = 0
-        for (const [key, row] of draft.records) {
-          const record = row.stored.record
-          if (record.connectionId !== connectionId) continue
-          if (containerId !== WILDCARD && !SourceRecord.containers(record).includes(containerId)) continue
-          draft.records.set(key, { ...row, stored: { ...row.stored, record: purge(record), revoked: true } })
-          purged += 1
-        }
-        return purged
-      })
-    )
+    transact(effect (_, draft) => {
+      const markers = draft.revocations.get(connectionId) ?? new Set<string>()
+      markers.add(containerId)
+      draft.revocations.set(connectionId, markers)
+      let purged = 0
+      for (const [key, row] of draft.records) {
+        const record = row.stored.record
+        if (record.connectionId !== connectionId) continue
+        if (containerId !== WILDCARD && !SourceRecord.containers(record).includes(containerId)) continue
+        draft.records.set(key, { ...row, stored: { ...row.stored, record: purge(record), revoked: true } })
+        purged += 1
+      }
+      return purged
+    })
 
   return SourceStore.of({
     apply: (records) =>
@@ -650,22 +637,21 @@ export const makeMemory: Effect.Effect<SourceStore> = Effect.gen(function*() {
         Ref.get(state),
         (current) => Option.fromNullishOr(current.records.get(pair(connectionId, externalId))?.stored)
       ),
-    retrieve: (query) =>
-      Effect.gen(function*() {
-        const limit = yield* checkLimit(query.limit)
-        const current = yield* Ref.get(state)
-        const needle = query.query === undefined || query.query.length === 0 ? undefined : asciiLower(query.query)
-        return Array.from(current.records.values(), (row) => row.stored)
-          .filter((stored) =>
-            !stored.revoked && !stored.record.deleted && !markedIn(current, stored.record) &&
-            covers(query.allowed, stored.record) &&
-            (query.kinds === undefined || query.kinds.includes(stored.record.kind)) &&
-            (needle === undefined || asciiLower(stored.record.text).includes(needle))
-          )
-          .map((stored) => stored.record)
-          .sort(newestFirst)
-          .slice(0, limit)
-      }),
+    retrieve: effect (query) => {
+      const limit = try checkLimit(query.limit)
+      const current = try Ref.get(state)
+      const needle = query.query === undefined || query.query.length === 0 ? undefined : asciiLower(query.query)
+      return Array.from(current.records.values(), (row) => row.stored)
+        .filter((stored) =>
+          !stored.revoked && !stored.record.deleted && !markedIn(current, stored.record) &&
+          covers(query.allowed, stored.record) &&
+          (query.kinds === undefined || query.kinds.includes(stored.record.kind)) &&
+          (needle === undefined || asciiLower(stored.record.text).includes(needle))
+        )
+        .map((stored) => stored.record)
+        .sort(newestFirst)
+        .slice(0, limit)
+    },
     validate: ({ allowed, references }) =>
       Effect.map(Ref.get(state), (current) =>
         references.map((reference) => {
@@ -681,9 +667,7 @@ export const makeMemory: Effect.Effect<SourceStore> = Effect.gen(function*() {
         () => revoke(connectionId, containerId)
       ),
     reinstate: (connectionId, containerId) =>
-      transact((_, draft) =>
-        Effect.sync(() => void draft.revocations.get(connectionId)?.delete(containerId ?? WILDCARD))
-      ),
+      transact(effect (_, draft) => void draft.revocations.get(connectionId)?.delete(containerId ?? WILDCARD)),
     isRevoked: (connectionId, containerId) =>
       Effect.map(Ref.get(state), (current) => {
         const markers = current.revocations.get(connectionId)
@@ -692,14 +676,13 @@ export const makeMemory: Effect.Effect<SourceStore> = Effect.gen(function*() {
       }),
     cursor: (connectionId, stream) =>
       Effect.map(Ref.get(state), (current) => current.cursors.get(cursorKey(connectionId, stream)) ?? null),
-    commit: (page) =>
-      Effect.gen(function*() {
-        const records = yield* admitPage(page)
-        const nowMs = yield* now
-        return yield* transact((tables) => commitPage(tables, page, records, nowMs))
-      })
+    commit: effect (page) => {
+      const records = try admitPage(page)
+      const nowMs = try now
+      return try transact((tables) => commitPage(tables, page, records, nowMs))
+    }
   })
-})
+}
 
 /**
  * Layer for the in-memory store.
@@ -748,7 +731,7 @@ const storeError = (operation: string) => (cause: unknown): IntegrationError =>
     { cause }
   )
 
-const fromRow = (row: Row): Effect.Effect<Stored, IntegrationError> =>
+const fromRow = (row: Row): Stored!IntegrationError =>
   Effect.try({
     try: (): Stored => ({
       record: {
@@ -791,16 +774,15 @@ const fromRow = (row: Row): Effect.Effect<Stored, IntegrationError> =>
  * @category constructors
  * @since 1.0.0
  */
-export const makeSql: Effect.Effect<SourceStore, never, SqlClient.SqlClient | DurableWriter> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  const writer = yield* DurableWriter
-  const cursors = yield* CursorStore.makeSql
+export const makeSql: SourceStore!never!SqlClient.SqlClient | DurableWriter = effect {
+  const sql = try SqlClient.SqlClient
+  const writer = try DurableWriter
+  const cursors = try CursorStore.makeSql
 
-  const transact = <A>(operation: string, body: Effect.Effect<A, IntegrationError>) =>
-    writer.write(body).pipe(Effect.mapError(storeError(operation)))
+  const transact = <A>(operation: string, body: A!IntegrationError) =>
+    writer.write(body) |> Effect.mapError(%, storeError(operation))
 
-  const failAs = (operation: string) => <A>(effect: Effect.Effect<A, unknown>) =>
-    Effect.mapError(effect, storeError(operation))
+  const failAs = (operation: string) => <A>(effect: A!unknown) => Effect.mapError(effect, storeError(operation))
 
   const marked = sql.literal(`EXISTS (SELECT 1 FROM smithers_integration_revocations v
     WHERE v.connection_id = r.connection_id
@@ -809,15 +791,14 @@ export const makeSql: Effect.Effect<SourceStore, never, SqlClient.SqlClient | Du
   const tables: Tables = {
     read: (connectionId, externalId) =>
       sql<Row>`SELECT * FROM smithers_integration_records
-        WHERE connection_id = ${connectionId} AND external_id = ${externalId}`.pipe(
-        failAs("read"),
-        Effect.flatMap((rows) => {
-          const row = rows[0]
-          return row === undefined
-            ? Effect.succeed(undefined)
-            : Effect.map(fromRow(row), (stored) => ({ stored, swept: Number(row.swept) === 1 }))
-        })
-      ),
+        WHERE connection_id = ${connectionId} AND external_id = ${externalId}`
+      |> failAs("read")(%)
+      |> Effect.flatMap(%, (rows) => {
+        const row = rows[0]
+        return row === undefined
+          ? Effect.succeed(undefined)
+          : Effect.map(fromRow(row), (stored) => ({ stored, swept: Number(row.swept) === 1 }))
+      }),
     write: ({ record, revoked }) =>
       sql`INSERT INTO smithers_integration_records (
           connection_id, external_id, provider, kind, url, author_id, author_label, created_at_ms, updated_at_ms,
@@ -838,62 +819,58 @@ export const makeSql: Effect.Effect<SourceStore, never, SqlClient.SqlClient | Du
           access_container_id = excluded.access_container_id, thread_container_id = excluded.thread_container_id,
           thread_id = excluded.thread_id, parent_id = excluded.parent_id, text = excluded.text,
           deleted = excluded.deleted, payload_json = excluded.payload_json, revoked = excluded.revoked,
-          swept = 0`.pipe(
-        Effect.asVoid,
-        failAs("write")
-      ),
+          swept = 0`
+      |> Effect.asVoid(%)
+      |> failAs("write")(%),
     mark: (connectionId, externalId, stream, generation) =>
       sql`UPDATE smithers_integration_records SET stream = ${stream}, seen_generation = ${generation}
-        WHERE connection_id = ${connectionId} AND external_id = ${externalId}`.pipe(Effect.asVoid, failAs("mark")),
+        WHERE connection_id = ${connectionId} AND external_id = ${externalId}` |> Effect.asVoid(%) |>
+      failAs("mark")(%),
     markers: (connectionId) =>
       sql<{ readonly container_id: string }>`SELECT container_id FROM smithers_integration_revocations
-        WHERE connection_id = ${connectionId}`.pipe(
-        Effect.map((rows) => new Set(rows.map((row) => row.container_id))),
-        failAs("revocation read")
-      ),
+        WHERE connection_id = ${connectionId}`
+      |> Effect.map(%, (rows) => new Set(rows.map((row) => row.container_id)))
+      |> failAs("revocation read")(%),
     stream: (connectionId, stream) =>
       sql<{ readonly generation: number; readonly sweeping: number }>`SELECT generation, sweeping
-        FROM smithers_integration_streams WHERE connection_id = ${connectionId} AND stream = ${stream}`.pipe(
-        Effect.map((rows) =>
-          rows[0] === undefined
-            ? { generation: 0, sweeping: false }
-            : { generation: Number(rows[0].generation), sweeping: Number(rows[0].sweeping) === 1 }
-        ),
-        failAs("stream read")
-      ),
+        FROM smithers_integration_streams WHERE connection_id = ${connectionId} AND stream = ${stream}`
+      |> Effect.map(%, (rows) =>
+        rows[0] === undefined
+          ? { generation: 0, sweeping: false }
+          : { generation: Number(rows[0].generation), sweeping: Number(rows[0].sweeping) === 1 })
+      |> failAs("stream read")(%),
     setStream: (connectionId, stream, state, nowMs) =>
       sql`INSERT INTO smithers_integration_streams (connection_id, stream, generation, sweeping, updated_at_ms)
         VALUES (${connectionId}, ${stream}, ${state.generation}, ${state.sweeping ? 1 : 0}, ${nowMs})
         ON CONFLICT (connection_id, stream) DO UPDATE SET generation = excluded.generation,
-          sweeping = excluded.sweeping, updated_at_ms = excluded.updated_at_ms`.pipe(
-        Effect.asVoid,
-        failAs("stream write")
-      ),
+          sweeping = excluded.sweeping, updated_at_ms = excluded.updated_at_ms`
+      |> Effect.asVoid(%)
+      |> failAs("stream write")(%),
     sweep: (connectionId, stream, generation, nowMs) =>
       sql`UPDATE smithers_integration_records
         SET deleted = 1, url = NULL, author_id = NULL, author_label = NULL, text = '', payload_json = 'null',
           retrieved_at_ms = ${nowMs}, swept = 1
         WHERE connection_id = ${connectionId} AND stream = ${stream} AND deleted = 0
-          AND seen_generation < ${generation}`.raw.pipe(Effect.flatMap(affectedRows), failAs("sweep")),
+          AND seen_generation < ${generation}`.raw |> Effect.flatMap(%, affectedRows) |> failAs("sweep")(%),
     setCursor: (key, cursor) => cursors.set(key, cursor)
   }
 
   const revoke = (connectionId: string, containerId: string) =>
     transact(
       "revoke",
-      Effect.gen(function*() {
-        const nowMs = yield* now
-        yield* sql`INSERT INTO smithers_integration_revocations (connection_id, container_id, revoked_at_ms)
+      effect {
+        const nowMs = try now
+        try sql`INSERT INTO smithers_integration_revocations (connection_id, container_id, revoked_at_ms)
           VALUES (${connectionId}, ${containerId}, ${nowMs})
           ON CONFLICT (connection_id, container_id) DO NOTHING`
         const scope = containerId === WILDCARD
           ? sql.literal("1 = 1")
           : sql`(access_container_id = ${containerId} OR thread_container_id = ${containerId})`
-        const raw = yield* sql`UPDATE smithers_integration_records
+        const raw = try sql`UPDATE smithers_integration_records
           SET revoked = 1, url = NULL, author_id = NULL, author_label = NULL, text = '', payload_json = 'null'
           WHERE connection_id = ${connectionId} AND ${scope}`.raw
-        return yield* affectedRows(raw)
-      }).pipe(failAs("revoke"))
+        return try affectedRows(raw)
+      } |> failAs("revoke")(%)
     )
 
   const grantClause = (grant: Grant): Fragment => {
@@ -912,47 +889,45 @@ export const makeSql: Effect.Effect<SourceStore, never, SqlClient.SqlClient | Du
     apply: (records) => Effect.flatMap(admitAll(records), (admitted) => transact("apply", applyAll(tables, admitted))),
     get: (connectionId, externalId) =>
       Effect.map(tables.read(connectionId, externalId), (current) => Option.fromNullishOr(current?.stored)),
-    retrieve: (query) =>
-      Effect.gen(function*() {
-        const limit = yield* checkLimit(query.limit)
-        if (query.allowed.length === 0) return []
-        const conditions: Array<Fragment> = [
-          sql.or(query.allowed.map(grantClause)),
-          sql.literal("r.deleted = 0"),
-          sql.literal("r.revoked = 0"),
-          sql`NOT ${marked}`
-        ]
-        if (query.kinds !== undefined) {
-          conditions.push(query.kinds.length === 0 ? sql.literal("1 = 0") : sql.in("r.kind", query.kinds))
-        }
-        if (query.query !== undefined && query.query.length > 0) {
-          conditions.push(sql.onDialectOrElse({
-            pg: () => sql`strpos(lower(r.text), lower(${query.query})) > 0`,
-            orElse: () => sql`instr(lower(r.text), lower(${query.query})) > 0`
-          }))
-        }
-        const rows = yield* sql<Row>`SELECT r.* FROM smithers_integration_records r WHERE ${sql.and(conditions)}
+    retrieve: effect (query) => {
+      const limit = try checkLimit(query.limit)
+      if (query.allowed.length === 0) return []
+      const conditions: Array<Fragment> = [
+        sql.or(query.allowed.map(grantClause)),
+        sql.literal("r.deleted = 0"),
+        sql.literal("r.revoked = 0"),
+        sql`NOT ${marked}`
+      ]
+      if (query.kinds !== undefined) {
+        conditions.push(query.kinds.length === 0 ? sql.literal("1 = 0") : sql.in("r.kind", query.kinds))
+      }
+      if (query.query !== undefined && query.query.length > 0) {
+        conditions.push(sql.onDialectOrElse({
+          pg: () => sql`strpos(lower(r.text), lower(${query.query})) > 0`,
+          orElse: () => sql`instr(lower(r.text), lower(${query.query})) > 0`
+        }))
+      }
+      const rows = try sql<Row>`SELECT r.* FROM smithers_integration_records r WHERE ${sql.and(conditions)}
           ORDER BY (COALESCE(r.updated_at_ms, r.created_at_ms) IS NULL),
             COALESCE(r.updated_at_ms, r.created_at_ms) DESC, r.connection_id, r.external_id
           LIMIT ${limit}`.pipe(failAs("retrieve"))
-        return yield* Effect.forEach(rows, (row) => Effect.map(fromRow(row), (stored) => stored.record))
-      }),
+      return try Effect.forEach(rows, (row) => Effect.map(fromRow(row), (stored) => stored.record))
+    },
     validate: ({ allowed, references }) =>
       Effect.forEach(
         references,
         (reference) =>
           sql<Row & { readonly marked: number }>`SELECT r.*, ${marked} AS marked FROM smithers_integration_records r
-          WHERE r.connection_id = ${reference.connectionId} AND r.external_id = ${reference.externalId}`.pipe(
-            failAs("validate"),
-            Effect.flatMap((rows) => {
-              const row = rows[0]
-              if (row === undefined) return Effect.succeed({ reference, validity: "missing" as const })
-              return Effect.map(fromRow(row), (stored) => ({
-                reference,
-                validity: classify(stored, Number(row.marked) === 1, reference, allowed)
-              }))
-            })
-          )
+          WHERE r.connection_id = ${reference.connectionId} AND r.external_id = ${reference.externalId}`
+          |> failAs("validate")(%)
+          |> Effect.flatMap(%, (rows) => {
+            const row = rows[0]
+            if (row === undefined) return Effect.succeed({ reference, validity: "missing" as const })
+            return Effect.map(fromRow(row), (stored) => ({
+              reference,
+              validity: classify(stored, Number(row.marked) === 1, reference, allowed)
+            }))
+          })
       ),
     revokeConnection: (connectionId) =>
       Effect.flatMap(checkConnectionId(connectionId), () => revoke(connectionId, WILDCARD)),
@@ -965,27 +940,24 @@ export const makeSql: Effect.Effect<SourceStore, never, SqlClient.SqlClient | Du
       transact(
         "reinstate",
         sql`DELETE FROM smithers_integration_revocations
-          WHERE connection_id = ${connectionId} AND container_id = ${containerId ?? WILDCARD}`.pipe(
-          Effect.asVoid,
-          failAs("reinstate")
-        )
+          WHERE connection_id = ${connectionId} AND container_id = ${containerId ?? WILDCARD}`
+          |> Effect.asVoid(%)
+          |> failAs("reinstate")(%)
       ),
     isRevoked: (connectionId, containerId) =>
       sql<{ readonly found: number }>`SELECT 1 AS found FROM smithers_integration_revocations
         WHERE connection_id = ${connectionId}
-          AND (container_id = '*' OR container_id = ${containerId ?? WILDCARD}) LIMIT 1`.pipe(
-        Effect.map((rows) => rows.length > 0),
-        failAs("revocation read")
-      ),
+          AND (container_id = '*' OR container_id = ${containerId ?? WILDCARD}) LIMIT 1`
+      |> Effect.map(%, (rows) => rows.length > 0)
+      |> failAs("revocation read")(%),
     cursor: (connectionId, stream) => cursors.get(cursorKey(connectionId, stream)),
-    commit: (page) =>
-      Effect.gen(function*() {
-        const records = yield* admitPage(page)
-        const nowMs = yield* now
-        return yield* transact("commit", commitPage(tables, page, records, nowMs))
-      })
+    commit: effect (page) => {
+      const records = try admitPage(page)
+      const nowMs = try now
+      return try transact("commit", commitPage(tables, page, records, nowMs))
+    }
   })
-})
+}
 
 /**
  * Layer for the SQL-backed store.

@@ -1,7 +1,7 @@
 import { Effect, Layer, Option } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import type { SourceRecord } from "../src/core/SourceRecord.vibe"
-import { layerMemory, SourceStore } from "../src/core/SourceStore.ts"
+import { layerMemory, SourceStore } from "../src/core/SourceStore.vibe"
 import { runSync } from "../src/core/Sync.vibe"
 import { commentId, issueId, make, PROVIDER } from "../src/github/Sync.vibe"
 import { type Fixture, json, type Recorded, startFixture } from "./Fixture.ts"

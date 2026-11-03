@@ -26,7 +26,7 @@
 import { Effect } from "effect";
 import { IntegrationError } from "../../../../src/core/IntegrationError.ts";
 import type { SourceRecord } from "./SourceRecord.vibe";
-import { SourceStore } from "../../../../src/core/SourceStore.ts";
+import { SourceStore } from "./SourceStore.vibe";
 /**
  * One page of changes.
  *

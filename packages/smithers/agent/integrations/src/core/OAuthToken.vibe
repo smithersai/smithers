@@ -98,7 +98,7 @@ export const ROTATION_SETTLE_MS = 500
  */
 export interface RefreshTokenStore {
   /** The current refresh token. */
-  readonly load: Effect.Effect<Redacted.Redacted<string>, IntegrationError>
+  readonly load: Redacted.Redacted<string>!IntegrationError
   /**
    * Replaces `previous` with `next` only when the stored token is still
    * `previous`. Answers `false`, without writing, when another writer got
@@ -107,7 +107,7 @@ export interface RefreshTokenStore {
   readonly replace: (
     previous: Redacted.Redacted<string>,
     next: Redacted.Redacted<string>
-  ) => Effect.Effect<boolean, IntegrationError>
+  ) => boolean!IntegrationError
 }
 
 /**
@@ -123,13 +123,14 @@ export interface RefreshTokenStore {
 export const memoryStore = (initial: Redacted.Redacted<string>): RefreshTokenStore => {
   let current = initial
   return {
-    load: Effect.sync(() => current),
-    replace: (previous, next) =>
-      Effect.sync(() => {
-        if (Redacted.value(current) !== Redacted.value(previous)) return false
-        current = next
-        return true
-      })
+    load: effect {
+      return current
+    },
+    replace: effect (previous, next) => {
+      if (Redacted.value(current) !== Redacted.value(previous)) return false
+      current = next
+      return true
+    }
   }
 }
 
@@ -159,15 +160,14 @@ const credentialFailure = (reference: CredentialRef) => (error: { readonly _tag:
  * @since 1.0.0
  */
 export const credentialStore = (credential: Credential, reference: CredentialRef): RefreshTokenStore => {
-  const load = credential.resolve(reference).pipe(Effect.mapError(credentialFailure(reference)))
+  const load = credential.resolve(reference) |> Effect.mapError(%, credentialFailure(reference))
   return {
     load,
     replace: (previous, next) =>
-      credential.rotate(reference, next, { expected: previous }).pipe(
-        Effect.as(true),
-        Effect.catchTag("/control/CredentialConflict", () => Effect.succeed(false)),
-        Effect.mapError(credentialFailure(reference))
-      )
+      credential.rotate(reference, next, { expected: previous })
+      |> Effect.as(%, true)
+      |> Effect.catchTag(%, "/control/CredentialConflict", () => Effect.succeed(false))
+      |> Effect.mapError(%, credentialFailure(reference))
   }
 }
 
@@ -233,18 +233,18 @@ export interface Grant {
   readonly scope: string | null
 }
 
-const TokenResponse = Schema.Struct({
-  access_token: Schema.NonEmptyString,
-  token_type: Schema.optional(Schema.String),
-  expires_in: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
-  refresh_token: Schema.optional(Schema.String),
-  scope: Schema.optional(Schema.String)
-})
+schema TokenResponse {
+  access_token: Schema.NonEmptyString
+  token_type?: string
+  expires_in?: number | string
+  refresh_token?: string
+  scope?: string
+}
 
-const ErrorResponse = Schema.Struct({
-  error: Schema.String,
-  error_description: Schema.optional(Schema.String)
-})
+schema ErrorResponse {
+  error: string
+  error_description?: string
+}
 
 const decodeTokenResponse = Schema.decodeUnknownOption(TokenResponse)
 const decodeErrorResponse = Schema.decodeUnknownOption(ErrorResponse)
@@ -347,7 +347,7 @@ const requestGrant = (
   form: Readonly<Record<string, string>>,
   secrets: ReadonlyArray<Redacted.Redacted<string>>,
   repeatable: boolean
-): Effect.Effect<Grant, IntegrationError> => {
+): Grant!IntegrationError => {
   const plain = secrets.map(Redacted.value)
   const secret = endpoint.clientSecret === undefined ? undefined : Redacted.value(endpoint.clientSecret)
   // Percent-encoding leaves only ASCII, which `btoa` encodes byte for byte.
@@ -382,24 +382,22 @@ const requestGrant = (
   // A redirect is answered, not followed: following a 307 would re-send the
   // form, secret included, to wherever the endpoint pointed. `http` does not
   // follow one, and a 3xx fails below as a refusal.
-  const attempt: Effect.Effect<Answer, IntegrationError> = http.execute(request).pipe(
-    Effect.flatMap((response) =>
+  const attempt: Answer!IntegrationError = http.execute(request)
+    |> Effect.flatMap(%, (response) =>
       Effect.map(response.text, (text) => ({
         status: response.status,
         headers: webHeaders(response.headers),
         json: parseBody(text)
-      }))
-    ),
+      })))
     // The transport's own message stays on the (redacted) cause.
-    Effect.mapError((error) =>
+    |> Effect.mapError(%, (error) =>
       failure(
         "delivery-failed",
         `${provider} token request failed before an answer arrived${ambiguity}`,
         { provider, path, retryable: repeatable, outcomeUnknown: !repeatable },
         { cause: transportCause(error) }
-      )
-    ),
-    Effect.timeoutOrElse({
+      ))
+    |> Effect.timeoutOrElse(%, {
       duration: endpoint.timeout,
       orElse: () =>
         Effect.fail(failure(
@@ -408,9 +406,8 @@ const requestGrant = (
           { provider, path, retryable: repeatable, outcomeUnknown: !repeatable, timedOut: true }
         ))
     })
-  )
 
-  const classify = (answer: Answer): Effect.Effect<Grant, IntegrationError> => {
+  const classify = (answer: Answer): Grant!IntegrationError => {
     // GitHub answers a refused grant with 200 OK and an OAuth error body, so an
     // answer carrying `error` and no token is that refusal, whatever its status.
     const success = answer.status >= 200 && answer.status < 300 &&
@@ -467,10 +464,9 @@ const requestGrant = (
     ))
   }
 
-  return attempt.pipe(
-    Effect.flatMap(classify),
-    Effect.withSpan("OAuthToken.request", { attributes: { "oauth.provider": provider } })
-  )
+  return attempt
+    |> Effect.flatMap(%, classify)
+    |> withSpan(%, "OAuthToken.request", { attributes: { "oauth.provider": provider } })
 }
 
 /**
@@ -505,20 +501,19 @@ export interface RefreshExchange extends Endpoint {
  */
 export const exchangeRefreshToken = (
   exchange: RefreshExchange
-): Effect.Effect<Grant, IntegrationError, HttpClient.HttpClient> =>
+): Grant!IntegrationError!HttpClient.HttpClient =>
   Effect.all([
     Effect.service(HttpClient.HttpClient),
     Effect.try({ try: () => resolveEndpoint(exchange), catch: (cause) => cause as IntegrationError })
-  ]).pipe(
-    Effect.flatMap(([http, endpoint]) => {
-      const form: Record<string, string> = {
-        grant_type: "refresh_token",
-        refresh_token: Redacted.value(exchange.refreshToken)
-      }
-      if (exchange.scopes !== undefined && exchange.scopes.length > 0) form["scope"] = exchange.scopes.join(" ")
-      return requestGrant(forCredentials(http), endpoint, form, [exchange.refreshToken], false)
-    })
-  )
+  ])
+  |> Effect.flatMap(%, ([http, endpoint]) => {
+    const form: Record<string, string> = {
+      grant_type: "refresh_token",
+      refresh_token: Redacted.value(exchange.refreshToken)
+    }
+    if (exchange.scopes !== undefined && exchange.scopes.length > 0) form["scope"] = exchange.scopes.join(" ")
+    return requestGrant(forCredentials(http), endpoint, form, [exchange.refreshToken], false)
+  })
 
 /**
  * What {@link exchangeCode} needs beyond the endpoint.
@@ -554,25 +549,24 @@ export interface CodeExchange extends Endpoint {
  */
 export const exchangeCode = (
   exchange: CodeExchange
-): Effect.Effect<Grant, IntegrationError, HttpClient.HttpClient> =>
+): Grant!IntegrationError!HttpClient.HttpClient =>
   Effect.all([
     Effect.service(HttpClient.HttpClient),
     Effect.try({ try: () => resolveEndpoint(exchange), catch: (cause) => cause as IntegrationError })
-  ]).pipe(
-    Effect.flatMap(([http, endpoint]) => {
-      const form: Record<string, string> = {
-        grant_type: "authorization_code",
-        code: Redacted.value(exchange.code),
-        redirect_uri: exchange.redirectUri
-      }
-      const secrets = [exchange.code]
-      if (exchange.codeVerifier !== undefined) {
-        form["code_verifier"] = Redacted.value(exchange.codeVerifier)
-        secrets.push(exchange.codeVerifier)
-      }
-      return requestGrant(forCredentials(http), endpoint, form, secrets, false)
-    })
-  )
+  ])
+  |> Effect.flatMap(%, ([http, endpoint]) => {
+    const form: Record<string, string> = {
+      grant_type: "authorization_code",
+      code: Redacted.value(exchange.code),
+      redirect_uri: exchange.redirectUri
+    }
+    const secrets = [exchange.code]
+    if (exchange.codeVerifier !== undefined) {
+      form["code_verifier"] = Redacted.value(exchange.codeVerifier)
+      secrets.push(exchange.codeVerifier)
+    }
+    return requestGrant(forCredentials(http), endpoint, form, secrets, false)
+  })
 
 interface Cached {
   readonly token: Redacted.Redacted<string>
@@ -596,15 +590,15 @@ const build = (options: Options, http: HttpClient.HttpClient): AccessTokenSource
   const cache = Ref.makeUnsafe<Option.Option<Cached>>(Option.none())
   const lock = Semaphore.makeUnsafe(1)
 
-  const cached = Effect.gen(function*() {
-    const now = yield* Clock.currentTimeMillis
-    return Option.filter(yield* Ref.get(cache), (entry) => now < entry.staleAtMs)
-  })
+  const cached = effect {
+    const now = try Clock.currentTimeMillis
+    return Option.filter(try Ref.get(cache), (entry) => now < entry.staleAtMs)
+  }
 
   const exchange = (current: Redacted.Redacted<string>) => {
     const form: Record<string, string> = { grant_type: "refresh_token", refresh_token: Redacted.value(current) }
     if (scope !== undefined) form["scope"] = scope
-    return requestGrant(http, endpoint, form, [current], true).pipe(Effect.map((grant) => ({ current, grant })))
+    return requestGrant(http, endpoint, form, [current], true) |> Effect.map(%, (grant) => ({ current, grant }))
   }
 
   // `invalid_grant` for a token another source has since rotated is not a
@@ -616,7 +610,7 @@ const build = (options: Options, http: HttpClient.HttpClient): AccessTokenSource
   const rotationPending = (
     current: Redacted.Redacted<string>,
     error: IntegrationError
-  ): Effect.Effect<never, IntegrationError> =>
+  ): never!IntegrationError =>
     Effect.flatMap(options.refreshToken.load, (stored) => {
       const rotated = Redacted.value(stored) !== Redacted.value(current)
       return Effect.fail(
@@ -631,39 +625,39 @@ const build = (options: Options, http: HttpClient.HttpClient): AccessTokenSource
       )
     })
 
-  const refresh = Effect.gen(function*() {
-    const { current, grant } = yield* Effect.flatMap(options.refreshToken.load, (current) =>
-      exchange(current).pipe(
-        Effect.catchIf((error) => error.details?.["oauthError"] === "invalid_grant", (error) =>
-          rotationPending(current, error))
-      ))
-    const now = yield* Clock.currentTimeMillis
+  const refresh = effect {
+    const { current, grant } = try Effect.flatMap(options.refreshToken.load, (current) =>
+      exchange(current)
+      |> Effect.catchIf(%, (error) =>
+        error.details?.["oauthError"] === "invalid_grant", (error) =>
+        rotationPending(current, error)))
+    const now = try Clock.currentTimeMillis
     if (grant.refreshToken !== null && Redacted.value(grant.refreshToken) !== Redacted.value(current)) {
-      const replaced = yield* options.refreshToken.replace(current, grant.refreshToken)
+      const replaced = try options.refreshToken.replace(current, grant.refreshToken)
       if (!replaced) {
-        yield* Effect.logWarning(
+        try Effect.logWarning(
           `${endpoint.provider} rotated the refresh token, but another refresher replaced the stored one first; keeping the stored token.`
         )
       }
     }
-    yield* Ref.set(
+    try Ref.set(
       cache,
       grant.expiresInSeconds === null
         ? Option.none()
         : Option.some({ token: grant.accessToken, staleAtMs: now + grant.expiresInSeconds * 1000 - skewMs })
     )
     return grant.accessToken
-  })
+  }
 
-  const token = Effect.gen(function*() {
-    const hit = yield* cached
+  const token = (effect {
+    const hit = try cached
     if (Option.isSome(hit)) return hit.value.token
-    return yield* lock.withPermits(1)(Effect.gen(function*() {
+    return try lock.withPermits(1)(effect {
       // Another caller may have refreshed while this one waited for the lock.
-      const again = yield* cached
-      return Option.isSome(again) ? again.value.token : yield* refresh
-    }))
-  }).pipe(Effect.withSpan("OAuthToken.token", { attributes: { "oauth.provider": endpoint.provider } }))
+      const again = try cached
+      return Option.isSome(again) ? again.value.token : try refresh
+    })
+  }) |> withSpan(%, "OAuthToken.token", { attributes: { "oauth.provider": endpoint.provider } })
 
   return { token, invalidate: Ref.set(cache, Option.none()) }
 }
@@ -699,7 +693,7 @@ const build = (options: Options, http: HttpClient.HttpClient): AccessTokenSource
  * @category constructors
  * @since 1.0.0
  */
-export const make = (options: Options): Effect.Effect<AccessTokenSource, IntegrationError, HttpClient.HttpClient> =>
+export const make = (options: Options): AccessTokenSource!IntegrationError!HttpClient.HttpClient =>
   Effect.flatMap(Effect.service(HttpClient.HttpClient), (http) =>
     Effect.suspend(() => {
       // A config error is a typed failure. Anything else build throws is a
