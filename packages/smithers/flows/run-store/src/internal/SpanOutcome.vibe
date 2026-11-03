@@ -7,7 +7,6 @@
  * @private
  */
 
-import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 
@@ -15,7 +14,7 @@ import * as Metric from "effect/Metric"
 const outcomeValue = (tag: string): string => tag.replace(/(?<=[a-z0-9])(?=[A-Z])/g, "_").toLowerCase()
 
 /** Classifies a non-success exit for the span `outcome` attribute. */
-const causeOutcome = <E>(cause: Cause.Cause<E>): "failure" | "interrupt" =>
+const causeOutcome = <E>(cause: Cause<E>): "failure" | "interrupt" =>
   Cause.hasInterruptsOnly(cause) ? "interrupt" : "failure"
 
 /**
@@ -35,22 +34,20 @@ export const observeOutcome = <A extends { readonly _tag: string }>(
   metricOf?: ((outcome: A) => Metric.Metric<number, Metric.CounterState<number>>) | undefined,
   exitMetric?: Metric.Metric<number, Metric.CounterState<number>> | undefined
 ) =>
-<E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  effect.pipe(
-    Effect.onExit((exit) => {
-      if (exit._tag === "Success") {
-        return Effect.annotateCurrentSpan({ outcome: outcomeValue(exit.value._tag) }).pipe(
-          Effect.andThen(metricOf === undefined ? Effect.void : Metric.update(metricOf(exit.value), 1))
-        )
-      }
-      const outcome = causeOutcome(exit.cause)
-      return Effect.annotateCurrentSpan({ outcome }).pipe(
-        Effect.andThen(
-          exitMetric === undefined ? Effect.void : Metric.update(Metric.withAttributes(exitMetric, { outcome }), 1)
-        )
+<E, R>(effect: A!E!R): A!E!R =>
+  effect
+  |> Effect.onExit(%, (exit) => {
+    if (exit._tag === "Success") {
+      return Effect.annotateCurrentSpan({ outcome: outcomeValue(exit.value._tag) })
+        |> Effect.andThen(%, metricOf === undefined ? Effect.void : Metric.update(metricOf(exit.value), 1))
+    }
+    const outcome = causeOutcome(exit.cause)
+    return Effect.annotateCurrentSpan({ outcome })
+      |> Effect.andThen(
+        %,
+        exitMetric === undefined ? Effect.void : Metric.update(Metric.withAttributes(exitMetric, { outcome }), 1)
       )
-    })
-  )
+  })
 
 /**
  * `observeOutcome` for operations whose success carries no domain outcome
@@ -61,11 +58,9 @@ export const observeOutcome = <A extends { readonly _tag: string }>(
  * @since 1.0.0-rc.0
  * @private
  */
-export const observeExit = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  effect.pipe(
-    Effect.onExit((exit) =>
-      Effect.annotateCurrentSpan({
-        outcome: exit._tag === "Success" ? "success" : causeOutcome(exit.cause)
-      })
-    )
-  )
+export const observeExit = <A, E, R>(effect: A!E!R): A!E!R =>
+  effect
+  |> Effect.onExit(%, (exit) =>
+    Effect.annotateCurrentSpan({
+      outcome: exit._tag === "Success" ? "success" : causeOutcome(exit.cause)
+    }))

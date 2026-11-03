@@ -9,27 +9,22 @@
  * @since 1.0.0
  * @private
  */
-
-import { Journal, type JournalError } from "@smthrs/journal/Journal"
-import * as JournalEvent from "@smthrs/journal/JournalEvent"
-import { Effect, Option } from "effect"
-
+import { type JournalError } from "@smthrs/journal/Journal";
+import { Effect } from "effect";
 /**
  * The companion stream name.
  *
  * @since 1.0.0
  * @private
  */
-export const stream = "run-store"
-
+export declare const stream = "run-store";
 /**
  * The producer every run-store fact is appended under.
  *
  * @since 1.0.0
  * @private
  */
-export const sourceId = "flows.run-store"
-
+export declare const sourceId = "flows.run-store";
 /**
  * Appends one fact to the run's companion stream through the journal in the
  * caller's context.
@@ -45,20 +40,4 @@ export const sourceId = "flows.run-store"
  * @since 1.0.0
  * @private
  */
-export const append = (
-  runId: string,
-  eventType: string,
-  payload: Readonly<Record<string, unknown>>
-): Effect.Effect<void, JournalError> =>
-  Effect.flatMap(Effect.serviceOption(Journal), (journal) =>
-    Option.isNone(journal)
-      ? Effect.void
-      : journal.value.emitDurableUnfenced(
-        new JournalEvent.Input({
-          runId: JournalEvent.companionRunId(stream, runId),
-          sourceId: sourceId as JournalEvent.SourceId,
-          eventType,
-          payload: { runId, ...payload },
-          meta: { runId }
-        })
-      ).pipe(Effect.asVoid))
+export declare const append: (runId: string, eventType: string, payload: Readonly<Record<string, unknown>>) => Effect.Effect<void, JournalError>;

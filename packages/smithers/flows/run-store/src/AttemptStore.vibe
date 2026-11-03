@@ -20,7 +20,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Boundary from "./internal/Boundary.ts"
-import { observeExit, observeOutcome } from "./internal/SpanOutcome.ts"
+import { observeExit, observeOutcome } from "./internal/SpanOutcome.vibe"
 
 const NonNegativeSafeInt = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(0),
