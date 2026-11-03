@@ -5,7 +5,7 @@
  */
 import type * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
-import * as Endpoint from "./Endpoint.vibe";
+import * as Endpoint from "../../../src/Endpoint.ts";
 import * as Resource from "../../../src/Resource.ts";
 import type { Configuration as ResourceConfiguration } from "../../../src/Resource.ts";
 /**
