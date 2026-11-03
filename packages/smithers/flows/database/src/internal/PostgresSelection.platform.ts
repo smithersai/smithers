@@ -1,12 +1,7 @@
-/** Native configuration selection shared by Node and Bun.
- * @since 1.0.0
- */
+// The platform code of PostgresSelection.vibe, which a .vibe file does not import as a value (EK4402).
 
-import { Effect, Layer } from "effect"
-import type { SqlClient } from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { basename, resolve } from "node:path"
-import * as PostgresDatabase from "../postgres/PostgresDatabase.ts"
 import { forStore } from "../TestSchemas.ts"
 import { UnsupportedDatabase } from "./UnsupportedDatabase.vibe"
 
@@ -15,7 +10,6 @@ import { UnsupportedDatabase } from "./UnsupportedDatabase.vibe"
  * @private
  */
 export const isUrl = (value: string): boolean => /^postgres(?:ql)?:\/\//.test(value)
-
 /** SQLite keeps memory and URI opens; an environment never redirects them to a
  * persistent shared schema.
  * @since 1.0.0
@@ -23,7 +17,6 @@ export const isUrl = (value: string): boolean => /^postgres(?:ql)?:\/\//.test(va
  */
 const sqliteOwned = (filename: string): boolean =>
   filename === "" || filename === ":memory:" || filename.startsWith("file:")
-
 /** Where a filename's store lives on PostgreSQL: the connection URL (without
  * its `schema` parameter) and the schema the store's tables are in, or
  * `undefined` for a store SQLite keeps.
@@ -65,20 +58,4 @@ export const location = (filename: string): { readonly url: string; readonly sch
     : `smithers_${createHash("sha256").update(resolve(filename)).digest("hex").slice(0, 32)}`
   parsed.searchParams.delete("schema")
   return { url: parsed.toString(), schema }
-}
-
-/** The PostgreSQL client for a filename {@link location} places on PostgreSQL.
- * The driver loads only then: `@effect/sql-pg` is an optional peer, absent
- * where every store stays on SQLite.
- * @since 1.0.0
- * @private
- */
-export const layer = (filename: string, readOnly = false): Layer.Layer<SqlClient> | undefined => {
-  const selected = location(filename)
-  if (selected === undefined) return undefined
-  return Layer.unwrap(
-    Effect.promise(() => import("@effect/sql-pg")).pipe(
-      Effect.map((driver) => PostgresDatabase.layer({ url: selected.url, schema: selected.schema, readOnly, driver }))
-    )
-  )
 }

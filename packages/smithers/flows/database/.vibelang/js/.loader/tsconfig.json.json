@@ -26,7 +26,7 @@
      "relative": "packages/smithers/flows/database/src"
     },
     null,
-    "I4Cp8UPmcaO7Wd5W5J-CkYGedRuO93uNAD9z98JCSbk",
+    "lJiYjFUYqAoT2ivH7q0Gvv8OC2kSPzg5ahOQzU8ouPo",
     [],
     {
      "recursive": true,
@@ -3083,10 +3083,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.ts"
+     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.platform.ts"
     },
-    "size": 3418,
-    "hash": "68CYu5Lm3xepr2Uf5pEB7o7ftVSsUpuy2uofaNT5SUo"
+    "size": 2658,
+    "hash": "zgtLVmyJCNcelev27tzGorJbOLm10p5FvwdmztaHm04"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
+    },
+    "size": 1661,
+    "hash": "Z9nX0gw3Gsop0v_SvdFZAFJgorP9adVHIkOH2Th0ZiA"
    },
    {
     "path": {
@@ -3099,8 +3106,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/bun/BunDatabase.ts"
     },
-    "size": 3028,
-    "hash": "X-8JsGzXMZyTQfqz0xzltMLNKSj0IAqqyRqnZP1cTOs"
+    "size": 3030,
+    "hash": "za2FRtBRs3m-ly1LZdLs0rr4dz1NO1cKyW9JIf_56n4"
    },
    {
     "path": {
@@ -3113,8 +3120,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
     },
-    "size": 4572,
-    "hash": "iwpmUbsZGE7zWrJ5_kHGgK5NKjMMehn9a1q7GnjlxV8"
+    "size": 4574,
+    "hash": "F-iQ3fbR2RG6Dp-ec3sYZhZXU8zSEYUYsUxdeDRPJ1c"
    },
    {
     "path": {
@@ -3184,7 +3191,10 @@
     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.ts"
    },
    {
-    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.ts"
+    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.platform.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
    },
    {
     "relative": "packages/smithers/flows/database/src/internal/SqliteOpen.ts"
@@ -3505,6 +3515,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
+    },
+    "line": 31,
+    "column": 66,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/database/src/internal/ReadOnly.vibe"
     },
     "line": 7,
@@ -3793,6 +3813,26 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;;;;;;;;;;GAiBG;AAEH;;;GAGG;AACH,OAAO,KAAK,aAAa,MAAM,oBAAoB,CAAA;AAEnD;;;GAGG;AACH,OAAO,KAAK,eAAe,MAAM,sBAAwB,CAAA;AAEzD;;;GAGG;AACH,OAAO,KAAK,UAAU,MAAM,iBAAiB,CAAA;AAE7C;;;GAGG;AACH,OAAO,KAAK,kBAAkB,MAAM,yBAAyB,CAAA;AAE7D;;;GAGG;AACH,OAAO,KAAK,gBAAgB,MAAM,gCAAgC,CAAA;AAElE;;GAEG;AACH,OAAO,KAAK,WAAW,MAAM,kBAAkB,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
+     }
+    ],
+    "code": "/** Native configuration selection shared by Node and Bun.\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as PostgresDatabase from \"../postgres/PostgresDatabase.js\";\nimport * as $platform from \"./PostgresSelection.platform.js\";\n/** Recognizes PostgreSQL connection strings.\n * @since 1.0.0\n * @private\n */\nexport const isUrl = (value) => $platform.isUrl(value);\n/** Where a filename's store lives on PostgreSQL: the connection URL (without\n * its `schema` parameter) and the schema the store's tables are in, or\n * `undefined` for a store SQLite keeps.\n * Explicit URLs select one schema; environment selection preserves each local store's identity.\n * Only Smithers' own settings select PostgreSQL: `SMITHERS_POSTGRES_URL`, or the generic\n * `DATABASE_URL` when `SMITHERS_BACKEND=postgres` asks for it.\n * @since 1.0.0\n * @private\n */\nexport const location = (filename) => $platform.location(filename);\n/** The PostgreSQL client for a filename {@link location} places on PostgreSQL.\n * The driver loads only then: `@effect/sql-pg` is an optional peer, absent\n * where every store stays on SQLite.\n * @since 1.0.0\n * @private\n */\nexport const layer = (filename, readOnly = false) => {\n    const selected = location(filename);\n    if (selected === undefined)\n        return undefined;\n    return Layer.unwrap(Effect.map(Effect.promise(() => import(\"@effect/sql-pg\")), (driver) => PostgresDatabase.layer({ url: selected.url, schema: selected.schema, readOnly, driver })));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "PostgresSelection.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;GAEG;;;AAGH,OAAO,KAAK,gBAAgB,MAAM,iCAAiC,CAAA;AACnE,OAAO,KAAK,SAAS,MAAM,iCAAiC,CAAA;AAE5D;;;GAGG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,KAAa,EAAW,EAAE,CAAC,SAAS,CAAC,KAAK,CAAC,KAAK,CAAC,CAAA;AACvE;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,QAAgB,EAAiE,EAAE,CAC1G,SAAS,CAAC,QAAQ,CAAC,QAAQ,CAAC,CAAA;AAC9B;;;;;GAKG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,QAAgB,EAAE,QAAQ,GAAG,KAAK,EAAgC,EAAE;IACxF,MAAM,QAAQ,GAAG,QAAQ,CAAC,QAAQ,CAAC,CAAA;IACnC,IAAI,QAAQ,KAAK,SAAS;QAAE,OAAO,SAAS,CAAA;IAC5C,OAAO,KAAK,CAAC,MAAM,CAEZ,MAAM,CAAC,GAAG,CADf,MAAM,CAAC,OAAO,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,gBAAgB,CAAC,CAAC,EAG1C,CAAC,MAAM,EAAE,EAAE,CAAC,gBAAgB,CAAC,KAAK,CAAC,EAAE,GAAG,EAAE,QAAQ,CAAC,GAAG,EAAE,MAAM,EAAE,QAAQ,CAAC,MAAM,EAAE,QAAQ,EAAE,MAAM,EAAE,CAAC,CACrG,CACJ,CAAA;AACH,CAAC,CAAA"
     }
    }
   ]

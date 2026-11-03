@@ -143,7 +143,7 @@ const securityReview = Smithers.SecurityReview({
         "A ?schema= query parameter or SMITHERS_POSTGRES_SCHEMA value accepted without restricting it to a safe identifier or rejecting system schemas such as public or pg_catalog.",
         "DATABASE_URL or SMITHERS_POSTGRES_URL silently redirecting a :memory:, file: URI, or explicit SQLite path to a shared PostgreSQL server."
       ],
-      paths: ["src/internal/PostgresSelection.ts", "src/postgres/**"]
+      paths: ["src/internal/PostgresSelection.vibe", "src/postgres/**"]
     },
     {
       id: "connection-secret-leak",
@@ -155,7 +155,7 @@ const securityReview = Smithers.SecurityReview({
         "A connection URL passed to PgClient without Redacted.make, or a Redacted value unwrapped into a string.",
         "A test-matrix child process or console line that prints SMITHERS_TEST_PG_URL with credentials."
       ],
-      paths: ["src/internal/PostgresSelection.ts", "src/postgres/**", "scripts/test-matrix.mjs"]
+      paths: ["src/internal/PostgresSelection.vibe", "src/postgres/**", "scripts/test-matrix.mjs"]
     },
     {
       id: "sqlite-file-permissions",

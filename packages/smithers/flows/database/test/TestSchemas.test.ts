@@ -1,6 +1,6 @@
 import { expect, test } from "vitest"
 import { TestSchemas } from "../src/index.vibe"
-import * as Selection from "../src/internal/PostgresSelection.ts"
+import * as Selection from "../src/internal/PostgresSelection.vibe"
 
 import { afterEach, vi } from "vitest"
 afterEach(() => vi.unstubAllEnvs())
