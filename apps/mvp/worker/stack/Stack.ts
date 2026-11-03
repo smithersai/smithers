@@ -28,7 +28,7 @@ import {
 
 // The one writer of a repository's stack (decision 0016 §1): the only code that writes `stacks`, `todos`,
 // `todo_requests`, `todo_attempts` and `stack_ops`. Each change is one short transaction that locks the repository's
-// `stacks` row first and makes no network or model call: it loads the open TODOs, applies the stack's rules
+// `stacks` row and makes no network or model call: it loads the open TODOs, applies the stack's rules
 // (src/features/todos/stack.ts), writes back what changed, and keeps a receipt under the change's op id, so a repeated
 // op answers the same and another payload under the same id is refused. Concurrent writers queue on the row lock, so
 // none loses another's change. Buttons, slash commands, the agent and the API reach it only through the stack route
@@ -202,12 +202,13 @@ export const lanesOf = (stack: Stack) => {
  * Applies `change` to its repository's stack in one transaction; `runs` says whether this host runs TODOs (a
  * `TodoRuns` is provided), and without it no TODO starts. A new op applies only while `holds` answers true in the same
  * transaction: on a repository other than the deployment's own, that the person still has the role the route decided
- * with (`RepoRoles.holds`, decision 0079 §6). The dispatcher establishes session authority after the body; fixed database timeouts bound this transaction. Records a span `stack.apply`, a log line and a count of `changes` by op
+ * with (`RepoRoles.holds`, decision 0079 §6). Session and alias liveness are checked before any mutation or receipt
+ * replay; fixed database timeouts bound this transaction. Records a span `stack.apply`, a log line and a count of `changes` by op
  * and outcome, with the repository, op id, number and version: never a title or a prompt.
  */
 export const apply = <E = never, R = never>(
   change: Change,
-  options: { readonly runs: boolean; readonly stoppedAttemptId?: string; readonly holds?: Effect.Effect<boolean, E, R> },
+  options: { readonly runs: boolean; readonly session?: WriteAuthority.Session; readonly stoppedAttemptId?: string; readonly holds?: Effect.Effect<boolean, E, R> },
 ) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
@@ -215,6 +216,7 @@ export const apply = <E = never, R = never>(
     const hash = payloadHash(change)
     const applied = yield* sql.withTransaction(Effect.tap(Effect.gen(function* () {
       yield* WriteAuthority.bound
+      if (!(yield* WriteAuthority.holds(options.session))) return { kind: "stale" } satisfies Applied
       yield* sql`INSERT INTO stacks (repo_id) VALUES (${change.repoId}) ON CONFLICT (repo_id) DO NOTHING`
       const [locked] = yield* sql<Locked>`
         SELECT next_number AS "nextNumber", lanes, max_open AS "maxOpen", base FROM stacks

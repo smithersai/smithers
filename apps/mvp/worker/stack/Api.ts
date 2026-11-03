@@ -379,7 +379,7 @@ export const make = <E, R>(
                 ? { kind: "attach", number: admitted.number, issue: admitted.issue }
                 : { kind: admitted.op, number: admitted.number },
             },
-            { runs: Option.isSome(runs), ...(Option.isSome(held) ? { holds: RepoRoles.holds(held.value) } : {}), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
+            { runs: Option.isSome(runs), session: WriteAuthority.sessionOf(who), ...(Option.isSome(held) ? { holds: RepoRoles.holds(held.value) } : {}), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
           ).pipe(Effect.provide(database), Effect.catchTag("@smthrs/mvp/stack/RetryForbidden", () => Effect.succeed({ kind: "forbidden" as const }))))
           let applied = yield* apply(scopedActor, held)
           // The row the request read expired, or changed, while the change waited: GitHub decides again, once, as for

@@ -22,7 +22,7 @@ todos, todo_requests ◀── Electric ◀── Postgres ◀──┘
 Drop ─▶ todo/drop ─▶ the same outbox and route
 ```
 
-- **One writer.** `worker/stack/Stack.ts` `apply` is the only code that writes `stacks`, `todos`, `todo_requests`, `todo_attempts` and `stack_ops`. Each change is one transaction that locks the repository's `stacks` row first, applies the stack's rules (`src/features/todos/stack.ts`), writes back what changed in one statement, and keeps a receipt under the op id. Writers racing on the same repository queue on the lock, so none loses another's change.
+- **One writer.** `worker/stack/Stack.ts` `apply` is the only code that writes `stacks`, `todos`, `todo_requests`, `todo_attempts` and `stack_ops`. Each change is one transaction that locks the repository's `stacks` row, applies the stack's rules (`src/features/todos/stack.ts`), writes back what changed in one statement, and keeps a receipt under the op id. Writers racing on the same repository queue on the lock, so none loses another's change.
 - **The rules are one pure function.** `stack.ts` `apply(stack, op)`: a commit takes the next number, which is never reused, and the last position; a drop clears the TODO's position and closes the gap; a full stack (`max_open`) refuses a commit; a merged TODO refuses a drop; dropping a dropped TODO changes nothing; whenever a lane is free, the oldest ready TODOs start ([lanes](#lanes)). Property tests prove them over random histories.
 - **A person commits; the agent drafts** (0016 §3). `todo/draft` is the agent's; `todo/commit` and `todo/drop` are a person's only. The agent's catalog lists neither, the step refuses a run that is the agent's call before it asks any tab, and the route takes who acts from the session (`Actor.act`), never from the request: a body that claims a door claims nothing.
 - **One route.** Buttons, slash commands, the agent's drafts once a person commits them, and the API all change a stack through `POST /api/repos/<owner>/<name>/stack`.
@@ -403,8 +403,10 @@ Machine access remains restricted to Members or above of `GITHUB_REPOSITORY` (de
 
 Steering a running TODO also requires deployment membership; a repository Member without it may still read the run (decision 0122 amendment).
 
-Synchronous Stack writes retain the session decision made after body admission, accepting natural expiry or explicit
-revocation during bounded waits. No per-route session recheck is added. Complete service budgets are 10 s for each
+Synchronous Stack writes retain session and alias identity after body admission. The final transaction locks and
+checks their liveness before mutation or receipt replay, so expiry or revocation during a wait refuses starts,
+retries and drop cancellations too. Sessionless local writes and reads add no queries; signed-in apply adds two SQL
+round trips, three with an alias. Complete service budgets are 10 s for each
 role read/refresh, 2 s each for retry-candidate lookup and remote stopped status, and 6 s for each complete apply
 (including database acquisition). The conservative total is 36 s, with at most one refresh and second apply.
 Postgres independently caps each writing transaction at 5 s (lock 1 s, statement 2 s). Timeout stages emit `write.wait`

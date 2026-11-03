@@ -2,7 +2,7 @@
 title: Commit-time write authority
 status: completed
 area: access
-owner: Codex / Astra repair
+owner: Codex / final transaction liveness
 updated: 2026-11-02
 links: []
 ---
@@ -339,3 +339,75 @@ Final `pnpm typecheck` in apps/mvp passed all four configurations with command e
 refused both hosts before source transfer. Test stdout/stderr is retained in the named files. No local install or
 repository copy was made. Coverage instrumentation was disabled; these are API/engine/Postgres tests, not production
 or browser E2E evidence. This note records implementation and executed checks, not an external review result.
+
+### Final-transaction session follow-up (2026-11-02, blocked before red)
+
+Base: `eeca93293f51fc4ab958a2022c72d94a27067ba4`; working change `ltllymkvtntynxulxwpluvxykxwwtluo`.
+Library catalog: existing Effect SQL and `WriteAuthority.holds`; no new dependency.
+Prepared 39 revocation/expiry cases plus one SQL-span/read-query case in `stack/CommitAuthority.test.ts`.
+They cover Commit, Retry, Drop and Configure during role resolution, refresh and receipt replay,
+plus Retry's remote status wait. Receipt cases retain real starts and drop cancellations.
+
+Red command, pinned to `LAT_RUN_HOSTS=nyc-02`, was refused by farm disk preflight before source sync:
+97% used, limit 95%, exit 2 (host probe exit 73). Stdout/stderr: `/tmp/retro-liveness-red.log`.
+`pnpm typecheck` in apps/mvp was independently refused at the same preflight, then reporting 98% use;
+stdout/stderr: `/tmp/retro-liveness-typecheck.log`. Neither command executed its requested checks.
+Executed test counts: 0 passed, 0 failed, 0 skipped; the 40 prepared cases were not collected.
+No failing assertion/red-line receipt exists. Production source remains unchanged to honor red first.
+
+The planned Stack guard precedes both mutation and receipt lookup in its final transaction; the caller must
+retain session/alias identity in its existing options. `WriteAuthority.holds` would add two SQL round trips
+for a session, three with an alias, zero for sessionless calls and reads; these are source-derived, unmeasured.
+WorkLinks has no retained session argument, so adding the guard there requires a signature and caller change
+as well as the guard. That exceeds the requested one-line condition; WorkLinks is unchanged.
+
+Repeated the requested red-first validation on 2026-11-02, still pinned to `LAT_RUN_HOSTS=nyc-02`:
+`/tmp/retro-liveness-red-2.log` and `/tmp/retro-liveness-typecheck-2.log` both exited 2 before
+reservation, sync or installation. Each log's line 1 reports `FARM_HEALTH DISK_FULL`, 98% used
+against the 95% limit; line 2 reports host probe exit 73. Neither invocation received a farm run id.
+Tests: 0 collected, 0 passed, 0 failed, 0 skipped (40 prepared cases unexecuted); typecheck did not run.
+Production code remains unchanged: there is still no failing assertion receipt and no measured added round trips.
+Static inspection confirms the guard must precede receipt lookup in Stack.apply: a repeated receipt reaches
+Api.ts:369's stop/start dispatch, bypassing the existing role-only guard after receipt lookup. The one caller's
+options at Api.ts:338 must retain session/alias identity; no separate check at run dispatch is planned.
+
+### Mac mini continuation: final transaction liveness (2026-11-02)
+
+The mini supersedes the unavailable Latitude hosts for every test and typecheck below. Base remains
+`eeca93293f51fc4ab958a2022c72d94a27067ba4`, change `ltllymkvtntynxulxwpluvxykxwwtluo`.
+Library catalog: existing Effect SQL and `WriteAuthority.holds`; no new dependency.
+
+Red ran before production edits: 40 failed, 0 passed, 0 skipped in `stack/CommitAuthority.test.ts` (6.87 s).
+Receipt: `~/.smithers-lead/scratchpad-mirror/retro-liveness-red-mini.log`, mini execution PID `42616`, slot 1.
+Log lines 154 and 167: SQL span deltas `[0, 0, 0]` instead of `[0, 2, 3]`, assertion at test line 46.
+Lines 178/195: a revoked-session Commit returned 202 instead of 403 (test line 101).
+Lines 234/251: receipt replay returned 200 instead of 403 (test line 101).
+Lines 402/419: Drop receipt replay returned 200 instead of 403 (test line 101).
+Test line 123 also rejected Retry's 202 after revocation in the remote-status wait.
+
+One `WriteAuthority.holds(options.session)` guard now runs in Stack.apply's final transaction, after its bounds
+and before its first mutation or receipt lookup. The existing Api.ts:338 caller retains `sessionOf(who)` in options;
+there is no separate route check or dispatch change. This covers Commit/Retry starts, Drop stops and starts,
+Configure starts and receipt replay. Existing `stale` logs and metrics record refusal. The regression matrix
+asserts unchanged stack/receipt/attempt/link/notification rows and no additional run starts or stops.
+
+WorkLinks is unchanged: its `write` signature retains only runner identity, so a session guard would require an
+argument and caller change as well as the guard. This exceeds the requested one-line condition; its 16 s person
+and 8 s runner wait bounds still apply.
+
+Green: `retro-liveness-green-mini-4.log`, mini execution PID `84167`, slot 3: six files, 154 passed,
+0 failed, 0 skipped (76.65 s), including all 40 liveness cases, Stack, Api, status reads, TodoRuns and CommitWaits.
+SQL client spans confirm +2 round trips per signed-in apply, +3 with an alias, +0 for sessionless applies and reads.
+A role refresh can apply twice, adding at most +4/+6 for its two successful liveness checks.
+
+Intermediate `retro-liveness-green-mini-3.log` (PID `62443`, slot 3) had 151 passed, 3 failed, 0 skipped:
+the three Commit/refresh snapshots included initialization of the empty stack by the first, still-authorized apply.
+The fixture now establishes that stack before the snapshot; every response, row and dispatch assertion remains.
+Green admission attempts 1–2 and typecheck admission attempts 1–6 timed out on occupied mini slots (exit 75),
+before executing checks. No reservation was removed or stolen. All logs are in
+`~/.smithers-lead/scratchpad-mirror/`; the requested commands used `MINI_RUN_SRC=$PWD`, `apps/mvp`,
+`--coverage.enabled=false` for vitest, and redirected stdout and stderr to their named files.
+
+Full `pnpm typecheck` in apps/mvp passed (exit 0), including app, worker, infra and evals configs:
+`retro-liveness-typecheck-mini-7.log`, mini execution PID `88145`, slot 2. Tests and typecheck ran only on the mini.
+No coverage, production or external-review evidence is claimed; no local installation or repository copy was made.
