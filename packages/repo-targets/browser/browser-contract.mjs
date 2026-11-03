@@ -32,7 +32,7 @@ export const BROWSER_SAFE = [
   { name: "@smthrs/keys", entry: "packages/smithers/flows/keys/src/index.ts" },
   { name: "@smthrs/plan", entry: "packages/smithers/flows/plan/src/index.ts" },
   { name: "@smthrs/plan-store", entry: "packages/smithers/flows/plan-store/src/index.ts" },
-  { name: "@smthrs/database", entry: "packages/smithers/flows/database/src/index.ts" },
+  { name: "@smthrs/database", entry: "packages/smithers/flows/database/src/index.vibe" },
   { name: "@smthrs/journal", entry: "packages/smithers/flows/journal/src/index.ts" },
   { name: "@smthrs/run-store", entry: "packages/smithers/flows/run-store/src/index.ts" },
   { name: "@smthrs/step-cache", entry: "packages/smithers/flows/step-cache/src/index.ts" },
