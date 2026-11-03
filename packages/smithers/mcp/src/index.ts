@@ -40,4 +40,4 @@ export * as McpError from "./McpError.vibe"
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as McpFlows from "./McpFlows.ts"
+export * as McpFlows from "./McpFlows.vibe"

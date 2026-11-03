@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Limits from "../src/internal/Limits.ts"
+import * as Limits from "../src/internal/Limits.vibe"
 
 describe("Limits", () => {
   it.each([1, 64, Number.MAX_SAFE_INTEGER])("accepts the positive safe integer %s", (value) => {

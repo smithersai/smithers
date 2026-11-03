@@ -25,9 +25,9 @@ import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { McpError } from "../McpError.vibe"
 import * as DiagnosticReporter from "./DiagnosticReporter.vibe"
 import * as JsonLimits from "./JsonLimits.ts"
-import * as Limits from "./Limits.ts"
+import * as Limits from "./Limits.vibe"
 import * as Rpc from "./Rpc.ts"
-import * as Transport from "./Transport.ts"
+import * as Transport from "./Transport.vibe"
 
 /**
  * The retained stderr diagnostic: the line redactor, which owns every line

@@ -1,6 +1,6 @@
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Transport from "../src/internal/Transport.ts"
+import * as Transport from "../src/internal/Transport.vibe"
 
 const bytes = (text: string) => new TextEncoder().encode(text)
 

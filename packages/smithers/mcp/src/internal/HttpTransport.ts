@@ -29,9 +29,9 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type { McpError } from "../McpError.vibe"
 import * as DiagnosticReporter from "./DiagnosticReporter.vibe"
 import * as JsonLimits from "./JsonLimits.ts"
-import * as Limits from "./Limits.ts"
+import * as Limits from "./Limits.vibe"
 import * as Rpc from "./Rpc.ts"
-import * as Transport from "./Transport.ts"
+import * as Transport from "./Transport.vibe"
 
 /**
  * Supplies the bearer credential for a Streamable HTTP server.
