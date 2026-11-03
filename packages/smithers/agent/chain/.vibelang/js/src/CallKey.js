@@ -48,7 +48,7 @@ export const CallKey = Schema.Struct({
     link: LinkId,
     scriptDigest: Schema.String,
     ordinal: Ordinal,
-    entryDigest: Schema.String,
+    entryDigest: Schema.String
 });
 /**
  * Builds a call key from its four components.

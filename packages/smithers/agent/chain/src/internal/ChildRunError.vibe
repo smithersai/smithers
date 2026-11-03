@@ -5,7 +5,7 @@
  */
 
 import type { Effect } from "effect"
-import * as Catalog from "../Catalog.ts"
+import * as Catalog from "../Catalog.vibe"
 import type * as Chain from "../Chain.ts"
 
 /**

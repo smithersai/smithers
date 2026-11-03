@@ -20,8 +20,8 @@ import type { QuickJSContext, QuickJSDeferredPromise, QuickJSRuntime, QuickJSWAS
 import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core"
 import * as QuickJsJobs from "./internal/QuickJsJobs.vibe"
 import * as JsonBoundary from "./JsonBoundary.ts"
-import type * as Outcome from "./Outcome.ts"
-import type * as Script from "./Script.ts"
+import type * as Outcome from "./Outcome.vibe"
+import type * as Script from "./Script.vibe"
 import * as ScriptRunner from "./ScriptRunner.ts"
 
 /**

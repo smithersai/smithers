@@ -15,8 +15,8 @@
 
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Layer, Option } from "effect"
-import * as Catalog from "./Catalog.ts"
+import { Effect, Layer } from "effect"
+import * as Catalog from "./Catalog.vibe"
 
 /**
  * A host-supplied handler for a module-bodied flow.
@@ -25,7 +25,7 @@ import * as Catalog from "./Catalog.ts"
  * @since 0.1.0
  * @slop
  */
-export type Implementation = (payload: unknown) => Effect.Effect<unknown, Catalog.CallError>
+export type Implementation = (payload: unknown) => unknown!Catalog.CallError
 
 /**
  * How a rendered markdown prompt executes — the seam a sub-agent seat
@@ -38,7 +38,7 @@ export type Implementation = (payload: unknown) => Effect.Effect<unknown, Catalo
 export type PromptRunner = (
   rendered: string,
   descriptor: Descriptor.FlowDescriptor
-) => Effect.Effect<string, Catalog.CallError>
+) => string!Catalog.CallError
 
 /**
  * How the registry is projected into a catalog: which flows have host
@@ -71,7 +71,7 @@ export interface Options {
  */
 export const declarationDigest: (descriptor: Descriptor.FlowDescriptor) => string = Descriptor.declarationDigest
 
-const promptArgs = (name: string, payload: unknown): Effect.Effect<string, Catalog.CallError> => {
+const promptArgs = (name: string, payload: unknown): string!Catalog.CallError => {
   if (typeof payload === "string") return Effect.succeed(payload)
   if (typeof payload === "object" && payload !== null && "args" in payload) {
     const args = (payload as { readonly args: unknown }).args
@@ -86,26 +86,23 @@ const markdownHandler = (
   digest: string,
   prompt: PromptRunner
 ): Implementation =>
-(payload) =>
-  Effect.gen(function*() {
-    const args = yield* promptArgs(descriptor.name, payload)
-    // The projection is a snapshot; a refreshed registry may carry a
-    // different declaration under the same name. Re-check at call time so
-    // the journaled entryDigest never lies about what actually ran.
-    const current = yield* registry.getOption(descriptor.name)
-    if (Option.isNone(current) || declarationDigest(current.value) !== digest) {
-      return yield* new Catalog.CallError({
-        message: `"${descriptor.name}" was redeclared since this catalog was built; rebuild the catalog`,
-        name: descriptor.name
-      })
-    }
-    const rendered = yield* registry.runPrompt(descriptor.name, { args }).pipe(
-      Effect.mapError((error) =>
-        new Catalog.CallError({ message: `"${descriptor.name}" failed: ${error.message}`, name: descriptor.name })
-      )
-    )
-    return yield* prompt(rendered, descriptor)
-  })
+effect (payload) => {
+  const args = try promptArgs(descriptor.name, payload)
+  // The projection is a snapshot; a refreshed registry may carry a
+  // different declaration under the same name. Re-check at call time so
+  // the journaled entryDigest never lies about what actually ran.
+  const current = try registry.getOption(descriptor.name)
+  if (Option.isNone(current) || declarationDigest(current.value) !== digest) {
+    throw new Catalog.CallError({
+      message: `"${descriptor.name}" was redeclared since this catalog was built; rebuild the catalog`,
+      name: descriptor.name
+    })
+  }
+  const rendered = registry.runPrompt(descriptor.name, { args }) catch effect (error) => {
+    throw new Catalog.CallError({ message: `"${descriptor.name}" failed: ${error.message}`, name: descriptor.name })
+  }
+  return try prompt(rendered, descriptor)
+}
 
 /**
  * Builds the catalog service from the ambient registry.
@@ -119,17 +116,17 @@ const markdownHandler = (
  * @since 0.1.0
  * @slop
  */
-export const make = (options: Options = {}): Effect.Effect<Catalog.Service, never, Registry.Registry> =>
-  Effect.gen(function*() {
-    const registry = yield* Registry.Registry
+export const make = (options: Options = {}): Catalog.Service!never!Registry.Registry =>
+  effect {
+    const registry = try Registry.Registry
     const implementations = options.implementations ?? new Map<string, Implementation>()
     const descriptors = options.visible === undefined
-      ? yield* registry.visible()
-      : (yield* registry.list()).filter(options.visible)
-    const known = new Set((yield* registry.list()).map((descriptor) => descriptor.name))
+      ? try registry.visible()
+      : (try registry.list()).filter(options.visible)
+    const known = new Set((try registry.list()).map((descriptor) => descriptor.name))
     const unknown = [...implementations.keys()].filter((name) => !known.has(name))
     if (unknown.length > 0) {
-      return yield* Effect.die(
+      return try Effect.die(
         new Error(`implementations bind flows the registry does not know: ${unknown.join(", ")}`)
       )
     }
@@ -151,7 +148,7 @@ export const make = (options: Options = {}): Effect.Effect<Catalog.Service, neve
       }]
     })
     return Catalog.make(Catalog.withSystem([...projected, ...(options.entries ?? [])]))
-  })
+  }
 
 /**
  * The registry-backed catalog layer.

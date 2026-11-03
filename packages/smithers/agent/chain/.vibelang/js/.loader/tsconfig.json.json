@@ -117,7 +117,7 @@
      "relative": "packages/smithers/agent/chain/src"
     },
     null,
-    "duYOZg9-ft-h_2-vpkI70emqwxg73bKq0RW0uMb6Kzo",
+    "74SQaGwgF2vMZZzpOt8DBONLJpFJq4h4zKBFqnRFa5M",
     [],
     {
      "recursive": true,
@@ -323,6 +323,13 @@
   "packages": [
    {
     "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/package.json"
+    },
+    "size": 4687,
+    "hash": "20imS0cRUHTXLT9UZAzWgkgMGpkkKl68_TUrhg7ognw"
+   },
+   {
+    "path": {
      "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/package.json"
     },
     "size": 3248,
@@ -332,8 +339,8 @@
     "path": {
      "relative": "packages/smithers/agent/chain/package.json"
     },
-    "size": 8647,
-    "hash": "T-7iWJuPbfIyb5d6At-TBd2TjFX3gBwKc-XyBSy4VVY"
+    "size": 8871,
+    "hash": "CUQ_qf4eZ2gVbu6CT5tDO2LRZSPxTSJdKuReWKf7j00"
    },
    {
     "path": {
@@ -358,13 +365,6 @@
    },
    {
     "path": {
-     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/package.json"
-    },
-    "size": 4687,
-    "hash": "20imS0cRUHTXLT9UZAzWgkgMGpkkKl68_TUrhg7ognw"
-   },
-   {
-    "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
@@ -374,8 +374,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
-    "size": 10177,
-    "hash": "c8DDzn-eAe02bg8GdRdgBqFoqDXPcSGjkqjKHuZ2gNQ"
+    "size": 10315,
+    "hash": "j00-BBiUmiBFVLtBycK_lp-p0YyK-dXYwmap73Ui--Q"
    },
    {
     "path": {
@@ -395,43 +395,43 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
-    "size": 15033,
-    "hash": "TpVwbO2uX8Kyk01XChbs_dKm-u4RLcUmXdPchEq9YxU"
+    "size": 15173,
+    "hash": "qBNGQuiuQk9YaNARWyOPk6bAl1LksGF7tmjhN14J4mc"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/package.json"
     },
-    "size": 12425,
-    "hash": "seVd7PU67yPETuel41ChzXBsloEUhCCUbAXPv5KfMho"
+    "size": 12559,
+    "hash": "ML9XnL3gy0S3dMXo2vzWWgXMgkBXXrpbnaJC9soCpgM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8845,
-    "hash": "VrF-0613k3AeimFa9sPtlXyjtkJo6YczusrpNEAdImo"
+    "size": 8983,
+    "hash": "HkEsBZn5oE73FkMHp1IVWloRAQivyKChWC6xDwTCWqA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
-    "size": 15062,
-    "hash": "Ehoav5n_0WiCoUYF2geBfe9CWBxFJmFFbZd4MnMPjks"
+    "size": 15090,
+    "hash": "kYSNG9t2PgOrmGZZ7Y66S-UDVE58P0v7OnJHwfxglFE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 11122,
-    "hash": "HkpKCUONLNsHGL65Ns5SOQCPYagw-2Fni4T8uxQPrII"
+    "size": 11258,
+    "hash": "fK0vdi3dDFOTMob0LKiDB1WNp5SxbwEp_tzeMqevZQc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
-    "size": 14108,
-    "hash": "JoPVNfhPyRO19D_3aET-BYy6ipqPKXeXaNt5KVmIJUU"
+    "size": 14526,
+    "hash": "kTwGKJsTp4FVGxmKUOPZg3c06ZLfQDJah4Eo8ALa1HE"
    },
    {
     "path": {
@@ -673,6 +673,13 @@
    }
   ],
   "files": [
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/version.d.ts"
+    },
+    "size": 91,
+    "hash": "OLhx74xVvRMxcl4krcVslmdZGXNsTNFw1VSQRYH3mpc"
+   },
    {
     "path": {
      "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Types.d.ts"
@@ -1893,139 +1900,6 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/Author.ts"
-    },
-    "size": 5249,
-    "hash": "5wuRpB9axBinD3VhIG3veqiuBWvkokhsXL3emtFwZKQ"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/canonical/src/internal/describe.ts"
-    },
-    "size": 388,
-    "hash": "_h8CSmq_kZob_8k2D688-4kTfd_kbuYEC4EWs0m4OhQ"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
-    },
-    "size": 11884,
-    "hash": "rYomHNIcHNZvY6vov1hrHUPpyL-nXBfKlQONc5DGqGU"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
-    },
-    "size": 3466,
-    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
-    },
-    "size": 380,
-    "hash": "ujxrdyUuUkUuEsos_UL6g4bSjv7JLRwZiLcJfhERZ_8"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/canonical/src/Record.ts"
-    },
-    "size": 1382,
-    "hash": "y7iZGGOgtt_BfRe2gW6yRE9zsjI31BD_WmLfQWF3kqE"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/canonical/src/BoundedJson.ts"
-    },
-    "size": 18557,
-    "hash": "xOvlbiuEfZlqjmL7FZFrAYEKFW5zRoSsrXpK-OGIycA"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/canonical/src/index.vibe"
-    },
-    "size": 1664,
-    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/crypto/src/Crypto.ts"
-    },
-    "size": 10836,
-    "hash": "kRxPTT9P4MdOLRZCYB5s8SW4K3WIMSk5Z97-WJRDw5E"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/crypto/src/internal/sha256.ts"
-    },
-    "size": 5494,
-    "hash": "ITy8hAQHKkNxaVTqwvXNuBzF7F4HMBrOdSBG5HFjbq0"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/crypto/src/Sha256.ts"
-    },
-    "size": 13982,
-    "hash": "V9jl4dZvBo_h1Qg6VLFlWW-0eo5CNokhDmgwwvcd418"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/crypto/src/internal/sourceShape.ts"
-    },
-    "size": 33365,
-    "hash": "ws6Nqn95dLrEVdIoN-BMGPZlDDr0N0iVWjxtYNzNSq8"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/crypto/src/Identity.ts"
-    },
-    "size": 22337,
-    "hash": "xMa-7VVZY6A2wUxAP6pilg9Qqaito0YkgnppgQLtI5E"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/crypto/src/WebCrypto.ts"
-    },
-    "size": 2381,
-    "hash": "VRm2KJmGl46AruOKOcOrcRUzofEjADFhqn-8_gXiIkw"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/crypto/src/Uuid.ts"
-    },
-    "size": 2539,
-    "hash": "tYJh0QBvIqQzp1o8_DZ7i6jYIGJldIpdcIMwiL8Yohs"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/crypto/src/index.ts"
-    },
-    "size": 1454,
-    "hash": "Gk90KqjvV3ToBQuRkSDo2fg6u5876NfSnHHvbWwhAPo"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/flows/core/src/Digest.vibe"
-    },
-    "size": 1703,
-    "hash": "VB-rlHs3g3Bv2P48v5T0BQ0C32MbfVRKluWow7O4soA"
-   },
-   {
-    "path": {
-     "relative": "packages/smithers/agent/chain/src/AuthorDeclaration.ts"
-    },
-    "size": 1272,
-    "hash": "HithzJLAMFtBxiIWitrhv6eLkHLOTB9j8_BBKB7OJSs"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/version.d.ts"
-    },
-    "size": 91,
-    "hash": "OLhx74xVvRMxcl4krcVslmdZGXNsTNFw1VSQRYH3mpc"
-   },
-   {
-    "path": {
      "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/calls.d.ts"
     },
     "size": 1375,
@@ -2261,6 +2135,132 @@
     },
     "size": 1501,
     "hash": "L6Wc5kc26xu8poMi8QYphUCOBmEd5zpZDXJT1AGA-KA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/agent/chain/src/Author.vibe"
+    },
+    "size": 5054,
+    "hash": "j5DQjBW7Dnl7W_WB4WfpBw9kuLENewzTzVLSH6I601c"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/internal/describe.ts"
+    },
+    "size": 388,
+    "hash": "_h8CSmq_kZob_8k2D688-4kTfd_kbuYEC4EWs0m4OhQ"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
+    },
+    "size": 11884,
+    "hash": "rYomHNIcHNZvY6vov1hrHUPpyL-nXBfKlQONc5DGqGU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+    },
+    "size": 3466,
+    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
+    },
+    "size": 380,
+    "hash": "ujxrdyUuUkUuEsos_UL6g4bSjv7JLRwZiLcJfhERZ_8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/Record.ts"
+    },
+    "size": 1382,
+    "hash": "y7iZGGOgtt_BfRe2gW6yRE9zsjI31BD_WmLfQWF3kqE"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/BoundedJson.ts"
+    },
+    "size": 18557,
+    "hash": "xOvlbiuEfZlqjmL7FZFrAYEKFW5zRoSsrXpK-OGIycA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/index.vibe"
+    },
+    "size": 1664,
+    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/Crypto.ts"
+    },
+    "size": 10836,
+    "hash": "kRxPTT9P4MdOLRZCYB5s8SW4K3WIMSk5Z97-WJRDw5E"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/internal/sha256.ts"
+    },
+    "size": 5494,
+    "hash": "ITy8hAQHKkNxaVTqwvXNuBzF7F4HMBrOdSBG5HFjbq0"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/Sha256.ts"
+    },
+    "size": 13982,
+    "hash": "V9jl4dZvBo_h1Qg6VLFlWW-0eo5CNokhDmgwwvcd418"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/internal/sourceShape.ts"
+    },
+    "size": 33365,
+    "hash": "ws6Nqn95dLrEVdIoN-BMGPZlDDr0N0iVWjxtYNzNSq8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/Identity.ts"
+    },
+    "size": 22337,
+    "hash": "xMa-7VVZY6A2wUxAP6pilg9Qqaito0YkgnppgQLtI5E"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/WebCrypto.ts"
+    },
+    "size": 2381,
+    "hash": "VRm2KJmGl46AruOKOcOrcRUzofEjADFhqn-8_gXiIkw"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/Uuid.ts"
+    },
+    "size": 2539,
+    "hash": "tYJh0QBvIqQzp1o8_DZ7i6jYIGJldIpdcIMwiL8Yohs"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/index.ts"
+    },
+    "size": 1454,
+    "hash": "Gk90KqjvV3ToBQuRkSDo2fg6u5876NfSnHHvbWwhAPo"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/core/src/Digest.vibe"
+    },
+    "size": 1703,
+    "hash": "VB-rlHs3g3Bv2P48v5T0BQ0C32MbfVRKluWow7O4soA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/agent/chain/src/AuthorDeclaration.ts"
+    },
+    "size": 1272,
+    "hash": "HithzJLAMFtBxiIWitrhv6eLkHLOTB9j8_BBKB7OJSs"
    },
    {
     "path": {
@@ -2609,50 +2609,50 @@
     "path": {
      "relative": "packages/smithers/agent/chain/src/CallKey.vibe"
     },
-    "size": 2041,
-    "hash": "dMS8yv6V2RGO0mi79SvOe6oYIyZAE_4bgOwj1VfkM50"
+    "size": 2039,
+    "hash": "-LweRbzhSVU7BcF7YtVZTsHoKO9CaJxwCFyAC4LVRxY"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/Catalog.ts"
+     "relative": "packages/smithers/agent/chain/src/Catalog.vibe"
     },
-    "size": 7592,
-    "hash": "NDACKs17YYkcIhulb2v3NvwY3jeiSaLNSTXPI6pQ4lM"
+    "size": 7576,
+    "hash": "7IBAs90Oa6l5se4fWzHYX4xrpvyUFUxNgkimKX9-9Pw"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/Authorize.ts"
     },
-    "size": 9699,
-    "hash": "SGJWgPwXY-WJyjcesVvVHXyAkZ_1qGazBoE67peVmQw"
+    "size": 9701,
+    "hash": "iHAGzKuvsrxkJ0UgTkkLv-8XklZlopi-UZ_2om0whns"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/Observation.vibe"
     },
-    "size": 1696,
-    "hash": "tX9abrk9IrVUw5Z6WfjPeO9O90ana1-X04NY9_8ElPk"
+    "size": 1693,
+    "hash": "zbjX436uvIdxIwvGx3HOPDPeMe8DYfisxnP8oDOlXuY"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/Script.ts"
+     "relative": "packages/smithers/agent/chain/src/Script.vibe"
     },
-    "size": 2723,
-    "hash": "sOckKzVBdR7AcuZ4ZRzhO645nn_MuxJIHUWeOuxgCVA"
+    "size": 2691,
+    "hash": "EOU_TNvraQKd0HQvY998ujYhb5UiLrduRuVLNj9uYoo"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/Outcome.ts"
+     "relative": "packages/smithers/agent/chain/src/Outcome.vibe"
     },
-    "size": 4296,
-    "hash": "SdZ4qMZ1jom7u4AQB_9apTRwkIiN0HXTrPEevm7xP64"
+    "size": 4266,
+    "hash": "zHih6wAfTSGdcAth-gzpDdSDP5t3Kx2OPgppBI7gfxI"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/Event.ts"
+     "relative": "packages/smithers/agent/chain/src/Event.vibe"
     },
-    "size": 8576,
-    "hash": "2KWWAcmcoZDvajtXdjmIXYVfElP0-58RGa1X4zg2dSw"
+    "size": 8548,
+    "hash": "_Qa2h-G37kovjEjQuXFcz1BH1f4Q3xtcs5BVLNvLyeU"
    },
    {
     "path": {
@@ -2665,29 +2665,29 @@
     "path": {
      "relative": "packages/smithers/agent/chain/src/internal/ChildRunError.vibe"
     },
-    "size": 643,
-    "hash": "2q4FibPK7TLJ65A_0XwZHEquJPifF74SLbbcJnMNKbM"
+    "size": 645,
+    "hash": "A2O7PrU30vyB2KBF7vtvDxVjAMRqyMd0GaJ6gfPTcho"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/Journal.ts"
+     "relative": "packages/smithers/agent/chain/src/Journal.vibe"
     },
-    "size": 3682,
-    "hash": "a9XSY_GpQ0oA801tPfyIKzmqtVvqjcVyelVv2EwsDbk"
+    "size": 3665,
+    "hash": "sfWCFsRlolsgNwLCN4AmdyBjVJnDw8W1q7Gm0mX_nZI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/JsonBoundary.ts"
     },
-    "size": 8348,
-    "hash": "-bZ9sHRf8-OSbiEMb_vmh3LEj9tsa3-73vX6u701bPY"
+    "size": 8350,
+    "hash": "q_kkHV9-zdRWDViODAE23KsXttFfHZZ2LPdyPRX9Z5k"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/ScriptRunner.ts"
     },
-    "size": 9033,
-    "hash": "he4nbn0g1x01ZZC_3saLww1S7lAYS4BiDb1xzgiaOHE"
+    "size": 9037,
+    "hash": "u7vST7AeVBvF46g92trhjOazGDgdzVCiIxjXACMRESI"
    },
    {
     "path": {
@@ -2700,15 +2700,15 @@
     "path": {
      "relative": "packages/smithers/agent/chain/src/Chain.ts"
     },
-    "size": 30599,
-    "hash": "_iOM0BgIXju5hgncXPigSjAJAWQOffNEkpi59Du2aPI"
+    "size": 30611,
+    "hash": "B2UWdmhvWyjgGk2cVxvI3mLcpsT685MjK_1V_kNYKS4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/GraphBuildError.vibe"
     },
-    "size": 7189,
-    "hash": "t4ctcjcfrJ1WLNue8WgsClkmpvcW6baX80-Tcupt8ao"
+    "size": 7187,
+    "hash": "u_TFqxIm4-JwNcO_4LU_9xt-YWT3BEdyDzOuqZPlJeA"
    },
    {
     "path": {
@@ -2875,15 +2875,15 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/FileSet.vibe"
     },
-    "size": 17028,
-    "hash": "y6IAZeCjDnyY6CSrSwjJphOXZeQb29XtsfTBwkJhTuw"
+    "size": 17020,
+    "hash": "rvrzZckehgOJSmDK7f7_zEsIkaf1HQsSPYAwU_PpimE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/src/KeyMaterial.vibe"
     },
-    "size": 3788,
-    "hash": "UeREWV3COMZVwB7AlUgz8RLtsyCKqOljr9b55meUyGQ"
+    "size": 3786,
+    "hash": "che0c1tjAN6f5pR04HZt1mUgQt3ByrBnWXJT3ftplRw"
    },
    {
     "path": {
@@ -3050,8 +3050,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/CachePolicy.vibe"
     },
-    "size": 4998,
-    "hash": "h3NeV5Zo4ztZ7HNbX_GZER1AcI7ui5MXA43RO79RwAA"
+    "size": 4992,
+    "hash": "t14oIilcLU25SJFgjrp7JzqjxIPP5oZisECHOmo3-oU"
    },
    {
     "path": {
@@ -3092,8 +3092,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6418,
-    "hash": "CVindifsoibdUy3X9jWukk6CiaUmtKsLpiyP9ceh8hY"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -3610,8 +3610,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/retry.vibe"
     },
-    "size": 4001,
-    "hash": "I7lQTfXg7YmckU0yHby6G7M4uFLvIbWp66HLZOTgrnY"
+    "size": 3981,
+    "hash": "oaorQkJG0mgl8AA6kjpcNM-CtpJ-n4WqS_whjkoYYyM"
    },
    {
     "path": {
@@ -3708,15 +3708,15 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Limits.vibe"
     },
-    "size": 3219,
-    "hash": "CIj4MRtMTMc11jEn1pXnOLibMR1El2LxLzoNrRnOQVI"
+    "size": 3214,
+    "hash": "OFcLpAJzZWsJJ0cybMQ-Srkp_OgQcrWBGg4_w0VT_Lo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/Signature.vibe"
     },
-    "size": 16471,
-    "hash": "HNeTROivOMqBJzQGXqsGcTenpxegL4XxK8key3d-2K4"
+    "size": 16444,
+    "hash": "_n53tKqUgjWnQj9oNaOLwRVpIwXRvKOknhBGcnaPi-c"
    },
    {
     "path": {
@@ -3736,8 +3736,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/internal/Compose.vibe"
     },
-    "size": 13052,
-    "hash": "cNT0Yhw-i6HLs0qKl2h3rTnYWxB1wltv-KqsvB88MV0"
+    "size": 13034,
+    "hash": "d7YaPHH89q0LjbvaazizW8Ge4hq-UkD1EG9kHsyR0b0"
    },
    {
     "path": {
@@ -3755,7 +3755,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/patterns/src/Pattern.ts"
+     "relative": "packages/smithers/flows/patterns/src/Pattern.vibe"
     },
     "size": 7009,
     "hash": "B0nGtwg7xZPfjrZsSMXtlZj-wOkDEfXWywzJ6D_-cWs"
@@ -3764,22 +3764,22 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryError.vibe"
     },
-    "size": 986,
-    "hash": "nYLFM9YakjiChg2aNgUV1MZPODh8C6N5AuR4Tr13RhI"
+    "size": 984,
+    "hash": "kLbdb7sEKzoC0pvJDDvq62Tu5HB3UuVly1sv44pXH0Q"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/Namespace.vibe"
     },
-    "size": 9958,
-    "hash": "NGtGTMANBwS2ORvNirp41sJhwjFsdFeQymo3zvLajn8"
+    "size": 9939,
+    "hash": "q_muCS1YYNfHWMgH3_tJRWcTQ3ybdc00THcXyZguRPo"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/ResolveNamespace.vibe"
     },
-    "size": 2804,
-    "hash": "hgztuchJr7P7iQYE1A035rrKjs8f4Xq6c6900uMrhh4"
+    "size": 2800,
+    "hash": "vnhjSuoDZn66R2pey0BujsTlYXFX1sEG7_RBL4ySJfU"
    },
    {
     "path": {
@@ -3888,17 +3888,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/Store.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
     },
-    "size": 11779,
-    "hash": "t9ZbhsoyOzuuFAXnN35vHHVEwIP9GC4Wf0IPOR089Hw"
+    "size": 11246,
+    "hash": "iIydbZ6fbwoWnq-WI5XUew74KC_YAB-TRu4GdsmXrlE"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
     },
-    "size": 10026,
-    "hash": "2uF2iCz0uTsd8oFj7sVMQZh8zT9H6Km58ahCk-OXiUs"
+    "size": 10028,
+    "hash": "3m-E2DiLMX-qd0hJmtRfBa6kQqv4sV2quZ1t1EaYLHU"
    },
    {
     "path": {
@@ -3911,22 +3911,22 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Notes.ts"
     },
-    "size": 13661,
-    "hash": "dPkP9U_eLGIL1Kmjqdbjbus_Ayyy-taHJghOYt19rmk"
+    "size": 13663,
+    "hash": "P78BMLRuiJR9uaXdOUPgj36ilF3x0nR4mHJ_ENIxB3w"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Search.ts"
     },
-    "size": 9831,
-    "hash": "kFlNxHTMdub40OTdAlnX4wLykNMEU_Rl9diGkDWHXPQ"
+    "size": 9833,
+    "hash": "v9CMwYRKZRckvJ8CMqsUKNbbQz-WDvgtf5jAB8IU-7c"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Threads.ts"
     },
-    "size": 15788,
-    "hash": "zNybfkcuiy_TgvLBEaKx-tEtP_Dgg2R90LssKECHo-g"
+    "size": 15790,
+    "hash": "S5Zwo2WngZCk18rmLIMSJIqQoeKJQMvXNTA15euO6Uk"
    },
    {
     "path": {
@@ -3958,31 +3958,31 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
     },
-    "size": 6611,
-    "hash": "2pjQaw0sf9Gpv68htwtiSQjZ51xfZnNAJLkc-rtwNAs"
+    "size": 6534,
+    "hash": "6bD4iq242UXnt15Rw9JTNW_UsrcaI6po0wo47B4GrwU"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
     },
-    "size": 832,
-    "hash": "sZ43yiXMRpphAZ2CtspiopzdP4f4Zsh3V03ptPHaUIs"
+    "size": 803,
+    "hash": "cEgne4cF1gs_ac3wwUSc3PUSGb7s2ifQIJHK4xUNqfI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/Migrations.ts"
     },
-    "size": 1401,
-    "hash": "qqiV8InJrRc4G-hl0vNyfurCmttdI7x3JrHtFPWVOno"
+    "size": 1405,
+    "hash": "1CMwJPP6tnIfFWf154At-3ufUYfZuLRuH0-hLlsLcOQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryStore.ts"
     },
-    "size": 15964,
-    "hash": "xkkHznDtVpdmOCTf4jUwAeXUe_JeHQi7l2WZsQ0Odls"
+    "size": 15966,
+    "hash": "S0uvN7iXYxn5apIK9r2fwLQBGDPLW9iNpYIdRKllXE4"
    },
    {
     "path": {
@@ -4016,8 +4016,8 @@
     "path": {
      "relative": "packages/smithers/agent/chain/src/MemoryEntries.ts"
     },
-    "size": 8041,
-    "hash": "qDPOoQSzqvvHyLBF9y9R5vWg5FHodgHmgraJuGbtIH0"
+    "size": 8043,
+    "hash": "PuBKKi8q3WOGNNqFXbSKvJ7mHXIE83C1OSZybyz3Bno"
    },
    {
     "path": {
@@ -4030,15 +4030,15 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelEvent.vibe"
     },
-    "size": 18314,
-    "hash": "eOL13_VciDeTo0iNlkIXAmFUugbKekeib4ci8BPEZPs"
+    "size": 18290,
+    "hash": "EM2Wgs3n09Qq5zx2VFOfkjl-HAEFcuMUcUT86SIXfmM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
     },
-    "size": 18772,
-    "hash": "-iayzx_aElsaY7enL9e3cNhMaEZS8v4Q1AjOIdYMDxU"
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
    },
    {
     "path": {
@@ -4065,15 +4065,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/StepFact.vibe"
     },
-    "size": 2106,
-    "hash": "4p5BwxZdwwqDTkEe6XaRTdBpC9svUS3xGkJGFphRfmo"
+    "size": 2103,
+    "hash": "b3kkgDyilW3C-FW4fdO4ounbiKeP_KuJRi79-7KoC5s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
     },
-    "size": 1443,
-    "hash": "hJJQrSJc2JJbAvxKiKk6z97oZ67ERK7xHx2TzpHBPnc"
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
    },
    {
     "path": {
@@ -4100,15 +4100,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/EventTally.vibe"
     },
-    "size": 801,
-    "hash": "jqNAp8SGRoVgR2UGFcQbDqD4VnG7fA7oCOkc8hwA_Nw"
+    "size": 800,
+    "hash": "_DXFihbOGu_VKm5BvOTjgOjn52C9LseZwxmqEucrkvQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
     },
-    "size": 963,
-    "hash": "h558rP8T8bGGWY1J39KkFj2H_C3ZwzleEC_jdLro1WY"
+    "size": 962,
+    "hash": "MWPlQMr_t56pVGgwDW0MWW24aMFIVC-RYfA3thfgK7w"
    },
    {
     "path": {
@@ -4121,8 +4121,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
     },
-    "size": 4805,
-    "hash": "TV_P427Tpq3T5TcSdUJ13uwDMQgjY6FQgBXaWOQ7ORA"
+    "size": 4800,
+    "hash": "0MAnTLasHh_cI-vlZtI_0FpjmdWsh6Itt25uXOU7e9c"
    },
    {
     "path": {
@@ -4261,8 +4261,8 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
     },
-    "size": 1367,
-    "hash": "KMRUmP-9Pq4fef97WjRMVwdSdKCtuF_hiS_zyvdpojA"
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
    },
    {
     "path": {
@@ -4429,8 +4429,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/ModelError.vibe"
     },
-    "size": 8728,
-    "hash": "wSPjMwN0Cbn18xiMUEWl6WVNKsvJ8I_-NwW9RnxkzAM"
+    "size": 8723,
+    "hash": "zGcY8dlcbHfrNn7DKU23zk9XRa_KITDZljq1K_pXAL8"
    },
    {
     "path": {
@@ -4457,8 +4457,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/internal/CallTiming.vibe"
     },
-    "size": 5055,
-    "hash": "03zZJDLpkCipolLqyh6_vw7-bJ8pM76ZL9U24RRJUBg"
+    "size": 5049,
+    "hash": "m7MdltMdCMjfgMT7s3m6iODwAVH17BcK75IT8cq16PM"
    },
    {
     "path": {
@@ -4471,8 +4471,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Pricing.vibe"
     },
-    "size": 6515,
-    "hash": "Q7ywCOCqjPaB7HvdXI_frhgUjKgiMAT098WeAbn0YZw"
+    "size": 6514,
+    "hash": "a4_mNhjGrGplAxO9L7QXxCq7NHo2aBrYmLsTcsJf49s"
    },
    {
     "path": {
@@ -4483,10 +4483,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/ModelAuthor.ts"
+     "relative": "packages/smithers/agent/chain/src/ModelAuthor.vibe"
     },
-    "size": 5665,
-    "hash": "L6wZJ7xyuYYpsGPw-kyd_sAYGrcpnqoyxSMacGwZldM"
+    "size": 5491,
+    "hash": "DMmQgLkEmhryX6DrG_cRtO4b9U_QAzlHpD0gx5bS9qY"
    },
    {
     "path": {
@@ -4499,8 +4499,8 @@
     "path": {
      "relative": "packages/smithers/agent/chain/src/Prompt.ts"
     },
-    "size": 8684,
-    "hash": "J5Ypnrfrs889YNDNr3tVASzxeEg80sf6Zsu6x59SHw4"
+    "size": 8686,
+    "hash": "zaboDV_Q1Y-5YJRUTeZxoHX3pe6W_dYXCLWH0irncAY"
    },
    {
     "path": {
@@ -4534,8 +4534,8 @@
     "path": {
      "relative": "packages/smithers/agent/chain/src/QuickJsRunner.ts"
     },
-    "size": 28811,
-    "hash": "eEfUEKmeCqGTemA38n_BCHaHcoRgOH-p6_c839zLclo"
+    "size": 28815,
+    "hash": "WSDYuN0PUUPfyxSmbE4B9fR23-BUzzVvBLG6dqqq8nc"
    },
    {
     "path": {
@@ -4828,8 +4828,8 @@
     "path": {
      "relative": "packages/smithers/flows/core/src/internal/skillFrontmatter.vibe"
     },
-    "size": 5100,
-    "hash": "JkPsJqXZHDDpRQDbS0e8Zm7nhuNp5OPkbZP_qWhNadA"
+    "size": 5097,
+    "hash": "POYj7x08XrCO954XGJiLpfLZ2Y-_Cxm3zeoxm8ExRM0"
    },
    {
     "path": {
@@ -5633,15 +5633,15 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Declared.vibe"
     },
-    "size": 1751,
-    "hash": "34cgDS6_EH_1EkMOHnE6_nJaisImMuCHzllFZWXB6AQ"
+    "size": 1747,
+    "hash": "uKJa4EmBRtlCx_DtDQNIrZrBMyxbWBXXLM6fDQQG2bA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/ModuleMetadata.vibe"
     },
-    "size": 43378,
-    "hash": "21-WakM0o_CV6QicRw2FleF7BdnfxP5qL0-B2Xj_QOQ"
+    "size": 43354,
+    "hash": "-j1rwxLHLFlz-TKpMYUfS1q49e8lTUmmmgkjUVdRLfw"
    },
    {
     "path": {
@@ -5654,29 +5654,29 @@
     "path": {
      "relative": "packages/smithers/agent/registry/src/internal/Names.vibe"
     },
-    "size": 2285,
-    "hash": "S-VM0xuTkTTvmKRwC0zZfSpaWgNpPkxSVjVWpwWVhyo"
+    "size": 2278,
+    "hash": "N58QLlT5ecYmsWcVOc9S3Qa9LdLrL5vqa84GBazkHqI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/MarkdownFlow.vibe"
     },
-    "size": 27635,
-    "hash": "LmH-9zS2mqqLUOThJ_a8fwbaCVjNxXW6dsK0cOoUrw0"
+    "size": 27581,
+    "hash": "6GqoFcuVy41_AYi_c5y3ujBTHiXEgWTDDq2dOSXTScQ"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/ModuleFlow.vibe"
     },
-    "size": 6463,
-    "hash": "lLr6mCi40WxUocDU8qK-wqGQccYQQW9TLfKOSy14aa8"
+    "size": 6451,
+    "hash": "2djBZIpwBzyexhd-7cfSz2DVkQKEwTP03Gk9_5YNttA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/src/RegistryError.vibe"
     },
-    "size": 4329,
-    "hash": "7_18snT3dvkHYGAZBjHFbB5rEgaj1dvf1_ARWw64aYI"
+    "size": 4324,
+    "hash": "cVjx0oNYrfXf6huK-m3fBHVVUdBaFL7t4hvNLDogJBw"
    },
    {
     "path": {
@@ -5689,15 +5689,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreError.vibe"
     },
-    "size": 2759,
-    "hash": "xTrcRq6w4L25wQ9g7oMEsb9p5mBQip8GVOqzs6RihF8"
+    "size": 2752,
+    "hash": "e0gJ43ZP8wYl2VIEFZ64B3v5n5brQ-awEFcT2uycFo4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
     },
-    "size": 2954,
-    "hash": "-wSYk6LCVeCfHLz53UyQe6wBJbKu1pC5443VByaiRiI"
+    "size": 2950,
+    "hash": "znPj_hPiOsRXfmIC_GZt2TFO2cNMJx_rEzjCTCm2dnM"
    },
    {
     "path": {
@@ -5731,15 +5731,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
     },
-    "size": 1234,
-    "hash": "7dXRqRW7oV8iF9H_HrBHzmsipSCzNs8ATyu0XZmMzkA"
+    "size": 1233,
+    "hash": "aQAIeIXzNVdQ_dTcupyMWtr1bU5yk5tN7iGi1gYJiGM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/validateDigest.vibe"
     },
-    "size": 1006,
-    "hash": "puaXORudxbm3fYtdd-o0-8HrihnGy_acCibYCp0s93Y"
+    "size": 1005,
+    "hash": "QXX3o5mipKBfkOLEtfZgJKDSPjG7VvL1KwBedfE75tE"
    },
    {
     "path": {
@@ -5813,24 +5813,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/RegistryCatalog.ts"
+     "relative": "packages/smithers/agent/chain/src/RegistryCatalog.vibe"
     },
-    "size": 6204,
-    "hash": "PpwR-pCf9Mv5xJ_G_qJ_HQVVXYxZKA4svuiVumo8IFY"
+    "size": 6009,
+    "hash": "Vuebh9uq8Q9M8enKy7lnu8u6CeNQSExEgNS0lB1AXI8"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/SubChains.ts"
     },
-    "size": 9949,
-    "hash": "t1tCo3bXo_Q2VVVyNqX2CEMOQy-0axWYVcQzO416yQQ"
+    "size": 9955,
+    "hash": "2Ci95TRDPU7TXLNcBdpzOh2nSsonR9-LmYR3F4VBfwA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/index.ts"
     },
-    "size": 3947,
-    "hash": "ZyBVu-P_N1OaMznW1q2nc6ge-8CrW0qxyifBmoWYQT0"
+    "size": 3963,
+    "hash": "hs-Xka893EEq1CJakIuizOXZ-RAtLPImsQshjFL82ag"
    },
    {
     "path": {
@@ -6731,7 +6731,7 @@
   ],
   "inputs": [
    {
-    "relative": "packages/smithers/agent/chain/src/Author.ts"
+    "relative": "packages/smithers/agent/chain/src/Author.vibe"
    },
    {
     "relative": "packages/smithers/flows/canonical/src/internal/describe.ts"
@@ -6935,7 +6935,7 @@
     "relative": "packages/smithers/agent/chain/src/CallKey.vibe"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/Catalog.ts"
+    "relative": "packages/smithers/agent/chain/src/Catalog.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/Authorize.ts"
@@ -6944,13 +6944,13 @@
     "relative": "packages/smithers/agent/chain/src/Observation.vibe"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/Script.ts"
+    "relative": "packages/smithers/agent/chain/src/Script.vibe"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/Outcome.ts"
+    "relative": "packages/smithers/agent/chain/src/Outcome.vibe"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/Event.ts"
+    "relative": "packages/smithers/agent/chain/src/Event.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/internal/childRun.ts"
@@ -6959,7 +6959,7 @@
     "relative": "packages/smithers/agent/chain/src/internal/ChildRunError.vibe"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/Journal.ts"
+    "relative": "packages/smithers/agent/chain/src/Journal.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/JsonBoundary.ts"
@@ -7331,7 +7331,7 @@
     "relative": "packages/smithers/flows/patterns/src/internal/Decorate.ts"
    },
    {
-    "relative": "packages/smithers/flows/patterns/src/Pattern.ts"
+    "relative": "packages/smithers/flows/patterns/src/Pattern.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/MemoryError.vibe"
@@ -7388,7 +7388,7 @@
     "relative": "packages/smithers/agent/memory/src/internal/Fts.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/Store.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
@@ -7415,10 +7415,10 @@
     "relative": "packages/smithers/agent/memory/src/internal/MemoryIndexes.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/MemorySchema.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/Migrations.ts"
@@ -7628,7 +7628,7 @@
     "relative": "packages/smithers/agent/model/src/Model.vibe"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/ModelAuthor.ts"
+    "relative": "packages/smithers/agent/chain/src/ModelAuthor.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/internal/prompts.ts"
@@ -7745,7 +7745,7 @@
     "relative": "packages/smithers/agent/registry/src/Registry.ts"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/RegistryCatalog.ts"
+    "relative": "packages/smithers/agent/chain/src/RegistryCatalog.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/SubChains.ts"
@@ -7755,6 +7755,66 @@
    }
   ],
   "warnings": [
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/Author.vibe"
+    },
+    "line": 20,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "AuthorError extends Schema.TaggedError; a schema error declaration, schema error AuthorError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/Author.vibe"
+    },
+    "line": 96,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "Author extends Context.Service; in VibeLang a service is a service declaration: service Author { … }.\n  No quick fix: its members come from Service; write them in the declaration. Keep its key in the declaration: static readonly key = \"/chain/Author\"."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/Catalog.vibe"
+    },
+    "line": 25,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "CallError extends Schema.TaggedError; a schema error declaration, schema error CallError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/Catalog.vibe"
+    },
+    "line": 102,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "Catalog extends Context.Service; in VibeLang a service is a service declaration: service Catalog { … }.\n  No quick fix: its members come from Service; write them in the declaration. Keep its key in the declaration: static readonly key = \"/chain/Catalog\"."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/Journal.vibe"
+    },
+    "line": 24,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "JournalError extends Schema.TaggedError; a schema error declaration, schema error JournalError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/Journal.vibe"
+    },
+    "line": 50,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "Journal extends Context.Service; in VibeLang a service is a service declaration: service Journal { … }.\n  No quick fix: its members come from Service; write them in the declaration. Keep its key in the declaration: static readonly key = \"/chain/Journal\"."
+   },
    {
     "file": {
      "relative": "packages/smithers/agent/chain/src/Steering.vibe"
@@ -7790,10 +7850,30 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/chain/src/Author.vibe"
+     }
+    ],
+    "code": "/**\n * The author seat — the one thing the chain needs from a model.\n *\n * The seat is mocked at this boundary, not at the provider wire: the model\n * layer sits beneath a production implementation and no chain code changes\n * when it arrives. The author call carries no tools; the root stays\n * clean (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Ref from \"effect/Ref\";\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\n/**\n * A failure of the author seat: the seat is unreachable, or a scripted mock\n * ran out of outputs.\n *\n * @category errors\n * @since 0.1.0\n * @slop\n */\nexport class AuthorError extends Schema.TaggedError()(\"/chain/AuthorError\", {\n    code: Schema.Literals([\"author_unavailable\", \"exhausted\"]),\n    message: Schema.String,\n    /**\n     * The underlying typed condition when one exists — a model failure code\n     * (`rate_limited`, `context_overflow`), a permission tag, or a stop\n     * reason (`length`, `content-filter`) — so callers branch on it rather\n     * than parsing prose.\n     */\n    cause: Schema.optional(Schema.String)\n}) {\n}\n/**\n * Normalizes an author call's payload into its context lines: scripts call\n * the author entry with `{ context: [...] }`, and anything else — a script\n * passing garbage stays a journaled observation, never a crash — normalizes\n * to no context.\n * Context elements use string coercion, falling back to JSON text when\n * coercion fails, or `[unprintable context]` if serialization also fails.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const contextOf = (payload) => {\n    if (typeof payload === \"object\" && payload !== null && \"context\" in payload) {\n        const context = payload.context;\n        if (Array.isArray(context)) {\n            return context.map((part) => {\n                try {\n                    return String(part);\n                }\n                catch {\n                    try {\n                        return JSON.stringify(part) ?? \"[unprintable context]\";\n                    }\n                    catch {\n                        return \"[unprintable context]\";\n                    }\n                }\n            });\n        }\n    }\n    return [];\n};\n/**\n * The author seat service tag.\n *\n * @category services\n * @since 0.1.0\n * @slop\n */\nexport class Author extends Context.Service()(\"/chain/Author\") {\n}\n/**\n * Builds a seat from an implementation.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (implementation) => Author.of(implementation);\n/**\n * A seat whose every operation fails as unavailable, with per-operation\n * overrides — the default a test starts from.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const makeNoop = (overrides = {}) => make({\n    author: Effect.fn(\"Author.author\")(() => Effect.fail(new AuthorError({ code: \"author_unavailable\", message: \"author is unavailable\" }))),\n    ...overrides\n});\n/**\n * The unavailable seat as a layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerNoop = (overrides = {}) => Layer.succeed(Author)(makeNoop(overrides));\n/**\n * A reactive mock: the test supplies the function from input to raw model\n * output, and can capture the inputs it saw.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerFn = (f) => Layer.succeed(Author)(make({\n    author: Effect.fn(\"Author.author\")((input) => Effect_1.sync(() => { return f(input); }))\n}));\n/**\n * A scripted mock: pops canned raw outputs in order and fails with\n * `exhausted` when asked for more than it holds. The outputs are copied\n * when the layer is constructed, so a later edit of the caller's array\n * changes nothing.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerMock = (outputs) => {\n    // Snapshot now, not when the lazy layer is later built: a caller may\n    // mutate its array after constructing the layer but before providing it.\n    const snapshot = [...outputs];\n    return Layer.effect(Author)(Effect_1.gen(function* () {\n        const remaining = yield* Ref.make(snapshot);\n        return make({\n            author: Effect.fn(\"Author.author\")(Effect_1.fnUntraced(function* () {\n                const next = yield* Ref.modify(remaining, (queue) => [queue[0], queue.slice(1)]);\n                if (next === undefined) {\n                    return yield* Effect_1.fail(new AuthorError({\n                        code: \"exhausted\",\n                        message: `the mock author ran out of outputs after ${snapshot.length}`\n                    }));\n                }\n                return next;\n            }))\n        });\n    }));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Author.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/Author.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;GASG;;;;;;;AAEH;;;;;;;GAOG;AACH,MAAM,OAAO,WAAY,SAAQ,MAAM,CAAC,WAAW,EAAe,CAAC,oBAAoB,EAAE;IACvF,IAAI,EAAE,MAAM,CAAC,QAAQ,CAAC,CAAC,oBAAoB,EAAE,WAAW,CAAC,CAAC;IAC1D,OAAO,EAAE,MAAM,CAAC,MAAM;IACtB;;;;;OAKG;IACH,KAAK,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;CACtC,CAAC;CAAG;AAeL;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,OAAgB,EAAyB,EAAE;IACnE,IAAI,OAAO,OAAO,KAAK,QAAQ,IAAI,OAAO,KAAK,IAAI,IAAI,SAAS,IAAI,OAAO,EAAE,CAAC;QAC5E,MAAM,OAAO,GAAI,OAAyC,CAAC,OAAO,CAAA;QAClE,IAAI,KAAK,CAAC,OAAO,CAAC,OAAO,CAAC,EAAE,CAAC;YAC3B,OAAO,OAAO,CAAC,GAAG,CAAC,CAAC,IAAI,EAAE,EAAE;gBAC1B,IAAI,CAAC;oBACH,OAAO,MAAM,CAAC,IAAI,CAAC,CAAA;gBACrB,CAAC;gBAAC,MAAM,CAAC;oBACP,IAAI,CAAC;wBACH,OAAO,IAAI,CAAC,SAAS,CAAC,IAAI,CAAC,IAAI,uBAAuB,CAAA;oBACxD,CAAC;oBAAC,MAAM,CAAC;wBACP,OAAO,uBAAuB,CAAA;oBAChC,CAAC;gBACH,CAAC;YACH,CAAC,CAAC,CAAA;QACJ,CAAC;IACH,CAAC;IACD,OAAO,EAAE,CAAA;AACX,CAAC,CAAA;AAcD;;;;;;GAMG;AACH,MAAM,OAAO,MAAO,SAAQ,OAAO,CAAC,OAAO,EAAmB,CAAC,eAAe,CAAC;CAAG;AAElF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,cAAuB,EAAW,EAAE,CAAC,MAAM,CAAC,EAAE,CAAC,cAAc,CAAC,CAAA;AAEnF;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAW,EAAE,CACpE,IAAI,CAAC;IACH,MAAM,EAAE,MAAM,CAAC,EAAE,CAAC,eAAe,CAAC,CAAC,GAAG,EAAE,CACtC,MAAM,CAAC,IAAI,CAAC,IAAI,WAAW,CAAC,EAAE,IAAI,EAAE,oBAAoB,EAAE,OAAO,EAAE,uBAAuB,EAAE,CAAC,CAAC,CAC/F;IACD,GAAG,SAAS;CACb,CAAC,CAAA;AAEJ;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAiB,EAAE,CAAC,KAAK,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,QAAQ,CAAC,SAAS,CAAC,CAAC,CAAA;AAExH;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,CAAC,CAA2B,EAAiB,EAAE,CACpE,KAAK,CAAC,OAAO,CAAC,MAAM,CAAC,CACnB,IAAI,CAAC;IACH,MAAM,EAAE,MAAM,CAAC,EAAE,CAAC,eAAe,CAAC,CAAC,CAAQ,KAAK,KAAK,c,CAAA,O,CAAA,MAAA,CAAC,CAAC,KAAK,CAAC,IAAA,CAAC;CAC/D,CAAC,CACH,CAAA;AAEH;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,OAA8B,EAAiB,EAAE;IACzE,qEAAqE;IACrE,yEAAyE;IACzE,MAAM,QAAQ,GAAG,CAAC,GAAG,OAAO,CAAC,CAAA;IAC7B,OAAO,KAAK,CAAC,MAAM,CAAC,MAAM,CAAC,CACzB,a,CAAA;QACE,MAAM,SAAS,UAAO,GAAG,CAAC,IAAI,CAAwB,QAAQ,CAAC,CAAA;QAC/D,OAAO,IAAI,CAAC;YACV,MAAM,EAAE,MAAM,CAAC,EAAE,CAAC,eAAe,CAAC,CAAC;gBACjC,MAAM,IAAI,UAAO,GAAG,CAAC,MAAM,CAAC,SAAS,EAAE,CAAC,KAAK,EAAE,EAAE,CAAC,CAAC,KAAK,CAAC,CAAC,CAAC,EAAE,KAAK,CAAC,KAAK,CAAC,CAAC,CAAC,CAAU,CAAC,CAAA;gBACtF,IAAI,IAAI,KAAK,SAAS,EAAE,CAAC;oBACvB,4BAAM,IAAI,WAAW,CAAC;wBACpB,IAAI,EAAE,WAAW;wBACjB,OAAO,EAAE,4CAA4C,QAAQ,CAAC,MAAM,EAAE;qBACvE,CAAC,EAAA;gBACJ,CAAC;gBACD,OAAO,IAAI,CAAA;YACb,CAAC,CAAA,CAAC;SACH,CAAC,CAAA;IACJ,CAAC,CAAA,CACF,CAAA;AACH,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/chain/src/CallKey.vibe"
      }
     ],
-    "code": "/**\n * The durable identity of one settled call within a link.\n *\n * Re-running a link with the same script digest prefix-matches its settled\n * calls by ordinal; editing one character of a script re-keys exactly the\n * calls inside it and nothing else. Governing contract:\n * https://chain.smithers.sh/contract/.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * A link's index in its chain, counted from zero.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const LinkId = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)));\n/**\n * A call's position within its link, counted from zero in issue order.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Ordinal = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)));\n/**\n * The scriptDigest recorded for calls the harness itself issues (bootstrap\n * and recovery author calls), which belong to no authored script.\n *\n * @category constants\n * @since 0.1.0\n * @slop\n */\nexport const harnessDigest = \"\";\n/**\n * The four components a settled call is keyed by: its link, the digest of\n * the script that issued it, its ordinal in that script, and the digest of\n * the entry it named.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const CallKey = Schema.Struct({\n    link: LinkId,\n    scriptDigest: Schema.String,\n    ordinal: Ordinal,\n    entryDigest: Schema.String,\n});\n/**\n * Builds a call key from its four components.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (link, scriptDigest, ordinal, entryDigest) => ({ link, scriptDigest, ordinal, entryDigest });\n",
+    "code": "/**\n * The durable identity of one settled call within a link.\n *\n * Re-running a link with the same script digest prefix-matches its settled\n * calls by ordinal; editing one character of a script re-keys exactly the\n * calls inside it and nothing else. Governing contract:\n * https://chain.smithers.sh/contract/.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * A link's index in its chain, counted from zero.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const LinkId = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)));\n/**\n * A call's position within its link, counted from zero in issue order.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Ordinal = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)));\n/**\n * The scriptDigest recorded for calls the harness itself issues (bootstrap\n * and recovery author calls), which belong to no authored script.\n *\n * @category constants\n * @since 0.1.0\n * @slop\n */\nexport const harnessDigest = \"\";\n/**\n * The four components a settled call is keyed by: its link, the digest of\n * the script that issued it, its ordinal in that script, and the digest of\n * the entry it named.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const CallKey = Schema.Struct({\n    link: LinkId,\n    scriptDigest: Schema.String,\n    ordinal: Ordinal,\n    entryDigest: Schema.String\n});\n/**\n * Builds a call key from its four components.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (link, scriptDigest, ordinal, entryDigest) => ({ link, scriptDigest, ordinal, entryDigest });\n",
     "map": {
      "version": 3,
      "file": "CallKey.js",
@@ -7810,10 +7890,30 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/chain/src/Catalog.vibe"
+     }
+    ],
+    "code": "/**\n * The catalog of entries a script may call — gate 3 is membership in it.\n *\n * Every effect goes through this one door: a call names a visible entry,\n * pinned by its declaration digest, and settles as a journaled event\n * (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Digest from \"@smthrs/core/Digest\";\nimport { Clock, Context, Layer, Random, Schema } from \"effect\";\n/**\n * A call that reached its entry and failed there. The chain journals it as\n * an observation rather than crashing the run. The message is journaled\n * verbatim and shown to the model on the next link, so a handler must keep\n * credentials and private data out of it.\n *\n * @category errors\n * @since 0.1.0\n * @slop\n */\nexport class CallError extends Schema.TaggedError()(\"/chain/CallError\", {\n    name: Schema.String,\n    message: Schema.String,\n    /**\n     * The underlying stable code when the failing subsystem has one (a\n     * memory error code, a permission verdict), so callers branch on it\n     * rather than parsing prose.\n     */\n    cause: Schema.optional(Schema.String)\n}) {\n}\n/**\n * The catalog service tag.\n *\n * @category services\n * @since 0.1.0\n * @slop\n */\nexport class Catalog extends Context.Service()(\"/chain/Catalog\") {\n}\n/**\n * The declaration digest that pins an entry's identity into every call key\n * that names it.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const entryDigest = (entry) => \n// An empty override falls back too: every call key pins a non-empty\n// digest, whatever the host supplied. Declared capabilities are part\n// of the declaration: narrowing or widening a claim re-keys the calls\n// settled under it.\nentry.digest !== undefined && entry.digest !== \"\"\n    ? entry.digest\n    : Digest.digest(Digest.canonical({\n        capabilities: entry.capabilities ?? null,\n        description: entry.description,\n        name: entry.name\n    }));\n/**\n * One entry copied out of the caller's object.\n *\n * The outer array is not enough. `Prompt.catalogBlock` reads `entries` and\n * gate 3 reads `lookup`, and both must keep answering about the SAME\n * declaration: renaming a caller-owned entry after construction would leave\n * the block advertising one name while the index still answers to another.\n * Only the declaration is copied — the handler is the entry's behavior and is\n * held by reference.\n */\nconst snapshotEntry = (entry) => Object.freeze({\n    capabilities: entry.capabilities === undefined ? undefined : Object.freeze([...entry.capabilities]),\n    description: entry.description,\n    digest: entry.digest,\n    handler: entry.handler,\n    settleOnInterrupt: entry.settleOnInterrupt,\n    name: entry.name\n});\n/**\n * Builds a catalog over the given entries, indexed by name.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (entries) => {\n    // One frozen snapshot backs BOTH the advertised list and the dispatch\n    // index. Retaining the caller's array would let a later push or pop move\n    // `Prompt.catalogBlock` (which reads `entries`) away from `lookup` (which\n    // gate 3 decides membership with), so the model would be shown a call the\n    // chain refuses, or refused a call the model was never shown.\n    const snapshot = Object.freeze(entries.map(snapshotEntry));\n    const byName = new Map(snapshot.map((entry) => [entry.name, entry]));\n    return Catalog.of({\n        entries: snapshot,\n        lookup: (name) => byName.get(name)\n    });\n};\n/**\n * The system entries every sealed realm relies on: time and randomness as\n * ordinary journaled calls, so replay is deterministic with no special\n * identity (https://chain.smithers.sh/contract/).\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const system = [\n    {\n        // The empty claim set is deliberate: these are the harness's own\n        // journaled reads, claiming no external authority, so the envelope\n        // seam has nothing to evaluate and every ruleset admits them.\n        capabilities: [],\n        description: \"The current wall-clock time in epoch milliseconds, journaled for replay\",\n        handler: () => Clock.currentTimeMillis,\n        name: \"sys/now\"\n    },\n    {\n        capabilities: [],\n        description: \"A uniform random number in [0, 1), journaled for replay\",\n        handler: () => Random.next,\n        name: \"sys/random\"\n    }\n];\n/**\n * Appends the system entries to a host's own — the composition every\n * sealed-realm host wants, since the QuickJS prelude deletes `Date` and\n * `Math.random` on the promise that `sys/now` and `sys/random` exist.\n *\n * The system entries come LAST because {@link make} indexes last-wins:\n * nothing a host passes can shadow `sys/now` or `sys/random` with an\n * unjournaled clock or RNG, which is what replay determinism rests on.\n * Every composition in the package goes through here, so the ordering has\n * one implementation rather than one per host.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const withSystem = (entries) => [...entries, ...system];\n/**\n * The empty catalog: every call misses gate 3.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const makeNoop = () => make([]);\n/**\n * A catalog over the given entries, as a layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layer = (entries) => Layer.succeed(Catalog)(make(entries));\n/**\n * The empty catalog as a layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerNoop = Layer.succeed(Catalog)(makeNoop());\n",
+    "map": {
+     "version": 3,
+     "file": "Catalog.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/Catalog.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/chain/src/Observation.vibe"
      }
     ],
-    "code": "/**\n * A typed, journaled gate observation.\n *\n * A failed gate is never a harness crash: it is recorded in the journal and\n * projected into the next authored link's context so the model corrects it\n * (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Which gate produced the observation, or which stage failed.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Kind = Schema.Literals([\n    \"shape\",\n    \"fuel\",\n    \"catalog\",\n    \"call_failed\",\n    \"script_failed\",\n    \"denied\",\n]);\n/**\n * One gate observation: its kind and the prose the next authoring reads.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Observation = Schema.Struct({\n    kind: Kind,\n    message: Schema.String,\n});\n/**\n * Builds an observation, capping its message at 8192 UTF-16 code units\n * including a truncation marker.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (kind, message) => ({\n    kind,\n    message: message.length > 8192 ? `${message.slice(0, 8192 - \"[truncated]\".length)}[truncated]` : message,\n});\n/**\n * Renders an observation as one context line for the next author call,\n * applying the message cap to older journal entries too.\n *\n * @category projections\n * @since 0.1.0\n * @slop\n */\nexport const render = (observation) => `[${observation.kind}] ${make(observation.kind, observation.message).message}`;\n",
+    "code": "/**\n * A typed, journaled gate observation.\n *\n * A failed gate is never a harness crash: it is recorded in the journal and\n * projected into the next authored link's context so the model corrects it\n * (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * Which gate produced the observation, or which stage failed.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Kind = Schema.Literals([\n    \"shape\",\n    \"fuel\",\n    \"catalog\",\n    \"call_failed\",\n    \"script_failed\",\n    \"denied\"\n]);\n/**\n * One gate observation: its kind and the prose the next authoring reads.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Observation = Schema.Struct({\n    kind: Kind,\n    message: Schema.String\n});\n/**\n * Builds an observation, capping its message at 8192 UTF-16 code units\n * including a truncation marker.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (kind, message) => ({\n    kind,\n    message: message.length > 8192 ? `${message.slice(0, 8192 - \"[truncated]\".length)}[truncated]` : message\n});\n/**\n * Renders an observation as one context line for the next author call,\n * applying the message cap to older journal entries too.\n *\n * @category projections\n * @since 0.1.0\n * @slop\n */\nexport const render = (observation) => `[${observation.kind}] ${make(observation.kind, observation.message).message}`;\n",
     "map": {
      "version": 3,
      "file": "Observation.js",
@@ -7825,6 +7925,66 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;GAQG;;AAEH;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,MAAM,CAAC,QAAQ,CAAC;IAClC,OAAO;IACP,MAAM;IACN,SAAS;IACT,aAAa;IACb,eAAe;IACf,QAAQ;CACT,CAAC,CAAA;AAWF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,MAAM,CAAC,MAAM,CAAC;IACvC,IAAI,EAAE,IAAI;IACV,OAAO,EAAE,MAAM,CAAC,MAAM;CACvB,CAAC,CAAA;AAWF;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,IAAU,EAAE,OAAe,EAAe,EAAE,CAAC,CAAC;IACjE,IAAI;IACJ,OAAO,EAAE,OAAO,CAAC,MAAM,GAAG,IAAI,CAAC,CAAC,CAAC,GAAG,OAAO,CAAC,KAAK,CAAC,CAAC,EAAE,IAAI,GAAG,aAAa,CAAC,MAAM,CAAC,aAAa,CAAC,CAAC,CAAC,OAAO;CACzG,CAAC,CAAA;AAEF;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,CAAC,WAAwB,EAAU,EAAE,CACzD,IAAI,WAAW,CAAC,IAAI,KAAK,IAAI,CAAC,WAAW,CAAC,IAAI,EAAE,WAAW,CAAC,OAAO,CAAC,CAAC,OAAO,EAAE,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/Script.vibe"
+     }
+    ],
+    "code": "/**\n * The authored artifact of one link: flow-script text plus its content\n * digest.\n *\n * The digest is the replay identity of every call the script makes\n * (https://chain.smithers.sh/contract/). Extraction implements gate 1\n * (shape): the author's output must contain exactly one fenced flow block.\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as Digest from \"@smthrs/core/Digest\";\n/**\n * A link's flow-script text paired with the content digest that keys every\n * call it makes.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Script = Schema.Struct({\n    text: Schema.String,\n    digest: Schema.String\n});\n/**\n * Builds a script from its text, digesting it.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (text) => ({ text, digest: Digest.digest(text) });\n// Closes the way a markdown fence closes: on a line holding only a run of\n// backticks at least as long as the opening run, plus trailing blanks. A\n// lazy match on any \"\\n```\" would end the block at an inner \"```js\" line\n// inside a template literal and hand the runner a truncated script.\nconst fence = /(?<!`)(`{3,})flow\\n([\\s\\S]*?)\\n\\1`*[ \\t]*(?=\\n|$)/g;\n/**\n * Applies the shape gate to raw author output: exactly one fenced `flow`\n * block, whose body becomes the script. The block opens with three or more\n * backticks followed by `flow` and closes on a line holding only at least\n * as many backticks, so a longer opening fence can carry inner fences.\n * CRLF line endings are read as LF, so the script text always uses LF.\n *\n * @category gates\n * @since 0.1.0\n * @slop\n */\nexport const extract = (raw) => {\n    // Some routes return CRLF text; the fence only knows LF line ends.\n    const blocks = [...raw.replace(/\\r\\n/g, \"\\n\").matchAll(fence)];\n    const first = blocks[0];\n    if (first === undefined) {\n        return { _tag: \"Rejected\", reason: \"the author output contains no ```flow block\" };\n    }\n    if (blocks.length > 1) {\n        return {\n            _tag: \"Rejected\",\n            reason: `the author output contains ${blocks.length} \\`\\`\\`flow blocks, expected exactly one`\n        };\n    }\n    // The capture group always participates when the fence matches.\n    return { _tag: \"Extracted\", script: make(first[2]) };\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Script.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/Script.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;GASG;;AAEH,OAAO,KAAK,MAAM,MAAM,qBAAqB,CAAA;AAE7C;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,MAAM,CAAC;IAClC,IAAI,EAAE,MAAM,CAAC,MAAM;IACnB,MAAM,EAAE,MAAM,CAAC,MAAM;CACtB,CAAC,CAAA;AAWF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,IAAY,EAAU,EAAE,CAAC,CAAC,EAAE,IAAI,EAAE,MAAM,EAAE,MAAM,CAAC,MAAM,CAAC,IAAI,CAAC,EAAE,CAAC,CAAA;AAcrF,0EAA0E;AAC1E,yEAAyE;AACzE,yEAAyE;AACzE,oEAAoE;AACpE,MAAM,KAAK,GAAG,oDAAoD,CAAA;AAElE;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,CAAC,GAAW,EAAc,EAAE;IACjD,mEAAmE;IACnE,MAAM,MAAM,GAAG,CAAC,GAAG,GAAG,CAAC,OAAO,CAAC,OAAO,EAAE,IAAI,CAAC,CAAC,QAAQ,CAAC,KAAK,CAAC,CAAC,CAAA;IAC9D,MAAM,KAAK,GAAG,MAAM,CAAC,CAAC,CAAC,CAAA;IACvB,IAAI,KAAK,KAAK,SAAS,EAAE,CAAC;QACxB,OAAO,EAAE,IAAI,EAAE,UAAU,EAAE,MAAM,EAAE,6CAA6C,EAAE,CAAA;IACpF,CAAC;IACD,IAAI,MAAM,CAAC,MAAM,GAAG,CAAC,EAAE,CAAC;QACtB,OAAO;YACL,IAAI,EAAE,UAAU;YAChB,MAAM,EAAE,8BAA8B,MAAM,CAAC,MAAM,0CAA0C;SAC9F,CAAA;IACH,CAAC;IACD,gEAAgE;IAChE,OAAO,EAAE,IAAI,EAAE,WAAW,EAAE,MAAM,EAAE,IAAI,CAAC,KAAK,CAAC,CAAC,CAAW,CAAC,EAAE,CAAA;AAChE,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/Outcome.vibe"
+     }
+    ],
+    "code": "/**\n * The trampoline outcomes a link can end with.\n *\n * `done` completes the chain, `to` hands off to a successor script, and\n * `park` suspends the lineage with a typed waiting reason. There is no\n * agent-loop object: continuation is whatever the script returns\n * (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as Script from \"./Script.js\";\n/**\n * What a parked lineage is waiting for.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const ParkCode = Schema.Literals([\"approval\", \"event\", \"timer\", \"quota\", \"plugin\"]);\n/**\n * A park's typed code plus the prose a reader needs to act on it.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const ParkReason = Schema.Struct({\n    code: ParkCode,\n    message: Schema.String\n});\n/**\n * The chain completed, carrying its result value.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Done = Schema.TaggedStruct(\"Done\", { value: Schema.Json });\n/**\n * The link hands off to a successor script — the trampoline's one bounce.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const To = Schema.TaggedStruct(\"To\", { script: Script.Script });\n/**\n * The lineage suspends, carrying the reason it is waiting.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Park = Schema.TaggedStruct(\"Park\", { reason: ParkReason });\n/**\n * Every outcome a link can end with.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Outcome = Schema.Union([Done, To, Park]);\n/**\n * Completes the chain with a value; `undefined` becomes `null`, the one\n * JSON representation of \"no value\".\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const done = (value) => ({ _tag: \"Done\", value: value ?? null });\n/**\n * Continues the chain with a successor script.\n *\n * The digest is RE-DERIVED from the text and the caller's is discarded.\n * Scripts are model-authored and `to` is in their scope, so a script that\n * passed `{ text, digest }` through unchanged would choose its successor's\n * replay identity: two different texts could share one digest, and the\n * successor's calls would prefix-match a previous script's settled results\n * instead of re-keying. A script's digest is the digest of its text, always.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const to = (script) => ({ _tag: \"To\", script: Script.make(script.text) });\n/**\n * Suspends the lineage with a typed waiting reason.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const park = (code, message = \"\") => ({ _tag: \"Park\", reason: { code, message } });\n",
+    "map": {
+     "version": 3,
+     "file": "Outcome.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/Outcome.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;GASG;;AAEH,OAAO,KAAK,MAAM,MAAM,aAAe,CAAA;AAEvC;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,UAAU,EAAE,OAAO,EAAE,OAAO,EAAE,OAAO,EAAE,QAAQ,CAAC,CAAC,CAAA;AAW1F;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,MAAM,CAAC,MAAM,CAAC;IACtC,IAAI,EAAE,QAAQ;IACd,OAAO,EAAE,MAAM,CAAC,MAAM;CACvB,CAAC,CAAA;AAWF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,MAAM,CAAC,YAAY,CAAC,MAAM,EAAE,EAAE,KAAK,EAAE,MAAM,CAAC,IAAI,EAAE,CAAC,CAAA;AAWvE;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,EAAE,GAAG,MAAM,CAAC,YAAY,CAAC,IAAI,EAAE,EAAE,MAAM,EAAE,MAAM,CAAC,MAAM,EAAE,CAAC,CAAA;AAWtE;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,MAAM,CAAC,YAAY,CAAC,MAAM,EAAE,EAAE,MAAM,EAAE,UAAU,EAAE,CAAC,CAAA;AAWvE;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,MAAM,CAAC,KAAK,CAAC,CAAC,IAAI,EAAE,EAAE,EAAE,IAAI,CAAC,CAAC,CAAA;AA0CrD;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,KAA8B,EAAQ,EAAE,CAAC,CAAC,EAAE,IAAI,EAAE,MAAM,EAAE,KAAK,EAAE,KAAK,IAAI,IAAI,EAAE,CAAC,CAAA;AAEtG;;;;;;;;;;;;;GAaG;AACH,MAAM,CAAC,MAAM,EAAE,GAAG,CAAC,MAAqB,EAAM,EAAE,CAAC,CAAC,EAAE,IAAI,EAAE,IAAI,EAAE,MAAM,EAAE,MAAM,CAAC,IAAI,CAAC,MAAM,CAAC,IAAI,CAAC,EAAE,CAAC,CAAA;AAEnG;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,IAAc,EAAE,OAAO,GAAG,EAAE,EAAQ,EAAE,CAAC,CAAC,EAAE,IAAI,EAAE,MAAM,EAAE,MAAM,EAAE,EAAE,IAAI,EAAE,OAAO,EAAE,EAAE,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/Event.vibe"
+     }
+    ],
+    "code": "/**\n * The journal event vocabulary of a chain, and the pure folds over it.\n *\n * The journal is the only state. The call cache used for replay, the\n * observation context handed to recovery author calls, and the terminal\n * verdict are all pure folds over the event array — nothing else is stored\n * anywhere (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as CallKey from \"./CallKey.js\";\nimport * as Observation from \"./Observation.js\";\nimport * as Outcome from \"./Outcome.js\";\nimport * as Script from \"./Script.js\";\n/**\n * The chain a scoped event belongs to. Omitted at the root — existing\n * journals stay byte-identical — and set to the deterministic child id\n * (`parent-chain/link.ordinal`) for sub-chain events.\n *\n * @category models\n * @since 0.1.0\n */\nconst scoped = { chain: Schema.optional(Schema.String) };\n/**\n * The chain's first event: the goal it was started with and the caller's\n * envelope.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const ChainStarted = Schema.TaggedStruct(\"ChainStarted\", {\n    ...scoped,\n    goal: Schema.String,\n    envelope: Schema.Json\n});\n/**\n * The script a link will execute, recorded before it runs so a resumed link\n * replays the same source.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const LinkAuthored = Schema.TaggedStruct(\"LinkAuthored\", {\n    ...scoped,\n    link: CallKey.LinkId,\n    script: Script.Script\n});\n/**\n * One call that reached an entry and produced a result — the unit the\n * replay cache is keyed by.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const CallSettled = Schema.TaggedStruct(\"CallSettled\", {\n    ...scoped,\n    link: CallKey.LinkId,\n    key: CallKey.CallKey,\n    name: Schema.String,\n    payload: Schema.Json,\n    result: Schema.Json\n});\n/**\n * One call a gate refused, recorded as the observation the next authoring\n * reads.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const GateRejected = Schema.TaggedStruct(\"GateRejected\", {\n    ...scoped,\n    link: CallKey.LinkId,\n    ordinal: CallKey.Ordinal,\n    observation: Observation.Observation\n});\n/**\n * The outcome a link ended with — the event that advances the link counter.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const LinkEnded = Schema.TaggedStruct(\"LinkEnded\", {\n    ...scoped,\n    link: CallKey.LinkId,\n    outcome: Outcome.Outcome\n});\n/**\n * One non-empty steering drain, tied to the live author call it fed —\n * a nondeterministic boundary in the sense of `RecordBoundary`\n * (packages/smithers/agent/harness/src/EngineLike.ts), journaled so a re-executed attempt reuses the recorded lines. Empty\n * drains are not journaled: a settled author call already pins its\n * context in its `CallSettled` payload.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const SteeringDrained = Schema.TaggedStruct(\"SteeringDrained\", {\n    ...scoped,\n    link: CallKey.LinkId,\n    ordinal: CallKey.Ordinal,\n    messages: Schema.Array(Schema.String)\n});\n/**\n * Every event a chain can journal.\n *\n * @category models\n * @since 0.1.0\n * @slop\n */\nexport const Event = Schema.Union([ChainStarted, LinkAuthored, CallSettled, GateRejected, LinkEnded, SteeringDrained]);\n/**\n * Whether an event belongs to the given chain scope.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const inChain = (event, chain) => (event.chain ?? \"\") === chain;\n/**\n * Whether the chain has recorded its `ChainStarted` event.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const started = (events, chain = \"\") => events.some((event) => event._tag === \"ChainStarted\" && inChain(event, chain));\n/**\n * The index of the current link: links end strictly in order, so the count\n * of `LinkEnded` events names the link now in progress.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const linkCount = (events, chain = \"\") => events.filter((event) => event._tag === \"LinkEnded\" && inChain(event, chain)).length;\n/**\n * The script authored for a link, if any. Link 0 (bootstrap) never has one.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const authored = (events, link, chain = \"\") => {\n    for (const event of events) {\n        if (event._tag === \"LinkAuthored\" && event.link === link && inChain(event, chain))\n            return event.script;\n    }\n    return undefined;\n};\n/**\n * The settled calls of a link, keyed by ordinal — the replay cache.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const settled = (events, link, chain = \"\") => {\n    const calls = new Map();\n    for (const event of events) {\n        if (event._tag === \"CallSettled\" && event.link === link && inChain(event, chain)) {\n            calls.set(event.key.ordinal, event);\n        }\n    }\n    return calls;\n};\n/**\n * The gate rejections of a link, keyed by ordinal — replayed as aborts so a\n * resumed link never re-executes a rejected call.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const rejected = (events, link, chain = \"\") => {\n    const rejections = new Map();\n    for (const event of events) {\n        if (event._tag === \"GateRejected\" && event.link === link && inChain(event, chain)) {\n            rejections.set(event.ordinal, event);\n        }\n    }\n    return rejections;\n};\n/**\n * All observations recorded for a link, in journal order — the material a\n * recovery author call projects into its context.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const observations = (events, link, chain = \"\") => events.flatMap((event) => event._tag === \"GateRejected\" && event.link === link && inChain(event, chain) ? [event.observation] : []);\n/**\n * Every steering line recorded for a link, in drain order. Steering is\n * link-cumulative: once drained into a link it reaches every subsequent\n * author attempt of that link, so a rejected attempt never swallows the\n * user's instruction.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const steeringLines = (events, link, chain = \"\") => events.flatMap((event) => event._tag === \"SteeringDrained\" && event.link === link && inChain(event, chain) ? event.messages : []);\n/**\n * The ordinals of a link's recorded drains — a resumed execution never\n * re-drains a boundary it already consumed.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const steeredOrdinals = (events, link, chain = \"\") => new Set(events.flatMap((event) => event._tag === \"SteeringDrained\" && event.link === link && inChain(event, chain) ? [event.ordinal] : []));\n/**\n * The chain's terminal outcome, if it has one: the last `LinkEnded` whose\n * outcome is `Done` or `Park`. A replay of a finished chain returns this\n * without executing anything.\n *\n * @category folds\n * @since 0.1.0\n * @slop\n */\nexport const terminal = (events, chain = \"\") => {\n    const last = [...events].reverse().find((event) => event._tag === \"LinkEnded\" && inChain(event, chain));\n    if (last === undefined)\n        return undefined;\n    return last.outcome._tag === \"To\" ? undefined : last.outcome;\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Event.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/Event.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {
@@ -7844,7 +8004,27 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;GAIG;AAGH,OAAO,KAAK,OAAO,MAAM,eAAe,CAAA;AAGxC;;;;;GAKG;AACH,MAAM,OAAO,aAAc,SAAQ,OAAO,CAAC,SAAS;IACzC,KAAK,CAA4C;IAE1D,YAAY,KAAiD;QAC3D,KAAK,CAAC,EAAE,KAAK,EAAE,KAAK,CAAC,IAAI,EAAE,OAAO,EAAE,GAAG,KAAK,CAAC,IAAI,KAAK,KAAK,CAAC,OAAO,EAAE,EAAE,IAAI,EAAE,OAAO,EAAE,CAAC,CAAA;QACvF,IAAI,CAAC,KAAK,GAAG,KAAK,CAAA;IACpB,CAAC;CACF"
+     "mappings": "AAAA;;;;GAIG;AAGH,OAAO,KAAK,OAAO,MAAM,eAAiB,CAAA;AAG1C;;;;;GAKG;AACH,MAAM,OAAO,aAAc,SAAQ,OAAO,CAAC,SAAS;IACzC,KAAK,CAA4C;IAE1D,YAAY,KAAiD;QAC3D,KAAK,CAAC,EAAE,KAAK,EAAE,KAAK,CAAC,IAAI,EAAE,OAAO,EAAE,GAAG,KAAK,CAAC,IAAI,KAAK,KAAK,CAAC,OAAO,EAAE,EAAE,IAAI,EAAE,OAAO,EAAE,CAAC,CAAA;QACvF,IAAI,CAAC,KAAK,GAAG,KAAK,CAAA;IACpB,CAAC;CACF"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/Journal.vibe"
+     }
+    ],
+    "code": "/**\n * The append-only journal port — the chain's only state.\n *\n * The in-memory layer is a deletable stand-in for the Smithers engine journal:\n * the e2e suite asserts journal contents, not this API, so the suite\n * survives the engine swap (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\n/**\n * A journal that cannot be appended to or read.\n *\n * @category errors\n * @since 0.1.0\n * @slop\n */\nexport class JournalError extends Schema.TaggedError()(\"/chain/JournalError\", {\n    code: Schema.Literals([\"journal_conflict\", \"journal_unavailable\"]).pipe(Schema.withConstructorDefault(Effect.succeed(\"journal_unavailable\"))),\n    message: Schema.String\n}) {\n}\n/**\n * The journal service tag.\n *\n * @category services\n * @since 0.1.0\n * @slop\n */\nexport class Journal extends Context.Service()(\"/chain/Journal\") {\n}\n/**\n * Builds a journal from an implementation.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (implementation) => Journal.of(implementation);\nconst unavailable = (operation) => new JournalError({ message: `${operation} is unavailable` });\n/**\n * A journal whose every operation fails as unavailable, with per-operation\n * overrides — the default a test starts from.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const makeNoop = (overrides = {}) => make({\n    append: Effect.fn(\"Journal.append\")(() => Effect.fail(unavailable(\"append\"))),\n    read: Effect.fail(unavailable(\"read\")),\n    ...overrides\n});\n/**\n * The unavailable journal as a layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerNoop = (overrides = {}) => Layer.succeed(Journal)(makeNoop(overrides));\n/**\n * An in-memory journal over one array, optionally seeded with prior events —\n * the seed is how tests replay and resume a chain. Appends push in place and\n * reads hand out a copy, so a reader never sees a later append and an append\n * never copies the history.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layerMemory = (initial = []) => {\n    // Snapshot now, not when the lazy layer is later built: a caller may\n    // mutate its seed after constructing the layer but before providing it.\n    const snapshot = [...initial];\n    return Layer.sync(Journal)(() => {\n        // Copy per build, so two builds of one layer never share a history.\n        const events = [...snapshot];\n        return make({\n            append: Effect.fn(\"Journal.append\")((event, expectedPosition) => Effect.suspend(() => {\n                if (events.length !== expectedPosition) {\n                    return Effect.fail(new JournalError({\n                        code: \"journal_conflict\",\n                        message: `append expected journal position ${expectedPosition}, found ${events.length}`\n                    }));\n                }\n                events.push(event);\n                return Effect.void;\n            })),\n            read: Effect_1.sync({ read: () => events.slice() }.read)\n        });\n    });\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Journal.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/Journal.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {
@@ -7870,6 +8050,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/chain/src/ModelAuthor.vibe"
+     }
+    ],
+    "code": "/**\n * The model-backed author seat.\n *\n * Requires `Model.Model` from context — production supplies a route stack,\n * tests supply a replay model — and maps an author input onto the sealed\n * request shape of the harness's sealed steps: prefix as the stable system\n * part, context lines as one user message, no tools, `toolChoice: \"none\"`\n * (https://chain.smithers.sh/contract/). Prior art, copied rather than\n * imported: the sealed steps in\n * packages/smithers/agent/harness/src/CellTurn.ts.\n *\n * @since 0.1.0\n */\nimport * as Stream from \"effect/Stream\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Model from \"@smthrs/model/Model\";\nimport * as ModelEvent from \"@smthrs/model/ModelEvent\";\nimport * as ModelRequest from \"@smthrs/model/ModelRequest\";\nimport { Effect, Layer } from \"effect\";\nimport * as Author from \"./Author.js\";\nimport { failureCode } from \"./internal/failureCode.js\";\n/**\n * Joins an assistant message's visible text parts — the one fold every\n * consumer of a settled message shares, so \"what counts as visible text\"\n * has exactly one definition.\n */\nconst visibleText = (message) => message.content\n    .filter((part) => part.type === \"text\")\n    .map((part) => part.text)\n    .join(\"\\n\");\n/**\n * The pure mapping from an author input to the wire-neutral request — the\n * same function derives test fixtures, so a mapping drift breaks the\n * replay match loudly instead of silently changing the step key.\n *\n * The prefix is host-supplied. `Prompt.assemble` places a fixed rule before\n * the catalog and encodes repository descriptions as labelled, untrusted\n * data; this mapping preserves that boundary in the system part.\n *\n * Degenerate inputs collapse to wire-valid shapes: an empty prefix emits\n * no system part at all, and an empty context (reachable from any script\n * via a garbage author payload) becomes one placeholder line — providers\n * reject empty system blocks and empty user content outright.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const requestFor = (config) => (input) => ModelRequest.ModelRequest.make({\n    modelId: config.modelId,\n    system: input.prefix === \"\" ? [] : [ModelRequest.SystemPart.make({ text: input.prefix })],\n    messages: [\n        ModelRequest.Message.user((input.context.length === 0 ? [\"(no context was provided)\"] : input.context)\n            .map((text) => ModelRequest.TextPart.make({ text })))\n    ],\n    tools: [],\n    toolChoice: \"none\",\n    params: config.params ?? ModelRequest.GenerationParams.make()\n});\nconst unavailable = (message, cause) => new Author.AuthorError({ cause, code: \"author_unavailable\", message });\n// A route stack fails with tagged errors that often carry no code of their\n// own, so the tag is the seat's last stable answer before \"unknown\".\nconst causeOf = (error) => failureCode(error, [\"code\", \"_tag\"]);\nconst describeFailure = (error) => {\n    if (typeof error === \"object\" && error !== null) {\n        const record = error;\n        const parts = [record._tag, record.code, record.message].filter((part) => typeof part === \"string\");\n        if (parts.length > 0)\n            return parts.join(\": \");\n    }\n    return String(error);\n};\n/**\n * Builds the author seat over the ambient model.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = Effect_1.fnUntraced(function* make(config) {\n    const model = yield* Model.Model;\n    const request = requestFor(config);\n    return Author.make({\n        author: Effect.fn(\"ModelAuthor.author\")((input) => Effect.mapError((Effect_1.gen(function* () {\n            const events = Array.from(yield* Stream.runCollect(model.stream(request(input))));\n            const settled = ModelEvent.ModelEvent.settledMessage(events);\n            // `settledMessage` folds an unsettled stream to stopReason\n            // \"aborted\", so one guard covers interruption, truncation\n            // (\"length\"), filtering, and provider errors alike — none of\n            // them may pass as a complete authored output.\n            if (settled.message.stopReason !== \"stop\") {\n                return yield* Effect_1.fail(unavailable(`the model stream settled with stopReason \"${settled.message.stopReason}\"`, settled.message.stopReason));\n            }\n            const text = visibleText(settled.message);\n            if (text.trim() === \"\") {\n                // A reasoning-only response is a seat failure, not an empty\n                // authored script (the harness's sealed steps in\n                // packages/smithers/agent/harness/src/CellTurn.ts fail the same way).\n                return yield* Effect_1.fail(unavailable(\"the model returned no visible text\", \"no_text\"));\n            }\n            return text;\n        })), (error) => error instanceof Author.AuthorError\n            ? error\n            : unavailable(describeFailure(error), causeOf(error))))\n    });\n});\n/**\n * The production author layer: `Author` from `Model.Model`.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layer = (config) => Layer.effect(Author.Author)(make(config));\n",
+    "map": {
+     "version": 3,
+     "file": "ModelAuthor.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/ModelAuthor.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/chain/src/internal/QuickJsJobs.vibe"
      }
     ],
@@ -7885,6 +8085,26 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC,OAAO,KAAK,YAAY,MAAM,oBAAoB,CAAA;AAClD,OAAO,KAAK,YAAY,MAAM,oBAAoB,CAAA;AAElD;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,IAA8B,EAAmC,EAAE;IACvF,IAAI,IAAI,CAAC,KAAK,KAAK,SAAS,EAAE,CAAC;QAC7B,IAAI,CAAC,OAAO,EAAE,CAAA;QACd,OAAO,MAAM,CAAC,IAAI,CAAA;IACpB,CAAC;IACD,MAAM,MAAM,GAAG,IAAI,CAAC,KAAK,CAAC,OAAO,CAAC,IAAI,CAAC,IAAI,CAAC,KAAK,CAAC,CAAA;IAClD,IAAI,CAAC,OAAO,EAAE,CAAA;IACd,OAAO,MAAM,CAAC,IAAI,CAChB,IAAI,YAAY,CAAC,aAAa,CAAC;QAC7B,IAAI,EAAE,SAAS;QACf,OAAO,EAAE,YAAY,CAAC,cAAc,CAAC,MAAM,CAAC;KAC7C,CAAC,CACH,CAAA;AACH,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/RegistryCatalog.vibe"
+     }
+    ],
+    "code": "/**\n * Projects the flow registry into the chain's catalog.\n *\n * Projection, not fusion: the registry stays the owner of discovery,\n * naming, warnings, and lazy bodies; this module renders its descriptors\n * as catalog entries at layer construction. Only callable descriptors are\n * projected — a module-bodied flow needs a host implementation and a\n * markdown-bodied flow needs a prompt runner — so the model's catalog\n * never discloses a call that is guaranteed to refuse. The system entries\n * (`sys/now`, `sys/random`) are always composed in, keeping the sealed\n * realm's promise (https://chain.smithers.sh/contract/).\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport { $catchExpression } from \"vibelang-runtime\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Descriptor from \"@smthrs/registry/Descriptor\";\nimport * as Registry from \"@smthrs/registry/Registry\";\nimport { Effect, Layer } from \"effect\";\nimport * as Catalog from \"./Catalog.js\";\n/**\n * The canonical digest of a descriptor's full declaration, and so of what\n * every catalog entry key pins.\n *\n * Re-exported from `@smthrs/registry`, which owns `FlowDescriptor`: one\n * declaration is one number here, in `@smthrs/harness`'s call identities, and\n * anywhere else that keys on a declaration.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const declarationDigest = Descriptor.declarationDigest;\nconst promptArgs = (name, payload) => {\n    if (typeof payload === \"string\")\n        return Effect.succeed(payload);\n    if (typeof payload === \"object\" && payload !== null && \"args\" in payload) {\n        const args = payload.args;\n        if (typeof args === \"string\")\n            return Effect.succeed(args);\n    }\n    return Effect.fail(new Catalog.CallError({ message: `\"${name}\" takes { args: string }`, name }));\n};\nconst markdownHandler = (registry, descriptor, digest, prompt) => Effect_1.fnUntraced(function* (payload) {\n    const args = yield* promptArgs(descriptor.name, payload);\n    // The projection is a snapshot; a refreshed registry may carry a\n    // different declaration under the same name. Re-check at call time so\n    // the journaled entryDigest never lies about what actually ran.\n    const current = yield* registry.getOption(descriptor.name);\n    if (Option.isNone(current) || declarationDigest(current.value) !== digest) {\n        return yield* Effect_1.fail(new Catalog.CallError({\n            message: `\"${descriptor.name}\" was redeclared since this catalog was built; rebuild the catalog`,\n            name: descriptor.name\n        }));\n    }\n    const rendered = yield* $catchExpression(() => registry.runPrompt(descriptor.name, { args }), (error) => Effect_1.suspend(() => { return Effect_1.fail(new Catalog.CallError({ message: `\"${descriptor.name}\" failed: ${error.message}`, name: descriptor.name })); }));\n    return yield* prompt(rendered, descriptor);\n});\n/**\n * Builds the catalog service from the ambient registry.\n *\n * Precedence when names collide: registry projection, then host extras,\n * then the system entries — later wins, so `sys/now` can never be\n * shadowed. Binding an implementation for a name the registry does not\n * know is a host configuration defect and dies at construction.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = (options = {}) => Effect_1.gen(function* () {\n    const registry = yield* Registry.Registry;\n    const implementations = options.implementations ?? new Map();\n    const descriptors = options.visible === undefined\n        ? yield* registry.visible() : (yield* registry.list()).filter(options.visible);\n    const known = new Set((yield* registry.list()).map((descriptor) => descriptor.name));\n    const unknown = [...implementations.keys()].filter((name) => !known.has(name));\n    if (unknown.length > 0) {\n        return yield* Effect.die(new Error(`implementations bind flows the registry does not know: ${unknown.join(\", \")}`));\n    }\n    const projected = descriptors.flatMap((descriptor) => {\n        const digest = declarationDigest(descriptor);\n        const bound = implementations.get(descriptor.name);\n        const handler = bound !== undefined\n            ? bound\n            : descriptor.body._tag === \"Markdown\" && options.prompt !== undefined\n                ? markdownHandler(registry, descriptor, digest, options.prompt)\n                : undefined;\n        if (handler === undefined)\n            return [];\n        return [{\n                capabilities: descriptor.capabilities,\n                description: descriptor.description,\n                digest,\n                handler,\n                name: descriptor.name\n            }];\n    });\n    return Catalog.make(Catalog.withSystem([...projected, ...(options.entries ?? [])]));\n});\n/**\n * The registry-backed catalog layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layer = (options = {}) => Layer.effect(Catalog.Catalog)(make(options));\n",
+    "map": {
+     "version": 3,
+     "file": "RegistryCatalog.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/RegistryCatalog.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    }
   ]

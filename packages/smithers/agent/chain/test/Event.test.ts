@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import * as Event from "../src/Event.ts"
-import * as Outcome from "../src/Outcome.ts"
-import * as Script from "../src/Script.ts"
+import * as Event from "../src/Event.vibe"
+import * as Outcome from "../src/Outcome.vibe"
+import * as Script from "../src/Script.vibe"
 
 const script = Script.make("return done(null)")
 

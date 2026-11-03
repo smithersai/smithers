@@ -22,7 +22,7 @@ export const Kind = Schema.Literals([
     "catalog",
     "call_failed",
     "script_failed",
-    "denied",
+    "denied"
 ]);
 /**
  * One gate observation: its kind and the prose the next authoring reads.
@@ -33,7 +33,7 @@ export const Kind = Schema.Literals([
  */
 export const Observation = Schema.Struct({
     kind: Kind,
-    message: Schema.String,
+    message: Schema.String
 });
 /**
  * Builds an observation, capping its message at 8192 UTF-16 code units
@@ -45,7 +45,7 @@ export const Observation = Schema.Struct({
  */
 export const make = (kind, message) => ({
     kind,
-    message: message.length > 8192 ? `${message.slice(0, 8192 - "[truncated]".length)}[truncated]` : message,
+    message: message.length > 8192 ? `${message.slice(0, 8192 - "[truncated]".length)}[truncated]` : message
 });
 /**
  * Renders an observation as one context line for the next author call,
