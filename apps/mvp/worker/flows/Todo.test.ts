@@ -300,7 +300,7 @@ describe("the todo run", { timeout: 120_000 }, () => {
       else ctx.github.close(pr)
       const began = Date.now()
       // This is the durable github/Apply step the signed webhook route starts, over the real stores and engine.
-      yield* Apply.read({ ...ctx.services, signalTodo: (runId: string, number: number) => {
+      yield* Apply.read({ ...ctx.services, mayAct: () => true, appLogin: "smithers[bot]", signalTodo: (runId: string, number: number) => {
         if (terminal === "closed-reopened") {
           const issue = ctx.github.issues.get(number)!
           issue.state = "open"
@@ -1326,7 +1326,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
         expect((yield* host.alarm())._tag).toBe("Parked")
         if (terminal === "merged") ctx.github.merge(pull1.number)
         else ctx.github.close(pull1.number)
-        const apply = (number: number, signalTodo?: Apply.Services["signalTodo"]) => Apply.read({ ...ctx.services,
+        const apply = (number: number, signalTodo?: Apply.Services["signalTodo"]) => Apply.read({ ...ctx.services, mayAct: () => true, appLogin: "smithers[bot]",
           ...(signalTodo === undefined ? {} : { signalTodo }),
         })({ deliveryId: crypto.randomUUID(), repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number, event: "pull_request" })
         const signal: NonNullable<Apply.Services["signalTodo"]> = (runId, number) => Effect.gen(function* () {
@@ -1442,7 +1442,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
           via: "person", op: { kind: "drop", number: 1 } }, { runs: true }))
       } else {
         ctx.github.close(pull.number)
-        await runtime.runPromise(Apply.read({ ...ctx.services,
+        await runtime.runPromise(Apply.read({ ...ctx.services, mayAct: () => true, appLogin: "smithers[bot]",
           invalidateTodo: (stop) => flows.execute(TodoBaseClosed.Invalidate, { executionId: `todo-closed:${stop.attemptId}`, payload: stop, discard: true }).pipe(Effect.provide(context)),
         })({ deliveryId: crypto.randomUUID(), repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number: pull.number, event: "pull_request" }))
       }
@@ -1557,7 +1557,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       op: { kind: "commit", title: "Two", prompt: "Queued", acceptance: [] } }, { runs: false }))
     await runtime.runPromise(Stack.report(start, { kind: "finished", state: "failed", failure: "pr_refused" }, { runs: true }))
     ctx.github.close(pull.number)
-    await runtime.runPromise(Apply.read(ctx.services)({ deliveryId: crypto.randomUUID(),
+    await runtime.runPromise(Apply.read({ ...ctx.services, mayAct: () => true, appLogin: "smithers[bot]" })({ deliveryId: crypto.randomUUID(),
       repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number: pull.number, event: "pull_request" }))
     await runtime.runPromise(Stack.descendants({ ...start, baseClosed: true }))
     expect(await todo(2)).toMatchObject({ state: "queued", failure: null })
@@ -1574,7 +1574,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     const { start1, pull1 } = await stacked(ctx)
     ctx.github.close(pull1.number)
     // The real projection commits, while its invalidation launch has not happened yet.
-    await runtime.runPromise(Apply.read(ctx.services)({ deliveryId: crypto.randomUUID(),
+    await runtime.runPromise(Apply.read({ ...ctx.services, mayAct: () => true, appLogin: "smithers[bot]" })({ deliveryId: crypto.randomUUID(),
       repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number: pull1.number, event: "pull_request" }))
     await sql(runtime, "UPDATE stacks SET lanes = 2")
     expect(await commit("Three", "Queued behind the closed base")).toBeUndefined()
@@ -1593,7 +1593,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       via: "person", op: { kind: "retry", number: 1 } }, { runs: false }))
     ctx.github.close(pull1.number)
     const requests: Array<unknown> = []
-    await runtime.runPromise(Apply.read({ ...ctx.services,
+    await runtime.runPromise(Apply.read({ ...ctx.services, mayAct: () => true, appLogin: "smithers[bot]",
       invalidateTodo: (stop) => Effect.sync(() => void requests.push(stop)),
     })({ deliveryId: crypto.randomUUID(), repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number: pull1.number, event: "pull_request" }))
     expect(requests).toEqual([{ attemptId: start1.attemptId, todoId: start1.todoId, baseClosed: true }])
@@ -1679,7 +1679,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     }
     if (merged) {
       ctx.github.merge(pull1.number, "maya")
-      await runtime.runPromise(Apply.read(ctx.services)({
+      await runtime.runPromise(Apply.read({ ...ctx.services, mayAct: () => true, appLogin: "smithers[bot]" })({
         deliveryId: crypto.randomUUID(), repo: `${REPOSITORY.owner}/${REPOSITORY.name}`,
         number: pull1.number, event: "pull_request",
       }))

@@ -96,6 +96,7 @@ import { Merge } from "./Merge.ts"
 import * as FirstPaint from "./FirstPaint.ts"
 import * as IssueList from "./IssueList.ts"
 import * as Metrics from "./Metrics.ts"
+import * as MachineWrite from "./MachineWrite.ts"
 import * as WorkLinks from "./WorkLinks.ts"
 import { Reconcile } from "./Reconcile.ts"
 import * as PullRefresh from "./PullRefresh.ts"
@@ -321,8 +322,21 @@ const SHAPES: ReadonlySet<string> = new Set([
 ])
 
 /** Whether ChatApi routes `path` here. */
+/** `/api/repos/<owner>/<name>/writes/<id>` as its parts, or `undefined` for any other path. */
+export const parseMachineWritePath = (path: string): { readonly owner: string; readonly name: string; readonly id: string; readonly retry: boolean } | undefined => {
+  if (!path.startsWith(`${REPOS_ROUTE}/`)) return undefined
+  const segments = path.slice(REPOS_ROUTE.length + 1).split("/")
+  const retry = segments.length === 5 && segments[4] === "retry"
+  if ((segments.length !== 4 && !retry) || segments[2] !== WRITES_SEGMENT || !/^[0-9a-f-]{36}$/i.test(segments[3]!)) return undefined
+  try {
+    return { owner: decodeURIComponent(segments[0]!), name: decodeURIComponent(segments[1]!), id: segments[3]!.toLowerCase(), retry }
+  } catch {
+    return undefined
+  }
+}
+
 export const handles = (path: string): boolean =>
-  path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined ||
+  path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined || parseMachineWritePath(path) !== undefined ||
   Compare.parseComparePath(path) !== undefined || Review.parseReviewPath(path) !== undefined ||
   IssueList.parseIssuesPath(path) !== undefined || WorkLinks.parseLinksPath(path) !== undefined ||
   FirstPaint.parseFirstPaintPath(path) !== undefined
@@ -402,8 +416,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * the allowed list doesn't leave out. Whether the App is installed there is Reconcile's to find out.
      */
     const mayAct = (id: string) =>
-      id === repository.id ||
-      (Option.isSome(options.app) && Option.match(allowed, { onNone: () => true, onSome: (ids) => ids.has(id) }))
+      Option.isSome(options.app) ? RepoRoles.actsOn(repository, allowed)(id) : id === repository.id
     // Check current metadata for anonymous readers, using the shared metadata token policy.
     const readToken = yield* ReadToken.fromConfig.pipe(
       options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
@@ -561,6 +574,86 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       ).pipe(Effect.annotateLogs({ ...fields, status: response.status }))
       return response
     }).pipe(Effect.withSpan("github.webhook", { kind: "server" }))
+
+    /** Starts the owner's dispatcher. Its id is the epoch's, so a start that was lost is made good by any later request. */
+    const startDispatch = (owner: string) =>
+      Effect.gen(function* () {
+        const epoch = yield* MachineWrite.launch(owner).pipe(Effect.provide(database))
+        yield* (yield* FlowStarter).start(MachineWrite.MachineDispatch, {
+          executionId: MachineWrite.dispatchExecutionId(owner, epoch),
+          payload: MachineWrite.dispatchPayload(owner, epoch),
+        })
+      })
+
+    /**
+     * `POST /api/repos/<owner>/<name>/writes` with a machine token (docs/features/machine-tokens.md). It reads no
+     * session and reaches no person's path: the token's own repository and scope decide, and the App writes.
+     */
+    const machineWrites = (target: { readonly owner: string; readonly name: string }) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
+        if (!isRepository(target.owner, target.name)) return refuse(404, "not_found")
+        const repo = repositoryOf(`${target.owner}/${target.name}`)
+        if (!mayAct(repo.id)) return refuse(404, "not_found")
+        if (Option.isNone(options.app)) return refuse(503, "not_configured")
+        const machine = yield* MachineWrite.machineOf(request, repo.id).pipe(Effect.provide(database))
+        if (Option.isNone(machine)) return refuse(401, "authentication")
+        const text = yield* readBounded(request, MAX_WRITE_BYTES).pipe(Effect.result)
+        if (text._tag === "Failure") return text.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
+        const body = MachineWrite.decodeBody(text.success)
+        if (Option.isNone(body)) return refuse(400, "invalid")
+        const write = body.value
+        if (!machine.value.scope.includes(write.op)) return refuse(403, "forbidden")
+        // What a machine posts is public, and a `smithers:` label is a person's or a flow's: refused whatever sent it.
+        const content = MachineWrite.refusalOf(write)
+        if (content !== undefined) {
+          yield* Effect.logWarning("github.machine_write.request").pipe(Effect.annotateLogs({ op: write.op, agent: machine.value.agent, lane: machine.value.lane, outcome: content }))
+          return content === "reserved_label" ? refuse(403, "forbidden") : HttpServerResponse.jsonUnsafe({ code: "public_content", reason: content }, { status: 422, headers: noStore })
+        }
+        // A sub-issue writes to its parent's repository too: it must be one this deployment acts on.
+        const parent = write.op === "issue/relate" ? repositoryOf(write.parent.repo) : undefined
+        if (parent !== undefined && !mayAct(parent.id)) return refuse(404, "not_found")
+        const owner = repo.owner.toLowerCase()
+        const admitted = yield* MachineWrite.admit({ repoId: repo.id, owner, machine: machine.value, body: write }).pipe(Effect.provide(database))
+        if (admitted.kind === "token") return refuse(401, "authentication")
+        if (admitted.kind === "parent") return refuse(403, "forbidden")
+        if (admitted.kind === "conflict") return refuse(409, "conflict")
+        if (admitted.kind === "backlog") return refuse(429, "rate_limited", 30)
+        if (admitted.kind === "inserted" || admitted.status === "pending") yield* startDispatch(owner)
+        yield* Effect.logInfo("github.machine_write.request").pipe(
+          Effect.annotateLogs({ op: write.op, writeId: write.writeId, agent: machine.value.agent, lane: machine.value.lane, outcome: admitted.kind }),
+        )
+        return HttpServerResponse.jsonUnsafe(
+          { writeId: write.writeId, ...(admitted.kind === "existing" ? { status: admitted.status } : {}) },
+          { status: admitted.kind === "inserted" ? 202 : 200, headers: noStore },
+        )
+      }).pipe(Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))))
+
+    /** `GET .../writes/<id>`: its status and issue number. `POST .../writes/<id>/retry`: a failed write, back in the queue. */
+    const machineWriteStatus = (target: { readonly owner: string; readonly name: string; readonly id: string; readonly retry: boolean }) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const method = target.retry ? "POST" : "GET"
+        if (request.method !== method) return HttpServerResponse.empty({ status: 405, headers: { allow: method } })
+        if (!isRepository(target.owner, target.name)) return refuse(404, "not_found")
+        const repo = repositoryOf(`${target.owner}/${target.name}`)
+        const machine = yield* MachineWrite.machineOf(request, repo.id).pipe(Effect.provide(database))
+        if (Option.isNone(machine)) return refuse(401, "authentication")
+        if (target.retry) {
+          if (!mayAct(repo.id)) return refuse(404, "not_found")
+          const again = yield* MachineWrite.retry(target.id, repo.id, machine.value, mayAct).pipe(Effect.provide(database))
+          if (again === "conflict") return refuse(409, "conflict")
+          if (again === "forbidden") return refuse(403, "forbidden")
+          if (again === "backlog") return refuse(429, "rate_limited", 30)
+          yield* startDispatch(repo.owner.toLowerCase())
+          return HttpServerResponse.jsonUnsafe({ writeId: target.id, status: "pending" }, { status: 202, headers: noStore })
+        }
+        const found = yield* MachineWrite.statusOf(target.id, repo.id, machine.value).pipe(Effect.provide(database))
+        return Option.isNone(found)
+          ? refuse(404, "not_found")
+          : HttpServerResponse.jsonUnsafe(found.value, { status: 200, headers: noStore })
+      }).pipe(Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))))
 
     /** `POST /api/repos/<owner>/<name>/writes`. */
     const writes = (target: { readonly owner: string; readonly name: string }) =>
@@ -1001,6 +1094,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (Option.isNone(actor)) return refused(503, "unavailable")
           let source: string
           let byRunner: { readonly tokenSha256: string } | undefined
+          let byMachine: { readonly tokenSha256: string } | undefined
           // The body is read before a runner is authorized: the write then checks the runner again, in its own
           // transaction, so a token revoked while the body arrived writes nothing (decision 0148).
           const text = yield* readBounded(request, WorkLinks.MAX_POST_BYTES).pipe(Effect.result)
@@ -1015,6 +1109,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             if (!mayAsk(resolved.success.role)) return refused(403, "forbidden")
             source = actor.value.value.login ?? actor.value.value.subject.id
           } else {
+            const machine = yield* MachineWrite.machineOf(request, target.id).pipe(Effect.provide(database), Effect.result)
+            if (machine._tag === "Failure") return refused(503, "unavailable")
+            if (Option.isSome(machine.success)) {
+              fields.by = "machine"
+              if (!machine.success.value.scope.includes("work/link")) return refused(403, "forbidden")
+              source = `machine:${machine.success.value.agent}/${machine.success.value.lane}`
+              byMachine = { tokenSha256: machine.success.value.tokenSha256 }
+            } else {
             fields.by = "runner"
             const runner = yield* WriteAuthority.wait("runner_lookup", WorkLinks.runnerOf(request, target.id).pipe(Effect.provide(database))).pipe(Effect.result)
             if (runner._tag === "Failure") return refused(503, "unavailable")
@@ -1023,6 +1125,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             if (runner.success.value._tag !== "Runner") return refused(403, "not_authorized")
             source = `runner:${runner.success.value.name}`
             byRunner = { tokenSha256: runner.success.value.tokenSha256 }
+            }
           }
           if (text._tag === "Failure") {
             return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
@@ -1030,7 +1133,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const post = WorkLinks.decode(text.success)
           const now = yield* Clock.currentTimeMillis
           if (post === undefined || WorkLinks.fromTheFuture(post, now)) return refused(400, "invalid")
-          const written = yield* WriteAuthority.wait("commit", WorkLinks.write(target.id, named.number, post, source, now, byRunner).pipe(
+          if (byMachine !== undefined && MachineWrite.publicContentProblem(post.links.flatMap((link) => [link.ref, link.label, link.url])) !== undefined) {
+            return refused(400, "invalid")
+          }
+          const written = yield* WriteAuthority.wait("commit", WorkLinks.write(target.id, named.number, post, source, now, byRunner, byMachine).pipe(
             Effect.provide(database),
           )).pipe(Effect.result)
           if (written._tag === "Failure") {
@@ -1151,7 +1257,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const linked = WorkLinks.parseLinksPath(path)
       if (linked !== undefined) return yield* links(linked)
       const target = parseWritesPath(path)
-      if (target !== undefined) return yield* writes(target)
+      if (target !== undefined) {
+        const machine = MachineWrite.carriesMachineToken(yield* HttpServerRequest.HttpServerRequest)
+        return yield* machine ? machineWrites(target) : writes(target)
+      }
+      const machineWrite = parseMachineWritePath(path)
+      if (machineWrite !== undefined) return yield* machineWriteStatus(machineWrite)
       return HttpServerResponse.empty({ status: 404 })
     })
 

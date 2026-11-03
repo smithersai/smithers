@@ -1,0 +1,59 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// Machine identity for agents (docs/features/machine-tokens.md). `machine_tokens` holds an agent's token by digest
+// only, for one repository, with its lane, scope and end; it is its own table, not a `runners` row, so no runner route
+// can read one as a runner by leaving a filter out. `machine_writes` is one admitted machine write and the owner's queue:
+// its own table, so `github/Write`'s rows, plans and device feeds never see one. `machine_dispatch` is one row per owner
+// for `github/MachineDispatch`: whether it runs, under which epoch, when it next wakes, the time no GitHub call may go
+// before, and the penalty the next rate limit adds.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`
+    CREATE TABLE machine_tokens (
+      token_sha256 text PRIMARY KEY CHECK (token_sha256 ~ '^[0-9a-f]{64}$'),
+      repo_id text NOT NULL,
+      agent text NOT NULL CHECK (length(agent) BETWEEN 1 AND 100 AND position('/' in agent) = 0),
+      lane text NOT NULL CHECK (length(lane) BETWEEN 1 AND 100 AND position('/' in lane) = 0),
+      scope text[] NOT NULL,
+      issued_by text NOT NULL,
+      issued_at timestamptz NOT NULL DEFAULT now(),
+      expires_at timestamptz NOT NULL,
+      revoked_at timestamptz
+    )`
+  yield* sql`
+    CREATE TABLE machine_writes (
+      id uuid PRIMARY KEY,
+      -- The marker this write leaves on GitHub: the server's, never the caller's id, so no caller can name another's.
+      recovery_id uuid NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+      -- Admission order, which a retry keeps: an older update never goes after a newer one on the same issue.
+      seq bigint GENERATED ALWAYS AS IDENTITY,
+      repo_id text NOT NULL,
+      owner text NOT NULL,
+      token_sha256 text NOT NULL,
+      agent text NOT NULL,
+      lane text NOT NULL,
+      op text NOT NULL CHECK (op IN ('issue/create', 'issue/update', 'issue/comment', 'issue/relate')),
+      payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+      payload_hash text NOT NULL CHECK (payload_hash ~ '^[0-9a-f]{64}$'),
+      status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'refused', 'failed')),
+      failure text,
+      item_number integer CHECK (item_number >= 1),
+      tries integer NOT NULL DEFAULT 0,
+      queued_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+      created_at timestamptz NOT NULL DEFAULT now(),
+      settled_at timestamptz
+    )`
+  yield* sql`CREATE INDEX machine_writes_queue ON machine_writes (owner, queued_at, id) WHERE status = 'pending'`
+  yield* sql`CREATE INDEX machine_writes_token ON machine_writes (token_sha256) WHERE status = 'pending'`
+  yield* sql`CREATE INDEX machine_writes_created ON machine_writes (repo_id, item_number) WHERE op = 'issue/create' AND status = 'done'`
+  yield* sql`
+    CREATE TABLE machine_dispatch (
+      owner text PRIMARY KEY,
+      epoch integer NOT NULL DEFAULT 0,
+      running boolean NOT NULL DEFAULT false,
+      due_at timestamptz NOT NULL DEFAULT now(),
+      next_at timestamptz NOT NULL DEFAULT now(),
+      penalty_ms integer NOT NULL DEFAULT 60000 CHECK (penalty_ms >= 60000)
+    )`
+})

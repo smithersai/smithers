@@ -124,6 +124,7 @@ export const write = (
   source: string,
   now: number,
   runner?: { readonly tokenSha256: string },
+  machine?: { readonly tokenSha256: string },
 ) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.withTransaction(Effect.gen(function* () {
@@ -138,10 +139,19 @@ export const write = (
           SELECT 1 FROM github_repositories WHERE repo_id = ${repoId} AND installation_id IS NOT NULL FOR SHARE`
         if (installed === undefined) return Option.none<{ readonly links: number; readonly changed: number }>()
       }
-      return Option.some(yield* writeLinks(repoId, number, post, source, now))
+      // A machine's token is held live and in scope after its body arrived; its links never replace another source's.
+      if (machine !== undefined) {
+        const [held] = yield* sql`
+          SELECT 1 FROM machine_tokens
+          WHERE token_sha256 = ${machine.tokenSha256} AND repo_id = ${repoId} AND revoked_at IS NULL AND expires_at > now()
+            AND 'work/link' = ANY(scope)
+          FOR SHARE`
+        if (held === undefined) return Option.none<{ readonly links: number; readonly changed: number }>()
+      }
+      return Option.some(yield* writeLinks(repoId, number, post, source, now, machine !== undefined))
     })))
 
-const writeLinks = (repoId: string, number: number, post: Post, source: string, now: number) =>
+const writeLinks = (repoId: string, number: number, post: Post, source: string, now: number, ownOnly = false) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const received = new Date(now).toISOString()
@@ -165,10 +175,11 @@ const writeLinks = (repoId: string, number: number, post: Post, source: string, 
         ref text, label text, url text, state text, source text, updated_at timestamptz)
       ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, url = EXCLUDED.url, state = EXCLUDED.state,
         source = EXCLUDED.source, updated_at = EXCLUDED.updated_at
-      WHERE EXCLUDED.updated_at > work_links.updated_at
+      WHERE (EXCLUDED.updated_at > work_links.updated_at
         OR (EXCLUDED.updated_at = work_links.updated_at
           AND (work_links.label, work_links.url, work_links.state, work_links.source)
-            IS DISTINCT FROM (EXCLUDED.label, EXCLUDED.url, EXCLUDED.state, EXCLUDED.source))
+            IS DISTINCT FROM (EXCLUDED.label, EXCLUDED.url, EXCLUDED.state, EXCLUDED.source)))
+        ${ownOnly ? sql`AND work_links.source = EXCLUDED.source` : sql``}
       RETURNING id`
     return { links: rows.length, changed: changed.length }
   })

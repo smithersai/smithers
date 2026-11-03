@@ -201,6 +201,20 @@ describe("GitHubClient over a real HTTP server", () => {
     expect(await Effect.runPromise(client().request("GET", "/x"))).toEqual(body)
   })
 
+  it("keeps a rate limit's full Retry-After beside the wait it caps", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 403, { message: "You have exceeded a secondary rate limit" }, { "retry-after": "600" })
+    )
+    const error = await Effect.runPromise(Effect.flip(client().request("GET", "/repos/acme/widgets")))
+    expect(error.details).toMatchObject({ rateLimited: true, retryAfterMillis: 60_000, retryAfterUncappedMillis: 600_000 })
+  })
+
+  it("keeps a bare 403's Retry-After in full, and leaves it not a rate limit", async () => {
+    fixture = await startFixture((_request, response) => json(response, 403, { message: "Forbidden" }, { "retry-after": "600" }))
+    const error = await Effect.runPromise(Effect.flip(client().request("GET", "/repos/acme/widgets")))
+    expect(error.details).toMatchObject({ rateLimited: false, retryable: false, retryAfterUncappedMillis: 600_000 })
+  })
+
   it("preserves the reset time of a GraphQL primary limit without Retry-After", async () => {
     const resetAt = Math.floor(Date.now() / 1_000) + 30
     fixture = await startFixture((_request, response) =>

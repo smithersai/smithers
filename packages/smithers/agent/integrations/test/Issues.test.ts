@@ -480,6 +480,16 @@ describe("findIssueByWrite", () => {
     expect(Option.getOrThrow(found)).toMatchObject({ number: 2, body: "original\n\n<!-- smithers:write=w-1 -->" })
   })
 
+  it("with an author, ignores a copied marker on an older issue someone else wrote", async () => {
+    github = await startGitHub()
+    github.issues.push(
+      rawIssue(1, Issues.withWriteMarker("copied in", "w-1"), { user: { id: 9, login: "mallory" } }),
+      rawIssue(2, Issues.withWriteMarker("original", "w-1"), { user: { id: 7, login: "app[bot]" } })
+    )
+    const found = await run(Issues.findIssueByWrite("o", "r", { writeId: "w-1", since: SINCE, author: "app[bot]" }))
+    expect(Option.getOrThrow(found).number).toBe(2)
+  })
+
   it("finds nothing when only a pull request carries the marker", async () => {
     github = await startGitHub()
     github.issues.push(rawIssue(1, Issues.withWriteMarker("pr", "w-1"), { pull_request: { url: "u" } }))
@@ -545,6 +555,16 @@ describe("findCommentByWrite", () => {
     expect(Option.getOrThrow(found).id).toBe(3)
     expect(query(0).get("since")).toBe(SINCE)
     expect(github.fixture.requests.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("with an author, ignores a copied marker on an earlier comment someone else wrote", async () => {
+    github = await startGitHub()
+    github.comments.set(7, [
+      { ...rawComment(1, 7, Issues.withWriteMarker("copied in", "w-1")), user: { id: 9, login: "mallory" } },
+      { ...rawComment(2, 7, Issues.withWriteMarker("original", "w-1")), user: { id: 7, login: "app[bot]" } }
+    ])
+    const found = await run(Issues.findCommentByWrite("o", "r", 7, { writeId: "w-1", since: SINCE, author: "app[bot]" }))
+    expect(Option.getOrThrow(found).id).toBe(2)
   })
 
   it("finds nothing when no comment carries the marker, reading the whole thread without `since`", async () => {

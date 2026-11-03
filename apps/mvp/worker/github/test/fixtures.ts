@@ -20,7 +20,7 @@ import type * as RepoRoles from "../RepoRoles.ts"
 import * as Store from "../Store.ts"
 import * as Tokens from "../Tokens.ts"
 import type * as Triage from "../Triage.ts"
-import { appKey, SCRIPTED_API, type ScriptedGitHub, scriptedApp } from "./scriptedGitHub.ts"
+import { appKey, BOT_LOGIN, SCRIPTED_API, type ScriptedGitHub, scriptedApp } from "./scriptedGitHub.ts"
 
 type Runtime = ReturnType<typeof testFile>
 
@@ -35,7 +35,7 @@ export const reset = (runtime: Runtime) =>
       (sql) =>
         sql`TRUNCATE github_projection_fences, items, comments, github_writes, github_sync, github_deliveries, github_repositories, sessions,
           sign_in_attempts, people, triage_settings, triage_decisions, model_usage, model_budget_days, model_roles,
-          github_repo_roles, work_links, runners CASCADE`,
+          github_repo_roles, work_links, runners, machine_tokens, machine_writes, machine_dispatch CASCADE`,
     ),
   )
 
@@ -228,6 +228,8 @@ export const services = async (
     database: options.database ?? (await database(runtime)),
     http: github.http,
     apiBaseUrl: SCRIPTED_API,
+    mayAct: () => true,
+    appLogin: BOT_LOGIN,
     tokens: Tokens.make({
       app,
       keys: options.signIn === false ? Option.none() : Option.some(await keys()),

@@ -85,6 +85,10 @@ export interface Services<E = unknown, R = never> {
   readonly http: HttpClient.HttpClient
   /** GitHub's REST API (`GITHUB_API_URL`). */
   readonly apiBaseUrl: string
+  /** Whether this deployment acts on repository `id` now (`RepoRoles.actsOn`). */
+  readonly mayAct: (id: string) => boolean
+  /** The App's login on GitHub, `<GITHUB_APP_SLUG>[bot]`, read once when the host starts: who wrote what the App wrote. */
+  readonly appLogin: string
   /** Complete a TODO's durable wait and wake its host; delivery is retried by this step. */
   readonly invalidateTodo?: (stop: { readonly attemptId: string; readonly todoId: string; readonly baseClosed: boolean }) => Effect.Effect<void, unknown>
   readonly signalTodo?: (executionId: string, prNumber: number) => Effect.Effect<void, unknown>

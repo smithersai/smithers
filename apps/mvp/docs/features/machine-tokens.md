@@ -1,0 +1,59 @@
+# Machine tokens
+
+An agent files issues with no person behind it: it holds a scoped, expiring token, and the server writes to GitHub as the App, so the App's bot is the author. No GitHub account or collaborator grant is involved.
+
+## How it works
+
+```
+operator                     smithers.sh                                                GitHub
+ops/machine-token/issue.ts ─ digest, agent, lane, repository, scope, end ─▶ machine_tokens
+                                    (the raw token goes to a mode-600 file)
+
+agent ─ Bearer smm_… ─ POST /api/repos/<o>/<n>/writes ─▶ machine_writes, the owner's queue
+                                                          github/MachineDispatch, one per owner
+                                                          round: a durable sleep, one tick
+                                                          tick: the hold ─ oldest write ─ its authority
+                                                                ─ token ─ reads ─ at most one POST ──▶ as the App (issues: write)
+agent ─ GET /api/repos/<o>/<n>/writes/<id> ◀─ { status, failure, number }
+```
+
+- **Issuing.** `~/vault-ws-deployer/bin/mvp-prod-env node ops/machine-token/issue.ts --project <neon id> --by <name> --repo <o/n> --agent <agent> --lane <lane> --out <file>`. It runs under the deployment's production credentials, writes only the token's digest, and prints one audit JSON line. `--revoke <digest>` ends a token at once. No person signs anything. That is acceptable because this operator can already write this database: the command gives them no power they lack, and a token it makes does less than they can.
+- **What a token is.** `smm_` and 32 random bytes, for one repository, at most 7 days. Its `scope` holds some of `issue/create`, `issue/update`, `issue/comment`, `issue/relate` and `work/link`. A TODO record has no scope here: it waits for v1.1's external TODOs, and `todo/commit` stays a person's.
+- **What a token can't do.** Only the writes route and the work-links route read one. To everything else on smithers.sh it is no session, so a route answers as for anyone signed out: every person-only act of decision 0016, starting a run or committing a TODO among them, is refused because nothing there knows the token. The writes route parses machine writes with their own schema, so `issue/triage` and `pr/merge` are `400 invalid` before any role is asked. A `smithers:` label is refused too, since triage and commitment state are read from those labels. `issue/update` touches no labels.
+- **Identity.** An agent or a lane holds no `/`, at issuing and in the table: a work link's source is `machine:<agent>/<lane>`, and it names one pair.
+- **Authority across repositories.** `issue/relate` writes to the parent's repository, so the parent must be one the deployment acts on and this agent and lane must hold a live `issue/relate` token there.
+- **At the moment of work.** A tick checks the write's token, and for a sub-issue the parent's, again. A token revoked since admission settles the write `refused` `revoked`. A repository that left `GITHUB_ALLOWED_REPOSITORIES`, the write's or the parent's, settles it `refused` `not_allowed`, and a retry is refused too.
+- **Ownership.** A write belongs to its agent and lane: another lane reads `404`, and resubmits `409`. `issue/update` needs a `done` create of this lane's for that number, and GitHub saying this App wrote it. Updates to one issue land in admission order, field by field: an older update, as a retry can be, leaves alone each of title, body and state a newer one has already set, and sends the rest; with nothing left it settles `refused` `superseded`. An update is `done` once GitHub accepts its PATCH, whatever the read after it. A machine's work link never replaces another source's link.
+- **Public content.** What a machine posts is public: credential-shaped text (machine tokens included) and home paths are refused `422 public_content`, as written and as rendered (percent escapes and numeric entities decoded), naming the kind, whatever client sent them. Clients also scrub first (`ops/issues/scrub.mjs`).
+- **After the body.** The token is held live and in scope in the transaction that admits the write or the link, so a request already open when a token is revoked admits nothing.
+- **Backlog.** At most 20 pending writes per token, on every way into pending, else `429` with `retry-after: 30`.
+- **Its own tables and flow.** `machine_tokens` is not `runners`, so no runner route can read one by leaving a filter out. `machine_writes` is not `github_writes`, and `github/MachineDispatch` is not `github/Write`: a person's write, its plan and any run in flight are untouched.
+
+## Routes
+
+| Route | Answers |
+|---|---|
+| `POST /api/repos/<owner>/<name>/writes` with `Authorization: Bearer smm_…` | `{ writeId, op: "issue/create", title, body, labels? }`, `{ writeId, op: "issue/update", number, title?, body?, state? }`, `{ writeId, op: "issue/comment", number, body }` or `{ writeId, op: "issue/relate", number, parent: { repo, number } }`. `202 { writeId }` new, `200 { writeId, status }` already taken. `401 authentication`: unknown, expired, revoked or another repository's. `403 forbidden`: out of scope, a `smithers:` label, or a parent's repository it holds no token on. `422 public_content`, `429 rate_limited` with `retry-after`, `400 invalid`, `409 conflict`, `413 too_large`, `503 not_configured`, `503 unavailable` |
+| `GET /api/repos/<owner>/<name>/writes/<id>` | The agent and lane's own write: `200 { status, failure, number }`, `status` `pending`, `done`, `refused` or `failed`; `404 not_found`; `401 authentication` |
+| `POST /api/repos/<owner>/<name>/writes/<id>/retry` | Puts the agent and lane's `failed` write at the back of the queue, under this token, which needs the write's scope and room, and the parent's repository; its marker keeps it one issue. A write already pending starts its dispatcher again, so a lost start can be made good. `202 { writeId, status }`; `403 forbidden`; `429 rate_limited`; `409 conflict` when it isn't theirs, or has settled otherwise |
+| `POST /api/repos/<owner>/<name>/issues/<n>/links` | [Work links](work-links.md), within `work/link`, with `source` `machine:<agent>/<lane>` |
+
+## Pacing
+
+`machine_writes` is the queue, first in, first served, and one durable flow per owner, `github/MachineDispatch`, drains it: a durable sleep (`system/sleep`), one tick, the next round, until the queue is empty.
+
+- **One send at a time.** A tick makes at most one POST, and rounds run one after another, so the send is held through its HTTP call. The next call waits 7.5 s from the end of it: under 480 an hour and 8 a minute, GitHub's secondary limits being 500 and 80.
+- **The hold comes first.** `machine_dispatch.next_at` is checked before any read or token, so a hold stops everything. One row per owner, and an App has one installation per owner, so it is the installation's, within this deployment's database. Machine tokens are issued for production alone, so nothing else sends under this budget.
+- **A rate limit** on any call, read or write, is a 429, or a 403 with `retry-after`, `x-ratelimit-remaining: 0` or a message naming a rate or abuse limit. It holds every call until the server's full wait, or a penalty of 60 s doubling to 30 minutes, whichever is later. A success resets the penalty, and the limit spends no try. A limit on looking up the installation or minting its token holds the same way, for GitHub's full wait.
+- **A permission 403**, a 404 or a 422 settles the write `refused`, and is never retried.
+- **A write that can't finish** settles `failed`: after 20 real tries (waiting spends none), or on a defect, which is that write's and not the queue's. The dispatcher goes on. Sending it again answers `failed` and starts nothing; the retry route is the deliberate way back.
+- **Recovery.** Each write carries `<!-- smithers:write=<recovery id> -->`, an id the server makes when it admits the write and never the caller's `writeId`, so no caller can name a marker another write left. The search matches only issues and comments GitHub names this App as the author of, so a marker someone copies into their own older issue is ignored. A tick looks for it before it POSTs, closed issues included, so a lost answer or a killed run never makes a second issue. A same-title issue is never a receipt. `issue/relate` looks at the child's parent first: already there is done, another parent is `refused` `has_parent`, never replaced.
+- **Starting.** Any request with a pending write starts the owner's current epoch, whose execution id is fixed, so a start that was lost is made good by the next request. A dispatcher more than 10 minutes past when it said it would wake is taken to be gone: the next request starts another epoch, and a tick of the old one stops itself.
+
+## Tests
+
+| File | Proves |
+|---|---|
+| `worker/github/MachineWrite.test.ts` | the route's scope and refusals, a token revoked while its body arrived, a person-only act and policy labels refused, public content, authority over a parent's repository, lane ownership, the backlog bound on every way into pending, the App as author, recovery by marker, look-first sub-issues, service in order, spacing from the end of a send, holds before reads and tokens, penalties, a permission 403 with a future reset, truncated JSON, defects, lease and epoch, `failed` and its retry, updates by the owning lane, `github/Write` replaying with both flows registered |
+| `ops/machine-token/issue.test.ts` | only the digest stored, the 7-day and scope bounds, the mode-600 file |
+| `e2e/machine-token.spec.ts` | production, on a sandbox repository the App is installed on: an agent token files an issue, the bot is its author, and a person-only act with the same token is refused |

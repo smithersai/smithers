@@ -355,6 +355,15 @@ const markedWith = (item: unknown, writeId: string): boolean => {
   return typeof body === "string" && writeIdOf(body) === writeId
 }
 
+// Whether a listed item, not yet decoded, is by `author`, when one is named.
+// A caller that knows who wrote its own items names it, so a marker someone
+// copied into an item of theirs is never the match.
+const byAuthor = (item: unknown, author: string | undefined): boolean => {
+  if (author === undefined) return true
+  const user = typeof item === "object" && item !== null ? (item as { readonly user?: unknown }).user : undefined
+  return typeof user === "object" && user !== null && (user as { readonly login?: unknown }).login === author
+}
+
 const isPullRequest = (item: unknown): boolean =>
   (item as { readonly pull_request?: unknown }).pull_request !== undefined
 
@@ -475,8 +484,9 @@ export const createComment = (
  * `GET /repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&since=…`.
  * Pull requests are skipped.
  *
- * With more than one match, the earliest created wins. A search that runs out
- * of pages fails `poll-failed` with `incomplete: true`, even with a match:
+ * With more than one match, the earliest created wins. With `author`, only
+ * items that login wrote match, so a copied marker never does. A search that
+ * runs out of pages fails `poll-failed` with `incomplete: true`, even with a match:
  * an older original may lie beyond the page budget.
  *
  * @category getters
@@ -485,7 +495,7 @@ export const createComment = (
 export const findIssueByWrite = (
   owner: string,
   repo: string,
-  options: { readonly writeId: string; readonly since: string }
+  options: { readonly writeId: string; readonly since: string; readonly author?: string | undefined }
 ): Effect.Effect<Option.Option<Issue>, IntegrationError, GitHubClient> =>
   Effect.gen(function*() {
     const client = yield* GitHubClient
@@ -499,7 +509,9 @@ export const findIssueByWrite = (
     )
     // Newest first, so the last match is the earliest created.
     let found: unknown
-    for (const item of page.items) if (markedWith(item, writeId) && !isPullRequest(item)) found = item
+    for (const item of page.items) {
+      if (markedWith(item, writeId) && byAuthor(item, options.author) && !isPullRequest(item)) found = item
+    }
     if (page.truncated) return yield* Effect.fail(incomplete("findIssueByWrite"))
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(Issue, found, path))
   }).pipe(Effect.withSpan("GitHub.Issues.findIssueByWrite", { attributes: spanAttributes(owner, repo) }))
@@ -519,7 +531,7 @@ export const findCommentByWrite = (
   owner: string,
   repo: string,
   number: number,
-  options: { readonly writeId: string; readonly since?: string | undefined }
+  options: { readonly writeId: string; readonly since?: string | undefined; readonly author?: string | undefined }
 ): Effect.Effect<Option.Option<IssueComment>, IntegrationError, GitHubClient> =>
   Effect.gen(function*() {
     const client = yield* GitHubClient
@@ -530,7 +542,7 @@ export const findCommentByWrite = (
     const path = `/repos/${repository}/issues/${issue}/comments`
     const page = yield* client.paginate(`${path}${query({ since })}`, { maxPages: RECONCILE_PAGES })
     // Oldest first, so the first match is the earliest created.
-    const found = page.items.find((item) => markedWith(item, writeId))
+    const found = page.items.find((item) => markedWith(item, writeId) && byAuthor(item, options.author))
     if (found === undefined && page.truncated) return yield* Effect.fail(incomplete("findCommentByWrite"))
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(IssueComment, found, path))
   }).pipe(Effect.withSpan("GitHub.Issues.findCommentByWrite", { attributes: spanAttributes(owner, repo, number) }))

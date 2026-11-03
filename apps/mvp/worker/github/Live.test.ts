@@ -63,6 +63,8 @@ const live = async () => {
     database: await database(runtime),
     http,
     apiBaseUrl: DEFAULT_API_URL,
+    mayAct: () => true,
+    appLogin: `${env["GITHUB_APP_SLUG"] ?? "smithers"}[bot]`,
     tokens: Tokens.make({ app, keys: Option.some(await keys()), refresh: () => Effect.void }),
   } satisfies Apply.Services
 }

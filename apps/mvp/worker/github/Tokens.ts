@@ -1,4 +1,4 @@
-import { GitHub } from "@smthrs/integrations"
+import { Core, GitHub } from "@smthrs/integrations"
 import { Clock, Effect, Metric, Option, type Redacted, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { SessionKeys } from "../SessionKeys.ts"
@@ -35,6 +35,13 @@ export class TokenUnavailable extends Schema.TaggedError<TokenUnavailable>()("@s
   retryAfterMillis: Schema.optional(Schema.Number),
   rateLimited: Schema.optional(Schema.Boolean),
   upstreamStatus: Schema.optional(Schema.Number),
+  /** The wait GitHub named in full, for a caller that holds its own calls: `retryAfterMillis` is capped for a step's retry. */
+  fullWaitMillis: Schema.optional(Schema.Number),
+  /**
+   * GitHub's headers name a wait (`Retry-After`, or `x-ratelimit-remaining: 0`) with no message saying so. Other callers
+   * keep reading such a 403 as `not_allowed`; the machine dispatcher reads it as a limit.
+   */
+  headerLimited: Schema.optional(Schema.Boolean),
 }) {}
 
 /** What the tokens need: the App, and, when sign-in is configured, the session keys and the role check that refreshes. */
@@ -75,8 +82,32 @@ export const permissionsOf = (access: Access): Readonly<Record<string, "read" | 
   }
 }
 
+/** How long GitHub asked a rate-limited caller to wait, uncapped: `Retry-After`, else the spent limit's reset. */
+const fullWaitOf = (error: unknown): number | undefined => {
+  if (!Core.IntegrationError.isIntegrationError(error)) return undefined
+  const named = error.details?.["retryAfterUncappedMillis"]
+  if (typeof named === "number") return named
+  const reset = error.details?.["rateLimitResetAt"]
+  return typeof reset === "number" && reset > Date.now() ? reset - Date.now() : undefined
+}
+
+/** A 403 or 429 whose headers name a wait, message or not. */
+const headerLimitOf = (error: unknown): { readonly headerLimited?: true; readonly fullWaitMillis?: number } => {
+  if (!Core.IntegrationError.isIntegrationError(error)) return {}
+  const status = statusOf(error)
+  if (status !== 403 && status !== 429) return {}
+  const named = error.details?.["retryAfterUncappedMillis"]
+  if (typeof named === "number") return { headerLimited: true, fullWaitMillis: named }
+  if (error.details?.["ratelimitRemaining"] === "0") {
+    const wait = fullWaitOf(error)
+    return { headerLimited: true, ...(wait === undefined ? {} : { fullWaitMillis: wait }) }
+  }
+  return {}
+}
+
 const unavailable = (error: unknown) => {
   const classified = classify(error)
+  const fullWait = isRateLimited(error) ? fullWaitOf(error) : undefined
   return new TokenUnavailable({
     reason: "unavailable",
     ...(statusOf(error) === undefined ? {} : { upstreamStatus: statusOf(error) }),
@@ -84,6 +115,8 @@ const unavailable = (error: unknown) => {
       ? { retryAfterMillis: classified.retryAfterMillis }
       : {}),
     ...(isRateLimited(error) ? { rateLimited: true } : {}),
+    ...(fullWait === undefined ? {} : { fullWaitMillis: fullWait }),
+    ...headerLimitOf(error),
   })
 }
 
@@ -164,7 +197,7 @@ export const make = (services: Services) => {
       // for GitHub's rate limit is no refusal: it passes on, retried.
       if (status === 422 || (status === 403 && !isRateLimited(minted.failure))) {
         yield* counted("app", "not_allowed", { access, status })
-        return yield* new TokenUnavailable({ reason: "not_allowed", upstreamStatus: status })
+        return yield* new TokenUnavailable({ reason: "not_allowed", upstreamStatus: status, ...headerLimitOf(minted.failure) })
       }
       yield* counted("app", "unavailable", { access, ...(status === undefined ? {} : { status }) })
       return yield* unavailable(minted.failure)

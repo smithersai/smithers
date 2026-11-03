@@ -98,6 +98,7 @@ import m0097 from "./migrations/0097_runner_reconfirmation.ts"
 import m0098 from "./migrations/0098_about_claim_generation.ts"
 import m0099 from "./migrations/0099_todo_attach.ts"
 import m0100 from "./migrations/0100_todo_leaves.ts"
+import m0101 from "./migrations/0101_machine_tokens.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -200,4 +201,5 @@ export const migrations = {
   "0098_about_claim_generation": m0098,
   "0099_todo_attach": m0099,
   "0100_todo_leaves": m0100,
+  "0101_machine_tokens": m0101,
 }

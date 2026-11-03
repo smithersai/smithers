@@ -108,6 +108,8 @@ export interface Fault {
   readonly match: (method: string, path: string) => boolean
   readonly status?: number
   readonly headers?: Readonly<Record<string, string>>
+  /** GitHub's message on the faulted answer; "scripted fault" unless set. */
+  readonly message?: string
   readonly lost?: boolean
   /** Applies the request, then returns a successful response with an invalid schema. */
   readonly malformed?: boolean
@@ -128,6 +130,8 @@ export interface ScriptedGitHub {
   readonly owner: string
   readonly name: string
   readonly issues: Map<number, ScriptedIssue>
+  /** Each sub-issue's parent, by number. */
+  readonly subIssueParents: Map<number, number>
   readonly calls: Array<Call>
   readonly faults: Array<Fault>
   /** Whether the App is installed on the repository. */
@@ -223,7 +227,7 @@ const decoder = new TextDecoder()
 export const accountIdOf = (login: string) => login.length * 1000
 
 /** A scripted GitHub at `https://api.github.test` with the repository `owner/name`, the App installed and granted write. */
-export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub => {
+export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_LOGIN): ScriptedGitHub => {
   const userTokens = new Map<string, string>()
   const installationTokens = new Map<string, Readonly<Record<string, string>>>()
   let ids = 1_000
@@ -443,6 +447,28 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const comments = live.flatMap((issue) => issue.comments.filter((comment) => !comment.gone))
       const listed = sorted(url, comments.filter((comment) => comment.updatedAt >= since(url)))
       return { response: paged(url, listed.map(commentJson)) }
+    }
+    const editMatch = /^\/issues\/(\d+)$/.exec(url.pathname.slice(apiPath.length))
+    if (editMatch !== null && method === "PATCH") {
+      const edited = github.issues.get(Number(editMatch[1]))
+      if (edited === undefined || edited.gone) return { response: json({ message: "Not Found" }, 404) }
+      Object.assign(edited, body)
+      return { response: json(issueJson(edited)) }
+    }
+    // Sub-issues (docs.github.com, REST "Sub-issues"): one parent per issue, by the child's id, in this repository.
+    const parentMatch = /^\/issues\/(\d+)\/parent$/.exec(url.pathname.slice(apiPath.length))
+    if (parentMatch !== null && method === "GET") {
+      const parent = github.subIssueParents.get(Number(parentMatch[1]))
+      return { response: parent === undefined
+        ? json({ message: "Not Found" }, 404)
+        : json({ number: parent, url: `https://api.github.com/repos/${owner}/${name}/issues/${parent}` }) }
+    }
+    const subIssuesMatch = /^\/issues\/(\d+)\/sub_issues$/.exec(url.pathname.slice(apiPath.length))
+    if (subIssuesMatch !== null && method === "POST") {
+      const child = [...github.issues.values()].find((issue) => issue.id === (body as { sub_issue_id?: unknown }).sub_issue_id)
+      if (child === undefined || github.subIssueParents.has(child.number)) return { response: json({ message: "Validation Failed" }, 422) }
+      github.subIssueParents.set(child.number, Number(subIssuesMatch[1]))
+      return { response: json({ number: Number(subIssuesMatch[1]) }, 201) }
     }
     const labelsMatch = /^\/issues\/(\d+)\/labels(?:\/([^/]+))?$/.exec(url.pathname.slice(apiPath.length))
     if (labelsMatch !== null) {
@@ -976,8 +1002,8 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     const bearer = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : undefined
     if (bearer === undefined) return { token: "none" }
     const permissions = installationTokens.get(bearer)
-    if (permissions?.["contents"] !== undefined) return { token: "installation-contents", login: BOT_LOGIN }
-    if (permissions !== undefined) return { token: "installation", login: BOT_LOGIN }
+    if (permissions?.["contents"] !== undefined) return { token: "installation-contents", login: botLogin }
+    if (permissions !== undefined) return { token: "installation", login: botLogin }
     const login = userTokens.get(bearer)
     if (login !== undefined) return { token: "user", login }
     const parts = bearer.split(".")
@@ -1021,7 +1047,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     Effect.suspend(() => {
       if (armed !== undefined && armed.lost !== true && armed.malformed !== true && (armed.hold === undefined || armed.status !== undefined)) {
         return Effect.succeed(
-          HttpClientResponse.fromWeb(request, json({ message: "scripted fault" }, armed.status ?? 502, { ...armed.headers })),
+          HttpClientResponse.fromWeb(request, json({ message: armed.message ?? "scripted fault" }, armed.status ?? 502, { ...armed.headers })),
         )
       }
       // An installation token writes only with the permission it was minted with: issues and labels need Issues, branches
@@ -1065,6 +1091,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     owner,
     name,
     issues: new Map(),
+    subIssueParents: new Map(),
     calls: [],
     faults: [],
     installed: true,

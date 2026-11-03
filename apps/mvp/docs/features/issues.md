@@ -2,7 +2,7 @@
 
 A person lists, reads, opens and comments on the issues of the repository this deployment syncs, on any device. GitHub is the truth: Postgres holds a projection that only the server's GitHub flows write, Electric syncs it to every device, and every write goes from the device's outbox to one route, then one remote flow, then GitHub. This is decision [0012](../decisions/0012-git-end-to-end.md)'s slice G0, and its triage (§5): each issue is proposed, accepted or not accepted, a repository's triage flow decides new issues with a model, and a person overrides it ([triage](#triage)).
 
-Each issue also shows the work on it, from links its lanes, queue and reviewers post ([work links](work-links.md)).
+Each issue also shows the work on it, from links its lanes, queue and reviewers post ([work links](work-links.md)). An agent with no person behind it writes through a [machine token](machine-tokens.md), as the App.
 
 Being built: issues form a tree on GitHub's sub-issues, with TODOs as its leaves, and a List/Tree toggle (decision [0153](../decisions/0153-issues-are-a-tree-todos-are-its-leaves.md)). A relation reaches a reader only when they may read both ends, and GitHub's child counts never leave the server.
 

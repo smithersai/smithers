@@ -294,6 +294,15 @@ export const retryAfterMs = (headers: Headers, nowMs: number = Date.now()): numb
 }
 
 /**
+ * A failure's `Retry-After` in full, rate limit or not, for a caller that holds its own calls for as long as GitHub
+ * asked and reads a bare 403 with one as a limit. `retryAfterMillis` is the capped wait a step's retry policy honors.
+ */
+const retryAfterUncapped = (headers: Headers): { readonly retryAfterUncappedMillis?: number } => {
+  const retryAfter = headers.get("retry-after")?.trim()
+  return retryAfter !== undefined && /^\d+$/.test(retryAfter) ? { retryAfterUncappedMillis: Number(retryAfter) * 1000 } : {}
+}
+
+/**
  * When a spent rate limit resets, uncapped: `x-ratelimit-reset` as epoch
  * milliseconds, for a caller that tells a person when GitHub answers again.
  * `retryAfterMillis` is the capped wait a step's retry policy honors.
@@ -636,6 +645,7 @@ const build = (
             outcomeUnknown,
             ...(wait === null ? {} : { retryAfterMillis: wait }),
             ...(rateLimited ? rateLimitReset(headers) : {}),
+            ...retryAfterUncapped(headers),
             ratelimitRemaining: headers.get("x-ratelimit-remaining")
           }
         ))

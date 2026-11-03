@@ -134,6 +134,10 @@ export const allowed = Effect.gen(function* () {
   return Option.some<ReadonlySet<string>>(new Set(text.value.split(",").map((name) => repositoryOf(name.trim()).id)))
 })
 
+/** Whether a deployment with the App acts on repository `id` (decision 0079 §4): its own, or any other `allowed` keeps. */
+export const actsOn = (own: Repository, allowed: Option.Option<ReadonlySet<string>>) => (id: string) =>
+  id === own.id || Option.match(allowed, { onNone: () => true, onSome: (ids) => ids.has(id) })
+
 /**
  * GitHub's answer as a `Permission` (decision 0079 §3): the role it names when it is one of GitHub's five, else an
  * organization's custom role at its base permission, never above write, because a custom role's base can't be told
