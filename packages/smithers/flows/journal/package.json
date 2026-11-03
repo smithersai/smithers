@@ -47,20 +47,36 @@
       "vibelang-source": "./src/Journal.ts",
       "default": "./.vibelang/js/src/Journal.js"
     },
-    "./JournalEvent": "./src/JournalEvent.vibe",
+    "./JournalEvent": {
+      "types": "./.vibe/declarations/src/JournalEvent.d.vibe.ts",
+      "vibelang-source": "./src/JournalEvent.vibe",
+      "default": "./.vibelang/js/src/JournalEvent.js"
+    },
     "./EngineEvent": {
       "types": "./src/EngineEvent.ts",
       "vibelang-source": "./src/EngineEvent.ts",
       "default": "./.vibelang/js/src/EngineEvent.js"
     },
-    "./JournalMetrics": "./src/JournalMetrics.vibe",
+    "./JournalMetrics": {
+      "types": "./.vibe/declarations/src/JournalMetrics.d.vibe.ts",
+      "vibelang-source": "./src/JournalMetrics.vibe",
+      "default": "./.vibelang/js/src/JournalMetrics.js"
+    },
     "./Migrations": {
       "types": "./src/Migrations.ts",
       "vibelang-source": "./src/Migrations.ts",
       "default": "./.vibelang/js/src/Migrations.js"
     },
-    "./OwnerId": "./src/OwnerId.vibe",
-    "./Projection": "./src/Projection.vibe",
+    "./OwnerId": {
+      "types": "./.vibe/declarations/src/OwnerId.d.vibe.ts",
+      "vibelang-source": "./src/OwnerId.vibe",
+      "default": "./.vibelang/js/src/OwnerId.js"
+    },
+    "./Projection": {
+      "types": "./.vibe/declarations/src/Projection.d.vibe.ts",
+      "vibelang-source": "./src/Projection.vibe",
+      "default": "./.vibelang/js/src/Projection.js"
+    },
     "./RedactedLogger": {
       "types": "./src/RedactedLogger.ts",
       "vibelang-source": "./src/RedactedLogger.ts",

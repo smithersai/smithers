@@ -34,7 +34,11 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.vibe",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./DatabaseMetrics": {
@@ -57,7 +61,11 @@
       "vibelang-source": "./src/UnsupportedBackend.ts",
       "default": "./.vibelang/js/src/UnsupportedBackend.js"
     },
-    "./index": "./src/index.vibe",
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./node/NodeDatabase": {
       "types": "./src/node/NodeDatabase.ts",
       "vibelang-source": "./src/node/NodeDatabase.ts",

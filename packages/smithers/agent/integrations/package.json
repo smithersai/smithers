@@ -34,44 +34,176 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Environment": "./src/Environment.ts",
-    "./core": "./src/core.ts",
-    "./core/AccessToken": "./src/core/AccessToken.vibe",
-    "./core/ActionFailure": "./src/core/ActionFailure.ts",
-    "./core/AuthorizationUrl": "./src/core/AuthorizationUrl.ts",
-    "./core/Channel": "./src/core/Channel.ts",
-    "./core/Connection": "./src/core/Connection.ts",
-    "./core/CursorStore": "./src/core/CursorStore.ts",
-    "./core/ExternalEvent": "./src/core/ExternalEvent.vibe",
-    "./core/IntegrationError": "./src/core/IntegrationError.ts",
-    "./core/JsonPath": "./src/core/JsonPath.ts",
-    "./core/OAuthToken": "./src/core/OAuthToken.ts",
-    "./core/Pkce": "./src/core/Pkce.ts",
-    "./core/SignalName": "./src/core/SignalName.ts",
-    "./core/Signature": "./src/core/Signature.ts",
-    "./core/Source": "./src/core/Source.ts",
-    "./core/SourceRecord": "./src/core/SourceRecord.vibe",
-    "./core/SourceStore": "./src/core/SourceStore.ts",
-    "./core/Sync": "./src/core/Sync.vibe",
-    "./github": "./src/github.ts",
-    "./github/Actions": "./src/github/Actions.ts",
-    "./github/AppAuth": "./src/github/AppAuth.ts",
-    "./github/Config": "./src/github/Config.vibe",
-    "./github/GitHubClient": "./src/github/GitHubClient.ts",
-    "./github/Issues": "./src/github/Issues.ts",
-    "./github/Payload": "./src/github/Payload.vibe",
-    "./github/Proxy": "./src/github/Proxy.ts",
-    "./github/RateLimit": "./src/github/RateLimit.ts",
-    "./github/Repository": "./src/github/Repository.ts",
-    "./github/Sync": "./src/github/Sync.ts",
-    "./index": "./src/index.ts",
+    "./Environment": {
+      "types": "./src/Environment.ts",
+      "vibelang-source": "./src/Environment.ts",
+      "default": "./.vibelang/js/src/Environment.js"
+    },
+    "./core": {
+      "types": "./src/core.ts",
+      "vibelang-source": "./src/core.ts",
+      "default": "./.vibelang/js/src/core.js"
+    },
+    "./core/AccessToken": {
+      "types": "./.vibe/declarations/src/core/AccessToken.d.vibe.ts",
+      "vibelang-source": "./src/core/AccessToken.vibe",
+      "default": "./.vibelang/js/src/core/AccessToken.js"
+    },
+    "./core/ActionFailure": {
+      "types": "./src/core/ActionFailure.ts",
+      "vibelang-source": "./src/core/ActionFailure.ts",
+      "default": "./.vibelang/js/src/core/ActionFailure.js"
+    },
+    "./core/AuthorizationUrl": {
+      "types": "./src/core/AuthorizationUrl.ts",
+      "vibelang-source": "./src/core/AuthorizationUrl.ts",
+      "default": "./.vibelang/js/src/core/AuthorizationUrl.js"
+    },
+    "./core/Channel": {
+      "types": "./src/core/Channel.ts",
+      "vibelang-source": "./src/core/Channel.ts",
+      "default": "./.vibelang/js/src/core/Channel.js"
+    },
+    "./core/Connection": {
+      "types": "./src/core/Connection.ts",
+      "vibelang-source": "./src/core/Connection.ts",
+      "default": "./.vibelang/js/src/core/Connection.js"
+    },
+    "./core/CursorStore": {
+      "types": "./src/core/CursorStore.ts",
+      "vibelang-source": "./src/core/CursorStore.ts",
+      "default": "./.vibelang/js/src/core/CursorStore.js"
+    },
+    "./core/ExternalEvent": {
+      "types": "./.vibe/declarations/src/core/ExternalEvent.d.vibe.ts",
+      "vibelang-source": "./src/core/ExternalEvent.vibe",
+      "default": "./.vibelang/js/src/core/ExternalEvent.js"
+    },
+    "./core/IntegrationError": {
+      "types": "./src/core/IntegrationError.ts",
+      "vibelang-source": "./src/core/IntegrationError.ts",
+      "default": "./.vibelang/js/src/core/IntegrationError.js"
+    },
+    "./core/JsonPath": {
+      "types": "./src/core/JsonPath.ts",
+      "vibelang-source": "./src/core/JsonPath.ts",
+      "default": "./.vibelang/js/src/core/JsonPath.js"
+    },
+    "./core/OAuthToken": {
+      "types": "./src/core/OAuthToken.ts",
+      "vibelang-source": "./src/core/OAuthToken.ts",
+      "default": "./.vibelang/js/src/core/OAuthToken.js"
+    },
+    "./core/Pkce": {
+      "types": "./src/core/Pkce.ts",
+      "vibelang-source": "./src/core/Pkce.ts",
+      "default": "./.vibelang/js/src/core/Pkce.js"
+    },
+    "./core/SignalName": {
+      "types": "./src/core/SignalName.ts",
+      "vibelang-source": "./src/core/SignalName.ts",
+      "default": "./.vibelang/js/src/core/SignalName.js"
+    },
+    "./core/Signature": {
+      "types": "./src/core/Signature.ts",
+      "vibelang-source": "./src/core/Signature.ts",
+      "default": "./.vibelang/js/src/core/Signature.js"
+    },
+    "./core/Source": {
+      "types": "./src/core/Source.ts",
+      "vibelang-source": "./src/core/Source.ts",
+      "default": "./.vibelang/js/src/core/Source.js"
+    },
+    "./core/SourceRecord": {
+      "types": "./.vibe/declarations/src/core/SourceRecord.d.vibe.ts",
+      "vibelang-source": "./src/core/SourceRecord.vibe",
+      "default": "./.vibelang/js/src/core/SourceRecord.js"
+    },
+    "./core/SourceStore": {
+      "types": "./src/core/SourceStore.ts",
+      "vibelang-source": "./src/core/SourceStore.ts",
+      "default": "./.vibelang/js/src/core/SourceStore.js"
+    },
+    "./core/Sync": {
+      "types": "./.vibe/declarations/src/core/Sync.d.vibe.ts",
+      "vibelang-source": "./src/core/Sync.vibe",
+      "default": "./.vibelang/js/src/core/Sync.js"
+    },
+    "./github": {
+      "types": "./src/github.ts",
+      "vibelang-source": "./src/github.ts",
+      "default": "./.vibelang/js/src/github.js"
+    },
+    "./github/Actions": {
+      "types": "./src/github/Actions.ts",
+      "vibelang-source": "./src/github/Actions.ts",
+      "default": "./.vibelang/js/src/github/Actions.js"
+    },
+    "./github/AppAuth": {
+      "types": "./src/github/AppAuth.ts",
+      "vibelang-source": "./src/github/AppAuth.ts",
+      "default": "./.vibelang/js/src/github/AppAuth.js"
+    },
+    "./github/Config": {
+      "types": "./.vibe/declarations/src/github/Config.d.vibe.ts",
+      "vibelang-source": "./src/github/Config.vibe",
+      "default": "./.vibelang/js/src/github/Config.js"
+    },
+    "./github/GitHubClient": {
+      "types": "./src/github/GitHubClient.ts",
+      "vibelang-source": "./src/github/GitHubClient.ts",
+      "default": "./.vibelang/js/src/github/GitHubClient.js"
+    },
+    "./github/Issues": {
+      "types": "./src/github/Issues.ts",
+      "vibelang-source": "./src/github/Issues.ts",
+      "default": "./.vibelang/js/src/github/Issues.js"
+    },
+    "./github/Payload": {
+      "types": "./.vibe/declarations/src/github/Payload.d.vibe.ts",
+      "vibelang-source": "./src/github/Payload.vibe",
+      "default": "./.vibelang/js/src/github/Payload.js"
+    },
+    "./github/Proxy": {
+      "types": "./src/github/Proxy.ts",
+      "vibelang-source": "./src/github/Proxy.ts",
+      "default": "./.vibelang/js/src/github/Proxy.js"
+    },
+    "./github/RateLimit": {
+      "types": "./src/github/RateLimit.ts",
+      "vibelang-source": "./src/github/RateLimit.ts",
+      "default": "./.vibelang/js/src/github/RateLimit.js"
+    },
+    "./github/Repository": {
+      "types": "./src/github/Repository.ts",
+      "vibelang-source": "./src/github/Repository.ts",
+      "default": "./.vibelang/js/src/github/Repository.js"
+    },
+    "./github/Sync": {
+      "types": "./src/github/Sync.ts",
+      "vibelang-source": "./src/github/Sync.ts",
+      "default": "./.vibelang/js/src/github/Sync.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./core/migrations/0001_integration_cursors": null,
     "./github/Webhook": null,
     "./github/ListenerRegistry": null,
-    "./core/IssueSync": "./src/core/IssueSync.ts",
+    "./core/IssueSync": {
+      "types": "./src/core/IssueSync.ts",
+      "vibelang-source": "./src/core/IssueSync.ts",
+      "default": "./.vibelang/js/src/core/IssueSync.js"
+    },
     "./linear": null,
     "./linear/Actions": null,
     "./linear/Config": null,
@@ -458,7 +590,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "scripts": {
     "lint": "eslint src examples --max-warnings=0 && dprint check",

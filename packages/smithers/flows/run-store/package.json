@@ -67,7 +67,11 @@
       "vibelang-source": "./src/RunStore.ts",
       "default": "./.vibelang/js/src/RunStore.js"
     },
-    "./RunStoreMetrics": "./src/RunStoreMetrics.vibe",
+    "./RunStoreMetrics": {
+      "types": "./.vibe/declarations/src/RunStoreMetrics.d.vibe.ts",
+      "vibelang-source": "./src/RunStoreMetrics.vibe",
+      "default": "./.vibelang/js/src/RunStoreMetrics.js"
+    },
     "./index": {
       "types": "./src/index.ts",
       "vibelang-source": "./src/index.ts",

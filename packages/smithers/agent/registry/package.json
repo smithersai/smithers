@@ -61,8 +61,16 @@
       "vibelang-source": "./src/Executable.ts",
       "default": "./.vibelang/js/src/Executable.js"
     },
-    "./MarkdownFlow": "./src/MarkdownFlow.vibe",
-    "./ModuleFlow": "./src/ModuleFlow.vibe",
+    "./MarkdownFlow": {
+      "types": "./.vibe/declarations/src/MarkdownFlow.d.vibe.ts",
+      "vibelang-source": "./src/MarkdownFlow.vibe",
+      "default": "./.vibelang/js/src/MarkdownFlow.js"
+    },
+    "./ModuleFlow": {
+      "types": "./.vibe/declarations/src/ModuleFlow.d.vibe.ts",
+      "vibelang-source": "./src/ModuleFlow.vibe",
+      "default": "./.vibelang/js/src/ModuleFlow.js"
+    },
     "./Pack": {
       "types": "./.vibe/declarations/src/Pack.d.vibe.ts",
       "vibelang-source": "./src/Pack.vibe",
@@ -73,7 +81,11 @@
       "vibelang-source": "./src/Registry.ts",
       "default": "./.vibelang/js/src/Registry.js"
     },
-    "./RegistryError": "./src/RegistryError.vibe",
+    "./RegistryError": {
+      "types": "./.vibe/declarations/src/RegistryError.d.vibe.ts",
+      "vibelang-source": "./src/RegistryError.vibe",
+      "default": "./.vibelang/js/src/RegistryError.js"
+    },
     "./index": {
       "types": "./src/index.ts",
       "vibelang-source": "./src/index.ts",
@@ -81,7 +93,11 @@
     },
     "./Prompt": {
       "types": "./.vibe/declarations/src/Prompt.d.vibe.ts",
-      "default": "./src/Prompt.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/Prompt.d.vibe.ts",
+        "vibelang-source": "./src/Prompt.vibe",
+        "default": "./.vibelang/js/src/Prompt.js"
+      }
     },
     "./Prompt/jsx-runtime": {
       "types": "./src/Prompt/jsx-runtime.ts",

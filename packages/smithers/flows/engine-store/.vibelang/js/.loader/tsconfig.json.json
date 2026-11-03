@@ -339,8 +339,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 5833,
-    "hash": "2nZYeTBU95Z536EDecEZCO0mZUVdDadh8CtdGI97kuQ"
+    "size": 7099,
+    "hash": "vf1VHC1ghlZnUX9dTqXUQa8-bXBBF9s-jjBJgsMgsQw"
    },
    {
     "path": {
@@ -367,8 +367,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 4856,
-    "hash": "05C_GJibNEAnuMVpPZn9UYwGc94uX-f5blMYHfANe-U"
+    "size": 5792,
+    "hash": "tclGin2j7J1-1euvTEo7n3UUHL7pm4M_063wLVWOaoM"
    },
    {
     "path": {
@@ -388,15 +388,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
-    "size": 19653,
-    "hash": "373XV-FsRKIYX2bq-dbuKXBNFKoRLdCBTBVA7Z2Ol9U"
+    "size": 20239,
+    "hash": "KELVyzOzJI2Drcg7s7FsndomtyrJrern_cUedaYXoQw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8565,
-    "hash": "RyBivdXW2YwvwGcm-3XzNIb5iWbJXXP471JAqiHyR_Y"
+    "size": 8845,
+    "hash": "S2xrkx_X-GtYsWRSTS0YYRAAk4wCvt9XotDFizAGeZM"
    },
    {
     "path": {

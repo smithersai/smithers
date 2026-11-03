@@ -39,7 +39,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./BrowserOtel": "./src/BrowserOtel.vibe",
+    "./BrowserOtel": {
+      "types": "./.vibe/declarations/src/BrowserOtel.d.vibe.ts",
+      "vibelang-source": "./src/BrowserOtel.vibe",
+      "default": "./.vibelang/js/src/BrowserOtel.js"
+    },
     "./Endpoint": {
       "types": "./src/Endpoint.ts",
       "vibelang-source": "./src/Endpoint.ts",
@@ -55,11 +59,31 @@
       "vibelang-source": "./src/JournalLogger.vibe",
       "default": "./.vibelang/js/src/JournalLogger.js"
     },
-    "./LogFailures": "./src/LogFailures.vibe",
-    "./Logger": "./src/Logger.vibe",
-    "./Metric": "./src/Metric.vibe",
-    "./NodeOtel": "./src/NodeOtel.vibe",
-    "./Otel": "./src/Otel.vibe",
+    "./LogFailures": {
+      "types": "./.vibe/declarations/src/LogFailures.d.vibe.ts",
+      "vibelang-source": "./src/LogFailures.vibe",
+      "default": "./.vibelang/js/src/LogFailures.js"
+    },
+    "./Logger": {
+      "types": "./.vibe/declarations/src/Logger.d.vibe.ts",
+      "vibelang-source": "./src/Logger.vibe",
+      "default": "./.vibelang/js/src/Logger.js"
+    },
+    "./Metric": {
+      "types": "./.vibe/declarations/src/Metric.d.vibe.ts",
+      "vibelang-source": "./src/Metric.vibe",
+      "default": "./.vibelang/js/src/Metric.js"
+    },
+    "./NodeOtel": {
+      "types": "./.vibe/declarations/src/NodeOtel.d.vibe.ts",
+      "vibelang-source": "./src/NodeOtel.vibe",
+      "default": "./.vibelang/js/src/NodeOtel.js"
+    },
+    "./Otel": {
+      "types": "./.vibe/declarations/src/Otel.d.vibe.ts",
+      "vibelang-source": "./src/Otel.vibe",
+      "default": "./.vibelang/js/src/Otel.js"
+    },
     "./Otlp": {
       "types": "./src/Otlp.ts",
       "vibelang-source": "./src/Otlp.ts",

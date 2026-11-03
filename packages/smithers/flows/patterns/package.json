@@ -68,7 +68,11 @@
     },
     "./DriftDetector": {
       "types": "./.vibe/declarations/src/DriftDetector.d.vibe.ts",
-      "default": "./src/DriftDetector.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/DriftDetector.d.vibe.ts",
+        "vibelang-source": "./src/DriftDetector.vibe",
+        "default": "./.vibelang/js/src/DriftDetector.js"
+      }
     },
     "./Escalation": {
       "types": "./.vibe/declarations/src/Escalation.d.vibe.ts",
@@ -111,7 +115,11 @@
       "vibelang-source": "./src/Pattern.ts",
       "default": "./.vibelang/js/src/Pattern.js"
     },
-    "./PatternError": "./src/PatternError.vibe",
+    "./PatternError": {
+      "types": "./.vibe/declarations/src/PatternError.d.vibe.ts",
+      "vibelang-source": "./src/PatternError.vibe",
+      "default": "./.vibelang/js/src/PatternError.js"
+    },
     "./Quarantine": {
       "types": "./src/Quarantine.ts",
       "vibelang-source": "./src/Quarantine.ts",

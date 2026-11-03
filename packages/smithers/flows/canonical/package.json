@@ -19,16 +19,44 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.vibe",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Canonical": "./src/Canonical.ts",
-    "./index": "./src/index.vibe",
-    "./Record": "./src/Record.ts",
-    "./BoundedJson": "./src/BoundedJson.ts",
-    "./IssuePath": "./src/IssuePath.vibe",
+    "./Canonical": {
+      "types": "./src/Canonical.ts",
+      "vibelang-source": "./src/Canonical.ts",
+      "default": "./.vibelang/js/src/Canonical.js"
+    },
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Record": {
+      "types": "./src/Record.ts",
+      "vibelang-source": "./src/Record.ts",
+      "default": "./.vibelang/js/src/Record.js"
+    },
+    "./BoundedJson": {
+      "types": "./src/BoundedJson.ts",
+      "vibelang-source": "./src/BoundedJson.ts",
+      "default": "./.vibelang/js/src/BoundedJson.js"
+    },
+    "./IssuePath": {
+      "types": "./.vibe/declarations/src/IssuePath.d.vibe.ts",
+      "vibelang-source": "./src/IssuePath.vibe",
+      "default": "./.vibelang/js/src/IssuePath.js"
+    },
     "./ReadonlyMap": "./src/ReadonlyMap.ts",
-    "./Serializer": "./src/Serializer.ts"
+    "./Serializer": {
+      "types": "./src/Serializer.ts",
+      "vibelang-source": "./src/Serializer.ts",
+      "default": "./.vibelang/js/src/Serializer.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -36,7 +64,8 @@
     "LICENSE",
     "README.md",
     "docs/",
-    "examples/"
+    "examples/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

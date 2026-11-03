@@ -260,22 +260,22 @@
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
-    "size": 9119,
-    "hash": "7YuFXWmqh3flZ1P4zWMFQOR3457joJXOVf8tpybF5Vs"
+    "size": 10177,
+    "hash": "HVzQHdlCGoRJ7BNjX20MIWjfqqwKwpcOYGB1797MYvs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 4856,
-    "hash": "05C_GJibNEAnuMVpPZn9UYwGc94uX-f5blMYHfANe-U"
+    "size": 5792,
+    "hash": "tclGin2j7J1-1euvTEo7n3UUHL7pm4M_063wLVWOaoM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
-    "size": 13470,
-    "hash": "ggt6Vc_8djm71tMyGMemGQ0MRL76nXfxvZOa-6byjvo"
+    "size": 13976,
+    "hash": "qcvi_3wmI6ce7NbCetMP6LKzZ3o5_w1_EAy1aNA8kiQ"
    },
    {
     "path": {
@@ -295,22 +295,22 @@
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
-    "size": 11492,
-    "hash": "AeYIWpZsmYbKCYUI0lf8zj32TrM55Kp3i8EqqYXLjsE"
+    "size": 14108,
+    "hash": "C7LdBvOYkz_eX0aXQzyI4fkhwPDxzWaSTAdUDcgrq5I"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8565,
-    "hash": "RyBivdXW2YwvwGcm-3XzNIb5iWbJXXP471JAqiHyR_Y"
+    "size": 8845,
+    "hash": "S2xrkx_X-GtYsWRSTS0YYRAAk4wCvt9XotDFizAGeZM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 10516,
-    "hash": "6vpTFScAhbXGxHmFFlcwYvqsB_yar6xEehR1E7j4Dmw"
+    "size": 11122,
+    "hash": "R9pPiv0vb3cdcG18_Rxkz5BXWBkGLYKOSc42WDs479k"
    },
    {
     "path": {
@@ -323,8 +323,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
-    "size": 13994,
-    "hash": "beI6HOfpTl_6nVbacXJ2pnPOAiBe0IsKLLaJELEk9I8"
+    "size": 15062,
+    "hash": "tB6dMRn77O4ZHVfBCOw1pqLh2Lw0Wjbk4lsw8dSwUW4"
    },
    {
     "path": {
@@ -337,8 +337,8 @@
     "path": {
      "relative": "packages/testing/package.json"
     },
-    "size": 17808,
-    "hash": "fARoLXLNcDju52synBD6VteX_8zcemvBcLncOe_RxbU"
+    "size": 18582,
+    "hash": "CRnbF5mA38p5_MGLfD_54PoDHCqEwnGs0QlV_nH9lyk"
    },
    {
     "path": {
@@ -365,15 +365,15 @@
     "path": {
      "relative": "packages/smithers/flows/platform-browser/package.json"
     },
-    "size": 6060,
-    "hash": "iW8nYJb31SF8NGHacJvHUUdTB4kDDGZ-iRhts-0gneM"
+    "size": 6886,
+    "hash": "rZUkMulvDjShE8TDRpZrYz8MALT2Ka0A0TO25EM0_qs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
-    "size": 7279,
-    "hash": "V7zfkQJyUfLAVrbrHGTHxXkzRgl3Jgs8VFj5Q7JBLiE"
+    "size": 7573,
+    "hash": "_UzuX1bu3eFd_Xr--f1qPyMTXOHkwH2YIMn5lu6qmXo"
    },
    {
     "path": {
@@ -3893,17 +3893,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/model/src/Model.ts"
+     "relative": "packages/smithers/agent/model/src/Model.vibe"
     },
-    "size": 7135,
-    "hash": "wrVkNAzfVzo_0HY9QFyybcVuHeUfvVnmv1I2Hl5DQOQ"
+    "size": 7109,
+    "hash": "HM3Hyl5U0KIvrSOjWg6BxyjHdUq1s47cysCatAyF8LI"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/src/Evaluator.ts"
     },
-    "size": 42668,
-    "hash": "NDp-ZPQtMHv_Uz6XT8qiK4_dW0I2r1PZnX8Qqvpyv5o"
+    "size": 42670,
+    "hash": "l-AT5NvAOT9rER9MI4w9q_TzmQl2ymRaCmIZF69ygbE"
    },
    {
     "path": {
@@ -5043,8 +5043,8 @@
     "path": {
      "relative": "packages/smithers/agent/model/src/Route.ts"
     },
-    "size": 28167,
-    "hash": "ZMAYzUyMkb_kT4_sTPf7kmeNqskJzqDva2ml7WXeV0s"
+    "size": 28169,
+    "hash": "8dL1G_1WroInFDW3smyKKlveSMMtrHSRhY-bDSQAXgw"
    },
    {
     "path": {
@@ -6953,7 +6953,7 @@
     "relative": "packages/smithers/agent/model/src/Pricing.vibe"
    },
    {
-    "relative": "packages/smithers/agent/model/src/Model.ts"
+    "relative": "packages/smithers/agent/model/src/Model.vibe"
    },
    {
     "relative": "packages/smithers/agent/model/src/Evaluator.ts"

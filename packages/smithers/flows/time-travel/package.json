@@ -36,17 +36,29 @@
     "./package.json": "./package.json",
     ".": {
       "types": "./.vibe/declarations/src/index.d.vibe.ts",
-      "default": "./src/index.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/index.d.vibe.ts",
+        "vibelang-source": "./src/index.vibe",
+        "default": "./.vibelang/js/src/index.js"
+      }
     },
     "./internal/*": null,
     "./*/index": null,
-    "./CompensationHandlers": "./src/CompensationHandlers.vibe",
+    "./CompensationHandlers": {
+      "types": "./.vibe/declarations/src/CompensationHandlers.d.vibe.ts",
+      "vibelang-source": "./src/CompensationHandlers.vibe",
+      "default": "./.vibelang/js/src/CompensationHandlers.js"
+    },
     "./EffectBoundary": {
       "types": "./src/EffectBoundary.ts",
       "vibelang-source": "./src/EffectBoundary.ts",
       "default": "./.vibelang/js/src/EffectBoundary.js"
     },
-    "./Frame": "./src/Frame.vibe",
+    "./Frame": {
+      "types": "./.vibe/declarations/src/Frame.d.vibe.ts",
+      "vibelang-source": "./src/Frame.vibe",
+      "default": "./.vibelang/js/src/Frame.js"
+    },
     "./MemoryTimeTravelStore": {
       "types": "./src/MemoryTimeTravelStore.ts",
       "vibelang-source": "./src/MemoryTimeTravelStore.ts",
@@ -67,7 +79,11 @@
       "vibelang-source": "./src/TimeTravel.ts",
       "default": "./.vibelang/js/src/TimeTravel.js"
     },
-    "./TimeTravelError": "./src/TimeTravelError.vibe",
+    "./TimeTravelError": {
+      "types": "./.vibe/declarations/src/TimeTravelError.d.vibe.ts",
+      "vibelang-source": "./src/TimeTravelError.vibe",
+      "default": "./.vibelang/js/src/TimeTravelError.js"
+    },
     "./TimeTravelStore": {
       "types": "./src/TimeTravelStore.ts",
       "vibelang-source": "./src/TimeTravelStore.ts",
@@ -75,7 +91,11 @@
     },
     "./index": {
       "types": "./.vibe/declarations/src/index.d.vibe.ts",
-      "default": "./src/index.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/index.d.vibe.ts",
+        "vibelang-source": "./src/index.vibe",
+        "default": "./.vibelang/js/src/index.js"
+      }
     }
   },
   "files": [

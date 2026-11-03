@@ -56,7 +56,11 @@
       "vibelang-source": "./src/CanonicalJson.ts",
       "default": "./.vibelang/js/src/CanonicalJson.js"
     },
-    "./Classifier": "./src/Classifier.vibe",
+    "./Classifier": {
+      "types": "./.vibe/declarations/src/Classifier.d.vibe.ts",
+      "vibelang-source": "./src/Classifier.vibe",
+      "default": "./.vibelang/js/src/Classifier.js"
+    },
     "./DeferredTools": {
       "types": "./src/DeferredTools.ts",
       "vibelang-source": "./src/DeferredTools.ts",
@@ -77,8 +81,16 @@
       "vibelang-source": "./src/EvaluatorBackup.ts",
       "default": "./.vibelang/js/src/EvaluatorBackup.js"
     },
-    "./Framing": "./src/Framing.vibe",
-    "./FailureCopy": "./src/FailureCopy.vibe",
+    "./Framing": {
+      "types": "./.vibe/declarations/src/Framing.d.vibe.ts",
+      "vibelang-source": "./src/Framing.vibe",
+      "default": "./.vibelang/js/src/Framing.js"
+    },
+    "./FailureCopy": {
+      "types": "./.vibe/declarations/src/FailureCopy.d.vibe.ts",
+      "vibelang-source": "./src/FailureCopy.vibe",
+      "default": "./.vibelang/js/src/FailureCopy.js"
+    },
     "./Model": {
       "types": "./.vibe/declarations/src/Model.d.vibe.ts",
       "vibelang-source": "./src/Model.vibe",
@@ -89,8 +101,16 @@
       "vibelang-source": "./src/ModelCatalog.ts",
       "default": "./.vibelang/js/src/ModelCatalog.js"
     },
-    "./ModelError": "./src/ModelError.vibe",
-    "./ModelEvent": "./src/ModelEvent.vibe",
+    "./ModelError": {
+      "types": "./.vibe/declarations/src/ModelError.d.vibe.ts",
+      "vibelang-source": "./src/ModelError.vibe",
+      "default": "./.vibelang/js/src/ModelError.js"
+    },
+    "./ModelEvent": {
+      "types": "./.vibe/declarations/src/ModelEvent.d.vibe.ts",
+      "vibelang-source": "./src/ModelEvent.vibe",
+      "default": "./.vibelang/js/src/ModelEvent.js"
+    },
     "./ModelRequest": {
       "types": "./src/ModelRequest.ts",
       "vibelang-source": "./src/ModelRequest.ts",
@@ -111,7 +131,11 @@
       "vibelang-source": "./src/OpenAIResponses.ts",
       "default": "./.vibelang/js/src/OpenAIResponses.js"
     },
-    "./Pricing": "./src/Pricing.vibe",
+    "./Pricing": {
+      "types": "./.vibe/declarations/src/Pricing.d.vibe.ts",
+      "vibelang-source": "./src/Pricing.vibe",
+      "default": "./.vibelang/js/src/Pricing.js"
+    },
     "./Protocol": {
       "types": "./.vibe/declarations/src/Protocol.d.vibe.ts",
       "vibelang-source": "./src/Protocol.vibe",
@@ -127,7 +151,11 @@
       "vibelang-source": "./src/Route.ts",
       "default": "./.vibelang/js/src/Route.js"
     },
-    "./ToolStream": "./src/ToolStream.vibe",
+    "./ToolStream": {
+      "types": "./.vibe/declarations/src/ToolStream.d.vibe.ts",
+      "vibelang-source": "./src/ToolStream.vibe",
+      "default": "./.vibelang/js/src/ToolStream.js"
+    },
     "./index": {
       "types": "./src/index.ts",
       "vibelang-source": "./src/index.ts",

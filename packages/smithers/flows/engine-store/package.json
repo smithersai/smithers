@@ -132,7 +132,11 @@
       "vibelang-source": "./src/Reconciliation.vibe",
       "default": "./.vibelang/js/src/Reconciliation.js"
     },
-    "./ReplayOnly": "./src/ReplayOnly.vibe",
+    "./ReplayOnly": {
+      "types": "./.vibe/declarations/src/ReplayOnly.d.vibe.ts",
+      "vibelang-source": "./src/ReplayOnly.vibe",
+      "default": "./.vibelang/js/src/ReplayOnly.js"
+    },
     "./Retention": {
       "types": "./src/Retention.ts",
       "vibelang-source": "./src/Retention.ts",
@@ -143,7 +147,11 @@
       "vibelang-source": "./src/RunCatalogRead.ts",
       "default": "./.vibelang/js/src/RunCatalogRead.js"
     },
-    "./RunState": "./src/RunState.vibe",
+    "./RunState": {
+      "types": "./.vibe/declarations/src/RunState.d.vibe.ts",
+      "vibelang-source": "./src/RunState.vibe",
+      "default": "./.vibelang/js/src/RunState.js"
+    },
     "./Selection": {
       "types": "./src/Selection.ts",
       "vibelang-source": "./src/Selection.ts",
@@ -159,7 +167,11 @@
       "vibelang-source": "./src/StepBoundary.ts",
       "default": "./.vibelang/js/src/StepBoundary.js"
     },
-    "./StepLogs": "./src/StepLogs.vibe",
+    "./StepLogs": {
+      "types": "./.vibe/declarations/src/StepLogs.d.vibe.ts",
+      "vibelang-source": "./src/StepLogs.vibe",
+      "default": "./.vibelang/js/src/StepLogs.js"
+    },
     "./DeferredClockFold": {
       "types": "./src/DeferredClockFold.ts",
       "vibelang-source": "./src/DeferredClockFold.ts",
@@ -175,7 +187,11 @@
       "vibelang-source": "./src/StepSandbox.ts",
       "default": "./.vibelang/js/src/StepSandbox.js"
     },
-    "./WakeBus": "./src/WakeBus.vibe",
+    "./WakeBus": {
+      "types": "./.vibe/declarations/src/WakeBus.d.vibe.ts",
+      "vibelang-source": "./src/WakeBus.vibe",
+      "default": "./.vibelang/js/src/WakeBus.js"
+    },
     "./WorkspaceSandbox": {
       "types": "./.vibe/declarations/src/WorkspaceSandbox.d.vibe.ts",
       "vibelang-source": "./src/WorkspaceSandbox.vibe",

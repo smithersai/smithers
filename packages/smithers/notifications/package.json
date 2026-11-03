@@ -53,11 +53,19 @@
     },
     "./Inbox": {
       "types": "./.vibe/declarations/src/Inbox.d.vibe.ts",
-      "default": "./src/Inbox.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/Inbox.d.vibe.ts",
+        "vibelang-source": "./src/Inbox.vibe",
+        "default": "./.vibelang/js/src/Inbox.js"
+      }
     },
     "./Notification": {
       "types": "./.vibe/declarations/src/Notification.d.vibe.ts",
-      "default": "./src/Notification.vibe"
+      "default": {
+        "types": "./.vibe/declarations/src/Notification.d.vibe.ts",
+        "vibelang-source": "./src/Notification.vibe",
+        "default": "./.vibelang/js/src/Notification.js"
+      }
     },
     "./NotificationEvent": {
       "types": "./src/NotificationEvent.ts",
