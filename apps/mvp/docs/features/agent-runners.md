@@ -226,6 +226,18 @@ A machine that posts issue work links with `ops/work-links/link.mjs` ([work link
 
 A repository's Cloudflare overflow runner is registered again by turning the overflow on again with its `PUT` (`/overflow/cloudflare`), which also rotates its token. A runner that an end-to-end run registers is registered on each run, so it needs nothing.
 
+## Turning the route on
+
+Nothing here applies until the git-credential route is turned on, and nothing changes for anyone until then. Registrations and settings written before the fenced release can't be told apart from good ones, so none is kept:
+
+1. Deploy the fenced release with the route off (`GIT_CREDENTIAL_ON = false`).
+2. Stop or wait for every queued or claimed job and every TODO and Admin flow that hasn't ended.
+3. Run `ops/runner-cutover/cutover.ts`. It refuses unless each `--worker` serves one version at 100%, `version.json` names `--release`, and nothing from step 2 is left. Then, in one transaction, it clears every runner's authorization and marks every agent and overflow. It checks again afterwards and exits 1, asking for another run, if a deploy or flow started meanwhile.
+4. Re-register each runner and write each marked agent and overflow again, with the same `PUT`s, through the fenced route. Until then a marked overflow reads as off, and a TODO on a repository whose coding agent is marked fails as unavailable rather than coding with another agent. The [audit](#audit) lists what remains.
+5. Turn the route on.
+
+A rollback to a release before the fence undoes the check: run the cutover again after one.
+
 ## Audit
 
 `GET /api/runners/audit`, for an Admin of the deployment's own repository acting in person (`403` for anyone else,
@@ -234,7 +246,8 @@ an Admin of another repository included), lists every live runner on every repos
 repository's Admin role authorized it, or null), `labels`, `seenAt`, and its repository's
 `installation: { recorded, checkedAt }`. A runner is flagged `needs_registration` where nothing authorized it
 ([registering a runner again](#registering-a-runner-again)) and `no_installation` where no installation is recorded:
-either way it claims nothing until someone acts ([decision 0148](../decisions/0148-runner-git-credential.md)). It never
+either way it claims nothing until someone acts ([decision 0148](../decisions/0148-runner-git-credential.md)). Its
+`reconfirm: { agents, overflow }` names each agent and overflow the [cutover](#turning-the-route-on) marked. It never
 answers a token or a token's digest.
 
 ## Admission

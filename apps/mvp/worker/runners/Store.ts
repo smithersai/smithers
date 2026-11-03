@@ -274,7 +274,7 @@ export const setAgent = (write: AgentWrite, by: By): Effect.Effect<Change, unkno
           ${agent.profile}, ${agent.maxHours}, ${agent.restarts}, ${write.coding}, ${by.actorId})
         ON CONFLICT (repo_id, name) DO UPDATE SET labels = EXCLUDED.labels, profile = EXCLUDED.profile,
           max_hours = EXCLUDED.max_hours, restarts = EXCLUDED.restarts, coding = EXCLUDED.coding,
-          updated_by = EXCLUDED.updated_by, updated_at = now()`
+          updated_by = EXCLUDED.updated_by, updated_at = now(), reconfirm_at = NULL`
       yield* bump(resourceKey("agents", write.repoId, agent.name))
       if ((yield* codingName(write.repoId)) !== coding) yield* bump(codingKey(write.repoId))
       const change = yield* written(write.repoId, agent.name, by, "set")
@@ -312,16 +312,29 @@ export const agent = (repoId: string, name: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly name: string; readonly coding: boolean }>`
-      SELECT name, coding FROM agents WHERE repo_id = ${repoId} AND name = ${name}`
+      SELECT name, coding FROM agents WHERE repo_id = ${repoId} AND name = ${name} AND reconfirm_at IS NULL`
     return Option.fromNullishOr(row)
   })
 
-/** Repository `repoId`'s coding agent, or none when it codes with Smithers' own. A row the schema refuses dies. */
+/** The repository's coding agent was marked by the runner cutover and no Admin has written it again (decision 0148). */
+export class CodingAgentUnconfirmed extends Schema.TaggedError<CodingAgentUnconfirmed>()(
+  "@smthrs/mvp/runners/CodingAgentUnconfirmed",
+  {},
+) {}
+
+/**
+ * Repository `repoId`'s coding agent, or none when it codes with Smithers' own. A row the schema refuses dies. One the
+ * runner cutover marked fails `CodingAgentUnconfirmed`: a TODO waits as unavailable, never quietly coding with something
+ * other than the agent an Admin chose.
+ */
 export const codingAgent = (repoId: string): Effect.Effect<Option.Option<AgentRunner.Agent>, unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<Record<string, unknown>>`
-      SELECT name, labels, profile, max_hours AS "maxHours", restarts FROM agents WHERE repo_id = ${repoId} AND coding`
+      SELECT name, labels, profile, max_hours AS "maxHours", restarts, reconfirm_at IS NOT NULL AS unconfirmed
+      FROM agents WHERE repo_id = ${repoId} AND coding`
     if (row === undefined) return Option.none()
-    return Option.some(yield* Effect.orDie(decodeAgent(row)))
+    const { unconfirmed, ...agent } = row
+    if (unconfirmed === true) return yield* new CodingAgentUnconfirmed()
+    return Option.some(yield* Effect.orDie(decodeAgent(agent)))
   })

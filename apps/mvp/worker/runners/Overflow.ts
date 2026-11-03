@@ -127,7 +127,7 @@ export const set = (
           origin = EXCLUDED.origin, profile = EXCLUDED.profile, argv = EXCLUDED.argv, labels = EXCLUDED.labels,
           min_queued_seconds = EXCLUDED.min_queued_seconds, capacity = EXCLUDED.capacity,
           token_ciphertext = EXCLUDED.token_ciphertext, token_nonce = EXCLUDED.token_nonce,
-          key_version = EXCLUDED.key_version, updated_by = EXCLUDED.updated_by, updated_at = now()`
+          key_version = EXCLUDED.key_version, updated_by = EXCLUDED.updated_by, updated_at = now(), reconfirm_at = NULL`
       // The setting's own write may have waited too: still within the authority's deadline, or none of it holds.
       yield* Store.commitWithin(by)
       return change
@@ -174,7 +174,7 @@ export const read = (repoId: string): Effect.Effect<Option.Option<Overflow>, unk
         SELECT repo_id AS "repoId", person_id AS "personId", connection_id AS "connectionId", origin, profile, argv,
           labels, min_queued_seconds AS "minQueuedSeconds", capacity, token_ciphertext AS ciphertext,
           token_nonce AS nonce, key_version AS "keyVersion"
-        FROM repo_overflow WHERE repo_id = ${repoId}`,
+        FROM repo_overflow WHERE repo_id = ${repoId} AND reconfirm_at IS NULL`,
       ([row]) =>
         row === undefined ? Option.none() : Option.some<Overflow>({
           repoId: row.repoId,
@@ -203,7 +203,7 @@ export const due = (key: string): Effect.Effect<Option.Option<Due>, unknown, Sql
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     Effect.map(
       sql<{ readonly repoId: string }>`
-        SELECT j.repo_id AS "repoId" FROM agent_jobs j JOIN repo_overflow o ON o.repo_id = j.repo_id
+        SELECT j.repo_id AS "repoId" FROM agent_jobs j JOIN repo_overflow o ON o.repo_id = j.repo_id AND o.reconfirm_at IS NULL
         WHERE j.key = ${key} AND j.status = 'queued' AND NOT j.cancel_requested AND j.pinned_runner IS NULL
           AND greatest(j.created_at, coalesce(j.not_before, j.created_at))
             <= now() - o.min_queued_seconds * interval '1 second'

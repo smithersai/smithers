@@ -15,7 +15,7 @@ const runtime = testFile("runner_audit")
 
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE runners, runner_changes, github_repositories, people RESTART IDENTITY CASCADE`)))
+    sql`TRUNCATE runners, runner_changes, agents, repo_overflow, github_repositories, people RESTART IDENTITY CASCADE`)))
 
 const sql = <A extends object>(strings: TemplateStringsArray, ...values: Array<unknown>) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client<A>(strings, ...(values as Array<never>))))
@@ -63,7 +63,7 @@ test("lists each live runner with its registrant, its authorization and installa
   const answer = await audit(admin)
   expect(answer.status).toBe(200)
   const body = JSON.parse(answer.text) as { runners: ReadonlyArray<Audit.Row> }
-  expect(Object.keys(body)).toEqual(["runners"])
+  expect(Object.keys(body)).toEqual(["runners", "reconfirm"])
   expect(body.runners.map((row) => [row.repoId, row.name, row.addedBy, row.addedByLogin, row.installation.recorded, row.flags]))
     .toEqual([
       ["github/acme/legacy", "b", ADMIN_ID, "octo-admin", true, ["needs_registration"]],
@@ -82,4 +82,20 @@ test("lists each live runner with its registrant, its authorization and installa
     expect(answer.text).not.toContain(digestSync(token))
   }
   expect(answer.text).not.toMatch(/token/i)
+})
+
+test("names each agent and overflow the runner cutover marked, which doesn't run until written again", async () => {
+  await sql`INSERT INTO agents (repo_id, name, labels, profile, coding, updated_by, reconfirm_at)
+    VALUES ('github/acme/marked', 'coder', '{}', 'p', true, 'person-admin', now())`
+  await sql`INSERT INTO repo_overflow (repo_id, person_id, connection_id, origin, profile, argv, labels, min_queued_seconds,
+      capacity, token_ciphertext, token_nonce, key_version, updated_by, reconfirm_at)
+    VALUES ('github/acme/marked', 'person-admin', 'c', 'https://smithers.example', 'p', '["a"]'::jsonb, '{}', 0, 1, 'sealed-secret', 'n', 1, 'person-admin', now())`
+  const answer = await audit(admin)
+  expect(JSON.parse(answer.text)).toMatchObject({
+    reconfirm: {
+      agents: [{ repoId: "github/acme/marked", name: "coder", coding: true, updatedBy: "person-admin" }],
+      overflow: [{ repoId: "github/acme/marked", updatedBy: "person-admin" }],
+    },
+  })
+  expect(answer.text).not.toContain("sealed-secret")
 })

@@ -96,7 +96,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       fields.runners = runners.length
       fields.flagged = runners.filter((runner) => runner.flags.length > 0).length
       fields.outcome = "listed"
-      return HttpServerResponse.jsonUnsafe({ runners }, { headers: noStore })
+      // What the runner cutover marked (ops/runner-cutover/cutover.ts): it doesn't run until an Admin writes it again.
+      const reconfirm = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        Effect.all({
+          agents: sql`
+            SELECT repo_id AS "repoId", name, coding, updated_by AS "updatedBy", to_json(reconfirm_at)#>>'{}' AS "markedAt"
+            FROM agents WHERE reconfirm_at IS NOT NULL ORDER BY repo_id, name`,
+          overflow: sql`
+            SELECT repo_id AS "repoId", updated_by AS "updatedBy", to_json(reconfirm_at)#>>'{}' AS "markedAt"
+            FROM repo_overflow WHERE reconfirm_at IS NOT NULL ORDER BY repo_id`,
+        })).pipe(Effect.provide(database))
+      return HttpServerResponse.jsonUnsafe({ runners, reconfirm }, { headers: noStore })
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {
