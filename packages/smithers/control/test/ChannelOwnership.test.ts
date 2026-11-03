@@ -1,6 +1,6 @@
 import { Effect, Layer, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Channels from "../src/Channels.ts"
+import * as Channels from "../src/Channels.vibe"
 import { Control } from "../src/Control.ts"
 import { RunNotFound } from "../src/ControlError.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"

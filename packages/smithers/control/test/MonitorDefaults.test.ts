@@ -24,7 +24,7 @@ import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { InvalidInput, PersistenceError } from "../src/ControlError.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
-import * as Monitor from "../src/Monitor.ts"
+import * as Monitor from "../src/Monitor.vibe"
 import { durable, type DurableStack } from "./DurableStack.ts"
 import { park } from "./Park.ts"
 

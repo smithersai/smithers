@@ -53,8 +53,8 @@
       "default": "./.vibelang/js/src/Cancellation.js"
     },
     "./Channels": {
-      "types": "./src/Channels.ts",
-      "vibelang-source": "./src/Channels.ts",
+      "types": "./.vibe/declarations/src/Channels.d.vibe.ts",
+      "vibelang-source": "./src/Channels.vibe",
       "default": "./.vibelang/js/src/Channels.js"
     },
     "./Control": {
@@ -103,8 +103,8 @@
       "default": "./.vibelang/js/src/ControlServer.js"
     },
     "./Credential": {
-      "types": "./src/Credential.ts",
-      "vibelang-source": "./src/Credential.ts",
+      "types": "./.vibe/declarations/src/Credential.d.vibe.ts",
+      "vibelang-source": "./src/Credential.vibe",
       "default": "./.vibelang/js/src/Credential.js"
     },
     "./CredentialCipher": {
@@ -113,8 +113,8 @@
       "default": "./.vibelang/js/src/CredentialCipher.js"
     },
     "./CredentialStore": {
-      "types": "./src/CredentialStore.ts",
-      "vibelang-source": "./src/CredentialStore.ts",
+      "types": "./.vibe/declarations/src/CredentialStore.d.vibe.ts",
+      "vibelang-source": "./src/CredentialStore.vibe",
       "default": "./.vibelang/js/src/CredentialStore.js"
     },
     "./DispatchReader": {
@@ -128,13 +128,13 @@
       "default": "./.vibelang/js/src/Lineage.js"
     },
     "./Migrations": {
-      "types": "./src/Migrations.ts",
-      "vibelang-source": "./src/Migrations.ts",
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./Monitor": {
-      "types": "./src/Monitor.ts",
-      "vibelang-source": "./src/Monitor.ts",
+      "types": "./.vibe/declarations/src/Monitor.d.vibe.ts",
+      "vibelang-source": "./src/Monitor.vibe",
       "default": "./.vibelang/js/src/Monitor.js"
     },
     "./ScopedToken": {
@@ -148,8 +148,8 @@
       "default": "./.vibelang/js/src/SqlControlRuntime.js"
     },
     "./SqlCredentialStore": {
-      "types": "./src/SqlCredentialStore.ts",
-      "vibelang-source": "./src/SqlCredentialStore.ts",
+      "types": "./.vibe/declarations/src/SqlCredentialStore.d.vibe.ts",
+      "vibelang-source": "./src/SqlCredentialStore.vibe",
       "default": "./.vibelang/js/src/SqlCredentialStore.js"
     },
     "./Steering": {

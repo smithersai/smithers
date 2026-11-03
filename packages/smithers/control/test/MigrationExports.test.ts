@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as ControlTables from "../src/migrations/0001_control_tables.vibe"
 
 // The CommonJS build converts every source module with esbuild's Node interop,

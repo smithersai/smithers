@@ -9,8 +9,7 @@
  */
 
 import * as Sha256 from "@smthrs/crypto/Sha256"
-import { Clock, Context, Effect, Layer, Ref, type Schema, Semaphore } from "effect"
-import { Headers } from "effect/http"
+import { type Schema } from "effect"
 import { Control } from "./Control.ts"
 import { type ControlError, InvalidInput, type Unauthorized, Unavailable } from "./ControlError.ts"
 import { ControlRuntime } from "./ControlRuntime.ts"
@@ -83,11 +82,11 @@ export interface Channel<A = unknown> {
    * signature, authorization, and credential headers must not be declared.
    */
   readonly fingerprintHeaders?: ReadonlyArray<string> | undefined
-  readonly verify: (raw: RawInbound) => Effect.Effect<void, Unauthorized>
+  readonly verify: (raw: RawInbound) => void!Unauthorized
   /** Deterministic, side-effect-free decoding; retries may evaluate it again. */
-  readonly decode: (raw: RawInbound) => Effect.Effect<A, InvalidInput>
+  readonly decode: (raw: RawInbound) => A!InvalidInput
   /** Deterministic, side-effect-free mapping; retries may evaluate it again. */
-  readonly map: (payload: A) => Effect.Effect<InboundResult, InvalidInput>
+  readonly map: (payload: A) => InboundResult!InvalidInput
   readonly project: (run: RunSummary, delivery: Delivery | undefined) => DeliveryProjection
 }
 
@@ -99,7 +98,7 @@ export interface Channel<A = unknown> {
  * @since 1.0.0
  */
 export interface RegisteredChannel extends Omit<Channel, "decode" | "map"> {
-  readonly decodeAndMap: (raw: RawInbound) => Effect.Effect<InboundResult, InvalidInput>
+  readonly decodeAndMap: (raw: RawInbound) => InboundResult!InvalidInput
 }
 
 const eraseChannel = <A>(channel: Channel<A>): RegisteredChannel => ({
@@ -140,10 +139,10 @@ export interface ProjectRequest {
  * @since 0.1.0
  */
 export interface Channels {
-  readonly register: <A>(channel: Channel<A>) => Effect.Effect<void>
-  readonly lookup: (name: string) => Effect.Effect<RegisteredChannel, Unavailable>
-  readonly ingest: (request: IngestRequest) => Effect.Effect<Receipt, ControlError>
-  readonly project: (request: ProjectRequest) => Effect.Effect<DeliveryProjection, Unavailable>
+  readonly register: <A>(channel: Channel<A>) => void!!
+  readonly lookup: (name: string) => RegisteredChannel!Unavailable
+  readonly ingest: (request: IngestRequest) => Receipt!ControlError
+  readonly project: (request: ProjectRequest) => DeliveryProjection!Unavailable
 }
 
 /**
@@ -254,7 +253,7 @@ const snapshotHeaders = (input: unknown): Readonly<Record<string, string | undef
 
 const snapshotRequest = (
   input: IngestRequest
-): Effect.Effect<{ readonly channel: string; readonly raw: RawInbound }, InvalidInput> =>
+): { readonly channel: string; readonly raw: RawInbound }!InvalidInput =>
   Effect.try({
     try: () => {
       const request = plainRecord(input, "request")
@@ -312,12 +311,12 @@ interface InboundReceiptStore {
   readonly lookupMutation: (
     key: IdempotencyKey,
     fingerprint: string
-  ) => Effect.Effect<Receipt | undefined, ControlError>
+  ) => Receipt | undefined!ControlError
   readonly recordMutation: (
     key: IdempotencyKey,
     fingerprint: string,
     receipt: Receipt
-  ) => Effect.Effect<void, ControlError>
+  ) => void!ControlError
 }
 
 /**
@@ -325,124 +324,129 @@ interface InboundReceiptStore {
  * mutation store. Inbound idempotency therefore survives coordinator restarts;
  * only registration and outbound projection cursors are process-local.
  */
-const makeWith = (runtime: InboundReceiptStore) =>
-  Effect.gen(function*() {
-    const channels = yield* Ref.make(new Map<string, RegisteredChannel>())
-    const deliveries = new Map<string, Delivery>()
-    // Live identities are never evicted. Terminal identities have a FIFO window
-    // for reconnects; retaining one per historical run would grow without bound.
-    const terminalDeliveries = new Set<string>()
-    const maximumTerminalDeliveries = 1024
-    const ingestion = yield* Semaphore.make(1)
-    const control = yield* Control
+const makeWith = effect (runtime: InboundReceiptStore) => {
+  const channels = try Ref.make(new Map<string, RegisteredChannel>())
+  const deliveries = new Map<string, Delivery>()
+  // Live identities are never evicted. Terminal identities have a FIFO window
+  // for reconnects; retaining one per historical run would grow without bound.
+  const terminalDeliveries = new Set<string>()
+  const maximumTerminalDeliveries = 1024
+  const ingestion = try Semaphore.make(1)
+  const control = try Control
 
-    const lookup = Effect.fn("Channels.lookup")(
-      function*(name: string): Effect.fn.Return<RegisteredChannel, Unavailable> {
-        return yield* Effect.flatMap(Ref.get(channels), (registered) => {
+  const lookup = effect (name: string): RegisteredChannel!Unavailable =>
+    try withSpan(
+      effect {
+        return try Effect.flatMap(Ref.get(channels), (registered) => {
           const channel = registered.get(name)
           return channel === undefined
             ? Effect.fail(unavailable(`channel "${name}" is not registered`))
             : Effect.succeed(channel)
         })
-      }
+      },
+      "Channels.lookup"
     )
 
-    return Channels.of({
-      register: Effect.fn("Channels.register")(<A>(channel: Channel<A>) =>
-        Ref.update(channels, (registered) => {
-          const next = new Map(registered)
-          next.set(channel.name, eraseChannel(channel))
-          return next
-        })
-      ),
-      lookup,
-      ingest: Effect.fn("Channels.ingest")((request) =>
-        Effect.flatMap(snapshotRequest(request), (snapshot) =>
-          ingestion.withPermits(1)(Effect.gen(function*() {
-            const channel = yield* lookup(snapshot.channel)
-            const fingerprintHeaders = normalizedFingerprintHeaders(channel)
-            const bodyFingerprint = fingerprint(snapshot.raw.body, snapshot.raw.headers, fingerprintHeaders)
-            // This ordering is intentional: signature verification is the
-            // amplification guard and must happen before decode or Control access.
-            // The verifier receives its own body copy, so even a verifier that
-            // edits bytes cannot change what the decoder sees after approval.
-            yield* channel.verify({ ...snapshot.raw, body: copyBody(snapshot.raw.body) })
-            const externalKey = snapshot.raw.idempotencyKey
-            const durableKey = mutationKey(snapshot.channel, externalKey)
-            const prior = yield* runtime.lookupMutation(durableKey, bodyFingerprint)
-            if (prior !== undefined) return externalReceipt(prior, externalKey)
-
-            const mapped = yield* channel.decodeAndMap(snapshot.raw)
-            const key = scopedKey(snapshot.channel, externalKey)
-            const principal = { id: snapshot.channel, kind: "channel", stampedAt: yield* Clock.currentTimeMillis }
-            let receipt: Receipt
-            if (mapped._tag === "Signal") {
-              // The channel is the caller, not the local operator: a webhook
-              // body names the run and wait, so a signal it maps to answers a
-              // human wait only if the host delegates approval to this channel.
-              receipt = yield* control.signal({
-                runId: mapped.runId,
-                signal: mapped.signal,
-                idempotencyKey: key,
-                principal,
-                reader: principal
-              })
-            } else {
-              const plan = yield* control.plan({
-                flowId: mapped.flowId,
-                input: mapped.input,
-                idempotencyKey: key
-              })
-              receipt = yield* control.run({
-                _tag: "Plan",
-                planId: plan.planId,
-                digest: plan.digest,
-                envelope: plan.envelope,
-                idempotencyKey: key,
-                principal
-              })
-            }
-            // A parked start has not launched. Leave ingress unsettled so a
-            // redelivery can retry the same Control key after plan approval.
-            if (receipt._tag !== "Conflict" && receipt._tag !== "Parked") {
-              yield* runtime.recordMutation(durableKey, bodyFingerprint, receipt)
-            }
-            return externalReceipt(receipt, externalKey)
-          })))
-      ),
-      project: Effect.fn("Channels.project")(function*(request) {
-        const channel = yield* lookup(request.channel)
-        const key = deliveryKey(request.channel, request.run)
-        // Keep the read, projection and update synchronous so concurrent fibers
-        // cannot project from the same stale delivery identity.
-        return yield* Effect.sync(() => {
-          const prior = deliveries.get(key)
-          const projection = channel.project(request.run, prior)
-          if (
-            projection.operation !== "noop" &&
-            (prior === undefined || prior.cursor !== projection.cursor || prior.messageId !== projection.messageId)
-          ) {
-            deliveries.set(key, { cursor: projection.cursor, messageId: projection.messageId })
-          }
-          if (deliveries.has(key)) {
-            const status = request.run.status
-            if (status === "completed" || status === "failed" || status === "cancelled") {
-              terminalDeliveries.add(key)
-              if (terminalDeliveries.size > maximumTerminalDeliveries) {
-                // The set is nonempty because it just exceeded the limit.
-                const oldest = terminalDeliveries.values().next().value!
-                terminalDeliveries.delete(oldest)
-                deliveries.delete(oldest)
-              }
-            } else {
-              terminalDeliveries.delete(key)
-            }
-          }
-          return projection
-        })
+  return Channels.of({
+    register: Effect.fn("Channels.register")(<A>(channel: Channel<A>) =>
+      Ref.update(channels, (registered) => {
+        const next = new Map(registered)
+        next.set(channel.name, eraseChannel(channel))
+        return next
       })
-    })
+    ),
+    lookup,
+    ingest: Effect.fn("Channels.ingest")((request) =>
+      Effect.flatMap(snapshotRequest(request), (snapshot) =>
+        ingestion.withPermits(1)(effect {
+          const channel = try lookup(snapshot.channel)
+          const fingerprintHeaders = normalizedFingerprintHeaders(channel)
+          const bodyFingerprint = fingerprint(snapshot.raw.body, snapshot.raw.headers, fingerprintHeaders)
+          // This ordering is intentional: signature verification is the
+          // amplification guard and must happen before decode or Control access.
+          // The verifier receives its own body copy, so even a verifier that
+          // edits bytes cannot change what the decoder sees after approval.
+          try channel.verify({ ...snapshot.raw, body: copyBody(snapshot.raw.body) })
+          const externalKey = snapshot.raw.idempotencyKey
+          const durableKey = mutationKey(snapshot.channel, externalKey)
+          const prior = try runtime.lookupMutation(durableKey, bodyFingerprint)
+          if (prior !== undefined) return externalReceipt(prior, externalKey)
+
+          const mapped = try channel.decodeAndMap(snapshot.raw)
+          const key = scopedKey(snapshot.channel, externalKey)
+          const principal = { id: snapshot.channel, kind: "channel", stampedAt: try Clock.currentTimeMillis }
+          let receipt: Receipt
+          if (mapped._tag === "Signal") {
+            // The channel is the caller, not the local operator: a webhook
+            // body names the run and wait, so a signal it maps to answers a
+            // human wait only if the host delegates approval to this channel.
+            receipt = try control.signal({
+              runId: mapped.runId,
+              signal: mapped.signal,
+              idempotencyKey: key,
+              principal,
+              reader: principal
+            })
+          } else {
+            const plan = try control.plan({
+              flowId: mapped.flowId,
+              input: mapped.input,
+              idempotencyKey: key
+            })
+            receipt = try control.run({
+              _tag: "Plan",
+              planId: plan.planId,
+              digest: plan.digest,
+              envelope: plan.envelope,
+              idempotencyKey: key,
+              principal
+            })
+          }
+          // A parked start has not launched. Leave ingress unsettled so a
+          // redelivery can retry the same Control key after plan approval.
+          if (receipt._tag !== "Conflict" && receipt._tag !== "Parked") {
+            try runtime.recordMutation(durableKey, bodyFingerprint, receipt)
+          }
+          return externalReceipt(receipt, externalKey)
+        }))
+    ),
+    project: effect (request) =>
+      try withSpan(
+        effect {
+          const channel = try lookup(request.channel)
+          const key = deliveryKey(request.channel, request.run)
+          // Keep the read, projection and update synchronous so concurrent fibers
+          // cannot project from the same stale delivery identity.
+          return try effect {
+            const prior = deliveries.get(key)
+            const projection = channel.project(request.run, prior)
+            if (
+              projection.operation !== "noop" &&
+              (prior === undefined || prior.cursor !== projection.cursor || prior.messageId !== projection.messageId)
+            ) {
+              deliveries.set(key, { cursor: projection.cursor, messageId: projection.messageId })
+            }
+            if (deliveries.has(key)) {
+              const status = request.run.status
+              if (status === "completed" || status === "failed" || status === "cancelled") {
+                terminalDeliveries.add(key)
+                if (terminalDeliveries.size > maximumTerminalDeliveries) {
+                  // The set is nonempty because it just exceeded the limit.
+                  const oldest = terminalDeliveries.values().next().value!
+                  terminalDeliveries.delete(oldest)
+                  deliveries.delete(oldest)
+                }
+              } else {
+                terminalDeliveries.delete(key)
+              }
+            }
+            return projection
+          }
+        },
+        "Channels.project"
+      )
   })
+}
 
 /**
  * Builds the coordinator over Control's durable mutation store.
@@ -450,10 +454,10 @@ const makeWith = (runtime: InboundReceiptStore) =>
  * @category constructors
  * @since 1.0.0
  */
-export const make = Effect.gen(function*() {
-  const runtime = yield* ControlRuntime
-  return yield* makeWith(runtime)
-})
+export const make = effect {
+  const runtime = try ControlRuntime
+  return try makeWith(runtime)
+}
 
 /**
  * Builds a process-local coordinator for adapter unit tests.
@@ -464,22 +468,22 @@ export const make = Effect.gen(function*() {
  * @category constructors
  * @since 1.0.0
  */
-export const makeMemory = Effect.gen(function*() {
-  const records = yield* Ref.make(
+export const makeMemory = effect {
+  const records = try Ref.make(
     new Map<IdempotencyKey, {
       readonly fingerprint: string
       readonly receipt: Receipt
     }>()
   )
-  return yield* makeWith({
+  return try makeWith({
     lookupMutation: (key, candidate) =>
-      Ref.get(records).pipe(Effect.map((stored) => {
+      Ref.get(records) |> Effect.map(%, (stored) => {
         const prior = stored.get(key)
         if (prior === undefined) return undefined
         return prior.fingerprint === candidate
           ? alreadyApplied(key, prior.receipt)
           : { _tag: "Conflict", message: `idempotency key ${key} was used for another mutation` }
-      })),
+      }),
     recordMutation: (key, candidate, receipt) =>
       Ref.update(records, (stored) => {
         const next = new Map(stored)
@@ -487,7 +491,7 @@ export const makeMemory = Effect.gen(function*() {
         return next
       })
   })
-})
+}
 
 /**
  * Channel layer with durable inbound receipts supplied by `ControlRuntime`.
@@ -503,4 +507,4 @@ export const layer = Layer.effect(Channels, make)
  * @category layers
  * @since 1.0.0
  */
-export const layerMemory: Layer.Layer<Channels, never, Control> = Layer.effect(Channels, makeMemory)
+export const layerMemory: Layer<Channels, never, Control> = Layer.effect(Channels, makeMemory)

@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/control"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -124,7 +124,7 @@
      "relative": "packages/smithers/control/src"
     },
     null,
-    "5AOslJ-TmBZXeRw6iS9x_WwmEAA8WSEaIQeJ2Ip0aVI",
+    "es5WOM4jdSrmUCxCPCGwYoAk6k98s_rKGf77DLL7yBk",
     [],
     {
      "recursive": true,
@@ -257,7 +257,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -282,7 +282,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -304,7 +304,7 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
@@ -318,63 +318,63 @@
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/package.json"
     },
     "size": 8141,
-    "hash": "O-3M6m6J761jj3XuevgCMWkZ0TCgCy_P5F6i9Z8fX9g"
+    "hash": "HEo0kTwc-dOtFCKf6lo2TywQyGj60SM4Mye31nbxoCI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
+    "hash": "jNdvnCgiUuOZHdrFItXIA-FehSkGnK5p9AVrYdLxwuo"
    },
    {
     "path": {
@@ -388,14 +388,14 @@
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
+    "hash": "5fpAg2n4ffGygENUuDADtM1zzf4mesCQ4apPsCZ0Xjg"
    },
    {
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
-    "size": 17630,
-    "hash": "bxheo6D0sDenep1VXnaAozWM3cs6TXN3tfj6Cfc1obM"
+    "size": 17798,
+    "hash": "VFgci-hEms2zkvvvv0t3_XA52s4_vu9DLChBz8vgo74"
    },
    {
     "path": {
@@ -570,42 +570,42 @@
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
     "size": 7099,
-    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
+    "hash": "_hUBmLEtDPyXj65GEqr0h8vedJ-YXIH_c5Gu9lRiYIo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "UJEoLkJ7MXGmJYIzXPkyA3-7p_k52_D8URkKB_Ofs-w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
     "size": 15090,
-    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
+    "hash": "5FOkC86vo7tOtcOeOCK-OP2Phqst49qpq5bwzD1uplY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/package.json"
     },
     "size": 9895,
-    "hash": "LH9WSZ_WGwMEPr0AjiUM6bzlOGw2B20C2fHGXref5dE"
+    "hash": "9GcZk3xYoB_dCBPYDNKfrJJk4OfIyFlLDn5mGcGWfok"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/package.json"
     },
     "size": 7088,
-    "hash": "L5fpKGg2FbL-bbpRq_YlefD5Em-og1_ImjXbGxSFdaY"
+    "hash": "q13S71scplguP_e1froPFQGBe8qAr-NpCrZZAuJJyag"
    },
    {
     "path": {
@@ -4454,10 +4454,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/Channels.ts"
+     "relative": "packages/smithers/control/src/Channels.vibe"
     },
-    "size": 19357,
-    "hash": "YeiYiu0EaavU5qwyofH6TAle74FgMFkR3pQ2fPNOW6Q"
+    "size": 18909,
+    "hash": "cmpbYGcmSC2Wjm91xM8QHkSOouD7PvXxgQ5h8RQP7Qk"
    },
    {
     "path": {
@@ -5665,17 +5665,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/CredentialStore.ts"
+     "relative": "packages/smithers/control/src/CredentialStore.vibe"
     },
-    "size": 4923,
-    "hash": "83okyU6AnVWBzVHeGFFOrl17m0SrUrOfyZViXetwMvw"
+    "size": 4722,
+    "hash": "Sj63fjG8c1T8OIiTcv4JG_raR866aSj0p1Sd-N942Es"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/Credential.ts"
+     "relative": "packages/smithers/control/src/Credential.vibe"
     },
-    "size": 11449,
-    "hash": "1VInZ7EOwb5mHq7FNRQyLa1kicMHKf48V4lT75hZTPw"
+    "size": 11399,
+    "hash": "FkO3acqCRu6K8DZO_hJmrICTQgDPzMUxUWvy7fZ9_ZI"
    },
    {
     "path": {
@@ -5987,52 +5987,52 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/migrations/0004_approval_decisions.ts"
+     "relative": "packages/smithers/control/src/migrations/0004_approval_decisions.vibe"
     },
-    "size": 970,
-    "hash": "FKigQOB5-jDZ_aKye1fQCHUJYXOgqAjhhyMlvr3coDw"
+    "size": 924,
+    "hash": "HxQGIoP4nrb3aWR164Y_wzzfw_16dM_Wmf25Jb8DuaU"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/migrations/0005_signal_principals.ts"
+     "relative": "packages/smithers/control/src/migrations/0005_signal_principals.vibe"
     },
-    "size": 932,
-    "hash": "Wtf8i23kmUymu_2J_K04b_e-KBi0DW9O344FeN5Wamw"
+    "size": 886,
+    "hash": "MUNQyus0iGmfbYyX3u5fuqF1z3xnPa1X-D-fKwd1u3M"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/migrations/0006_run_principals.ts"
+     "relative": "packages/smithers/control/src/migrations/0006_run_principals.vibe"
     },
-    "size": 996,
-    "hash": "bw7BtEn2ODj_KkquhC7nz1mPEoLMViTdOAPNyry43ck"
+    "size": 947,
+    "hash": "DTT1WYc2rGTdjwa1IXdVCmbptPInw5ly1cfeSZ7_JSY"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/migrations/0007_resume_consent.ts"
+     "relative": "packages/smithers/control/src/migrations/0007_resume_consent.vibe"
     },
-    "size": 922,
-    "hash": "gt60Xdce3tmz5gEIyF7ugCJ3MFYE82anTuYtRRy2-84"
+    "size": 876,
+    "hash": "Q1ERqGJT1F0sXAtl3i38JDZPUdeuzUyDSK4gOuspesU"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/migrations/0008_signal_rejection.ts"
+     "relative": "packages/smithers/control/src/migrations/0008_signal_rejection.vibe"
     },
-    "size": 770,
-    "hash": "vpUt8mMvndHr6xdT9l2GlGtemaTh3jbKGhzgpDDo0IM"
+    "size": 724,
+    "hash": "wDZjrGA-tMqpzfIdjd89cBvzEuXIlGIwXpNGEPpckMc"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/Migrations.ts"
+     "relative": "packages/smithers/control/src/Migrations.vibe"
     },
-    "size": 1852,
-    "hash": "oPebnIhS0_imylTLd3oTXB3-Nr8HqQtj6SyjhwHmb9o"
+    "size": 1862,
+    "hash": "AcZNhmwAWUD3we3LR0wxneeDxW_SGdCsory4mJFSUsk"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/Monitor.ts"
+     "relative": "packages/smithers/control/src/Monitor.vibe"
     },
-    "size": 26481,
-    "hash": "KxHrLJkBOdqIyELjctf1K1Nb9RzAxHaHhjLX5uVoO8w"
+    "size": 25758,
+    "hash": "NItfbdJ6GV98_iOBm8cdE7kflus_ZfI8GLcbRC7uim8"
    },
    {
     "path": {
@@ -6064,17 +6064,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/run-store/src/internal/Companion.ts"
+     "relative": "packages/smithers/flows/run-store/src/internal/Companion.vibe"
     },
-    "size": 1996,
-    "hash": "bnv3ytm7gYx9pgq9HLRopPrYRPKctQSL5q31pqiFupM"
+    "size": 1974,
+    "hash": "qXl-DYPIh9jULJFArmD-svNO-2sKLKDUEfoOcn-RPUc"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.ts"
+     "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.vibe"
     },
-    "size": 2864,
-    "hash": "QtqvPCvQkkYx4GN2l5g-yt3DY4DvI0ZAUpOZ0pK0n4I"
+    "size": 2699,
+    "hash": "SOkLWtRPWG2unW6tY38LF_G-uYMBGh9vSsfKDZYxpVc"
    },
    {
     "path": {
@@ -6087,8 +6087,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStore.ts"
     },
-    "size": 87788,
-    "hash": "ZndaMo3_26LRSNeqG1bgkUWvcrOvYY-yyaP0uQk4OHM"
+    "size": 87792,
+    "hash": "4Jf-pv2BQYcoTjCPvuIkLTrOzg1EUkJ2Aa0SQK7rt2A"
    },
    {
     "path": {
@@ -6150,8 +6150,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/AttemptStore.vibe"
     },
-    "size": 46646,
-    "hash": "YjJQZu3R0KAJxBJ1j5-6strYJhdQx49HIRvAsw_tOyo"
+    "size": 46648,
+    "hash": "eYzGwuN1gjOv2XVuvo5Jy_AbPU3wyAYa3bAjpmF-SKY"
    },
    {
     "path": {
@@ -6220,15 +6220,15 @@
     "path": {
      "relative": "packages/smithers/control/src/SqlControlRuntime.ts"
     },
-    "size": 113361,
-    "hash": "uPRwrYDew-egPcA-Zu37jVs0O3-Z3L9RskncSpe-IVY"
+    "size": 113363,
+    "hash": "JrrLqnYjROdcWlqvHeXsXGIVmErCtwjgLVJQvLrg2P8"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/SqlCredentialStore.ts"
+     "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
     },
-    "size": 4910,
-    "hash": "1-s-2wHbIBahd1rEHYUtjnWBEV4hFVjwnqrTCZllJ_s"
+    "size": 4659,
+    "hash": "2BBwr6i_5I_LGgjvfprcdfcyYa2TgIWRzzZH_nj4TYU"
    },
    {
     "path": {
@@ -6241,15 +6241,15 @@
     "path": {
      "relative": "packages/smithers/control/src/WebhookChannel.vibe"
     },
-    "size": 6491,
-    "hash": "JOXlbKrhpL64TIMwR8qXlr2d9y_34qtnDv3pCe0HdHM"
+    "size": 6495,
+    "hash": "90asMwEeTER5mM6JnbNnX1ZlGmzf0DLwRj6IwEDZ_Rc"
    },
    {
     "path": {
      "relative": "packages/smithers/control/src/index.ts"
     },
-    "size": 3595,
-    "hash": "69L5d3c9E9tx1slhSrSKe6T_RFhvAfYQv9IB44muvRA"
+    "size": 3607,
+    "hash": "iLVTOlFFbT55GiOaBieE3pvbwII1jX9Ph5ySafZ3pR8"
    },
    {
     "path": {
@@ -6344,10 +6344,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.ts"
+     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.platform.ts"
     },
-    "size": 3418,
-    "hash": "68CYu5Lm3xepr2Uf5pEB7o7ftVSsUpuy2uofaNT5SUo"
+    "size": 2658,
+    "hash": "zgtLVmyJCNcelev27tzGorJbOLm10p5FvwdmztaHm04"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
+    },
+    "size": 1661,
+    "hash": "Z9nX0gw3Gsop0v_SvdFZAFJgorP9adVHIkOH2Th0ZiA"
    },
    {
     "path": {
@@ -6367,8 +6374,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
     },
-    "size": 4572,
-    "hash": "iwpmUbsZGE7zWrJ5_kHGgK5NKjMMehn9a1q7GnjlxV8"
+    "size": 4574,
+    "hash": "F-iQ3fbR2RG6Dp-ec3sYZhZXU8zSEYUYsUxdeDRPJ1c"
    },
    {
     "path": {
@@ -8001,7 +8008,7 @@
     "relative": "packages/smithers/control/src/ControlRuntime.ts"
    },
    {
-    "relative": "packages/smithers/control/src/Channels.ts"
+    "relative": "packages/smithers/control/src/Channels.vibe"
    },
    {
     "relative": "packages/smithers/control/src/ControlRpcs.vibe"
@@ -8160,10 +8167,10 @@
     "relative": "packages/smithers/control/src/CredentialCipher.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/CredentialStore.ts"
+    "relative": "packages/smithers/control/src/CredentialStore.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/Credential.ts"
+    "relative": "packages/smithers/control/src/Credential.vibe"
    },
    {
     "relative": "packages/smithers/flows/kernel/src/CapabilitySet.ts"
@@ -8298,25 +8305,25 @@
     "relative": "packages/smithers/control/src/migrations/0003_signal_commands.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/migrations/0004_approval_decisions.ts"
+    "relative": "packages/smithers/control/src/migrations/0004_approval_decisions.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/migrations/0005_signal_principals.ts"
+    "relative": "packages/smithers/control/src/migrations/0005_signal_principals.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/migrations/0006_run_principals.ts"
+    "relative": "packages/smithers/control/src/migrations/0006_run_principals.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/migrations/0007_resume_consent.ts"
+    "relative": "packages/smithers/control/src/migrations/0007_resume_consent.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/migrations/0008_signal_rejection.ts"
+    "relative": "packages/smithers/control/src/migrations/0008_signal_rejection.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/Migrations.ts"
+    "relative": "packages/smithers/control/src/Migrations.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/Monitor.ts"
+    "relative": "packages/smithers/control/src/Monitor.vibe"
    },
    {
     "relative": "packages/smithers/control/src/ScopedToken.ts"
@@ -8331,10 +8338,10 @@
     "relative": "packages/smithers/flows/run-store/src/internal/Boundary.ts"
    },
    {
-    "relative": "packages/smithers/flows/run-store/src/internal/Companion.ts"
+    "relative": "packages/smithers/flows/run-store/src/internal/Companion.vibe"
    },
    {
-    "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.ts"
+    "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.vibe"
    },
    {
     "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
@@ -8379,7 +8386,7 @@
     "relative": "packages/smithers/control/src/SqlControlRuntime.ts"
    },
    {
-    "relative": "packages/smithers/control/src/SqlCredentialStore.ts"
+    "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
    },
    {
     "relative": "packages/smithers/control/src/WebCryptoCipher.ts"
@@ -8400,7 +8407,10 @@
     "relative": "packages/smithers/flows/database/src/TestSchemas.ts"
    },
    {
-    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.ts"
+    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.platform.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
    },
    {
     "relative": "packages/smithers/flows/database/src/internal/ReleasePolicy.ts"
@@ -8422,6 +8432,26 @@
    }
   ],
   "warnings": [
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/Channels.vibe"
+    },
+    "line": 176,
+    "column": 7,
+    "category": "warning",
+    "code": "EK4805",
+    "text": "InboundBoundaryError extends TypeError, but a VibeLang failure is an error declaration.\n  Declare it with error instead, as in error InboundBoundaryError { message: string }, so that catch, match, and is can tell it apart by its _tag."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/Channels.vibe"
+    },
+    "line": 229,
+    "column": 62,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/Headers#empty` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
    {
     "file": {
      "relative": "packages/smithers/control/src/ControlRpcs.vibe"
@@ -8654,6 +8684,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/control/src/CredentialStore.vibe"
+    },
+    "line": 57,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "CredentialStore extends Context.Service; in VibeLang a service is a service declaration: service CredentialStore { … }.\n  No quick fix: its members come from Service; write them in the declaration. Keep its key in the declaration: static readonly key = \"/control/CredentialStore\"."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/control/src/DispatchReader.vibe"
     },
     "line": 62,
@@ -8661,6 +8701,56 @@
     "category": "warning",
     "code": "EK4831",
     "text": "DispatchReader extends Context.Service; in VibeLang a service is a service declaration: service DispatchReader { … }.\n  No quick fix: its members come from Service; write them in the declaration. Keep its key in the declaration: static readonly key = \"/control/DispatchReader\"."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/Monitor.vibe"
+    },
+    "line": 560,
+    "column": 12,
+    "category": "warning",
+    "code": "EK4835",
+    "text": "Effect.catch takes a handler; write a catch expression: x catch (e) => handler.\n  No quick fix: this rewrite cannot preserve its comments."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
+    },
+    "line": 55,
+    "column": 50,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
+    },
+    "line": 64,
+    "column": 82,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
+    },
+    "line": 65,
+    "column": 44,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
+    },
+    "line": 135,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    },
    {
     "file": {
@@ -8731,6 +8821,56 @@
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/migrations/0004_approval_decisions.vibe"
+    },
+    "line": 16,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/migrations/0005_signal_principals.vibe"
+    },
+    "line": 21,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/migrations/0006_run_principals.vibe"
+    },
+    "line": 21,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/migrations/0007_resume_consent.vibe"
+    },
+    "line": 21,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/control/src/migrations/0008_signal_rejection.vibe"
+    },
+    "line": 16,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    }
   ],
   "outputs": [
@@ -8752,6 +8892,26 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/Channels.vibe"
+     }
+    ],
+    "code": "/**\n * Channel contracts and the in-memory channel coordinator.\n *\n * A channel verifies opaque transport data before it decodes or maps it. The\n * resulting request is then dispatched through the Control service; channels\n * do not acquire an execution path of their own.\n *\n * @since 0.1.0\n */\nimport * as Clock from \"effect/Clock\";\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Headers from \"effect/http/Headers\";\nimport * as Layer from \"effect/Layer\";\nimport * as Ref from \"effect/Ref\";\nimport * as Semaphore from \"effect/Semaphore\";\nimport { withSpan } from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime_1 from \"vibelang-runtime\";\nimport * as Sha256 from \"@smthrs/crypto/Sha256\";\nimport {} from \"effect\";\nimport { Control } from \"./Control.js\";\nimport { InvalidInput, Unavailable } from \"./ControlError.js\";\nimport { ControlRuntime } from \"./ControlRuntime.js\";\nimport { alreadyApplied } from \"./internal/planning.js\";\nconst eraseChannel = (channel) => ({\n    name: channel.name,\n    schema: channel.schema,\n    fingerprintHeaders: channel.fingerprintHeaders,\n    verify: (raw) => channel.verify(raw),\n    decodeAndMap: (raw) => Effect.flatMap(channel.decode(raw), (payload) => channel.map(payload)),\n    project: (run, delivery) => channel.project(run, delivery)\n});\n/**\n * Service tag for channel registration, ingestion, and pure projection.\n *\n * @category services\n * @since 0.1.0\n */\nexport const Channels = Context.Service(\"/control/Channels\");\nconst unavailable = (feature) => new Unavailable({\n    feature,\n    ticket: \"control-channel-registry\"\n});\nconst deliveryKey = (channel, run) => `${channel.length}:${channel}:${run.runId}`;\n/** Collision-free control-plane key for one channel-owned external key. */\nconst scopedKey = (channel, key) => `channel:${channel.length}:${channel}:${key}`;\nconst mutationKey = (channel, key) => `channel.ingest:${scopedKey(channel, key)}`;\nconst typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);\nconst typedArrayBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, \"buffer\")?.get;\nconst typedArrayByteOffset = Object.getOwnPropertyDescriptor(typedArrayPrototype, \"byteOffset\")?.get;\nconst typedArrayByteLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, \"byteLength\")?.get;\nclass InboundBoundaryError extends TypeError {\n    issue;\n    constructor(issue) {\n        super(issue);\n        this.issue = issue;\n    }\n}\nconst boundary = (issue) => {\n    throw new InboundBoundaryError(issue);\n};\nconst plainRecord = (input, path) => {\n    if (typeof input !== \"object\" || input === null || Array.isArray(input)) {\n        return boundary(`${path}: must be a plain record`);\n    }\n    const prototype = Object.getPrototypeOf(input);\n    if (prototype !== Object.prototype && prototype !== null) {\n        return boundary(`${path}: must have a plain prototype`);\n    }\n    return input;\n};\nconst ownData = (input, key, path) => {\n    const descriptor = Object.getOwnPropertyDescriptor(input, key);\n    if (descriptor === undefined || !(\"value\" in descriptor))\n        return boundary(`${path}: must be an own data property`);\n    return descriptor.value;\n};\nconst copyBody = (input) => {\n    /* v8 ignore next 4 -- every host that has `Uint8Array` has its prototype accessors; the refusal exists so a host without them fails closed rather than reading a caller-owned buffer */\n    if (typedArrayBuffer === undefined || typedArrayByteOffset === undefined ||\n        typedArrayByteLength === undefined)\n        return boundary(\"raw.body: this host cannot inspect typed arrays\");\n    try {\n        const buffer = Reflect.apply(typedArrayBuffer, input, []);\n        const byteOffset = Reflect.apply(typedArrayByteOffset, input, []);\n        const byteLength = Reflect.apply(typedArrayByteLength, input, []);\n        const source = new Uint8Array(buffer, byteOffset, byteLength);\n        const snapshot = new Uint8Array(byteLength);\n        snapshot.set(source);\n        return snapshot;\n    }\n    catch {\n        return boundary(\"raw.body: must be a Uint8Array\");\n    }\n};\n/**\n * The prototype of Effect's HTTP `Headers`. It carries only inspection hooks,\n * never header values, so a request's own headers read as safely as a plain\n * record. `WebhookChannel.handler` passes exactly this shape.\n */\nconst effectHeadersPrototype = Object.getPrototypeOf(Headers.empty);\nconst snapshotHeaders = (input) => {\n    const record = typeof input === \"object\" && input !== null && Object.getPrototypeOf(input) === effectHeadersPrototype\n        ? input\n        : plainRecord(input, \"raw.headers\");\n    const snapshot = Object.create(null);\n    for (const key of Reflect.ownKeys(record)) {\n        if (typeof key !== \"string\")\n            return boundary(\"raw.headers: symbol keys are not supported\");\n        const descriptor = Object.getOwnPropertyDescriptor(record, key);\n        if (descriptor === undefined || !(\"value\" in descriptor) || !descriptor.enumerable) {\n            return boundary(`raw.headers.${key}: must be an enumerable data property`);\n        }\n        if (descriptor.value !== undefined && typeof descriptor.value !== \"string\") {\n            return boundary(`raw.headers.${key}: must be a string or undefined`);\n        }\n        const normalized = key.toLowerCase();\n        if (Object.hasOwn(snapshot, normalized)) {\n            return boundary(`raw.headers.${normalized}: duplicate case-insensitive name`);\n        }\n        snapshot[normalized] = descriptor.value;\n    }\n    return Object.freeze(snapshot);\n};\nconst snapshotRequest = (input) => Effect.try({\n    try: () => {\n        const request = plainRecord(input, \"request\");\n        const channel = ownData(request, \"channel\", \"request.channel\");\n        const candidate = plainRecord(ownData(request, \"raw\", \"request.raw\"), \"request.raw\");\n        const idempotencyKey = ownData(candidate, \"idempotencyKey\", \"raw.idempotencyKey\");\n        if (typeof channel !== \"string\" || channel.length === 0)\n            return boundary(\"request.channel: must be non-empty\");\n        if (typeof idempotencyKey !== \"string\" || idempotencyKey.length === 0) {\n            return boundary(\"raw.idempotencyKey: must be non-empty\");\n        }\n        return Object.freeze({\n            channel,\n            raw: Object.freeze({\n                body: copyBody(ownData(candidate, \"body\", \"raw.body\")),\n                headers: snapshotHeaders(ownData(candidate, \"headers\", \"raw.headers\")),\n                idempotencyKey\n            })\n        });\n    },\n    catch: (cause) => new InvalidInput({\n        issue: cause instanceof InboundBoundaryError ? cause.issue : \"channel request could not be inspected safely\"\n    })\n});\nconst normalizedFingerprintHeaders = (channel) => Array.from(new Set((channel.fingerprintHeaders ?? []).map((name) => name.toLowerCase()))).sort();\n/** Digests the body plus only the adapter-declared, non-secret semantic headers. */\nconst fingerprint = (body, headers, names) => {\n    const document = JSON.stringify([\n        Sha256.digestSync(body),\n        names.map((name) => [name, headers[name] ?? null])\n    ]);\n    return `channel-ingress:v2:${Sha256.digestSync(new TextEncoder().encode(document))}`;\n};\nconst externalReceipt = (receipt, key) => {\n    switch (receipt._tag) {\n        case \"Accepted\":\n        case \"AlreadyApplied\":\n        case \"Parked\":\n            return { ...receipt, receiptId: key };\n        default:\n            return receipt;\n    }\n};\n/**\n * Builds an in-memory channel registry and delivery map over Control's durable\n * mutation store. Inbound idempotency therefore survives coordinator restarts;\n * only registration and outbound projection cursors are process-local.\n */\nconst makeWith = Effect_1.fnUntraced(runtime_1.$joinedFrame(function* makeWith(runtime) {\n    const channels = yield* Ref.make(new Map());\n    const deliveries = new Map();\n    // Live identities are never evicted. Terminal identities have a FIFO window\n    // for reconnects; retaining one per historical run would grow without bound.\n    const terminalDeliveries = new Set();\n    const maximumTerminalDeliveries = 1024;\n    const ingestion = yield* Semaphore.make(1);\n    const control = yield* Control;\n    const lookup = (name) => Effect_1.suspend({ lookup: () => { return withSpan(Effect_1.suspend(() => Effect.flatMap(Ref.get(channels), (registered) => {\n            const channel = registered.get(name);\n            return channel === undefined\n                ? Effect.fail(unavailable(`channel \"${name}\" is not registered`))\n                : Effect.succeed(channel);\n        })), \"Channels.lookup\"); } }.lookup);\n    return Channels.of({\n        register: Effect.fn(\"Channels.register\")((channel) => Ref.update(channels, (registered) => {\n            const next = new Map(registered);\n            next.set(channel.name, eraseChannel(channel));\n            return next;\n        })),\n        lookup,\n        ingest: Effect.fn(\"Channels.ingest\")((request) => Effect.flatMap(snapshotRequest(request), (snapshot) => ingestion.withPermits(1)(Effect_1.gen(function* () {\n            const channel = yield* lookup(snapshot.channel);\n            const fingerprintHeaders = normalizedFingerprintHeaders(channel);\n            const bodyFingerprint = fingerprint(snapshot.raw.body, snapshot.raw.headers, fingerprintHeaders);\n            // This ordering is intentional: signature verification is the\n            // amplification guard and must happen before decode or Control access.\n            // The verifier receives its own body copy, so even a verifier that\n            // edits bytes cannot change what the decoder sees after approval.\n            yield* channel.verify({ ...snapshot.raw, body: copyBody(snapshot.raw.body) });\n            const externalKey = snapshot.raw.idempotencyKey;\n            const durableKey = mutationKey(snapshot.channel, externalKey);\n            const prior = yield* runtime.lookupMutation(durableKey, bodyFingerprint);\n            if (prior !== undefined)\n                return externalReceipt(prior, externalKey);\n            const mapped = yield* channel.decodeAndMap(snapshot.raw);\n            const key = scopedKey(snapshot.channel, externalKey);\n            const principal = { id: snapshot.channel, kind: \"channel\", stampedAt: yield* Clock.currentTimeMillis };\n            let receipt;\n            if (mapped._tag === \"Signal\") {\n                // The channel is the caller, not the local operator: a webhook\n                // body names the run and wait, so a signal it maps to answers a\n                // human wait only if the host delegates approval to this channel.\n                receipt = yield* control.signal({\n                    runId: mapped.runId,\n                    signal: mapped.signal,\n                    idempotencyKey: key,\n                    principal,\n                    reader: principal\n                });\n            }\n            else {\n                const plan = yield* control.plan({\n                    flowId: mapped.flowId,\n                    input: mapped.input,\n                    idempotencyKey: key\n                });\n                receipt = yield* control.run({\n                    _tag: \"Plan\",\n                    planId: plan.planId,\n                    digest: plan.digest,\n                    envelope: plan.envelope,\n                    idempotencyKey: key,\n                    principal\n                });\n            }\n            // A parked start has not launched. Leave ingress unsettled so a\n            // redelivery can retry the same Control key after plan approval.\n            if (receipt._tag !== \"Conflict\" && receipt._tag !== \"Parked\") {\n                yield* runtime.recordMutation(durableKey, bodyFingerprint, receipt);\n            }\n            return externalReceipt(receipt, externalKey);\n        })))),\n        project: (request) => Effect_1.suspend({ project: () => { return withSpan(Effect_1.gen(function* () {\n                const channel = yield* lookup(request.channel);\n                const key = deliveryKey(request.channel, request.run);\n                // Keep the read, projection and update synchronous so concurrent fibers\n                // cannot project from the same stale delivery identity.\n                return yield* Effect_1.gen(function* () {\n                    const prior = deliveries.get(key);\n                    const projection = channel.project(request.run, prior);\n                    if (projection.operation !== \"noop\" &&\n                        (prior === undefined || prior.cursor !== projection.cursor || prior.messageId !== projection.messageId)) {\n                        deliveries.set(key, { cursor: projection.cursor, messageId: projection.messageId });\n                    }\n                    if (deliveries.has(key)) {\n                        const status = request.run.status;\n                        if (status === \"completed\" || status === \"failed\" || status === \"cancelled\") {\n                            terminalDeliveries.add(key);\n                            if (terminalDeliveries.size > maximumTerminalDeliveries) {\n                                // The set is nonempty because it just exceeded the limit.\n                                const oldest = terminalDeliveries.values().next().value;\n                                terminalDeliveries.delete(oldest);\n                                deliveries.delete(oldest);\n                            }\n                        }\n                        else {\n                            terminalDeliveries.delete(key);\n                        }\n                    }\n                    return projection;\n                });\n            }), \"Channels.project\"); } }.project)\n    });\n}));\n/**\n * Builds the coordinator over Control's durable mutation store.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const make = Effect_1.gen(function* make() {\n    const runtime = yield* ControlRuntime;\n    return yield* makeWith(runtime);\n});\n/**\n * Builds a process-local coordinator for adapter unit tests.\n *\n * Production hosts use {@link layer}; this constructor deliberately makes no\n * restart guarantee.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const makeMemory = Effect_1.gen(function* makeMemory() {\n    const records = yield* Ref.make(new Map());\n    return yield* makeWith({\n        lookupMutation: (key, candidate) => Effect.map(Ref.get(records), (stored) => {\n            const prior = stored.get(key);\n            if (prior === undefined)\n                return undefined;\n            return prior.fingerprint === candidate\n                ? alreadyApplied(key, prior.receipt)\n                : { _tag: \"Conflict\", message: `idempotency key ${key} was used for another mutation` };\n        }),\n        recordMutation: (key, candidate, receipt) => Ref.update(records, (stored) => {\n            const next = new Map(stored);\n            next.set(key, { fingerprint: candidate, receipt });\n            return next;\n        })\n    });\n});\n/**\n * Channel layer with durable inbound receipts supplied by `ControlRuntime`.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = Layer.effect(Channels, make);\n/**\n * Process-local channel layer for adapter unit tests only.\n *\n * @category layers\n * @since 1.0.0\n */\nexport const layerMemory = Layer.effect(Channels, makeMemory);\n",
+    "map": {
+     "version": 3,
+     "file": "Channels.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/Channels.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {
@@ -8832,6 +8992,46 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;;GASG;AAEH,OAAO,EAAE,OAAO,IAAI,aAAa,EAAE,MAAM,EAAE,KAAK,EAAiB,MAAM,QAAQ,CAAA;AAC/E,OAAO,EAAyB,WAAW,EAAE,MAAM,mBAAmB,CAAA;AA+CtE;;;;;GAKG;AACH,MAAM,OAAO,gBAAiB,SAAQ,aAAa,CAAC,OAAO,EAA6B,CACtF,2BAA2B,CAC5B;CAAG;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,cAAuB,EAAW,EAAE,CAAC,gBAAgB,CAAC,EAAE,CAAC,cAAc,CAAC,CAAA;AAE7F;;;;;GAKG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,GAAgB,EAAE,CAC3C,IAAI,WAAW,CAAC;IACd,OAAO,EAAE,uBAAuB;IAChC,MAAM,EAAE,4BAA4B;CACrC,CAAC,CAAA;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAW,EAAE,CACpE,IAAI,CAAC;IACH,IAAI,EAAE,MAAM,CAAC,EAAE,CAAC,uBAAuB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,EAAE,CAAC,CAAC;IAC1E,IAAI,EAAE,MAAM,CAAC,EAAE,CAAC,uBAAuB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,EAAE,CAAC,CAAC;IAC1E,GAAG,SAAS;CACb,CAAC,CAAA;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAiC,EAAE,CAC3F,KAAK,CAAC,OAAO,CAAC,gBAAgB,CAAC,CAAC,QAAQ,CAAC,SAAS,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/CredentialStore.vibe"
+     }
+    ],
+    "code": "/**\n * Browser-safe persistence port for encrypted credential material.\n *\n * The store only ever sees a {@link SealedRecord}: an opaque connection name\n * plus ciphertext. Plaintext never reaches this boundary, so an adapter can be\n * backed by anything — SQL, Web Storage, a remote vault — without becoming a\n * place a secret can leak from.\n *\n * Writes are compare-and-set on `version`. A writer that read version *n*\n * commits version *n + 1*; a concurrent writer that read the same *n* is\n * refused with {@link ControlError.CredentialConflict} rather than silently\n * overwriting the winner.\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Option from \"effect/Option\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { CredentialConflict, Unavailable } from \"./ControlError.js\";\n/**\n * Service key for encrypted credential persistence.\n *\n * @category services\n * @since 0.1.0\n */\nexport class CredentialStore extends Context.Service()(\"/control/CredentialStore\") {\n}\n/**\n * Constructs a store from an implementation record.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = (implementation) => CredentialStore.of(implementation);\nconst unavailable = () => new Unavailable({\n    feature: \"credential storage\",\n    ticket: \"control-credential-storage\"\n});\n/**\n * A store that reports unavailable persistence for every operation.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeNoop = (overrides = {}) => make({\n    list: Effect.fn(\"CredentialStore.list\")(() => Effect.fail(unavailable())),\n    read: Effect.fn(\"CredentialStore.read\")(() => Effect.fail(unavailable())),\n    write: Effect.fn(\"CredentialStore.write\")(() => Effect.fail(unavailable())),\n    remove: Effect.fn(\"CredentialStore.remove\")(() => Effect.fail(unavailable())),\n    ...overrides\n});\n/**\n * Provides a store that reports unavailable persistence.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layerNoop = (overrides = {}) => Layer.succeed(CredentialStore)(makeNoop(overrides));\n/**\n * Constructs a process-local store.\n *\n * Browser-safe and durable for the lifetime of the process only; it exists so\n * the credential contract can be exercised without a host adapter, and as the\n * fallback a short-lived worker can use.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeMemory = () => {\n    const records = new Map();\n    // SQL adapters serialize each row on both sides of storage. Copying here\n    // keeps the in-memory double from granting callers mutable access to state a\n    // durable store would have isolated.\n    const copy = (record) => structuredClone(record);\n    return make({\n        list: Effect.fn(\"CredentialStore.list\")(() => Effect_1.sync(() => { return Array.from(records.values(), copy); })),\n        read: Effect.fn(\"CredentialStore.read\")((id) => Effect_1.sync(() => { return Option.map(Option.fromNullishOr(records.get(id)), copy); })),\n        write: Effect.fn(\"CredentialStore.write\")((record) => Effect.suspend(() => {\n            const current = records.get(record.id);\n            const actual = current?.version ?? 0;\n            if (actual !== record.version - 1) {\n                return Effect.fail(new CredentialConflict({\n                    id: record.id,\n                    expectedVersion: record.version - 1,\n                    actualVersion: actual\n                }));\n            }\n            records.set(record.id, copy(record));\n            return Effect.void;\n        })),\n        remove: Effect.fn(\"CredentialStore.remove\")(Effect_1.fnUntraced(function* (id) {\n            records.delete(id);\n        }))\n    });\n};\n/**\n * Provides a process-local store.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layerMemory = Layer.sync(CredentialStore)(makeMemory);\n",
+    "map": {
+     "version": 3,
+     "file": "CredentialStore.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/CredentialStore.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;;;;;;GAcG;;;;;;AAEH,OAAO,EAAE,kBAAkB,EAAE,WAAW,EAAE,MAAM,mBAAmB,CAAA;AAkCnE;;;;;GAKG;AACH,MAAM,OAAO,eAAgB,SAAQ,OAAO,CAAC,OAAO,EAA4B,CAC9E,0BAA0B,CAC3B;CAAG;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,cAAuB,EAAW,EAAE,CAAC,eAAe,CAAC,EAAE,CAAC,cAAc,CAAC,CAAA;AAE5F,MAAM,WAAW,GAAG,GAAgB,EAAE,CACpC,IAAI,WAAW,CAAC;IACd,OAAO,EAAE,oBAAoB;IAC7B,MAAM,EAAE,4BAA4B;CACrC,CAAC,CAAA;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAW,EAAE,CACpE,IAAI,CAAC;IACH,IAAI,EAAE,MAAM,CAAC,EAAE,CAAC,sBAAsB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,EAAE,CAAC,CAAC;IACzE,IAAI,EAAE,MAAM,CAAC,EAAE,CAAC,sBAAsB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,EAAE,CAAC,CAAC;IACzE,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,uBAAuB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,EAAE,CAAC,CAAC;IAC3E,MAAM,EAAE,MAAM,CAAC,EAAE,CAAC,wBAAwB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,EAAE,CAAC,CAAC;IAC7E,GAAG,SAAS;CACb,CAAC,CAAA;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,SAAS,GAAqB,EAAE,EAA0B,EAAE,CACpF,KAAK,CAAC,OAAO,CAAC,eAAe,CAAC,CAAC,QAAQ,CAAC,SAAS,CAAC,CAAC,CAAA;AAErD;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,GAAY,EAAE;IACtC,MAAM,OAAO,GAAG,IAAI,GAAG,EAAwB,CAAA;IAC/C,yEAAyE;IACzE,6EAA6E;IAC7E,qCAAqC;IACrC,MAAM,IAAI,GAAG,CAAC,MAAoB,EAAgB,EAAE,CAAC,eAAe,CAAC,MAAM,CAAC,CAAA;IAC5E,OAAO,IAAI,CAAC;QACV,IAAI,EAAE,MAAM,CAAC,EAAE,CAAC,sBAAsB,CAAC,CAAC,MAAa,c,CAAA,O,CAAA,MAAA,KAAK,CAAC,IAAI,CAAC,OAAO,CAAC,MAAM,EAAE,EAAE,IAAI,CAAC,IAAA,CAAC;QACxF,IAAI,EAAE,MAAM,CAAC,EAAE,CAAC,sBAAsB,CAAC,CAAC,CAAQ,EAAE,KAAK,c,CAAA,O,CAAA,MAAA,MAAM,CAAC,GAAG,CAAC,MAAM,CAAC,aAAa,CAAC,OAAO,CAAC,GAAG,CAAC,EAAE,CAAC,CAAC,EAAE,IAAI,CAAC,IAAA,CAAC;QAC/G,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,uBAAuB,CAAC,CAAC,CAAC,MAAM,EAAE,EAAE,CACnD,MAAM,CAAC,OAAO,CAAC,GAAG,EAAE;YAClB,MAAM,OAAO,GAAG,OAAO,CAAC,GAAG,CAAC,MAAM,CAAC,EAAE,CAAC,CAAA;YACtC,MAAM,MAAM,GAAG,OAAO,EAAE,OAAO,IAAI,CAAC,CAAA;YACpC,IAAI,MAAM,KAAK,MAAM,CAAC,OAAO,GAAG,CAAC,EAAE,CAAC;gBAClC,OAAO,MAAM,CAAC,IAAI,CAChB,IAAI,kBAAkB,CAAC;oBACrB,EAAE,EAAE,MAAM,CAAC,EAAE;oBACb,eAAe,EAAE,MAAM,CAAC,OAAO,GAAG,CAAC;oBACnC,aAAa,EAAE,MAAM;iBACtB,CAAC,CACH,CAAA;YACH,CAAC;YACD,OAAO,CAAC,GAAG,CAAC,MAAM,CAAC,EAAE,EAAE,IAAI,CAAC,MAAM,CAAC,CAAC,CAAA;YACpC,OAAO,MAAM,CAAC,IAAI,CAAA;QACpB,CAAC,CAAC,CACH;QACD,MAAM,EAAE,MAAM,CAAC,EAAE,CAAC,wBAAwB,CAAC,CAAC,+BAAQ,EAAE;YACpD,OAAO,CAAC,MAAM,CAAC,EAAE,CAAC,CAAA;QACpB,CAAC,CAAA,CAAC;KACH,CAAC,CAAA;AACJ,CAAC,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,WAAW,GAA2B,KAAK,CAAC,IAAI,CAAC,eAAe,CAAC,CAAC,UAAU,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/Credential.vibe"
+     }
+    ],
+    "code": "/**\n * Credential storage boundary.\n *\n * Credentials are capabilities. They must never enter flow input, plan\n * digests, journal payloads, or model context, so only a {@link CredentialRef}\n * — an id and a human-readable connection name — crosses the browser-safe\n * contract. Plaintext exists in exactly two places: inside a `Redacted` handed\n * to `create`/`rotate`, and inside the `Redacted` returned by `resolve`.\n *\n * The implementation composes two ports:\n *\n * - {@link CredentialStore} persists an opaque sealed record and enforces\n *   compare-and-set on writes, so concurrent rotations cannot interleave.\n *   `rotate` with `expected` extends that compare to the secret itself: the\n *   secret it checks and the version it writes over come from one read, so a\n *   writer that commits in between, in any process, is refused.\n * - {@link CredentialCipher} seals and opens the secret under host-managed\n *   keys. `WebCryptoCipher` is the browser and Node adapter; a host with no\n *   secure key material fails with the typed `Unavailable`.\n *\n * Authorization is a host decision, injected as {@link Options.authorize}. A\n * reference is also authenticated on every operation: caller-owned fields are\n * snapshotted before policy effects run, and a caller cannot present a forged\n * or stale `CredentialRef` because the snapshotted name must still match the\n * stored record.\n *\n * @since 0.1.0\n */\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Option from \"effect/Option\";\nimport * as Redacted from \"effect/Redacted\";\nimport { withSpan } from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { CredentialConflict, InvalidInput, Unauthorized, Unavailable } from \"./ControlError.js\";\nimport * as CredentialCipher from \"./CredentialCipher.js\";\nimport * as CredentialStore from \"./CredentialStore.js\";\n// String.prototype.isWellFormed without the ES2024 lib, which every package\n// compiling this source would also need. A loop, not a regex: a match would\n// leave the rejected secret in the legacy RegExp.input static.\nconst wellFormed = (value) => {\n    for (let index = 0; index < value.length; index++) {\n        const unit = value.charCodeAt(index);\n        if (unit >= 0xdc00 && unit <= 0xdfff)\n            return false;\n        if (unit >= 0xd800 && unit <= 0xdbff) {\n            const low = value.charCodeAt(++index);\n            if (!(low >= 0xdc00 && low <= 0xdfff))\n                return false;\n        }\n    }\n    return true;\n};\n/**\n * Service tag for credential resolution.\n *\n * @category services\n * @since 0.1.0\n */\nexport const Credential = Context.Service(\"/control/Credential\");\nconst unavailable = () => new Unavailable({\n    feature: \"credential storage\",\n    ticket: \"control-credential-storage\"\n});\n/**\n * A credential implementation that explicitly reports unavailable storage.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeNoop = () => Credential.of({\n    list: Effect.fn(\"Credential.list\")(() => Effect.fail(unavailable())),\n    get: Effect.fn(\"Credential.get\")(() => Effect.fail(unavailable())),\n    create: Effect.fn(\"Credential.create\")(() => Effect.fail(unavailable())),\n    resolve: Effect.fn(\"Credential.resolve\")(() => Effect.fail(unavailable())),\n    rotate: Effect.fn(\"Credential.rotate\")(() => Effect.fail(unavailable())),\n    revoke: Effect.fn(\"Credential.revoke\")(() => Effect.fail(unavailable()))\n});\n/**\n * Layer for the unavailable credential-storage boundary.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layerNoop = Layer.succeed(Credential, makeNoop());\nconst referenceOf = (value) => Object.freeze({\n    id: value.id,\n    name: value.name\n});\nconst cipherContextOf = (value) => Object.freeze({\n    id: value.id,\n    name: value.name,\n    version: value.version\n});\nconst missing = (id) => \n// Deliberately indistinguishable from a denied reference: telling an\n// unauthorized caller which ids exist is itself a leak.\nnew Unauthorized({ message: `Credential ${id} is not available to this caller` });\n/**\n * Constructs a working credential boundary over a store and a cipher.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = (options) => {\n    const authorize = options.authorize ?? (() => Effect.void);\n    const store = options.store;\n    const cipher = options.cipher;\n    /** Reads the record `reference` names, refusing a forged or stale one. */\n    const authenticate = Effect_1.fnUntraced(function* authenticate(operation, reference) {\n        const snapshot = referenceOf(reference);\n        yield* authorize(operation, Option.some(snapshot));\n        const record = yield* store.read(snapshot.id);\n        if (Option.isNone(record))\n            return yield* Effect_1.fail(missing(snapshot.id));\n        if (record.value.name !== snapshot.name)\n            return yield* Effect_1.fail(missing(snapshot.id));\n        return record.value;\n    });\n    const put = Effect_1.fnUntraced(function* put(record, secret) {\n        if (!wellFormed(Redacted.value(secret))) {\n            return yield* Effect_1.fail(new InvalidInput({ issue: \"Credential secret must be well-formed Unicode\" }));\n        }\n        // The metadata written beside this blob is also its authenticated data;\n        // moving the blob to another id, name, or version must make it unreadable.\n        const context = cipherContextOf(record);\n        const sealed = yield* cipher.seal(secret, context);\n        const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);\n        yield* store.write({ ...record, ...sealed, updatedAtMs: now });\n        return referenceOf(record);\n    });\n    return Credential.of({\n        list: () => Effect_1.suspend({ list: () => { return withSpan(Effect_1.gen(function* () {\n                yield* authorize(\"list\", Option.none());\n                const records = yield* store.list();\n                return records.map(referenceOf);\n            }), \"Credential.list\"); } }.list),\n        get: (id) => Effect_1.suspend({ get: () => { return withSpan(Effect_1.gen(function* () {\n                const record = yield* store.read(id);\n                if (Option.isNone(record))\n                    return yield* Effect_1.fail(missing(id));\n                const reference = referenceOf(record.value);\n                yield* authorize(\"get\", Option.some(reference));\n                return reference;\n            }), \"Credential.get\"); } }.get),\n        create: (input) => Effect_1.suspend({ create: () => { return withSpan(Effect_1.gen(function* () {\n                const snapshot = Object.freeze({\n                    reference: referenceOf(input),\n                    secret: input.secret\n                });\n                yield* authorize(\"create\", Option.some(snapshot.reference));\n                return yield* put({\n                    id: snapshot.reference.id,\n                    name: snapshot.reference.name,\n                    ciphertext: \"\",\n                    nonce: \"\",\n                    version: 1,\n                    updatedAtMs: 0\n                }, snapshot.secret);\n            }), \"Credential.create\"); } }.create),\n        resolve: (reference) => Effect_1.suspend({ resolve: () => { return withSpan(Effect_1.gen(function* () {\n                const record = yield* authenticate(\"resolve\", reference);\n                return yield* cipher.open({ ciphertext: record.ciphertext, nonce: record.nonce }, cipherContextOf(record));\n            }), \"Credential.resolve\"); } }.resolve),\n        rotate: (reference, secret, options) => Effect_1.suspend({ rotate: () => { return withSpan(Effect_1.gen(function* () {\n                const expected = options?.expected;\n                const record = yield* authenticate(\"rotate\", reference);\n                if (expected !== undefined) {\n                    const stored = yield* cipher.open({ ciphertext: record.ciphertext, nonce: record.nonce }, cipherContextOf(record));\n                    if (Redacted.value(stored) !== Redacted.value(expected)) {\n                        return yield* Effect_1.fail(new CredentialConflict({\n                            id: record.id,\n                            expectedVersion: record.version,\n                            actualVersion: record.version\n                        }));\n                    }\n                }\n                // `put` writes over exactly the version read above, so the secret just\n                // compared is still the stored one when the write commits.\n                return yield* put({ ...record, version: record.version + 1 }, secret);\n            }), \"Credential.rotate\"); } }.rotate),\n        revoke: (reference) => Effect_1.suspend({ revoke: () => { return withSpan(Effect_1.gen(function* () {\n                const record = yield* authenticate(\"revoke\", reference);\n                yield* store.remove(record.id);\n            }), \"Credential.revoke\"); } }.revoke)\n    });\n};\n/**\n * Provides a working credential boundary over the ambient store and cipher.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = (options = {}) => Layer.effect(Credential)(Effect_1.gen(function* () {\n    const store = yield* CredentialStore.CredentialStore;\n    const cipher = yield* CredentialCipher.CredentialCipher;\n    return make({ store, cipher, ...(options.authorize === undefined ? {} : { authorize: options.authorize }) });\n}));\n",
+    "map": {
+     "version": 3,
+     "file": "Credential.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/Credential.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {
@@ -8937,6 +9137,146 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/control/src/migrations/0004_approval_decisions.vibe"
+     }
+    ],
+    "code": "/**\n * Preserve the actual decision without guessing erased legacy answers.\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/**\n * Idempotent for both recorded migrations and standalone runtime bootstrap.\n * @category migrations\n * @since 1.0.0\n */\nexport const approvalDecisions = Effect_1.gen(function* approvalDecisions() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql.withTransaction(Effect_1.gen(function* () {\n        const columns = yield* Dialect.columns(sql, \"control_tokens\");\n        if (columns.some((column) => column.name === \"decision_json\"))\n            return;\n        // NULL is intentional: old terminal tokens erased their answer. Their\n        // decoder refuses recovery instead of inferring approval from a grant.\n        // An undecided token still has its unambiguous resolved=0 representation.\n        yield* sql `ALTER TABLE control_tokens ADD COLUMN decision_json TEXT`;\n    }));\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0004_approval_decisions.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/migrations/0004_approval_decisions.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;GAGG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;GAIG;AACH,MAAM,CAAC,MAAM,iBAAiB,GAAG,a,CAAA,S,CAAA;IAC/B,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAC,eAAe,CAAC,a,CAAA;QACtB,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAC,GAAG,EAAE,gBAAgB,CAAC,CAAA;QAC1D,IAAI,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,eAAe,CAAC;YAAE,OAAM;QACrE,sEAAsE;QACtE,uEAAuE;QACvE,0EAA0E;QAC1E,OAAI,GAAG,CAAA,0DAA0D,CAAA;IACnE,CAAC,CAAA,CAAC,CAAA;AACJ,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/migrations/0005_signal_principals.vibe"
+     }
+    ],
+    "code": "/**\n * Record who admitted each signal command.\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/**\n * Adds the admitting principal to the signal inbox.\n *\n * NULL is intentional for existing rows: a command admitted before this column\n * has no recorded identity, so it cannot answer a human wait, which requires\n * `ApprovalAuthority` to authorize the admitting principal.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const signalPrincipals = Effect_1.gen(function* signalPrincipals() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql.withTransaction(Effect_1.gen(function* () {\n        const columns = yield* Dialect.columns(sql, \"control_signal_commands\");\n        if (columns.some((column) => column.name === \"principal_json\"))\n            return;\n        yield* sql `ALTER TABLE control_signal_commands ADD COLUMN principal_json TEXT`;\n    }));\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0005_signal_principals.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/migrations/0005_signal_principals.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;GAGG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,gBAAgB,GAAG,a,CAAA,S,CAAA;IAC9B,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAC,eAAe,CAAC,a,CAAA;QACtB,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAC,GAAG,EAAE,yBAAyB,CAAC,CAAA;QACnE,IAAI,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,gBAAgB,CAAC;YAAE,OAAM;QACtE,OAAI,GAAG,CAAA,oEAAoE,CAAA;IAC7E,CAAC,CAAA,CAAC,CAAA;AACJ,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/migrations/0006_run_principals.vibe"
+     }
+    ],
+    "code": "/**\n * Record who launched each run.\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/**\n * Adds the launching principal to the launch index.\n *\n * NULL is intentional for existing rows: a run launched before these columns\n * has no recorded launcher, so only a reader that sees every run lists or\n * watches it.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const runPrincipals = Effect_1.gen(function* runPrincipals() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql.withTransaction(Effect_1.gen(function* () {\n        const columns = yield* Dialect.columns(sql, \"control_runs\");\n        if (!columns.some((column) => column.name === \"principal_id\")) {\n            yield* sql `ALTER TABLE control_runs ADD COLUMN principal_id TEXT`;\n        }\n        if (!columns.some((column) => column.name === \"principal_kind\")) {\n            yield* sql `ALTER TABLE control_runs ADD COLUMN principal_kind TEXT`;\n        }\n    }));\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0006_run_principals.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/migrations/0006_run_principals.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;GAGG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,a,CAAA,S,CAAA;IAC3B,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAC,eAAe,CAAC,a,CAAA;QACtB,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAC,GAAG,EAAE,cAAc,CAAC,CAAA;QACxD,IAAI,CAAC,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,cAAc,CAAC,EAAE,CAAC;YAC9D,OAAI,GAAG,CAAA,uDAAuD,CAAA;QAChE,CAAC;QACD,IAAI,CAAC,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,gBAAgB,CAAC,EAAE,CAAC;YAChE,OAAI,GAAG,CAAA,yDAAyD,CAAA;QAClE,CAAC;IACH,CAAC,CAAA,CAAC,CAAA;AACJ,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/migrations/0007_resume_consent.vibe"
+     }
+    ],
+    "code": "/**\n * Record the operator consent a resume delegation carries.\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/**\n * Adds the journal sequence of an operator's explicit resume to the pending\n * resume delegations.\n *\n * NULL is intentional for existing rows: a delegation recorded before this\n * column is an approval or a wake, which is background intent.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const resumeConsent = Effect_1.gen(function* resumeConsent() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql.withTransaction(Effect_1.gen(function* () {\n        const columns = yield* Dialect.columns(sql, \"control_run_resumes\");\n        if (!columns.some((column) => column.name === \"consent_seq\")) {\n            yield* sql `ALTER TABLE control_run_resumes ADD COLUMN consent_seq ${Dialect.integer(sql)}`;\n        }\n    }));\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0007_resume_consent.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/migrations/0007_resume_consent.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;GAGG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;;;;;;;GASG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,a,CAAA,S,CAAA;IAC3B,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAC,eAAe,CAAC,a,CAAA;QACtB,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAC,GAAG,EAAE,qBAAqB,CAAC,CAAA;QAC/D,IAAI,CAAC,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,aAAa,CAAC,EAAE,CAAC;YAC7D,OAAI,GAAG,CAAA,0DAA0D,OAAO,CAAC,OAAO,CAAC,GAAG,CAAC,EAAE,CAAA;QACzF,CAAC;IACH,CAAC,CAAA,CAAC,CAAA;AACJ,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/migrations/0008_signal_rejection.vibe"
+     }
+    ],
+    "code": "/**\n * Persist the outcome of a rejected signal.\n *\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\n/** Adds the rejection outcome, preserving legacy no-match rejections.\n * @category migrations\n * @since 1.0.0\n */\nexport const signalRejection = Effect_1.gen(function* signalRejection() {\n    const sql = yield* SqlClient.SqlClient;\n    yield* sql.withTransaction(Effect_1.gen(function* () {\n        const columns = yield* Dialect.columns(sql, \"control_signal_commands\");\n        if (columns.some((column) => column.name === \"rejection\"))\n            return;\n        yield* sql `ALTER TABLE control_signal_commands ADD COLUMN rejection TEXT CHECK (rejection IS NULL OR rejection = 'unauthorized')`;\n    }));\n});\n",
+    "map": {
+     "version": 3,
+     "file": "0008_signal_rejection.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/migrations/0008_signal_rejection.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD;;;GAGG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,a,CAAA,S,CAAA;IAC7B,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,OAAI,GAAG,CAAC,eAAe,CAAC,a,CAAA;QACtB,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAC,GAAG,EAAE,yBAAyB,CAAC,CAAA;QACnE,IAAI,OAAO,CAAC,IAAI,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,WAAW,CAAC;YAAE,OAAM;QACjE,OAAI,GAAG,CAAA,uHAAuH,CAAA;IAChI,CAAC,CAAA,CAAC,CAAA;AACJ,CAAC,CAAA,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/Migrations.vibe"
+     }
+    ],
+    "code": "/**\n * Control-plane and credential schema migrations.\n *\n * This package reserves the migration block immediately after time travel.\n * Hosts compose this set with the journal and run-store sets before opening a\n * shared control database.\n *\n * @since 0.1.0\n */\nimport * as DatabaseMigrations from \"@smthrs/database/Migrations\";\nimport * as Layer from \"effect/Layer\";\nimport { initial } from \"./migrations/0001_control_tables.js\";\nimport { runKeys } from \"./migrations/0002_run_keys.js\";\nimport { signalCommands } from \"./migrations/0003_signal_commands.js\";\nimport { approvalDecisions } from \"./migrations/0004_approval_decisions.js\";\nimport { signalPrincipals } from \"./migrations/0005_signal_principals.js\";\nimport { runPrincipals } from \"./migrations/0006_run_principals.js\";\nimport { resumeConsent } from \"./migrations/0007_resume_consent.js\";\nimport { signalRejection } from \"./migrations/0008_signal_rejection.js\";\n/**\n * The control package's namespaced migration set.\n *\n * @category migrations\n * @since 0.1.0\n */\nexport const set = {\n    namespace: \"control\",\n    idOffset: DatabaseMigrations.idBlock * 6,\n    migrations: {\n        \"0001_control_tables\": initial,\n        \"0002_run_keys\": runKeys,\n        \"0003_signal_commands\": signalCommands,\n        \"0004_approval_decisions\": approvalDecisions,\n        \"0005_signal_principals\": signalPrincipals,\n        \"0006_run_principals\": runPrincipals,\n        \"0007_resume_consent\": resumeConsent,\n        \"0008_signal_rejection\": signalRejection\n    }\n};\n/**\n * Creates every durable control-plane and credential table.\n *\n * @category migrations\n * @since 0.1.0\n */\nexport const run = DatabaseMigrations.run([set]);\n/**\n * Layer that runs control migrations before exposing the database to control\n * services.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = Layer.effectDiscard(run);\n",
+    "map": {
+     "version": 3,
+     "file": "Migrations.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/Migrations.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;GAQG;AAEH,OAAO,KAAK,kBAAkB,MAAM,6BAA6B,CAAA;AACjE,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,EAAE,OAAO,EAAE,MAAM,qCAAuC,CAAA;AAC/D,OAAO,EAAE,OAAO,EAAE,MAAM,+BAAiC,CAAA;AACzD,OAAO,EAAE,cAAc,EAAE,MAAM,sCAAwC,CAAA;AACvE,OAAO,EAAE,iBAAiB,EAAE,MAAM,yCAA2C,CAAA;AAC7E,OAAO,EAAE,gBAAgB,EAAE,MAAM,wCAA0C,CAAA;AAC3E,OAAO,EAAE,aAAa,EAAE,MAAM,qCAAuC,CAAA;AACrE,OAAO,EAAE,aAAa,EAAE,MAAM,qCAAuC,CAAA;AACrE,OAAO,EAAE,eAAe,EAAE,MAAM,uCAAyC,CAAA;AAEzE;;;;;GAKG;AACH,MAAM,CAAC,MAAM,GAAG,GAAoC;IAClD,SAAS,EAAE,SAAS;IACpB,QAAQ,EAAE,kBAAkB,CAAC,OAAO,GAAG,CAAC;IACxC,UAAU,EAAE;QACV,qBAAqB,EAAE,OAAO;QAC9B,eAAe,EAAE,OAAO;QACxB,sBAAsB,EAAE,cAAc;QACtC,yBAAyB,EAAE,iBAAiB;QAC5C,wBAAwB,EAAE,gBAAgB;QAC1C,qBAAqB,EAAE,aAAa;QACpC,qBAAqB,EAAE,aAAa;QACpC,uBAAuB,EAAE,eAAe;KACzC;CACF,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,kBAAkB,CAAC,GAAG,CAAC,CAAC,GAAG,CAAC,CAAC,CAAA;AAEhD;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,KAAK,CAAC,aAAa,CAAC,GAAG,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/Monitor.vibe"
+     }
+    ],
+    "code": "/**\n * Run health over the control plane: what a run's state means, and what to do\n * about it.\n *\n * A control plane answers \"what is this run doing\". A monitor answers the\n * question after it — \"is that all right, and if not, what now\" — and the two\n * are deliberately separate modules. {@link classify} is a pure function of\n * one observation, so the vocabulary an operator reads on a dashboard is the\n * same one a heal loop branches on and the same one a test can enumerate.\n * {@link run} is the loop that beats over `Control` and journals what it saw.\n *\n * The classification is decided from durable evidence only: the run summary\n * the control plane projects, and the journal entries `watch` replays. Nothing\n * here reads an in-process fiber, which is what makes a monitor able to watch\n * a run in another process at all.\n *\n * @since 0.1.0\n */\nimport * as Duration from \"effect/Duration\";\nimport * as Stream from \"effect/Stream\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { Journal, JournalEvent } from \"@smthrs/journal\";\nimport { Effect } from \"effect\";\nimport { Control } from \"./Control.js\";\nimport { InvalidInput, PersistenceError } from \"./ControlError.js\";\nimport * as SubjectHealth from \"./Health.js\";\n/**\n * The journal event type the engine records when an action attempt starts.\n *\n * Named as a string rather than imported, exactly as in `Lineage`: a monitor\n * reads journals, not engines.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const attemptStartedEventType = \"flows.engine.attempt-started\";\n/**\n * The journal event type the engine records when an action attempt settles.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const attemptFinishedEventType = \"flows.engine.attempt-finished\";\n/**\n * The journal event type one monitor beat is recorded under.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const beatEventType = \"control.monitor.beat\";\n/**\n * The journal event type one applied remedy is recorded under.\n *\n * A beat and a heal are two records because they are two facts, and only one\n * of them is true before the remedy runs. A single record carrying `healed`\n * has to be written either before the remedy — leaving durable evidence of a\n * heal that a crash one instruction later never performed — or after it, which\n * loses the evidence of what a monitor decided when the remedy is what killed\n * it. Splitting them keeps both.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const healedEventType = \"control.monitor.healed\";\n/**\n * What a run looks like to a monitor.\n *\n * `healthy` covers both \"moving\" and \"finished\": a completed run needs nothing\n * done to it, and neither does one that is making progress. The other six name\n * a specific thing that is wrong, because a heal that cannot tell them apart\n * would resume a run that is waiting for a human.\n *\n * @category models\n * @since 0.1.0\n */\nexport const Health = SubjectHealth.HealthState;\n/** How many rounds a trampoline may take before a monitor calls it runaway. */\nconst defaultRoundBound = 32;\nconst foldAttempt = (state, event) => {\n    if (event.kind === attemptStartedEventType)\n        state.open += 1;\n    if (event.kind === attemptFinishedEventType) {\n        state.open -= 1;\n        const payload = event.payload;\n        state.failed = typeof payload === \"object\" && payload !== null && !Array.isArray(payload) &&\n            payload[\"state\"] === \"failed\";\n    }\n};\n/**\n * Decides what a run's state means.\n *\n * The order is the order an operator would read it in, and each rule earns its\n * place by naming a different response:\n *\n * | Condition | Health | Because |\n * | --- | --- | --- |\n * | No summary | `unknown` | Nothing to say, and nothing to do. |\n * | `failed` | `failing` | The run itself reported the failure. |\n * | `completed`, `cancelled` | `healthy` | A finished run needs nothing. |\n * | `waiting-approval`, or parked on `approval` | `awaiting-human` | A human owes it an answer; no machine can supply one. |\n * | Parked with no waiting reason | `awaiting-human` | Only an operator's own park writes no waiting reason, so a person stopped it and a person restarts it. |\n * | `roundOrdinal` at or past the bound | `runaway-loop` | The lineage is looping without converging. |\n * | The last settled attempt failed | `failing` | The run is still alive but its work is not landing. |\n * | No progress for `stallBeats`, an attempt open | `wedged-node` | One attempt started and never settled: the work is stuck, not the run. |\n * | No progress for `stallBeats` | `stalled` | Nothing is happening and nothing is in flight. |\n * | Anything else | `healthy` | Entries are still arriving. |\n *\n * `awaiting-human` deliberately outranks `failing`: a run parked for approval\n * after a failed attempt is waiting for a person, and resuming or cancelling\n * it would take the decision away from them.\n *\n * A park with no reason is the same case. The engine names every park it makes\n * — `event`, `approval`, `timer`, `quota`, `released` — so a parked run whose\n * `waitingReason` is absent was parked by an operator through\n * `ControlRuntime.writeStatus`. Calling that a stall and resuming it would undo\n * a deliberate act, which is the worst thing an unattended heal loop can do.\n *\n * @param observation what the beat saw\n * @category projections\n * @since 0.1.0\n */\nexport const classify = (observation) => {\n    const attempts = { open: 0, failed: false };\n    for (const event of observation.events)\n        foldAttempt(attempts, event);\n    return classifyState(observation, attempts);\n};\nconst classifyState = (observation, attempts) => {\n    const summary = observation.summary;\n    if (summary === undefined)\n        return \"unknown\";\n    if (summary.status === \"failed\")\n        return \"failing\";\n    if (summary.status === \"completed\" || summary.status === \"cancelled\")\n        return \"healthy\";\n    if (summary.status === \"waiting-approval\")\n        return \"awaiting-human\";\n    if (summary.status === \"parked\" && (summary.waitingReason === \"approval\" || summary.waitingReason === undefined)) {\n        return \"awaiting-human\";\n    }\n    if (SubjectHealth.waitReason(summary.status, summary.waitingReason) !== undefined)\n        return \"healthy\";\n    const bound = observation.roundBound ?? defaultRoundBound;\n    if (summary.roundOrdinal !== undefined && summary.roundOrdinal >= bound)\n        return \"runaway-loop\";\n    if (attempts.failed)\n        return \"failing\";\n    if (!observation.semanticProgress && observation.beatsWithoutProgress >= observation.stallBeats) {\n        return attempts.open > 0 ? \"wedged-node\" : \"stalled\";\n    }\n    return \"healthy\";\n};\n/**\n * The remedy a health warrants, before `autoHeal` decides whether to apply it.\n *\n * A stalled or wedged run is one nobody is driving, and a resume claims it. A\n * failing or runaway run is one that will not get better by being driven\n * harder. Everything else is left alone.\n *\n * @param health what the beat classified\n * @category projections\n * @since 0.1.0\n */\nexport const remedyFor = (health) => {\n    switch (health) {\n        case \"stalled\":\n        case \"wedged-node\":\n            return \"resume\";\n        case \"failing\":\n        case \"runaway-loop\":\n            return \"cancel\";\n        default:\n            return \"none\";\n    }\n};\nconst summaryOf = (runId) => Effect.flatMap(Control, (control) => Effect.map(control.list({ _tag: \"runs\", filters: { runId } }), (listed) => listed._tag === \"runs\" ? listed.items[0] : undefined));\nconst terminal = (summary) => summary !== undefined &&\n    (summary.status === \"completed\" || summary.status === \"failed\" || summary.status === \"cancelled\");\n/**\n * Watches one run and, when told to, heals it.\n *\n * The loop stops early on a terminal run, because a finished run has nothing\n * left to observe and beating at it would fill its journal with heartbeats.\n * Otherwise it takes `maxChecks` beats and reports what it saw.\n *\n * Every beat is journaled as `control.monitor.beat` before any remedy is\n * applied, carrying the `remedy` it is about to attempt, so a monitor that\n * crashes mid-heal leaves the evidence of what it decided. The remedy itself\n * is journaled separately as `control.monitor.healed`, and only once the heal\n * returned a receipt: a heal that failed, or a process that died running one,\n * must not leave a durable record saying the run was healed.\n *\n * `autoHeal` is empty by default. A monitor that healed by default would be a\n * monitor that cancels a run the first time it looks at one, which is the\n * wrong default for a thing an operator points at production.\n *\n * Fails with `InvalidInput` before the first beat when `intervalMs` is\n * negative or not finite, `maxChecks` is negative or `NaN`, or `stallBeats`,\n * `roundBound` or `retainBeats` is not a positive integer.\n *\n * Nothing here leases the run. Two monitors on one run both beat and both\n * remedy, so a remedy has to be idempotent on the control plane — which the\n * two defaults are, through `Control.resume` and `Control.cancel`\n * idempotency keys that name the monitor, the run, and the beat. A custom\n * `heal` owes the same property.\n *\n * @param options how to beat and what to heal\n * @category constructors\n * @since 0.1.0\n */\nexport const run = Effect_1.fnUntraced(function* run(options) {\n    const intervalMs = options.intervalMs ?? options.healthCheck?.policy.intervalMs ?? 1_000;\n    const maxChecks = options.maxChecks ?? 10;\n    const stallBeats = options.stallBeats ?? 3;\n    // A bound the loop cannot honour is refused before the first beat:\n    // `stallBeats: 0` makes every beat a stall and `roundBound: 0` makes every\n    // run a runaway, and either one under `autoHeal` remedies a healthy run.\n    const refused = !(Number.isFinite(intervalMs) && intervalMs >= 0)\n        ? \"intervalMs must be a non-negative finite number\"\n        : !(maxChecks >= 0)\n            ? \"maxChecks must be a non-negative number\"\n            : !(Number.isSafeInteger(stallBeats) && stallBeats >= 1)\n                ? \"stallBeats must be a positive integer\"\n                : options.roundBound !== undefined && !(Number.isSafeInteger(options.roundBound) && options.roundBound >= 1)\n                    ? \"roundBound must be a positive integer\"\n                    : options.retainBeats !== undefined && !(Number.isSafeInteger(options.retainBeats) && options.retainBeats >= 1)\n                        ? \"retainBeats must be a positive integer\"\n                        : undefined;\n    if (refused !== undefined)\n        return yield* Effect_1.fail(new InvalidInput({ issue: `Monitor.run: ${refused}` }));\n    const control = yield* Control;\n    const journal = yield* Journal.Journal;\n    let consecutiveProbeFailures = 0;\n    let lastPublished;\n    const autoHeal = options.autoHeal ?? [];\n    const monitorId = options.monitorId ?? \"default\";\n    const heal = options.heal ?? ((input) => input.remedy === \"resume\"\n        ? control.resume({\n            runId: input.runId,\n            idempotencyKey: `monitor:${monitorId}:resume:${input.runId}:${input.beat}`\n        })\n        : control.cancel({\n            runId: input.runId,\n            reason: `monitor:${input.health}`,\n            idempotencyKey: `monitor:${monitorId}:cancel:${input.runId}:${input.beat}`\n        }));\n    const emit = (eventType, payload, operation) => {\n        const unrecorded = (cause) => new PersistenceError({\n            operation: eventType,\n            message: `Failed to record ${operation} for ${options.runId}`,\n            cause\n        });\n        // The record is BUILT inside the failure channel, not before it.\n        // `JournalEvent.RunId`/`SourceId` refuse an identifier the store cannot\n        // tell apart from another one — a lone UTF-16 surrogate, an embedded NUL\n        // — by THROWING, and `monitorId` reaches here from an operator's flag. A\n        // thrown constructor is a defect, which the RPC boundary reports as an\n        // opaque `TransportError` and a caller cannot handle; a beat whose record\n        // cannot be built is the same event as a beat whose record cannot be\n        // appended, so both fail as `PersistenceError` naming the record.\n        return Effect.asVoid(Effect.flatMap(Effect.try({\n            try: () => new JournalEvent.Input({\n                runId: JournalEvent.RunId.make(options.runId),\n                sourceId: JournalEvent.SourceId.make(`/control/monitor/${monitorId}`),\n                eventType,\n                payload: { runId: options.runId, monitorId, ...payload }\n            }),\n            catch: unrecorded\n        }), (input) => Effect.mapError(journal.emitDurableUnfenced(input), unrecorded)));\n    };\n    /** What the beat saw, and what it is about to do about it. */\n    const record = (beat, remedy) => emit(beatEventType, {\n        beat: beat.beat,\n        health: beat.health,\n        sequence: beat.sequence,\n        ...(remedy === \"none\" ? {} : { remedy })\n    }, `monitor beat ${beat.beat}`);\n    /** What the remedy did, once it returned. */\n    const recordHealed = (beat, remedy, receipt) => emit(healedEventType, { beat: beat.beat, health: beat.health, healed: remedy, receipt: receipt._tag }, `monitor heal ${beat.beat}`);\n    const beats = [];\n    let beatsWithoutProgress = 0;\n    let lastSequence = -1;\n    let checkpoint = {};\n    const attempts = { open: 0, failed: false };\n    let sequence = -1;\n    for (let beat = 0; beat < maxChecks; beat += 1) {\n        if (beat > 0 && intervalMs > 0) {\n            yield* Effect.sleep(Duration.millis(options.healthCheck === undefined\n                ? intervalMs\n                : SubjectHealth.nextDelay(options.healthCheck.policy, consecutiveProbeFailures)));\n        }\n        const summary = yield* summaryOf(options.runId);\n        const newEvents = [];\n        const sinceCursor = Math.max(0, sequence);\n        yield* control.watch({ runId: options.runId, follow: false, ...checkpoint }).pipe(Stream.runForEach(Effect_1.fnUntraced(function* (event) {\n            // Advance over bookkeeping too, but never count it as run progress.\n            checkpoint = event.cursor === undefined\n                ? { afterSequence: event.sequence }\n                : { afterCursor: event.cursor };\n            if (isBookkeepingEvent(event.kind))\n                return;\n            newEvents.push(event);\n            if (newEvents.length > 256)\n                newEvents.shift();\n            sequence = event.sequence;\n            foldAttempt(attempts, event);\n        })));\n        beatsWithoutProgress = sequence === lastSequence ? beatsWithoutProgress + 1 : 0;\n        lastSequence = sequence;\n        const health = classifyState({\n            ...(summary === undefined ? {} : { summary }),\n            beatsWithoutProgress,\n            stallBeats,\n            ...(options.roundBound === undefined ? {} : { roundBound: options.roundBound })\n        }, attempts);\n        if (options.healthCheck !== undefined && summary !== undefined) {\n            const check = options.healthCheck;\n            const subjectId = `run:${options.runId}`;\n            const incarnation = SubjectHealth.runIncarnation(summary);\n            const probe = Effect_1.suspend({ probe: () => SubjectHealth.evaluate(check, {\n                    subjectId,\n                    state: summary.status,\n                    summary,\n                    events: newEvents,\n                    sinceCursor\n                }, { monitorId, incarnation, evidenceSeq: Math.max(0, sequence) }) }.probe);\n            let observation = yield* (options.withProbePermit?.(probe) ?? probe);\n            const current = yield* summaryOf(options.runId);\n            if (current === undefined || SubjectHealth.runIncarnation(current) !== incarnation) {\n                observation = { ...observation, outcome: \"discarded\", report: undefined, reason: \"owner-changed\" };\n            }\n            consecutiveProbeFailures = observation.outcome === \"ok\" ? 0 : consecutiveProbeFailures + 1;\n            const semanticProgress = observation.outcome === \"ok\" && observation.report?.activity === \"working\";\n            const baseHealth = classifyState({\n                summary,\n                beatsWithoutProgress,\n                stallBeats,\n                roundBound: options.roundBound,\n                semanticProgress\n            }, attempts);\n            observation = { ...observation, baseHealth };\n            const status = SubjectHealth.rollup({\n                subjectId,\n                state: summary.status,\n                incarnation,\n                waitingReason: summary.waitingReason,\n                baseHealth,\n                latest: { observation, sequence: 0 },\n                now: observation.observedAt,\n                updatedAt: summary.updatedAt\n            });\n            const changed = lastPublished === undefined || lastPublished.incarnation !== observation.incarnation ||\n                lastPublished.outcome !== observation.outcome || lastPublished.baseHealth !== observation.baseHealth ||\n                lastPublished.evidenceSeq !== observation.evidenceSeq ||\n                JSON.stringify(lastPublished.report) !== JSON.stringify(observation.report) ||\n                lastPublished.reason !== observation.reason;\n            // Renew before expiry, but do not fill the journal with identical per-probe records.\n            if (changed || observation.observedAt >= lastPublished.observedAt + check.policy.ttlMs / 2) {\n                yield* emit(SubjectHealth.statusObservedEventType, {\n                    ...observation,\n                    status: summary.status,\n                    health: status.health,\n                    activity: status.activity,\n                    attention: status.attention,\n                    freshness: status.freshness,\n                    waitingReason: summary.waitingReason ?? \"\"\n                }, \"health observation\");\n                lastPublished = observation;\n            }\n        }\n        // Checker output is observational and never participates in remedy authorization.\n        const remedy = autoHeal.includes(health) ? remedyFor(health) : \"none\";\n        const observed = { beat, health, sequence };\n        if (options.recordBeats !== false)\n            yield* record(observed, remedy);\n        if (remedy === \"none\") {\n            beats.push(observed);\n        }\n        else {\n            const receipt = yield* (Effect.catch(heal({ runId: options.runId, health, remedy, beat })\n            // A remedy that fails must not abort the run of beats: the monitor\n            // is an unattended loop, and one failing heal leaves every other\n            // beat — and every other run it would have observed — unwatched.\n            // The failure is logged with the beat it failed on, and the beat is\n            // recorded without `healed` or `receipt`, exactly as a remedy the\n            // monitor never got to apply reports.\n            , (failure) => Effect.as(Effect.annotateLogs(Effect.logWarning(\"A monitor remedy failed and was skipped\"), { runId: options.runId, beat, health, remedy, cause: String(failure) }), undefined)));\n            if (receipt === undefined) {\n                // The stall evidence stands: nothing provably moved the run, so the\n                // next beat compares against the same progress mark and the remedy\n                // is retried with the beat's own idempotency key.\n                beats.push(observed);\n            }\n            else {\n                // A remedy that returned is not a remedy that was applied. `Terminal`\n                // says the run had already settled, so nothing was healed; `Conflict`\n                // says the key belonged to another mutation, so this monitor's remedy\n                // never ran. Recording either as `healed` claimed something that did\n                // not happen, and resetting the stall count on either erased the\n                // evidence the next beat needs to notice the run is still stuck.\n                const applied = receipt._tag === \"Accepted\" || receipt._tag === \"AlreadyApplied\";\n                if (applied) {\n                    // Journaled here and not a line earlier: `healed` is a claim about\n                    // something that happened, and until the receipt came back it had not.\n                    yield* recordHealed(observed, remedy, receipt);\n                    // The heal moved the run, so the next beat compares against a run\n                    // that has changed. Counting the beats before it as stall evidence\n                    // again would heal a second time for the same stall.\n                    beatsWithoutProgress = 0;\n                }\n                beats.push(applied ? { ...observed, healed: remedy, receipt } : { ...observed, receipt });\n                // A remedy that answered `Terminal` observed the run settle. The loop\n                // ends on the same evidence a terminal summary ends it on, rather than\n                // beating against a run nothing can move.\n                if (receipt._tag === \"Terminal\")\n                    break;\n            }\n        }\n        if (options.retainBeats !== undefined && beats.length > options.retainBeats) {\n            beats.splice(0, beats.length - options.retainBeats);\n        }\n        if (terminal(summary)) {\n            break;\n        }\n    }\n    return {\n        runId: options.runId,\n        beats,\n        health: beats[beats.length - 1]?.health ?? \"unknown\"\n    };\n});\n/** Observer and notification bookkeeping is never execution progress.\n * @category predicates\n * @since 1.0.0\n */\nexport const isBookkeepingEvent = (kind) => kind.startsWith(\"control.monitor.\") || kind.startsWith(\"control.status.\") ||\n    kind.startsWith(\"flows.alerts.\") || kind.startsWith(\"flows.notifications.\") || kind.startsWith(\"flows.notification.\");\n",
+    "map": {
+     "version": 3,
+     "file": "Monitor.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/Monitor.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/control/src/internal/activeFibers.vibe"
      }
     ],
@@ -8957,6 +9297,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
+     }
+    ],
+    "code": "/**\n * Durable credential persistence over `@smthrs/database`.\n *\n * This is the host adapter behind {@link CredentialStore} on any runtime with\n * a SQL database — the Node composition uses `@smthrs/database/node`, and\n * tests use its in-memory SQLite driver. The module itself imports no `node:*`\n * API: it speaks the driver-neutral SQL contract, so it stays bundleable and a\n * browser host that ships a SQL driver can use it unchanged.\n *\n * Only ciphertext is stored. The row carries no key material, and the\n * compare-and-set on `version` is what makes two concurrent rotations\n * serializable: the loser is refused with `CredentialConflict` instead of\n * clobbering the winner.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { DurableWriter } from \"@smthrs/database/DurableWriter\";\nimport { Effect, Layer } from \"effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\nimport { CredentialConflict, Unavailable } from \"./ControlError.js\";\nimport * as CredentialStore from \"./CredentialStore.js\";\nimport { initial } from \"./migrations/0001_control_tables.js\";\nconst toRecord = (row) => ({\n    id: row.id,\n    name: row.name,\n    ciphertext: row.ciphertext,\n    nonce: row.nonce,\n    version: Number(row.version),\n    updatedAtMs: Number(row.updated_at_ms)\n});\nconst unavailable = (operation) => () => new Unavailable({\n    feature: `credential storage (${operation})`,\n    ticket: \"control-credential-storage\"\n});\n/**\n * Creates the credential table if it does not exist.\n *\n * @category migrations\n * @since 0.1.0\n */\nexport const migrate = Effect.mapError(initial, unavailable(\"migrate\"));\n/**\n * Constructs a durable credential store over the ambient database.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = Effect_1.gen(function* make() {\n    const sql = yield* Effect.service(SqlClient.SqlClient);\n    const writer = yield* DurableWriter;\n    yield* migrate;\n    const list = () => Effect.mapError(Effect.map(sql `SELECT * FROM control_credentials ORDER BY name`, (rows) => rows.map(toRecord)), unavailable(\"list\"));\n    const read = (id) => Effect.mapError(Effect.map(sql `SELECT * FROM control_credentials WHERE id = ${id}`, (rows) => Option.map(Option.fromNullishOr(rows[0]), toRecord)), unavailable(\"read\"));\n    // One write transaction, so the version this writer read and the row it\n    // guards cannot interleave with a concurrent rotation.\n    const write = (record) => Effect.mapError(writer.write(Effect_1.gen(function* () {\n        const rows = yield* sql `\n        SELECT version FROM control_credentials WHERE id = ${record.id}\n      `;\n        const stored = rows[0];\n        const actual = stored === undefined ? 0 : Number(stored.version);\n        if (actual !== record.version - 1) {\n            return yield* Effect_1.fail(new CredentialConflict({\n                id: record.id,\n                expectedVersion: record.version - 1,\n                actualVersion: actual\n            }));\n        }\n        yield* sql `\n        INSERT INTO control_credentials (id, name, ciphertext, nonce, version, updated_at_ms)\n        VALUES (\n          ${record.id},\n          ${record.name},\n          ${record.ciphertext},\n          ${record.nonce},\n          ${record.version},\n          ${record.updatedAtMs}\n        )\n        ON CONFLICT (id) DO UPDATE SET\n          name = excluded.name,\n          ciphertext = excluded.ciphertext,\n          nonce = excluded.nonce,\n          version = excluded.version,\n          updated_at_ms = excluded.updated_at_ms\n      `;\n    })), (cause) => cause instanceof CredentialConflict ? cause : unavailable(\"write\")());\n    const remove = (id) => Effect.mapError(Effect.asVoid(sql `DELETE FROM control_credentials WHERE id = ${id}`), unavailable(\"remove\"));\n    return CredentialStore.make({ list, read, write, remove });\n});\n/**\n * Provides durable credential persistence over the ambient database.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = Layer.effect(CredentialStore.CredentialStore)(make);\n",
+    "map": {
+     "version": 3,
+     "file": "SqlCredentialStore.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/control/src/WebhookChannel.vibe"
      }
     ],
@@ -8971,7 +9331,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    }
   ]

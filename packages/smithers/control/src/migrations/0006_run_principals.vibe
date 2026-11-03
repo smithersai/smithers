@@ -17,15 +17,15 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const runPrincipals = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql.withTransaction(Effect.gen(function*() {
-    const columns = yield* Dialect.columns(sql, "control_runs")
+export const runPrincipals = effect {
+  const sql = try SqlClient.SqlClient
+  try sql.withTransaction(effect {
+    const columns = try Dialect.columns(sql, "control_runs")
     if (!columns.some((column) => column.name === "principal_id")) {
-      yield* sql`ALTER TABLE control_runs ADD COLUMN principal_id TEXT`
+      try sql`ALTER TABLE control_runs ADD COLUMN principal_id TEXT`
     }
     if (!columns.some((column) => column.name === "principal_kind")) {
-      yield* sql`ALTER TABLE control_runs ADD COLUMN principal_kind TEXT`
+      try sql`ALTER TABLE control_runs ADD COLUMN principal_kind TEXT`
     }
-  }))
-})
+  })
+}

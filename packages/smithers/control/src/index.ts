@@ -54,7 +54,7 @@ export * as Lineage from "./Lineage.vibe"
  * @category projections
  * @since 0.1.0
  */
-export * as Monitor from "./Monitor.ts"
+export * as Monitor from "./Monitor.vibe"
 
 /**
  * @category projections
@@ -114,7 +114,7 @@ export * as ControlClient from "./ControlClient.ts"
  * @category services
  * @since 0.1.0
  */
-export * as Channels from "./Channels.ts"
+export * as Channels from "./Channels.vibe"
 
 /**
  * @category channels
@@ -126,7 +126,7 @@ export * as WebhookChannel from "./WebhookChannel.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as Credential from "./Credential.ts"
+export * as Credential from "./Credential.vibe"
 
 /**
  * @category services
@@ -138,13 +138,13 @@ export * as CredentialCipher from "./CredentialCipher.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as CredentialStore from "./CredentialStore.ts"
+export * as CredentialStore from "./CredentialStore.vibe"
 
 /**
  * @category layers
  * @since 0.1.0
  */
-export * as SqlCredentialStore from "./SqlCredentialStore.ts"
+export * as SqlCredentialStore from "./SqlCredentialStore.vibe"
 
 /**
  * @category layers
@@ -168,7 +168,7 @@ export * as ScopedToken from "./ScopedToken.ts"
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"
 
 /**
  * Observational health contracts.

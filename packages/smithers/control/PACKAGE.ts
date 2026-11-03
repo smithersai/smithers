@@ -101,7 +101,7 @@ const securityReview = Smithers.SecurityReview({
         "src/ControlLive.ts",
         "src/SqlControlRuntime.ts",
         "src/ControlRuntime.ts",
-        "src/Channels.ts"
+        "src/Channels.vibe"
       ]
     },
     {
@@ -150,7 +150,7 @@ const securityReview = Smithers.SecurityReview({
         "src/ControlLive.ts",
         "src/ControlExecutor.ts",
         "src/SqlControlRuntime.ts",
-        "src/Channels.ts",
+        "src/Channels.vibe",
         "src/migrations/0003_signal_commands.vibe"
       ]
     },
@@ -165,7 +165,7 @@ const securityReview = Smithers.SecurityReview({
         "fingerprintHeaders accepting authorization, signature, or cookie headers so a secret reaches the durable idempotency fingerprint.",
         "scopedKey/mutationKey letting two channel names or external keys collide (missing length prefix or separator ambiguity)."
       ],
-      paths: ["src/WebhookChannel.vibe", "src/Channels.ts"]
+      paths: ["src/WebhookChannel.vibe", "src/Channels.vibe"]
     },
     {
       id: "credential-confidentiality",
@@ -181,11 +181,11 @@ const securityReview = Smithers.SecurityReview({
         "SqlCredentialStore.write committing without the version compare-and-set in the same DurableWriter transaction."
       ],
       paths: [
-        "src/Credential.ts",
+        "src/Credential.vibe",
         "src/CredentialCipher.vibe",
         "src/WebCryptoCipher.ts",
-        "src/CredentialStore.ts",
-        "src/SqlCredentialStore.ts"
+        "src/CredentialStore.vibe",
+        "src/SqlCredentialStore.vibe"
       ]
     },
     {
@@ -209,7 +209,7 @@ const securityReview = Smithers.SecurityReview({
         "sql.literal, sql.unsafe, or string concatenation in SqlControlRuntime or the migrations carrying any value derived from ListRequest, WatchFilter, or a cursor.",
         "A column or ORDER BY fragment chosen from request text rather than from a fixed branch."
       ],
-      paths: ["src/SqlControlRuntime.ts", "src/SqlCredentialStore.ts", "src/migrations/**"]
+      paths: ["src/SqlControlRuntime.ts", "src/SqlCredentialStore.vibe", "src/migrations/**"]
     },
     {
       id: "mutation-input-bounds",
@@ -239,7 +239,7 @@ const securityReview = Smithers.SecurityReview({
         "Health exposing a session outputTail when the binding did not set exposeOutput: true.",
         "A ControlError or Unauthorized message that echoes input values, credential ids, or tokens."
       ],
-      paths: ["src/ControlLive.ts", "src/Steering.ts", "src/Health.vibe", "src/Monitor.ts", "src/ControlError.ts"]
+      paths: ["src/ControlLive.ts", "src/Steering.ts", "src/Health.vibe", "src/Monitor.vibe", "src/ControlError.ts"]
     },
     {
       id: "jev-output-injection",
@@ -250,7 +250,7 @@ const securityReview = Smithers.SecurityReview({
         "JevSessionChecker passing more than jevStateTailCharacters, or passing the tail as instructions rather than as state data.",
         "A health report from the evaluator that changes run state, approvals, or cancellations rather than only an advisory activity label."
       ],
-      paths: ["src/JevSessionChecker.vibe", "src/Health.vibe", "src/Monitor.ts"]
+      paths: ["src/JevSessionChecker.vibe", "src/Health.vibe", "src/Monitor.vibe"]
     }
   ]
 })
