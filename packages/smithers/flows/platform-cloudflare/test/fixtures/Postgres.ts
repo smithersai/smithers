@@ -45,6 +45,11 @@ export interface Target {
 
 const target = async (name: string, targetUrl: string, start: string): Promise<Target> => {
   const available = await listening(targetUrl)
+  // A runner that promises these services fails instead of skipping: 30 routing tests skipped silently on the Latitude
+  // farm in the landing of ccd0edb7, because its wrapper only started them for other packages.
+  if (!available && process.env.SMITHERS_TEST_REQUIRE_PG === "1") {
+    throw new Error(`${name}: nothing listens at ${new URL(targetUrl).host}, and SMITHERS_TEST_REQUIRE_PG is set`)
+  }
   return {
     url: targetUrl,
     available,

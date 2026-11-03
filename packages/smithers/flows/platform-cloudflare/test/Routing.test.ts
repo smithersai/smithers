@@ -379,7 +379,7 @@ for (const target of Postgres.targets) {
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
     })
 
-    it.live("a child's alarm costs at most 215 round trips: a lone read of an engine table is one", () => {
+    it.live("a child's alarm costs at most 193 round trips: a lone read of an engine table is one", () => {
       const schema = Postgres.freshSchema()
       return Effect.gen(function*() {
         const scope = yield* Scope.make()
@@ -395,8 +395,8 @@ for (const target of Postgres.targets) {
         const childId = [...objects.objects.keys()].find((id) => id !== parentId)!
         const before = trace.roundTrips()
         yield* objects.alarm(childId)
-        // 276 before a lone read named its schema (decision 0150's engine query cuts, 2026-11-03).
-        expect(trace.roundTrips() - before).toBeLessThanOrEqual(215)
+        // 276 before a lone read named its schema and consecutive savepoints shared one (2026-11-03).
+        expect(trace.roundTrips() - before).toBeLessThanOrEqual(193)
         yield* Scope.close(scope, Exit.void)
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
     })

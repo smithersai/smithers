@@ -169,6 +169,21 @@ const widenStatement = "SELECT pg_advisory_xact_lock(hashtextextended($1, 2099))
 const joinStatement = "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))"
 
 /**
+ * One connection's savepoints: whether anything ran since the last real
+ * savepoint, that savepoint, and what each id rolls back to (undefined: it
+ * opened none).
+ */
+interface Frame {
+  clean: boolean
+  real: string | undefined
+  /** How many real savepoints this transaction has opened. Each name is its own: a reused name would shadow one in use. */
+  opened: number
+  /** How many statements have started on this connection, so a savepoint can tell if one started while it was on the wire. */
+  started: number
+  readonly targets: Map<number, string | undefined>
+}
+
+/**
  * The writer locks one open write transaction holds: the whole schema, or its
  * partitions. Each records the savepoint depth it was taken at, because
  * rolling back to a savepoint releases the locks taken inside it.
@@ -287,6 +302,37 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
   // the lock outlives a rollback of that savepoint: the whole schema when it
   // names no partition, or its own partition. A transaction that holds the
   // schema, or a read transaction, which holds nothing, takes nothing.
+  // Consecutive savepoints with no statement between them mark one state, so
+  // only the first costs a round trip: the rest roll back to it. A nested write
+  // that only reads has nothing to undo and needs none (`WriteOptions.readOnly`).
+  const frames = new WeakMap<Connection, Frame>()
+  const frameOf = (conn: Connection): Frame => {
+    const found = frames.get(conn)
+    if (found !== undefined) return found
+    const frame: Frame = { clean: false, real: undefined, opened: 0, started: 0, targets: new Map() }
+    frames.set(conn, frame)
+    return frame
+  }
+  // Marked when a statement runs, not when its effect is built: an effect can be built and run later.
+  const tracked = (conn: Connection): Connection => {
+    const dirty = Effect.sync(() => {
+      const frame = frames.get(tracking)
+      if (frame === undefined) return
+      frame.clean = false
+      frame.started++
+    })
+    const tracking: Connection = {
+      execute: (sql, params, transformRows) => Effect.andThen(dirty, conn.execute(sql, params, transformRows)),
+      executeRaw: (sql, params) => Effect.andThen(dirty, conn.executeRaw(sql, params)),
+      executeValues: (sql, params) => Effect.andThen(dirty, conn.executeValues(sql, params)),
+      executeValuesUnprepared: (sql, params) => Effect.andThen(dirty, conn.executeValuesUnprepared(sql, params)),
+      executeUnprepared: (sql, params, transformRows) =>
+        Effect.andThen(dirty, conn.executeUnprepared(sql, params, transformRows)),
+      executeStream: (sql, params, transformRows) =>
+        Stream.unwrap(Effect.as(dirty, conn.executeStream(sql, params, transformRows)))
+    }
+    return tracking
+  }
   const savepoint = (conn: Connection, id: number) =>
     Effect.flatMap(requested, (partition) => {
       const state = held.get(conn)
@@ -307,13 +353,46 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
           })
         ))
         : Effect.void
-      return Effect.andThen(take, conn.executeUnprepared(`SAVEPOINT effect_sql_${id}`, [], undefined))
+      return Effect.flatMap(
+        Effect.andThen(take, Effect.service(WriteLock.ReadOnlyBody)),
+        (readOnlyBody) =>
+          Effect.suspend((): Effect.Effect<unknown, SqlError> => {
+            const frame = frameOf(conn)
+            if (readOnlyBody) {
+              frame.targets.set(id, undefined)
+              return Effect.void
+            }
+            if (frame.clean && frame.real !== undefined) {
+              frame.targets.set(id, frame.real)
+              return Effect.void
+            }
+            const name = `effect_sql_${++frame.opened}`
+            // Its own start counts once; any more means a statement started after it on this connection.
+            const expected = frame.started + 1
+            return conn.executeUnprepared(`SAVEPOINT ${name}`, [], undefined).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  frame.targets.set(id, name)
+                  frame.real = name
+                  frame.clean = frame.started === expected
+                })
+              )
+            )
+          })
+      )
     })
   // Rolling back to savepoint `id` releases what was taken inside it.
-  const rollbackSavepoint = (conn: Connection, id: number) =>
-    conn.executeUnprepared(`ROLLBACK TO SAVEPOINT effect_sql_${id}`, [], undefined).pipe(
+  const rollbackSavepoint = (conn: Connection, id: number) => {
+    const frame = frameOf(conn)
+    // A read-only body opened none: nothing to undo, and the lock it took stays.
+    const target = frame.targets.get(id)
+    if (target === undefined) return Effect.void
+    const expected = frame.started + 1
+    return conn.executeUnprepared(`ROLLBACK TO SAVEPOINT ${target}`, [], undefined).pipe(
       Effect.tap(() =>
         Effect.sync(() => {
+          frame.real = target
+          frame.clean = frame.started === expected
           const state = held.get(conn)
           if (state === undefined) return
           if (state.schema !== undefined && state.schema >= id) state.schema = undefined
@@ -321,6 +400,7 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
         })
       )
     )
+  }
   // PostgreSQL answers COMMIT in an aborted transaction with the tag ROLLBACK
   // and no error; that is a failed write, never a committed one.
   const commit = (conn: Connection) =>
@@ -460,7 +540,7 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
             const conn = yield* Scope.provide(reserve, reservation).pipe(
               Effect.onExit((exit) => exit._tag === "Failure" ? Scope.close(reservation, exit) : Effect.void)
             )
-            return [reservation, conn] as const
+            return [reservation, tracked(conn)] as const
           }),
           begin: start,
           savepoint,

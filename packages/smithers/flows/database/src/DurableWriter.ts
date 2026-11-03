@@ -80,6 +80,13 @@ export interface Service {
  */
 export interface WriteOptions {
   /**
+   * The body only reads, so a failure inside it has nothing to undo: nested in
+   * a transaction, it takes its lock but opens no savepoint, which costs a round
+   * trip on a networked database. Its SQL error aborts the enclosing transaction
+   * as any statement's does outside a savepoint.
+   */
+  readonly readOnly?: boolean | undefined
+  /**
    * The partition every row this write reads for a decision or changes
    * belongs to, such as one run's id. Writes to one partition commit one at a
    * time; writes to different partitions may commit concurrently; a write
@@ -301,6 +308,7 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
                 : undefined
               return Effect.provideService(effect, CommitScope.Current, scope).pipe(
                 Effect.provideService(WriteLock.Requested, undefined),
+                Effect.provideService(WriteLock.ReadOnlyBody, false),
                 Effect.tap(() =>
                   Effect.sync(() => {
                     bodySucceeded = true
@@ -310,6 +318,7 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
             })
           ).pipe(
             Effect.provideService(WriteLock.Requested, partition),
+            Effect.provideService(WriteLock.ReadOnlyBody, writeOptions?.readOnly === true),
             // Effect SQL fails a rejected COMMIT with a typed `SqlError`, and
             // with defects when the rollback that follows it fails too. Both
             // are this write's SQL failure, so the defects return to the typed

@@ -98,6 +98,15 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause))
     )
 
+  /** `write` for a body that only reads: it serializes the same, with no savepoint around it. */
+  const writeReading = <A>(
+    key: string,
+    body: Effect.Effect<A, unknown>
+  ): Effect.Effect<A, ConsensusError> =>
+    writer.write(body, { partition: key, readOnly: true }).pipe(
+      Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause))
+    )
+
   const leaseOf = (runId: string) =>
     sql<LeaseRow>`
       SELECT owner_host_id, owner_pid, owner_nonce, claim_host_id, claim_pid, claim_nonce
@@ -348,7 +357,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
   )
 
   const guard: Service["guard"] = Effect.fn("Consensus.guard")((runId: string, owner: OwnerId) =>
-    write(
+    writeReading(
       runId,
       Effect.gen(function*() {
         const held = yield* sql<{ readonly ok: number }>`

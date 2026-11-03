@@ -65,7 +65,7 @@ the parent's drive parks and routes; an alarm reads its run's row once for what 
 | child, admit to settle    |    301 |   276 |
 | parent, child's result    |    301 |   277 |
 
-Done 2026-11-03: a lone plain read of `flows_*` tables names their schema and costs one round trip, not four (`@smthrs/database` `QualifiedRead`), which took a child's alarm from 276 round trips to at most 215 (`platform-cloudflare/test/Routing.test.ts`).
+Done 2026-11-03: a lone plain read of `flows_*` tables names their schema and costs one round trip, not four (`@smthrs/database` `QualifiedRead`), and consecutive savepoints share one, with `Consensus.guard` opening none. That took a child's alarm from 276 round trips to 193 (`platform-cloudflare/test/Routing.test.ts`).
 
 Not done: `BEGIN` and `set_config('search_path')` in one round trip. Hyperdrive's handling of a multi-statement
 simple query or a pipelined extended-protocol batch cannot be proven from here. A per-connection `search_path` is
