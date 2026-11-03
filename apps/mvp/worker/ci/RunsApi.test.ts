@@ -725,6 +725,26 @@ describe("POST /api/repos/<owner>/<name>/runs: a run again", { timeout: 120_000 
     })
   })
 
+  test.each([false, true].flatMap((failed) =>
+    (["repository", "execution", "flow"] as const).map((mismatch) => ({ failed, mismatch }))
+  ))("Retry failed=$failed refuses poisoned engine $mismatch", async ({ failed, mismatch }) => {
+    await afterRun({ "pnpm lint": 1 }, async (h, request) => {
+      const server = await Effect.runPromise(TestDatabase.serverUrl)
+      await Effect.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => {
+        const path = mismatch === "repository" ? "{payload,repo}" : mismatch === "execution" ? "{payload,run}" : "{flowName}"
+        const value = mismatch === "repository" ? "private/victim" : mismatch === "execution" ? `ci:${uuid()}` : "another/Flow"
+        return sql`UPDATE flows_runs SET state_json = jsonb_set(state_json::jsonb, ${path}::text[], to_jsonb(${value}::text))
+          WHERE run_id = ${request.run}`
+      }).pipe(Effect.provide(ExecutionHost.database(server.toString(), h.engineSchema))))
+      const before = await rows()
+      const response = await h.fetch(repoRunsRoute(REPOSITORY.owner, REPOSITORY.name), post({ id: uuid(), retryOf: request.run, failed }))
+      expect(await answer(response), `poisoned ${mismatch} must not authorize retry`).toEqual([404, { code: "not_found" }])
+      expect(h.starts).toEqual([])
+      expect(await rows()).toEqual(before)
+      expect(h.count(RunsApi.starts, { kind: failed ? "retry_failed" : "retry", outcome: "not_found" })).toBe(1)
+    })
+  })
+
   test("Retry runs the flow again at its commit; Retry failed only its jobs that didn't pass", async () => {
     await afterRun({ "pnpm lint": 1 }, async (h, request) => {
       const path = repoRunsRoute(REPOSITORY.owner, REPOSITORY.name)

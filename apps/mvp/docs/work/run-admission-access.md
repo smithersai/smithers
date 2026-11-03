@@ -1,8 +1,8 @@
 ---
 title: Run admission ownership and authority
-status: done
+status: in-progress
 area: access
-owner: Codex retro-runs follow-up
+owner: Codex retro-runs round 2
 updated: 2026-11-02
 links: [../features/actions.md]
 ---
@@ -75,3 +75,13 @@ The broader app suite initially passed 29 cases and failed its second-repository
 - Focused runs disabled coverage measurement; no full coverage result, production execution, production count, deployment, landing, push or review is claimed. The standalone count-only query remains unexecuted for the operator. Four public-safe issue drafts accompany these findings outside the repository.
 
 No sleeps, test retry wrappers or longer timeouts were added. The unchanged coverage configuration now includes RunAuthority. All changes remain on this workspace's private commit stack above the two supplied revisions; main is untouched.
+
+## Round 2 P1: retry ownership
+
+Both Retry modes now validate the engine's flow tag, payload execution id and repository through the existing `RepoRuns.repositoryIntent` decoder before using any input or secrets setting. A historical projection cannot grant authority over a different execution. This is access infrastructure, using the catalog's existing engine inspection and Effect SQL; no new library or feature interface.
+
+Red on the mini farm against parent `9c4a222ba89f`: all six repository/execution/flow mismatches across both retry modes failed with `poisoned <mismatch> must not authorize retry: expected [ 202, …(1) ] to deeply equal [ 404, { code: 'not_found' } ]`. Counts: 6 failed, 0 passed, 46 filtered skips. Log: `/tmp/retro-runs-r2-p1-red-mini.log`. The Latitude attempt failed both disk preflights before sync or test execution (`/tmp/retro-runs-r2-p1-red.log`); it is not red defect evidence. The regression also checks no execution handoff, unchanged projection rows and refusal metrics.
+
+The stack's starts, retries and drop cancellations under revoked sessions (`worker/stack/Api.ts:337`, `:369`) belong to the write-seam lane and are excluded from this change. Production's zero-row count was supplied by Will; this lane did not query production. No landing, push, deployment or review is authorized.
+
+P1 fixed-code mini-farm receipt: `pnpm exec vitest run worker/ci/RunsApi.test.ts --coverage.enabled=false`, 52 passed, 0 failed, 0 skipped (`/tmp/retro-runs-r2-p1-green.log`). Focused coverage is disabled; no full-coverage claim. Final app typecheck is scheduled with P3's final source.

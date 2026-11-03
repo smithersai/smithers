@@ -283,6 +283,9 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         const read = yield* engine.inspect(retryOf, { limit: 1 }).pipe(Effect.option)
         const stored = yield* engine.payload(retryOf).pipe(Effect.option)
         if (Option.isNone(read) || Option.isNone(stored)) return { _tag: "refused", code: "not_settled" } as const
+        // The projection alone cannot authorize copying a payload or its repository secrets setting.
+        const owned = RepoRuns.repositoryIntent({ flow: stored.value.flowName, executionId: retryOf, payload: stored.value.payload })
+        if (Option.isNone(owned) || owned.value.repoId !== repository.id) return { _tag: "refused", code: "not_found" } as const
         if (!settled(read.value.run.status)) return { _tag: "refused", code: "not_settled" } as const
         // A repository's run is a repo/Run: its payload is the run's request.
         const request = yield* decodeRequest(stored.value.payload)
