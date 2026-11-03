@@ -69,7 +69,7 @@ const lint = Smithers.EsLint({
   cwd
 })
 const fmt = Smithers.Dprint({
-  sources: [Smithers.glob("**/*.{ts,tsx,js,jsx,mjs,json,md}")],
+  sources: [Smithers.glob("**/*.{ts,tsx,js,jsx,mjs,json,md,vibe}")],
   config: Smithers.file("dprint.json"),
   deps: [],
   fix: false,
@@ -655,7 +655,7 @@ const benchSources = [
 ]
 const gatewaySources = Smithers.Filegroup({
   cwd: "packages/smithers/gateway",
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")]
+  srcs: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("test/**/*.ts")]
 })
 
 /** Required fast behavioral mutation tier, including both exact-byte guards. */
@@ -1077,8 +1077,16 @@ const securityReview = Smithers.SecurityReview({
   include: [
     // The lane gates are bash; they were reviewed under scripts/ before.
     Smithers.glob("land/**/*.sh"),
-    Smithers.glob("**/*.{ts,mjs,js,mdx}", {
-      exclude: ["wiki/**", "test/**", "node_modules/**", "migrate-smithers-v1/test/**", "**/*.test.ts", "**/*.test.mjs"]
+    Smithers.glob("**/*.{ts,mjs,js,mdx,vibe}", {
+      exclude: [
+        "wiki/**",
+        "test/**",
+        "node_modules/**",
+        "migrate-smithers-v1/test/**",
+        "**/*.test.ts",
+        "**/*.test.vibe",
+        "**/*.test.mjs"
+      ]
     }),
     Smithers.glob("checks/*.sh"),
     // The C-REL-05 credential soak recorder; it was reviewed under scripts/ before.
@@ -1476,7 +1484,7 @@ const issueClaim = Smithers.NodeTest({
   ],
   deps: [
     Smithers.Filegroup({ cwd: ".specs/engineering", srcs: [Smithers.glob("checks/*.md")] }),
-    Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations", srcs: [Smithers.glob("src/**/*.ts")] })
+    Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations", srcs: [Smithers.glob("src/**/*.{ts,vibe}")] })
   ],
   cwd
 })
