@@ -166,7 +166,7 @@ describe("the flow surface's dependency boundary", () => {
     // `bin.ts` runs `NodeRuntime.runMain` when it is evaluated. A manifest
     // that calls the whole package side-effect free entitles a bundler to
     // drop it.
-    expect(manifest.sideEffects).toEqual(["./src/flow/bin.vibe", "./dist/esm/flow/bin.js", "./dist/cjs/flow/bin.js"])
+    expect(manifest.sideEffects).toEqual(["./src/flow/bin.ts", "./dist/esm/flow/bin.js", "./dist/cjs/flow/bin.js"])
   })
 
   it("reaches capability values through @smthrs/kernel, which declares them", () => {

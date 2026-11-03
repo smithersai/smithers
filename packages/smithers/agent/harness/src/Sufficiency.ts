@@ -42,6 +42,7 @@
  * @since 0.1.0
  */
 
+import { Effect, Schema } from "effect"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import * as NarrowedCheck from "./NarrowedCheck.vibe"
 
@@ -84,7 +85,7 @@ export class Failure extends Schema.Class<Failure>("flows/harness/Sufficiency/Fa
    * ordering on any host, including one that measures nothing and knows only
    * what its calls declared.
    */
-  epoch: NonNegativeSafeInt,
+  epoch: NonNegativeSafeInt
 }) {}
 
 /**
@@ -95,7 +96,7 @@ export class Failure extends Schema.Class<Failure>("flows/harness/Sufficiency/Fa
  */
 export const Ledger = Schema.Array(Failure).pipe(
   Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Failure>>([])),
-  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Failure>>([])),
+  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Failure>>([]))
 )
 
 /**
@@ -130,7 +131,7 @@ export const remember = (
     readonly frame: ReadonlyArray<NarrowedCheck.Check>
     /** Frames that had changed the workspace before this one. */
     readonly epoch: number
-  },
+  }
 ): Ledger => {
   const newest = new Map(ledger.map((entry) => [entry.signature, entry]))
   for (const check of options.frame) {
@@ -143,8 +144,8 @@ export const remember = (
         signature: check.signature,
         terms: check.terms,
         label: check.label,
-        epoch: options.epoch,
-      }),
+        epoch: options.epoch
+      })
     )
   }
   const distinct = [...newest.values()]

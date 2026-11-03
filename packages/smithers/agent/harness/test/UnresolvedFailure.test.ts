@@ -13,8 +13,8 @@
  */
 import type { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as NarrowedCheck from "../src/NarrowedCheck.vibe"
-import * as UnresolvedFailure from "../src/UnresolvedFailure.vibe"
+import * as NarrowedCheck from "../src/NarrowedCheck.ts"
+import * as UnresolvedFailure from "../src/UnresolvedFailure.ts"
 
 const command = (text: string): Schema.Json => ({ mode: "unhermetic", command: text })
 

@@ -547,7 +547,7 @@ const docsRuntimeTests = Smithers.Shell.Test({
     Smithers.file("package.json"),
     Smithers.file("docs-redirect/wrangler.jsonc"),
     Smithers.file("//apps/patterns-site/wrangler.jsonc"),
-    Smithers.file("//apps/bug-worker/alchemy.run.vibe"),
+    Smithers.file("//apps/bug-worker/alchemy.run.ts"),
     Smithers.file("//apps/bug-worker/README.md"),
     Smithers.file("//apps/bug-worker/package.json"),
     mvpPackage.deploymentSources,

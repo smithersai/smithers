@@ -65,9 +65,9 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as Sufficiency from "../../src/Sufficiency.vibe"
+import * as Sufficiency from "../../src/Sufficiency.ts"
 import * as UnmovedTree from "../../src/UnmovedTree.ts"
-import * as UnresolvedFailure from "../../src/UnresolvedFailure.vibe"
+import * as UnresolvedFailure from "../../src/UnresolvedFailure.ts"
 import { read } from "./lib/journal-facts.mjs"
 import { usd } from "./prices.ts"
 

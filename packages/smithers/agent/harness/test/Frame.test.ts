@@ -13,8 +13,8 @@ import * as CellTurn from "../src/CellTurn.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
 import * as Frame from "../src/internal/frame.ts"
-import * as NarrowedCheck from "../src/NarrowedCheck.vibe"
-import * as Sufficiency from "../src/Sufficiency.vibe"
+import * as NarrowedCheck from "../src/NarrowedCheck.ts"
+import * as Sufficiency from "../src/Sufficiency.ts"
 
 const base = CellTurn.make({
   session: "session-1",
