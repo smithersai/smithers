@@ -30,8 +30,8 @@ import {
   retiredRootMessage,
   type Source,
   SourceScan
-} from "./Descriptor.ts"
-import * as Frontmatter from "./internal/Frontmatter.ts"
+} from "./Descriptor.vibe"
+import * as Frontmatter from "./internal/Frontmatter.vibe"
 import { measureLockfiles } from "./internal/Lockfiles.ts"
 import * as ModuleClosure from "./internal/ModuleClosure.ts"
 import * as ModuleMetadata from "./internal/ModuleMetadata.vibe"

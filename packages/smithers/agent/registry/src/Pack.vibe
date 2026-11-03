@@ -31,9 +31,8 @@ import * as Digest from "@smthrs/core/Digest"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
-import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
-import { DiscoveryWarning, FlowDescriptor, Provenance, type Source } from "./Descriptor.ts"
+import { DiscoveryWarning, FlowDescriptor, Provenance, type Source } from "./Descriptor.vibe"
 import type { RegistryError } from "./RegistryError.vibe"
 import { registryError } from "./RegistryError.vibe"
 
@@ -188,60 +187,54 @@ const knownManifestKeys = new Set(["name", "version", "flows", "skills", "requir
  * @category constructors
  * @since 0.1.0
  */
-export const read = (
+export const read = effect (
   fs: FileSystem.FileSystem,
   path: Path.Path,
   dir: string
-): Effect.Effect<
-  {
+): {
     readonly manifest: Manifest
     readonly dir: string
     readonly warnings: ReadonlyArray<DiscoveryWarning>
-  },
-  RegistryError
-> =>
-  Effect.gen(function*() {
-    const location = path.join(dir, manifestFileName)
-    const invalid = (description: string, cause?: unknown) =>
-      registryError({
-        code: "invalid_pack",
-        module: "Pack",
-        method: "read",
-        path: location,
-        description,
-        cause
-      })
-    const text = yield* fs.readFileString(location).pipe(
-      Effect.mapError((cause) => invalid(`the pack manifest at "${location}" could not be read`, cause))
-    )
-    const parsed = yield* Effect.try({
-      try: () => JSON.parse(text) as unknown,
-      catch: (cause) => invalid(`the pack manifest at "${location}" is not valid JSON`, cause)
+  }!RegistryError => {
+  const location = path.join(dir, manifestFileName)
+  const invalid = (description: string, cause?: unknown) =>
+    registryError({
+      code: "invalid_pack",
+      module: "Pack",
+      method: "read",
+      path: location,
+      description,
+      cause
     })
-    const unsafe = unsafeManifestEntry(parsed)
-    if (unsafe !== undefined) {
-      return yield* Effect.fail(
-        invalid(
-          `the pack manifest at "${location}" contains unsafe ${unsafe.field} entry ${JSON.stringify(unsafe.entry)}`
-        )
-      )
-    }
-    const manifest = yield* decodeManifest(parsed).pipe(
-      Effect.mapError((cause) => invalid(`the pack manifest at "${location}" is not a valid manifest`, cause))
-    )
-    const warnings = Object.keys(parsed as Record<string, unknown>).flatMap((key) =>
-      knownManifestKeys.has(key)
-        ? []
-        : [
-          new DiscoveryWarning({
-            code: "unknown_pack_key",
-            path: location,
-            message: `Unknown pack manifest key: ${key}`
-          })
-        ]
-    )
-    return { manifest, dir, warnings }
+  const text = fs.readFileString(location) catch effect (cause) => {
+    throw invalid(`the pack manifest at "${location}" could not be read`, cause)
+  }
+  const parsed = try Effect.try({
+    try: () => JSON.parse(text) as unknown,
+    catch: (cause) => invalid(`the pack manifest at "${location}" is not valid JSON`, cause)
   })
+  const unsafe = unsafeManifestEntry(parsed)
+  if (unsafe !== undefined) {
+    throw invalid(
+      `the pack manifest at "${location}" contains unsafe ${unsafe.field} entry ${JSON.stringify(unsafe.entry)}`
+    )
+  }
+  const manifest = decodeManifest(parsed) catch effect (cause) => {
+    throw invalid(`the pack manifest at "${location}" is not a valid manifest`, cause)
+  }
+  const warnings = Object.keys(parsed as Record<string, unknown>).flatMap((key) =>
+    knownManifestKeys.has(key)
+      ? []
+      : [
+        new DiscoveryWarning({
+          code: "unknown_pack_key",
+          path: location,
+          message: `Unknown pack manifest key: ${key}`
+        })
+      ]
+  )
+  return { manifest, dir, warnings }
+}
 
 /**
  * The content address of one pack, as a lock file records it.
@@ -449,59 +442,58 @@ export const compatible = (range: string, runtimeVersion: string): boolean => {
  * @category conversions
  * @since 0.1.0
  */
-export const sources = (
+export const sources = effect (
   pack: Installed,
   path: Path.Path
-): Effect.Effect<ReadonlyArray<Source>, RegistryError, FileSystem.FileSystem> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const root = path.resolve(pack.dir)
-    const location = path.join(pack.dir, manifestFileName)
-    const invalid = (entry: string) =>
-      registryError({
-        code: "invalid_pack",
-        module: "Pack",
-        method: "sources",
-        path: location,
-        description:
-          `pack "${pack.manifest.name}@${pack.manifest.version}" at "${location}" declares unsafe source entry ${
-            JSON.stringify(entry)
-          }`
-      })
-    const contains = (parent: string, candidate: string): boolean => {
-      const resolvedParent = path.resolve(parent)
-      const resolvedCandidate = path.resolve(candidate)
-      const prefix = path.join(resolvedParent, path.sep)
-      return resolvedCandidate === resolvedParent || resolvedCandidate.startsWith(prefix)
-    }
-    const output: Array<Source> = []
-    for (const relative of [...pack.manifest.flows, ...(pack.manifest.skills ?? [])]) {
-      if (!isPackRelativePath(relative)) return yield* Effect.fail(invalid(relative))
-      const sourcePath = path.resolve(pack.dir, relative)
-      if (!contains(root, sourcePath)) return yield* Effect.fail(invalid(relative))
+): ReadonlyArray<Source>!RegistryError!FileSystem.FileSystem => {
+  const fs = try FileSystem.FileSystem
+  const root = path.resolve(pack.dir)
+  const location = path.join(pack.dir, manifestFileName)
+  const invalid = (entry: string) =>
+    registryError({
+      code: "invalid_pack",
+      module: "Pack",
+      method: "sources",
+      path: location,
+      description:
+        `pack "${pack.manifest.name}@${pack.manifest.version}" at "${location}" declares unsafe source entry ${
+          JSON.stringify(entry)
+        }`
+    })
+  const contains = (parent: string, candidate: string): boolean => {
+    const resolvedParent = path.resolve(parent)
+    const resolvedCandidate = path.resolve(candidate)
+    const prefix = path.join(resolvedParent, path.sep)
+    return resolvedCandidate === resolvedParent || resolvedCandidate.startsWith(prefix)
+  }
+  const output: Array<Source> = []
+  for (const relative of [...pack.manifest.flows, ...(pack.manifest.skills ?? [])]) {
+    if (!isPackRelativePath(relative)) throw invalid(relative)
+    const sourcePath = path.resolve(pack.dir, relative)
+    if (!contains(root, sourcePath)) throw invalid(relative)
 
-      const [realRoot, realSource] = yield* Effect.all([
-        Effect.result(fs.realPath(root)),
-        Effect.result(fs.realPath(sourcePath))
-      ])
-      // An unresolved root cannot establish physical confinement. A source must either
-      // resolve inside it or not exist yet; any other failure (a looping or
-      // unreadable link) is refused rather than trusted lexically.
-      if (Result.isFailure(realRoot)) return yield* Effect.fail(invalid(relative))
-      if (Result.isSuccess(realSource)) {
-        if (!contains(realRoot.success, realSource.success)) return yield* Effect.fail(invalid(relative))
-      } else if (realSource.failure.reason._tag !== "NotFound") {
-        return yield* Effect.fail(invalid(relative))
-      }
-      output.push({
-        source: `pack:${pack.manifest.name}`,
-        root: sourcePath,
-        confinementRoot: root,
-        naming: "path"
-      })
+    const [realRoot, realSource] = try Effect.all([
+      Effect.result(fs.realPath(root)),
+      Effect.result(fs.realPath(sourcePath))
+    ])
+    // An unresolved root cannot establish physical confinement. A source must either
+    // resolve inside it or not exist yet; any other failure (a looping or
+    // unreadable link) is refused rather than trusted lexically.
+    if (Result.isFailure(realRoot)) throw invalid(relative)
+    if (Result.isSuccess(realSource)) {
+      if (!contains(realRoot.success, realSource.success)) throw invalid(relative)
+    } else if (realSource.failure.reason._tag !== "NotFound") {
+      throw invalid(relative)
     }
-    return output
-  })
+    output.push({
+      source: `pack:${pack.manifest.name}`,
+      root: sourcePath,
+      confinementRoot: root,
+      naming: "path"
+    })
+  }
+  return output
+}
 
 /**
  * Stamps a descriptor with the pack it was discovered in.
@@ -617,7 +609,7 @@ export const checkCompatible = (
   pack: Installed,
   path: Path.Path,
   runtimeVersion: string
-): Effect.Effect<void, RegistryError> => {
+): void!RegistryError => {
   if (pack.manifest.requires === undefined) return Effect.void
   const range = pack.manifest.requires.smithers
   const parsed = parseRange(range)

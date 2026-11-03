@@ -1,7 +1,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 import * as ModuleFlow from "../src/ModuleFlow.vibe"
 
 // A module flow read from its source text alone, as Discovery reads a `flow.ts` and as a host reads source it keeps

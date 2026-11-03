@@ -28,10 +28,10 @@ import {
   type SandboxSelection,
   SchemaRefMarkdownArgs,
   SchemaRefMarkdownOutput,
-} from "./Descriptor.ts"
+} from "./Descriptor.vibe"
 import type { EffectProblem } from "./internal/Authority.ts"
 import { narrowDelegation, projectEffects, unprojectableDelegation } from "./internal/Authority.ts"
-import * as Frontmatter from "./internal/Frontmatter.ts"
+import * as Frontmatter from "./internal/Frontmatter.vibe"
 import * as Names from "./internal/Names.vibe"
 
 /**

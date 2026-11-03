@@ -7,7 +7,7 @@
 import * as Effects from "@smthrs/plan/Effects"
 import * as Context from "effect/Context"
 import * as Schema from "effect/Schema"
-import { BudgetCeiling, FlowBudget, ModelSelection } from "../Descriptor.ts"
+import { BudgetCeiling, FlowBudget, ModelSelection } from "../Descriptor.vibe"
 
 /**
  * The schema and metadata fields accepted at module admission.

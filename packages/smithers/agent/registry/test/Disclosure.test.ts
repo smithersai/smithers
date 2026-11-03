@@ -6,7 +6,7 @@ import {
   Provenance,
   SchemaRefMarkdownArgs,
   SchemaRefMarkdownOutput
-} from "../src/Descriptor.ts"
+} from "../src/Descriptor.vibe"
 import * as Disclosure from "../src/Disclosure.ts"
 
 const descriptor = (

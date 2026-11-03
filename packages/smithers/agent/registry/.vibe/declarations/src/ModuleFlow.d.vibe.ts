@@ -12,7 +12,7 @@
  * @since 1.0.0-rc.16
  */
 import * as Option from "effect/Option";
-import { DiscoveryWarning, FlowDescriptor, type ModuleImport, type Provenance } from "../../../src/Descriptor.ts";
+import { DiscoveryWarning, FlowDescriptor, type ModuleImport, type Provenance } from "./Descriptor.vibe";
 /**
  * Parameters used to derive a descriptor from already-read module text.
  *

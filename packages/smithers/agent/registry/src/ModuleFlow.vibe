@@ -22,7 +22,7 @@ import {
   type Provenance,
   SchemaRefModule,
   SchemaRefNone,
-} from "./Descriptor.ts"
+} from "./Descriptor.vibe"
 import * as ModuleMetadata from "./internal/ModuleMetadata.vibe"
 import { deriveBudget } from "./MarkdownFlow.vibe"
 

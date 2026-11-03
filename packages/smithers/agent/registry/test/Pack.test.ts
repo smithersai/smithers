@@ -18,11 +18,11 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as MarkdownFlow from "../src/MarkdownFlow.vibe"
-import * as Pack from "../src/Pack.ts"
+import * as Pack from "../src/Pack.vibe"
 import * as Registry from "../src/Registry.ts"
 
 import { type Node, virtualFileSystem } from "./support/VirtualFileSystem.ts"

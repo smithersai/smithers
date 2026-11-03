@@ -2,7 +2,7 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Effect, FileSystem, Layer } from "effect"
-import * as Descriptor from "../../../src/Descriptor.ts"
+import * as Descriptor from "../../../src/Descriptor.vibe"
 import * as Executable from "../../../src/Executable.ts"
 import * as Registry from "../../../src/Registry.ts"
 

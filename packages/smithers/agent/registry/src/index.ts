@@ -27,7 +27,7 @@ export * as RegistryError from "./RegistryError.vibe"
  * @category models
  * @since 0.1.0
  */
-export * as Descriptor from "./Descriptor.ts"
+export * as Descriptor from "./Descriptor.vibe"
 
 /**
  * @category services
@@ -69,7 +69,7 @@ export * as Executable from "./Executable.ts"
  * @category models
  * @since 0.1.0
  */
-export * as Pack from "./Pack.ts"
+export * as Pack from "./Pack.vibe"
 
 /**
  * @category services

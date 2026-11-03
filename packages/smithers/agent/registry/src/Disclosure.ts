@@ -13,7 +13,7 @@
  * @since 0.1.0
  */
 
-import type { FlowDescriptor } from "./Descriptor.ts"
+import type { FlowDescriptor } from "./Descriptor.vibe"
 
 const isXmlCharacter = (codePoint: number): boolean =>
   codePoint === 0x09 ||
