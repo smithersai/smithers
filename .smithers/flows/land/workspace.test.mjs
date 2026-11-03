@@ -1,13 +1,15 @@
 import { strict as assert } from "node:assert"
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { spawn } from "node:child_process"
 import { setTimeout as delay } from "node:timers/promises"
 import { runProcess } from "./process.mjs"
 import { jj } from "./numbering.mjs"
-import { acquireLock, createWorkspace, syncWorkspace, landWorkspace, removeWorkspace, ensureFresh } from "./workspace.mjs"
+import { acquireLock, createWorkspace, syncWorkspace, landWorkspace as land, removeWorkspace, ensureFresh } from "./workspace.mjs"
+
+const landWorkspace = (root, options) => land(root, { ...options, lockPath: join(dirname(root), "main-push.lock") })
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "devx-workspaces-"))
@@ -86,6 +88,16 @@ test("land refuses failed tests, unspecified validation and conflicts; remote ne
   writeFileSync(join(root, "base.txt"), "remote\n")
   // A new main-side revision remains local; write it through the local remote in the next fixture case.
   assert.equal(readFileSync(join(lane, "feature.txt"), "utf8"), "feature\n")
+})
+
+test("land refuses source changed by a check and retains it without moving remote main", async (t) => {
+  const { root, lane } = fixture(t)
+  createWorkspace(root, lane, "lane")
+  writeFileSync(join(lane, "feature.txt"), "before\n")
+  const base = jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "commit_id"])
+  await assert.rejects(landWorkspace(lane, { message: "changed", tests: ['node -e \'require("fs").writeFileSync("feature.txt","after")\''] }), /Source changed during validation/)
+  assert.equal(jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "commit_id"]), base)
+  assert.equal(readFileSync(join(lane, "feature.txt"), "utf8"), "after")
 })
 
 test("stale recovery preserves unsnapshotted edits, additions and deletions without reverting upstream", (t) => {
@@ -181,7 +193,12 @@ test("two concurrent CLI landings serialize and retain both remote changes", asy
   writeFileSync(join(second, "two.txt"), "two\n")
   const script = join(import.meta.dirname, "workspace.mjs")
   const env = { ...process.env, SMITHERS_LAND_LOCK: lock, SMITHERS_CO_AUTHOR: "Test Agent <test@example.invalid>" }
-  const results = await Promise.all([lane, second].map((cwd, i) => runProcess(process.execPath, [script, "land", "--message", `lane ${i}`, "--test", "node -e '0'"], { cwd, env })))
+  const results = await Promise.all([lane, second].map(async (cwd, i) => {
+    const args = [script, "land", "--message", `lane ${i}`, "--test", "node -e '0'"]
+    const result = await runProcess(process.execPath, args, { cwd, env })
+    if (result.status === 1 && /Main advanced during validation/.test(result.stderr)) return runProcess(process.execPath, args, { cwd, env })
+    return result
+  }))
   for (const result of results) { assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /LANDED [a-f0-9]{40}/) }
   assert.equal(existsSync(lock), false)
   assert.match(jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "description"]), /Co-Authored-By: Test Agent <test@example.invalid>$/)
@@ -208,6 +225,50 @@ test("CLI interruption and failed fetch release the lock and retain source", asy
   assert.equal(failed.status, 1)
   assert.equal(existsSync(lock), false)
   assert.equal(readFileSync(join(lane, "feature.txt"), "utf8"), "retained\n")
+})
+
+test("capacity fallback and tests run without the push lock; a concurrent landing invalidates validation", async (t) => {
+  const { root, lane, directory, lock } = fixture(t)
+  mkdirSync(join(root, ".smithers"))
+  writeFileSync(join(root, ".smithers/target-index.json"), "[]\n")
+  writeFileSync(join(root, ".node-version"), "26.5.0\n")
+  jj(root, ["describe", "-m", "index source"])
+  jj(root, ["bookmark", "set", "main", "-r", "@"])
+  jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main"])
+  createWorkspace(root, lane, "lane")
+  const second = join(directory, "second")
+  createWorkspace(root, second, "second")
+  writeFileSync(join(lane, "one.txt"), "one\n")
+  writeFileSync(join(second, "two.txt"), "two\n")
+  const mini = join(directory, "mini-run"), box = join(directory, "cfbox")
+  writeFileSync(mini, `#!${process.execPath}\n
+    const fs = require("node:fs"), assert = require("node:assert/strict")
+    assert.equal(fs.existsSync(process.env.SMITHERS_LAND_LOCK), false, "mini admission held push lock")
+    console.error("CAPACITY_TIMEOUT"); process.exit(7)
+  `, { mode: 0o755 })
+  writeFileSync(box, `#!${process.execPath}\n
+    require("node:assert/strict").equal(require("node:fs").existsSync(process.env.SMITHERS_LAND_LOCK), false)
+    console.log("SMITHERS_TARGET_INDEX " + Buffer.from('[{"label":"//:index"}]').toString("base64"))
+  `, { mode: 0o755 })
+  const script = join(import.meta.dirname, "workspace.mjs")
+  const env = { ...process.env, SMITHERS_LAND_LOCK: lock, SMITHERS_MINI_RUN: mini, SMITHERS_CFBOX: box }
+  const ready = join(directory, "ready"), proceed = join(directory, "proceed")
+  const check = `node -e 'const fs=require("fs"), assert=require("assert/strict"); assert.equal(fs.existsSync(process.env.SMITHERS_LAND_LOCK),false); fs.writeFileSync(${JSON.stringify(ready)},"ready"); const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(proceed)}))clearInterval(timer)},20)'`
+  const first = runProcess(process.execPath, [script, "land", "--message", "first", "--test", check], { cwd: lane, env })
+  for (let i = 0; i < 500 && !existsSync(ready); i++) await delay(20)
+  if (!existsSync(ready)) { const result = await first; assert.fail(result.stderr) }
+  const other = await runProcess(process.execPath, [script, "land", "--message", "second", "--test", "true"], { cwd: second, env })
+  writeFileSync(proceed, "continue")
+  const stale = await first
+  assert.equal(other.status, 0, other.stderr)
+  assert.equal(stale.status, 1, stale.stderr)
+  assert.match(stale.stderr, /Main advanced during validation/)
+  assert.equal(existsSync(lock), false)
+  assert.equal(jj(lane, ["file", "list", "-r", "main@origin", "one.txt"]), "")
+  const retried = await runProcess(process.execPath, [script, "land", "--message", "first", "--test", "true"], { cwd: lane, env })
+  assert.equal(retried.status, 0, retried.stderr)
+  assert.equal(jj(lane, ["file", "show", "-r", "main@origin", "one.txt"]), "one")
+  assert.equal(jj(lane, ["file", "show", "-r", "main@origin", "two.txt"]), "two")
 })
 
 test("removal refuses work the lane moved off @: a lane bookmark or a bare head", (t) => {

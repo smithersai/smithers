@@ -271,10 +271,16 @@ export function removeWorkspace(root) {
 
 /**
  * @param {string} root
- * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, signal?: AbortSignal}} [options]
+ * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, signal?: AbortSignal, lockPath?: string}} [options]
  */
-export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, signal } = {}) {
-  syncWorkspace(root)
+export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, signal, lockPath = process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock") } = {}) {
+  const lock = () => acquireLock(lockPath, { timeoutMs: Number(process.env.SMITHERS_LOCK_TIMEOUT_MS ?? 300000), signal })
+  let release = await lock()
+  let base
+  try {
+    syncWorkspace(root)
+    base = revision(root, "main@origin")
+  } finally { release() }
   signal?.throwIfAborted()
   for (const requirement of requirements) {
     const equal = requirement.indexOf("=")
@@ -287,45 +293,55 @@ export async function landWorkspace(root, { message, tests = [], validation, req
     }
   }
   if (existsSync(join(root, indexPath))) await regenerateIndex(root, undefined, signal)
+  jj(root, ["status"])
+  const tested = revision(root, "@")
   for (const command of tests) {
     const result = await runProcess("bash", ["-o", "pipefail", "-c", command], { cwd: root, stream: true, signal, timeoutMs: 40 * 60 * 1000, env: engineeringGateEnvironment(process.env) })
     if (result.status !== 0) throw new Error(`Landing test failed: ${command}`)
   }
   signal?.throwIfAborted()
-  rejectConflicts(root)
-  checkNumbers(root)
-  checkManifest(root)
-  const candidate = revision(root, "@ & empty()") ? "@-" : "@"
-  const commit = revision(root, candidate)
-  if (!commit || commit.includes("\n")) throw new Error("Landing requires one tip commit")
-  if (revision(root, `${commit} & ::main@origin`)) { console.log(`LANDED ${commit} (already present)`); return commit }
-  if (!tests.length && !validation) throw new Error("Supply --test <command> or --validated <existing test receipt>; nothing pushed")
-  if (revision(root, `main ~ ::${commit}`)) throw new Error("Local main has unpublished work; refusing to move it backwards")
-  if (message) {
-    if (coAuthor && /[\r\n]/.test(coAuthor)) throw new Error("Co-author must be one trailer value")
-    const authors = message.split(/\r?\n/).filter((line) => line.startsWith("Co-Authored-By: "))
-    if (coAuthor) authors.push(`Co-Authored-By: ${coAuthor}`)
-    const body = message.split(/\r?\n/).filter((line) => !line.startsWith("Co-Authored-By: ")).join("\n").trimEnd()
-    const trailers = [...new Set(authors)].join("\n")
-    const text = `${body}\n\nLanding-Tests: ${tests.length ? tests.join("; ") : validation}${trailers ? `\n${trailers}` : ""}`
-    jj(root, ["describe", "-r", commit, "-m", text])
-  } else if (!jj(root, ["log", "-r", commit, "--no-graph", "-T", "description"]).trim()) throw new Error("Describe the change or supply --message")
-  const pushed = revision(root, candidate)
-  jj(root, ["bookmark", "set", "main", "-r", pushed])
-  console.error(`PUSH ${pushed}`)
-  jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main"])
-  jj(root, ["git", "fetch", "--remote", "origin", "--ignore-working-copy"])
-  if (!revision(root, `${pushed} & ::main@origin`)) throw new Error("Push returned but remote ancestry does not contain the landed change")
-  // Leave an immutable parent and a fresh private working-copy child for the next change.
-  if (revision(root, "@") === pushed) jj(root, ["new", pushed])
-  rmSync(join(root, ".jj/agent-recovery"), { recursive: true, force: true })
-  console.log(`LANDED ${pushed}`)
-  return pushed
+  release = await lock()
+  try {
+    // Publication is serialized, but capacity admission and validation never
+    // hold the shared lock. A changed base needs a fresh sync and fresh checks.
+    jj(root, ["git", "fetch", "--remote", "origin"])
+    if (revision(root, "main@origin") !== base) throw new Error("Main advanced during validation; rerun land to sync and validate the new base")
+    if (revision(root, "@") !== tested) throw new Error("Source changed during validation; rerun land before publishing")
+    rejectConflicts(root)
+    checkNumbers(root)
+    checkManifest(root)
+    const candidate = revision(root, "@ & empty()") ? "@-" : "@"
+    const commit = revision(root, candidate)
+    if (!commit || commit.includes("\n")) throw new Error("Landing requires one tip commit")
+    if (revision(root, `${commit} & ::main@origin`)) { console.log(`LANDED ${commit} (already present)`); return commit }
+    if (!tests.length && !validation) throw new Error("Supply --test <command> or --validated <existing test receipt>; nothing pushed")
+    if (revision(root, `main ~ ::${commit}`)) throw new Error("Local main has unpublished work; refusing to move it backwards")
+    if (message) {
+      if (coAuthor && /[\r\n]/.test(coAuthor)) throw new Error("Co-author must be one trailer value")
+      const authors = message.split(/\r?\n/).filter((line) => line.startsWith("Co-Authored-By: "))
+      if (coAuthor) authors.push(`Co-Authored-By: ${coAuthor}`)
+      const body = message.split(/\r?\n/).filter((line) => !line.startsWith("Co-Authored-By: ")).join("\n").trimEnd()
+      const trailers = [...new Set(authors)].join("\n")
+      const text = `${body}\n\nLanding-Tests: ${tests.length ? tests.join("; ") : validation}${trailers ? `\n${trailers}` : ""}`
+      jj(root, ["describe", "-r", commit, "-m", text])
+    } else if (!jj(root, ["log", "-r", commit, "--no-graph", "-T", "description"]).trim()) throw new Error("Describe the change or supply --message")
+    const pushed = revision(root, candidate)
+    jj(root, ["bookmark", "set", "main", "-r", pushed])
+    console.error(`PUSH ${pushed}`)
+    jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main"])
+    jj(root, ["git", "fetch", "--remote", "origin", "--ignore-working-copy"])
+    if (!revision(root, `${pushed} & ::main@origin`)) throw new Error("Push returned but remote ancestry does not contain the landed change")
+    // Leave an immutable parent and a fresh private working-copy child for the next change.
+    if (revision(root, "@") === pushed) jj(root, ["new", pushed])
+    rmSync(join(root, ".jj/agent-recovery"), { recursive: true, force: true })
+    console.log(`LANDED ${pushed}`)
+    return pushed
+  } finally { release() }
 }
 
 export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
   if (args[0] === "--help" || !args.length) {
-    console.log("Usage: node .smithers/flows/land/workspace.mjs create <path> <name> | sync | recover | land [--message <text>] [--test <command>] [--validated <receipt>] | remove\nRun from the invoking workspace. No installs. All mutations use main-push.lock; waits are bounded. Ignored data prevents removal.")
+    console.log("Usage: node .smithers/flows/land/workspace.mjs create <path> <name> | sync | recover | land [--message <text>] [--test <command>] [--validated <receipt>] | remove\nRun from the invoking workspace. No installs. Sync and push use main-push.lock; remote validation runs unlocked. Waits are bounded. Ignored data prevents removal.")
     return
   }
   const [command, ...rest] = args
@@ -352,9 +368,9 @@ export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
   process.once("SIGINT", onSignal); process.once("SIGTERM", onSignal)
   let release
   try {
-  release = await acquireLock(process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock"), {
-    timeoutMs: Number(process.env.SMITHERS_LOCK_TIMEOUT_MS ?? 300000), signal: controller.signal
-  })
+    if (command !== "land") release = await acquireLock(process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock"), {
+      timeoutMs: Number(process.env.SMITHERS_LOCK_TIMEOUT_MS ?? 300000), signal: controller.signal
+    })
     options.signal = controller.signal
     controller.signal.throwIfAborted()
     if (command === "create") createWorkspace(root, rest[0], rest[1])

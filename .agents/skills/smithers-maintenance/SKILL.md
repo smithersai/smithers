@@ -64,9 +64,11 @@ Use `node .smithers/flows/land/workspace.mjs` from the invoking workspace:
   bytes remain available. Do not remove an unresolved safeguard.
 - `land --message "<gitmoji conventional message>" --test "<remote command>"`:
   serialize with the same `~/smithers-builders/main-push.lock` legacy lanes use,
-  sync, regenerate/check the target index on the mini, run explicit commands,
+  sync, regenerate/check the target index on the mini (cfbox on capacity timeout), run explicit commands,
   reject conflicts, advance main by ancestry, push, verify, and print
-  `LANDED <full id>`. `--validated "<existing receipt>"` records previously run
+  `LANDED <full id>`. Remote preparation and tests do not hold the push lock;
+  publication re-fetches main and refuses a changed validation base or source.
+  `--validated "<existing receipt>"` records previously run
   checks when rerunning is unavailable; it does not claim fresh execution.
 - `land --require path[=content] ...`: require a file/content predicate on
   fetched main. This fails promptly rather than waiting on a rewritten commit id.
@@ -84,6 +86,10 @@ explicit override for independent repositories/tests; all lanes of this repo
 keep the shared default. `SMITHERS_MINI_RUN` selects the farm client (default
 `~/.smithers-lead/scratchpad-mirror/mini-run`). No test command or install is
 invented on the MacBook. Existing manual landings continue to work.
+Target-index admission sets `MINI_RUN_WAIT_SECONDS=0`. Exit 7 or a failed
+`CAPACITY_TIMEOUT` selects `SMITHERS_CFBOX` (default `~/.vibe-orch/bin/cfbox`),
+which receives only jj-listed source. `SMITHERS_CFBOX_VIA` selects an upload
+relay; cfbox caching is disabled in relay mode.
 
 This is bootstrap automation, like `commit.mjs`: it must recover a source-only
 checkout even when the installed CLI or durable host cannot load. It does not

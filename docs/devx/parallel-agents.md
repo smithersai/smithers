@@ -94,11 +94,33 @@ unchanged. No existing Postgres migration or ledger key is renamed.
 ## Implemented: workspace and landing lifecycle
 
 `workspace.mjs` creates a private child of fetched immutable main, without
-installing dependencies. Every mutation coordinates through the legacy mkdir
-lock. Waits are bounded; an unknown owner is never assumed dead. It refuses
+installing dependencies. Sync and publication coordinate through the legacy
+mkdir lock; target-index preparation and tests run outside it. Publication
+fetches main again and refuses changed source or a changed base, requiring fresh
+sync and validation. Waits are bounded; an unknown owner is never assumed dead. It refuses
 shared mutable ancestry, so a rebase cannot rewrite another workspace's commits.
 A failed fetch/test/push or cancellation releases only this invocation's lock.
 Pushing checks local and remote ancestry and emits the full landed commit id.
+
+Target-index preparation tries mini admission with `MINI_RUN_WAIT_SECONDS=0`.
+Exit 7 or `CAPACITY_TIMEOUT` on a failed attempt routes to
+`~/.vibe-orch/bin/cfbox` (`SMITHERS_CFBOX` overrides the client). Both hosts
+generate and drift-check before returning the same single base64 receipt; only
+a valid receipt and unchanged source permit writing the local projection.
+Other mini failures remain failures. The metadata job requests 2 vCPUs (8 GiB),
+so it does not queue behind the larger 4-vCPU tier. The box bootstraps the repository's pinned
+Node and pnpm through the existing Cloud CI target-index gate and runs the
+projection helper. The Mac installs nothing. A temporary tree from `jj file
+list`, plus cfbox's `--with-deps` directory walker, avoids Git discovery and
+excludes VCS storage and ignored files. Staging is removed on success or failure.
+`SMITHERS_CFBOX_VIA` selects cfbox's upload relay where large direct uploads
+fail; relay mode omits dependency caching because cfbox does not support both.
+The native `smithers-jj-export` helper is unnecessary for this path:
+`TargetIndex` uses `GeneratedFile` write/check actions on the build engine's
+Node filesystem, and its inventory prerequisite only reads declarations.
+Neither acquires the confined `AtomicFileSystem` service or exports a jj tree.
+A real cfbox generate/check/receipt run passed with the helper configured to a
+nonexistent path.
 
 The real-jj stale regression reproduced an unsnapshotted edit being overwritten
 by `update-stale` on jj 0.39.0. The remedy first saves only dirty source and
