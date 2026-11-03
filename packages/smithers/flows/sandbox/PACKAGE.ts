@@ -89,7 +89,7 @@ const securityReview = Smithers.SecurityReview({
         "src/CloudflareSandbox/make.ts",
         "src/DaytonaSandbox/make.ts",
         "src/MicrosandboxSandbox/make.ts",
-        "src/MicrosandboxSandbox/snapshots.ts"
+        "src/MicrosandboxSandbox/snapshots.vibe"
       ]
     },
     {
@@ -163,7 +163,7 @@ const securityReview = Smithers.SecurityReview({
         "A secret stored transformed (base64, URL-encoded, split) that the fixed-string longest-line search cannot find.",
         "A failed capture path that leaves the stopped machine or a partial snapshot undestroyed."
       ],
-      paths: ["src/MicrosandboxSandbox/snapshots.ts"]
+      paths: ["src/MicrosandboxSandbox/snapshots.vibe"]
     },
     {
       id: "signal-and-reap-targeting",
@@ -232,7 +232,7 @@ const securityReview = Smithers.SecurityReview({
         "src/SandboxHealth/**",
         "src/SandboxSupervision/**",
         "src/RemoteChildProcessSpawner/ProviderError.ts",
-        "src/MicrosandboxSandbox/snapshots.ts"
+        "src/MicrosandboxSandbox/snapshots.vibe"
       ]
     }
   ]
