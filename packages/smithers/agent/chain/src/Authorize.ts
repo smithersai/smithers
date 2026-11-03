@@ -16,7 +16,7 @@
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { Context, Effect, Layer, Option, Schema } from "effect"
-import type * as Catalog from "./Catalog.ts"
+import type * as Catalog from "./Catalog.vibe"
 
 /**
  * A refusal from the authorization seam: a policy denial, a required

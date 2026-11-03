@@ -65,7 +65,7 @@ export interface Entry {
   readonly description: string
   /** Signal cancellation, then await the handler and its journal receipt before returning. */
   readonly settleOnInterrupt?: boolean | undefined
-  readonly handler: (payload: unknown, slot?: CallSlot) => Effect.Effect<unknown, CallError>
+  readonly handler: (payload: unknown, slot?: CallSlot) => unknown!CallError
   /**
    * An optional declaration digest overriding the default name+description
    * digest — richer catalogs (the registry) pin their full declaration.

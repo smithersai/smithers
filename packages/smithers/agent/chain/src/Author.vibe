@@ -9,8 +9,6 @@
  * @since 0.1.0
  */
 
-import { Context, Effect, Layer, Ref, Schema } from "effect"
-
 /**
  * A failure of the author seat: the seat is unreachable, or a scripted mock
  * ran out of outputs.
@@ -85,7 +83,7 @@ export const contextOf = (payload: unknown): ReadonlyArray<string> => {
  * @slop
  */
 export interface Service {
-  readonly author: (input: Input) => Effect.Effect<string, AuthorError>
+  readonly author: (input: Input) => string!AuthorError
 }
 
 /**
@@ -129,8 +127,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
  * @since 0.1.0
  * @slop
  */
-export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<Author> =>
-  Layer.succeed(Author)(makeNoop(overrides))
+export const layerNoop = (overrides: Partial<Service> = {}): Layer<Author> => Layer.succeed(Author)(makeNoop(overrides))
 
 /**
  * A reactive mock: the test supplies the function from input to raw model
@@ -140,10 +137,10 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<Author>
  * @since 0.1.0
  * @slop
  */
-export const layerFn = (f: (input: Input) => string): Layer.Layer<Author> =>
+export const layerFn = (f: (input: Input) => string): Layer<Author> =>
   Layer.succeed(Author)(
     make({
-      author: Effect.fn("Author.author")((input) => Effect.sync(() => f(input)))
+      author: Effect.fn("Author.author")(effect (input) => f(input))
     })
   )
 
@@ -157,27 +154,25 @@ export const layerFn = (f: (input: Input) => string): Layer.Layer<Author> =>
  * @since 0.1.0
  * @slop
  */
-export const layerMock = (outputs: ReadonlyArray<string>): Layer.Layer<Author> => {
+export const layerMock = (outputs: ReadonlyArray<string>): Layer<Author> => {
   // Snapshot now, not when the lazy layer is later built: a caller may
   // mutate its array after constructing the layer but before providing it.
   const snapshot = [...outputs]
   return Layer.effect(Author)(
-    Effect.gen(function*() {
-      const remaining = yield* Ref.make<ReadonlyArray<string>>(snapshot)
+    effect {
+      const remaining = try Ref.make<ReadonlyArray<string>>(snapshot)
       return make({
-        author: Effect.fn("Author.author")(() =>
-          Effect.gen(function*() {
-            const next = yield* Ref.modify(remaining, (queue) => [queue[0], queue.slice(1)] as const)
-            if (next === undefined) {
-              return yield* new AuthorError({
-                code: "exhausted",
-                message: `the mock author ran out of outputs after ${snapshot.length}`
-              })
-            }
-            return next
-          })
-        )
+        author: Effect.fn("Author.author")(effect () => {
+          const next = try Ref.modify(remaining, (queue) => [queue[0], queue.slice(1)] as const)
+          if (next === undefined) {
+            throw new AuthorError({
+              code: "exhausted",
+              message: `the mock author ran out of outputs after ${snapshot.length}`
+            })
+          }
+          return next
+        })
       })
-    })
+    }
   )
 }

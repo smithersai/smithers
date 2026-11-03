@@ -9,11 +9,10 @@
  * @since 0.1.0
  */
 
-import { Schema } from "effect"
 import * as CallKey from "./CallKey.vibe"
 import * as Observation from "./Observation.vibe"
-import * as Outcome from "./Outcome.ts"
-import * as Script from "./Script.ts"
+import * as Outcome from "./Outcome.vibe"
+import * as Script from "./Script.vibe"
 
 /**
  * The chain a scoped event belongs to. Omitted at the root — existing

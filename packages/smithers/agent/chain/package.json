@@ -62,9 +62,9 @@
     "./*/index": null,
     "./Author": {
       "types": {
-        "default": "./src/Author.ts"
+        "default": "./.vibe/declarations/src/Author.d.vibe.ts"
       },
-      "vibelang-source": "./src/Author.ts",
+      "vibelang-source": "./src/Author.vibe",
       "default": "./.vibelang/js/src/Author.js"
     },
     "./AuthorDeclaration": {
@@ -76,9 +76,9 @@
     },
     "./Catalog": {
       "types": {
-        "default": "./src/Catalog.ts"
+        "default": "./.vibe/declarations/src/Catalog.d.vibe.ts"
       },
-      "vibelang-source": "./src/Catalog.ts",
+      "vibelang-source": "./src/Catalog.vibe",
       "default": "./.vibelang/js/src/Catalog.js"
     },
     "./Authorize": {
@@ -90,23 +90,23 @@
     },
     "./Script": {
       "types": {
-        "default": "./src/Script.ts"
+        "default": "./.vibe/declarations/src/Script.d.vibe.ts"
       },
-      "vibelang-source": "./src/Script.ts",
+      "vibelang-source": "./src/Script.vibe",
       "default": "./.vibelang/js/src/Script.js"
     },
     "./Outcome": {
       "types": {
-        "default": "./src/Outcome.ts"
+        "default": "./.vibe/declarations/src/Outcome.d.vibe.ts"
       },
-      "vibelang-source": "./src/Outcome.ts",
+      "vibelang-source": "./src/Outcome.vibe",
       "default": "./.vibelang/js/src/Outcome.js"
     },
     "./Event": {
       "types": {
-        "default": "./src/Event.ts"
+        "default": "./.vibe/declarations/src/Event.d.vibe.ts"
       },
-      "vibelang-source": "./src/Event.ts",
+      "vibelang-source": "./src/Event.vibe",
       "default": "./.vibelang/js/src/Event.js"
     },
     "./internal/childRun": {
@@ -118,9 +118,9 @@
     },
     "./Journal": {
       "types": {
-        "default": "./src/Journal.ts"
+        "default": "./.vibe/declarations/src/Journal.d.vibe.ts"
       },
-      "vibelang-source": "./src/Journal.ts",
+      "vibelang-source": "./src/Journal.vibe",
       "default": "./.vibelang/js/src/Journal.js"
     },
     "./JsonBoundary": {
@@ -167,9 +167,9 @@
     },
     "./ModelAuthor": {
       "types": {
-        "default": "./src/ModelAuthor.ts"
+        "default": "./.vibe/declarations/src/ModelAuthor.d.vibe.ts"
       },
-      "vibelang-source": "./src/ModelAuthor.ts",
+      "vibelang-source": "./src/ModelAuthor.vibe",
       "default": "./.vibelang/js/src/ModelAuthor.js"
     },
     "./internal/prompts": {
@@ -202,9 +202,9 @@
     },
     "./RegistryCatalog": {
       "types": {
-        "default": "./src/RegistryCatalog.ts"
+        "default": "./.vibe/declarations/src/RegistryCatalog.d.vibe.ts"
       },
-      "vibelang-source": "./src/RegistryCatalog.ts",
+      "vibelang-source": "./src/RegistryCatalog.vibe",
       "default": "./.vibelang/js/src/RegistryCatalog.js"
     },
     "./SubChains": {

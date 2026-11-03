@@ -12,7 +12,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import type * as Event from "./Event.ts"
+import type * as Event from "./Event.vibe"
 
 /**
  * A journal that cannot be appended to or read.
@@ -36,8 +36,8 @@ export class JournalError extends Schema.TaggedError<JournalError>()("/chain/Jou
  * @slop
  */
 export interface Service {
-  readonly append: (event: Event.Event, expectedPosition: number) => Effect.Effect<void, JournalError>
-  readonly read: Effect.Effect<ReadonlyArray<Event.Event>, JournalError>
+  readonly append: (event: Event.Event, expectedPosition: number) => void!JournalError
+  readonly read: ReadonlyArray<Event.Event>!JournalError
 }
 
 /**
@@ -117,7 +117,9 @@ export const layerMemory = (initial: ReadonlyArray<Event.Event> = []): Layer.Lay
           return Effect.void
         })
       ),
-      read: Effect.sync(() => events.slice())
+      read: effect {
+        return events.slice()
+      }
     })
   })
 }

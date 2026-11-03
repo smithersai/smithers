@@ -5,8 +5,8 @@ import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
 import * as TestMemory from "@smthrs/memory/test/TestMemory"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Author from "../src/Author.ts"
-import type * as Catalog from "../src/Catalog.ts"
+import * as Author from "../src/Author.vibe"
+import type * as Catalog from "../src/Catalog.vibe"
 import * as MemoryEntries from "../src/MemoryEntries.ts"
 import { flow, runChain, runOn } from "./harness.ts"
 
@@ -234,7 +234,7 @@ describe("MemoryEntries", () => {
   it("composes the system entries into the standalone layer", async () => {
     const catalog = await Effect.runPromise(
       Effect.flatMap(
-        (await import("../src/Catalog.ts")).Catalog,
+        (await import("../src/Catalog.vibe")).Catalog,
         (service) => Effect.succeed(service.entries.map((entry) => entry.name))
       ).pipe(
         Effect.provide(MemoryEntries.layer(policy).pipe(Layer.provide(services)))

@@ -96,7 +96,7 @@ const securityReview = Smithers.SecurityReview({
         "An unparseable claim treated as allow, or authorize_unavailable swallowed instead of failing the run.",
         "A sub-chain spawned through the agent entry running without the parent's Authorize service."
       ],
-      paths: ["src/Authorize.ts", "src/Chain.ts", "src/SubChains.ts", "src/AuthorDeclaration.ts", "src/Catalog.ts"]
+      paths: ["src/Authorize.ts", "src/Chain.ts", "src/SubChains.ts", "src/AuthorDeclaration.ts", "src/Catalog.vibe"]
     },
     {
       id: "replay-identity",
@@ -112,10 +112,10 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/Chain.ts",
         "src/CallKey.vibe",
-        "src/Event.ts",
-        "src/Outcome.ts",
-        "src/Catalog.ts",
-        "src/RegistryCatalog.ts",
+        "src/Event.vibe",
+        "src/Outcome.vibe",
+        "src/Catalog.vibe",
+        "src/RegistryCatalog.vibe",
         "src/JsonBoundary.ts"
       ]
     },
@@ -130,7 +130,7 @@ const securityReview = Smithers.SecurityReview({
         "Child scope derivation in SubChains that two slots can map to the same string, or a depth check a crafted slot can bypass.",
         "Chain.append absorbing another writer's events on journal_conflict instead of failing."
       ],
-      paths: ["src/Chain.ts", "src/Event.ts", "src/SubChains.ts", "src/Journal.ts", "src/internal/childRun.ts"]
+      paths: ["src/Chain.ts", "src/Event.vibe", "src/SubChains.ts", "src/Journal.vibe", "src/internal/childRun.ts"]
     },
     {
       id: "resource-budgets",
@@ -158,9 +158,9 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Prompt.ts",
-        "src/RegistryCatalog.ts",
-        "src/Script.ts",
-        "src/Author.ts",
+        "src/RegistryCatalog.vibe",
+        "src/Script.vibe",
+        "src/Author.vibe",
         "src/Steering.vibe",
         "src/internal/prompts.ts",
         "prompts/**"
@@ -191,7 +191,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/Chain.ts",
         "src/MemoryEntries.ts",
-        "src/ModelAuthor.ts",
+        "src/ModelAuthor.vibe",
         "src/internal/failureCode.ts",
         "src/Observation.vibe"
       ]

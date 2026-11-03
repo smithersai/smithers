@@ -1,6 +1,6 @@
 import { Context, Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Author from "../src/Author.ts"
+import * as Author from "../src/Author.vibe"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
 import { flow, runChain, runOn } from "./harness.ts"

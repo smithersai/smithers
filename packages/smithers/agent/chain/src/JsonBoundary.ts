@@ -13,7 +13,7 @@
  */
 
 import { Option, Schema } from "effect"
-import * as Outcome from "./Outcome.ts"
+import * as Outcome from "./Outcome.vibe"
 
 const decodeOutcomeShape = Schema.decodeUnknownOption(Outcome.Outcome)
 
