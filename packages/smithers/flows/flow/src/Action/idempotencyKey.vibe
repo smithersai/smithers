@@ -8,7 +8,7 @@
 
 import type { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
-import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
+import { FlowInstance } from "../FlowRuntime/FlowInstance.vibe"
 import { CurrentAttempt } from "./Context.ts"
 import * as StepIdentity from "./StepIdentity.ts"
 

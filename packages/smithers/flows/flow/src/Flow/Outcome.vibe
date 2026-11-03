@@ -11,7 +11,7 @@
 import type { CapabilityPattern } from "@smthrs/capability/Capability"
 import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
-import { WaitingAnnotation } from "../FlowRuntime/WaitingAnnotation.ts"
+import { WaitingAnnotation } from "../FlowRuntime/WaitingAnnotation.vibe"
 import { OutcomeNodeTypeId, OutcomeValueTypeId } from "../internal/OutcomeMarker.ts"
 
 const outcomeNode = <A extends Outcome>(value: A): Node.Node<Node.Succeed<A>> => {

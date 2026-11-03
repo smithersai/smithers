@@ -47,20 +47,52 @@
     "./StepIdentity": "./src/Action/StepIdentity.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Deadline": "./src/Deadline.ts",
-    "./DurableClock": "./src/DurableClock.ts",
-    "./DurableDeferred": "./src/DurableDeferred.ts",
+    "./Deadline": {
+      "types": "./.vibe/declarations/src/Deadline.d.vibe.ts",
+      "vibelang-source": "./src/Deadline.vibe",
+      "default": "./.vibelang/js/src/Deadline.js"
+    },
+    "./DurableClock": {
+      "types": "./.vibe/declarations/src/DurableClock.d.vibe.ts",
+      "vibelang-source": "./src/DurableClock.vibe",
+      "default": "./.vibelang/js/src/DurableClock.js"
+    },
+    "./DurableDeferred": {
+      "types": "./.vibe/declarations/src/DurableDeferred.d.vibe.ts",
+      "vibelang-source": "./src/DurableDeferred.vibe",
+      "default": "./.vibelang/js/src/DurableDeferred.js"
+    },
     "./DurableQueue": "./src/DurableQueue.ts",
     "./ExternalJob": "./src/ExternalJob.ts",
     "./Fault": "./src/Fault.ts",
     "./Graph": "./src/Graph.ts",
     "./HumanTask": "./src/HumanTask.ts",
     "./Interpreter": "./src/Interpreter.ts",
-    "./Poll": "./src/Poll.ts",
-    "./RetryPolicy": "./src/RetryPolicy.ts",
-    "./Sleep": "./src/Sleep.ts",
-    "./Stall": "./src/Stall.ts",
-    "./WaitFor": "./src/WaitFor.ts",
+    "./Poll": {
+      "types": "./.vibe/declarations/src/Poll.d.vibe.ts",
+      "vibelang-source": "./src/Poll.vibe",
+      "default": "./.vibelang/js/src/Poll.js"
+    },
+    "./RetryPolicy": {
+      "types": "./.vibe/declarations/src/RetryPolicy.d.vibe.ts",
+      "vibelang-source": "./src/RetryPolicy.vibe",
+      "default": "./.vibelang/js/src/RetryPolicy.js"
+    },
+    "./Sleep": {
+      "types": "./.vibe/declarations/src/Sleep.d.vibe.ts",
+      "vibelang-source": "./src/Sleep.vibe",
+      "default": "./.vibelang/js/src/Sleep.js"
+    },
+    "./Stall": {
+      "types": "./.vibe/declarations/src/Stall.d.vibe.ts",
+      "vibelang-source": "./src/Stall.vibe",
+      "default": "./.vibelang/js/src/Stall.js"
+    },
+    "./WaitFor": {
+      "types": "./.vibe/declarations/src/WaitFor.d.vibe.ts",
+      "vibelang-source": "./src/WaitFor.vibe",
+      "default": "./.vibelang/js/src/WaitFor.js"
+    },
     "./index": "./src/index.ts"
   },
   "files": [

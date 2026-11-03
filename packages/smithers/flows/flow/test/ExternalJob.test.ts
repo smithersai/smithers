@@ -3,7 +3,7 @@ import { Action, ExternalJob, Flow, FlowRuntime, Interpreter, Sleep } from "@smt
 import type { Node } from "@smthrs/plan"
 import { Cause, Context, Duration, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import { TestClock } from "effect/testing"
-import { ExecutionMiddleware } from "../src/internal/ExecutionMiddleware.ts"
+import { ExecutionMiddleware } from "../src/internal/ExecutionMiddleware.vibe"
 import { effectOnTestClock as effect } from "./Harness.ts"
 import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
 

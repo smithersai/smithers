@@ -27,7 +27,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
-import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
+import { FlowInstance } from "../FlowRuntime/FlowInstance.vibe"
 import { CurrentInvocationKey } from "./Context.ts"
 
 /**

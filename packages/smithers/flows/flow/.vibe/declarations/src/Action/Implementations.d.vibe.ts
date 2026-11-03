@@ -39,8 +39,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type { Scope } from "effect/Scope";
-import type { FlowInstance } from "../../../../src/FlowRuntime/FlowInstance.ts";
-import type { FlowRuntime } from "../../../../src/FlowRuntime/FlowRuntime.ts";
+import type { FlowInstance } from "../FlowRuntime/FlowInstance.vibe";
+import type { FlowRuntime } from "../FlowRuntime/FlowRuntime.vibe";
 /**
  * One declared action's implementation, as a driver consumes it: a name to
  * resolve it by, and the durable action a payload produces.
