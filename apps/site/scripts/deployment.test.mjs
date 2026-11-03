@@ -288,7 +288,7 @@ test("every shared-state stack plans against one record under stage prod", () =>
   // last, and the CLI's default stage is dev_$USER, so either one gives each
   // machine its own view of production.
   const stacks = [
-    { stack: "apps/bug-worker/alchemy.run.ts", pkg: "apps/bug-worker/package.json", qualifiedOnly: true },
+    { stack: "apps/bug-worker/alchemy.run.vibe", pkg: "apps/bug-worker/package.json", qualifiedOnly: true },
   ]
   for (const { stack, pkg, qualifiedOnly } of stacks) {
     const source = read(stack)
@@ -331,7 +331,7 @@ test("documented deploy commands hand Alchemy its flags directly", () => {
   // looks for a file named --adopt and never adopts.
   const docs = [
     "apps/bug-worker/README.md",
-    "apps/bug-worker/alchemy.run.ts",
+    "apps/bug-worker/alchemy.run.vibe",
   ]
   for (const path of docs) {
     assert.doesNotMatch(readFileSync(join(root, path), "utf8"), /(run (plan|deploy|destroy)|docs:deploy) -- /, path)

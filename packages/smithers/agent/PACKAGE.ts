@@ -13,7 +13,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
-  testSources: Smithers.glob("{test,examples}/**/*.ts")
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}")
 })
 
 /** ModelStep's durable and process-boundary cases require an authenticated PostgreSQL server. */
@@ -33,7 +33,7 @@ const test = Smithers.Vitest({
   tests: [Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] })],
   sources: [
     Smithers.glob("src/**/*.{ts,vibe}"),
-    Smithers.glob("{test,examples}/**/*.ts"),
+    Smithers.glob("{test,examples}/**/*.{ts,vibe}"),
     Smithers.file("docs/quickstart.md"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
