@@ -20,7 +20,7 @@ import { Effect, Layer, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { CredentialConflict, Unavailable } from "./ControlError.ts"
 import * as CredentialStore from "./CredentialStore.ts"
-import { initial } from "./migrations/0001_control_tables.ts"
+import { initial } from "./migrations/0001_control_tables.vibe"
 
 interface Row {
   readonly id: string

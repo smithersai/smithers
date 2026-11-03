@@ -5,9 +5,9 @@
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as Fault from "@smthrs/flow/Fault"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { Cause, Effect, Metric, Schema } from "effect"
+import { Cause, Effect, Schema } from "effect"
 import type { ControlEvent, RunSummary } from "./ControlSchema.ts"
-import { makeJevSessionChecker } from "./JevSessionChecker.ts"
+import { makeJevSessionChecker } from "./JevSessionChecker.vibe"
 
 /** Authoritative subject lifecycle.
  * @category schemas
@@ -232,7 +232,7 @@ export interface HealthChecker<C = unknown> {
   readonly id: string
   readonly configSchema?: Schema.Codec<C, unknown> | undefined
   readonly defaults?: Partial<CheckPolicy> | undefined
-  readonly probe: (context: ProbeContext, config: C) => Effect.Effect<ProbeReport, unknown>
+  readonly probe: (context: ProbeContext, config: C) => ProbeReport!unknown
 }
 /** Data may select a registered checker but never executable code.
  * @category models
@@ -276,11 +276,9 @@ export interface Registry {
  * @category errors
  * @since 1.0.0
  */
-export class HealthConfigurationError
-  extends Schema.TaggedError<HealthConfigurationError>()("HealthConfigurationError", {
-    reason: Schema.Literals(["invalid-policy", "invalid-checker", "invalid-config"])
-  })
-{}
+export schema error HealthConfigurationError {
+  reason: "invalid-policy" | "invalid-checker" | "invalid-config"
+}
 Fault.register("HealthConfigurationError", "bug")
 /** Safe cadence used by unconfigured hosts.
  * @category constants
@@ -420,58 +418,59 @@ const decodeReport = Schema.decodeUnknownSync(ProbeReport)
  * @category constructors
  * @since 1.0.0
  */
-export const evaluate = (
+export const evaluate = effect (
   check: ResolvedCheck,
   context: ProbeContext,
   stamp: ObservationStamp
-): Effect.Effect<HealthObservation> =>
-  Effect.gen(function*() {
-    const subjectId = context.subjectId
-    const state = context.state
-    const captured = { ...stamp }
-    const started = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
-    const result = yield* Effect.suspend(() => check.checker.probe(context, check.config)).pipe(
-      Effect.flatMap((candidate) => Effect.try({ try: () => decodeReport(candidate), catch: () => "invalid-report" })),
-      Effect.map((report) => ({ outcome: "ok" as const, report })),
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.interrupt
-          : Effect.succeed({ outcome: "error" as const, reason: "probe-error" as const })
-      ),
-      Effect.timeoutOrElse({
-        duration: check.policy.timeoutMs,
-        orElse: () => Effect.succeed({ outcome: "timeout" as const, reason: "probe-timeout" as const })
-      }),
-      Effect.tap((outcome) =>
-        Effect.annotateCurrentSpan({
-          outcome: outcome.outcome,
-          activity: "report" in outcome ? outcome.report.activity : "unknown"
-        })
-      ),
-      Effect.withSpan("smithers.health.probe", {
-        attributes: {
-          subjectKind: context.session === undefined ? "run" : "session",
-          subjectId,
-          checkerId: check.checker.id,
-          monitorId: captured.monitorId
-        }
-      })
+): HealthObservation!! => {
+  const subjectId = context.subjectId
+  const state = context.state
+  const captured = { ...stamp }
+  const started = try Effect.clockWith((clock) => clock.currentTimeMillis)
+  const result = try (effect {
+    return try check.checker.probe(context, check.config)
+  }
+    |> Effect.flatMap(
+      %,
+      (candidate) => Effect.try({ try: () => decodeReport(candidate), catch: () => "invalid-report" })
     )
-    const observedAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
-    const durationMs = Math.max(0, observedAt - started)
-    yield* Metric.update(outcomes.pipe(Metric.withAttributes({ outcome: result.outcome })), 1)
-    yield* Metric.update(durations, durationMs)
-    return {
-      subjectId,
-      state,
-      checkerId: check.checker.id,
-      ...captured,
-      observedAt,
-      expiresAt: observedAt + check.policy.ttlMs,
-      durationMs,
-      ...result
-    }
-  })
+    |> Effect.map(%, (report) => ({ outcome: "ok" as const, report }))
+    |> Effect.catchCause(%, (cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.succeed({ outcome: "error" as const, reason: "probe-error" as const }))
+    |> Effect.timeoutOrElse(%, {
+      duration: check.policy.timeoutMs,
+      orElse: () => Effect.succeed({ outcome: "timeout" as const, reason: "probe-timeout" as const })
+    })
+    |> Effect.tap(%, (outcome) =>
+      Effect.annotateCurrentSpan({
+        outcome: outcome.outcome,
+        activity: "report" in outcome ? outcome.report.activity : "unknown"
+      }))
+    |> Effect.withSpan(%, "smithers.health.probe", {
+      attributes: {
+        subjectKind: context.session === undefined ? "run" : "session",
+        subjectId,
+        checkerId: check.checker.id,
+        monitorId: captured.monitorId
+      }
+    }))
+  const observedAt = try Effect.clockWith((clock) => clock.currentTimeMillis)
+  const durationMs = Math.max(0, observedAt - started)
+  try Metric.update(outcomes.pipe(Metric.withAttributes({ outcome: result.outcome })), 1)
+  try Metric.update(durations, durationMs)
+  return {
+    subjectId,
+    state,
+    checkerId: check.checker.id,
+    ...captured,
+    observedAt,
+    expiresAt: observedAt + check.policy.ttlMs,
+    durationMs,
+    ...result
+  }
+}
 
 /** Select evidence for the current opaque owner incarnation, breaking equal evidence ties by durable sequence.
  * @category projections

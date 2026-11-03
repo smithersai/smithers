@@ -5,7 +5,7 @@
  */
 
 import { NotificationError } from "@smthrs/notifications/NotificationQueue"
-import { Context, Effect, Layer, Schema, SchemaTransformation } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc"
 import {
   AlreadyResolved,
@@ -285,7 +285,7 @@ export interface Authenticator {
   readonly authenticate: (
     headers: Readonly<Record<string, string>>,
     call?: Call | undefined
-  ) => Effect.Effect<typeof Principal.Type, Unauthorized>
+  ) => typeof Principal.Type!Unauthorized
 }
 
 /**
@@ -374,7 +374,7 @@ export const bearerAuthenticator = (options: BearerAuthOptions): Authenticator =
  */
 export const anyAuthenticator = (authenticators: ReadonlyArray<Authenticator>): Authenticator => ({
   authenticate: (headers, call) =>
-    authenticators.reduce<Effect.Effect<typeof Principal.Type, Unauthorized>>(
+    authenticators.reduce<typeof Principal.Type!Unauthorized>(
       (attempt, authenticator) =>
         Effect.catchTag(attempt, "/control/Unauthorized", () => authenticator.authenticate(headers, call)),
       Effect.fail(new Unauthorized({ message: "A valid bearer credential is required" }))
@@ -411,10 +411,9 @@ export const layerAuth = (authenticator: Authenticator, options: AuthOptions = {
       Effect.flatMap(
         authenticator.authenticate(call.headers, { rpc: call.rpc._tag, payload: call.payload }),
         (principal) =>
-          effect.pipe(
-            Effect.provideService(ControlPrincipal, principal),
-            Effect.provideService(RunVisibility, visibility)
-          )
+          effect
+          |> Effect.provideService(%, ControlPrincipal, principal)
+          |> Effect.provideService(%, RunVisibility, visibility)
       )
   )
 }

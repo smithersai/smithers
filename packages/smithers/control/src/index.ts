@@ -48,7 +48,7 @@ export * as Cancellation from "./Cancellation.ts"
  * @category projections
  * @since 0.1.0
  */
-export * as Lineage from "./Lineage.ts"
+export * as Lineage from "./Lineage.vibe"
 
 /**
  * @category projections
@@ -78,7 +78,7 @@ export * as ControlExecutor from "./ControlExecutor.ts"
  * @category services
  * @since 1.0.0
  */
-export * as DispatchReader from "./DispatchReader.ts"
+export * as DispatchReader from "./DispatchReader.vibe"
 
 /**
  * @category layers
@@ -96,13 +96,13 @@ export * as SystemFlows from "./SystemFlows.ts"
  * @category rpc
  * @since 0.1.0
  */
-export * as ControlRpcs from "./ControlRpcs.ts"
+export * as ControlRpcs from "./ControlRpcs.vibe"
 
 /**
  * @category layers
  * @since 0.1.0
  */
-export * as ControlServer from "./ControlServer.ts"
+export * as ControlServer from "./ControlServer.vibe"
 
 /**
  * @category layers
@@ -120,7 +120,7 @@ export * as Channels from "./Channels.ts"
  * @category channels
  * @since 0.1.0
  */
-export * as WebhookChannel from "./WebhookChannel.ts"
+export * as WebhookChannel from "./WebhookChannel.vibe"
 
 /**
  * @category services
@@ -132,7 +132,7 @@ export * as Credential from "./Credential.ts"
  * @category services
  * @since 0.1.0
  */
-export * as CredentialCipher from "./CredentialCipher.ts"
+export * as CredentialCipher from "./CredentialCipher.vibe"
 
 /**
  * @category services
@@ -175,14 +175,14 @@ export * as Migrations from "./Migrations.ts"
  * @category health
  * @since 1.0.0
  */
-export * as Health from "./Health.ts"
+export * as Health from "./Health.vibe"
 
 /**
  * The Jev-decided session checker a host binds as `jev.session`.
  * @category health
  * @since 1.0.0
  */
-export * as JevSessionChecker from "./JevSessionChecker.ts"
+export * as JevSessionChecker from "./JevSessionChecker.vibe"
 
 /** Versioned control lifecycle producer and projection contract. */
 export * as ControlFacts from "./ControlFacts.ts"

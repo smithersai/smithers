@@ -10,9 +10,9 @@
 
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
-import { initial } from "./migrations/0001_control_tables.ts"
-import { runKeys } from "./migrations/0002_run_keys.ts"
-import { signalCommands } from "./migrations/0003_signal_commands.ts"
+import { initial } from "./migrations/0001_control_tables.vibe"
+import { runKeys } from "./migrations/0002_run_keys.vibe"
+import { signalCommands } from "./migrations/0003_signal_commands.vibe"
 import { approvalDecisions } from "./migrations/0004_approval_decisions.ts"
 import { signalPrincipals } from "./migrations/0005_signal_principals.ts"
 import { runPrincipals } from "./migrations/0006_run_principals.ts"

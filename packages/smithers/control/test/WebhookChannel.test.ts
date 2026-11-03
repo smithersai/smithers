@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest"
 import * as Channels from "../src/Channels.ts"
 import { InvalidInput, Unauthorized } from "../src/ControlError.ts"
 import type { CredentialRef } from "../src/Credential.ts"
-import * as WebhookChannel from "../src/WebhookChannel.ts"
+import * as WebhookChannel from "../src/WebhookChannel.vibe"
 
 const accepted = { _tag: "Accepted" as const, receiptId: "receipt" }
 

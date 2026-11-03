@@ -14,28 +14,28 @@
  *
  * @since 1.0.0
  */
-
-import { Context, Effect, Layer } from "effect"
-import type { ControlError } from "./ControlError.ts"
-import { InvalidInput } from "./ControlError.ts"
-import type { FireSummary, ListRequest, TriggerSummary } from "./ControlSchema.ts"
-
+import { Context, Effect, Layer } from "effect";
+import type { ControlError } from "../../../src/ControlError.ts";
+import { InvalidInput } from "../../../src/ControlError.ts";
+import type { FireSummary, ListRequest, TriggerSummary } from "../../../src/ControlSchema.ts";
 /**
  * The `triggers` listing request as the port receives it.
  *
  * @category models
  * @since 1.0.0
  */
-export type TriggersRequest = Extract<ListRequest, { readonly _tag: "triggers" }>
-
+export type TriggersRequest = Extract<ListRequest, {
+    readonly _tag: "triggers";
+}>;
 /**
  * The `fires` listing request as the port receives it.
  *
  * @category models
  * @since 1.0.0
  */
-export type FiresRequest = Extract<ListRequest, { readonly _tag: "fires" }>
-
+export type FiresRequest = Extract<ListRequest, {
+    readonly _tag: "fires";
+}>;
 /**
  * The reader `Control.list` pages trigger and fire rows from.
  *
@@ -50,28 +50,25 @@ export type FiresRequest = Extract<ListRequest, { readonly _tag: "fires" }>
  * @since 1.0.0
  */
 export interface Service {
-  readonly list: (request: TriggersRequest) => Effect.Effect<ReadonlyArray<TriggerSummary>, ControlError>
-  readonly fires: (request: FiresRequest) => Effect.Effect<ReadonlyArray<FireSummary>, ControlError>
+    readonly list: (request: TriggersRequest) => Effect.Effect<ReadonlyArray<TriggerSummary>, ControlError>;
+    readonly fires: (request: FiresRequest) => Effect.Effect<ReadonlyArray<FireSummary>, ControlError>;
 }
-
+declare const DispatchReader_base: Context.ServiceClass<DispatchReader, "/control/DispatchReader", Service>;
 /**
  * The {@link Service} tag.
  *
  * @category services
  * @since 1.0.0
  */
-export class DispatchReader extends Context.Service<DispatchReader, Service>()(
-  "/control/DispatchReader"
-) {}
-
+export declare class DispatchReader extends DispatchReader_base {
+}
 /**
  * The refusal a host without a trigger store answers both variants with.
  *
  * @category constants
  * @since 1.0.0
  */
-export const noStoreIssue = "this host serves no trigger store"
-
+export declare const noStoreIssue = "this host serves no trigger store";
 /**
  * The typed refusal for a host without a trigger store: `InvalidInput` with
  * code `invalid_input` and {@link noStoreIssue} as the issue, the same shape
@@ -80,16 +77,14 @@ export const noStoreIssue = "this host serves no trigger store"
  * @category constructors
  * @since 1.0.0
  */
-export const refuse = (): InvalidInput => new InvalidInput({ issue: noStoreIssue })
-
+export declare const refuse: () => InvalidInput;
 /**
  * Builds a {@link Service} from an implementation of its methods.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const make = (implementation: Service): Service => DispatchReader.of(implementation)
-
+export declare const make: (implementation: Service) => Service;
 /**
  * A {@link Service} that serves no trigger store: both methods fail with
  * {@link refuse}.
@@ -97,21 +92,14 @@ export const make = (implementation: Service): Service => DispatchReader.of(impl
  * @category constructors
  * @since 1.0.0
  */
-export const makeNone = (): Service =>
-  make({
-    list: Effect.fn("DispatchReader.list")(() => Effect.fail(refuse())),
-    fires: Effect.fn("DispatchReader.fires")(() => Effect.fail(refuse()))
-  })
-
+export declare const makeNone: () => Service;
 /**
  * Provides {@link DispatchReader} from an implementation.
  *
  * @category layers
  * @since 1.0.0
  */
-export const layer = (implementation: Service): Layer.Layer<DispatchReader> =>
-  Layer.succeed(DispatchReader)(make(implementation))
-
+export declare const layer: (implementation: Service) => Layer.Layer<DispatchReader>;
 /**
  * Provides {@link makeNone}: a reader that refuses both listings because this
  * host serves no trigger store.
@@ -119,4 +107,5 @@ export const layer = (implementation: Service): Layer.Layer<DispatchReader> =>
  * @category layers
  * @since 1.0.0
  */
-export const layerNone: Layer.Layer<DispatchReader> = Layer.succeed(DispatchReader)(makeNone())
+export declare const layerNone: Layer.Layer<DispatchReader>;
+export {};

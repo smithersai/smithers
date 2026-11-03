@@ -6,7 +6,7 @@
  */
 import { Cause, Effect, Exit, Redacted } from "effect"
 import { describe, expect, it } from "vitest"
-import * as CredentialCipher from "../src/CredentialCipher.ts"
+import * as CredentialCipher from "../src/CredentialCipher.vibe"
 import * as WebCryptoCipher from "../src/WebCryptoCipher.ts"
 
 const key = Redacted.make(btoa("0123456789abcdef0123456789abcdef"))

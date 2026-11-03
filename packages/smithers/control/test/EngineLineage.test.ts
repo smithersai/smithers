@@ -31,7 +31,7 @@ import { Effect, Layer, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import type { ControlEvent, ListResponse, RunSummary } from "../src/ControlSchema.ts"
-import * as Lineage from "../src/Lineage.ts"
+import * as Lineage from "../src/Lineage.vibe"
 import { controlPlane, type DurableStack } from "./DurableStack.ts"
 
 const parentRunId = "engine-lineage-parent"

@@ -23,7 +23,7 @@ import type { CredentialRef } from "./Credential.ts"
 export type SignatureVerifier = (
   raw: RawInbound,
   credential: Redacted.Redacted<CredentialRef>
-) => Effect.Effect<void, Unauthorized>
+) => void!Unauthorized
 
 /**
  * Configuration for a schema-declared webhook channel.
@@ -37,7 +37,7 @@ export interface Config<A> {
   readonly credential: Redacted.Redacted<CredentialRef>
   readonly fingerprintHeaders?: Channel<A>["fingerprintHeaders"]
   readonly verify: SignatureVerifier
-  readonly map: (payload: A) => Effect.Effect<InboundResult, InvalidInput>
+  readonly map: (payload: A) => InboundResult!InvalidInput
   readonly project: Channel<A>["project"]
 }
 
@@ -107,13 +107,13 @@ export const make = <A>(config: Config<A>): Channel<A> => {
     ...(config.fingerprintHeaders === undefined ? {} : { fingerprintHeaders: config.fingerprintHeaders }),
     verify: Effect.fn("WebhookChannel.verify")((raw) => config.verify(raw, config.credential)),
     decode: Effect.fn("WebhookChannel.decode")((raw) =>
-      Effect.try({
+      (Effect.try({
         try: () => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw.body)),
         catch: () => invalidInput("invalid webhook JSON")
-      }).pipe(
-        Effect.flatMap((json) => decode(json)),
-        Effect.mapError((cause) => cause instanceof InvalidInput ? cause : invalidInput(String(cause)))
-      ) as Effect.Effect<A, InvalidInput>
+      })
+        |> Effect.flatMap(%, (json) => decode(json))
+        |> Effect.mapError(%, (cause) =>
+          cause instanceof InvalidInput ? cause : invalidInput(String(cause)))) as A!InvalidInput
     ),
     map: Effect.fn("WebhookChannel.map")((payload) => config.map(payload)),
     project: config.project
@@ -136,41 +136,39 @@ export const make = <A>(config: Config<A>): Channel<A> => {
  * @category handlers
  * @since 0.1.0
  */
-export const handler = (
+export const handler = effect (
   channel: string,
   idempotencyKey: IdempotencyKey,
   options?: HandlerOptions | undefined
-) =>
-  Effect.gen(function*() {
-    const limit = options?.maximumBodyBytes ?? maximumBodyBytes
-    if (!Number.isFinite(limit) || limit < 0) {
-      // NaN would make every size comparison false and read an unbounded body.
-      return yield* Effect.die(new Error(`maximumBodyBytes must be a non-negative finite number, got ${limit}`))
+) => {
+  const limit = options?.maximumBodyBytes ?? maximumBodyBytes
+  if (!Number.isFinite(limit) || limit < 0) {
+    // NaN would make every size comparison false and read an unbounded body.
+    return try Effect.die(new Error(`maximumBodyBytes must be a non-negative finite number, got ${limit}`))
+  }
+  const request = try HttpServerRequest.HttpServerRequest
+  const declared = declaredLength(request.headers)
+  if (declared !== undefined && declared > limit) {
+    throw invalidInput(`webhook body: declared ${declared} bytes exceeds the ${limit} byte limit`)
+  }
+  const chunks: Array<Uint8Array> = []
+  let size = 0
+  try Stream.runForEach(request.stream, effect (chunk) => {
+    size += chunk.byteLength
+    if (size > limit) {
+      throw invalidInput(`webhook body: ${size} bytes exceeds the ${limit} byte limit`)
     }
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const declared = declaredLength(request.headers)
-    if (declared !== undefined && declared > limit) {
-      return yield* invalidInput(`webhook body: declared ${declared} bytes exceeds the ${limit} byte limit`)
-    }
-    const chunks: Array<Uint8Array> = []
-    let size = 0
-    yield* Stream.runForEach(request.stream, (chunk) =>
-      Effect.gen(function*() {
-        size += chunk.byteLength
-        if (size > limit) {
-          return yield* invalidInput(`webhook body: ${size} bytes exceeds the ${limit} byte limit`)
-        }
-        if (chunk.byteLength > 0) chunks.push(chunk.slice())
-      }))
-    const body = new Uint8Array(size)
-    let offset = 0
-    for (const chunk of chunks) {
-      body.set(chunk, offset)
-      offset += chunk.byteLength
-    }
-    const channels = yield* Channels
-    return yield* channels.ingest({
-      channel,
-      raw: { body, headers: request.headers, idempotencyKey }
-    })
+    if (chunk.byteLength > 0) chunks.push(chunk.slice())
   })
+  const body = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  const channels = try Channels
+  return try channels.ingest({
+    channel,
+    raw: { body, headers: request.headers, idempotencyKey }
+  })
+}

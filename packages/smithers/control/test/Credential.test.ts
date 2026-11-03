@@ -6,7 +6,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted } from "e
 import { describe, expect, it } from "vitest"
 import { Unauthorized } from "../src/ControlError.ts"
 import * as Credential from "../src/Credential.ts"
-import * as CredentialCipher from "../src/CredentialCipher.ts"
+import * as CredentialCipher from "../src/CredentialCipher.vibe"
 import * as CredentialStore from "../src/CredentialStore.ts"
 import * as WebCryptoCipher from "../src/WebCryptoCipher.ts"
 

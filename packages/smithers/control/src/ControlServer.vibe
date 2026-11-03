@@ -4,12 +4,9 @@
  * @since 0.1.0
  */
 
-import { Cause, Context, Effect, Layer, Stream } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { RpcServer } from "effect/rpc"
 import { Control } from "./Control.ts"
 import { Unauthorized } from "./ControlError.ts"
-import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.ts"
+import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.vibe"
 
 /**
  * Logs a content-free diagnostic for a failed RPC handler, and nothing for
@@ -20,7 +17,7 @@ import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.ts"
  * @category logging
  * @since 1.0.0
  */
-export const logDefect = (cause: Cause.Cause<unknown>): Effect.Effect<void> =>
+export const logDefect = (cause: Cause<unknown>): void!! =>
   Cause.hasDies(cause) ? Effect.logError("A control RPC handler died") : Effect.void
 
 /**
@@ -39,7 +36,7 @@ export const RequestScheme = Context.Reference<"http:" | "https:" | undefined>(
   { defaultValue: () => undefined }
 )
 
-const logged = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.tapCause(effect, logDefect)
+const logged = <A, E, R>(effect: A!E!R) => Effect.tapCause(effect, logDefect)
 
 /**
  * Control RPC handlers delegating to the transport-independent service.
@@ -58,66 +55,59 @@ const logged = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.tapCause(effe
  * @since 0.1.0
  */
 export const layer = ControlRpcs.toLayer(
-  Effect.gen(function*() {
-    const control = yield* Control
+  effect {
+    const control = try Control
     // A reader that is not an operator is restricted to the runs its own
     // principal launched. `reader` is not on the wire, so only this stamp sets
     // it. The authentication middleware provides the rule with the principal.
-    const reader = Effect.gen(function*() {
-      const principal = yield* ControlPrincipal
-      const visibility = yield* RunVisibility
+    const reader = effect {
+      const principal = try ControlPrincipal
+      const visibility = try RunVisibility
       return visibility.seesAllRuns(principal) ? {} : { reader: principal }
-    })
+    }
     return ControlRpcs.of({
       Plan: Effect.fn("Control.plan")((input) => control.plan(input), logged),
-      Run: Effect.fn("Control.run")((input) =>
-        Effect.gen(function*() {
-          const principal = yield* ControlPrincipal
-          return yield* control.run({ ...input, principal })
-        }), logged),
-      Approve: Effect.fn("Control.approve")((input) =>
-        Effect.gen(function*() {
-          const principal = yield* ControlPrincipal
-          if (principal.id === "loopback" && principal.kind === "anonymous") {
-            return yield* new Unauthorized({ message: "An operator credential is required" })
-          }
-          return yield* control.approve({ ...input, principal })
-        }), logged),
-      Deny: Effect.fn("Control.deny")((input) =>
-        Effect.gen(function*() {
-          const principal = yield* ControlPrincipal
-          if (principal.id === "loopback" && principal.kind === "anonymous") {
-            return yield* new Unauthorized({ message: "An operator credential is required" })
-          }
-          return yield* control.deny({ ...input, principal })
-        }), logged),
-      Steer: Effect.fn("Control.steer")((input) =>
-        Effect.gen(function*() {
-          const principal = yield* ControlPrincipal
-          // A steer carries a principal on the wire because an in-process
-          // caller names one that is not an operator: `agent/send` attributes
-          // a child's steer to the parent flow. A remote client may not, so
-          // the authenticated identity replaces whatever arrived. It reaches
-          // the notification's `sourceActor` and the run transcript, which is
-          // exactly where a spoofed name would be read as truth.
-          const { attribution: _attribution, ...message } = input.message
-          return yield* control.steer({ ...input, message: { ...message, principal }, ...yield* reader })
-        }), logged),
-      Signal: Effect.fn("Control.signal")((input) =>
-        Effect.gen(function*() {
-          const principal = yield* ControlPrincipal
-          return yield* control.signal({ ...input, principal, ...yield* reader })
-        }), logged),
-      Cancel: Effect.fn("Control.cancel")((input) =>
-        Effect.gen(function*() {
-          const principal = yield* ControlPrincipal
-          return yield* control.cancel({ ...input, principal, ...yield* reader })
-        }), logged),
-      Resume: Effect.fn("Control.resume")((input) =>
-        Effect.gen(function*() {
-          const principal = yield* ControlPrincipal
-          return yield* control.resume({ ...input, principal, ...yield* reader })
-        }), logged),
+      Run: Effect.fn("Control.run")(effect (input) => {
+        const principal = try ControlPrincipal
+        return try control.run({ ...input, principal })
+      }, logged),
+      Approve: Effect.fn("Control.approve")(effect (input) => {
+        const principal = try ControlPrincipal
+        if (principal.id === "loopback" && principal.kind === "anonymous") {
+          throw new Unauthorized({ message: "An operator credential is required" })
+        }
+        return try control.approve({ ...input, principal })
+      }, logged),
+      Deny: Effect.fn("Control.deny")(effect (input) => {
+        const principal = try ControlPrincipal
+        if (principal.id === "loopback" && principal.kind === "anonymous") {
+          throw new Unauthorized({ message: "An operator credential is required" })
+        }
+        return try control.deny({ ...input, principal })
+      }, logged),
+      Steer: Effect.fn("Control.steer")(effect (input) => {
+        const principal = try ControlPrincipal
+        // A steer carries a principal on the wire because an in-process
+        // caller names one that is not an operator: `agent/send` attributes
+        // a child's steer to the parent flow. A remote client may not, so
+        // the authenticated identity replaces whatever arrived. It reaches
+        // the notification's `sourceActor` and the run transcript, which is
+        // exactly where a spoofed name would be read as truth.
+        const { attribution: _attribution, ...message } = input.message
+        return try control.steer({ ...input, message: { ...message, principal }, ...try reader })
+      }, logged),
+      Signal: Effect.fn("Control.signal")(effect (input) => {
+        const principal = try ControlPrincipal
+        return try control.signal({ ...input, principal, ...try reader })
+      }, logged),
+      Cancel: Effect.fn("Control.cancel")(effect (input) => {
+        const principal = try ControlPrincipal
+        return try control.cancel({ ...input, principal, ...try reader })
+      }, logged),
+      Resume: Effect.fn("Control.resume")(effect (input) => {
+        const principal = try ControlPrincipal
+        return try control.resume({ ...input, principal, ...try reader })
+      }, logged),
       List: Effect.fn("Control.list")(
         (input) => Effect.flatMap(reader, (restriction) => control.list({ ...input, ...restriction })),
         logged
@@ -128,7 +118,7 @@ export const layer = ControlRpcs.toLayer(
           logDefect
         )
     })
-  })
+  }
 )
 
 /**
@@ -141,7 +131,7 @@ export const layer = ControlRpcs.toLayer(
  * behalf (cross-site WebSocket hijacking of the `Watch` stream).
  */
 const sameOrigin = (
-  request: HttpServerRequest.HttpServerRequest,
+  request: HttpServerRequest,
   scheme: "http:" | "https:" | undefined
 ): boolean => {
   const headers = request.headers
@@ -166,15 +156,13 @@ const sameOrigin = (
  */
 const originGuard = Layer.unwrap(
   Effect.map(RequestScheme, (scheme) =>
-    HttpRouter.middleware((httpEffect) =>
-      Effect.gen(function*() {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        if (sameOrigin(request, scheme)) return yield* httpEffect
-        return HttpServerResponse.text("The browser Origin must match the control server scheme and Host", {
-          status: 403
-        })
+    HttpRouter.middleware(effect (httpEffect) => {
+      const request = try HttpServerRequest.HttpServerRequest
+      if (sameOrigin(request, scheme)) return try httpEffect
+      return HttpServerResponse.text("The browser Origin must match the control server scheme and Host", {
+        status: 403
       })
-    ).layer)
+    }).layer)
 )
 
 const server = RpcServer.layer(ControlRpcs, {

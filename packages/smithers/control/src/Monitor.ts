@@ -23,7 +23,7 @@ import { Control } from "./Control.ts"
 import type { ControlError } from "./ControlError.ts"
 import { InvalidInput, PersistenceError } from "./ControlError.ts"
 import type { ControlEvent, Receipt, RunId, RunSummary, WatchFilter } from "./ControlSchema.ts"
-import * as SubjectHealth from "./Health.ts"
+import * as SubjectHealth from "./Health.vibe"
 
 /**
  * The journal event type the engine records when an action attempt starts.

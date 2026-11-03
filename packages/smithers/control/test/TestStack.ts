@@ -17,7 +17,7 @@ import type { Control } from "../src/Control.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 import * as ControlLive from "../src/ControlLive.ts"
 import * as ControlRuntime from "../src/ControlRuntime.ts"
-import * as DispatchReader from "../src/DispatchReader.ts"
+import * as DispatchReader from "../src/DispatchReader.vibe"
 
 /** The same host-free crypto `TestControl` uses, without a Node import. */
 export const browserCrypto = Layer.succeed(
