@@ -19,9 +19,9 @@ import * as RepoMetrics from "./RepoMetrics.ts"
 // anonymous quota (60 calls an hour per address, shared by every Worker on Cloudflare's egress).
 //
 // - **Kept for every data center** in Postgres (worker/about/Store.ts): a fresh answer serves everyone. When it goes
-//   stale, one request claims the next read and the rest keep serving the stale answer; when GitHub can't answer, the
-//   last good answer serves for up to `STALE_FOR`. With nothing kept yet, the requests that didn't claim the read wait
-//   for the one that did, watching the store, so a crowd's first read is one call too.
+//   stale, one request claims the next read and the rest wait for a fresh answer or a refusal, watching the store.
+//   An answer past its freshUntil is never served, including while GitHub can't answer or another read is held.
+//   A crowd causes one read of GitHub.
 // - **Nothing is shared between requests.** A Worker isolate serves many requests at once, and a request may not
 //   resume on another's I/O: on 2026-10-25 a lookup shared through Effect's `Cache` answered 23 of 30 concurrent
 //   visitors 500. Each request reads the store, GitHub and the App's signer on its own; only the store is common.
@@ -57,8 +57,6 @@ export const NOT_FOUND_HOLD = Duration.minutes(1)
 export const MAX_HOLD = Duration.minutes(15)
 /** How long an answer GitHub left parts out of is fresh, at most. */
 export const PARTIAL_FRESH = Duration.minutes(5)
-/** How old a kept answer may be and still serve while GitHub can't answer. */
-export const STALE_FOR = Duration.days(7)
 /** How long the App's absence from a repository is remembered before GitHub is asked again. */
 export const APP_RECHECK = Duration.hours(1)
 /** How long a request asks the browser to wait when another request's first read didn't land in `WAIT_FOR`. */
@@ -69,8 +67,6 @@ export const WAIT_FOR = Duration.seconds(10)
 export const POLL = Duration.millis(250)
 /** Each GitHub call's deadline. */
 export const REQUEST_TIMEOUT = Duration.seconds(8)
-/** How long a browser keeps a stale answer. */
-export const STALE_MAX_AGE_SECONDS = 30
 
 /** How the about read reaches GitHub, and how long its answers are fresh. */
 export interface Settings {
@@ -125,17 +121,16 @@ export interface GitHubRead {
 }
 
 /**
- * What GitHub's answer is for a repository: an answer (`hit`: fresh from the store; `miss`: read from GitHub now;
- * `stale`: the last good answer while another request reads or GitHub can't answer) or a refusal (`miss`: GitHub
- * refused now; `refusal`: GitHub's refusal the store keeps; `wait`: another data center is reading it for the first
- * time). `read` is what this lookup's read of GitHub did, and `store` names the store operations that failed.
+ * What GitHub's answer is for a repository: an answer (`hit`: fresh from the store; `miss`: read from GitHub now)
+ * or a refusal (`miss`: GitHub refused now; `refusal`: GitHub's refusal the store keeps; `wait`: another data center
+ * is reading it). `read` is what this lookup's read of GitHub did, and `store` names the store operations that failed.
  */
 export type Answer =
   & (
     | {
       readonly _tag: "Answered"
       readonly text: string
-      readonly cache: "hit" | "miss" | "stale"
+      readonly cache: "hit" | "miss"
       readonly via: Via
       readonly maxAgeSeconds: number
     }
@@ -299,13 +294,13 @@ export const make = <E, R>(
             Effect.orElseSucceed(() => false),
           )
 
-    /** A kept answer as a request's: the browser keeps a fresh one until it goes stale, a stale one briefly. */
-    const answered = (kept: KeptAnswer, cache: "hit" | "miss" | "stale", nowMs: number) => ({
+    /** A fresh answer as a request's: the browser keeps it until it goes stale. */
+    const answered = (kept: KeptAnswer, cache: "hit" | "miss", nowMs: number) => ({
       _tag: "Answered" as const,
       text: kept.text,
       cache,
       via: kept.via,
-      maxAgeSeconds: cache === "stale" ? STALE_MAX_AGE_SECONDS : Math.max(1, Math.ceil((kept.freshUntilMs - nowMs) / 1000)),
+      maxAgeSeconds: Math.max(1, Math.ceil((kept.freshUntilMs - nowMs) / 1000)),
     })
 
     /** How long nobody asks GitHub again after `refusal`. */
@@ -388,7 +383,6 @@ export const make = <E, R>(
         if (Option.isSome(answer) && answer.value.freshUntilMs > nowMs) {
           return { ...answered(answer.value, "hit", nowMs), ...extra() }
         }
-        const usable = Option.filter(answer, (found) => nowMs - found.readAtMs <= ms(STALE_FOR))
         // A read is due without a row or once its `next_read_at` passed; with no store to ask, every request reads.
         const due = Option.match(row, {
           onNone: () => true,
@@ -396,20 +390,18 @@ export const make = <E, R>(
         })
         // An anonymous rate limit belongs to a different quota. A curated home may recover once with the
         // deployment token; the store atomically replaces the refusal with a claim, so concurrent reads still wait.
-        const recovery = !due && Option.isNone(usable) && Curated.find(owner, name) !== undefined &&
+        const recovery = !due && Curated.find(owner, name) !== undefined &&
           Option.isSome(row) && row.value.refusal === "rate_limited" &&
           (row.value.refusalVia === undefined || row.value.refusalVia === "anonymous")
           ? yield* tokenFor(owner, name, id, row.value.appAbsentUntilMs, nowMs, member, failed) : undefined
         const recoverAnonymous = recovery !== undefined && Option.isSome(recovery.token)
-        // A claim the store can't answer reads GitHub only when there is nothing to serve: a crowd during a store
-        // outage serves the stale answer rather than all asking GitHub.
-        const claim = store.claim(id, nowMs, nowMs + ms(CLAIM), recoverAnonymous).pipe(Effect.catch(storeDown("claim", Option.isNone(usable))))
+        // A claim the store can't answer reads GitHub; no fresh answer is available.
+        const claim = store.claim(id, nowMs, nowMs + ms(CLAIM), recoverAnonymous).pipe(Effect.catch(storeDown("claim", true)))
         const claimed = Option.isNone(kept) || ((due || recoverAnonymous) && (yield* claim))
         if (!claimed) {
-          if (Option.isSome(usable)) return { ...answered(usable.value, "stale", nowMs), ...extra() }
           const found = Option.getOrUndefined(row)
           const refusal = found?.refusal ?? null
-          // Nothing to serve yet: another request is reading it for the first time.
+          // Nothing fresh to serve: another request is reading it.
           if (refusal === null || recoverAnonymous) return { ...(yield* awaitRead(id, nowMs)), ...extra() }
           // A kept refusal always has its wait: `refuse` writes both.
           return {
@@ -445,8 +437,8 @@ export const make = <E, R>(
           return { ...answered(fresh, "miss", nowMs), read: record, ...extra() }
         }
         // GH-4: with the shared anonymous quota spent and nothing to serve, a rate limit says nothing of the repository,
-        // so github.com's own 404 decides. A kept answer is served as usual, and costs no extra request.
-        const absent = read.failure.code === "rate_limited" && chosen.via === "anonymous" && Option.isNone(usable) &&
+        // so github.com's own 404 decides.
+        const absent = read.failure.code === "rate_limited" && chosen.via === "anonymous" &&
           (yield* absentOnWeb(owner, name))
         const refusal = absent ? new AboutRefused({ code: "not_found", stage: "web", upstreamStatus: 404 }) : read.failure
         const record: GitHubRead = {
@@ -458,10 +450,6 @@ export const make = <E, R>(
         }
         yield* recorded(id, record)
         yield* store.refuse(id, refusal.code, nowMs + holdFor(refusal, nowMs), chosen.via).pipe(Effect.catch(storeDown("refuse", undefined)))
-        // GitHub can't answer now: the last good answer serves. A repository GitHub says isn't there has none.
-        if (refusal.code !== "not_found" && Option.isSome(usable)) {
-          return { ...answered(usable.value, "stale", nowMs), read: record, ...extra() }
-        }
         return {
           _tag: "Refused" as const,
           code: refusal.code,

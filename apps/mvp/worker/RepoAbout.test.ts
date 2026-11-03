@@ -1,6 +1,6 @@
 // The about read (worker/RepoAbout.ts) over this file's schema of the compose Postgres (`pnpm db:up`) and the scripted
-// GitHub (worker/test/githubRest.ts): whose quota a read spends, the answer kept for every data center and served stale
-// while GitHub can't answer, the waits after GitHub refused, many visitors causing one read, in one isolate and across
+// GitHub (worker/test/githubRest.ts): whose quota a read spends, the answer kept for every data center and served
+// only while fresh even when GitHub can't answer, the waits after GitHub refused, many visitors causing one read across
 // two, with no request resuming on another's work, and a store that fails, injected. The reads themselves are worker/about/GitHubRead.test.ts.
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Clock, ConfigProvider, Duration, Effect, Layer, Logger, Metric, Option, Redacted } from "effect"
@@ -380,7 +380,7 @@ describe("kept for every data center", () => {
     expect(github.calls.length).toBeGreaterThan(calls)
   })
 
-  test("while GitHub doesn't answer, the last good answer serves, and nobody asks again for 5 seconds", async () => {
+  test("past freshness, GitHub failing returns no content, and nobody asks again for 5 seconds", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
     const now = Date.now() + 60_000 // A different host clock must not change the duration.
@@ -388,19 +388,21 @@ describe("kept for every data center", () => {
     await one.answer("octocat", "Spoon-Knife")
     await age(SPOON)
     github.fail("", 502)
-    const stale = answered(await one.answer("octocat", "Spoon-Knife"))
-    expect(stale).toMatchObject({ cache: "stale", maxAgeSeconds: RepoAbout.STALE_MAX_AGE_SECONDS, about: { name: "octocat/Spoon-Knife" } })
-    expect(stale.read).toMatchObject({ outcome: "github_unavailable", stage: "repository", upstreamStatus: 502 })
+    const refused = await one.answer("octocat", "Spoon-Knife")
+    expect(refused).toMatchObject({ _tag: "Refused", code: "github_unavailable", cache: "miss" })
+    expect(refused).not.toHaveProperty("text")
+    expect(refused.read).toMatchObject({ outcome: "github_unavailable", stage: "repository", upstreamStatus: 502 })
     const kept = await row(SPOON, now)
     expect(kept).toMatchObject({ refusal: "github_unavailable" })
     expect(kept?.nextIn).toBeGreaterThan(2_000)
     expect(kept?.nextIn).toBeLessThanOrEqual(Duration.toMillis(RepoAbout.HOLD))
     const calls = github.calls.length
-    const served = answered(await one.answer("octocat", "Spoon-Knife"))
-    expect(served.cache).toBe("stale")
+    const served = await one.answer("octocat", "Spoon-Knife")
+    expect(served).toMatchObject({ _tag: "Refused", code: "github_unavailable", cache: "refusal", retryAfterMillis: Duration.toMillis(RepoAbout.HOLD) })
+    expect(served).not.toHaveProperty("text")
     expect(served).not.toHaveProperty("read")
     expect(github.calls).toHaveLength(calls)
-    // Older than a week, it no longer serves.
+    // An older kept answer is refused too.
     await age(SPOON, "8 days")
     const old = await one.answer("octocat", "Spoon-Knife")
     expect(old).toMatchObject({ _tag: "Refused", code: "github_unavailable", cache: "miss" })
@@ -536,7 +538,7 @@ describe("many visitors, one read", () => {
     expect(github.calls).toHaveLength(4)
   })
 
-  test("across data centers: while one reads, the other waits for its first answer, then serves the stale one", async () => {
+  test("across data centers: while one reads, the other waits for its first answer, then waits for a fresh one", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
     const westStore = await watched()
@@ -551,7 +553,7 @@ describe("many visitors, one read", () => {
     release()
     expect(answered(await first).cache).toBe("miss")
     expect(answered(await waiting)).toMatchObject({ cache: "hit", waitedMs: expect.any(Number) })
-    // Stale everywhere: of fifteen visitors in each, one reads GitHub and the rest serve the stale answer.
+    // Stale everywhere: of fifteen visitors in each, one reads GitHub and the rest wait for a fresh answer.
     await age(SPOON)
     const before = github.calls.length
     release = github.hold()
@@ -563,7 +565,28 @@ describe("many visitors, one read", () => {
     expect(east.reads().length + west.reads().length).toBe(2)
     expect(github.calls.slice(before).filter((call) => call === "")).toHaveLength(1)
     expect(outcomes.filter((outcome) => outcome.cache === "miss")).toHaveLength(1)
-    expect(outcomes.filter((outcome) => outcome.cache === "stale" || outcome.cache === "hit")).toHaveLength(29)
+    expect(outcomes.filter((outcome) => outcome.cache === "hit")).toHaveLength(29)
+  })
+
+  test("past freshness, a concurrent held read returns no content and can be retried", async () => {
+    const github = scriptedGitHub()
+    github.publish("octocat", "Spoon-Knife")
+    const east = await isolate(github)
+    await east.answer("octocat", "Spoon-Knife")
+    await age(SPOON)
+    const west = await isolate(github, { timing: { waitFor: Duration.millis(50), poll: Duration.millis(10) } })
+    const release = github.hold()
+    const reading = east.answer("octocat", "Spoon-Knife")
+    try {
+      await until(() => github.holding() > 0)
+      const held = await west.answer("octocat", "Spoon-Knife")
+      expect(held).toMatchObject({ _tag: "Refused", code: "unavailable", cache: "wait", retryAfterMillis: Duration.toMillis(RepoAbout.WAIT) })
+      expect(held).not.toHaveProperty("text")
+    } finally {
+      release()
+      expect(answered(await reading).cache).toBe("miss")
+    }
+    expect(answered(await west.answer("octocat", "Spoon-Knife")).cache).toBe("hit")
   })
 
   test("a request waiting for another's first read gets GitHub's refusal when that read is refused", async () => {
@@ -653,10 +676,10 @@ describe("a store that fails", () => {
     const one = await isolate(github, { store: { ...real, claim: () => unavailable("claim") } })
     expect(await one.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Answered", cache: "miss", store: ["claim"] })
     expect(answered(await one.answer("octocat", "Spoon-Knife")).cache).toBe("hit")
-    // With a stale answer to serve, a claim the store can't answer serves it and leaves GitHub alone.
+    // An expired answer cannot mask a failed claim: read GitHub again.
     await age(SPOON)
     const calls = github.calls.length
-    expect(await one.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Answered", cache: "stale", store: ["claim"] })
-    expect(github.calls).toHaveLength(calls)
+    expect(await one.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Answered", cache: "miss", store: ["claim"] })
+    expect(github.calls.length).toBeGreaterThan(calls)
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { CAPACITY_COPY, CLONING, COULDNT_LOAD, FAILURE_COPY, MEMBERS_CLONE, NOT_CLONED, READING_PAUSED, SIGN_IN_TO_CLONE } from "./contract"
+import { CAPACITY_COPY, CLONING, COULDNT_LOAD, FAILURE_COPY, GITHUB_DOWN, MEMBERS_CLONE, NOT_CLONED, READING_PAUSED, SIGN_IN_TO_CLONE } from "./contract"
 import { type AboutRow, type BlobRow, type CloneRow, emptyView, type RefsRow, type TreeRow, type ViewRow } from "./rows"
 import type { About, Repository } from "./schema"
 import {
@@ -563,6 +563,16 @@ describe("what the page shows", () => {
     expect(pageOf(state(at("tree", "", answered), { about: { ...aboutRow("failed"), message: READING_PAUSED } })))
       .toEqual({ kind: "retry", text: READING_PAUSED })
     expect(pageOf(state(at("tree", "", answered), { about: aboutRow("failed") }))).toEqual({ kind: "retry", text: COULDNT_LOAD })
+  })
+
+  test("a public GitHub outage leaves About empty, offers retry, and keeps cloned files usable", () => {
+    const failed: AboutRow = { ...aboutRow("failed"), message: GITHUB_DOWN }
+    expect(aboutOf(failed)).toBeUndefined()
+    expect(aboutProps(failed)).toEqual({ loading: false })
+    expect(pageOf(state(at("tree", "", { answered: true, signedIn: false }), { about: failed })))
+      .toEqual({ kind: "retry", text: GITHUB_DOWN })
+    expect(pageOf(state(at("tree", "", resolved), { about: failed })).kind).toBe("files")
+    expect(pageOf(state(at("blob", "README.md", resolved), { about: failed })).kind).toBe("files")
   })
 
   test("before a clone the top level is GitHub's: loading, then its folder; deeper, Not cloned or Cloning", () => {
