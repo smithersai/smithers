@@ -25,7 +25,7 @@ const securityReview = Smithers.SecurityReview({
         "The constructor interpolating details or cause into message or summary instead of storing them in separate fields.",
         "details stored by reference instead of the shallow Object.freeze({ ...details }) copy, letting a caller mutate it after a redaction check."
       ],
-      paths: ["src/SmithersError.vibe"]
+      paths: ["src/SmithersError.ts"]
     },
     {
       id: "shape-refinement-forgery",
@@ -50,7 +50,7 @@ const securityReview = Smithers.SecurityReview({
         "smithersErrorDefinitions, a nested definition, or smithersErrorCodes left unfrozen after module load.",
         "ERROR_REFERENCE_URL or docsUrl derived from caller input or served over a non-https URL, since it is appended to every user-visible message."
       ],
-      paths: ["src/ErrorCode.ts", "src/SmithersError.vibe"]
+      paths: ["src/ErrorCode.ts", "src/SmithersError.ts"]
     },
     {
       id: "docs-redaction-examples",

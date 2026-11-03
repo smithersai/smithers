@@ -34,7 +34,7 @@
     "./internal/*": null,
     "./*/index": null,
     "./ErrorCode": "./src/ErrorCode.ts",
-    "./SmithersError": "./src/SmithersError.vibe",
+    "./SmithersError": "./src/SmithersError.ts",
     "./index": "./src/index.ts"
   },
   "publishConfig": {
