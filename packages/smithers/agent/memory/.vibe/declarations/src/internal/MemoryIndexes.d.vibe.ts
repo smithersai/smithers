@@ -3,7 +3,7 @@
  *
  * @since 1.0.0
  */
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 /**
  * Replaces the unusable `(updated_at_ms, ttl_ms)` expiry index with one over
