@@ -45,12 +45,11 @@
  * @since 1.0.0
  */
 
-import { Effect, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import type { SourceRecord } from "../core/SourceRecord.vibe"
 import type { Changes, SyncAdapter } from "../core/Sync.vibe"
 import { type GitHubClient, MAX_PER_PAGE } from "./GitHubClient.ts"
-import { repositoryPath } from "./Repository.ts"
+import { repositoryPath } from "./Repository.vibe"
 
 /**
  * The provider name on every record.
@@ -94,15 +93,13 @@ const Position = Schema.Struct({
 
 type Position = typeof Position.Type
 
-const Cursor = Schema.Struct({
-  v: Schema.Literal(1),
-  phase: Schema.Literals(["issues", "comments"]),
-  full: Schema.Boolean,
-  issues: Position,
+schema Cursor {
+  v: 1
+  phase: "issues" | "comments"
+  full: boolean
+  issues: Position
   comments: Position
-})
-
-type Cursor = typeof Cursor.Type
+}
 
 const start: Position = { since: null, page: 1 }
 
@@ -132,7 +129,7 @@ const Comment = Schema.Struct({
   updated_at: Schema.String
 })
 
-const Repository = Schema.Struct({ id: Schema.Number, private: Schema.Boolean })
+schema Repository { id: number; private: boolean }
 
 /**
  * The external id of an issue or pull request.
@@ -179,27 +176,26 @@ export const make = (options: Options): SyncAdapter => {
   const decodeFailed = (message: string, extra: Record<string, unknown> = {}, cause?: unknown) =>
     new IntegrationError("decode-failed", message, { ...scope, ...extra }, { cause })
 
-  const readCursor = (cursor: string): Effect.Effect<Cursor, IntegrationError> =>
-    Effect.try({ try: () => JSON.parse(cursor) as unknown, catch: (cause) => cause }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Cursor)),
-      Effect.filterOrFail(
-        (decoded) =>
-          [decoded.issues.since, decoded.comments.since].every((since) =>
-            since === null || Number.isFinite(Date.parse(since))
-          ),
-        () => "since is not a timestamp"
-      ),
-      Effect.mapError((cause) =>
-        new IntegrationError(
-          "invalid-config",
-          `GitHub sync for "${stream}" has a stored cursor it did not write, so syncing would restart the listing.`,
-          { ...scope, retryable: false },
-          { cause }
-        )
-      )
+  const readCursor = (cursor: string): Cursor!IntegrationError =>
+    Effect.try({ try: () => JSON.parse(cursor) as unknown, catch: (cause) => cause })
+    |> Effect.flatMap(%, Schema.decodeUnknownEffect(Cursor))
+    |> Effect.filterOrFail(
+      %,
+      (decoded) =>
+        [decoded.issues.since, decoded.comments.since].every((since) =>
+          since === null || Number.isFinite(Date.parse(since))
+        ),
+      () => "since is not a timestamp"
     )
+    |> Effect.mapError(%, (cause) =>
+      new IntegrationError(
+        "invalid-config",
+        `GitHub sync for "${stream}" has a stored cursor it did not write, so syncing would restart the listing.`,
+        { ...scope, retryable: false },
+        { cause }
+      ))
 
-  const time = (value: string, field: string, id: number): Effect.Effect<number, IntegrationError> => {
+  const time = (value: string, field: string, id: number): number!IntegrationError => {
     const ms = Date.parse(value)
     return Number.isFinite(ms)
       ? Effect.succeed(ms)
@@ -208,10 +204,9 @@ export const make = (options: Options): SyncAdapter => {
 
   const decodeItems = <A>(schema: Schema.Decoder<A>, items: ReadonlyArray<unknown>, what: string) =>
     Effect.forEach(items, (item) =>
-      Schema.decodeUnknownEffect(schema)(item).pipe(
-        Effect.map((decoded) => ({ decoded, raw: item })),
-        Effect.mapError((cause) => decodeFailed(`GitHub returned ${what} this adapter cannot read.`, {}, cause))
-      ))
+      Schema.decodeUnknownEffect(schema)(item)
+      |> Effect.map(%, (decoded) => ({ decoded, raw: item }))
+      |> Effect.mapError(%, (cause) => decodeFailed(`GitHub returned ${what} this adapter cannot read.`, {}, cause)))
 
   const advance = (position: Position, latestMs: number | null, more: boolean): Position => {
     // An empty page that still links onward can only move on by page number.
@@ -238,19 +233,19 @@ export const make = (options: Options): SyncAdapter => {
     return `/repos/${path}/${endpoint === "issues" ? "issues" : "issues/comments"}?${query.toString()}`
   }
 
-  const changes = (stored: string | null): Effect.Effect<Changes, IntegrationError> =>
-    Effect.gen(function*() {
-      const decoded = stored === null ? initial(options.fullListing === true) : yield* readCursor(stored)
+  const changes = (stored: string | null): Changes!IntegrationError =>
+    (effect {
+      const decoded = stored === null ? initial(options.fullListing === true) : try readCursor(stored)
       const reset = options.fullListing === true && (stored === null || !decoded.full)
       const cursor = reset ? initial(true) : decoded
-      const repository = yield* client.request("GET", `/repos/${path}`, undefined, { schema: Repository })
-      const retrievedAtMs = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+      const repository = try client.request("GET", `/repos/${path}`, undefined, { schema: Repository })
+      const retrievedAtMs = try Effect.clockWith((clock) => clock.currentTimeMillis)
       const repositoryId = String(repository.id)
       const access: SourceRecord["access"] = repository.private
         ? { scope: "container", containerId: repositoryId }
         : { scope: "public", containerId: null }
       const position = cursor[cursor.phase]
-      const page = yield* client.paginate(listingPath(cursor.phase, position), { perPage, maxPages: 1 })
+      const page = try client.paginate(listingPath(cursor.phase, position), { perPage, maxPages: 1 })
       const records: Array<SourceRecord> = []
       let latestMs: number | null = null
       const base = (id: string, raw: unknown) => ({
@@ -266,9 +261,9 @@ export const make = (options: Options): SyncAdapter => {
       const author = (user: typeof User.Type): SourceRecord["author"] =>
         user === null ? null : { id: String(user.id), label: user.login }
       if (cursor.phase === "issues") {
-        for (const { decoded: issue, raw } of yield* decodeItems(Issue, page.items, "an issue")) {
-          const createdAtMs = yield* time(issue.created_at, "created_at", issue.id)
-          const updatedAtMs = yield* time(issue.updated_at, "updated_at", issue.id)
+        for (const { decoded: issue, raw } of try decodeItems(Issue, page.items, "an issue")) {
+          const createdAtMs = try time(issue.created_at, "created_at", issue.id)
+          const updatedAtMs = try time(issue.updated_at, "updated_at", issue.id)
           latestMs = Math.max(latestMs ?? updatedAtMs, updatedAtMs)
           const id = issueId(repository.id, issue.number)
           const body = issue.body ?? ""
@@ -284,15 +279,13 @@ export const make = (options: Options): SyncAdapter => {
           })
         }
       } else {
-        for (const { decoded: comment, raw } of yield* decodeItems(Comment, page.items, "an issue comment")) {
-          const createdAtMs = yield* time(comment.created_at, "created_at", comment.id)
-          const updatedAtMs = yield* time(comment.updated_at, "updated_at", comment.id)
+        for (const { decoded: comment, raw } of try decodeItems(Comment, page.items, "an issue comment")) {
+          const createdAtMs = try time(comment.created_at, "created_at", comment.id)
+          const updatedAtMs = try time(comment.updated_at, "updated_at", comment.id)
           latestMs = Math.max(latestMs ?? updatedAtMs, updatedAtMs)
           const issueNumber = ISSUE_NUMBER.exec(comment.issue_url)?.[1]
           if (issueNumber === undefined) {
-            return yield* Effect.fail(
-              decodeFailed("GitHub returned an issue comment whose issue_url names no issue.", { id: comment.id })
-            )
+            throw decodeFailed("GitHub returned an issue comment whose issue_url names no issue.", { id: comment.id })
           }
           const parent = issueId(repository.id, Number(issueNumber))
           records.push({
@@ -318,7 +311,7 @@ export const make = (options: Options): SyncAdapter => {
         done = true
       }
       return { records, cursor: JSON.stringify(following), reset, done }
-    }).pipe(Effect.withSpan("GitHub.Sync.changes", { attributes: { "integration.stream": stream } }))
+    }) |> withSpan(%, "GitHub.Sync.changes", { attributes: { "integration.stream": stream } })
 
   return { provider: PROVIDER, connectionId, stream, changes }
 }

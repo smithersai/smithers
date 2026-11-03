@@ -42,11 +42,10 @@
  * @since 1.0.0
  */
 
-import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { LabelName, RECONCILE_PAGES } from "./Actions.ts"
 import { GitHubClient } from "./GitHubClient.ts"
-import { IssueNumber, requireRepositoryPath } from "./Repository.ts"
+import { IssueNumber, requireRepositoryPath } from "./Repository.vibe"
 
 /**
  * The account on an issue or comment. GitHub sends `null` for a deleted
@@ -211,7 +210,7 @@ export const writeIdOf = (body: string | null | undefined): string | undefined =
  */
 export const withoutWriteMarker = (body: string): string => body.replace(MARKER_WITH_BREAK, "")
 
-const requireIssueNumber = (number: number): Effect.Effect<number, IntegrationError> =>
+const requireIssueNumber = (number: number): number!IntegrationError =>
   Schema.is(IssueNumber)(number) ? Effect.succeed(number) : Effect.fail(
     new IntegrationError("invalid-config", "A GitHub issue number must be a positive integer.", {
       field: "number",
@@ -220,12 +219,12 @@ const requireIssueNumber = (number: number): Effect.Effect<number, IntegrationEr
     })
   )
 
-const requireWriteId = (writeId: string): Effect.Effect<string, IntegrationError> =>
+const requireWriteId = (writeId: string): string!IntegrationError =>
   typeof writeId === "string" && WRITE_ID_PATTERN.test(writeId)
     ? Effect.succeed(writeId)
     : Effect.fail(invalidWriteId(writeId))
 
-const requireSince = (since: string | undefined): Effect.Effect<string | undefined, IntegrationError> =>
+const requireSince = (since: string | undefined): string | undefined!IntegrationError =>
   since === undefined || (typeof since === "string" && Number.isFinite(Date.parse(since)))
     ? Effect.succeed(since)
     : Effect.fail(
@@ -244,7 +243,7 @@ const incomplete = (operation: string): IntegrationError =>
     { operation, incomplete: true, retryable: false }
   )
 
-const requireLabelName = (name: unknown): Effect.Effect<string, IntegrationError> =>
+const requireLabelName = (name: unknown): string!IntegrationError =>
   Schema.is(LabelName)(name) ? Effect.succeed(name) : Effect.fail(
     new IntegrationError("invalid-config", "A GitHub label name must be 1 to 50 characters.", {
       field: "name",
@@ -255,7 +254,7 @@ const requireLabelName = (name: unknown): Effect.Effect<string, IntegrationError
 
 const requireLabelNames = (
   names: ReadonlyArray<string>
-): Effect.Effect<ReadonlyArray<string>, IntegrationError> =>
+): ReadonlyArray<string>!IntegrationError =>
   Array.isArray(names) && names.length > 0
     ? Effect.forEach(names, requireLabelName)
     : Effect.fail(
@@ -267,7 +266,7 @@ const requireLabelNames = (
 
 // `encodeURIComponent` leaves dots alone and the URL parser resolves `.` and
 // `..` segments, so a label named either would address the issue itself.
-const requireLabelSegment = (name: string): Effect.Effect<string, IntegrationError> =>
+const requireLabelSegment = (name: string): string!IntegrationError =>
   Effect.flatMap(requireLabelName(name), (valid) =>
     valid === "." || valid === ".."
       ? Effect.fail(
@@ -295,35 +294,30 @@ export const LABEL_COLOR_PATTERN = /^[0-9A-Fa-f]{6}$/
  */
 export const MAX_LABEL_DESCRIPTION = 100
 
-const requireNewLabel = (
+const requireNewLabel = effect (
   input: { readonly name: string; readonly color: string; readonly description?: string | undefined }
-): Effect.Effect<{ readonly name: string; readonly color: string; readonly description?: string }, IntegrationError> =>
-  Effect.gen(function*() {
-    const name = yield* requireLabelName(input.name)
-    if (typeof input.color !== "string" || !LABEL_COLOR_PATTERN.test(input.color)) {
-      return yield* Effect.fail(
-        new IntegrationError("invalid-config", "A GitHub label color must be six hex digits, without `#`.", {
-          field: "color",
-          color: typeof input.color === "string" ? input.color.slice(0, 16) : typeof input.color,
-          retryable: false
-        })
-      )
-    }
-    const description = input.description
-    if (
-      description !== undefined &&
-      (typeof description !== "string" || description.length > MAX_LABEL_DESCRIPTION)
-    ) {
-      return yield* Effect.fail(
-        new IntegrationError(
-          "invalid-config",
-          `A GitHub label description must be at most ${MAX_LABEL_DESCRIPTION} characters.`,
-          { field: "description", retryable: false }
-        )
-      )
-    }
-    return description === undefined ? { name, color: input.color } : { name, color: input.color, description }
-  })
+): { readonly name: string; readonly color: string; readonly description?: string }!IntegrationError => {
+  const name = try requireLabelName(input.name)
+  if (typeof input.color !== "string" || !LABEL_COLOR_PATTERN.test(input.color)) {
+    throw new IntegrationError("invalid-config", "A GitHub label color must be six hex digits, without `#`.", {
+      field: "color",
+      color: typeof input.color === "string" ? input.color.slice(0, 16) : typeof input.color,
+      retryable: false
+    })
+  }
+  const description = input.description
+  if (
+    description !== undefined &&
+    (typeof description !== "string" || description.length > MAX_LABEL_DESCRIPTION)
+  ) {
+    throw new IntegrationError(
+      "invalid-config",
+      `A GitHub label description must be at most ${MAX_LABEL_DESCRIPTION} characters.`,
+      { field: "description", retryable: false }
+    )
+  }
+  return description === undefined ? { name, color: input.color } : { name, color: input.color, description }
+}
 
 const hasStatus = (status: number) => (error: IntegrationError): boolean => error.details?.["status"] === status
 
@@ -337,15 +331,15 @@ const decodeAll = <A>(
   schema: Schema.Decoder<A>,
   items: ReadonlyArray<unknown>,
   path: string
-): Effect.Effect<ReadonlyArray<A>, IntegrationError> =>
-  Schema.decodeUnknownEffect(Schema.Array(schema))(items).pipe(Effect.mapError((cause) => decodeFailed(path, cause)))
+): ReadonlyArray<A>!IntegrationError =>
+  Schema.decodeUnknownEffect(Schema.Array(schema))(items) |> Effect.mapError(%, (cause) => decodeFailed(path, cause))
 
 const decodeOne = <A>(
   schema: Schema.Decoder<A>,
   item: unknown,
   path: string
-): Effect.Effect<A, IntegrationError> =>
-  Schema.decodeUnknownEffect(schema)(item).pipe(Effect.mapError((cause) => decodeFailed(path, cause)))
+): A!IntegrationError =>
+  Schema.decodeUnknownEffect(schema)(item) |> Effect.mapError(%, (cause) => decodeFailed(path, cause))
 
 // Whether a listed item, not yet decoded, carries `writeId`'s marker. Only the
 // match is decoded, so an unrelated item GitHub shapes differently never
@@ -391,13 +385,13 @@ export const getIssue = (
   owner: string,
   repo: string,
   number: number
-): Effect.Effect<Issue, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const issue = yield* requireIssueNumber(number)
-    return yield* client.request("GET", `/repos/${repository}/issues/${issue}`, undefined, { schema: Issue })
-  }).pipe(Effect.withSpan("GitHub.Issues.getIssue", { attributes: spanAttributes(owner, repo, number) }))
+): Issue!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    return try client.request("GET", `/repos/${repository}/issues/${issue}`, undefined, { schema: Issue })
+  }) |> withSpan(%, "GitHub.Issues.getIssue", { attributes: spanAttributes(owner, repo, number) })
 
 /**
  * The comments on issue `number`, oldest first:
@@ -413,21 +407,17 @@ export const listComments = (
   repo: string,
   number: number,
   options?: { readonly since?: string | undefined; readonly maxPages?: number | undefined }
-): Effect.Effect<
-  { readonly items: ReadonlyArray<IssueComment>; readonly truncated: boolean },
-  IntegrationError,
-  GitHubClient
-> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const issue = yield* requireIssueNumber(number)
-    const since = yield* requireSince(options?.since)
+): { readonly items: ReadonlyArray<IssueComment>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    const since = try requireSince(options?.since)
     const path = `/repos/${repository}/issues/${issue}/comments`
-    const page = yield* client.paginate(`${path}${query({ since })}`, { maxPages: options?.maxPages })
-    const items = yield* decodeAll(IssueComment, page.items, path)
+    const page = try client.paginate(`${path}${query({ since })}`, { maxPages: options?.maxPages })
+    const items = try decodeAll(IssueComment, page.items, path)
     return { items, truncated: page.truncated }
-  }).pipe(Effect.withSpan("GitHub.Issues.listComments", { attributes: spanAttributes(owner, repo, number) }))
+  }) |> withSpan(%, "GitHub.Issues.listComments", { attributes: spanAttributes(owner, repo, number) })
 
 /**
  * Opens an issue: `POST /repos/{owner}/{repo}/issues`. Mark `body` with
@@ -443,14 +433,14 @@ export const createIssue = (
   owner: string,
   repo: string,
   input: { readonly title: string; readonly body: string }
-): Effect.Effect<Issue, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    return yield* client.request("POST", `/repos/${repository}/issues`, { title: input.title, body: input.body }, {
+): Issue!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    return try client.request("POST", `/repos/${repository}/issues`, { title: input.title, body: input.body }, {
       schema: Issue
     })
-  }).pipe(Effect.withSpan("GitHub.Issues.createIssue", { attributes: spanAttributes(owner, repo) }))
+  }) |> withSpan(%, "GitHub.Issues.createIssue", { attributes: spanAttributes(owner, repo) })
 
 /**
  * Comments on issue or pull request `number`:
@@ -468,15 +458,15 @@ export const createComment = (
   repo: string,
   number: number,
   body: string
-): Effect.Effect<IssueComment, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const issue = yield* requireIssueNumber(number)
-    return yield* client.request("POST", `/repos/${repository}/issues/${issue}/comments`, { body }, {
+): IssueComment!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    return try client.request("POST", `/repos/${repository}/issues/${issue}/comments`, { body }, {
       schema: IssueComment
     })
-  }).pipe(Effect.withSpan("GitHub.Issues.createComment", { attributes: spanAttributes(owner, repo, number) }))
+  }) |> withSpan(%, "GitHub.Issues.createComment", { attributes: spanAttributes(owner, repo, number) })
 
 /**
  * The issue whose body carries `writeId`'s marker, among issues updated since
@@ -496,14 +486,14 @@ export const findIssueByWrite = (
   owner: string,
   repo: string,
   options: { readonly writeId: string; readonly since: string; readonly author?: string | undefined }
-): Effect.Effect<Option.Option<Issue>, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const writeId = yield* requireWriteId(options.writeId)
-    const since = yield* requireSince(options.since)
+): Option<Issue>!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const writeId = try requireWriteId(options.writeId)
+    const since = try requireSince(options.since)
     const path = `/repos/${repository}/issues`
-    const page = yield* client.paginate(
+    const page = try client.paginate(
       `${path}${query({ state: "all", sort: "created", direction: "desc", since })}`,
       { maxPages: RECONCILE_PAGES }
     )
@@ -512,9 +502,9 @@ export const findIssueByWrite = (
     for (const item of page.items) {
       if (markedWith(item, writeId) && byAuthor(item, options.author) && !isPullRequest(item)) found = item
     }
-    if (page.truncated) return yield* Effect.fail(incomplete("findIssueByWrite"))
-    return found === undefined ? Option.none() : Option.some(yield* decodeOne(Issue, found, path))
-  }).pipe(Effect.withSpan("GitHub.Issues.findIssueByWrite", { attributes: spanAttributes(owner, repo) }))
+    if (page.truncated) throw incomplete("findIssueByWrite")
+    return found === undefined ? Option.none() : Option.some(try decodeOne(Issue, found, path))
+  }) |> withSpan(%, "GitHub.Issues.findIssueByWrite", { attributes: spanAttributes(owner, repo) })
 
 /**
  * The comment on issue `number` whose body carries `writeId`'s marker, among
@@ -532,20 +522,20 @@ export const findCommentByWrite = (
   repo: string,
   number: number,
   options: { readonly writeId: string; readonly since?: string | undefined; readonly author?: string | undefined }
-): Effect.Effect<Option.Option<IssueComment>, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const issue = yield* requireIssueNumber(number)
-    const writeId = yield* requireWriteId(options.writeId)
-    const since = yield* requireSince(options.since)
+): Option<IssueComment>!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    const writeId = try requireWriteId(options.writeId)
+    const since = try requireSince(options.since)
     const path = `/repos/${repository}/issues/${issue}/comments`
-    const page = yield* client.paginate(`${path}${query({ since })}`, { maxPages: RECONCILE_PAGES })
+    const page = try client.paginate(`${path}${query({ since })}`, { maxPages: RECONCILE_PAGES })
     // Oldest first, so the first match is the earliest created.
     const found = page.items.find((item) => markedWith(item, writeId) && byAuthor(item, options.author))
-    if (found === undefined && page.truncated) return yield* Effect.fail(incomplete("findCommentByWrite"))
-    return found === undefined ? Option.none() : Option.some(yield* decodeOne(IssueComment, found, path))
-  }).pipe(Effect.withSpan("GitHub.Issues.findCommentByWrite", { attributes: spanAttributes(owner, repo, number) }))
+    if (found === undefined && page.truncated) throw incomplete("findCommentByWrite")
+    return found === undefined ? Option.none() : Option.some(try decodeOne(IssueComment, found, path))
+  }) |> withSpan(%, "GitHub.Issues.findCommentByWrite", { attributes: spanAttributes(owner, repo, number) })
 
 /**
  * Adds labels to issue or pull request `number`, keeping the ones it has:
@@ -564,17 +554,17 @@ export const addLabels = (
   repo: string,
   number: number,
   names: readonly [string, ...Array<string>]
-): Effect.Effect<ReadonlyArray<IssueLabel>, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const issue = yield* requireIssueNumber(number)
-    const labels = yield* requireLabelNames(names)
-    return yield* client.request("POST", `/repos/${repository}/issues/${issue}/labels`, { labels }, {
+): ReadonlyArray<IssueLabel>!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    const labels = try requireLabelNames(names)
+    return try client.request("POST", `/repos/${repository}/issues/${issue}/labels`, { labels }, {
       schema: Schema.Array(IssueLabel),
       retryUnsafeWrites: true
     })
-  }).pipe(Effect.withSpan("GitHub.Issues.addLabels", { attributes: spanAttributes(owner, repo, number) }))
+  }) |> withSpan(%, "GitHub.Issues.addLabels", { attributes: spanAttributes(owner, repo, number) })
 
 /**
  * Removes label `name` from issue or pull request `number`:
@@ -595,19 +585,18 @@ export const removeLabel = (
   repo: string,
   number: number,
   name: string
-): Effect.Effect<boolean, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const issue = yield* requireIssueNumber(number)
-    const label = yield* requireLabelSegment(name)
-    return yield* client.request("DELETE", `/repos/${repository}/issues/${issue}/labels/${label}`, undefined, {
+): boolean!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    const label = try requireLabelSegment(name)
+    return try (client.request("DELETE", `/repos/${repository}/issues/${issue}/labels/${label}`, undefined, {
       retryUnsafeWrites: true
-    }).pipe(
-      Effect.as(true),
-      Effect.catchIf(hasStatus(404), () => Effect.succeed(false))
-    )
-  }).pipe(Effect.withSpan("GitHub.Issues.removeLabel", { attributes: spanAttributes(owner, repo, number) }))
+    })
+      |> Effect.as(%, true)
+      |> Effect.catchIf(%, hasStatus(404), () => Effect.succeed(false)))
+  }) |> withSpan(%, "GitHub.Issues.removeLabel", { attributes: spanAttributes(owner, repo, number) })
 
 /**
  * Creates a repository label: `POST /repos/{owner}/{repo}/labels`. Answers
@@ -625,13 +614,12 @@ export const createLabel = (
   owner: string,
   repo: string,
   input: { readonly name: string; readonly color: string; readonly description?: string | undefined }
-): Effect.Effect<boolean, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const label = yield* requireNewLabel(input)
-    return yield* client.request("POST", `/repos/${repository}/labels`, label, { retryUnsafeWrites: true }).pipe(
-      Effect.as(true),
-      Effect.catchIf(hasStatus(422), () => Effect.succeed(false))
-    )
-  }).pipe(Effect.withSpan("GitHub.Issues.createLabel", { attributes: spanAttributes(owner, repo) }))
+): boolean!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const label = try requireNewLabel(input)
+    return try (client.request("POST", `/repos/${repository}/labels`, label, { retryUnsafeWrites: true })
+      |> Effect.as(%, true)
+      |> Effect.catchIf(%, hasStatus(422), () => Effect.succeed(false)))
+  }) |> withSpan(%, "GitHub.Issues.createLabel", { attributes: spanAttributes(owner, repo) })

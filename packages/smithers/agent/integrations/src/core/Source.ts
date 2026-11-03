@@ -8,8 +8,8 @@
 import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
-import { Failure, fromIntegrationError, toIntegrationError } from "./ActionFailure.ts"
-import { CursorStore } from "./CursorStore.ts"
+import { Failure, fromIntegrationError, toIntegrationError } from "./ActionFailure.vibe"
+import { CursorStore } from "./CursorStore.vibe"
 import { ExternalEvent } from "./ExternalEvent.vibe"
 import { IntegrationError } from "./IntegrationError.ts"
 

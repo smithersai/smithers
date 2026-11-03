@@ -45,11 +45,11 @@
 
 import { Action, FlowRuntime, type RetryPolicy } from "@smthrs/flow"
 import { Effect, Layer, Option, Schema } from "effect"
-import { Failure, fromIntegrationError, retryPolicy as stepRetryPolicy } from "../core/ActionFailure.ts"
+import { Failure, fromIntegrationError, retryPolicy as stepRetryPolicy } from "../core/ActionFailure.vibe"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { withWriteLock } from "./internal/WriteLock.ts"
-import { IssueNumber, Owner, Repo, requireRepositoryPath } from "./Repository.ts"
+import { IssueNumber, Owner, Repo, requireRepositoryPath } from "./Repository.vibe"
 
 /**
  * What {@link CommentOnIssue} needs.

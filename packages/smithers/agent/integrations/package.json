@@ -57,8 +57,8 @@
       "default": "./.vibelang/js/src/core/AccessToken.js"
     },
     "./core/ActionFailure": {
-      "types": "./src/core/ActionFailure.ts",
-      "vibelang-source": "./src/core/ActionFailure.ts",
+      "types": "./.vibe/declarations/src/core/ActionFailure.d.vibe.ts",
+      "vibelang-source": "./src/core/ActionFailure.vibe",
       "default": "./.vibelang/js/src/core/ActionFailure.js"
     },
     "./core/AuthorizationUrl": {
@@ -67,8 +67,8 @@
       "default": "./.vibelang/js/src/core/AuthorizationUrl.js"
     },
     "./core/Channel": {
-      "types": "./src/core/Channel.ts",
-      "vibelang-source": "./src/core/Channel.ts",
+      "types": "./.vibe/declarations/src/core/Channel.d.vibe.ts",
+      "vibelang-source": "./src/core/Channel.vibe",
       "default": "./.vibelang/js/src/core/Channel.js"
     },
     "./core/Connection": {
@@ -77,8 +77,8 @@
       "default": "./.vibelang/js/src/core/Connection.js"
     },
     "./core/CursorStore": {
-      "types": "./src/core/CursorStore.ts",
-      "vibelang-source": "./src/core/CursorStore.ts",
+      "types": "./.vibe/declarations/src/core/CursorStore.d.vibe.ts",
+      "vibelang-source": "./src/core/CursorStore.vibe",
       "default": "./.vibelang/js/src/core/CursorStore.js"
     },
     "./core/ExternalEvent": {
@@ -162,8 +162,8 @@
       "default": "./.vibelang/js/src/github/GitHubClient.js"
     },
     "./github/Issues": {
-      "types": "./src/github/Issues.ts",
-      "vibelang-source": "./src/github/Issues.ts",
+      "types": "./.vibe/declarations/src/github/Issues.d.vibe.ts",
+      "vibelang-source": "./src/github/Issues.vibe",
       "default": "./.vibelang/js/src/github/Issues.js"
     },
     "./github/Payload": {
@@ -182,13 +182,13 @@
       "default": "./.vibelang/js/src/github/RateLimit.js"
     },
     "./github/Repository": {
-      "types": "./src/github/Repository.ts",
-      "vibelang-source": "./src/github/Repository.ts",
+      "types": "./.vibe/declarations/src/github/Repository.d.vibe.ts",
+      "vibelang-source": "./src/github/Repository.vibe",
       "default": "./.vibelang/js/src/github/Repository.js"
     },
     "./github/Sync": {
-      "types": "./src/github/Sync.ts",
-      "vibelang-source": "./src/github/Sync.ts",
+      "types": "./.vibe/declarations/src/github/Sync.d.vibe.ts",
+      "vibelang-source": "./src/github/Sync.vibe",
       "default": "./.vibelang/js/src/github/Sync.js"
     },
     "./index": {

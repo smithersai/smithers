@@ -42,7 +42,7 @@ import * as HttpClient from "effect/http/HttpClient"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { redactedError } from "../core/RedactedError.ts"
 import * as GitHubClient from "./GitHubClient.ts"
-import { isRepo, requireRepositoryPath } from "./Repository.ts"
+import { isRepo, requireRepositoryPath } from "./Repository.vibe"
 
 /**
  * What a GitHub App authenticates with.

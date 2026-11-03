@@ -22,7 +22,7 @@
 
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
-import { requireRepositoryPath } from "./Repository.ts"
+import { requireRepositoryPath } from "./Repository.vibe"
 
 /**
  * The states GitHub takes: running (`pending`), passed (`success`), failed

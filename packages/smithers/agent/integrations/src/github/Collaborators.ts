@@ -12,7 +12,7 @@
 import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
-import { requireRepositoryPath } from "./Repository.ts"
+import { requireRepositoryPath } from "./Repository.vibe"
 
 /**
  * A person's or App's access to a repository.
