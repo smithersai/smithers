@@ -5,9 +5,9 @@ import {
   engineProjectionPending,
   engineRunEvidence,
   engineTraceFromJournal
-} from "../src/EngineTrace.js"
-import type { JournalRecord } from "../src/RunTrace.js"
-import { monitorFromJournal, traceFromJournal, turnNarratives } from "../src/RunTrace.js"
+} from "../src/EngineTrace.vibe"
+import type { JournalRecord } from "../src/RunTrace.vibe"
+import { monitorFromJournal, traceFromJournal, turnNarratives } from "../src/RunTrace.vibe"
 
 const nativeRecord = (eventType: string, payload: unknown) => ({ eventType, payload })
 

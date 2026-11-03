@@ -26,12 +26,12 @@ export * as Diagnosis from "./Diagnosis.ts"
 /**
  * @since 1.0.0 @category projections
  */
-export * as RunTrace from "./RunTrace.ts"
+export * as RunTrace from "./RunTrace.vibe"
 
 /**
  * @since 1.0.0 @category projections
  */
-export * as EngineTrace from "./EngineTrace.ts"
+export * as EngineTrace from "./EngineTrace.vibe"
 
 /**
  * @since 1.0.0 @category projections
@@ -78,4 +78,4 @@ export * as Sync from "@smthrs/sync"
 /**
  * @since 1.0.0 @category projections
  */
-export * as InspectionJournal from "./InspectionJournal.ts"
+export * as InspectionJournal from "./InspectionJournal.vibe"

@@ -19,9 +19,8 @@
 
 import { CallFact } from "@smthrs/journal"
 import { CallPresentation, FlowActivity, type FlowDescriptor } from "@smthrs/registry/Descriptor"
-import { Schema } from "effect"
 import { callScope, openCallIndex } from "./Diagnosis.ts"
-import { engineExecutionEvidence, engineTraceFromJournal } from "./EngineTrace.ts"
+import { engineExecutionEvidence, engineTraceFromJournal } from "./EngineTrace.vibe"
 import { ACTION_RENDERINGS } from "./internal/actionRenderings.ts"
 import { type CallEventFilter, callEventFilter, nativeStepEvent, uniqueCallEvents } from "./internal/callEvents.vibe"
 import { inspectLabel } from "./internal/inspectLabels.ts"

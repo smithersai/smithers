@@ -4,8 +4,7 @@
  */
 
 import { CallFact, StepFact } from "@smthrs/journal"
-import { Option, Schema } from "effect"
-import { type JournalRecord, monitorFromJournal, type TraceRun } from "./RunTrace.ts"
+import { type JournalRecord, monitorFromJournal, type TraceRun } from "./RunTrace.vibe"
 
 /** A redacted event released by RunInspection.
  * @since 1.0.0
