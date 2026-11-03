@@ -103,4 +103,4 @@ export * as CompensationHandlers from "./CompensationHandlers.vibe";
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "../../../src/Migrations.ts";
+export * as Migrations from "./Migrations.vibe";

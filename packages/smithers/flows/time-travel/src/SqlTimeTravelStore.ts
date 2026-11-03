@@ -36,7 +36,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectBoundary from "./EffectBoundary.ts"
 import { forkCreatedEventType, Frame, type LineageEdge, LineageEdgeKind } from "./Frame.vibe"
 import * as LineageTree from "./internal/LineageTree.ts"
-import * as Migrations from "./Migrations.ts"
+import * as Migrations from "./Migrations.vibe"
 import { error, TimeTravelError } from "./TimeTravelError.vibe"
 import * as TimeTravelStore from "./TimeTravelStore.ts"
 

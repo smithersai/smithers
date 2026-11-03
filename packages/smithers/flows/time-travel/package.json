@@ -41,14 +41,38 @@
     "./internal/*": null,
     "./*/index": null,
     "./CompensationHandlers": "./src/CompensationHandlers.vibe",
-    "./EffectBoundary": "./src/EffectBoundary.ts",
+    "./EffectBoundary": {
+      "types": "./src/EffectBoundary.ts",
+      "vibelang-source": "./src/EffectBoundary.ts",
+      "default": "./.vibelang/js/src/EffectBoundary.js"
+    },
     "./Frame": "./src/Frame.vibe",
-    "./MemoryTimeTravelStore": "./src/MemoryTimeTravelStore.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./SqlTimeTravelStore": "./src/SqlTimeTravelStore.ts",
-    "./TimeTravel": "./src/TimeTravel.ts",
+    "./MemoryTimeTravelStore": {
+      "types": "./src/MemoryTimeTravelStore.ts",
+      "vibelang-source": "./src/MemoryTimeTravelStore.ts",
+      "default": "./.vibelang/js/src/MemoryTimeTravelStore.js"
+    },
+    "./Migrations": {
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./SqlTimeTravelStore": {
+      "types": "./src/SqlTimeTravelStore.ts",
+      "vibelang-source": "./src/SqlTimeTravelStore.ts",
+      "default": "./.vibelang/js/src/SqlTimeTravelStore.js"
+    },
+    "./TimeTravel": {
+      "types": "./src/TimeTravel.ts",
+      "vibelang-source": "./src/TimeTravel.ts",
+      "default": "./.vibelang/js/src/TimeTravel.js"
+    },
     "./TimeTravelError": "./src/TimeTravelError.vibe",
-    "./TimeTravelStore": "./src/TimeTravelStore.ts",
+    "./TimeTravelStore": {
+      "types": "./src/TimeTravelStore.ts",
+      "vibelang-source": "./src/TimeTravelStore.ts",
+      "default": "./.vibelang/js/src/TimeTravelStore.js"
+    },
     "./index": {
       "types": "./.vibe/declarations/src/index.d.vibe.ts",
       "default": "./src/index.vibe"
@@ -64,7 +88,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
