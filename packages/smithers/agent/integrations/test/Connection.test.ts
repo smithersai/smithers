@@ -13,7 +13,7 @@ import {
   decode,
   personalPolicy,
   resolveSecret
-} from "../src/core/Connection.vibe"
+} from "../src/core/Connection.ts"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 
 const KEY = Redacted.make(Buffer.from(new Uint8Array(32).fill(7)).toString("base64"))

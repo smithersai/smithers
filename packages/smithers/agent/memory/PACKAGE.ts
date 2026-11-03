@@ -144,7 +144,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Namespace.vibe",
-        "src/Recall.vibe",
+        "src/Recall.ts",
         "src/Flows.ts",
         "src/RecallSemantic.ts",
         "src/internal/Search.ts"
@@ -159,7 +159,7 @@ const securityReview = Smithers.SecurityReview({
         "A vector with non-finite, missing, or mismatched-dimension components stored or compared without rejection.",
         "Stored vector bytes decoded without a length check in VectorBytes."
       ],
-      paths: ["src/Embedding.vibe", "src/RecallSemantic.ts", "src/internal/VectorBytes.ts"]
+      paths: ["src/Embedding.ts", "src/RecallSemantic.ts", "src/internal/VectorBytes.ts"]
     },
     {
       id: "model-write-provenance",
@@ -171,7 +171,7 @@ const securityReview = Smithers.SecurityReview({
         "runRemember recording empty provenance, so a model-written fact is indistinguishable from an operator-written one.",
         "putFact replacing an existing fact key written by a different source without superseding or recording the prior author."
       ],
-      paths: ["src/Flows.ts", "src/Namespace.vibe", "src/Recall.vibe", "src/internal/Facts.ts", "src/internal/Store.ts"]
+      paths: ["src/Flows.ts", "src/Namespace.vibe", "src/Recall.ts", "src/internal/Facts.ts", "src/internal/Store.ts"]
     },
     {
       id: "ttl-and-retention",

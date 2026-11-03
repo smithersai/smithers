@@ -1,6 +1,6 @@
 import { Cause, Effect, Layer, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Endpoint from "../src/Endpoint.vibe"
+import * as Endpoint from "../src/Endpoint.ts"
 import * as NodeOtel from "../src/NodeOtel.vibe"
 import * as Otlp from "../src/Otlp.ts"
 

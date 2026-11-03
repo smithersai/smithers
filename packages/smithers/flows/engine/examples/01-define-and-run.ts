@@ -13,29 +13,30 @@ import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 export const Greet = Action.make("examples/Greet", {
   payload: { name: Schema.String },
-  success: Schema.String,
+  success: Schema.String
 })
 
 export const Greeting = Flow.make("examples/Greeting", {
   payload: { name: Schema.String },
   success: Schema.String,
-  body: (payload) => Greet.call(payload),
+  body: (payload) => Greet.call(payload)
 })
 
 const GreetingLayer = Layer.mergeAll(
-  Greet.toLayer(({ name }) => `Hello, ${name}.`),
-  Interpreter.layer(Greeting),
+  Greet.toLayer(({ name }) => Effect.succeed(`Hello, ${name}.`)),
+  Interpreter.layer(Greeting)
 ).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
   // An action dispatch is recorded under a derived step identity, so the
   // engine needs a `Crypto` even in memory. A browser program supplies its own;
   // this one is Node.
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 /**
@@ -43,12 +44,13 @@ const GreetingLayer = Layer.mergeAll(
  * an `idempotencyKey`, the default source mints a fresh UUID for each call.
  * Retain the id to reattach to the same execution.
  */
-export const main: string!! = Greeting.execute(
+export const main: Effect.Effect<string> = Greeting.execute(
   { name: "Ada" },
-  { executionId: "greeting-ada-1" },
-)
+  { executionId: "greeting-ada-1" }
+).pipe(
   // `execute` fails typed when a payload does not satisfy the flow's schema.
   // This example constructs a statically valid payload, so a refusal here
   // would be a defect in the example, not an error a caller handles.
-  |> Effect.orDie(%)
-  |> Effect.provide(%, GreetingLayer)
+  Effect.orDie,
+  Effect.provide(GreetingLayer)
+)

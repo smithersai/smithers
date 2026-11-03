@@ -54,7 +54,7 @@ export * as ExecutionObject from "./ExecutionObject.ts"
  *
  * @since 1.0.0
  */
-export * as EdgeCache from "./EdgeCache.vibe"
+export * as EdgeCache from "./EdgeCache.ts"
 
 /**
  * A browser terminal attached to a tmux session in a Durable Object's

@@ -8,7 +8,7 @@
  */
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as CellHistory from "../src/CellHistory.vibe"
+import * as CellHistory from "../src/CellHistory.ts"
 
 const run = <A>(effect: Effect.Effect<A>): Promise<A> => Effect.runPromise(effect)
 

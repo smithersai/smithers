@@ -6,7 +6,7 @@ import { createHmac } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import * as Core from "../src/core/Channel.ts"
 import { readHeader } from "../src/core/JsonPath.ts"
-import { GITHUB_SIGNATURE_PREFIX, verifySignature } from "../src/core/Signature.vibe"
+import { GITHUB_SIGNATURE_PREFIX, verifySignature } from "../src/core/Signature.ts"
 
 /** Signs a test delivery with `node:crypto`, independent of the verifier under test. */
 const computeHmacSha256Hex = (payload: string, secret: string) =>

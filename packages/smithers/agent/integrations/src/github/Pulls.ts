@@ -32,11 +32,12 @@
  * @since 1.0.0
  */
 
+import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { RECONCILE_PAGES } from "./Actions.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { IssueUser, WRITE_ID_PATTERN, writeIdOf } from "./Issues.ts"
-import { requireBranch } from "./Refs.vibe"
+import { requireBranch } from "./Refs.ts"
 import { IssueNumber, requireRepositoryPath } from "./Repository.ts"
 
 /**
@@ -58,8 +59,8 @@ export const PullEnd = Schema.Struct({ ref: Schema.String, sha: Schema.String })
 export const PullBase = Schema.Struct({
   ...PullEnd.fields,
   repo: Schema.NullOr(Schema.Struct({ default_branch: Schema.String })).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
+    Schema.withDecodingDefault(Effect.succeed(null))
+  )
 })
 
 /**
@@ -92,7 +93,7 @@ export const PullRequest = Schema.Struct({
   changed_files: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   created_at: Schema.String,
   updated_at: Schema.String,
-  closed_at: Schema.NullOr(Schema.String),
+  closed_at: Schema.NullOr(Schema.String)
 })
 
 /**
@@ -114,9 +115,9 @@ export const PullCommit = Schema.Struct({
   sha: Schema.String,
   commit: Schema.Struct({
     message: Schema.String,
-    author: Schema.NullOr(Schema.Struct({ name: Schema.String, date: Schema.String })),
+    author: Schema.NullOr(Schema.Struct({ name: Schema.String, date: Schema.String }))
   }),
-  author: IssueUser,
+  author: IssueUser
 })
 
 /**
@@ -141,7 +142,7 @@ export const Review = Schema.Struct({
   body: Schema.NullOr(Schema.String),
   state: Schema.String,
   commit_id: Schema.NullOr(Schema.String),
-  submitted_at: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  submitted_at: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null)))
 })
 
 /**
@@ -189,7 +190,7 @@ export interface Merged {
   readonly merged: boolean
 }
 
-schema MergeAnswer { sha: string; merged: boolean }
+const MergeAnswer = Schema.Struct({ sha: Schema.String, merged: Schema.Boolean })
 
 const SHA = /^[0-9a-f]{40}$/
 
@@ -197,69 +198,69 @@ const invalid = (field: string, message: string, value?: unknown): IntegrationEr
   new IntegrationError("invalid-config", message, {
     field,
     ...(value === undefined ? {} : { value: typeof value === "string" ? value.slice(0, 64) : typeof value }),
-    retryable: false,
+    retryable: false
   })
 
-const requireNumber = effect (number: number): number!IntegrationError =>
+const requireNumber = (number: number): Effect.Effect<number, IntegrationError> =>
   Schema.is(IssueNumber)(number)
-    ? number
-    : throw invalid("number", "A GitHub pull request number must be a positive integer.", number)
+    ? Effect.succeed(number)
+    : Effect.fail(invalid("number", "A GitHub pull request number must be a positive integer.", number))
 
-const requireSha = effect (field: string, sha: string): string!IntegrationError =>
+const requireSha = (field: string, sha: string): Effect.Effect<string, IntegrationError> =>
   typeof sha === "string" && SHA.test(sha)
-    ? sha
-    : throw invalid(field, "A commit SHA must be 40 lowercase hex digits.", sha)
+    ? Effect.succeed(sha)
+    : Effect.fail(invalid(field, "A commit SHA must be 40 lowercase hex digits.", sha))
 
 // A finder that ran out of pages without a match cannot say the write was never made; see `Issues`.
 const incomplete = (operation: string): IntegrationError =>
   new IntegrationError(
     "poll-failed",
     `${operation}: the search ran out of its ${RECONCILE_PAGES}-page budget before it could rule the write out.`,
-    { operation, incomplete: true, retryable: false },
+    { operation, incomplete: true, retryable: false }
   )
 
-const requireWriteId = effect (writeId: string): string!IntegrationError =>
+const requireWriteId = (writeId: string): Effect.Effect<string, IntegrationError> =>
   typeof writeId === "string" && WRITE_ID_PATTERN.test(writeId)
-    ? writeId
-    : throw invalid("writeId", "A write id must be 1 to 100 letters, digits and hyphens.", writeId)
+    ? Effect.succeed(writeId)
+    : Effect.fail(invalid("writeId", "A write id must be 1 to 100 letters, digits and hyphens.", writeId))
 
-const requireMethod = effect (method: MergeMethod): MergeMethod!IntegrationError =>
+const requireMethod = (method: MergeMethod): Effect.Effect<MergeMethod, IntegrationError> =>
   method === "squash" || method === "merge" || method === "rebase"
-    ? method
-    : throw invalid("method", "A merge method is squash, merge or rebase.", method)
+    ? Effect.succeed(method)
+    : Effect.fail(invalid("method", "A merge method is squash, merge or rebase.", method))
 
-const requireUpdateMethod = effect (method: UpdateMethod): UpdateMethod!IntegrationError =>
+const requireUpdateMethod = (method: UpdateMethod): Effect.Effect<UpdateMethod, IntegrationError> =>
   method === "merge" || method === "rebase"
-    ? method
-    : throw invalid("method", "A branch update method is merge or rebase.", method)
+    ? Effect.succeed(method)
+    : Effect.fail(invalid("method", "A branch update method is merge or rebase.", method))
 
-const requireNodeId = effect (field: string, nodeId: string): string!IntegrationError =>
+const requireNodeId = (field: string, nodeId: string): Effect.Effect<string, IntegrationError> =>
   typeof nodeId === "string" && /^[A-Za-z0-9_=-]{1,100}$/.test(nodeId)
-    ? nodeId
-    : throw invalid(field, "A pull request's node id is 1 to 100 letters, digits, - and _.", nodeId)
+    ? Effect.succeed(nodeId)
+    : Effect.fail(invalid(field, "A pull request's node id is 1 to 100 letters, digits, - and _.", nodeId))
 
-const requireEvent = effect (event: ReviewEvent): ReviewEvent!IntegrationError =>
+const requireEvent = (event: ReviewEvent): Effect.Effect<ReviewEvent, IntegrationError> =>
   event === "COMMENT" || event === "APPROVE" || event === "REQUEST_CHANGES"
-    ? event
-    : throw invalid("event", "A review event is COMMENT, APPROVE or REQUEST_CHANGES.", event)
+    ? Effect.succeed(event)
+    : Effect.fail(invalid("event", "A review event is COMMENT, APPROVE or REQUEST_CHANGES.", event))
 
 const decodeFailed = (path: string, cause: unknown): IntegrationError =>
   new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
     method: "GET",
-    path,
+    path
   }, { cause })
 
 const decodeAll = <A>(
   schema: Schema.Decoder<A>,
   items: ReadonlyArray<unknown>,
-  path: string,
-): ReadonlyArray<A>!IntegrationError =>
-  Schema.decodeUnknownEffect(Schema.Array(schema))(items) catch effect (cause) => { throw decodeFailed(path, cause) }
+  path: string
+): Effect.Effect<ReadonlyArray<A>, IntegrationError> =>
+  Schema.decodeUnknownEffect(Schema.Array(schema))(items).pipe(Effect.mapError((cause) => decodeFailed(path, cause)))
 
 const spanAttributes = (owner: string, repo: string, number?: number): Record<string, unknown> => ({
   "github.owner": owner,
   "github.repo": repo,
-  ...(number === undefined ? {} : { "github.number": number }),
+  ...(number === undefined ? {} : { "github.number": number })
 })
 
 /**
@@ -272,14 +273,14 @@ const spanAttributes = (owner: string, repo: string, number?: number): Record<st
 export const getPull = (
   owner: string,
   repo: string,
-  number: number,
-): PullRequest!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const pull = try requireNumber(number)
-    return try client.request("GET", `/repos/${repository}/pulls/${pull}`, undefined, { schema: PullRequest })
-  }) |> Effect.withSpan(%, "GitHub.Pulls.getPull", { attributes: spanAttributes(owner, repo, number) })
+  number: number
+): Effect.Effect<PullRequest, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const pull = yield* requireNumber(number)
+    return yield* client.request("GET", `/repos/${repository}/pulls/${pull}`, undefined, { schema: PullRequest })
+  }).pipe(Effect.withSpan("GitHub.Pulls.getPull", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
  * The repository's pull requests, most recently updated first:
@@ -297,19 +298,23 @@ export const listPulls = (
     readonly state?: "open" | "closed" | "all" | undefined
     readonly head?: string | undefined
     readonly maxPages?: number | undefined
-  },
-): { readonly items: ReadonlyArray<PullRequest>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
+  }
+): Effect.Effect<
+  { readonly items: ReadonlyArray<PullRequest>; readonly truncated: boolean },
+  IntegrationError,
+  GitHubClient
+> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
     const search = new URLSearchParams({ state: options?.state ?? "all", sort: "updated", direction: "desc" })
     // The owner was validated with the repository path above.
-    if (options?.head !== undefined) search.set("head", `${owner}:${try requireBranch(options.head)}`)
+    if (options?.head !== undefined) search.set("head", `${owner}:${yield* requireBranch(options.head)}`)
     const path = `/repos/${repository}/pulls`
-    const page = try client.paginate(`${path}?${search.toString()}`, { maxPages: options?.maxPages })
-    const items = try decodeAll(PullRequest, page.items, path)
+    const page = yield* client.paginate(`${path}?${search.toString()}`, { maxPages: options?.maxPages })
+    const items = yield* decodeAll(PullRequest, page.items, path)
     return { items, truncated: page.truncated }
-  }) |> Effect.withSpan(%, "GitHub.Pulls.listPulls", { attributes: spanAttributes(owner, repo) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.listPulls", { attributes: spanAttributes(owner, repo) }))
 
 /**
  * The pull request from branch `head` of the repository itself, open or
@@ -324,16 +329,16 @@ export const listPulls = (
 export const findPullByHead = (
   owner: string,
   repo: string,
-  options: { readonly head: string; readonly writeId?: string | undefined },
-): Option<PullRequest>!IntegrationError!GitHubClient =>
-  (effect {
-    const writeId = options.writeId === undefined ? undefined : try requireWriteId(options.writeId)
-    const listed = try listPulls(owner, repo, { state: "all", head: options.head, maxPages: RECONCILE_PAGES })
+  options: { readonly head: string; readonly writeId?: string | undefined }
+): Effect.Effect<Option.Option<PullRequest>, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const writeId = options.writeId === undefined ? undefined : yield* requireWriteId(options.writeId)
+    const listed = yield* listPulls(owner, repo, { state: "all", head: options.head, maxPages: RECONCILE_PAGES })
     const matches = listed.items.filter((pull) => writeId === undefined || writeIdOf(pull.body) === writeId)
     const earliest = [...matches].sort((a, b) => a.number - b.number)[0]
-    if (earliest === undefined && listed.truncated) throw incomplete("findPullByHead")
+    if (earliest === undefined && listed.truncated) return yield* Effect.fail(incomplete("findPullByHead"))
     return Option.fromUndefinedOr(earliest)
-  }) |> Effect.withSpan(%, "GitHub.Pulls.findPullByHead", { attributes: spanAttributes(owner, repo) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.findPullByHead", { attributes: spanAttributes(owner, repo) }))
 
 /**
  * Opens a pull request from branch `head` into `base`:
@@ -357,24 +362,24 @@ export const createPull = (
     readonly title: string
     readonly body: string
     readonly draft?: boolean | undefined
-  },
-): PullRequest!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const head = try requireBranch(input.head)
-    const base = try requireBranch(input.base)
+  }
+): Effect.Effect<PullRequest, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const head = yield* requireBranch(input.head)
+    const base = yield* requireBranch(input.base)
     if (typeof input.title !== "string" || input.title.trim().length === 0) {
-      throw invalid("title", "A pull request needs a title.")
+      return yield* Effect.fail(invalid("title", "A pull request needs a title."))
     }
-    return try client.request("POST", `/repos/${repository}/pulls`, {
+    return yield* client.request("POST", `/repos/${repository}/pulls`, {
       head,
       base,
       title: input.title,
       body: input.body,
-      draft: input.draft ?? false,
+      draft: input.draft ?? false
     }, { schema: PullRequest })
-  }) |> Effect.withSpan(%, "GitHub.Pulls.createPull", { attributes: spanAttributes(owner, repo) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.createPull", { attributes: spanAttributes(owner, repo) }))
 
 /**
  * Closes pull request `number` without merging it:
@@ -387,17 +392,17 @@ export const createPull = (
 export const closePull = (
   owner: string,
   repo: string,
-  number: number,
-): PullRequest!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const pull = try requireNumber(number)
-    return try client.request("PATCH", `/repos/${repository}/pulls/${pull}`, { state: "closed" }, {
+  number: number
+): Effect.Effect<PullRequest, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const pull = yield* requireNumber(number)
+    return yield* client.request("PATCH", `/repos/${repository}/pulls/${pull}`, { state: "closed" }, {
       schema: PullRequest,
-      retryUnsafeWrites: true,
+      retryUnsafeWrites: true
     })
-  }) |> Effect.withSpan(%, "GitHub.Pulls.closePull", { attributes: spanAttributes(owner, repo, number) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.closePull", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
  * Moves pull request `number` onto base branch `base`:
@@ -414,26 +419,26 @@ export const setBase = (
   owner: string,
   repo: string,
   number: number,
-  base: string,
-): PullRequest!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const pull = try requireNumber(number)
-    const branch = try requireBranch(base)
-    return try client.request("PATCH", `/repos/${repository}/pulls/${pull}`, { base: branch }, {
+  base: string
+): Effect.Effect<PullRequest, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const pull = yield* requireNumber(number)
+    const branch = yield* requireBranch(base)
+    return yield* client.request("PATCH", `/repos/${repository}/pulls/${pull}`, { base: branch }, {
       schema: PullRequest,
-      retryUnsafeWrites: true,
+      retryUnsafeWrites: true
     })
-  }) |> Effect.withSpan(%, "GitHub.Pulls.setBase", { attributes: spanAttributes(owner, repo, number) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.setBase", { attributes: spanAttributes(owner, repo, number) }))
 
 const ReadyAnswer = Schema.Struct({
   data: Schema.optionalKey(Schema.NullOr(Schema.Struct({
     markPullRequestReadyForReview: Schema.NullOr(Schema.Struct({
-      pullRequest: Schema.Struct({ isDraft: Schema.Boolean }),
-    })),
+      pullRequest: Schema.Struct({ isDraft: Schema.Boolean })
+    }))
   }))),
-  errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String }))),
+  errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String })))
 })
 
 /**
@@ -449,36 +454,38 @@ const ReadyAnswer = Schema.Struct({
 export const markReady = (
   owner: string,
   repo: string,
-  nodeId: string,
-): void!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    try requireRepositoryPath(owner, repo)
-    try requireNodeId("nodeId", nodeId)
-    const answer = try client.request("POST", "/graphql", {
-      query: "mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) "
-        + "{ pullRequest { isDraft } } }",
-      variables: { id: nodeId },
+  nodeId: string
+): Effect.Effect<void, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    yield* requireRepositoryPath(owner, repo)
+    yield* requireNodeId("nodeId", nodeId)
+    const answer = yield* client.request("POST", "/graphql", {
+      query: "mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) " +
+        "{ pullRequest { isDraft } } }",
+      variables: { id: nodeId }
     }, { schema: ReadyAnswer, retryUnsafeWrites: true })
     if ((answer.errors !== undefined && answer.errors.length > 0) || !answer.data?.markPullRequestReadyForReview) {
-      throw new IntegrationError("delivery-failed", "GitHub refused to mark the pull request ready.", {
-        status: 422,
-        graphql: true,
-        retryable: false,
-        outcomeUnknown: false,
-      })
+      return yield* Effect.fail(
+        new IntegrationError("delivery-failed", "GitHub refused to mark the pull request ready.", {
+          status: 422,
+          graphql: true,
+          retryable: false,
+          outcomeUnknown: false
+        })
+      )
     }
-  }) |> Effect.withSpan(%, "GitHub.Pulls.markReady", { attributes: spanAttributes(owner, repo) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.markReady", { attributes: spanAttributes(owner, repo) }))
 
 const UpdateBranchAnswer = Schema.Struct({
   data: Schema.optionalKey(Schema.NullOr(Schema.Struct({
     updatePullRequestBranch: Schema.NullOr(Schema.Struct({
-      pullRequest: Schema.NullOr(Schema.Struct({ headRefOid: Schema.String })),
-    })),
+      pullRequest: Schema.NullOr(Schema.Struct({ headRefOid: Schema.String }))
+    }))
   }))),
   errors: Schema.optionalKey(
-    Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) })),
-  ),
+    Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) }))
+  )
 })
 
 /**
@@ -502,36 +509,38 @@ const UpdateBranchAnswer = Schema.Struct({
 export const updateBranch = (
   owner: string,
   repo: string,
-  input: { readonly pullNodeId: string; readonly expectedHeadOid: string; readonly method: UpdateMethod },
-): { readonly headSha: string }!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    try requireRepositoryPath(owner, repo)
-    const pullRequestId = try requireNodeId("pullNodeId", input.pullNodeId)
-    const expectedHeadOid = try requireSha("expectedHeadOid", input.expectedHeadOid)
-    const method = try requireUpdateMethod(input.method)
-    const answer = try client.request("POST", "/graphql", {
-      query: "mutation($input: UpdatePullRequestBranchInput!) "
-        + "{ updatePullRequestBranch(input: $input) { pullRequest { headRefOid } } }",
+  input: { readonly pullNodeId: string; readonly expectedHeadOid: string; readonly method: UpdateMethod }
+): Effect.Effect<{ readonly headSha: string }, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    yield* requireRepositoryPath(owner, repo)
+    const pullRequestId = yield* requireNodeId("pullNodeId", input.pullNodeId)
+    const expectedHeadOid = yield* requireSha("expectedHeadOid", input.expectedHeadOid)
+    const method = yield* requireUpdateMethod(input.method)
+    const answer = yield* client.request("POST", "/graphql", {
+      query: "mutation($input: UpdatePullRequestBranchInput!) " +
+        "{ updatePullRequestBranch(input: $input) { pullRequest { headRefOid } } }",
       variables: {
-        input: { pullRequestId, expectedHeadOid, updateMethod: method === "merge" ? "MERGE" : "REBASE" },
-      },
+        input: { pullRequestId, expectedHeadOid, updateMethod: method === "merge" ? "MERGE" : "REBASE" }
+      }
     }, { schema: UpdateBranchAnswer })
     const pullRequest = answer.data?.updatePullRequestBranch?.pullRequest
     if (
       (answer.errors !== undefined && answer.errors.length > 0) || pullRequest === undefined || pullRequest === null
     ) {
       const type = answer.errors?.[0]?.type
-      throw new IntegrationError("delivery-failed", "GitHub refused to update the pull request's branch.", {
-        status: 422,
-        graphql: true,
-        ...(type === undefined ? {} : { type: type.slice(0, 64) }),
-        retryable: false,
-        outcomeUnknown: false,
-      })
+      return yield* Effect.fail(
+        new IntegrationError("delivery-failed", "GitHub refused to update the pull request's branch.", {
+          status: 422,
+          graphql: true,
+          ...(type === undefined ? {} : { type: type.slice(0, 64) }),
+          retryable: false,
+          outcomeUnknown: false
+        })
+      )
     }
     return { headSha: pullRequest.headRefOid }
-  }) |> Effect.withSpan(%, "GitHub.Pulls.updateBranch", { attributes: spanAttributes(owner, repo) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.updateBranch", { attributes: spanAttributes(owner, repo) }))
 
 /**
  * Merges pull request `number` at exactly `sha`, its head as the person saw
@@ -556,21 +565,21 @@ export const mergePull = (
     readonly method: MergeMethod
     readonly commitTitle?: string | undefined
     readonly commitMessage?: string | undefined
-  },
-): Merged!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const pull = try requireNumber(number)
-    const sha = try requireSha("sha", input.sha)
-    const method = try requireMethod(input.method)
-    return try client.request("PUT", `/repos/${repository}/pulls/${pull}/merge`, {
+  }
+): Effect.Effect<Merged, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const pull = yield* requireNumber(number)
+    const sha = yield* requireSha("sha", input.sha)
+    const method = yield* requireMethod(input.method)
+    return yield* client.request("PUT", `/repos/${repository}/pulls/${pull}/merge`, {
       sha,
       merge_method: method,
       ...(input.commitTitle === undefined ? {} : { commit_title: input.commitTitle }),
-      ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage }),
+      ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage })
     }, { schema: MergeAnswer })
-  }) |> Effect.withSpan(%, "GitHub.Pulls.mergePull", { attributes: spanAttributes(owner, repo, number) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.mergePull", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
  * The commits on pull request `number`, oldest first:
@@ -584,16 +593,20 @@ export const listCommits = (
   owner: string,
   repo: string,
   number: number,
-  options?: { readonly maxPages?: number | undefined },
-): { readonly items: ReadonlyArray<PullCommit>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const pull = try requireNumber(number)
+  options?: { readonly maxPages?: number | undefined }
+): Effect.Effect<
+  { readonly items: ReadonlyArray<PullCommit>; readonly truncated: boolean },
+  IntegrationError,
+  GitHubClient
+> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const pull = yield* requireNumber(number)
     const path = `/repos/${repository}/pulls/${pull}/commits`
-    const page = try client.paginate(path, { maxPages: options?.maxPages ?? 3 })
-    return { items: try decodeAll(PullCommit, page.items, path), truncated: page.truncated }
-  }) |> Effect.withSpan(%, "GitHub.Pulls.listCommits", { attributes: spanAttributes(owner, repo, number) })
+    const page = yield* client.paginate(path, { maxPages: options?.maxPages ?? 3 })
+    return { items: yield* decodeAll(PullCommit, page.items, path), truncated: page.truncated }
+  }).pipe(Effect.withSpan("GitHub.Pulls.listCommits", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
  * The reviews on pull request `number`, oldest first:
@@ -607,16 +620,20 @@ export const listReviews = (
   owner: string,
   repo: string,
   number: number,
-  options?: { readonly maxPages?: number | undefined },
-): { readonly items: ReadonlyArray<Review>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const pull = try requireNumber(number)
+  options?: { readonly maxPages?: number | undefined }
+): Effect.Effect<
+  { readonly items: ReadonlyArray<Review>; readonly truncated: boolean },
+  IntegrationError,
+  GitHubClient
+> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const pull = yield* requireNumber(number)
     const path = `/repos/${repository}/pulls/${pull}/reviews`
-    const page = try client.paginate(path, { maxPages: options?.maxPages ?? 3 })
-    return { items: try decodeAll(Review, page.items, path), truncated: page.truncated }
-  }) |> Effect.withSpan(%, "GitHub.Pulls.listReviews", { attributes: spanAttributes(owner, repo, number) })
+    const page = yield* client.paginate(path, { maxPages: options?.maxPages ?? 3 })
+    return { items: yield* decodeAll(Review, page.items, path), truncated: page.truncated }
+  }).pipe(Effect.withSpan("GitHub.Pulls.listReviews", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
  * Submits a review on pull request `number` against head `commitId`:
@@ -633,23 +650,23 @@ export const createReview = (
   owner: string,
   repo: string,
   number: number,
-  input: { readonly commitId: string; readonly event: ReviewEvent; readonly body: string },
-): Review!IntegrationError!GitHubClient =>
-  (effect {
-    const client = try GitHubClient
-    const repository = try requireRepositoryPath(owner, repo)
-    const pull = try requireNumber(number)
-    const commitId = try requireSha("commitId", input.commitId)
-    const event = try requireEvent(input.event)
+  input: { readonly commitId: string; readonly event: ReviewEvent; readonly body: string }
+): Effect.Effect<Review, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const pull = yield* requireNumber(number)
+    const commitId = yield* requireSha("commitId", input.commitId)
+    const event = yield* requireEvent(input.event)
     if (event === "COMMENT" && (typeof input.body !== "string" || input.body.trim().length === 0)) {
-      throw invalid("body", "A COMMENT review needs a body.")
+      return yield* Effect.fail(invalid("body", "A COMMENT review needs a body."))
     }
-    return try client.request("POST", `/repos/${repository}/pulls/${pull}/reviews`, {
+    return yield* client.request("POST", `/repos/${repository}/pulls/${pull}/reviews`, {
       commit_id: commitId,
       event,
-      body: input.body,
+      body: input.body
     }, { schema: Review })
-  }) |> Effect.withSpan(%, "GitHub.Pulls.createReview", { attributes: spanAttributes(owner, repo, number) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.createReview", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
  * The review on pull request `number` whose body carries `writeId`'s marker;
@@ -664,12 +681,12 @@ export const findReviewByWrite = (
   owner: string,
   repo: string,
   number: number,
-  options: { readonly writeId: string },
-): Option<Review>!IntegrationError!GitHubClient =>
-  (effect {
-    const writeId = try requireWriteId(options.writeId)
-    const reviews = try listReviews(owner, repo, number, { maxPages: RECONCILE_PAGES })
+  options: { readonly writeId: string }
+): Effect.Effect<Option.Option<Review>, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const writeId = yield* requireWriteId(options.writeId)
+    const reviews = yield* listReviews(owner, repo, number, { maxPages: RECONCILE_PAGES })
     const found = reviews.items.find((review) => writeIdOf(review.body) === writeId)
-    if (found === undefined && reviews.truncated) throw incomplete("findReviewByWrite")
+    if (found === undefined && reviews.truncated) return yield* Effect.fail(incomplete("findReviewByWrite"))
     return Option.fromUndefinedOr(found)
-  }) |> Effect.withSpan(%, "GitHub.Pulls.findReviewByWrite", { attributes: spanAttributes(owner, repo, number) })
+  }).pipe(Effect.withSpan("GitHub.Pulls.findReviewByWrite", { attributes: spanAttributes(owner, repo, number) }))

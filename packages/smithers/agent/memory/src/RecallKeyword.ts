@@ -15,7 +15,7 @@ import { resolveBanks } from "./internal/ResolveNamespace.vibe"
 import type * as MemoryError from "./MemoryError.vibe"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
-import * as Recall from "./Recall.vibe"
+import * as Recall from "./Recall.ts"
 
 /**
  * A row accepted from the store retrieval seam.

@@ -53,7 +53,7 @@ import { digest } from "./internal/Digest.ts"
 import { resolveBanks } from "./internal/ResolveNamespace.vibe"
 import type { MemoryError } from "./MemoryError.vibe"
 import * as MemoryStore from "./MemoryStore.ts"
-import * as Recall from "./Recall.vibe"
+import * as Recall from "./Recall.ts"
 import * as SnapshotRecorder from "./SnapshotRecorder.vibe"
 
 /**

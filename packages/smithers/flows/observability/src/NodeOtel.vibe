@@ -13,7 +13,7 @@ import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import type * as Duration from "effect/Duration"
 import * as Layer from "effect/Layer"
-import * as Endpoint from "./Endpoint.vibe"
+import * as Endpoint from "./Endpoint.ts"
 import * as Resource from "./Resource.ts"
 import type { Configuration as ResourceConfiguration } from "./Resource.ts"
 

@@ -13,7 +13,7 @@
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as MemoryError from "./MemoryError.vibe"
+import * as MemoryError from "./MemoryError.ts"
 
 /**
  * A vector returned by an embedding provider.
@@ -42,8 +42,8 @@ export interface EmbedManyResponse {
  * @since 0.1.0
  */
 export type EmbedMany = (
-  inputs: ReadonlyArray<string>,
-) => ReadonlyArray<ReadonlyArray<number>>!MemoryError.MemoryError
+  inputs: ReadonlyArray<string>
+) => Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, MemoryError.MemoryError>
 
 /**
  * Embedding service shape, mirroring the unstable Effect EmbeddingModel
@@ -53,8 +53,8 @@ export type EmbedMany = (
  * @since 0.1.0
  */
 export interface Service {
-  readonly embed: (input: string) => EmbedResponse!MemoryError.MemoryError
-  readonly embedMany: (inputs: ReadonlyArray<string>) => EmbedManyResponse!MemoryError.MemoryError
+  readonly embed: (input: string) => Effect.Effect<EmbedResponse, MemoryError.MemoryError>
+  readonly embedMany: (inputs: ReadonlyArray<string>) => Effect.Effect<EmbedManyResponse, MemoryError.MemoryError>
 }
 
 /**
@@ -70,9 +70,9 @@ const unavailable = (message: string): MemoryError.MemoryError =>
 
 const validate = (
   inputs: ReadonlyArray<string>,
-  vectors: ReadonlyArray<ReadonlyArray<number>>,
-): EmbedManyResponse!MemoryError.MemoryError => {
-  const invalid = effect () => throw unavailable("embedding provider returned an invalid batch")
+  vectors: ReadonlyArray<ReadonlyArray<number>>
+): Effect.Effect<EmbedManyResponse, MemoryError.MemoryError> => {
+  const invalid = () => Effect.fail(unavailable("embedding provider returned an invalid batch"))
   const dimensions = vectors[0]?.length
   if (vectors.length !== inputs.length || dimensions === undefined || dimensions === 0) return invalid()
   const embeddings: Array<EmbedResponse> = []
@@ -87,7 +87,7 @@ const validate = (
     }
     embeddings.push({ vector: values })
   }
-  return { embeddings }
+  return Effect.succeed({ embeddings })
 }
 
 /**
@@ -99,17 +99,18 @@ const validate = (
 export const make = (embedMany: EmbedMany): Service => {
   const service: Service = {
     embed: (input) =>
-      service.embedMany([input])
-      |> Effect.flatMap(%, effect (response) => {
-        const embedding = response.embeddings[0]
-        return embedding === undefined
-          ? throw unavailable("embedding provider returned an empty batch")
-          : embedding
-      }),
+      service.embedMany([input]).pipe(
+        Effect.flatMap((response) => {
+          const embedding = response.embeddings[0]
+          return embedding === undefined
+            ? Effect.fail(unavailable("embedding provider returned an empty batch"))
+            : Effect.succeed(embedding)
+        })
+      ),
     embedMany: (inputs) =>
       inputs.length === 0
-        ? { embeddings: [] }
-        : (embedMany(inputs) |> Effect.flatMap(%, (vectors) => validate(inputs, vectors))),
+        ? Effect.succeed({ embeddings: [] })
+        : embedMany(inputs).pipe(Effect.flatMap((vectors) => validate(inputs, vectors)))
   }
   return Embedding.of(service)
 }
@@ -128,7 +129,7 @@ export const layer = (embedMany: EmbedMany): Layer.Layer<Embedding> => Layer.suc
  * @category constructors
  * @since 0.1.0
  */
-export const makeNoop = (): Service => make(effect () => throw unavailable("no embedding provider is configured"))
+export const makeNoop = (): Service => make(() => Effect.fail(unavailable("no embedding provider is configured")))
 
 /**
  * Provides the unavailable embedding implementation.
@@ -146,10 +147,12 @@ export const layerNoop: Layer.Layer<Embedding> = Layer.succeed(Embedding)(makeNo
  * @since 0.1.0
  */
 export const layerFake = (
-  vectors: ReadonlyArray<ReadonlyArray<number>> | ((input: string, index: number) => ReadonlyArray<number>),
+  vectors: ReadonlyArray<ReadonlyArray<number>> | ((input: string, index: number) => ReadonlyArray<number>)
 ): Layer.Layer<Embedding> =>
   layer((inputs) =>
-    inputs.map((input, index) => typeof vectors === "function" ? vectors(input, index) : vectors[index] ?? [])
+    Effect.succeed(
+      inputs.map((input, index) => typeof vectors === "function" ? vectors(input, index) : vectors[index] ?? [])
+    )
   )
 
 /**
@@ -185,7 +188,7 @@ export const inProcessVector = (input: string): ReadonlyArray<number> => {
  * @category constructors
  * @since 0.1.0
  */
-export const makeInProcess = (): Service => make((inputs) => inputs.map(inProcessVector))
+export const makeInProcess = (): Service => make((inputs) => Effect.succeed(inputs.map(inProcessVector)))
 
 /**
  * Provides deterministic in-process embeddings with no provider dependency.

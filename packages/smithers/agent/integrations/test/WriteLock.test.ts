@@ -1,7 +1,7 @@
 import { Deferred, Effect, Fiber } from "effect"
 import { TestClock } from "effect/testing"
 import { expect, it } from "vitest"
-import { withWriteLock } from "../src/github/internal/WriteLock.vibe"
+import { withWriteLock } from "../src/github/internal/WriteLock.ts"
 
 it("cancelling a waiter preserves the owner's gate and admits the next waiter after release", async () => {
   await Effect.runPromise(

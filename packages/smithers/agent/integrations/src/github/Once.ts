@@ -36,8 +36,8 @@ import { IntegrationError } from "../core/IntegrationError.ts"
 import * as Commits from "./Commits.vibe"
 import type { GitHubClient } from "./GitHubClient.ts"
 import * as Issues from "./Issues.ts"
-import * as Pulls from "./Pulls.vibe"
-import * as Refs from "./Refs.vibe"
+import * as Pulls from "./Pulls.ts"
+import * as Refs from "./Refs.ts"
 
 /**
  * The commit trailer that carries a write's key.

@@ -7,6 +7,7 @@
  * `@smthrs/harness`). The test beside this example provides both.
  */
 import { type Interactions, PresentationRealm, ViewCode } from "@smthrs/views"
+import * as Effect from "effect/Effect"
 
 /** A two-button counter: one state interaction, no model call per click. */
 export const counter = `import { Button, Card } from "@smthrs/ui"
@@ -27,10 +28,11 @@ export default function View({ props, state }: ViewProps<number>) {
 `
 
 /** Checks and renders `source`, then applies `event` the way a click would. */
-export const program = effect (source: string, event: Interactions.Event) => {
-  const realm = PresentationRealm.PresentationRealm()
-  const module = try ViewCode.check(source, { components: realm.components })
-  const first = realm.render({ module, props: { label: "Count" }, state: 0 })
-  const next = realm.interact({ module, props: { label: "Count" }, state: 0, event })
-  return { interactions: module.interactions, first, next }
-}
+export const program = (source: string, event: Interactions.Event) =>
+  Effect.gen(function*() {
+    const realm = yield* PresentationRealm.PresentationRealm
+    const module = yield* ViewCode.check(source, { components: realm.components })
+    const first = yield* realm.render({ module, props: { label: "Count" }, state: 0 })
+    const next = yield* realm.interact({ module, props: { label: "Count" }, state: 0, event })
+    return { interactions: module.interactions, first, next }
+  })
