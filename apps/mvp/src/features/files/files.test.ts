@@ -11,6 +11,7 @@ import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Effect, Exit, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { repoAuthority } from "../../test/repoAuthority"
 import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
 import { runFlow } from "../../../worker/test/flowHost"
@@ -394,7 +395,7 @@ test("a headless device keeps and closes tabs without a routed repository follow
     expect(yield* store.drop(AT, "README.md")).toBe(true)
     expect(yield* store.tabs.toArray).toEqual([stored(row("other.ts", 2))])
     expect(yield* store.drop(AT, "README.md")).toBe(false)
-  }).pipe(Effect.provide(FilesStore.layer.pipe(Layer.provide(Persistence.memory)))))
+  }).pipe(Effect.provide(FilesStore.layer.pipe(Layer.provide(repoAuthority), Layer.provide(Persistence.memory)))))
 })
 
 test("a host without a router pathname refuses file actions even with repository rows present", async () => {

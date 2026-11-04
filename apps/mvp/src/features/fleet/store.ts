@@ -56,7 +56,7 @@ const shapeOf = (origin: string, route: string, repo: string) => ({
 const refusable = <A extends object>(
   scope: Scope.Scope,
   auth: Option.Option<AuthStore["Service"]>,
-  repos: Option.Option<RepoStore["Service"]>,
+  repos: RepoStore["Service"],
   id: string,
   make: Effect.Effect<ElectricCollection.ElectricCollection<A>, never, Scope.Scope>,
 ) =>
@@ -77,7 +77,7 @@ const refusable = <A extends object>(
     const again = Effect.gen(function* () {
       if (Option.isSome(auth)) {
         const session = yield* auth.value.session.get(SESSION)
-        const row = Option.isSome(repos) ? Option.getOrUndefined(yield* repos.value.roles.get(id)) : undefined
+        const row = Option.getOrUndefined(yield* repos.roles.get(id))
         if (Option.isSome(session) && repoVisibility(session.value, row) !== "show") return
       }
       yield* running.open
@@ -96,19 +96,17 @@ const refusable = <A extends object>(
         Effect.forkIn(scope, { startImmediately: true }),
       )
     }
-    if (Option.isSome(repos)) {
-      yield* repos.value.rolesState.rows.pipe(
-        Stream.map((rows) => rows.find((row) => row.id === id)),
-        // Each answer that grants something, by what it grants: Member to Maintainer starts machines again.
-        Stream.map((row) => row === undefined || row.refused !== undefined || row.failure !== undefined
-          ? undefined
-          : `${row.role}|${row.own}|${row.workspaceRole ?? ""}|${row.readable ?? ""}`),
-        Stream.changes,
-        Stream.filter((granted) => granted !== undefined),
-        Stream.runForEach(() => again),
-        Effect.forkIn(scope, { startImmediately: true }),
-      )
-    }
+    yield* repos.rolesState.rows.pipe(
+      Stream.map((rows) => rows.find((row) => row.id === id)),
+      // Each answer that grants something, by what it grants: Member to Maintainer starts machines again.
+      Stream.map((row) => row === undefined || row.refused !== undefined || row.failure !== undefined
+        ? undefined
+        : `${row.role}|${row.own}|${row.workspaceRole ?? ""}|${row.readable ?? ""}`),
+      Stream.changes,
+      Stream.filter((granted) => granted !== undefined),
+      Stream.runForEach(() => again),
+      Effect.forkIn(scope, { startImmediately: true }),
+    )
     return { collection, stop }
   })
 
@@ -128,7 +126,7 @@ export class FleetStore extends Context.Service<
       Effect.gen(function* () {
         const scope = yield* Effect.scope
         const auth = yield* Effect.serviceOption(AuthStore)
-        const repos = yield* Effect.serviceOption(RepoStore)
+        const repos = yield* RepoStore
         // Each shape opened, by repository id: a repository's refusal stops it and drops its rows until authority returns.
         const stops = new Map<string, Array<Effect.Effect<void>>>()
         const registered = <A extends object>(repo: string, make: Effect.Effect<ElectricCollection.ElectricCollection<A>, never, Scope.Scope>) =>
@@ -137,17 +135,15 @@ export class FleetStore extends Context.Service<
             const id = repoId(owner, name)
             const { collection, stop } = yield* refusable(scope, auth, repos, id, make)
             stops.set(id, [...(stops.get(id) ?? []), stop])
-            if (Option.isSome(repos) && repos.value.isRefused(id)) yield* stop
+            if (repos.isRefused(id)) yield* stop
             return collection
           })
-        if (Option.isSome(repos)) {
-          yield* repos.value.registerCache(["agent-runs", "machines"], (id) =>
-            Effect.suspend(() => Effect.all(stops.get(id) ?? [], { discard: true })))
-        }
+        yield* repos.registerCache(["agent-runs", "machines"], (id) =>
+          Effect.suspend(() => Effect.all(stops.get(id) ?? [], { discard: true })))
         // What shows of a repository's rows: only through the data gate (repo/gate.ts), so a refusal or a session a
         // reached server couldn't verify drops them in the change that hides the repository, before any eviction.
         const shown = <A extends object & { readonly repoId: string }>(collection: ElectricCollection.ElectricCollection<A>) =>
-          Option.isSome(repos) ? repos.value.gate(collection) : Effect.succeed(collection)
+          repos.gate(collection)
         // Opening a repository twice at once opens it once: each cache runs one lookup per repository and keeps it.
         const runs = yield* Cache.make({
           lookup: (repo: string) =>

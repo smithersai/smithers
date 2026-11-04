@@ -280,7 +280,7 @@ export class RunsStore extends Context.Service<
     RunsStore,
     Effect.gen(function* () {
       const auth = yield* Effect.serviceOption(AuthStore)
-      const repos = yield* Effect.serviceOption(RepoStore)
+      const repos = yield* RepoStore
       const timing = yield* routeTiming
       const attempts = new Map<string, RouteTiming>()
       const scope = yield* Effect.scope
@@ -726,12 +726,12 @@ export class RunsStore extends Context.Service<
         [Stream.map(cloudRuns.changes(), () => undefined), Stream.map(shownRepoRuns.changes(), () => undefined)],
         { concurrency: "unbounded" },
       ).pipe(Stream.runForEach(() => placeAgain), Effect.forkScoped({ startImmediately: true }))
-      /** `rows` as the gate shows them, or every row in an app without the repository store (a test's). */
+      /** `rows` as the repository authority allows them to show. */
       const gated = <A extends object & { readonly repoId?: string | null | undefined }>(
         rows: Source<A>,
         by: By = "repoId",
         also?: (row: Record<string, any>) => ReturnType<typeof Query.eq>,
-      ) => Option.isSome(repos) ? repos.value.gate(rows, by, also) : Effect.succeed(rows)
+      ) => repos.gate(rows, by, also)
       // A read with no content shows as it is: loading, not found, not started, unavailable.
       // A read with no content (loading, not found, not started, unavailable) and a read from this device's own engine
       // are no repository's: they show as they are. One query each, never a union (repo/gate.ts `gate`).
@@ -740,16 +740,14 @@ export class RunsStore extends Context.Service<
       const unattributed = Object.entries(UNATTRIBUTED_RUN_KINDS).flatMap(([kind, why]) => why === null ? [] : [kind])
       const shownCloud = yield* gated(cloudRuns as unknown as Source<CloudRun & { readonly repoId?: string }>, "repo",
         (run) => Query.and(Query.isNull(run.repo), anyOf(unattributed.map((kind) => Query.eq(run.kind, kind)))))
-      if (Option.isSome(repos)) {
-        // A refused repository's run reads and Cloudflare rows go from this tab; their pages read again if it returns.
-        yield* repos.value.registerCache(["run-pages", "cloud-runs"], (id) => Effect.gen(function* () {
-          const reads = (yield* pages.toArray).filter((page) => page.repoId === id).map((page) => page.id)
-          if (reads.length > 0) yield* Effect.ignore(pages.delete(reads))
-          const listed = (yield* cloudRuns.toArray)
-            .filter((run) => run.repo !== null && `github/${run.repo}`.toLowerCase() === id).map((run) => run.runId)
-          if (listed.length > 0) yield* Effect.ignore(cloudRuns.delete(listed))
-        }))
-      }
+      // A refused repository's run reads and Cloudflare rows go from this tab; their pages read again if it returns.
+      yield* repos.registerCache(["run-pages", "cloud-runs"], (id) => Effect.gen(function* () {
+        const reads = (yield* pages.toArray).filter((page) => page.repoId === id).map((page) => page.id)
+        if (reads.length > 0) yield* Effect.ignore(pages.delete(reads))
+        const listed = (yield* cloudRuns.toArray)
+          .filter((run) => run.repo !== null && `github/${run.repo}`.toLowerCase() === id).map((run) => run.runId)
+        if (listed.length > 0) yield* Effect.ignore(cloudRuns.delete(listed))
+      }))
 
       // The runs page's Run form: the repository's flows a person runs by hand, and the chosen one's form, read from
       // ChatApi (docs/features/actions.md#running-a-flow-by-hand). This tab's only.
@@ -805,7 +803,7 @@ export class RunsStore extends Context.Service<
       const opened = new Set<string>()
       const repoRuns = new Map<string, { readonly evict: Effect.Effect<void> }>()
       const openRepoRuns = (owner: string, name: string, route?: RouteTiming) => Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
-        if (Option.isSome(repos)) yield* repos.value.refusalsKnown
+        yield* repos.refusalsKnown
         const repo = `${owner}/${name}`.toLowerCase()
         const attempt = route ?? (yield* timing.begin)
         if (opened.has(repo)) return yield* attempt.record("repo-runs", "reused")
@@ -818,13 +816,13 @@ export class RunsStore extends Context.Service<
           persist: { schemaVersion: 1 },
           shape: { url: `${config.origin}${ACTIONS_SHAPE_ROUTE}?repo=${encodeURIComponent(repo)}`, columnMapper: ElectricCollection.snakeCamelMapper() },
         }).pipe(
-          Effect.provideService(ShapeSource.ShapeSource, memberRunSource(Option.isSome(auth) && Option.isSome(repos) ? revokingSource(yield* ShapeSource.ShapeSource, auth.value, repos.value, repoId(owner, name)) : yield* ShapeSource.ShapeSource, auth, repos, repoId(owner, name))),
+          Effect.provideService(ShapeSource.ShapeSource, memberRunSource(Option.isSome(auth) ? revokingSource(yield* ShapeSource.ShapeSource, auth.value, repos, repoId(owner, name)) : yield* ShapeSource.ShapeSource, auth, Option.some(repos), repoId(owner, name))),
           Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie)
         yield* attempt.record("repo-runs", "ready")
         repoRuns.set(repoId(owner, name), rows)
-        if (Option.isSome(auth) && Option.isSome(repos)) {
+        if (Option.isSome(auth)) {
           // A refusal drops the repository's runs from the device, and from what this tab shows of them.
-          yield* evictOnRefusal(wipeAuthority(auth.value, repositoryAccessChanges(auth.value, repos.value, repoId(owner, name))), [rows]).pipe(
+          yield* evictOnRefusal(wipeAuthority(auth.value, repositoryAccessChanges(auth.value, repos, repoId(owner, name))), [rows]).pipe(
             Effect.forkIn(scope, { startImmediately: true }),
           )
         }
@@ -852,12 +850,10 @@ export class RunsStore extends Context.Service<
         }).pipe(Effect.forkIn(scope, { startImmediately: true }))
       }))
 
-      if (Option.isSome(repos)) {
-        yield* repos.value.registerCache(["repo-runs", "repo-runs-shown"], (id) => {
-          const [owner, name] = id.slice("github/".length).split("/") as [string, string]
-          return Effect.andThen(openRepoRuns(owner, name), Effect.suspend(() => repoRuns.get(id)?.evict ?? Effect.void))
-        })
-      }
+      yield* repos.registerCache(["repo-runs", "repo-runs-shown"], (id) => {
+        const [owner, name] = id.slice("github/".length).split("/") as [string, string]
+        return Effect.andThen(openRepoRuns(owner, name), Effect.suspend(() => repoRuns.get(id)?.evict ?? Effect.void))
+      })
 
       return RunsStore.of({
         scope,

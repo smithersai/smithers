@@ -87,37 +87,31 @@ const make = Effect.gen(function* () {
   const curated = yield* Collection.persisted(CuratedHomesStore)
   const files = yield* Collection.local<FileRow, string>({ id: "home-files", schema: FileRow, getKey: (row) => row.key })
   // A refused repository's homes, which hold its README and manifest, leave the device with its other rows.
-  const repos = yield* Effect.serviceOption(RepoStore)
-  if (Option.isSome(repos)) {
-    yield* repos.value.registerCache(["homes", "curated-homes", "home-files"], (id) => Effect.gen(function* () {
-      // After the device's rows are back: a wipe that ran first would see none, and they'd return after it.
-      yield* Effect.all([homes.restored, curated.restored], { discard: true })
-      yield* Effect.forEach(yield* files.toArray, (row) => row.key.startsWith(`${id}@`) ? Effect.ignore(files.delete(row.key)) : Effect.void, { discard: true })
-      yield* Effect.forEach(yield* homes.toArray, (row) => row.key.startsWith(`${id}@`) ? Effect.ignore(homes.delete(row.key)) : Effect.void, { discard: true })
-      yield* Effect.ignore(curated.delete(id))
-    }))
-  }
+  const repos = yield* RepoStore
+  yield* repos.registerCache(["homes", "curated-homes", "home-files"], (id) => Effect.gen(function* () {
+    // After the device's rows are back: a wipe that ran first would see none, and they'd return after it.
+    yield* Effect.all([homes.restored, curated.restored], { discard: true })
+    yield* Effect.forEach(yield* files.toArray, (row) => row.key.startsWith(`${id}@`) ? Effect.ignore(files.delete(row.key)) : Effect.void, { discard: true })
+    yield* Effect.forEach(yield* homes.toArray, (row) => row.key.startsWith(`${id}@`) ? Effect.ignore(homes.delete(row.key)) : Effect.void, { discard: true })
+    yield* Effect.ignore(curated.delete(id))
+  }))
   const current = yield* Collection.local<CurrentRow, string>({
     id: "home-current",
     schema: CurrentRow,
     getKey: rowId,
     initialData: [emptyCurrent],
   })
-  const shownFiles = Option.isSome(repos) ? yield* repos.value.gate(files) : files
-  let shownHomes: Shown<HomeRow> = homes
-  let shownCurated: Shown<CuratedRow> = curated
-  if (Option.isSome(repos)) {
-    const { track, visible } = repos.value
-    // The shown repository gets a visibility row as the route names it.
-    yield* Effect.acquireRelease(
-      Effect.sync(() => current.tanstack.subscribeChanges((changes) => {
-        for (const change of changes) if (change.type !== "delete") track(change.value.repoId)
-      }, { includeInitialState: true })),
-      (subscription) => Effect.sync(() => subscription.unsubscribe()),
-    )
-    shownHomes = (yield* shownHomesQuery(current, homes, visible)) as unknown as typeof shownHomes
-    shownCurated = (yield* shownCuratedQuery(current, curated, visible)) as unknown as typeof shownCurated
-  }
+  const shownFiles = yield* repos.gate(files)
+  const { track, visible } = repos
+  // The shown repository gets a visibility row as the route names it.
+  yield* Effect.acquireRelease(
+    Effect.sync(() => current.tanstack.subscribeChanges((changes) => {
+      for (const change of changes) if (change.type !== "delete") track(change.value.repoId)
+    }, { includeInitialState: true })),
+    (subscription) => Effect.sync(() => subscription.unsubscribe()),
+  )
+  const shownHomes = (yield* shownHomesQuery(current, homes, visible)) as unknown as Shown<HomeRow>
+  const shownCurated = (yield* shownCuratedQuery(current, curated, visible)) as unknown as Shown<CuratedRow>
   // The live blocks' rows, from the stores that sync them: this person's runs, only those whose conversation may show
   // (the data gate, `StatusStore.shownRuns`), so one repository's home never lists a refused one's runs. A `stack`
   // block's rows are the TODOs store's own (`TodosStore.opened`), and an `issues` block's the issues store's.
@@ -145,8 +139,7 @@ const make = Effect.gen(function* () {
     noAccess,
     files,
     current,
-    // The data gate (repo/gate.ts): the page reads a repository's homes and files only while it may show. A tab
-    // without the repository store has no refusal to keep.
+    // The data gate (repo/gate.ts): the page reads a repository's homes and files only while it may show.
     homeState: yield* homeQuery(current, shownHomes, shownCurated),
     fileState: yield* filesQuery(current, shownFiles),
     /** The one load the routed page runs: opening another repository interrupts it. */

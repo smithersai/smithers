@@ -1,6 +1,6 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, FiberHandle, Layer, Option, Scope, Semaphore, Stream } from "effect"
+import { Context, Effect, FiberHandle, Layer, Scope, Semaphore, Stream } from "effect"
 import { RepoStore } from "../repo/store"
 import { shapeRefusals } from "../issues/source"
 import { DOMAINS_SHAPE_ROUTE } from "./contract"
@@ -64,15 +64,14 @@ export class DomainsStore extends Context.Service<
         })
         const opened = new Map<string, ElectricCollection.ElectricCollection<Domain>>()
         const opening = yield* Semaphore.make(1)
-        const repos = yield* Effect.serviceOption(RepoStore)
+        const repos = yield* RepoStore
         const source = yield* ShapeSource.ShapeSource
         // A domains shape's 403 refuses the repository's domains, not the repository (ruling #3): they go from the list.
-        const narrow = Option.isNone(repos) ? undefined : yield* shapeRefusals(repos.value, scope)
+        const narrow = yield* shapeRefusals(repos, scope)
         // Requests wait while the repository is refused, so an eviction doesn't sync rows back (decision 0110).
         const unrefused = (id: string) => {
-          if (Option.isNone(repos) || narrow === undefined) return source
           const marked = ShapeSource.gated(source,
-            repos.value.rolesState.rows.pipe(Stream.map((rows) => rows.find((row) => row.id === id)?.refused !== "forbidden"), Stream.changes))
+            repos.rolesState.rows.pipe(Stream.map((rows) => rows.find((row) => row.id === id)?.refused !== "forbidden"), Stream.changes))
           return narrow.source(marked, id, Effect.suspend(() => opened.get(id)?.evict ?? Effect.void))
         }
         const open = (repoId: string) =>
@@ -91,9 +90,7 @@ export class DomainsStore extends Context.Service<
             Scope.provide(scope),
             Effect.tap((collection) => Effect.sync(() => opened.set(repoId, collection))),
           )
-        if (Option.isSome(repos)) {
-          yield* repos.value.registerCache(["domains"], (id) => Effect.suspend(() => opened.get(id)?.evict ?? Effect.void))
-        }
+        yield* repos.registerCache(["domains"], (id) => Effect.suspend(() => opened.get(id)?.evict ?? Effect.void))
         // One at a time, so two callers asking for one repository at once open it once.
         const domains = (repoId: string) =>
           Semaphore.withPermits(opening, 1)(
@@ -107,7 +104,7 @@ export class DomainsStore extends Context.Service<
           pageState: yield* pageQuery(page),
           list,
           // Only through the data gate (repo/gate.ts): a refused or unverified repository's domains never show.
-          listState: yield* listQuery(Option.isSome(repos) ? yield* repos.value.gate(list) : list),
+          listState: yield* listQuery(yield* repos.gate(list)),
           saves,
           savesState: yield* savesQuery(saves),
           domains,

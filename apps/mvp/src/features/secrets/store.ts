@@ -66,7 +66,7 @@ const make = Effect.fnUntraced(function* (config: SecretsConfig) {
   const scope = yield* Effect.scope
   const persistence = yield* Persistence.Persistence
   const auth = yield* Effect.serviceOption(AuthStore)
-  const repos = yield* Effect.serviceOption(RepoStore)
+  const repos = yield* RepoStore
   const source = yield* ShapeSource.ShapeSource
   const view = yield* Collection.local<SecretsView, string>({
     id: "secrets-view",
@@ -86,9 +86,9 @@ const make = Effect.fnUntraced(function* (config: SecretsConfig) {
     getKey: byName,
   })
   // What shows reads through the data gate (repo/gate.ts): no row of a repository that may not show. The store's own
-  // follower reads every row. A tab without the repository store has no refusal to keep.
+  // follower reads every row.
   const gate = <A extends object & { readonly repoId: string }>(rows: Collection.Collection<A, any, any>) =>
-    Option.isSome(repos) ? repos.value.gate(rows) : Effect.succeed(rows)
+    repos.gate(rows)
   const empty = yield* listQuery(yield* gate(nothing))
   const allForms = yield* formsQuery(forms)
   const formList = yield* formsQuery(yield* gate(forms))
@@ -118,7 +118,7 @@ const make = Effect.fnUntraced(function* (config: SecretsConfig) {
   const collections = new Map<string, ElectricCollection.ElectricCollection<SecretRow>>()
   const open = (id: string) =>
     Effect.gen(function* () {
-      if (Option.isSome(repos)) yield* repos.value.refusalsKnown
+      yield* repos.refusalsKnown
       const secrets = yield* ElectricCollection.make<SecretRow>({
         id: `secrets:${id}`,
         schema: SecretRow,
@@ -131,20 +131,20 @@ const make = Effect.fnUntraced(function* (config: SecretsConfig) {
         },
         syncMode: "eager",
         persist: { schemaVersion: 1 },
-      }).pipe(Effect.provideService(ShapeSource.ShapeSource, Option.isSome(auth) && Option.isSome(repos)
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, Option.isSome(auth)
         // Below Member the shape has no rows, so only a refusal stops it, never a role still unanswered.
         ? ShapeSource.gated(
-          revokingSource(source, auth.value, repos.value, id),
-          Stream.map(repositoryAccessChanges(auth.value, repos.value, id), (status) => !refused(status)),
+          revokingSource(source, auth.value, repos, id),
+          Stream.map(repositoryAccessChanges(auth.value, repos, id), (status) => !refused(status)),
         )
         : source))
-      if (Option.isSome(auth) && Option.isSome(repos)) {
-        yield* evictOnRefusal(wipeAuthority(auth.value, repositoryAccessChanges(auth.value, repos.value, id)), [secrets]).pipe(
+      if (Option.isSome(auth)) {
+        yield* evictOnRefusal(wipeAuthority(auth.value, repositoryAccessChanges(auth.value, repos, id)), [secrets]).pipe(
           Effect.forkIn(scope, { startImmediately: true }),
         )
       }
       const all = yield* listQuery(secrets)
-      if (Option.isSome(repos)) repos.value.track(id)
+      repos.track(id)
       const list = yield* listQuery(yield* gate(secrets))
       yield* Stream.zipLatest(all.rows, allForms.rows).pipe(
         Stream.runForEach(([rows, all]) =>
@@ -160,10 +160,8 @@ const make = Effect.fnUntraced(function* (config: SecretsConfig) {
     }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence))
   // Opening a list twice at once opens it once: the cache runs one lookup per repository and keeps it.
   const opening = yield* Cache.make({ lookup: open, capacity: Number.MAX_SAFE_INTEGER })
-  if (Option.isSome(repos)) {
-    yield* repos.value.registerCache(["secrets"], (id) =>
-      Effect.andThen(Cache.get(opening, id), Effect.suspend(() => collections.get(id)?.evict ?? Effect.void)))
-  }
+  yield* repos.registerCache(["secrets"], (id) =>
+    Effect.andThen(Cache.get(opening, id), Effect.suspend(() => collections.get(id)?.evict ?? Effect.void)))
 
   return SecretsStore.of({
     listOf: (id) => Cache.get(opening, id),

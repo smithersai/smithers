@@ -1,5 +1,6 @@
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
 import { expect, test } from "vitest"
+import { repoAuthority } from "../../test/repoAuthority"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { FlowDispatch } from "../../flows/dispatch"
 import { BranchTrackRefused, BranchTrackUnavailable } from "../branch/flows"
@@ -9,7 +10,7 @@ import { HomeStore } from "./store"
 
 // A home opened without the optional feature stores still exposes usable empty live blocks.
 test("standalone homes have empty issues, sync, runs, stack and access blocks", async () => {
-  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(Persistence.memory)))
+  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(repoAuthority), Layer.provide(Persistence.memory)))
   try {
     const store = await runtime.runPromise(Effect.service(HomeStore))
     expect(await runtime.runPromise(Effect.all([store.noItems, store.noSyncs, store.runs, store.noTodos, store.noAccess].map((query) => query.toArray)))).toEqual([[], [], [], [], []])
@@ -31,7 +32,7 @@ test.each([
   [new BranchTrackRefused({ reason: "forbidden" }), "forbidden"],
   [new BranchTrackUnavailable(), "unavailable"],
 ])("a refused home action clears its running state and keeps the reason (%s)", async (error, reason) => {
-  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(Persistence.memory)))
+  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(repoAuthority), Layer.provide(Persistence.memory)))
   try {
     const store = await runtime.runPromise(Effect.service(HomeStore))
     await runtime.runPromise(store.current.update(CURRENT, (row) => {
@@ -49,7 +50,7 @@ test.each([
 
 
 test.each(["failed", "done"] as const)("an action finishing after navigation cannot change the new repository or navigate back (%s)", async (outcome) => {
-  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(Persistence.memory)))
+  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(repoAuthority), Layer.provide(Persistence.memory)))
   try {
     const store = await runtime.runPromise(Effect.service(HomeStore))
     const started = Deferred.makeUnsafe<void>()

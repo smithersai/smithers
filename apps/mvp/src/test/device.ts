@@ -30,6 +30,7 @@ import { tabFiles } from "../features/files/tab"
 import { workerRegistrations } from "../flows/registrations"
 import type { Endpoint } from "../flows/tabPort"
 import { ORIGIN } from "./agent"
+import { repoAuthority } from "./repoAuthority"
 
 /**
  * Where a device's records go: the tab's and the engine worker's own exporters, as `src/main.tsx` and
@@ -64,7 +65,7 @@ const hereAt = (at: string | undefined): Option.Option<Here> => {
  */
 const files = (name: string, at: string | undefined, navigated: Array<string>) =>
   tabFiles({ name }).pipe(
-    Layer.provideMerge(FilesStore.layer),
+    Layer.provideMerge(FilesStore.layer.pipe(Layer.provide(repoAuthority))),
     Layer.provide(Layer.succeed(FilesPage, FilesPage.of({ here: Effect.succeed(hereAt(at)), navigate: (path) => void navigated.push(path) }))),
     Layer.provide(Persistence.memory),
     Layer.provide(TabChannel.layer),

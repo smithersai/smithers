@@ -1,6 +1,7 @@
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Exit, Layer, ManagedRuntime, Option } from "effect"
 import { expect, test, vi } from "vitest"
+import { repoAuthority } from "../../test/repoAuthority"
 import { nodeDevice } from "../../test/chatApi"
 import { close, FilesPage, open } from "./actions"
 import { FilesStore } from "./store"
@@ -34,7 +35,7 @@ test("file actions wait for the device write before navigating; reload restores 
   })
   let here = { ...at, kind: "tree" as "tree" | "blob", path: "" }
   const navigated: Array<string> = []
-  const layer = FilesStore.layer.pipe(Layer.provideMerge(persistence), Layer.provideMerge(Layer.succeed(FilesPage, {
+  const layer = FilesStore.layer.pipe(Layer.provide(repoAuthority), Layer.provideMerge(persistence), Layer.provideMerge(Layer.succeed(FilesPage, {
     here: Effect.sync(() => Option.some(here)),
     navigate: (path) => { navigated.push(path) },
   })))
@@ -77,7 +78,7 @@ test("file actions wait for the device write before navigating; reload restores 
     resume()
     await runtime.dispose()
   }
-  const reloaded = ManagedRuntime.make(FilesStore.layer.pipe(Layer.provide(Persistence.layer(host))))
+  const reloaded = ManagedRuntime.make(FilesStore.layer.pipe(Layer.provide(repoAuthority), Layer.provide(Persistence.layer(host))))
   try {
     const store = await reloaded.runPromise(Effect.service(FilesStore))
     await reloaded.runPromise(store.tabs.restored)
@@ -110,6 +111,7 @@ test.each(["insert", "update", "delete"] as const)("a refused device %s never na
   })
   const navigated: Array<string> = []
   const runtime = ManagedRuntime.make(FilesStore.layer.pipe(
+    Layer.provide(repoAuthority),
     Layer.provideMerge(persistence),
     Layer.provideMerge(Layer.succeed(FilesPage, {
       here: Effect.succeed(Option.some({ ...at, kind: "blob" as const, path: "README.md" })),

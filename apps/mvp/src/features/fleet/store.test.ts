@@ -12,6 +12,7 @@ import { testFile } from "../../../worker/test/harness.ts"
 import { fleetHarness } from "../../../worker/runners/test/fleet.ts"
 import { isLive, RUN_STATES } from "./contract"
 import { FleetStore } from "./store"
+import { repoAuthority } from "../../test/repoAuthority"
 
 const server = testFile("fleet_browser")
 const sql = <A>(body: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) => server.runPromise(Effect.flatMap(SqlClient.SqlClient, body))
@@ -26,7 +27,7 @@ test("each repository has one live run and machine query; timestamps and reporte
         ('github/smithersai/vibelang', 'alpha', repeat('c',64), 3, 'person', '2026-11-01T12:00:00Z', 1.5, 24.75)`,
   ], { discard: true }))
   const h = await fleetHarness(server, { actor: maintainer })
-  const runtime = ManagedRuntime.make(FleetStore.layer({ origin: h.origin }).pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch))))
+  const runtime = ManagedRuntime.make(FleetStore.layer({ origin: h.origin }).pipe(Layer.provide(repoAuthority), Layer.provide(Persistence.memory), Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch))))
   try {
     const store = await runtime.runPromise(Effect.service(FleetStore))
     const [runs, same, machines] = await Promise.all([
@@ -79,6 +80,8 @@ test.each([[403, 0], [401, 1]] as const)("a shape's %s asks no more and leaves %
     }),
   })
   const runtime = ManagedRuntime.make(FleetStore.layer({ origin: h.origin }).pipe(
+    Layer.provide(repoAuthority),
+    Layer.provide(Persistence.memory),
     Layer.provide(source),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
   ))
@@ -114,6 +117,7 @@ test("a stopped shape starts again once authority may have returned", async () =
       : ShapeSource.fetchSource.request(url, init)),
   })
   const runtime = ManagedRuntime.make(FleetStore.layer({ origin: h.origin }).pipe(
+    Layer.provide(repoAuthority),
     Layer.provideMerge(AuthStore.layer),
     Layer.provide(Persistence.memory),
     Layer.provide(source),

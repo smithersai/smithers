@@ -26,9 +26,9 @@ const fileShown = (view: ViewRow): boolean =>
 const make = Effect.gen(function* () {
   const tabs = yield* Collection.persisted(FileTabsStore)
   // Through the data gate (repo/gate.ts): a refused or unverified repository's tabs leave the strip, and stay on the
-  // device for when it shows again. A tab without the repository store (a test's) has no refusal to keep.
-  const repo = yield* Effect.serviceOption(RepoStore)
-  const all = yield* tabsQuery(Option.isSome(repo) ? yield* repo.value.gate(tabs) : tabs)
+  // device for when it shows again.
+  const repo = yield* RepoStore
+  const all = yield* tabsQuery(yield* repo.gate(tabs))
   // One write at a time, so the follower and an open of one file never both insert it.
   const writes = yield* Semaphore.make(1)
 
@@ -64,22 +64,20 @@ const make = Effect.gen(function* () {
     }).pipe(Semaphore.withPermits(writes, 1), Effect.orDie)
 
   // Every file the routed repository view shows gets a tab, with the lines it highlights.
-  if (Option.isSome(repo)) {
-    yield* repo.value.view.changes({ initial: true }).pipe(
-      Stream.runForEach((changes) =>
-        Effect.forEach(changes, (change) =>
-          // The view's one row is never deleted: each change says where it is now.
-          !fileShown(change.value)
-            ? Effect.void
-            : keep(
-              { owner: change.value.owner, name: change.value.name, revision: change.value.revision! },
-              change.value.path,
-              linesOf(change.value.line, change.value.lineEnd),
-            ).pipe(Effect.ignore), { discard: true })
-      ),
-      Effect.forkScoped,
-    )
-  }
+  yield* repo.view.changes({ initial: true }).pipe(
+    Stream.runForEach((changes) =>
+      Effect.forEach(changes, (change) =>
+        // The view's one row is never deleted: each change says where it is now.
+        !fileShown(change.value)
+          ? Effect.void
+          : keep(
+            { owner: change.value.owner, name: change.value.name, revision: change.value.revision! },
+            change.value.path,
+            linesOf(change.value.line, change.value.lineEnd),
+          ).pipe(Effect.ignore), { discard: true })
+    ),
+    Effect.forkScoped,
+  )
 
   return { tabs, all, keep, drop }
 })

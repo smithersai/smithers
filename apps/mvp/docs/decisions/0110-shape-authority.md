@@ -34,6 +34,11 @@ A narrower shape's 403 (a TODO stack, feeds, domains) is a tier refusal: the per
 
 Raw collections stay inside their stores and the feature modules that write them. `src/device/dataGate.test.ts` checks one thing with the type checker: no other module reads a raw collection whose rows name a repository. A raw collection read elsewhere is the person's own: declared there, and its row type must name no repository.
 
+Repository display stores require `RepoStore` as an Effect service, including the plugin host, homes, file tabs,
+domains, secrets, fleet and runs. Omitting authority is a composition error; it never selects a raw collection.
+`src/features/dataGate.test.ts` checks each public layer's required services and that providing `RepoStore`
+satisfies this requirement. Isolated feature tests provide the real authority too.
+
 The route gate (`repoGated`, `RepoGate`) stays for the page's states: Sign in, and Can't check with Try again. The wipes, fences, source gates and the durable mark stay as cleanup and bandwidth.
 
 ## W9 follow-up: repository actions

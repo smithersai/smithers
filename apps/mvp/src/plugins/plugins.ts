@@ -182,8 +182,8 @@ export class Plugins extends Context.Service<
     readonly itemsOpen: Map<string, CoreQuery>
     /** Every repository's feeds, which `core/feeds` and `core/feed` read. */
     readonly feeds: FeedsStore["Service"]
-    /** Where the host's own repository rows show: the app's data gate (repo/gate.ts), none in a host with no repositories. */
-    readonly repos: Option.Option<RepoStore["Service"]>
+    /** Where the host's own repository rows show: the app's required data gate (repo/gate.ts). */
+    readonly repos: RepoStore["Service"]
     /** Every repository's agent runs and machines, which `core/agent-runs` and `core/machines` read. */
     readonly fleet: FleetStore["Service"]
     /** `core/agent-runs` and `core/machines` of each repository asked for so far, by `<query>:<repo>`, opened once. */
@@ -225,12 +225,12 @@ export class Plugins extends Context.Service<
         const feeds = yield* FeedsStore
         const fleet = yield* FleetStore
         const auth = yield* Effect.serviceOption(AuthStore)
-        const repos = yield* Effect.serviceOption(RepoStore)
+        const repos = yield* RepoStore
         const visible = (id: string) => {
-          if (Option.isNone(auth) || Option.isNone(repos)) return true
+          if (Option.isNone(auth)) return true
           const session = auth.value.sessionState.tanstack.toArray[0]
           if (session === undefined) return true
-          return repoVisibility(session, repos.value.rolesState.tanstack.toArray.find((row) => row.id === id)) === "show"
+          return repoVisibility(session, repos.rolesState.tanstack.toArray.find((row) => row.id === id)) === "show"
         }
         const onVisibility = (listener: () => void) => {
           const stops: Array<() => void> = []
@@ -238,10 +238,8 @@ export class Plugins extends Context.Service<
             const sessions = auth.value.sessionState.tanstack.subscribeChanges(listener)
             stops.push(() => sessions.unsubscribe())
           }
-          if (Option.isSome(repos)) {
-            const roles = repos.value.rolesState.tanstack.subscribeChanges(listener)
-            stops.push(() => roles.unsubscribe())
-          }
+          const roles = repos.rolesState.tanstack.subscribeChanges(listener)
+          stops.push(() => roles.unsubscribe())
           return () => { for (const stop of stops) stop() }
         }
         const core = new Map<string, CoreQuery>([
@@ -444,7 +442,7 @@ const openItems = (plugins: Plugins["Service"], repo: string, document: string) 
       getKey: (row) => row.key,
     })
     // The host shows a document's items only through the data gate (repo/gate.ts).
-    const shown = Option.isSome(plugins.repos) ? yield* plugins.repos.value.gate(collection) : collection
+    const shown = yield* plugins.repos.gate(collection)
     const ordered = yield* LiveQuery.make((q) => q.from({ item: shown.tanstack }).orderBy(({ item }) => item.index, "asc"))
     // What `collection` holds, kept beside it: the host reads its rows only through the gate.
     let current = new Map<string, FeedItem>()
