@@ -33,6 +33,7 @@ import * as Bridge from "./ControlBridge.ts"
 import { prepareHistoryRun, reconcileHistory } from "./HistoryCommands.ts"
 import * as Presentation from "./Presentation.ts"
 import * as RunActivity from "./RunActivity.ts"
+import * as RunHistory from "./RunHistory.ts"
 import * as RunProgress from "./RunProgress.ts"
 import * as TargetApprovals from "./TargetApprovals.ts"
 
@@ -411,12 +412,25 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       description: "Show a run's current status and diagnosis",
       mcp: { annotations: { readOnlyHint: true } },
       args: runArgs,
-      options,
+      options: options.extend({
+        field: z.string().optional().describe(
+          "Read one bounded event field by JSON pointer: /events/<sequence>/payload/<field>"
+        ),
+        offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe(
+          "Character offset in a string --field"
+        ),
+        length: z.number().int().min(1).max(65536).optional().describe(
+          "Characters per string field page (default 4096)"
+        )
+      }),
       run: (c) =>
         guard(c, async () => {
           if (!Bridge.hasRecords(c.options, runtime)) {
             await Bridge.project(checks(c.options, runtime), c.options, runtime)
             throw unknownRun(c.args.run)
+          }
+          if (c.options.field === undefined && (c.options.offset !== undefined || c.options.length !== undefined)) {
+            throw new CliError.UsageError({ message: "--offset/--length require --field" })
           }
           return observing("runs show", c.options, runtime, async () => {
             await reconcileHistory(c.options, runtime)
@@ -426,10 +440,50 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
                 const page = yield* control.list({ _tag: "runs", filters: { runId: c.args.run } })
                 const run = page._tag === "runs" ? page.items.find((row) => row.runId === c.args.run) : undefined
                 if (run === undefined) throw unknownRun(c.args.run)
-                const events = yield* BoundedEvents.collect(control.watch({ runId: run.runId, follow: false }), {
-                  operation: "run diagnosis",
-                  subject: run.runId
-                })
+                const stream = control.watch({ runId: run.runId, follow: false })
+                if (c.options.field !== undefined) {
+                  return yield* RunHistory.field(
+                    stream,
+                    c.options.field,
+                    undefined,
+                    c.options.offset === undefined && c.options.length === undefined ? undefined : {
+                      offset: c.options.offset ?? 0,
+                      length: c.options.length ?? 4096
+                    }
+                  )
+                }
+                const history = yield* RunHistory.read(
+                  stream,
+                  run.runId,
+                  undefined,
+                  run.executionView?.current.executionId ?? run.runId
+                )
+                const events = history.events
+                if (history.history !== undefined) {
+                  return {
+                    ...run,
+                    diagnosis: {
+                      status: run.status,
+                      ...(run.status === "failed" && typeof history.history.lastError === "string"
+                        ? { cause: history.history.lastError }
+                        : {}),
+                      unavailable: true
+                    },
+                    activityUnavailable: true,
+                    healthUnavailable: true,
+                    history: {
+                      ...history.history,
+                      ...(["completed", "failed", "cancelled"].includes(run.status) ?
+                        {
+                          lastRecordedNode: history.history.lastRecordedNode ?? history.history.currentNode,
+                          currentNode: undefined,
+                          currentNodeUnavailable: true as const
+                        } :
+                        {}),
+                      round: run.executionView?.current.roundOrdinal ?? history.history.round ?? run.roundOrdinal
+                    }
+                  }
+                }
                 const executionIds = RunActivity.knownExecutionIds(events)
                 const batches: Array<ControlSchema.ExecutionBatch> = []
                 for (let offset = 0; offset < executionIds.length; offset += 200) {
@@ -460,7 +514,30 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
               runtime
             )
           })
-        }, { next: Presentation.runs({ show: false }) })
+        }, {
+          next: Presentation.runs({ show: false }),
+          render: (value) => {
+            if (!("history" in value) || value.history === undefined) return {}
+            const h = value.history
+            const clean = Presentation.clean
+            return {
+              human: [
+                `${clean(value.runId)} · ${clean(value.flowId)} · ${clean(value.status)}`,
+                h.currentNode === undefined ? "Current node: unavailable" : `Current node: ${clean(h.currentNode)}`,
+                ...(h.round === undefined ? [] : [`Round: ${h.round}`]),
+                ...(h.lastError === undefined ? [] : [`Last error: ${clean(RunHistory.errorText(h.lastError))}`]),
+                `History: ${h.events} events, ${h.bytes} bytes`,
+                `Omitted: ${h.omittedEvents} events, ${h.omittedBytes} bytes`,
+                ...h.truncatedFields.map((field) => `Truncated: ${clean(field.path)} (${field.bytes} bytes)`),
+                ...(h.truncatedFieldsOmitted === 0
+                  ? []
+                  : [`${h.truncatedFieldsOmitted} more truncated fields; use --json`]),
+                ...h.largestFields.slice(0, 5).map((field) => `Largest: ${clean(field.path)} (${field.bytes} bytes)`),
+                Failure.terminalSafe(h.read)
+              ].join("\n")
+            }
+          }
+        })
     })
     .command("devtools", {
       description: "Inspect a run's node tree: state, timings, inputs, outputs and journal frames",

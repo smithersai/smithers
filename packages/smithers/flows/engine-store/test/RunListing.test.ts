@@ -69,10 +69,10 @@ describe("bounded run listing", () => {
                   query.pipe(Effect.map((rows) => {
                     statements++
                     return rows.map((row) => {
-                      if (!("state_json" in row)) return row
+                      if (!("state_version" in row)) return row
                       return new Proxy(row, {
                         get(target, key, receiver) {
-                          if (key === "state_json") decodedRows++
+                          if (key === "state_version") decodedRows++
                           return Reflect.get(target, key, receiver)
                         }
                       })

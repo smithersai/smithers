@@ -128,7 +128,19 @@ export const make = () =>
         return yield* Dialect.readTransaction(
           sql,
           Effect.gen(function*() {
-            const at = yield* Read.position(sql)
+            // Discover optional legacy columns in the watermark statement,
+            // keeping four statements per page without caching schema state
+            // before migrations or across an upgrade.
+            const positions = yield* Dialect.query<{ has_waiting_request: boolean | number }>(
+              sql,
+              `SELECT source, revision, EXISTS (SELECT 1 FROM ${
+                Dialect.isPostgres(sql)
+                  ? "information_schema.columns WHERE table_schema = current_schema() AND table_name = 'flows_runs' AND column_name = 'waiting_request'"
+                  : "pragma_table_info('flows_runs') WHERE name = 'waiting_request'"
+              }) AS has_waiting_request FROM flows_run_source WHERE singleton = 1`,
+              []
+            )
+            const at = yield* Read.decode(Read.Position, positions[0])
             if (cursor !== null && cursor.source !== at.source) {
               return yield* Effect.fail(
                 new RunCatalogError({ code: "source_changed", message: "run cursor belongs to another engine source" })
@@ -165,9 +177,12 @@ export const make = () =>
             values.push(limit + 1)
             const rows = yield* Dialect.query(
               sql,
-              `SELECT ${Read.selectColumns} FROM flows_runs r ${
-                Dialect.isPostgres(sql) ? "" : `INDEXED BY flows_runs_listing_${mask}`
-              }
+              `SELECT ${
+                Read.selectColumns(
+                  sql,
+                  positions[0]?.has_waiting_request === true || positions[0]?.has_waiting_request === 1
+                )
+              } FROM flows_runs r ${Dialect.isPostgres(sql) ? "" : `INDEXED BY flows_runs_listing_${mask}`}
         LEFT JOIN flows_run_changes c ON c.run_id = r.run_id
         ${
                 predicates.length === 0

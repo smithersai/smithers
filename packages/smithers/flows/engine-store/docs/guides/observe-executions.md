@@ -258,3 +258,13 @@ yet. The control projection consumer and public control list routing are a
 separate integration step. They must expose their durable applied revision and
 the source revision observed during catch-up to represent lag. These ports
 provide that information but do not claim the control projection is current.
+
+## Large execution state
+
+Snapshot and catalog queries select lifecycle columns plus the JSON version and
+flow name in SQL. They do not return `state_json`, payloads, results, or other
+execution state to the driver. A large payload therefore does not multiply the
+application's snapshot-buffer size by the requested batch size. The lifecycle
+read validates the projected version and flow name and retains ownership,
+ancestry, wait and revision invariant checks; it does not decode execution data.
+The optional waiting-request column is discovered for older read-only stores.
