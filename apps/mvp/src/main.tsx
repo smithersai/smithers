@@ -376,15 +376,23 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
   screen: () => ({ browser: navigator.userAgent, viewport: `${window.innerWidth}x${window.innerHeight}` }),
   // `app/web/open` (src/features/web/url.ts): `http:` pages on this machine open in a new tab only under the dev
   // server. A person's own `/web … tab` opens its tab here, inside their keypress, when the browser still allows it:
-  // `window.open` takes the click's activation when it opens a tab, so an activation still there after it means the
-  // browser refused, and the flow adds a card instead. A browser that can't say opens nothing here.
+  // The host obtains a real tab handle before dropping its opener and navigating without a referrer. Activation
+  // consumption cannot be the receipt: WebKit leaves it active after opening the tab.
   web: {
     policy: { localHttp: import.meta.env.DEV, appOrigin: window.location.origin },
     openTab: (href) => {
-      const activation = navigator.userActivation
-      if (activation === undefined || !activation.isActive) return false
-      window.open(href, "_blank", "noopener,noreferrer")
-      return !activation.isActive
+      if (!navigator.userActivation?.isActive) return false
+      const tab = window.open("about:blank", "_blank")
+      if (tab === null) return false
+      // The new document is still ours. Sever its opener before any outside document can run, and let an actual
+      // noreferrer link navigate it: location.replace would send the app's referrer.
+      tab.opener = null
+      const link = tab.document.createElement("a")
+      link.href = href
+      link.rel = "noreferrer"
+      tab.document.body.appendChild(link)
+      link.click()
+      return true
     },
   },
   // The repository view's language server: TypeScript in a worker of its own, started when a TypeScript or JavaScript
