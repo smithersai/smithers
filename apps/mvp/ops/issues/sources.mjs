@@ -309,32 +309,43 @@ const draftLinks = (links) => {
  */
 const TRACKING = /^migrate\b.*\b(?:effect modules to vibelang\b|to vibelang \(tracking\))/i
 
+/** One vocabulary across drafters; unknown values are a refusal, never an implicit open or skipped draft. */
+const DRAFT_STATUSES = new Map([
+  ["open", "open"], ["fixed", "fixed"], ["nonbug", "nonbug"], ["duplicate", "duplicate"], ["closed", "closed"],
+  ["not_a_bug", "nonbug"], ["not-a-bug", "nonbug"], ["notabug", "nonbug"], ["wontfix", "nonbug"],
+  ["dup", "duplicate"], ["done", "fixed"], ["resolved", "fixed"],
+])
+
 /**
- * Issue drafts the agents prepared, `{ title, body, labels, parent, repo?, draft_id? | id? | key?, status? | state?,
- * links? }`, filed under the node their parent text names, else by their labels, else their source's node. A draft
- * marked closed is left out. A repository's tracking draft carries `asNode`: it becomes that node's issue instead of a
- * child of it.
+ * All issue drafts the agents prepared, normalized but unfiltered so the importer can count and audit every row.
+ * Legacy `state` supplies status when `status` is absent; absence of both means open. A repository's tracking draft carries
+ * `asNode`: it becomes that node's issue instead of a child of it.
  */
 export const draftRecords = (source, drafts) =>
-  drafts
-    .filter((draft) => draft.status !== "closed" && draft.state !== "closed")
-    .map((draft) => {
-      const labels = [...new Set([...(draft.labels ?? []), ...migrateLabels(source)])]
-      const repoNode = migrateLabels(source)[0] === undefined ? undefined : `tree:repos:${source}`
-      const parent = nodeOfParentText(draft.parent) ?? nodeOfLabels(labels) ?? repoNode ?? "tree:impl"
-      const tracking = TRACKING.test(String(draft.title)) || /this is the .*node/i.test(String(draft.parent ?? "")) || /\bnode\b/i.test(String(draft.role ?? ""))
-      const asNode = tracking ? (MIGRATED_REPOS.map((repo) => `tree:repos:${repo}`).find((key) => key === parent || key === repoNode) ?? undefined) : undefined
-      return {
-        key: `draft:${source}:${draft.draft_id ?? draft.id ?? draft.key ?? short(draft.title)}`,
-        kind: "draft",
-        source,
-        repo: draft.repo ?? VIBELANG,
-        title: oneLine(draft.title),
-        body: body([String(draft.body ?? "")]),
-        labels,
-        links: draftLinks(draft.links),
-        parent,
-        parentText: draft.parent ?? null,
-        ...(asNode === undefined ? {} : { asNode }),
-      }
-    })
+  drafts.map((draft) => {
+    const key = `draft:${source}:${draft.draft_id ?? draft.id ?? draft.key ?? short(draft.title)}`
+    const value = draft.status === undefined ? (draft.state === undefined ? "open" : draft.state) : draft.status
+    const status = typeof value === "string" ? DRAFT_STATUSES.get(value.toLowerCase()) : undefined
+    if (status === undefined) throw new Error(`${key} has unknown status ${JSON.stringify(value)}`)
+    const duplicateOf = draft.duplicate_of_draft ?? draft.duplicate_of_title ?? draft.duplicate_of
+    const labels = [...new Set([...(draft.labels ?? []), ...migrateLabels(source)])]
+    const repoNode = migrateLabels(source)[0] === undefined ? undefined : `tree:repos:${source}`
+    const parent = nodeOfParentText(draft.parent) ?? nodeOfLabels(labels) ?? repoNode ?? "tree:impl"
+    const tracking = TRACKING.test(String(draft.title)) || /this is the .*node/i.test(String(draft.parent ?? "")) || /\bnode\b/i.test(String(draft.role ?? ""))
+    const asNode = tracking ? (MIGRATED_REPOS.map((repo) => `tree:repos:${repo}`).find((key) => key === parent || key === repoNode) ?? undefined) : undefined
+    return {
+      key,
+      status,
+      ...(duplicateOf === undefined ? {} : { duplicate_of: duplicateOf }),
+      kind: "draft",
+      source,
+      repo: draft.repo ?? VIBELANG,
+      title: oneLine(draft.title),
+      body: body([String(draft.body ?? "")]),
+      labels,
+      links: draftLinks(draft.links),
+      parent,
+      parentText: draft.parent ?? null,
+      ...(asNode === undefined ? {} : { asNode }),
+    }
+  })

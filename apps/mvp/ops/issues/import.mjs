@@ -8,8 +8,9 @@
 //                              [--draft <source>=<file or host:path>]... [--replace-findings <repo>]... [--pending-ref main]
 //
 // Draft mode, the first form: one or more `--draft` and no `--source`. It reads only the named local draft files, then
-// places, scrubs, deduplicates and plans them with the whole tree. It runs no `gh` and no `ssh`, so an agent holding
-// only the App's machine token can plan its drafts: agent actions go through the App, never a personal login. A
+// counts every normalized status and plans only open drafts, placing, scrubbing and deduplicating them with the tree.
+// It runs no `gh` and no `ssh`, so an agent holding only the App's machine token can plan its drafts: agent actions
+// go through the App, never a personal login. A
 // `host:path` draft needs ssh, so draft mode refuses it; copy the file here, or select a source. It reads no existing
 // issues: `issues/file-tree` reuses an issue or a tree node by its `key:` marker when it files
 // (ops/issues/track.mjs `findMatch`). Private repository names for the scrub come from `--private-repos <file>` or
@@ -29,6 +30,9 @@
 //   parsed findings. A repository's tracking draft becomes its tree node's issue.
 // Private repository names for the scrub come from `gh repo list <owner> --visibility private`, held in memory, and
 // the `--private-repos` file. `gh` and `ssh` use the operator's own logins, so only an operator runs this form.
+//
+// Non-open drafts are counted and saved to `<out>.skipped.jsonl` (mode 600), with key, status and any duplicate_of.
+// Unknown draft statuses refuse the import with exit 2 before output files are written.
 //
 // Plan rows, in filing order: `{"type":"node", ...}` (the tree), then `{"type":"issue", ...}` (drafts, then findings;
 // each with key, repo, title, body, labels, links, parent, depth), then `{"type":"queue-link", key, repo, issue, link}`
@@ -150,8 +154,20 @@ const round = remote.filter((row) => row.kind === "round")
 // they win a title match against a finding of the same thing. A queue entry is work, never an issue.
 const queue = queuePlan(remote.filter((row) => row.kind === "queue").map((row) => row.entry))
 const replaced = new Set(values["replace-findings"])
+let draftRows
+try {
+  draftRows = drafts.flatMap(({ source, file }) => draftRecords(source, readDrafts(file)))
+} catch (error) {
+  console.error(error.message)
+  process.exit(2)
+}
+const statuses = { open: 0, fixed: 0, nonbug: 0, duplicate: 0, closed: 0 }
+for (const row of draftRows) statuses[row.status]++
+const skipped = draftRows.filter((row) => row.status !== "open").map(({ key, status, duplicate_of }) => ({
+  key, status, ...(duplicate_of === undefined ? {} : { duplicate_of }),
+}))
 const records = [
-  ...drafts.flatMap(({ source, file }) => draftRecords(source, readDrafts(file))),
+  ...draftRows.filter((row) => row.status === "open"),
   ...reviewRoundRecords(round.map((row) => ({ reviewer: row.reviewer, round: row.round, text: row.text }))),
   ...remote.filter((row) => row.kind === "scoped").flatMap((row) => scopedRecords(row.scope, row.text)),
   ...remote.filter((row) => row.kind === "migration" && !replaced.has(row.repo)).flatMap((row) => migrationRecords(row.repo, row.text)),
@@ -201,6 +217,8 @@ const summary = {
   at: new Date().toISOString(),
   nodes: tree.nodes.length,
   issues: tree.records.length,
+  statuses,
+  planned: statuses.open,
   byKind: count(tree.records, (row) => row.kind),
   bySource: count(tree.records, (row) => (row.kind === "draft" ? `draft:${row.source}` : row.kind)),
   queueLinks: queueLinks.length,
@@ -223,13 +241,16 @@ const summary = {
 const out = resolve(values.out)
 mkdirSync(dirname(out), { recursive: true, mode: 0o700 })
 const rows = [
-  ...tree.nodes.map((node) => ({ type: "node", ...node, labels: node.labels ?? ["tree"] })),
+  ...tree.nodes.map((node) => ({ type: "node", ...node, ...(node.draft === undefined ? {} : { status: "open" }), labels: node.labels ?? ["tree"] })),
   ...tree.records.map((record) => ({ type: "issue", ...record })),
   ...queueLinks,
   ...dropped,
   ...duplicates.map((row) => ({ type: "duplicate", ...row })),
   summary,
 ]
+const skippedOut = `${out}.skipped.jsonl`
+writeFileSync(skippedOut, skipped.map((row) => JSON.stringify(row)).join("\n") + "\n", { mode: 0o600 })
+chmodSync(skippedOut, 0o600)
 const queueOut = out.replace(/(\.jsonl)?$/, ".queue-unlinked.jsonl")
 writeFileSync(queueOut, queue.unlinked.map((row) => JSON.stringify(row)).join("\n") + "\n", { mode: 0o600 })
 chmodSync(queueOut, 0o600)

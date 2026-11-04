@@ -2,7 +2,7 @@
 // records its call; in draft mode any call is a failure, since an agent has the App's machine token and no personal
 // GitHub login or lane-host key.
 import { describe, expect, test } from "vitest"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, statSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -60,7 +60,7 @@ const setup = () => {
     const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Call)
     writeFileSync(log, "")
     const plan = result.status === 0 ? readFileSync(out, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Row) : []
-    return { status: result.status, stderr: result.stderr, calls, plan }
+    return { status: result.status, stderr: result.stderr, stdout: result.stdout, calls, plan, out }
   }
   return { file, run, privateRepos }
 }
@@ -84,6 +84,59 @@ describe("the importer's CLI", () => {
     expect(plan.filter((row) => row.type === "queue-link" || row.type === "dropped")).toEqual([])
     expect(plan.filter((row) => row.type === "node").map((row) => row.key)).toContain("tree:ship-vibelang")
     expect(plan.at(-1)).toMatchObject({ type: "summary", issues: 2, bySource: { "draft:t3code": 2 }, laneReports: null, fuzzSource: null })
+  })
+
+  test("counts every draft and plans only open rows, auditing skipped statuses and duplicate references privately", () => {
+    const { file, run, privateRepos } = setup()
+    const drafts = [
+      { draft_id: "open", title: "Still open", status: "OPEN" },
+      { draft_id: "missing", title: "Missing status" },
+      { draft_id: "fixed", title: "Fixed", status: "resolved" },
+      { draft_id: "nonbug", title: "Nonbug", status: "nonbug" },
+      { draft_id: "alias", title: "Nonbug", status: "not_a_bug" },
+      { draft_id: "dup-draft", title: "Duplicate", status: "dup", duplicate_of_draft: "open" },
+      { draft_id: "dup-title", title: "Duplicate", status: "duplicate", duplicate_of_title: "Still open" },
+      { draft_id: "dup", title: "Duplicate", status: "DUPLICATE", duplicate_of: "#42" },
+      { draft_id: "closed", title: "Closed", state: "closed" },
+    ]
+    // Two files exercise aggregate counts; repeated titles must still appear individually in the audit.
+    const first = file("mixed.jsonl", drafts.slice(0, 4).map((row) => JSON.stringify(row)).join("\n"))
+    const second = file("more.json", JSON.stringify(drafts.slice(4)))
+    const { status, stderr, stdout, calls, plan, out } = run([
+      "--draft", `t3code=${first}`, "--draft", `t3code=${second}`, "--private-repos", privateRepos,
+    ], { FAKE_FAIL: "1" })
+    expect({ status, stderr, calls }).toEqual({ status: 0, stderr: "", calls: [] })
+    expect(plan.filter((row) => row.type === "issue").map((row) => [row.key, row.status]))
+      .toEqual([["draft:t3code:open", "open"], ["draft:t3code:missing", "open"]])
+    const counts = { open: 2, fixed: 1, nonbug: 2, duplicate: 3, closed: 1 }
+    expect(plan.at(-1)).toMatchObject({ statuses: counts, planned: 2 })
+    expect(JSON.parse(stdout)).toMatchObject({ statuses: counts, planned: 2 })
+    const skipped = `${out}.skipped.jsonl`
+    expect(statSync(skipped).mode & 0o777).toBe(0o600)
+    expect(readFileSync(skipped, "utf8").trim().split("\n").map((line) => JSON.parse(line))).toEqual([
+      { key: "draft:t3code:fixed", status: "fixed" },
+      { key: "draft:t3code:nonbug", status: "nonbug" },
+      { key: "draft:t3code:alias", status: "nonbug" },
+      { key: "draft:t3code:dup-draft", status: "duplicate", duplicate_of: "open" },
+      { key: "draft:t3code:dup-title", status: "duplicate", duplicate_of: "Still open" },
+      { key: "draft:t3code:dup", status: "duplicate", duplicate_of: "#42" },
+      { key: "draft:t3code:closed", status: "closed" },
+    ])
+  })
+
+  test("unknown status refuses the entire import with exit 2 and its draft key, without writing outputs", () => {
+    const { file, run, privateRepos } = setup()
+    const drafts = file("unknown.json", JSON.stringify([
+      { draft_id: "good", title: "Open" },
+      { draft_id: "bad", title: "Unknown", status: "maybe" },
+    ]))
+    const { status, stderr, stdout, out, calls } = run(["--draft", `t3code=${drafts}`, "--private-repos", privateRepos], { FAKE_FAIL: "1" })
+    expect(status).toBe(2)
+    expect(stderr).toContain('draft:t3code:bad has unknown status "maybe"')
+    expect(stdout).toBe("")
+    expect(calls).toEqual([])
+    expect(existsSync(out)).toBe(false)
+    expect(existsSync(`${out}.skipped.jsonl`)).toBe(false)
   })
 
   test("draft mode refuses a host:path draft and a run without private repository names, before any gh or ssh", () => {

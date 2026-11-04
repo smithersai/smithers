@@ -101,16 +101,32 @@ describe("the importer's records", () => {
     expect(nodeOfParentText("The vibe and main workflow")).toBe("tree:workflow")
   })
 
-  test("drafts: closed ones skip, their own keys and links carry over, labels place an unparented one", () => {
+  test("drafts: all statuses, keys and links carry over, labels place an unparented one", () => {
     const rows = draftRecords("spec", [
       { key: "lane-x", title: "Retire a form", body: "b", labels: ["spec", "compiler"], links: { lane: "class1", mq: ["4cff70"], commit: "" }, state: "open" },
       { key: "lane-y", title: "Done already", body: "b", labels: ["compiler"], state: "closed" },
-      { id: "foldkit-4", title: "Docs page", body: "b", labels: ["docs"], status: "draft" },
+      { id: "foldkit-4", title: "Docs page", body: "b", labels: ["docs"], status: "open" },
       { title: "A compiler gap", body: "b", labels: ["compiler"] },
     ])
-    expect(keys(rows)).toEqual(["draft:spec:lane-x", "draft:spec:foldkit-4", expect.stringMatching(/^draft:spec:[0-9a-f]{12}$/)])
+    expect(keys(rows)).toEqual(["draft:spec:lane-x", "draft:spec:lane-y", "draft:spec:foldkit-4", expect.stringMatching(/^draft:spec:[0-9a-f]{12}$/)])
     expect(rows[0].links).toEqual([{ kind: "session", ref: "lane:class1", label: "lane class1" }, { kind: "queue", ref: "4cff70", label: "queue 4cff70" }])
-    expect(rows.map((row: Row) => row.parent)).toEqual(["tree:spec", "tree:docs", "tree:impl"])
+    expect(rows.map((row: Row) => row.parent)).toEqual(["tree:spec", "tree:impl", "tree:docs", "tree:impl"])
+  })
+
+  test.each([
+    [undefined, "open"], ["OPEN", "open"], ["FiXeD", "fixed"],
+    ["nonbug", "nonbug"], ["not_a_bug", "nonbug"], ["NOT-A-BUG", "nonbug"],
+    ["NotABug", "nonbug"], ["WONTFIX", "nonbug"], ["Duplicate", "duplicate"],
+    ["DUP", "duplicate"], ["done", "fixed"], ["RESOLVED", "fixed"], ["CLOSED", "closed"],
+  ])("drafts: normalizes %s to %s without dropping it", (status, expected) => {
+    const rows = draftRecords("spec", [{ draft_id: "status", title: "Status", status }])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ key: "draft:spec:status", status: expected })
+  })
+
+  test.each(["maybe", "", 7, null])("drafts: refuses unknown status %s with its key and value", (status) => {
+    expect(() => draftRecords("spec", [{ draft_id: "unknown", title: "Unknown", status }]))
+      .toThrow(`draft:spec:unknown has unknown status ${JSON.stringify(status)}`)
   })
 
   test("drafts: a repository's tracking draft becomes its tree node's issue, not a child of it", () => {
