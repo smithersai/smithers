@@ -74,10 +74,10 @@ export function AppShell() {
             </ComposerGate>
           </FirstRunGate>
         </div>
-        <section className="app-shell-conversation" aria-label="Conversation">
+        <div className="app-shell-conversation">
           {/* Anchor after the pin so its controls stay clear; the stack still takes no space (0137). */}
           <Conversation notices={<Notices surface="conversation" />} />
-        </section>
+        </div>
       </div>
     </main>
   )

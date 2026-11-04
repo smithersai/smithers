@@ -48,6 +48,8 @@ stacks under the view.
 - **`/app`** shows the home conversation: the deployment repository's (`GITHUB_REPOSITORY`) `main`. Its route leaves the branch, so the composer asks there again.
 - **A ref that isn't a branch** (a commit, a tag, a name GitHub doesn't have) shows the repository view alone.
 
+The transcript owns the page’s one named `Conversation` landmark, both here and at `/app`. Layout containers add no duplicate landmark; the live `Messages` log remains inside it. `e2e/accessibility-chat-log.spec.ts` checks both pages without a model call.
+
 ## Tracking a branch
 
 `branch/track { repo, branch, openId? }` is a client flow a person's page and the agent run alike (`src/features/branch/flows.ts`). Its one step posts `POST /api/branches { owner, name, ref, openId? }` (`worker/branch/Branches.ts`); a page's open names itself in `openId`, so the same open tried again never undoes an archive made since ([conversations](conversations.md#archive)):

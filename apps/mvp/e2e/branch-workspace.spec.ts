@@ -46,6 +46,7 @@ const expectWorkspace = (page: Page, branch: string) =>
     })
     await expect(page.locator(".repo-page").or(page.getByText("Clone to browse files", { exact: true }))).toBeVisible({ timeout: 30_000 })
     const view = (await page.locator(".branch-screen-view").boundingBox())!
+    await expect(conversationOf(page), "one Conversation landmark in the workspace").toHaveCount(1)
     const conversation = (await conversationOf(page).boundingBox())!
     expect(conversation.x, "the conversation sits beside the view").toBeGreaterThanOrEqual(view.x + view.width)
     expect(conversation.height, "the conversation is a full column").toBeGreaterThan(400)
@@ -118,6 +119,7 @@ test("branch conversation: a question asked on a branch is stored in that branch
 
   // The home conversation at /app has neither.
   await page.goto("/app")
+  await expect(conversationOf(page), "one Conversation landmark at home").toHaveCount(1)
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await expect(questionIn(conversationOf(page), first)).toHaveCount(0)
   await expect(questionIn(conversationOf(page), second)).toHaveCount(0)

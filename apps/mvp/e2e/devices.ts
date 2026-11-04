@@ -220,7 +220,7 @@ export class Tab {
     readonly page: Page,
     readonly startedAt: number,
   ) {
-    this.conversation = page.getByRole("region", { name: "Conversation", exact: true }).first()
+    this.conversation = page.getByRole("region", { name: "Conversation", exact: true })
     this.composer = page.getByRole("textbox", { name: "Message Smithers" })
     this.composerForm = page.locator('form[data-slot="chat-composer"]')
     this.chatButton = page.getByRole("button", { name: /Chat/ })
