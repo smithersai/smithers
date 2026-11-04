@@ -29,10 +29,17 @@ export const startFakeSmithers = ({ liveTokens = Object.keys(LANES), lanes = LAN
       const url = new URL(req.url, "http://fake")
       const path = url.pathname
       const body = raw === "" ? undefined : JSON.parse(raw)
-      log.push({ method: req.method, path, at: Date.now() })
+      log.push({ method: req.method, path, at: Date.now(), writeId: body?.writeId, offset: url.searchParams.get("offset") })
       const scripted = scripts.find((s) => s.match(req.method, path) && s.answers.length > 0)
       if (scripted !== undefined) {
         const [status, answer, headers] = scripted.answers.shift()
+        if (status === "reset") return req.socket.destroy()
+        if (status === "reset-body") {
+          res.writeHead(200, { "content-type": "application/json", "electric-offset": "lost-page", "electric-handle": "lost-handle" })
+          res.write("[")
+          setTimeout(() => res.destroy(), 10)
+          return
+        }
         return json(res, status, answer, headers)
       }
       // The issues shape, signed out, as Electric sends it: every issue a create made, then up to date.

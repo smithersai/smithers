@@ -36,8 +36,25 @@ import {
 export const STAGES = ["create", "link", "work"]
 /** How long a pending write is left between looks. */
 const WATCH_MS = 5_000
-/** How long a server outage is left, with no wait of its own. */
-const OUTAGE_MS = 60_000
+/** Bounded per-stage outage budget, carried by recorded round outcomes. */
+const MAX_UNAVAILABLE_ATTEMPTS = 12
+const MAX_WAIT_MS = 300_000
+const transient = (status) => status === 0 || status === 429 || status >= 500
+class PermanentRequest extends Error {
+  constructor(response) { super("request refused"); this.response = response }
+}
+class TransientRequest extends Error {
+  constructor(response) { super("request unavailable"); this.response = response }
+}
+const unavailable = (cursor, headers, fields) => {
+  const retryCount = (cursor.retryCount ?? 0) + 1
+  if (retryCount >= MAX_UNAVAILABLE_ATTEMPTS) throw new Refused("unavailable_exhausted", `${cursor.stage} unavailable after ${retryCount} attempts`, 4)
+  const raw = headers.get("retry-after")
+  const seconds = raw === null || raw.trim() === "" ? NaN : Number(raw)
+  const delay = Number.isFinite(seconds) ? (seconds >= 0 ? seconds * 1000 : NaN) : raw === null ? NaN : Math.max(0, Date.parse(raw) - Date.now())
+  const fallback = Math.min(MAX_WAIT_MS, 2000 * 2 ** Math.min(retryCount - 1, 8))
+  return outcome({ ...fields, done: false, retryCount, waitMs: Number.isFinite(delay) && delay >= 0 ? Math.min(MAX_WAIT_MS, delay) : fallback })
+}
 
 /** An ISO 8601 UTC time, as the importer writes one. */
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/
@@ -123,9 +140,14 @@ const request = async (cursor, repo, { method = "GET", path, body, dry }) => {
     response = await fetch(`${cursor.origin}/api/repos/${owner}/${name}${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
   } catch {
     // A fetch error can quote the request's headers, the token among them, and the run keeps its errors.
-    throw new Refused("unavailable", `the request to ${cursor.origin} failed`, 4)
+    return { status: 0, headers: new Headers(), answer: undefined }
   }
-  return { status: response.status, headers: response.headers, answer: await response.json().catch(() => undefined) }
+  let answer
+  try { answer = await response.json() }
+  catch (error) {
+    if (!(error instanceof SyntaxError) && response.ok) return { status: 0, headers: new Headers(), answer: undefined }
+  }
+  return { status: response.status, headers: response.headers, answer }
 }
 
 /** Checks the plan, and before a real run that every repository's token is live: an unknown write id answers 404. */
@@ -135,6 +157,7 @@ export const verify = async ({ plan, acceptDropped, dryRun, origin }) => {
   if (!dryRun) {
     for (const repo of repos) {
       const { status } = await request({ dryRun, origin }, repo, { path: "/writes/00000000-0000-4000-8000-000000000000" })
+      if (transient(status)) throw new Refused("unavailable", `identity verification unavailable: HTTP ${status}`, 4)
       if (status !== 404) throw new Refused("identity", `the machine token for ${repo} is not live: HTTP ${status}`, 3)
     }
   }
@@ -145,21 +168,22 @@ const outcome = (fields) => ({ number: null, submitted: false, kind: "ok", waitM
 const options = () => ({ privateRepos: privateReposOf(process.env.SMITHERS_PRIVATE_REPOS_FILE) })
 
 /** What the server's wait, an outage or a refusal means for this attempt: the same stage again later, or an exception. */
-const notOk = ({ status, headers, answer }, fields) => {
-  const retryAfter = Number(headers.get("retry-after"))
-  if (status === 429 || status >= 500) return outcome({ ...fields, done: false, waitMs: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : OUTAGE_MS })
-  return outcome({ ...fields, kind: "refused", exception: `refused: HTTP ${status}${typeof answer?.code === "string" ? ` ${answer.code}` : ""}` })
+const notOk = ({ status, headers, answer }, fields, cursor) => {
+  if (transient(status)) return unavailable(cursor, headers, fields)
+  const code = typeof answer?.code === "string" && /^[a-z_]{1,32}$/.test(answer.code) ? ` ${answer.code}` : ""
+  if ([401, 403].includes(status)) throw new Refused("refused", `${cursor.stage} refused: HTTP ${status}${code}`, 1)
+  return outcome({ ...fields, kind: "refused", exception: `refused: HTTP ${status}${code}` })
 }
 
 /** Submits `body` once, then watches it across attempts. `fields` carries what the row keeps meanwhile. */
 const submitOrWatch = async (cursor, repo, writeId, body, fields, onDone) => {
   if (!cursor.submitted) {
     const sent = await request(cursor, repo, { method: "POST", path: "/writes", body: { writeId, ...body }, dry: { writeId } })
-    if (sent.status !== 200 && sent.status !== 202) return notOk(sent, fields)
+    if (sent.status !== 200 && sent.status !== 202) return notOk(sent, fields, cursor)
     return outcome({ ...fields, submitted: true, done: false, waitMs: 0 })
   }
   const looked = await request(cursor, repo, { path: `/writes/${writeId}`, dry: { status: "done", number: 1_000_000 + cursor.index, failure: null } })
-  if (looked.status !== 200) return notOk(looked, { ...fields, submitted: true })
+  if (looked.status !== 200) return notOk(looked, { ...fields, submitted: true }, cursor)
   if (looked.answer.status === "pending") return outcome({ ...fields, submitted: true, done: false, waitMs: WATCH_MS })
   if (looked.answer.status !== "done") return outcome({ ...fields, kind: "refused", exception: `${looked.answer.failure ?? looked.answer.status}` })
   return onDone(looked.answer)
@@ -169,7 +193,18 @@ const submitOrWatch = async (cursor, repo, writeId, body, fields, onDone) => {
 const shapes = new Map()
 const issuesOf = (origin, repo) => {
   const key = `${origin} ${repo}`
-  if (!shapes.has(key)) shapes.set(key, shapeReaderOf(clientOf({ origin, dryRun: false }), repoOf(repo)))
+  if (!shapes.has(key)) shapes.set(key, shapeReaderOf((() => {
+    const client = clientOf({ origin, dryRun: false })
+    return { ...client, send: async (input) => {
+      const response = await client.send(input)
+      if (transient(response.status)) throw new TransientRequest(response)
+      if (response.status !== 200 && response.status !== 409) throw new PermanentRequest(response)
+      // clientOf deliberately suppresses JSON/body errors. Never let the shape
+      // reader advance its offset for a page whose body did not arrive.
+      if (response.status === 200 && !Array.isArray(response.answer)) throw new TransientRequest({ headers: response.headers })
+      return response
+    } }
+  })(), repoOf(repo)))
   return shapes.get(key).rows()
 }
 
@@ -178,7 +213,17 @@ export const step = async (cursor) => {
   const { sha, rows } = readPlan(cursor.plan)
   if (sha !== cursor.sha) throw new Refused("plan", "the plan changed since the run validated it", 2)
   const all = fileRows(rows)
-  const result = await stepRow(cursor, all, rows)
+  let result
+  try { result = await stepRow(cursor, all, rows) }
+  catch (error) {
+    const fields = { submitted: cursor.submitted, number: cursor.number, nodeKey: all[cursor.index].type === "node" ? all[cursor.index].key : null }
+    if (error instanceof PermanentRequest) result = notOk(error.response, fields, cursor)
+    else {
+      if (!(error instanceof TransientRequest) && !(error instanceof Refused && error.code === "unavailable")) throw error
+      result = unavailable(cursor, error instanceof TransientRequest ? error.response.headers : new Headers(), fields)
+    }
+  }
+  result = { ...result, rowKey: all[cursor.index].key, nodeKey: all[cursor.index].type === "node" ? all[cursor.index].key : null }
   // Only a future link needs a created node's number. Keep the current row's
   // parent through every submit/watch retry, and retain null for failed parents.
   // In particular, never carry leaf-node receipts into every later handoff.
@@ -191,10 +236,13 @@ export const step = async (cursor) => {
 /** Runs the current stage; `step` adds its live-parent projection to the recorded outcome. */
 const stepRow = async (cursor, all, rows) => {
   const row = all[cursor.index]
+  if (row.parent !== undefined && cursor.nodes[row.parent] === null) {
+    return outcome({ kind: "skipped", exception: `no parent: ${row.parent} failed` })
+  }
   const at = rows.find((r) => r.type === "summary")?.at ?? new Date(0).toISOString()
   const postLinks = async (repo, number, links, fields) => {
     const posted = await request(cursor, repo, { method: "POST", path: `/issues/${number}/links`, body: { links: links.map((link) => ({ ...link, at: link.at ?? at })) } })
-    return posted.status === 200 || (cursor.dryRun && posted.status === 202) ? outcome(fields) : notOk(posted, fields)
+    return posted.status === 200 || (cursor.dryRun && posted.status === 202) ? outcome(fields) : notOk(posted, fields, cursor)
   }
   if (row.type === "queue-link") {
     const { links } = scrubbedOrException({ links: [row.link] })

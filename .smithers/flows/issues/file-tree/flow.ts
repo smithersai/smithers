@@ -60,6 +60,8 @@ export const Cursor = Schema.Struct({
   stage: Schema.Literals(["create", "link", "work"]),
   submitted: Schema.Boolean,
   attempt: Schema.Number,
+  /** Transient failures in this stage; absent in legacy cursors. */
+  retryCount: Schema.optionalKey(Schema.Number),
   number: Schema.NullOr(Schema.Number),
   /** How long this round sleeps before its attempt. */
   waitMs: Schema.Number,
@@ -108,7 +110,10 @@ export const Outcome = Schema.Struct({
   /** How long the round sleeps before this stage's next attempt. */
   waitMs: Schema.Number,
   done: Schema.Boolean,
+  retryCount: Schema.optionalKey(Schema.Number),
   exception: Schema.NullOr(Schema.String),
+  /** Public row identity; absent in legacy outcomes. */
+  rowKey: Schema.optionalKey(Schema.String),
   /** The row's key when the row is a tree node others hang under; its number goes in the cursor's `nodes`. */
   nodeKey: Schema.NullOr(Schema.String),
   /** Completed mappings no remaining row needs. Absent in previously recorded outcomes. */
@@ -184,10 +189,10 @@ export const layer = Layer.mergeAll(
 export const advance = (cursor: typeof Cursor.Type, outcome: typeof Outcome.Type): typeof Cursor.Type => {
   const forgotten = new Set(outcome.forgetNodes ?? [])
   const nodes = Object.fromEntries(Object.entries(cursor.nodes).filter(([key]) => !forgotten.has(key)))
-  if (!outcome.done) return { ...cursor, nodes, submitted: outcome.submitted, attempt: cursor.attempt + 1, waitMs: outcome.waitMs }
-  const exception = outcome.exception === null ? [] : [`${cursor.index}:${cursor.stage}: ${outcome.exception}`]
+  if (!outcome.done) return { ...cursor, nodes, submitted: outcome.submitted, attempt: cursor.attempt + 1, waitMs: outcome.waitMs, retryCount: outcome.retryCount ?? cursor.retryCount ?? 0 }
+  const exception = outcome.exception === null ? [] : [`${outcome.rowKey ?? cursor.index}:${cursor.stage}: ${outcome.exception}`]
   const number = cursor.stage === "create" ? outcome.number : cursor.number
-  const nodeKey = cursor.stage === "create" ? outcome.nodeKey : null
+  const nodeKey = outcome.nodeKey
   const counts = {
     created: cursor.counts.created + (cursor.stage === "create" && outcome.number !== null ? 1 : 0),
     linked: cursor.counts.linked + (cursor.stage === "link" && outcome.exception === null ? 1 : 0),
@@ -197,15 +202,16 @@ export const advance = (cursor: typeof Cursor.Type, outcome: typeof Outcome.Type
   const base = {
     ...cursor,
     attempt: 0,
+    retryCount: 0,
     submitted: false,
     waitMs: 0,
     counts,
-    exceptions: [...cursor.exceptions, ...exception].slice(-500),
-    nodes: nodeKey === null || forgotten.has(nodeKey) ? nodes : { ...nodes, [nodeKey]: number }
+    exceptions: [...cursor.exceptions, ...exception],
+    nodes: nodeKey === null || forgotten.has(nodeKey) ? nodes : { ...nodes, [nodeKey]: outcome.exception === null ? number : null }
   }
   const nextStage = STAGES[STAGES.indexOf(cursor.stage) + 1] as typeof Cursor.Type["stage"] | undefined
   // A row with no issue has nothing to label, link or post.
-  return nextStage === undefined || number === null
+  return nextStage === undefined || number === null || outcome.exception !== null
     ? { ...base, index: cursor.index + 1, stage: "create", number: null }
     : { ...base, stage: nextStage, number }
 }
