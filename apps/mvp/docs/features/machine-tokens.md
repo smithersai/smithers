@@ -115,6 +115,10 @@ fetch boundary.
 
 ## Tests
 
+`E2E_MACHINE_TOKEN_FILE` names the private token file issued by `ops/machine-token/issue.ts` for the scratch
+repository. The production spec declares `machineToken`; a missing file is a reported prerequisite, without reading
+or printing its value during need detection.
+
 | File | Proves |
 |---|---|
 | `worker/github/MachineWrite.test.ts` | the route's scope and refusals, a token revoked while its body arrived, a person-only act and policy labels refused, public content, authority over a parent's repository, lane ownership, the backlog bound on every way into pending, the App as author, missing/existing labels, metadata validation, label creation races and lost answers, twenty-label provisioning, stored label refusal causes and User-Agent coverage, recovery by marker, look-first sub-issues, service in order, spacing from the end of a send, holds before reads and tokens, penalties, a permission 403 with a future reset, truncated JSON, defects, lease and epoch, `failed` and its retry, updates by the owning lane, `github/Write` replaying with both flows registered |

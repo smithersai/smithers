@@ -1,16 +1,13 @@
 import { expect, test } from "./fixtures"
 import { requires } from "./target"
+import { failedHistory, repositoryHistory } from "./run-prerequisites"
 
-// Read-only regression against the test account's retained bug-bash runs.
-// No launch, provider call, or repository write is required.
+// Verified retained failures; repository history is selected through the product or created with its manual flow.
 requires("githubSignIn", "member")
 
 test("failed history opens on its failure with records and consistent skipped steps", async ({ page }) => {
   requires("failedRun")
-  const execution = process.env.E2E_FAILED_RUN!
-  const receipt = await page.request.get(`/api/remote-runs/${encodeURIComponent(execution)}?limit=1`)
-  expect(receipt.status(), "the failed-run prerequisite must be visible to this person").toBe(200)
-  expect(await receipt.json()).toMatchObject({ run: { status: "failed" } })
+  const execution = await failedHistory(page.request)
   await page.goto("/app/runs")
   const failed = page.getByRole("table", { name: "Runs", exact: true }).locator(`tr[data-run="${execution}"]`)
   await expect(failed).toContainText("Failed")
@@ -27,9 +24,8 @@ test("failed history opens on its failure with records and consistent skipped st
 })
 
 test("repository history returns to personal Runs and keeps engine names in details", async ({ page }) => {
-  requires("repositoryRun")
+  const execution = await repositoryHistory(page.request)
   await page.goto("/app/runs")
-  const execution = process.env.E2E_REPOSITORY_RUN!
   const link = page.getByRole("table", { name: "Runs", exact: true }).locator(`tr[data-run="${execution}"] .sui-run-list-flow a[href*="/actions/runs/"]`)
   await expect(link).toBeVisible()
   await link.click()

@@ -308,8 +308,10 @@ const needs = {
     reason: "it commits and drops TODOs: locally on octocat/Spoon-Knife; a deployment needs E2E_STACK_REPOSITORY naming a writable scratch repository with stack shapes and repository membership, never a smithersai one",
   },
   absentRepository: {
-    met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_ABSENT_REPOSITORY ?? ""),
-    reason: "it needs an authoritative absent public repository: set E2E_ABSENT_REPOSITORY and prime About through an authenticated Member with a working read token; an anonymous GitHub quota is not a fixture",
+    met: (run) => run.env.E2E_ABSENT_REPOSITORY
+      ? /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_ABSENT_REPOSITORY)
+      : run.target === "deployment",
+    reason: "it verifies a fresh unique repository name on GitHub and through authenticated About; E2E_ABSENT_REPOSITORY optionally selects a name, which must also be verified absent at test time",
     blocked: true,
   },
   unsyncedRepository: {
@@ -318,8 +320,8 @@ const needs = {
     blocked: true,
   },
   failedRun: {
-    met: (run) => (run.env.E2E_FAILED_RUN ?? "") !== "",
-    reason: "it needs a retained real failed run with failure attempts and undispatched steps, visible to this account: E2E_FAILED_RUN names its execution; never insert fabricated history",
+    met: (run) => run.target === "deployment" || (run.env.E2E_FAILED_RUN ?? "") !== "",
+    reason: "it selects and inspects real failed history through this person's Cloud runs API; E2E_FAILED_RUN optionally pins an execution with recorded failure attempts and skipped steps; never insert fabricated history",
     blocked: true,
   },
   repositoryRun: {
@@ -452,6 +454,10 @@ const needs = {
   githubPushToken: {
     met: (run) => set(run, "E2E_GITHUB_TOKEN"),
     reason: "local development pushes as a person: set E2E_GITHUB_TOKEN to a token with Contents write on the scratch repository",
+  },
+  machineToken: {
+    met: (run) => set(run, "E2E_MACHINE_TOKEN_FILE") && existsSync(run.env.E2E_MACHINE_TOKEN_FILE!),
+    reason: "it files an issue using a real machine token: E2E_MACHINE_TOKEN_FILE must name the private token file issued for the scratch repository by ops/machine-token/issue.ts",
   },
   githubApp: {
     met: (run) => run.target === "deployment",

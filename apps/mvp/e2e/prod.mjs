@@ -64,16 +64,17 @@ const take = () => {
   return true
 }
 mkdirSync(dirname(lock), { recursive: true })
-for (let waiting = false; !take(); waiting = true) {
+for (let previous = ""; !take();) {
   const owner = ownerOf()
   const pid = Number(/\bpid (\d+)/.exec(owner)?.[1])
   if (Number.isInteger(pid) && !alive(pid)) {
     console.error(`The production e2e lock ${lock} is held by a run that ended (${owner}). Remove it once nothing uses the test account.`)
     process.exit(2)
   }
-  if (!waiting) console.error(`Waiting for the production e2e lock ${lock}, held by: ${owner}`)
+  if (previous !== owner) console.error(`Waiting for the production e2e lock ${lock}, held by: ${owner}`)
+  previous = owner
   // A blocking wait between looks; the lock is a directory another process removes.
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20_000)
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_000)
 }
 // Released once: after Playwright exits, or at exit when it never ran. A second release would remove the next run's lock.
 let held = true
@@ -90,5 +91,7 @@ const tests = spawnSync("pnpm", ["exec", "playwright", "test", ...process.argv.s
 // The recordings use neither the test account nor the deployment: the next run may start while they are made.
 release()
 const media = join(homedir(), "Desktop/smithers-mvp/prod")
-const recordings = spawnSync("node", ["e2e/gifs.mjs", "test-results-deployment", join(media, "gifs"), join(media, "videos")], { stdio: "inherit", env })
+// A small browser driver can delegate video encoding to its compute host. The runner must wait for the real
+// media command and propagate its exit status; the recordings remain part of this run's gate.
+const recordings = spawnSync(env.E2E_MEDIA_RUNNER || "node", ["e2e/gifs.mjs", "test-results-deployment", join(media, "gifs"), join(media, "videos")], { stdio: "inherit", env })
 process.exit(tests.status !== 0 ? (tests.status ?? 1) : (recordings.status ?? 1))

@@ -195,6 +195,7 @@ describe("needs", () => {
       "repoFlows",
       "githubAppKey",
       "githubPushToken",
+      "machineToken",
       "githubApp",
       "longRun",
       "docsSite",
@@ -251,11 +252,11 @@ describe("needs", () => {
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
     const met = (role: ReturnType<Run["role"]>) => (Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].met(deployedAs(role)))
-    expect(met("guest")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
-    expect(met(null)).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
-    expect(met("member")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member"])
-    expect(met("maintainer")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
-    expect(met("admin")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("guest")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "absentRepository", "failedRun", "hostedModelOff", "githubApp"])
+    expect(met(null)).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "absentRepository", "failedRun", "hostedModelOff", "githubApp"])
+    expect(met("member")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "absentRepository", "failedRun", "hostedModelOff", "githubApp", "member"])
+    expect(met("maintainer")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "absentRepository", "failedRun", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("admin")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "absentRepository", "failedRun", "hostedModelOff", "githubApp", "member", "maintainer"])
 
     // An Admin turned the deployment's own model on; a local dev server answers with it unless told otherwise.
     expect(NEEDS.hostedModelOff.met(deployedAs("member", { E2E_HOSTED_MODEL: "on" }))).toBe(false)
@@ -661,18 +662,35 @@ describe("the specs", () => {
 
 
 describe("retained production prerequisites", () => {
-  it("requires explicit absent, unsynced and empty-secret repositories", () => {
-    for (const [need, variable] of [["absentRepository", "E2E_ABSENT_REPOSITORY"], ["unsyncedRepository", "E2E_UNSYNCED_REPOSITORY"], ["emptySecretsRepository", "E2E_EMPTY_SECRETS_REPOSITORY"]] as const) {
+  it("requires explicit unsynced and empty-secret repositories", () => {
+    for (const [need, variable] of [["unsyncedRepository", "E2E_UNSYNCED_REPOSITORY"], ["emptySecretsRepository", "E2E_EMPTY_SECRETS_REPOSITORY"]] as const) {
       for (const name of [undefined, "", "owner", "owner/repo/other", "owner/repo?token=secret"]) {
         expect(NEEDS[need].met(deployedAs("member", { [variable]: name }))).toBe(false)
       }
       expect(NEEDS[need].met(deployedAs("member", { [variable]: "owner/fixture" }))).toBe(true)
     }
   })
-  it("requires real retained execution identifiers instead of assuming history is populated", () => {
+  it("provisions absence and run history at test time instead of skipping unset fixture ids", () => {
+    for (const value of [undefined, "", "owner/fixture"]) {
+      expect(NEEDS.absentRepository.met(deployedAs("member", { E2E_ABSENT_REPOSITORY: value }))).toBe(true)
+    }
+    for (const value of ["owner", "owner/repo/other", "owner/repo?token=secret"]) {
+      expect(NEEDS.absentRepository.met(deployedAs("member", { E2E_ABSENT_REPOSITORY: value }))).toBe(false)
+    }
     for (const [need, variable] of [["failedRun", "E2E_FAILED_RUN"], ["repositoryRun", "E2E_REPOSITORY_RUN"]] as const) {
-      for (const id of [undefined, ""]) expect(NEEDS[need].met(deployedAs("member", { [variable]: id }))).toBe(false)
+      for (const id of [undefined, ""]) expect(NEEDS[need].met(deployedAs("member", { [variable]: id }))).toBe(need === "failedRun")
       expect(NEEDS[need].met(deployedAs("member", { [variable]: "repo:fixture:1" }))).toBe(true)
     }
+  })
+  it("requires an existing machine-token file without reading its value", () => {
+    const directory = mkdtempSync(join(tmpdir(), "machine-token-need-"))
+    const file = join(directory, "token")
+    try {
+      for (const path of [undefined, "", file]) {
+        expect(NEEDS.machineToken.met(deployedAs("member", { E2E_MACHINE_TOKEN_FILE: path }))).toBe(false)
+      }
+      writeFileSync(file, "", { mode: 0o600 })
+      expect(NEEDS.machineToken.met(deployedAs("member", { E2E_MACHINE_TOKEN_FILE: file }))).toBe(true)
+    } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 })

@@ -378,9 +378,37 @@ E2E_ISSUES_REPOSITORY=<owner>/<scratch>   # issue writes and Make TODO; synced w
 E2E_STACK_REPOSITORY=<owner>/<scratch>    # TODO commits and drops; stackAdmin when the account is its Admin
 E2E_FACTORY_REPOSITORY=<owner>/<scratch>  # TODO runs on an external agent the spec runs (agentRunner)
 E2E_RUNNER_MIRROR=<a jj clone of it>      # `jj git clone https://github.com/<owner>/<scratch> <dir>`
+E2E_UNDISPATCHED_RUN_ID=<execution>      # retained real TODO with failed Implement and undispatched Publish/Await/Settle
 ```
 
 The scratch repository is the test account's own, never a `smithersai` one, with the deployment's GitHub App installed on it: the specs open issues, commit TODOs, and let the App open throwaway pull requests there. It keeps one open issue for Make TODO.
+
+History and absence fixtures are verified at test time (`e2e/run-prerequisites.ts`,
+`e2e/repository-prerequisites.ts`), without fabricated engine events:
+
+- `E2E_FAILED_RUN` optionally pins a real failed execution in the account's personal Runs list.
+  Otherwise the spec selects the newest listed failure whose inspection has failed attempts and undispatched actions.
+  A TODO's engine may complete after its failure handler records failed work; the assertions check both receipts.
+- `E2E_REPOSITORY_RUN` optionally pins a real repository execution in that list. Otherwise the spec reuses a listed
+  repository run or starts the scratch repository's `hand` flow through the product. `E2E_REPO_FLOWS_REPOSITORY`
+  selects that scratch repository, defaulting to `E2E_FACTORY_REPOSITORY`. The deployment must enable `REPO_FLOWS`
+  and include it in `REPO_FLOWS_REPOSITORIES`; its default branch needs `e2e/fixtures/ci-repo`'s manual flow.
+  A missing setting or history fails the test with the product's refusal, never silently skips it.
+- `E2E_ABSENT_REPOSITORY` optionally selects an `owner/name`. Otherwise each invocation generates a unique name
+  under the test account. GitHub must answer `404 Not Found` at test time before authenticated product About also
+  confirms `404 not_found`. An existing repository, quota refusal or outage fails the fixture. The receipt attaches
+  only its identifier, status and check time.
+- `E2E_UNDISPATCHED_RUN_ID` identifies retained legacy TODO history. Before opening its page the spec verifies its
+  failed `todo/Implement` attempts and empty dispatch attempts for `todo/Publish`, `todo/Await` and `todo/Settle`.
+  This older recording is required to exercise dependency failures recorded before the graph distinguished skipped
+  actions. Select and verify it through the test account's `/api/remote-runs/<execution>` API; never insert history.
+
+Keep retained identifiers in the private dotenv settings file, mode 0600. Never store sessions or tokens in fixture
+attachments. Creating a new historical failure needs a real failed action; production offers no fault-injection route.
+`E2E_MEDIA_RUNNER` optionally names an executable that runs the media command on a compute host. It receives
+`e2e/gifs.mjs`, the results directory and both media destinations as arguments, and must wait for encoding and
+propagate its status. The default is `node`. This keeps browser driving on a small machine without encoding there;
+media validation remains required.
 
 A run that was killed never reaches its own cleanup: a Working TODO it left holds the stack's lane, and its runner stays registered. So the setup puts each scratch repository the account administers back before any test (`cleanScratch`, `e2e/stackWrites.ts`): it retires every `e2e-` runner and its agent, drops every open TODO and sets one stacked lane, all through the product's routes, and prints what it found. `pnpm e2e:prod` holds the test account's lock, so nothing there is another run's. A refusal fails the setup at once, naming what stayed dirty. Don't wrap a run in `timeout`: `prod.mjs` waits for Playwright, and what a run finishes it cleans up itself.
 

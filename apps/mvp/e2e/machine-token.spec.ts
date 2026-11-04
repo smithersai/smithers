@@ -9,11 +9,10 @@ import { readFileSync } from "node:fs"
 import { expect, test } from "./fixtures"
 import { baseURL, requires } from "./target"
 
-requires("githubScratch")
+requires("githubScratch", "machineToken")
 
 const repo = process.env.E2E_ISSUES_REPOSITORY ?? ""
 const file = process.env.E2E_MACHINE_TOKEN_FILE
-test.skip(file === undefined, "needs E2E_MACHINE_TOKEN_FILE, issued by ops/machine-token/issue.ts")
 const headers = () => ({ authorization: `Bearer ${readFileSync(file!, "utf8").trim()}`, "content-type": "application/json" })
 
 test("an agent token files an issue as the App, and a person-only act with it is refused", async ({ request, playwright }) => {
