@@ -1,6 +1,6 @@
 import { IssueSearchBox } from "../../features/issues/components/IssueSearchBox"
 import { IssueSort } from "../../features/issues/components/IssueSort"
-import { visibleRows, withSearched } from "../../features/issues/list"
+import { awaitingListRows, visibleRows, withSearched } from "../../features/issues/list"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { Badge, Button, Card, CardContent, EmptyState, IssuesView, LinkTabs, PageBody } from "@smthrs/ui"
@@ -71,9 +71,11 @@ export function IssuesScreen() {
   // Until the list has synced, the issues route answers a search; once it has, the device's own rows do.
   const searchable = listSync === "syncing" ? withSearched(rows ?? [], searched?.[0], repoId(owner, repo), search.q) : rows ?? []
   const visible = listProps(visibleRows(filterWork(filterCommitment(searchable as ReadonlyArray<ListRow>, search.commitment), work, search.work), search), synced, access, triage !== undefined && !triage.paused).issues
-  // Still syncing, with no row of its own to show yet, and no filter: the first paint's rows may stand in.
-  const awaitingRows = failure === undefined && listSync === "syncing" && visible.length === 0 &&
-    search.q === undefined && search.commitment === undefined && search.work === undefined && search.sort === undefined
+  // A query alone is not a settled answer: retain the gated shell until this search answers or sync wins.
+  const awaitingRows = awaitingListRows({ syncing: listSync === "syncing", failed: failure !== undefined,
+    rows: visible.length, filtered: search.commitment !== undefined || search.work !== undefined || search.sort !== undefined,
+    repoId: repoId(owner, repo), q: search.q, searched: searched?.[0],
+  })
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
   const header = <RepoHeader backTarget={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
@@ -139,10 +141,9 @@ export function IssuesScreen() {
           <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ ...search, work: "pr-or-queue" }}
             aria-current={search.work === "pr-or-queue" ? "page" : undefined}>{WORK_FILTER_LABEL}</Link>
         </LinkTabs>
-        {failure !== undefined ? null : listSync === "syncing" ? <p role="status" data-list-sync="" className="issues-syncing">Syncing issues…</p> : null}
         {(
           <div className="list-search-tools" role="search" aria-label="Search issues">
-            <IssueSearchBox owner={owner} repo={repo} q={search.q} ask={listSync === "syncing"} />
+            <IssueSearchBox owner={owner} repo={repo} q={search.q} />
             <IssueSort value={search.sort ?? "updated"}
               onChange={(sort) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
           </div>
@@ -157,8 +158,7 @@ export function IssuesScreen() {
               session !== undefined && mayChange(session, confirmed, answer),
               (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
             )}
-            // Until its rows are known the list shows no counts and no placeholders: the "Syncing issues…" line says it
-            // (ARCH-5, 0002 §7). `loading` would mark it busy, a spinner by another name.
+            // Until its rows are known the list shows no counts or loading state (the cold-path contract).
             unknown={listSync === "syncing"}
             href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
             onNavigate={(_, href) => void navigate({ href })}

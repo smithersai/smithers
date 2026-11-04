@@ -162,3 +162,24 @@ test("a failed repository cache wipe is exported without its repository or error
   for (const failure of failures) expect(failure.attributes).toEqual({ feature: "repo", family: "test-cache" })
   expect(JSON.stringify(tab.api.telemetry)).not.toContain("private sentinel")
 })
+
+// Cold search's authority starts before unrelated repository and branch persistence work.
+// These are the real collection adapters; the record contains collection names only, never rows or statements.
+test("repository refusal restoration starts before repository metadata and branch conversations", async () => {
+  const device = nodeDevice()
+  const selected: string[] = []
+  const host = { ...device, persistence: { ...device.persistence, make: (...args: Parameters<typeof device.persistence.make>) => {
+    const normal = device.persistence.make(...args)
+    return { ...normal, resolvePersistenceForCollection: (selection: Parameters<NonNullable<typeof normal.resolvePersistenceForCollection>>[0]) => {
+      selected.push(selection.collectionId)
+      return normal.resolvePersistenceForCollection?.(selection) ?? normal
+    } }
+  } } }
+  const tab = await open(host)
+  await tab.runtime.runPromise(tab.store.refusalsKnown)
+  expect(selected).toContain("repo-refusals")
+  for (const collection of ["repo-repositories", "branch-conversations"]) {
+    expect(selected).toContain(collection)
+    expect(selected.indexOf("repo-refusals")).toBeLessThan(selected.indexOf(collection))
+  }
+})

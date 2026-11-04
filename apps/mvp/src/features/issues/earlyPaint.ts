@@ -1,0 +1,56 @@
+import { Effect, FiberHandle, Layer, Metric, Stream, SubscriptionRef } from "effect"
+import { runners } from "../../boundary"
+import { RepoStore } from "../repo/store"
+import { repoId } from "../repo/contract"
+import { IssuesClient } from "./api"
+import type { EarlySearchHost } from "./earlySearch"
+import type { FirstPaintIssue } from "./contract"
+
+const paints = Metric.counter("issues_early_search_paints", { description: "Early search gate decisions, by outcome" })
+
+/** Publish a server-authorized read through the existing gate before unrelated application services finish. */
+export const earlySearchPaint = (host: EarlySearchHost | undefined) => Layer.effectDiscard(Effect.gen(function* () {
+  if (host?.show === undefined) return
+  const { early } = yield* IssuesClient
+  if (early === undefined) return
+  const repos = yield* RepoStore
+  const run = runners(yield* Effect.context<never>(), "issues")
+  const showing = yield* FiberHandle.make<void, never>()
+  yield* SubscriptionRef.changes(early).pipe(Stream.runForEach((read) => FiberHandle.run(showing,
+    read === undefined ? Effect.void : Effect.gen(function* () {
+      const id = repoId(read.owner, read.name)
+      const fence = repos.fenceOf(id)
+      yield* repos.refusalsKnown
+      if (!read.current() || repos.fenceOf(id) !== fence) { read.revoke(); return }
+      let rows: ReadonlyArray<FirstPaintIssue> | undefined
+      let shown = false
+      let last: boolean | undefined
+      const publish = () => {
+        const allowed = read.current() && shown
+        if (!allowed) read.revoke()
+        if (allowed && rows === undefined || last === allowed) return
+        last = allowed
+        host.show!(read.owner, read.name, read.q, allowed ? rows : undefined)
+        const outcome = allowed ? "shown" : "withheld"
+        run.runSync(Metric.update(Metric.withAttributes(paints, { outcome }), 1).pipe(
+          Effect.andThen(Effect.logInfo("issues.search.paint").pipe(Effect.annotateLogs({ outcome }))),
+        ))
+      }
+      // Synchronous with the gate's own change: a refusal never leaves an early row on the page for another turn.
+      yield* Effect.acquireRelease(Effect.sync(() => repos.observe(id, show => {
+        shown = show
+        publish()
+      })), unsubscribe => Effect.sync(() => {
+        read.revoke()
+        unsubscribe()
+        host.show!(read.owner, read.name, read.q, undefined)
+      }))
+      // Observe authority while the body is still pending: a closed-and-reopened gate cannot revive that answer.
+      const result = yield* Effect.result(read.answer)
+      if (result._tag === "Failure") return
+      if (!read.current() || repos.fenceOf(id) !== fence) { read.revoke(); return }
+      rows = result.success.map(issue => ({ number: issue.number, title: issue.title, state: issue.state, author: issue.author.login }))
+      publish()
+      yield* Effect.never
+    }).pipe(Effect.scoped), { startImmediately: true })), Effect.forkScoped({ startImmediately: true }))
+}))

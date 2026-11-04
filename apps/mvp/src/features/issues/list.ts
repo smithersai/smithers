@@ -1,5 +1,20 @@
 import type { ListedIssue } from "./schema"
 
+/** Keep the gated first paint until the normal list has an answer, including an empty answer to this search. */
+export const awaitingListRows = (state: {
+  readonly syncing: boolean
+  readonly failed: boolean
+  readonly rows: number
+  readonly filtered: boolean
+  readonly repoId: string
+  readonly q: string | undefined
+  readonly searched: { readonly repoId: string; readonly q: string } | undefined
+}): boolean => {
+  if (!state.syncing || state.failed || state.rows > 0 || state.filtered) return false
+  return state.q === undefined || state.searched === undefined ||
+    state.searched.repoId !== state.repoId || state.searched.q !== state.q.trim()
+}
+
 /** Shared URL state and client-side ordering over synced issue and pull request rows. */
 export const LIST_SORTS = ["newest", "oldest", "updated"] as const
 export type ListSort = (typeof LIST_SORTS)[number]

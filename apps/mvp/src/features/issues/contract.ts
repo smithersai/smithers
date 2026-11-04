@@ -417,6 +417,8 @@ export const NOT_FOUND = "Not found"
 /** What the issues feature records (docs/observability.md), by name, and the attributes they carry: never text. */
 export const ISSUES_TELEMETRY = {
   records: [
+    "issues.search.early", "issues.search.paint",
+    "issues_early_search_reads", "issues_early_search_paints",
     "issues.write.admission",
     "smithers_issue_write_admissions",
     "smithers_issue_submission_failures",

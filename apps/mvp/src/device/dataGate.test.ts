@@ -102,8 +102,8 @@ test("outside the stores, nothing reads a raw collection of a repository's rows"
     visit(file)
   }
   expect(reads).toBeGreaterThan(0)
-  expect(leaks).toEqual([])
-  expect(personal).toEqual([])
+  expect(leaks, leaks.join("\n")).toEqual([])
+  expect(personal, personal.join("\n")).toEqual([])
 }, 240_000)
 
 test("the walk finds a component that reads a raw collection of a repository's rows", () => {

@@ -34,6 +34,7 @@ const contextOf = () => {
 const load = (preload: boolean) => ({
   location: { pathname: "/acme/widgets/issues/7", searchStr: "", hash: "" },
   preload,
+  search: {},
   abortController: new AbortController(),
 })
 
@@ -74,7 +75,6 @@ test("the issues list asks GitHub's spelling of the repository's name while its 
   const entering = (router.routesById["/$owner/$repo/issues"].options.beforeLoad as unknown as Enter)({
     context: { ...context, repo: { actions: { ...context.repo.actions, warmRoute: () => warming, canonicalName } } },
     params: { owner: "acme", repo: "widgets" },
-    search: {},
     ...load(false),
     location: { pathname: "/acme/widgets/issues", searchStr: "", hash: "" },
   })
@@ -108,4 +108,19 @@ test("a cold page's first load shows the issues list's pending screen at once, t
   await loading
   expect(cold.state.matches.find((match) => match.routeId === "/$owner/$repo/issues")?.status).toBe("success")
   await vi.waitFor(() => expect([cold.options.defaultPendingMs, cold.options.defaultPendingMinMs]).toEqual([PENDING_MS, PENDING_MIN_MS]))
+})
+
+// Search starts once at navigation, before the route's warm/About dependency can settle. The input only navigates.
+test("a cold URL search starts before the repository opens and a preload starts none", async () => {
+  const { context, release } = contextOf()
+  const enter = router.routesById["/$owner/$repo/issues"].options.beforeLoad as unknown as Enter
+  const args = { context, params: { owner: "acme", repo: "widgets" }, ...load(false), search: { q: "#42" } }
+  const entering = enter(args)
+  expect(context.issues.actions.restoreSearch).toHaveBeenCalledExactlyOnceWith("acme", "widgets", "#42")
+  release()
+  await entering
+  await enter({ ...args, preload: true })
+  expect(context.issues.actions.restoreSearch).toHaveBeenCalledTimes(1)
+  await enter({ ...args, search: {} })
+  expect(context.issues.actions.restoreSearch).toHaveBeenLastCalledWith("acme", "widgets", undefined)
 })

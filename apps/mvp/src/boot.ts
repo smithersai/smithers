@@ -49,6 +49,8 @@ import { Home, type HomeView } from "./features/home/home"
 import { HomeClient } from "./features/home/api"
 import { HomeStore } from "./features/home/store"
 import { CommandsStore } from "./features/commands/store"
+import type { EarlySearchHost } from "./features/issues/earlySearch"
+import { earlySearchPaint } from "./features/issues/earlyPaint"
 import { IssuesClient } from "./features/issues/api"
 import { Issues, type IssuesLayer } from "./features/issues/issues"
 import { IssuesStore } from "./features/issues/store"
@@ -138,6 +140,8 @@ export const bootTime = Metric.histogram("smithers_web_boot_ms", {
  * theme paints, the clipboard, and this tab's engine worker. main.tsx gives the browser's; a test gives Node's.
  */
 export interface Host extends ChatHost {
+  /** The first-paint input, bound before the store opens; publication follows the repository data gate. */
+  readonly earlyIssueSearch?: EarlySearchHost
   readonly formSnapshot?: PendingSnapshot.Service
   readonly writeSnapshot?: PendingSnapshot.Service
 
@@ -370,20 +374,22 @@ export const appLayer = <S = never>(
     // Which repository each of the person's conversations is of: what a conversation's rows show through (the data gate).
     Layer.provideMerge(ConversationOwners.layer({ origin }).pipe(
       Layer.provideMerge(Layer.succeed(WebTab, host.web)),
-      Layer.provideMerge(RepoStore.layer({ origin })),
     )),
-    // Drafts and the outbox initialize before any repository's gate or conversation's display queries. Only a sent
-    // question's delivery confirmation waits for ChatStore's read side (chat/writes.ts).
+    // Publish through repository authority before branch conversations and the remaining feature services.
+    Layer.provideMerge(BranchStore.layer.pipe(
+      Layer.provideMerge(earlySearchPaint(host.earlyIssueSearch).pipe(
+        Layer.provideMerge(RepoStore.layer({ origin })),
+        Layer.provideMerge(AuthStore.layer),
+      )),
+    )),
+    // Drafts and the outbox retain their independent startup before repository restoration. Search's HTTP read
+    // already runs below storage; its publisher alone waits for the gate's own restoration.
     Layer.provideMerge(ChatWrites.layer(host).pipe(
       Layer.provideMerge(StackWrites.layer),
       Layer.provideMerge(SteerWrites.layer),
       Layer.provideMerge(IssueWrites.layer),
       Layer.provideMerge(TextWrites.layer),
     )),
-    // Below the repository store, which shows the sign-in link in Clone's place from sign-in's row; beside it, the
-    // branch this tab's route shows: the branch layer's, and the composer's, whose `/new` starts a conversation in its
-    // repository (src/features/commands/actions.ts).
-    Layer.provideMerge(Layer.merge(AuthStore.layer, BranchStore.layer)),
     // Above dispatch, which remembers this tab's requests and runs: `app/navigate` moves only the tab that asked,
     // `repo/copy` writes only its clipboard, and a bug report reads only its page and runs. The door each run came
     // through is answered with sign-in, above (`auth`).
@@ -409,7 +415,6 @@ export const appLayer = <S = never>(
     // `SecretsClient` or `PersonalModelClient` in its place.
     Layer.provideMerge(
       Layer.mergeAll(
-        IssuesClient.layer({ origin, within: REQUEST_WITHIN }),
         PullsClient.layer({ origin, within: REQUEST_WITHIN }),
         SecretsClient.layer({ origin, within: REQUEST_WITHIN }),
         PersonalModelClient.layer({ origin, within: REQUEST_WITHIN }),
@@ -434,7 +439,13 @@ export const appLayer = <S = never>(
     ),
     // Built before the device store: the leading tab's engine worker serves the store's SQLite, so this tab starts
     // its worker first.
-    Layer.provideMerge(tabEngine(host.engineWorker, host.engineName)),
+    // Search input and its authorized HTTP read need no store, drafts or global services. Publication still uses
+    // the repository data gate, and the ordinary action reuses the answer. Build below the startup dependency chain.
+    Layer.provideMerge(tabEngine(host.engineWorker, host.engineName).pipe(
+      Layer.provideMerge(IssuesClient.layer({ origin, within: REQUEST_WITHIN,
+        ...(host.earlyIssueSearch === undefined ? {} : { early: host.earlyIssueSearch }),
+      })),
+    )),
     Layer.provideMerge(Page.layer(reload)),
     Layer.provide(FetchHttpClient.layer),
     // What went wrong in this tab lately, which a bug report carries (src/flows/errors.ts): the error records the

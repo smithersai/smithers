@@ -19,7 +19,7 @@ const issues = { actions: { search: vi.fn() } } as never
 
 const show = (box: ReactNode) =>
   act(() => root.render(createElement(IssuesProvider, { value: issues }, createElement(RouterContextProvider, { router, children: box }))))
-const box = (repo: string, pending: boolean) => createElement(IssueSearchBox, { key: pending ? "pending" : "list", owner: "acme", repo, q: "#12", ask: true, pending })
+const box = (repo: string, pending: boolean) => createElement(IssueSearchBox, { key: pending ? "pending" : "list", owner: "acme", repo, q: "#12", pending })
 const input = () => dom.document.querySelector("input") as unknown as HTMLInputElement
 const typedIn = async (repo: string) => {
   await show(box(repo, true))

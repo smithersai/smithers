@@ -67,27 +67,6 @@ export const replaceRole = (store: { readonly roles: Collection.Collection<RepoR
   }).pipe(Effect.orDie)
 
 const make = Effect.fnUntraced(function* (config: RepoConfig) {
-  const repositories = yield* ElectricCollection.make<Repository>({
-    id: "repo-repositories",
-    schema: Repository,
-    getKey: (row) => row.id,
-    syncMode: "eager",
-    // Version 4 adds `refsChangedAt`; synced caches resync on a version change (decision 0021).
-    persist: { schemaVersion: 4 },
-    shape: {
-      url: `${config.origin}${REPOSITORIES_SHAPE_ROUTE}`,
-      columnMapper: ElectricCollection.snakeCamelMapper(),
-      parser: { int8: (value: string) => Number(value) },
-    },
-    ...(config.retry === undefined ? {} : { retry: config.retry }),
-  })
-  const clones = yield* Collection.local<CloneRow, string>({ id: "repo-clones", schema: CloneRow, getKey: (row) => row.id })
-  const trees = yield* Collection.local<TreeRow, string>({ id: "repo-trees", schema: TreeRow, getKey: (row) => row.key })
-  const blobs = yield* Collection.local<BlobRow, string>({ id: "repo-blobs", schema: BlobRow, getKey: (row) => row.key })
-  const refs = yield* Collection.local<RefsRow, string>({ id: "repo-refs", schema: RefsRow, getKey: (row) => row.key })
-  const abouts = yield* Collection.local<AboutRow, string>({ id: "repo-abouts", schema: AboutRow, getKey: (row) => row.key })
-  const heads = yield* Collection.local<HeadRow, string>({ id: "repo-heads", schema: HeadRow, getKey: (row) => row.key })
-  const embeds = yield* Collection.local<EmbedRow, string>({ id: "repo-embeds", schema: EmbedRow, getKey: (row) => row.key })
   const roles = yield* Collection.local<RepoRole, string>({ id: "repo-roles", schema: RepoRole, getKey: (row) => row.id })
   // The one owner of "this repository refused this person" on the device. A 403 anywhere marks it, durably, so every tab
   // and every later load reads it, and each cache of the repository registers to be wiped by it (`registerCache`).
@@ -150,6 +129,29 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     Effect.catch(() => Effect.logError("repo.refusals.unavailable").pipe(Effect.annotateLogs({ feature: "repo" }))),
     Effect.forkScoped({ startImmediately: true }),
   )
+  // Start authority restoration before repository metadata. Only the data gate waits for it: store construction
+  // remains synchronous with memory persistence and never blocks the app on an unavailable restore.
+  const repositories = yield* ElectricCollection.make<Repository>({
+    id: "repo-repositories",
+    schema: Repository,
+    getKey: (row) => row.id,
+    syncMode: "eager",
+    // Version 4 adds `refsChangedAt`; synced caches resync on a version change (decision 0021).
+    persist: { schemaVersion: 4 },
+    shape: {
+      url: `${config.origin}${REPOSITORIES_SHAPE_ROUTE}`,
+      columnMapper: ElectricCollection.snakeCamelMapper(),
+      parser: { int8: (value: string) => Number(value) },
+    },
+    ...(config.retry === undefined ? {} : { retry: config.retry }),
+  })
+  const clones = yield* Collection.local<CloneRow, string>({ id: "repo-clones", schema: CloneRow, getKey: (row) => row.id })
+  const trees = yield* Collection.local<TreeRow, string>({ id: "repo-trees", schema: TreeRow, getKey: (row) => row.key })
+  const blobs = yield* Collection.local<BlobRow, string>({ id: "repo-blobs", schema: BlobRow, getKey: (row) => row.key })
+  const refs = yield* Collection.local<RefsRow, string>({ id: "repo-refs", schema: RefsRow, getKey: (row) => row.key })
+  const abouts = yield* Collection.local<AboutRow, string>({ id: "repo-abouts", schema: AboutRow, getKey: (row) => row.key })
+  const heads = yield* Collection.local<HeadRow, string>({ id: "repo-heads", schema: HeadRow, getKey: (row) => row.key })
+  const embeds = yield* Collection.local<EmbedRow, string>({ id: "repo-embeds", schema: EmbedRow, getKey: (row) => row.key })
   const view = yield* Collection.local<ViewRow, string>({
     id: "repo-view",
     schema: ViewRow,
@@ -233,6 +235,8 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     visible: visibility.visible,
     /** Repository `id` has rows on this tab: it gets a visibility row now. */
     track: visibility.track,
+    /** The gate's decision and subsequent changes, synchronously, without exposing raw rows to an early host. */
+    observe: visibility.observe,
     /** A store's rows as the live query it exposes: only the rows of a repository that may show (gate.ts). */
     gate: visibility.gate,
     view,

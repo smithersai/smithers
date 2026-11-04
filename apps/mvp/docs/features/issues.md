@@ -448,3 +448,15 @@ Visibility misses share the role reader's bounded coordination primitive, with a
 Reconciliation captures Postgres observation time before requesting repository metadata. Its visibility receipt and RepoRoles' visibility reads use the same conditional upsert: only an observation newer than the stored receipt can replace it. A delayed public response cannot supersede a private receipt or renew its age after installation removal. This adds one timestamp query per reconciliation walk.
 
 `e2e/issues.spec.ts` holds the creating device offline to assert the admitted `?write=` request, then reconnects and waits for its numbered issue before visiting the list. Both devices assert the published comment inside Comments.
+
+### Cold search input
+
+The first-paint list accepts a query before the app's store and services finish starting. Its existing authorized
+HTTP client starts the read once device identity permits API requests. A publisher waits for restored refusals and
+follows the existing data gate synchronously before the shell receives any search rows. The read overlaps draft/outbox
+startup; publication depends on the data gate independently of the remaining feature services and repository route loading. A refusal fence or a closed
+gate revokes the answer permanently.
+The normal action consumes the same response once, still checks repository authority, and lets synced rows win.
+The shell yields when that view has rows, this query has an answer (including an empty one), or sync completes; a query alone never settles an empty view. No early result enters a device store; replacement, revocation and a 15-second cap
+forget the transient read. See decision 0152. `issues.search.early` records outcome and duration, never query text;
+`issues_early_search_reads` counts reads. `issues.search.paint` and `issues_early_search_paints` record gate decisions.

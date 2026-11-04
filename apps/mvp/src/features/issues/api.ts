@@ -1,4 +1,5 @@
-import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
+import { earlySearch, type EarlySearchHost, type EarlyRead } from "./earlySearch"
+import { Context, Data, type Duration, Effect, Layer, Option, Schema, type SubscriptionRef } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewalOf, renewed, withBearer, withoutCookie } from "../../flows/bearer"
 import { issuesRoute, type TriageDecision, type WriteOp, writesRoute } from "./contract"
@@ -143,22 +144,28 @@ export class IssuesClient extends Context.Service<
       write: WriteRequest,
       credential?: string,
     ) => Effect.Effect<WriteTaken, WriteNotTaken>
+    readonly early?: SubscriptionRef.SubscriptionRef<EarlyRead | undefined>
     /** The list's first search page, or only the exact `number` across its pages for a direct issue. */
     readonly search: (owner: string, name: string, q: string, number?: number) => Effect.Effect<ReadonlyArray<ListedIssue>, SearchNotAnswered>
   }
 >()("@smthrs/mvp/issues/IssuesClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
-  static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input }) =>
+  static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input; readonly early?: EarlySearchHost }) =>
     Layer.effect(
       IssuesClient,
-      Effect.map(HttpClient.HttpClient, (client) =>
-        IssuesClient.of({
+      Effect.gen(function* () {
+        const client = yield* HttpClient.HttpClient
+        const search: IssuesClient["Service"]["search"] = (owner, name, q, number) =>
+          getSearch(options.origin, { owner, name }, q, options.within, number).pipe(Effect.provideService(HttpClient.HttpClient, client))
+        const early = options.early === undefined ? undefined : yield* earlySearch(search, options.early)
+        return IssuesClient.of({
+          ...(early === undefined ? {} : { early: early.pending }),
           write: (owner, name, write, credential) =>
             postWrite(options.origin, { owner, name }, write, options.within, credential).pipe(
               Effect.provideService(HttpClient.HttpClient, client),
             ),
-          search: (owner, name, q, number) =>
-            getSearch(options.origin, { owner, name }, q, options.within, number).pipe(Effect.provideService(HttpClient.HttpClient, client)),
-        })),
+          search: early ?? search,
+        })
+      }),
     )
 }

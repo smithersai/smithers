@@ -1,7 +1,6 @@
 import { Input } from "@smthrs/ui"
 import { useNavigate } from "@tanstack/react-router"
 import { useLayoutEffect, useRef } from "react"
-import { useIssues } from "./IssuesContext"
 
 /**
  * The caret of the pending screen's box, as that screen went with the box focused: the list's box mounting in the same
@@ -11,18 +10,16 @@ let carried: { readonly owner: string; readonly repo: string; readonly start: nu
 
 /**
  * The issues list's search box, the same on the list's pending screen (`pending`) and on the list: `q` from the URL,
- * each keystroke written back to it, and, when `ask`, to the issues route (`actions.search`), so a search on a list
+ * each keystroke written back to it. The route starts its read in `beforeLoad`, so a search on a list
  * that hasn't synced doesn't wait for it. The list's pending screen shows it while the route still loads, so a cold page
  * takes a search as soon as the app renders; when the list replaces it, the list's own box takes its focus and caret.
  */
-export function IssueSearchBox({ owner, repo, q, ask, pending = false }: {
+export function IssueSearchBox({ owner, repo, q, pending = false }: {
   readonly owner: string
   readonly repo: string
   readonly q: string | undefined
-  readonly ask: boolean
   readonly pending?: boolean
 }) {
-  const { actions } = useIssues()
   const navigate = useNavigate()
   const input = useRef<HTMLInputElement>(null)
   useLayoutEffect(() => {
@@ -46,7 +43,6 @@ export function IssueSearchBox({ owner, repo, q, ask, pending = false }: {
     <Input ref={input} aria-label="Search issues" placeholder="Search issues" value={q ?? ""}
       onChange={(event) => {
         const value = event.currentTarget.value
-        if (ask) actions.search(owner, repo, value)
         void navigate({
           to: "/$owner/$repo/issues",
           params: { owner, repo },

@@ -21,7 +21,6 @@
 @media (max-width: 960px) {
   .issues-status-line > a { display: inline-flex; align-items: center; min-height: 32px; }
 }
-.issues-syncing { margin: 0; }
 
 .issues-sign-in [data-slot="card-content"] { display: flex; justify-content: center; }
 

@@ -101,6 +101,14 @@ export const makeVisibility = (
     const track = (id: unknown) => {
       if (typeof id === "string" && id !== "" && !visible.tanstack.has(id)) decide([id])
     }
+    /** A synchronous decision observer for an early host: exposes only the gate's boolean, never its raw rows. */
+    const observe = (id: string, listener: (show: boolean) => void) => {
+      track(id)
+      const emit = () => listener(visible.tanstack.get(id)?.show === true)
+      const subscription = visible.tanstack.subscribeChanges(emit)
+      emit()
+      return () => subscription.unsubscribe()
+    }
     /**
      * `rows` as a live query joined to the visibility rows: only the rows of a repository that may show. Each repository
      * a row names (its `repoId`, or its `id` for a repository's own row) gets a visibility row as the row arrives.
@@ -144,5 +152,5 @@ export const makeVisibility = (
         )
         return query as unknown as Gated<A>
       }).pipe(Effect.orDie)
-    return { visible, track, gate }
+    return { visible, track, observe, gate }
   }).pipe(Effect.orDie)

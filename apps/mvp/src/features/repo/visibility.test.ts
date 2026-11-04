@@ -124,3 +124,31 @@ test("every route of a repository is built with the gate", () => {
   }
   expect(checked).toBeGreaterThan(5)
 })
+
+
+test("a gate observer gives synchronous decisions, stays closed before restoration, and stops on unsubscribe", async () => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const known = yield* Deferred.make<void>()
+    const roles = yield* Collection.local({ id: "observer-roles", schema: RepoRole, getKey: row => row.id })
+    const sessions = yield* Collection.local({ id: "observer-session", schema: SessionRow, getKey: row => row.id,
+      initialData: [session("signed_in", undefined)] })
+    const gate = yield* makeVisibility(roles, sessions, Deferred.await(known))
+    const seen: boolean[] = []
+    const stop = gate.observe("github/acme/repo", show => { seen.push(show) })
+    expect(seen).toEqual([false])
+    yield* Deferred.succeed(known, undefined)
+    yield* Effect.promise(() => expect.poll(() => seen.at(-1)).toBe(true))
+    yield* roles.insert({ id: "github/acme/repo", role: null, own: false, refused: "forbidden" })
+    expect(seen.at(-1)).toBe(false)
+    yield* roles.update("github/acme/repo", row => { row.role = "member"; delete row.refused })
+    expect(seen.at(-1)).toBe(true)
+    stop()
+    const count = seen.length
+    yield* roles.update("github/acme/repo", row => { row.role = null; row.refused = "forbidden" })
+    expect(seen).toHaveLength(count)
+    const absent: boolean[] = []
+    const stopAbsent = gate.observe("", show => { absent.push(show) })
+    expect(absent).toEqual([false])
+    stopAbsent()
+  })))
+})

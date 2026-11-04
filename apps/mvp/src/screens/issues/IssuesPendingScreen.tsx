@@ -26,7 +26,7 @@ export function IssuesPendingScreen() {
       />
       <PageBody width="wide">
         <div className="list-search-tools" role="search" aria-label="Search issues">
-          <IssueSearchBox owner={owner} repo={repo} q={typeof search.q === "string" ? search.q : undefined} ask pending />
+          <IssueSearchBox owner={owner} repo={repo} q={typeof search.q === "string" ? search.q : undefined} pending />
         </div>
         <div {...SLOT} />
       </PageBody>

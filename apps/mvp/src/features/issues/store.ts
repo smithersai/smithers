@@ -1,3 +1,5 @@
+import { IssuesClient } from "./api"
+import { finishEarlySearch } from "./earlySearch"
 import { observeInitialApplied } from "../../shapeApplied"
 import { admissionReceipt } from "../../writeAdmission"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
@@ -185,6 +187,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   const scope = yield* Effect.scope
   const chat = yield* ChatStore
   const { sending, requested, search } = yield* IssueWrites
+  const early = Option.getOrUndefined(yield* Effect.serviceOption(IssuesClient))?.early
   const persistence = yield* Persistence.Persistence
   const source = yield* ShapeSource.ShapeSource
   const auth = yield* AuthStore
@@ -491,6 +494,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       yield* followAvailability(items, access, id)
       // Its summaries answer list searches now. A direct issue keeps its heading until its own detail arrives.
       yield* items.currentApplied.pipe(
+        Effect.andThen(finishEarlySearch(early, id)),
         Effect.andThen(Effect.suspend(() => searches.issue ? Effect.void : forgetSearchOf(id))),
         Effect.ignore,
         Effect.forkIn(scope, { startImmediately: true }),

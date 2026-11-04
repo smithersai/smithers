@@ -687,3 +687,97 @@ describe("the shell", () => {
 
 const shells = new Map<ReturnType<typeof browser>, NonNullable<ReturnType<typeof startShell>>>()
 const shellOf = (b: ReturnType<typeof browser>) => shells.get(b)!
+
+test("the cold list takes search input before services; no early result reaches the page", async () => {
+  const b = browser({ path: "/acme/app/issues" })
+  const shell = startShell(b.host)!
+  await b.paint(painted({ list: [ISSUE] }))
+  const input = b.node()!.querySelector('input')!
+  input.value = "#42"
+  input.dispatchEvent(new Event("input"))
+  expect(b.node()!.querySelectorAll("a")).toHaveLength(0)
+  // The real observer runs when old rows are removed, before the bundle can bind the input.
+  b.mutate()
+  expect(shell.outcome()).toBe("painted")
+  const asked: string[] = []
+  let forgotten = 0
+  const unbind = shell.bindSearch!((owner, name, q) => asked.push(`${owner}/${name}:${q}`), () => forgotten++)
+  expect(asked).toEqual(["acme/app:#42"])
+  b.location.search = "?q=%2342"
+  shell.routed(b.location.pathname, b.location.search)
+  expect(shell.outcome()).toBe("painted")
+  expect(b.node()!.querySelector('[aria-busy], [data-slot="skeleton"], [role="progressbar"]')).toBeNull()
+  shell.verify({ signedIn: true, personId: "someone-else" })
+  expect(b.node()).toBeNull()
+  expect(forgotten).toBe(1)
+  input.dispatchEvent(new Event("input"))
+  expect(asked).toHaveLength(1)
+  unbind()
+})
+
+test("an early search is revoked on navigation and a late client cannot bind it", async () => {
+  const b = browser({ path: "/acme/app/issues" })
+  const shell = startShell(b.host)!
+  await b.paint(painted({ list: [ISSUE] }))
+  let asked = 0
+  let forgotten = 0
+  shell.bindSearch!(() => asked++, () => forgotten++)
+  const input = b.node()!.querySelector('input')!
+  input.value = "#42"
+  input.dispatchEvent(new Event("input"))
+  shell.routed("/acme/other/issues", "?q=%2342")
+  expect(forgotten).toBe(1)
+  shell.bindSearch!(() => asked++, () => forgotten++)()
+  expect(asked).toBe(1)
+})
+
+test("the app takes a cold search's focus and caret without revoking its pending read", async () => {
+  const b = browser({ path: "/acme/app/issues" })
+  const shell = startShell(b.host)!
+  await b.paint(painted({ list: [ISSUE] }))
+  let forgotten = 0
+  shell.bindSearch!(() => {}, () => forgotten++)
+  const input = b.node()!.querySelector('input')!
+  input.focus()
+  input.value = "#42"
+  input.setSelectionRange(1, 2)
+  input.dispatchEvent(new Event("input"))
+  b.location.search = "?q=%2342"
+  const root = document.createElement("div")
+  root.id = "root"
+  const main = document.createElement("main")
+  main.setAttribute(SETTLED_ATTRIBUTE, "settled")
+  const next = document.createElement("input")
+  next.setAttribute("aria-label", "Search issues")
+  next.value = "#42"
+  main.append(next)
+  root.append(main)
+  document.body.append(root)
+  b.mutate()
+  expect(shell.outcome()).toBe("handed_over")
+  expect(document.activeElement).toBe(next)
+  expect([next.selectionStart, next.selectionEnd]).toEqual([1, 2])
+  expect(forgotten).toBe(0)
+})
+
+test("only the current gated search paints; withholding, revocation and handover remove its rows", async () => {
+  const b = browser({ path: "/acme/app/issues" })
+  const shell = startShell(b.host)!
+  await b.paint(painted({ list: [ISSUE] }))
+  const input = b.node()!.querySelector('input')!
+  input.value = "#42"
+  input.dispatchEvent(new Event("input"))
+  b.mutate()
+  shell.showSearch!("acme", "other", "#42", [ISSUE])
+  shell.showSearch!("acme", "app", "old", [ISSUE])
+  expect(b.node()!.querySelectorAll("a")).toHaveLength(0)
+  shell.showSearch!("ACME", "APP", "#42", [{ ...ISSUE, title: "<img src=x>" }])
+  expect(b.node()!.querySelector("a")!.textContent).toBe("<img src=x>")
+  expect(b.node()!.querySelector("img")).toBeNull()
+  shell.showSearch!("acme", "app", "#42", undefined)
+  expect(b.node()!.querySelectorAll("a")).toHaveLength(0)
+  shell.showSearch!("acme", "app", "#42", [ISSUE])
+  shell.verify({ signedIn: true, personId: "changed" })
+  shell.showSearch!("acme", "app", "#42", [ISSUE])
+  expect(b.node()).toBeNull()
+})

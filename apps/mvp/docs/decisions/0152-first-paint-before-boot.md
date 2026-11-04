@@ -81,3 +81,36 @@ new feature or plugin. Catalog entries used: `@smthrs/ui` for the heading,
 `@smthrs/effect-tanstack-db` for the existing gated in-memory result, and the
 existing Effect HTTP issues client. No new runtime or cache.
 
+
+## Search before global startup (2026-11-04)
+
+The list's shell accepts search text before React mounts. The browser's existing issues client is built below the
+store and service startup chain; its read waits for device identity as every app API read does, but not for SQLite
+preparation or restored drafts. TanStack Router owns the query URL. The shell drops its unfiltered rows as soon as
+text changes. A separate publisher follows the existing data gate before passing it any search rows.
+The gate exposes synchronous boolean decisions through its observer API; the publisher never reads its raw collection.
+
+One transient, bounded response serves the early gated paint and is consumed once by the ordinary search action.
+The early publisher waits for restored refusals and follows the existing gate synchronously; a changed refusal fence
+or a closed gate revokes the answer permanently. Once refusals are known, the publisher observes the gate before
+joining the HTTP body, so a close-and-reopen during a delayed body cannot revive it. A normal consumer that already
+claimed that revoked answer discards it too and makes its own fresh authorized read. Expiry, replacement and publisher
+teardown revoke the same entry even after consumption; the consumer rechecks its generation after the body joins. The ordinary action still waits for repository authority and lets
+synced rows win. Applying authoritative summaries withdraws the early answer, and the shell gives way to the settled
+view when it has rows, an answer to this repository and query (including zero matches), or complete sync. A query
+without an answer does not mark an empty view settled and discard the gated shell. Restoring refusal marks is
+an authorization dependency and is deliberately retained. No response is inserted into any collection by this early
+reader. A replacement query, navigation, wipe, changed viewer, expiry, or closing the app revokes an unconsumed read;
+it also expires after 15 seconds. The bridge changes no transaction or durable acknowledgment.
+
+The HTTP read overlaps device storage and draft/outbox startup. Those local writes retain their existing independence
+from repository restoration. Authority starts before repository metadata and branch conversations; store construction
+does not await refusal restoration. The publisher alone waits for the gate, while other feature services may start.
+The same refusal collection, restore follower, closed gate, statements and commit acknowledgments are used. A failed
+restore still leaves private rows hidden while local drafts remain writable, and in-memory stores construct synchronously.
+The route starts each search once; the public input only changes its URL. No cold-list loading label is rendered.
+
+This belongs to the existing first-paint core boundary because it runs before the plugin host exists. It uses the
+existing issues HTTP client and the catalog's persisted-collection/data-gate libraries (`@smthrs/effect-tanstack-db`),
+not a second issues store. `issues.search.early` and `issues_early_search_reads` record duration and outcome without
+search text. `issues.search.paint` and `issues_early_search_paints` record gate decisions. The shell marks when it accepted input on the boot timeline.

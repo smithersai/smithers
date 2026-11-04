@@ -300,6 +300,20 @@ const outboxStorage = async () => {
 // `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
 // sending when the browser says it can, led by one tab through @smthrs/platform-browser's Web Lock service.
 const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal"> = {
+  ...(firstPaint?.bindSearch === undefined ? {} : { earlyIssueSearch: {
+    show: (owner, name, q, issues) => firstPaint.showSearch?.(owner, name, q, issues),
+    bind: (ask, forget) => firstPaint.bindSearch!((owner, name, q) => {
+      // Router history owns the URL even before React mounts. The route consumes the same read at hand-over.
+      const search = new URLSearchParams(router.history.location.search)
+      if (q === "") search.delete("q")
+      else search.set("q", q)
+      const suffix = search.size === 0 ? "" : `?${search}`
+      router.history.replace(`${router.history.location.pathname}${suffix}`)
+      // Browser history batches writes. The shell observes DOM changes before that batch may flush.
+      router.history.flush()
+      ask(owner, name, q)
+    }, forget),
+  } }),
   persistence: {
     open: async () => {
       try {

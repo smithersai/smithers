@@ -1,6 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import { Effect } from "effect"
+import { Deferred, Effect, Fiber, SubscriptionRef } from "effect"
+import { TestClock } from "effect/testing"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { RepoRole, Session } from "../auth/schema"
+import { makeVisibility } from "../repo/gate"
+import { RepoStore } from "../repo/store"
+import { earlySearchPaint } from "./earlyPaint"
+import { finishEarlySearch, type EarlySearchHost } from "./earlySearch"
+import type { FirstPaintIssue } from "./contract"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test } from "vitest"
 import { IssuesClient, type WriteRequest } from "./api"
@@ -206,6 +214,33 @@ describe("a search asked of the issues route", () => {
 
 describe("a direct issue read", () => {
   const target = { number: 7, title: "The older target", state: "closed", author: { login: null }, comments: 0, created_at: "a", updated_at: "b", triage: "", commitment: null }
+  test.each([undefined, "#7", "different"])("an issue read with early query %s follows its own pages and revokes the list answer", async (earlyQuery) => {
+    let ask!: (owner: string, name: string, q: string) => void
+    const gateway = await serve((request, response) => {
+      if (request.url!.includes("cursor=")) return json(200, [target])(request, response)
+      response.setHeader("link", '</api/repos/octo/hello/issues?cursor=next-page>; rel="next"')
+      json(200, [{ ...target, number: 99 }])(request, response)
+    })
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const client = yield* IssuesClient
+      if (earlyQuery !== undefined) {
+        ask("octo", "hello", earlyQuery)
+        yield* Effect.promise(() => expect.poll(() => gateway.asked.length).toBe(1))
+      }
+      const early = yield* SubscriptionRef.get(client.early!)
+      expect((yield* client.search("octo", "hello", "#7", 7)).map(issue => issue.number)).toEqual([7])
+      expect(gateway.asked).toHaveLength(earlyQuery === undefined ? 2 : 3)
+      expect(yield* SubscriptionRef.get(client.early!)).toBeUndefined()
+      if (early !== undefined) expect(early.current()).toBe(false)
+      // Returning to the same list must make a fresh read, never recover the revoked first page.
+      yield* client.search("octo", "hello", "#7")
+      expect(gateway.asked).toHaveLength(earlyQuery === undefined ? 3 : 4)
+    })).pipe(
+      Effect.provide(IssuesClient.layer({ origin: gateway.origin, within: "2 seconds", early: {
+        bind: (read) => { ask = read; return () => {} },
+      } })), Effect.provide(FetchHttpClient.layer),
+    ))
+  })
   const read = (origin: string) => Effect.runPromise(
     Effect.result(Effect.flatMap(IssuesClient, (client) => client.search("octo", "hello", "#7", 7))).pipe(
       Effect.provide(IssuesClient.layer({ origin, within: "300 millis" })), Effect.provide(FetchHttpClient.layer),
@@ -225,4 +260,214 @@ describe("a direct issue read", () => {
       expect(await read(gateway.origin)).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered", ...(status === 0 ? {} : { status }) } })
     }
   })
+})
+
+// The early input is bound before any store exists. Its one answer goes through the normal caller at hand-over.
+test("an early search reaches real HTTP before services and the consumer reuses it exactly once", async () => {
+  let ask!: (owner: string, name: string, q: string) => void
+  let forget!: () => void
+  let unbound = false
+  const server = await serve(json(200, []))
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const client = yield* IssuesClient
+    ask("octo", "hello", " #12 ")
+    yield* Effect.promise(() => expect.poll(() => server.asked.length).toBe(1))
+    expect(yield* client.search("octo", "hello", "#12")).toEqual([])
+    expect(server.asked).toHaveLength(1)
+    yield* client.search("octo", "hello", "#12")
+    expect(server.asked).toHaveLength(2)
+    ask("octo", "hello", "#13")
+    forget()
+    yield* Effect.sleep("200 millis")
+    expect(server.asked).toHaveLength(2)
+    ask("octo", "hello", "")
+    yield* Effect.sleep("200 millis")
+    expect(server.asked).toHaveLength(2)
+  }).pipe(
+    Effect.provide(IssuesClient.layer({ origin: server.origin, within: "2 seconds", early: {
+      bind: (request, revoke) => { ask = request; forget = revoke; return () => { unbound = true } },
+    } })),
+    Effect.provide(FetchHttpClient.layer),
+  )))
+  expect(unbound).toBe(true)
+})
+
+test("an early server refusal is preserved and a different search never consumes that answer", async () => {
+  let ask!: (owner: string, name: string, q: string) => void
+  const server = await serve(json(403, {}))
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const client = yield* IssuesClient
+    ask("octo", "hello", "#12")
+    yield* Effect.promise(() => expect.poll(() => server.asked.length).toBe(1))
+    expect(yield* Effect.result(client.search("octo", "hello", "#13"))).toMatchObject({ _tag: "Failure", failure: { status: 403 } })
+    expect(server.asked).toHaveLength(2)
+    expect(yield* Effect.result(client.search("octo", "hello", "#12"))).toMatchObject({ _tag: "Failure", failure: { status: 403 } })
+    expect(server.asked).toHaveLength(3)
+  }).pipe(
+    Effect.provide(IssuesClient.layer({ origin: server.origin, within: "2 seconds", early: { bind: (request) => { ask = request; return () => {} } } })),
+    Effect.provide(FetchHttpClient.layer),
+  )))
+})
+
+
+test("the early HTTP answer paints only through the real gate; a refusal is synchronous and cannot revive an old answer", async () => {
+  const listed = { number: 7, title: "early", state: "open", author: { login: null }, comments: 0, created_at: "a", updated_at: "b", triage: "", commitment: null }
+  let status = 200
+  let waiting: ServerResponse | undefined
+  let hold = false
+  let fence = 0
+  const server = await serve((request, response) => {
+    if (hold) waiting = response
+    else json(status, status === 200 ? [listed] : {})(request, response)
+  })
+  let ask!: (owner: string, name: string, q: string) => void
+  let painted: ReadonlyArray<FirstPaintIssue> | undefined
+  const host: EarlySearchHost = { bind: request => { ask = request; return () => {} }, show: (_owner, _name, _q, rows) => { painted = rows } }
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const known = yield* Deferred.make<void>()
+    const waitingForGate = yield* Deferred.make<void>()
+    const roles = yield* Collection.local({ id: "early-roles", schema: RepoRole, getKey: row => row.id })
+    const session = yield* Collection.local({ id: "early-session", schema: Session, getKey: row => row.id, initialData: [{ id: "session", status: "signed_in", login: "person", role: "member", available: true, signingOut: false, restored: true }] })
+    const gate = yield* makeVisibility(roles, session, Deferred.await(known))
+    // Faulty service: its persisted refusals deliberately remain unresolved. Visibility is the production data gate.
+    const repos = RepoStore.of({ ...gate, refusalsKnown: Deferred.succeed(waitingForGate, undefined).pipe(Effect.andThen(Deferred.await(known))), fenceOf: () => fence } as never)
+    yield* Effect.gen(function* () {
+      const client = yield* IssuesClient
+      ask("octo", "hello", "early")
+      yield* Effect.promise(() => expect.poll(() => server.asked.length).toBe(1))
+      const pending = (yield* SubscriptionRef.get(client.early!))!
+      yield* pending.answer
+      expect(painted).toBeUndefined()
+      yield* Deferred.await(waitingForGate)
+      pending.revoke()
+      yield* Deferred.succeed(known, undefined)
+      yield* Effect.yieldNow
+      expect(painted).toBeUndefined()
+      ask("octo", "hello", "early")
+      yield* Effect.promise(() => expect.poll(() => painted?.[0]?.number).toBe(7))
+      yield* roles.insert({ id: "github/octo/hello", role: null, own: false, refused: "forbidden" })
+      expect(painted).toBeUndefined()
+      yield* roles.update("github/octo/hello", row => { row.role = "member"; delete row.refused })
+      expect(painted).toBeUndefined()
+      expect(pending.current()).toBe(false)
+      yield* client.search("octo", "hello", "early")
+      expect(server.asked).toHaveLength(3)
+      // A fresh server read may paint under the recovered gate; closing its scope withdraws it.
+      ask("octo", "hello", "early")
+      yield* Effect.promise(() => expect.poll(() => painted?.[0]?.number).toBe(7))
+      status = 403
+      ask("octo", "hello", "refused")
+      yield* Effect.promise(() => expect.poll(() => server.asked.length).toBe(5))
+      const refused = (yield* SubscriptionRef.get(client.early!))!
+      expect(yield* Effect.result(refused.answer)).toMatchObject({ _tag: "Failure", failure: { status: 403 } })
+      expect(painted).toBeUndefined()
+      // A denial that arrives while HTTP is pending fences that response, even after the gate recovers.
+      status = 200
+      hold = true
+      ask("octo", "hello", "fenced")
+      yield* Effect.promise(() => expect.poll(() => waiting !== undefined).toBe(true))
+      const fenced = (yield* SubscriptionRef.get(client.early!))!
+      fence++
+      waiting!.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify([listed]))
+      waiting = undefined
+      yield* Effect.promise(() => expect.poll(fenced.current).toBe(false))
+      expect(painted).toBeUndefined()
+      // A synced list revokes only its own early answer, even while the HTTP body remains pending.
+      yield* finishEarlySearch(undefined, "github/octo/hello")
+      // An explicitly invalidated response is likewise never painted when its body arrives.
+      ask("octo", "hello", "stale")
+      yield* Effect.promise(() => expect.poll(() => waiting !== undefined).toBe(true))
+      const stale = (yield* SubscriptionRef.get(client.early!))!
+      yield* finishEarlySearch(client.early, "github/octo/other")
+      expect(stale.current()).toBe(true)
+      stale.revoke()
+      waiting!.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify([listed]))
+      hold = false
+      yield* stale.answer
+      expect(painted).toBeUndefined()
+      ask("octo", "hello", "synced")
+      yield* Effect.promise(() => expect.poll(() => painted?.[0]?.number).toBe(7))
+      const synced = (yield* SubscriptionRef.get(client.early!))!
+      yield* finishEarlySearch(client.early, "github/octo/hello")
+      expect(synced.current()).toBe(false)
+      yield* Effect.promise(() => expect.poll(() => painted).toBeUndefined())
+      yield* finishEarlySearch(client.early, "github/octo/hello")
+    }).pipe(
+      Effect.provide(earlySearchPaint(host)),
+      Effect.provideService(RepoStore, repos),
+      Effect.provide(IssuesClient.layer({ origin: server.origin, within: "2 seconds", early: host })),
+      Effect.provide(FetchHttpClient.layer),
+    )
+  })))
+  expect(painted).toBeUndefined()
+})
+
+
+test("no shell output or no early client installs no search publisher", async () => {
+  const host: EarlySearchHost = { bind: () => () => {}, show: () => { throw new Error("unexpected paint") } }
+  for (const shell of [undefined, { bind: host.bind }, host]) {
+    await Effect.runPromise(Effect.void.pipe(
+      Effect.provide(earlySearchPaint(shell)),
+      // Faulty absent repository service: these paths must never read any field of it.
+      Effect.provideService(RepoStore, {} as never),
+      Effect.provide(IssuesClient.layer({ origin: "http://127.0.0.1:9", within: "1 second" })),
+      Effect.provide(FetchHttpClient.layer),
+    ))
+  }
+})
+
+
+test.each(["restored refusal", "closed while consumed", "expired while consumed"] as const)("a pending early body cannot survive %s and recovery", async scenario => {
+  const issue = { number: 7, title: "old", state: "open", author: { login: null }, comments: 0, created_at: "a", updated_at: "b", triage: "", commitment: null }
+  let waiting: ServerResponse | undefined
+  const server = await serve((request, response) => {
+    if (waiting === undefined) waiting = response
+    else json(200, [{ ...issue, number: 8, title: "fresh" }])(request, response)
+  })
+  let ask!: (owner: string, name: string, q: string) => void
+  const paints: number[] = []
+  const host: EarlySearchHost = { bind: request => { ask = request; return () => {} }, show: (_owner, _name, _q, rows) => { paints.push(...(rows ?? []).map(row => row.number)) } }
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const roles = yield* Collection.local({ id: "pending-roles", schema: RepoRole, getKey: row => row.id,
+      initialData: scenario === "restored refusal" ? [{ id: "github/octo/hello", role: null, own: false, refused: "forbidden" }] : [] })
+    const session = yield* Collection.local({ id: "pending-session", schema: Session, getKey: row => row.id,
+      initialData: [{ id: "session", status: "signed_in", login: "person", role: "member", available: true, signingOut: false, restored: true }] })
+    const gate = yield* makeVisibility(roles, session)
+    // Faulty authority timing: restoration already completed; the fence stays unchanged during gate recovery.
+    const repos = RepoStore.of({ ...gate, refusalsKnown: Effect.void, fenceOf: () => 1 } as never)
+    yield* Effect.gen(function* () {
+      const client = yield* IssuesClient
+      ask("octo", "hello", "same")
+      yield* TestClock.adjust(150)
+      yield* Effect.promise(() => expect.poll(() => waiting !== undefined).toBe(true))
+      const pending = (yield* SubscriptionRef.get(client.early!))!
+      const consumed = scenario !== "restored refusal"
+        ? yield* client.search("octo", "hello", "same").pipe(Effect.forkScoped({ startImmediately: true }))
+        : undefined
+      if (scenario === "expired while consumed") {
+        // Expiry runs at 15 s; HTTP's 15 s deadline starts after the 150 ms debounce, leaving this real window.
+        yield* TestClock.adjust(14_850)
+        expect(yield* SubscriptionRef.get(client.early!)).toBeUndefined()
+      }
+      if (scenario === "restored refusal") {
+        yield* roles.update("github/octo/hello", row => { row.role = "member"; delete row.refused })
+      } else {
+        yield* session.update("session", row => { row.status = "unreachable"; row.unverifiable = true })
+        yield* session.update("session", row => { row.status = "signed_in"; delete row.unverifiable })
+      }
+      waiting!.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify([issue]))
+      yield* pending.answer
+      // Both the publisher and a consumer already joining the body must discard it permanently.
+      const answer = consumed === undefined ? yield* client.search("octo", "hello", "same") : yield* Fiber.join(consumed)
+      expect(pending.current()).toBe(false)
+      expect(answer.map(row => row.number)).toEqual([8])
+      expect(server.asked).toHaveLength(2)
+      expect(paints).toEqual([])
+    }).pipe(
+      Effect.provide(earlySearchPaint(host)),
+      Effect.provideService(RepoStore, repos),
+      Effect.provide(IssuesClient.layer({ origin: server.origin, within: "15 seconds", early: host })),
+      Effect.provide(FetchHttpClient.layer),
+    )
+  }).pipe(Effect.provide(TestClock.layer()))))
 })
