@@ -29,3 +29,5 @@ projects, on Node 26.5 with the real Postgres test image through `run-heavy`.
 Codex Astra reviewed the implementation and regression without findings.
 The local browser rerun and production verification remain pending shared
 test capacity; deployment belongs to the lead.
+
+Fable confirmed the snapshot logic and identified shared-array mutation by an untyped consumer. The follow-up freezes the empty sentinel and adopted snapshots; the real-collection regression attempts mutation, requires rejection and verifies unchanged reads before normal updates and permission changes. Follow-up validation: 9/9 focused tests and all four typecheck projects pass on Node 26.5; Fable re-review has no findings. Caller audit confirms mutators operate on copies or derived arrays.

@@ -26,12 +26,17 @@ test("plugin snapshots keep their identity until rows change, and a refusal hide
     const live = yield* liveQueryOf(gated)
     expect(live.current()).toEqual([])
     expect(live.current()).toBe(live.current())
+    // An untyped plugin cannot mutate the shared empty snapshot seen by another subscriber.
+    expect(() => (live.current() as unknown as Array<unknown>).push({ id: "injected" })).toThrow(TypeError)
+    expect(live.current()).toEqual([])
 
     yield* rows.insert({ id: "a", repoId: "github/acme/repo", value: 1 })
     yield* rows.insert({ id: "b", repoId: "github/acme/repo", value: 2 })
     const before = live.current()
     expect(before.map((row) => row.value)).toEqual([1, 2])
     expect(live.current()).toBe(before)
+    expect(() => (before as unknown as Array<unknown>).reverse()).toThrow(TypeError)
+    expect(live.current().map((row) => row.value)).toEqual([1, 2])
     yield* rows.update("b", (draft) => { draft.value = 3 })
     const changed = live.current()
     expect(changed).not.toBe(before)

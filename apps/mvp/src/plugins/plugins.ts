@@ -55,7 +55,7 @@ export const presses = Metric.counter("smithers_plugin_presses", {
 // One gated view per live query, so two reads of one query answer the same object, as the queries do. It holds no
 // decision: `current` reads the rule each time, so a session or role change shows in the next read.
 const gatedViews = new WeakMap<object, Host.Live<unknown>>()
-const EMPTY_ROWS: ReadonlyArray<never> = []
+const EMPTY_ROWS: ReadonlyArray<never> = Object.freeze([])
 const gateLive = <R>(plugins: { readonly visible: (id: string) => boolean; readonly onVisibility: (listener: () => void) => () => void }, id: string, live: Host.Live<R>): Host.Live<R> => {
   const known = gatedViews.get(live)
   if (known !== undefined) return known as Host.Live<R>
@@ -107,7 +107,7 @@ export const liveQueryOf = <R extends object>(query: Gated<R>) =>
     // a cached stream value could still expose rows synchronously after permission was refused.
     const snapshot = () => {
       const rows = query.tanstack.toArray
-      if (rows.length !== current.length || rows.some((row, index) => row !== current[index])) current = rows
+      if (rows.length !== current.length || rows.some((row, index) => row !== current[index])) current = Object.freeze(rows)
       return current
     }
     const listeners = new Set<() => void>()
