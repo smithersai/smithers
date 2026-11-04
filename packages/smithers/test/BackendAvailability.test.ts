@@ -47,7 +47,7 @@ describe("designed backend availability units over real TCP", () => {
     expect(failure).toMatchObject({
       fault: "infra",
       code: "backend_unavailable",
-      message: "Cannot reach Smithers API. Check api_origin and your connection"
+      message: expect.stringContaining("Cannot reach Smithers API at ")
     })
     expect(Failure.operatorSentence(failure)).not.toMatch(/fetch failed|ECONNREFUSED/)
     expect(Failure.operatorDetail(failure)).toContain("ECONNREFUSED")
@@ -65,7 +65,7 @@ describe("designed backend availability units over real TCP", () => {
     expect(failure).toMatchObject({
       fault: "infra",
       code: "backend_timed_out",
-      message: "Smithers API timed out. Check api_origin and your connection"
+      message: expect.stringContaining("timed out.")
     })
     expect(Failure.operatorDetail(failure)).toContain("TimeoutError")
     expect(Failure.operatorSentence(failure)).not.toContain("TimeoutError")
@@ -106,7 +106,7 @@ describe("actual CLI backend availability", () => {
     expect(result.code, result.output + result.error).toBe(1)
     expect(JSON.parse(result.output)).toMatchObject({
       code: "backend_unavailable",
-      message: "Cannot reach Smithers API. Check api_origin and your connection"
+      message: expect.stringContaining("Cannot reach Smithers API at ")
     })
     expect(result.output + result.error).not.toMatch(
       /availability-session-secret|ECONNREFUSED|fetch failed|command_failed/

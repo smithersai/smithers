@@ -355,13 +355,14 @@ export const query = async <A, E>(
 export const launch = async <A, E>(
   operation: Effect.Effect<A, E, Control.Control | Ui.Ui>,
   options: ConnectionOptions,
-  runtime: Runtime = {}
+  runtime: Runtime = {},
+  initialFlows?: ReadonlyArray<string>
 ): Promise<A> =>
   settle(
     provideServices(
       operation.pipe(
         Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code)),
-        Effect.provide(NodeControl.layer({ ...configuration(options, runtime), startsRuns: true }))
+        Effect.provide(NodeControl.layer({ ...configuration(options, runtime), startsRuns: true, initialFlows }))
       ),
       options,
       runtime

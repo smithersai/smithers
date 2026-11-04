@@ -604,3 +604,49 @@ If a process crashes while holding it, confirm no service operation is running
 before removing that lock directory. Active agents start at login and
 restarts after a crash. These commands require an unprivileged macOS user;
 never run them with sudo.
+
+### Running a checkout's flow
+
+Use Node and the checkout's source shim, with that checkout's workspace dependencies
+installed: `node packages/smithers/bin/smithers.mjs`. `pnpm exec smthrs` resolves the
+same shim in an installed workspace. The shim deliberately ignores a checkout's
+old `dist` output. A global binary can be a release or a link to a different
+checkout; its version string alone does not identify the source it runs. Check
+its resolved filesystem path. A source-only checkout needs dependencies provisioned
+on its build host before it can run; a global install does not supply them.
+
+```sh
+node packages/smithers/bin/smithers.mjs flow start example --root "$PWD" --data '{}' --wait --verbose
+node packages/smithers/bin/smithers.mjs runs list --root "$PWD"
+node packages/smithers/bin/smithers.mjs runs show <run-id> --root "$PWD"
+```
+
+Without `--remote` or `SMITHERS_REMOTE`, this uses the local durable engine, with
+`<root>/.flows/control.db`, `<root>/.flows/engine.db` and `<root>/.flows/logs`.
+No `serve` process or cloud login is required. Explicit `--root` also prevents a
+saved install from redirecting run inspection. `--wait` waits for settlement;
+inspect the returned status, since a parked run is not a completed run.
+
+`flow start <name>` eagerly loads that body, its declared collaborators and
+retained active-run bodies. Other measured bodies load on first use. This avoids
+running every unrelated module's initialization before starting one flow. Imports
+still use the guarded filesystem and verified source identities. Edited deferred
+bytes require explicit refresh. Body-load stages and elapsed times, including the
+catalog's loaded, refused and deferred counts, are logged at Debug level, below
+the CLI's Info floor, so a normal `flow start` prints none of them. `--quiet`
+explicitly suppresses progress.
+
+The native filesystem helper is also required. Installed packages ship it;
+source hosts build it on their build machine or set
+`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to an executable for that host's OS/ABI.
+
+A failed install request names its origin, the effective configuration source,
+and `smthrs config set api_origin <origin>`. On macOS the default setting lives
+in `~/Library/Application Support/smithers/config.toon`; legacy credentials live
+in `~/.config/smithers/auth.json`. `SMITHERS_API_ORIGIN`, then `SMITHERS_URL`,
+override the saved setting. Changing config does not override those variables,
+migrate a credential to another origin or make a retired API available. Local
+flow inspection should use `--root`, not a guessed cloud replacement.
+
+An explicit request origin bypasses the saved API setting; failure diagnostics
+identify that explicit destination instead of recommending an unrelated config change.

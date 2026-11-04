@@ -68,6 +68,8 @@ export interface Config {
   readonly startsRuns?: boolean | undefined
   /** Compile and validate authored flow plans while keeping execution disabled. */
   readonly plansFlows?: boolean | undefined
+  /** Eagerly load these flow bodies; other measured entries load on first use. */
+  readonly initialFlows?: ReadonlyArray<string> | undefined
   /** A human can answer parked agent steps on this host. Unattended compositions default to false. */
   readonly approvalChannel?: boolean | undefined
   /** Trusted local observational checkers, keyed by flow id. Remote clients never execute these callbacks. */

@@ -316,7 +316,7 @@ describe("remote cache endpoint resolution", () => {
     expect(smithersCloudCacheEndpoint("a b/repo#1", { SMITHERS_CLOUD_API_URL: "https://api.example.test/base/" }))
       .toBe("https://api.example.test/base/api/repos/a%20b/repo%231/build-cache")
     expect(smithersCloudCacheEndpoint("alice/repo", {}))
-      .toBe("https://api.jjhub.tech/api/repos/alice/repo/build-cache")
+      .toBe("https://smithers.sh/api/repos/alice/repo/build-cache")
   })
 })
 

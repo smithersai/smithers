@@ -378,6 +378,54 @@ describe("Pack.sources", () => {
 })
 
 describe("pack discovery confinement", () => {
+  it("refuses an outside flow.ts file symlink at discovery when bodies are deferred and never loaded", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "smithers-registry-pack-"))
+    const packDir = join(temporary, "pack")
+    const outside = join(temporary, "pack-outside")
+    const escape = join(packDir, "flows", "escape", "flow.ts")
+    const marker = join(temporary, "imported")
+    mkdirSync(join(packDir, "flows", "escape"), { recursive: true })
+    mkdirSync(join(packDir, "flows", "safe"))
+    mkdirSync(outside)
+    writeFileSync(join(packDir, "flows", "safe", "flow.mdx"), "---\ndescription: Safe deferred prompt\ncapabilities: []\n---\nSafe body\n")
+    writeFileSync(join(outside, "flow.ts"), [
+      "import { Flow } from \"@smthrs/flow\"",
+      "import { Node } from \"@smthrs/plan\"",
+      "import { Schema } from \"effect\"",
+      "import { writeFileSync } from \"node:fs\"",
+      `writeFileSync(${JSON.stringify(marker)}, "imported")`,
+      "export default Flow.make(\"escape\", { description: \"Outside module\", capabilities: [],",
+      "payload: {}, success: Schema.String, body: () => Node.succeed(\"outside\") })"
+    ].join("\n"))
+    symlinkSync(join(outside, "flow.ts"), escape, "file")
+    const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
+    const registryLayer = Registry.layerFromPacks([
+      installed(packDir, localManifest, "installed")
+    ], { runtimeVersion: "1.0.0" }).pipe(
+      Layer.provide(Discovery.layer.pipe(Layer.provide(platform))),
+      Layer.provide(platform)
+    )
+
+    try {
+      const result = await Effect.runPromise(
+        Effect.gen(function*() {
+          const registry = yield* Registry.Registry
+          return {
+            entries: yield* registry.list(),
+            catalog: yield* Executable.catalog({ delegates: [], initialFlows: [] }),
+            warnings: yield* registry.warnings()
+          }
+        }).pipe(Effect.provide(registryLayer), Effect.provide(platform))
+      )
+      expect(result.entries.map((entry) => entry.name)).toEqual(["safe"])
+      expect(result.catalog).toEqual({ executables: [], refused: [], deferred: result.entries })
+      expect(result.warnings).toEqual([expect.objectContaining({ code: "outside_root", path: escape })])
+      expect(existsSync(marker)).toBe(false)
+    } finally {
+      rmSync(temporary, { recursive: true, force: true })
+    }
+  })
+
   it.each(["pack", "project"] as const)(
     "preserves permitted directory and entry-file links for %s sources",
     async (kind) => {

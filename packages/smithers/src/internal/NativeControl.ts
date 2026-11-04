@@ -406,6 +406,8 @@ export interface ExecutorOptions {
   readonly startsRuns?: boolean | undefined
   /** Planning imports authored modules without enabling launches or resumes. */
   readonly plansFlows?: boolean | undefined
+  /** Requested flow bodies, plus persisted active bodies, loaded before admission. */
+  readonly initialFlows?: ReadonlyArray<string> | undefined
   /** A human can answer this executor's in-run waits. */
   readonly approvalChannel?: boolean | undefined
   /**
@@ -1045,16 +1047,18 @@ export const make = (
               : Failure.operatorSentence(cause)
           })
       })
-    const retryLoad = executable === undefined && refusal?.code === "load_timeout" && host.catalog?.load !== undefined
-      ? host.catalog.load(descriptor.name).pipe(
-        Effect.mapError((cause) => new ControlError.InvalidInput({ issue: loadIssue(descriptor.name, cause) })),
-        Effect.flatMap((loaded) =>
-          Descriptor.executionDigest(loaded.descriptor) === Descriptor.executionDigest(descriptor)
-            ? Effect.succeed(loaded)
-            : Effect.fail(new ControlError.InvalidInput({ issue: `Flow ${descriptor.name} changed while loading` }))
+    const deferred = host.catalog?.deferred?.some((entry) => entry.name === descriptor.name) === true
+    const retryLoad =
+      executable === undefined && (refusal?.code === "load_timeout" || deferred) && host.catalog?.load !== undefined
+        ? host.catalog.load(descriptor.name).pipe(
+          Effect.mapError((cause) => new ControlError.InvalidInput({ issue: loadIssue(descriptor.name, cause) })),
+          Effect.flatMap((loaded) =>
+            Descriptor.executionDigest(loaded.descriptor) === Descriptor.executionDigest(descriptor)
+              ? Effect.succeed(loaded)
+              : Effect.fail(new ControlError.InvalidInput({ issue: `Flow ${descriptor.name} changed while loading` }))
+          )
         )
-      )
-      : undefined
+        : undefined
     return {
       flowId: descriptor.name,
       description: descriptor.description,
@@ -1518,6 +1522,10 @@ export const make = (
         })
         return Executable.layer({
           delegates: [],
+          initialFlows: options.initialFlows === undefined ? undefined : [
+            ...options.initialFlows,
+            ...[...pinned.values()].map((entry) => entry.name)
+          ],
           snapshots,
           adapterExecutionDigest: (descriptor) => {
             // New sources get their own adapter. Replay and explicit adoption
@@ -1974,7 +1982,8 @@ export const make = (
                   const plan = yield* resumes!.getPlan(run.planId)
                   if (
                     plan.decision === "approved" && run.planDigest === plan.card.digest &&
-                    catalog.refused.some((entry) => entry.flow === plan.card.flowId && entry.code === "load_timeout")
+                    (catalog.refused.some((entry) => entry.flow === plan.card.flowId && entry.code === "load_timeout")
+                      || catalog.deferred?.some((entry) => entry.name === plan.card.flowId))
                   ) yield* catalog.load(plan.card.flowId)
                 }
                 return yield* moduleAdmission(runId, native)
@@ -2359,6 +2368,7 @@ export const make = (
         evaluator: config.evaluator,
         startsRuns: config.startsRuns,
         plansFlows: config.plansFlows,
+        initialFlows: config.initialFlows,
         expectedSourceRevision: config.expectedSourceRevision,
         catalogRevision: config.catalogRevision,
         approvalChannel: config.approvalChannel,

@@ -235,3 +235,24 @@ Markdown `model` accepts a seat name or a non-empty ordered list, for example
 primary and the rest are fallbacks. Discovery preserves the order in the
 execution identity and invocation; invalid lists produce `invalid_model` and
 are not registered.
+
+## Selected startup bodies
+
+`Executable.layer({ delegates, initialFlows: ["example"] })` eagerly loads only
+those names and their declared `flows` collaborators. It retains other measured
+descriptors in `Catalog.deferred`; `Catalog.load(name)` verifies and registers one
+on first use. Concurrent loads share the catalog's existing semaphore and return
+the registered executable. Changed bytes refuse; newly discovered names require
+explicit refresh. Omitting `initialFlows` preserves the complete startup catalog.
+A host restoring active runs includes their retained descriptor names in the eager
+set. The CLI does this for `flow start` and retains the full startup path for
+resume and served hosts.
+
+Pack confinement is checked during discovery, before reading entry metadata,
+regardless of `initialFlows`. Outside directory and entry-file symlinks produce
+`outside_root` warnings and never enter the deferred catalog. Omitting
+`initialFlows` retains the eager catalog's `{ executables, refused }` shape.
+
+The `smithers.registry.catalog` span and Debug body-load logs report the flow name,
+outcome, elapsed milliseconds and final loaded/refused/deferred counts, never
+payloads. These logs stay below the CLI's Info floor.

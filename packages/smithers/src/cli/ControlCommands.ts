@@ -311,7 +311,8 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
               })
             ),
             c.options,
-            runtime
+            runtime,
+            [c.args.flow]
           )
         })
     })

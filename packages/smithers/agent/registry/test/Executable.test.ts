@@ -723,7 +723,7 @@ export default ({
     Effect.gen(function*() {
       const descriptor = yield* descriptorNamed("greet")
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => logs.push(JSON.stringify(entry.message)))
       const entered = yield* Deferred.make<void>()
       const pending = yield* Effect.forkChild(
         Executable.fromDescriptor(
@@ -859,7 +859,7 @@ export default ({
     Effect.gen(function*() {
       const descriptor = yield* descriptorNamed("greet")
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => logs.push(JSON.stringify(entry.message)))
       const entered = yield* Deferred.make<void>()
       const pending = yield* Effect.forkChild(
         Executable.fromDescriptor(
@@ -982,7 +982,7 @@ export default ({
         )
       }
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => { if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message)) })
       const built = yield* Executable.catalog(options({ loadTimeoutMs: 500 })).pipe(
         Effect.provide(Registry.layerProject({ root })),
         Effect.provide(Logger.layer([capture])),
@@ -1796,7 +1796,7 @@ describe("the host's catalog", () => {
       // warning per prompt flow on every launch is noise no operator can act on;
       // a flow that names a delegate nobody registered still warns.
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => { if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message)) })
       const built = yield* Executable.catalog(options({ delegates: [Echo, Other] })).pipe(
         Effect.provide(Logger.layer([capture]))
       )
@@ -1851,7 +1851,7 @@ describe("the host's catalog", () => {
       const warnings: Array<Readonly<Record<string, unknown>>> = []
       const capture = Logger.make((entry) => {
         const [, fields] = entry.message as ReadonlyArray<Readonly<Record<string, unknown>>>
-        if (fields !== undefined) warnings.push(fields)
+        if (entry.logLevel === "Warn" && fields !== undefined) warnings.push(fields)
       })
       const built = yield* Executable.catalog(options()).pipe(
         Effect.provide(Registry.layerProject({ root })),
@@ -1894,7 +1894,7 @@ describe("the host's catalog", () => {
         const warnings: Array<Readonly<Record<string, unknown>>> = []
         const capture = Logger.make((entry) => {
           const [, fields] = entry.message as ReadonlyArray<Readonly<Record<string, unknown>>>
-          if (fields !== undefined) warnings.push(fields)
+          if (entry.logLevel === "Warn" && fields !== undefined) warnings.push(fields)
         })
         const built = yield* Executable.catalog(options({ load: () => Effect.fail(cause) })).pipe(
           Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) }),
@@ -2262,7 +2262,7 @@ describe("registration", () => {
   it.effect("retains refreshed prompt-agent refusals without warning and still warns for named missing delegates", () =>
     Effect.gen(function*() {
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => { if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message)) })
       const runtime = Layer.succeed(FlowRuntime.FlowRuntime, { register: () => Effect.void } as never)
       yield* Effect.gen(function*() {
         const catalog = yield* Executable.Catalog
