@@ -102,6 +102,8 @@ const gitReviews = (withWorkingTree) => {
 }
 
 try {
+  // Queue before validation; no farm capacity is held during admission.
+  releaseLanding = await acquireLock(process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock"))
   const gateEnvironment = engineeringGateEnvironment(process.env)
   // A home credential store cannot be hidden by changing HOME: absolute reads
   // remain possible. Refuse execution until the invoking checkout is isolated.
@@ -117,7 +119,7 @@ try {
       cwd: root, stdio: "inherit", env: gateEnvironment
     })
     if (result.error || result.status !== 0) throw new Error(`Mandatory drift gates failed (${result.error?.message ?? result.status})`)
-    // Before the shared lock, as in workspace.mjs: a land must not wait on a typecheck holding it.
+    // Validation runs under the same lease as publication.
     const published = 'remote_bookmarks(exact:"main", exact:"origin")'
     await typecheckApp(root, existsSync(join(root, ".jj")) ? {
       touched: () => run("jj", ["log", "-r", `(::@ ~ ::${published}) & files("apps/mvp")`, "--no-graph", "-T", "commit_id"], true) !== "",
@@ -127,8 +129,7 @@ try {
       source: snapshot
     })
   }
-  // Moving main shares landing's lock, so neither can move it between the other's review gate and push.
-  releaseLanding = await acquireLock(process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock"), { timeoutMs: Number(process.env.SMITHERS_LOCK_TIMEOUT_MS ?? 300000) })
+  releaseLanding.check()
   if (existsSync(join(root, ".jj"))) {
     // Refuse before moving main; the check after the commit, on immutable main, is the one that counts.
     if (push) {
@@ -148,7 +149,7 @@ try {
       // From this check to the push nothing snapshots, so a later edit cannot join what was checked.
       logLanding(root, sha, jjReviews(sha))
       if (run("jj", ["log", "--ignore-working-copy", "-r", "main", "--no-graph", "-T", "commit_id"], true) !== sha) throw new Error("main moved after the review gate; nothing pushed")
-      run("jj", ["git", "push", "--remote", "origin", "-b", "main", "--ignore-working-copy"])
+      await releaseLanding.push("jj", ["git", "push", "--remote", "origin", "-b", "main", "--ignore-working-copy"], { cwd: root, stream: true })
       run("jj", ["git", "fetch", "--remote", "origin"])
       if (!run("jj", ["log", "-r", `${sha} & ::main@origin`, "--no-graph", "-T", "commit_id"], true)) throw new Error("remote main moved; pushed commit is absent")
       console.log(`LANDED ${sha}`)
@@ -169,7 +170,7 @@ try {
       const sha = run("git", ["rev-parse", "main"], true)
       assertValidated(validated, run("git", ["rev-parse", "main^{tree}"], true))
       logLanding(root, sha, gitReviews(false))
-      run("git", ["push", "origin", "main"])
+      await releaseLanding.push("git", ["push", "origin", "main"], { cwd: root, stream: true })
       run("git", ["fetch", "origin", "+refs/heads/main:refs/remotes/origin/main"])
       try {
         run("git", ["merge-base", "--is-ancestor", sha, "refs/remotes/origin/main"], true)
@@ -184,6 +185,6 @@ try {
   console.error(`${push ? "NOT LANDED: " : ""}${error.message}`)
   process.exitCode = 1
 } finally {
-  releaseLanding?.()
+  await releaseLanding?.()
   rmSync(lock, { recursive: true, force: true })
 }

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, writeSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { basename, join, resolve } from "node:path"
 import { test } from "node:test"
 import { pathToFileURL } from "node:url"
 
@@ -66,7 +66,18 @@ export const Package = S.Package({ targets: {
   assert.equal(indexed.status, 0, indexed.stderr + indexed.stdout)
 
 }
-const command = (cwd, bin, args, environment = {}) => spawnSync(bin, args, { cwd, encoding: "utf8", env: { ...process.env, ...environment, PATH: `${join(cwd, ".git/test-bin")}:${process.env.PATH}`, HOME: join(cwd, ".git/test-home") } })
+let commandNumber = 0
+const command = (cwd, bin, args, environment = {}) => {
+  const number = ++commandNumber, started = performance.now()
+  const trace = (stage) => { if (process.env.SMITHERS_LAND_TEST_PROGRESS) writeSync(2, `LAND_FIXTURE command=${number} tool=${basename(bin)} ${stage}\n`) }
+  trace("started")
+  // Fixture commands never need a production admission hour. Retain their output
+  // and fail with a named case if a nested invocation or publication gets stuck.
+  const result = spawnSync(bin, args, { cwd, encoding: "utf8", timeout: 180000, killSignal: "SIGKILL", env: { ...process.env, ...environment, PATH: `${join(cwd, ".git/test-bin")}:${process.env.PATH}`, HOME: join(cwd, ".git/test-home") } })
+  trace(`finished status=${result.status} error=${result.error?.code ?? "none"} elapsedMs=${Math.round(performance.now() - started)}`)
+  if (result.error) result.stderr = `${result.stderr ?? ""}\nFixture command ${number} (${basename(bin)}): ${result.error.code}\n`
+  return result
+}
 const ok = (cwd, bin, args) => {
   const result = command(cwd, bin, args)
   assert.equal(result.status, 0, result.stderr + result.stdout)
@@ -413,7 +424,7 @@ for (const vcs of ["git", "jj"]) {
 }
 
 for (const vcs of ["git", "jj"]) {
-  test(`${vcs}: an edit made after the checks ran, while the push waits for the lock, refuses the push`, async () => {
+  test(`${vcs}: edits made while queued are validated before publication`, async () => {
     const directory = mkdtempSync(join(tmpdir(), "smithers-commit-bound-"))
     const remote = mkdtempSync(join(tmpdir(), "smithers-commit-bound-remote-"))
     try {
@@ -435,21 +446,24 @@ for (const vcs of ["git", "jj"]) {
       writeFileSync(join(directory, "checked.txt"), "checked\n")
       const lock = join(remote, "main-push.lock")
       mkdirSync(lock); writeFileSync(join(lock, "owner"), "the test\n")
-      const child = spawn(process.execPath, [script, "--push", "--no-test", "unit", "--message", "fix: checked"], {
+      const validate = `node -e 'const fs=require("node:fs"); require("node:assert/strict").equal(fs.existsSync("unchecked.txt"),true); fs.writeFileSync(".git/validation-ran","yes")'`
+      const child = spawn(process.execPath, [script, "--push", "--test", validate, "--message", "fix: checked"], {
         cwd: directory, env: { ...process.env, SMITHERS_LAND_LOCK: lock, HOME: join(directory, ".git/test-home"), PATH: `${join(directory, ".git/test-bin")}:${process.env.PATH}` }
       })
       let stderr = ""
       const closed = new Promise((resolveClosed) => child.once("close", resolveClosed))
       child.stdout.resume()
       await new Promise((resolveWaiting, reject) => {
-        child.stderr.on("data", (chunk) => { stderr += chunk; if (stderr.includes("WAITING landing lock")) resolveWaiting() })
+        child.stderr.on("data", (chunk) => { stderr += chunk; if (stderr.includes("WAITING landing queue")) resolveWaiting() })
         child.once("close", () => reject(new Error(`finished before waiting on the lock:\n${stderr}`)))
       })
-      writeFileSync(join(directory, "unchecked.txt"), "written after the checks\n")
+      assert.throws(() => readFileSync(join(directory, ".git/validation-ran")), { code: "ENOENT" })
+      writeFileSync(join(directory, "unchecked.txt"), "written while queued\n")
       rmSync(lock, { recursive: true })
-      assert.notEqual(await closed, 0)
-      assert.match(stderr, /changed after its checks ran; nothing pushed/)
-      assert.equal(ok(remote, "git", ["rev-parse", "main"]), before)
+      assert.equal(await closed, 0, stderr)
+      assert.equal(readFileSync(join(directory, ".git/validation-ran"), "utf8"), "yes")
+      assert.notEqual(ok(remote, "git", ["rev-parse", "main"]), before)
+      assert.equal(ok(remote, "git", ["show", "main:unchecked.txt"]), "written while queued")
     } finally {
       rmSync(directory, { recursive: true, force: true })
       rmSync(remote, { recursive: true, force: true })
@@ -487,7 +501,7 @@ test("a concurrent commit waits for the shared lock; a land publishes only what 
         child = spawn(process.execPath, [script, "--message", "chore: a late checkpoint"], { cwd: directory, env: { ...process.env, SMITHERS_LAND_LOCK: lockPath, HOME: join(directory, ".git/test-home"), PATH: `${join(directory, ".git/test-bin")}:${process.env.PATH}` } })
         closed = new Promise((resolveClosed) => child.once("close", resolveClosed))
         child.stdout.resume()
-        child.stderr.on("data", (chunk) => { if (String(chunk).includes("WAITING landing lock")) resolvePaused() })
+        child.stderr.on("data", (chunk) => { if (String(chunk).includes("WAITING landing queue")) resolvePaused() })
         child.once("close", (status) => reject(new Error(`the checkpoint finished before the land released the lock: ${status}`)))
       })
     })

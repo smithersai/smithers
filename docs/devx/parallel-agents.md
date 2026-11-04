@@ -190,9 +190,9 @@ be written the override refuses, and the tool never creates it. So the override
 works only on the host that has the inbox, the Mac. On nyc-01, which has no
 `~/.vibe-orch`, it refuses; get a receipt there, or land on the Mac.
 
-**One lock.** `commit.mjs` moves main under `main-push.lock`, as `land` does, so
-neither can move main between the other's gate and push, and both re-read main
-before pushing. The lock is per host. A land from another host doesn't serialize
+**One queue.** `commit.mjs`, `workspace.mjs land` and issue-sweep take the same FIFO lease
+before validation. The lease spans sync/rebase, target-index preparation,
+typecheck, tests and push. Both retain their final main/source checks. The lock is per host. A land from another host doesn't serialize
 with the Mac's; a moved main then fails the push.
 
 **The required list** names the areas where most files decide who may act or what
@@ -210,7 +210,7 @@ gate, because the list is itself on it.
 worker, infra and evals projects, and `--validated` doesn't skip it. `vibelang -p
 tsconfig.json` alone skips worker tests, which let a type error reach main twice
 in two days (7ee5a29a, ab1b52fd). It runs on the farm with no local install and
-before `main-push.lock` is held: `SMITHERS_MINI_RUN` with five seconds of admission, then
+while its FIFO lease is held: `SMITHERS_MINI_RUN` with five seconds of admission, then
 `SMITHERS_LAT_RUN` if the mini has no slot or doesn't answer, then cfbox if neither answers.
 Cfbox stages only `jj file list` source and sources the Cloud CI bootstrap
 helpers to install verified supported Node and pinned pnpm. It runs
@@ -222,7 +222,7 @@ the land. So does a farm that can't answer: the check counts only if the command
 own `SMITHERS_TYPECHECK_EXIT` line comes back, because a client that skips a
 package also exits 0. Rerun when the farm has capacity. `commit.mjs --push` also
 binds publication to the tree its checks saw: an edit made after they ran, such as
-while it waits for the lock, refuses the push. Latitude classifies the command as
+during validation, refuses the push. Latitude classifies the command as
 light, so it needs no heavy-test permit. `mini-run` starts its admission clock after
 its health check and sweeps the slots once even with no wait; the target index
 also gets five seconds, because an older `mini-run` read 0 as already expired and
@@ -231,10 +231,65 @@ sent every land to cfbox.
 ## Implemented: workspace and landing lifecycle
 
 `workspace.mjs` creates a private child of fetched immutable main, without
-installing dependencies. Sync and publication coordinate through the legacy
-mkdir lock; target-index preparation and tests run outside it. Publication
-fetches main again and refuses changed source or a changed base, requiring fresh
-sync and validation. Waits are bounded; an unknown owner is never assumed dead. It refuses
+installing dependencies. Admission uses `~/smithers-builders/main-push.lock.queue/`
+(or `${SMITHERS_LAND_LOCK}.queue/`). An atomic numeric `mkdir` claim allocates
+each ticket; permanent claim directories make the sequence monotonic across
+empty queues and crashes. Ticket order never uses mtime. Waiters print their
+position and hold no farm slot. The head also takes the legacy `main-push.lock`
+directory through validation and push, excluding existing bare-mkdir scripts.
+Its owner marker is prepared inside the ticket, then the complete directory is
+published by an exclusive rename that never replaces even an empty legacy lock.
+This requires Python 3's standard-library FFI for macOS `RENAME_EXCL` or Linux
+`RENAME_NOREPLACE`; Node does not expose those flags. Missing support refuses
+acquisition. There is no mkdir-to-owner crash gap or ordinary-rename fallback.
+
+`SMITHERS_LOCK_TIMEOUT_MS` bounds queue admission (default one hour), including
+validation by landers ahead of us. Both bootstrap entry points use the exported
+`defaultLockTimeoutMs` in `lock.mjs`; a healthy validation lasting six minutes
+keeps its waiting ticket through publication.
+`SMITHERS_LOCK_MAX_HOLD_MS` bounds the holder (default fifteen minutes).
+`SMITHERS_LOCK_STALE_MS` is the heartbeat threshold (default one minute), and
+`SMITHERS_LOCK_HEARTBEAT_MS` is the refresh interval (default five seconds; it
+must be shorter than the threshold). Tickets record host, pid, start time,
+hold start and heartbeat. A separate Node heartbeat writer stays responsive
+through synchronous checks and exits when the lander's IPC channel closes.
+
+A waiter reclaims a ticket after heartbeat expiry, max hold, or proof its pid
+is gone on this host, logging its ticket, host, pid and reason. Remote pids
+are never probed. An interrupted ticket initializer is reclaimed after the
+heartbeat threshold. Legacy directories without a queue ticket remain untouched;
+a file, symlink or other non-directory at the legacy path refuses immediately.
+Only this ticket's unique marker can release its legacy lock.
+
+Publication competes atomically with revocation by renaming a prepared, nonempty
+decision directory into place. A decision never appears without its contents.
+An independent supervisor records the publication process group before granting
+permission to execute, and the launcher rechecks ownership and expiry. A lost or
+overrun land refuses publication. The supervisor and launcher enforce the
+remaining lease, capped at one minute, even if the lander is killed. Recovery
+confirms the publication process group has stopped before admitting a successor.
+Process observations without arguments or group members are inconclusive;
+they retain exclusion and record `publisher-probe`, never prove PID reuse or death.
+Stop receipts record their producer, time and proof. The supervisor also closes
+its launcher's own IPC endpoint so it can kill its group without a PID probe.
+On cancellation or deadline the parent also kills its own supervisor directly,
+including a suspended one, then independently confirms the publication group
+stopped. `publisher-stop-requested` records the reason code, producer, supervisor
+pid and time without command arguments or environment values. Unconfirmed
+termination returns an error and retains the ticket and legacy exclusion.
+For a remote publication, only its supervisor's stop receipt confirms termination;
+a local clock passing the remote deadline cannot reclaim it. A missing receipt
+retains exclusion, logs `RETAIN` and leaves waiters subject to their admission bound.
+Cleanup atomically retires the legacy directory with its ownership marker before
+marking the ticket done, so interrupted cleanup remains recoverable. It first
+retires any prepared acquisition source so a surviving helper cannot publish late.
+Initialization and retirement contend on the same immutable, nonempty directory:
+cleanup either sees the complete source and owner or prevents them from appearing.
+This also fences a stalled initializer before the ticket is marked done.
+Issue-sweep retries failed publication with a fresh ticket and fresh validation.
+Publication also fetches
+main again and refuses changed source or a changed base, catching pushers outside
+this queue. It refuses
 shared mutable ancestry, so a rebase cannot rewrite another workspace's commits.
 A failed fetch/test/push or cancellation releases only this invocation's lock.
 Pushing checks local and remote ancestry and emits the full landed commit id.

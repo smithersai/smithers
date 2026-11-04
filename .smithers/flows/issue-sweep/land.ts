@@ -3,12 +3,13 @@
  * run the tests of the packages it touches, and push it when they pass.
  *
  * The burndown's merge queue calls {@link landChange} for several changes at
- * once: their checks run concurrently, each in its own workspace, and only the
- * step that moves `main` runs one change at a time. Every repository write
+ * once: they join the shared FIFO lease before rebasing or checking, and retain
+ * it through publication. Every repository write
  * takes the machine-wide VCS lock other landing tools on this Mac share, when
  * it exists. The checks run inside `codex sandbox`, so code the agent wrote
  * can write only its own workspace and has no network.
  */
+import { acquireLock, type LandLease } from "../land/lock.mjs"
 import { Fault, type FlowRuntime } from "@smthrs/flow"
 import { Cause, Deferred, Duration, Effect, Option, Result, Schema, Semaphore } from "effect"
 import type * as Crypto from "effect/Crypto"
@@ -537,14 +538,15 @@ const checkAttempts = 6
 const pushAttempts = 3
 
 /**
- * Builds {@link landChange} over `checks`. Landings may run concurrently;
- * the step that moves `main` runs for one change at a time per lander.
+ * Builds {@link landChange} over `checks`. Each landing holds the shared FIFO
+ * lease from its first fetch through validation and supervised publication.
  * `lock` is the VCS lock file every repository write takes; `beforePush`
  * runs inside that serial step, before `main` moves.
  */
 export const makeLander = <R>(options: {
   readonly checks: Checks<R>
   readonly lock?: string | undefined
+  readonly landingLock?: string | undefined
   readonly beforePush?: ((change: string) => Effect.Effect<void>) | undefined
 }) => {
   const { checks } = options
@@ -565,6 +567,7 @@ export const makeLander = <R>(options: {
    * commits {@link invalidates} the checks; then it answers `undefined`.
    */
   const push = (
+    lease: LandLease,
     workspace: string,
     change: string,
     tested: string,
@@ -586,12 +589,20 @@ export const makeLander = <R>(options: {
             yield* rebase(workspace, change, main)
             base = main
           }
+          yield* Effect.try({ try: () => lease.check(), catch: (error) => fail(String(error)) })
           if (options.beforePush !== undefined) yield* options.beforePush(change)
           // Only a fast-forward may move main; a refusal means main moved again.
           const moved = yield* Effect.result(write(workspace, ["bookmark", "set", "main", "-r", change]))
           if (Result.isFailure(moved)) continue
-          const pushed = yield* Effect.result(write(workspace, ["git", "push", "-b", "main"]))
-          if (Result.isSuccess(pushed)) return yield* one(workspace, change, "commit_id")
+          const pushed = yield* Effect.result(Effect.tryPromise({
+            try: () => options.lock !== undefined && existsSync(options.lock)
+              ? lease.push("lockf", ["-k", "-t", "900", options.lock, "jj", "-R", workspace, "git", "push", "-b", "main"], { cwd: workspace, stream: true })
+              : lease.push("jj", ["-R", workspace, "git", "push", "-b", "main"], { cwd: workspace, stream: true }),
+            catch: (error) => fail(String(error))
+          }))
+          // A publication decision is single-use. A failed push needs a fresh
+          // FIFO ticket and fresh validation, outside this lease's scope.
+          return Result.isSuccess(pushed) ? yield* one(workspace, change, "commit_id") : undefined
         }
         return undefined
       })
@@ -601,8 +612,8 @@ export const makeLander = <R>(options: {
    * Lands the change `change` (a jj change id) from `workspace` on `main`,
    * and answers the landed commit id.
    *
-   * The checks run on `main` as it was when they started, concurrently with
-   * other landings. Moving `main` is serial: when `main` moved meanwhile, the
+   * The checks run under the shared FIFO lease. If a pusher outside the queue
+   * moves `main` meanwhile, the
    * change is rebased and pushed without checking again unless the new
    * commits touched a package whose tests it ran (see {@link invalidates}).
    * Re-landing a change `main` already contains answers its commit, so a
@@ -614,33 +625,42 @@ export const makeLander = <R>(options: {
   return (workspace: string, change: string) =>
     Effect.gen(function*() {
       for (let attempt = 1; attempt <= checkAttempts; attempt++) {
-        yield* write(workspace, ["git", "fetch"])
-        const landed = yield* landedAs(workspace, change)
-        if (landed !== "") return landed
-        const main = yield* one(workspace, "main@origin", "commit_id")
-        yield* rebase(workspace, change, main)
-        const files = yield* changedFiles(workspace, change)
-        if (files.length === 0) return yield* fail(`change ${change} is empty on main ${main.slice(0, 12)}`)
-        const hooks = files.filter((file) => installHooks.includes(file))
-        if (hooks.length > 0) {
-          return yield* fail(`change ${change} edits install hooks (${hooks.join(" ")}); land it by hand`)
-        }
-        yield* checks.prepare(workspace, change, files)
-        const index = yield* checks.index(workspace)
-        const labels = testTargets(files, index)
-        if (labels.length > 0) {
-          const checked = yield* checks.test(workspace, labels)
-          if (checked._tag === "Broken") return yield* fail(`checks did not run for ${change}: ${checked.message}`)
-          if (checked._tag === "Red") {
-            const blockers = blocking(checked.labels, yield* checks.redOnMain(checked.labels, main))
-            if (blockers.length > 0) return yield* fail(`checks red for ${change}: ${blockers.join(" ")}`)
-          }
-        }
-        const pushed = yield* push(workspace, change, main, {
-          packages: [...new Set(labels.map(packageOf))],
-          all: [...new Set(index.map((target) => packageOf(target.label)))],
-          docs: files.some(isDocsSource)
-        })
+        const pushed = yield* Effect.acquireUseRelease(
+          Effect.interruptible(Effect.tryPromise({
+            try: (signal) => acquireLock(options.landingLock ?? process.env.SMITHERS_LAND_LOCK ?? `${homedir()}/smithers-builders/main-push.lock`, { signal }),
+            catch: (error) => fail(String(error))
+          })),
+          (lease) => Effect.gen(function*() {
+            yield* write(workspace, ["git", "fetch"])
+            const landed = yield* landedAs(workspace, change)
+            if (landed !== "") return landed
+            const main = yield* one(workspace, "main@origin", "commit_id")
+            yield* rebase(workspace, change, main)
+            const files = yield* changedFiles(workspace, change)
+            if (files.length === 0) return yield* fail(`change ${change} is empty on main ${main.slice(0, 12)}`)
+            const hooks = files.filter((file) => installHooks.includes(file))
+            if (hooks.length > 0) {
+              return yield* fail(`change ${change} edits install hooks (${hooks.join(" ")}); land it by hand`)
+            }
+            yield* checks.prepare(workspace, change, files)
+            const index = yield* checks.index(workspace)
+            const labels = testTargets(files, index)
+            if (labels.length > 0) {
+              const checked = yield* checks.test(workspace, labels)
+              if (checked._tag === "Broken") return yield* fail(`checks did not run for ${change}: ${checked.message}`)
+              if (checked._tag === "Red") {
+                const blockers = blocking(checked.labels, yield* checks.redOnMain(checked.labels, main))
+                if (blockers.length > 0) return yield* fail(`checks red for ${change}: ${blockers.join(" ")}`)
+              }
+            }
+            return yield* push(lease, workspace, change, main, {
+              packages: [...new Set(labels.map(packageOf))],
+              all: [...new Set(index.map((target) => packageOf(target.label)))],
+              docs: files.some(isDocsSource)
+            })
+          }),
+          (lease) => Effect.promise(() => lease())
+        )
         if (pushed !== undefined) return pushed
       }
       return yield* fail(`main kept moving; ${change} not landed after ${checkAttempts} checks`)

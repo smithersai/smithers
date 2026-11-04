@@ -133,12 +133,12 @@ test("a farm that can't answer refuses and says why; it never counts as a pass",
   assert.equal(onMain(), "base")
 })
 
-test("the land does not hold the push lock during the typecheck", async (t) => {
+test("the land holds the FIFO lease during the typecheck", async (t) => {
   const { directory, change, onMain, landing, calls } = fixture(t)
   change("apps/mvp/worker/ok.ts", "export const ok = 1\n")
   const lock = join(directory, "main-push.lock")
-  // Both clients refuse while the lock is held, so neither can stand in for the other.
-  const guarded = `test -d "${lock}" && exit 42\ndir=$1; shift 2; cd "$MINI_RUN_SRC/$dir" && exec "$@"`
+  // Both clients require the lock, so neither can stand in for the other.
+  const guarded = `test -d "${lock}" || exit 42\ndir=$1; shift 2; cd "$MINI_RUN_SRC/$dir" && exec "$@"`
   process.env.SMITHERS_MINI_RUN = client(join(directory, "mini"), guarded)
   process.env.SMITHERS_LAT_RUN = client(join(directory, "lat"), guarded)
   await landing()

@@ -1,4 +1,4 @@
-/** The typecheck a land owes apps/mvp, run on the farm: no local install, and before the push lock is held. */
+/** The typecheck a land owes apps/mvp, run on the farm: no local install, while the FIFO landing lease is held. */
 import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"

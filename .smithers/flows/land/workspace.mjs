@@ -3,9 +3,8 @@
 import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, lstatSync, readlinkSync, copyFileSync, realpathSync, rmSync, symlinkSync } from "node:fs"
-import { homedir, hostname } from "node:os"
+import { homedir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
-import { setTimeout as delay } from "node:timers/promises"
 import { pathToFileURL } from "node:url"
 import { sourcePath, writeSource } from "./files.mjs"
 import { jj, prepareLane, checkNumbers } from "./numbering.mjs"
@@ -28,40 +27,8 @@ const rejectConflicts = (root) => {
   if (revision(root, "main@origin..@ & conflicts()")) throw new Error("Conflicted lane commits; resolve them before landing")
 }
 
-/**
- * Never steal an old or ownerless lock: its owner may still be alive on another client.
- * @param {string} path
- * @param {{timeoutMs?: number, signal?: AbortSignal}} [options]
- */
-export async function acquireLock(path, { timeoutMs = 300000, signal } = {}) {
-  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) throw new Error("Invalid lock timeout")
-  mkdirSync(dirname(path), { recursive: true })
-  const token = randomUUID(), start = Date.now()
-  let announced = false
-  while (true) {
-    signal?.throwIfAborted()
-    try { mkdirSync(path); break } catch (error) {
-      if (error.code !== "EEXIST") throw error
-      let entry
-      try { entry = lstatSync(path) } catch (error) { if (error.code === "ENOENT") continue; throw error }
-      if (!entry.isDirectory()) {
-        const kind = entry.isFile() ? "a regular file" : entry.isSymbolicLink() ? "a symbolic link" : entry.isFIFO() ? "a FIFO" : entry.isSocket() ? "a socket" : entry.isBlockDevice() ? "a block device" : entry.isCharacterDevice() ? "a character device" : "an unknown filesystem entry"
-        throw new Error(`Landing lock ${path} is ${kind}, not the directory form (mkdir lock + owner); remove it only after confirming no lander holds it`)
-      }
-      if (!announced) { console.error(`WAITING landing lock: ${path}`); announced = true }
-      if (Date.now() - start >= timeoutMs) {
-        const owner = existsSync(join(path, "owner")) ? readFileSync(join(path, "owner"), "utf8").trim().slice(0, 240) : "ownerless (not reclaimed)"
-        throw new Error(`Landing lock timed out: ${owner}; no lock was removed`)
-      }
-      await delay(Math.min(250, timeoutMs - (Date.now() - start)), undefined, { signal })
-    }
-  }
-  const owner = `${hostname()} pid=${process.pid} token=${token}\n`
-  try { writeFileSync(join(path, "owner"), owner, { flag: "wx" }) } catch (error) { rmSync(path, { recursive: true, force: true }); throw error }
-  return () => {
-    if (existsSync(join(path, "owner")) && readFileSync(join(path, "owner"), "utf8") === owner) rmSync(path, { recursive: true })
-  }
-}
+import { acquireLock, defaultLockTimeoutMs } from "./lock.mjs"
+export { acquireLock } from "./lock.mjs"
 
 const sourcePaths = (root, prefix = "") => readdirSync(join(root, prefix), { withFileTypes: true }).flatMap((entry) => {
   if (excluded.has(entry.name) || secret(entry.name)) return []
@@ -279,44 +246,39 @@ export function removeWorkspace(root) {
 
 /**
  * @param {string} root
- * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, noReviewNeeded?: string, afterValidation?: () => void, beforePush?: () => Promise<void>, signal?: AbortSignal, lockPath?: string}} [options]
+ * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, noReviewNeeded?: string, afterValidation?: () => void, beforePush?: () => Promise<void>, signal?: AbortSignal, lockPath?: string, lockOptions?: object}} [options]
  */
-export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, noReviewNeeded, afterValidation, beforePush, signal, lockPath = process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock") } = {}) {
+export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, noReviewNeeded, afterValidation, beforePush, signal, lockOptions, lockPath = process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock") } = {}) {
   const reviews = (tip) => requireReviews(root, `(main@origin..${tip}) ~ empty()`, { override: noReviewNeeded })
-  const lock = () => acquireLock(lockPath, { timeoutMs: Number(process.env.SMITHERS_LOCK_TIMEOUT_MS ?? 300000), signal })
-  let release = await lock()
-  let base
+  const release = await acquireLock(lockPath, { ...lockOptions, signal })
   try {
     syncWorkspace(root)
-    base = revision(root, "main@origin")
-  } finally { release() }
-  signal?.throwIfAborted()
-  for (const requirement of requirements) {
-    const equal = requirement.indexOf("=")
-    const path = equal < 0 ? requirement : requirement.slice(0, equal)
-    const needle = equal < 0 ? undefined : requirement.slice(equal + 1)
-    if (!path || path.startsWith("/") || path.split("/").includes("..")) throw new Error("Readiness path must be repository-relative")
-    const files = jj(root, ["file", "list", "--ignore-working-copy", "-r", "main@origin", path])
-    if (!files.split("\n").includes(path) || (needle !== undefined && !jj(root, ["file", "show", "--ignore-working-copy", "-r", "main@origin", path]).includes(needle))) {
-      throw new Error(`Main is not ready: ${path}${needle === undefined ? "" : " (required content missing)"}; no commit-id wait was used`)
+    const base = revision(root, "main@origin")
+    signal?.throwIfAborted()
+    for (const requirement of requirements) {
+      const equal = requirement.indexOf("=")
+      const path = equal < 0 ? requirement : requirement.slice(0, equal)
+      const needle = equal < 0 ? undefined : requirement.slice(equal + 1)
+      if (!path || path.startsWith("/") || path.split("/").includes("..")) throw new Error("Readiness path must be repository-relative")
+      const files = jj(root, ["file", "list", "--ignore-working-copy", "-r", "main@origin", path])
+      if (!files.split("\n").includes(path) || (needle !== undefined && !jj(root, ["file", "show", "--ignore-working-copy", "-r", "main@origin", path]).includes(needle))) {
+        throw new Error(`Main is not ready: ${path}${needle === undefined ? "" : " (required content missing)"}; no commit-id wait was used`)
+      }
     }
-  }
-  if (existsSync(join(root, indexPath))) await regenerateIndex(root, undefined, signal)
-  jj(root, ["status"])
-  const tested = revision(root, "@")
-  // Refuse before spending the tests; the check under the lock below is the one that counts.
-  reviews("@")
-  // Runs whatever validation the land names, --validated included, and holds no lock.
-  await typecheckApp(root, { signal })
-  for (const command of tests) {
-    const result = await runProcess("bash", ["-o", "pipefail", "-c", command], { cwd: root, stream: true, signal, timeoutMs: 40 * 60 * 1000, env: engineeringGateEnvironment(process.env) })
-    if (result.status !== 0) throw new Error(`Landing test failed: ${command}`)
-  }
-  signal?.throwIfAborted()
-  release = await lock()
-  try {
-    // Publication is serialized, but capacity admission and validation never
-    // hold the shared lock. A changed base needs a fresh sync and fresh checks.
+    if (existsSync(join(root, indexPath))) await regenerateIndex(root, undefined, signal)
+    jj(root, ["status"])
+    const tested = revision(root, "@")
+    // Refuse before spending the tests; the check under the lock below is the one that counts.
+    reviews("@")
+    // Keep the same FIFO lease from sync through every validation and the push.
+    await typecheckApp(root, { signal })
+    for (const command of tests) {
+      const result = await runProcess("bash", ["-o", "pipefail", "-c", command], { cwd: root, stream: true, signal, timeoutMs: 40 * 60 * 1000, env: engineeringGateEnvironment(process.env) })
+      if (result.status !== 0) throw new Error(`Landing test failed: ${command}`)
+    }
+    signal?.throwIfAborted()
+    release.check()
+    // Detect pushers outside this lease as a safety net before publication.
     jj(root, ["git", "fetch", "--remote", "origin"])
     if (revision(root, "main@origin") !== base) throw new Error("Main advanced during validation; rerun land to sync and validate the new base")
     if (revision(root, "@") !== tested) throw new Error("Source changed during validation; rerun land before publishing")
@@ -348,7 +310,7 @@ export async function landWorkspace(root, { message, tests = [], validation, req
     await beforePush?.()
     if (revision(root, "main") !== pushed) throw new Error("main moved after the review gate; nothing pushed, rerun land")
     console.error(`PUSH ${pushed}`)
-    jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main", "--ignore-working-copy"])
+    await release.push("jj", ["--color=never", "--no-pager", "git", "push", "--remote", "origin", "--bookmark", "main", "--ignore-working-copy"], { cwd: root, stream: true })
     jj(root, ["git", "fetch", "--remote", "origin", "--ignore-working-copy"])
     if (!revision(root, `${pushed} & ::main@origin`)) throw new Error("Push returned but remote ancestry does not contain the landed change")
     // Leave an immutable parent and a fresh private working-copy child for the next change.
@@ -356,12 +318,12 @@ export async function landWorkspace(root, { message, tests = [], validation, req
     rmSync(join(root, ".jj/agent-recovery"), { recursive: true, force: true })
     console.log(`LANDED ${pushed}`)
     return pushed
-  } finally { release() }
+  } finally { await release() }
 }
 
 export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
   if (args[0] === "--help" || !args.length) {
-    console.log("Usage: node .smithers/flows/land/workspace.mjs create <path> <name> | sync | recover | land [--message <text>] [--test <command>] [--validated <receipt>] [--no-review-needed <reason>] | remove\nRun from the invoking workspace. No installs. Sync and push use main-push.lock; remote validation runs unlocked. Waits are bounded. Ignored data prevents removal. Commits touching review-required.txt paths need a receipt from review.mjs.")
+    console.log("Usage: node .smithers/flows/land/workspace.mjs create <path> <name> | sync | recover | land [--message <text>] [--test <command>] [--validated <receipt>] [--no-review-needed <reason>] | remove\nRun from the invoking workspace. No installs. Sync, validation and push share a FIFO lease on main-push.lock. Waits are bounded. Ignored data prevents removal. Commits touching review-required.txt paths need a receipt from review.mjs.")
     return
   }
   const [command, ...rest] = args
@@ -390,7 +352,7 @@ export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
   let release
   try {
     if (command !== "land") release = await acquireLock(process.env.SMITHERS_LAND_LOCK ?? join(homedir(), "smithers-builders/main-push.lock"), {
-      timeoutMs: Number(process.env.SMITHERS_LOCK_TIMEOUT_MS ?? 300000), signal: controller.signal
+      timeoutMs: Number(process.env.SMITHERS_LOCK_TIMEOUT_MS ?? defaultLockTimeoutMs), signal: controller.signal
     })
     options.signal = controller.signal
     controller.signal.throwIfAborted()
@@ -400,7 +362,7 @@ export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
     else if (command === "land") await landWorkspace(root, options)
     else removeWorkspace(root)
   } finally {
-    release?.(); process.removeListener("SIGINT", onSignal); process.removeListener("SIGTERM", onSignal)
+    await release?.(); process.removeListener("SIGINT", onSignal); process.removeListener("SIGTERM", onSignal)
   }
 }
 

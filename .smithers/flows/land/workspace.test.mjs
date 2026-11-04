@@ -50,7 +50,7 @@ test("a regular file at the landing lock path is refused immediately and preserv
   const before = lstatSync(lock)
   const start = performance.now()
   const error = await acquireLock(lock, { timeoutMs: 1200 }).then(
-    (release) => { release(); assert.fail("acquired a regular file lock") },
+    async (release) => { await release(); assert.fail("acquired a regular file lock") },
     (error) => error
   )
   assert.ok(performance.now() - start < 250, "refuse before waiting for the lock timeout")
@@ -81,15 +81,16 @@ test("a symbolic link at the landing lock path is refused without touching its t
 test("one mkdir lock coordinates legacy owners, bounded waits and concurrent tool users", async (t) => {
   const { lock } = fixture(t)
   mkdirSync(lock); writeFileSync(join(lock, "owner"), "legacy lane\n")
-  await assert.rejects(acquireLock(lock, { timeoutMs: 10 }), /legacy lane/)
+  await assert.rejects(acquireLock(lock, { timeoutMs: 10 }), /legacy lock/)
   assert.equal(readFileSync(join(lock, "owner"), "utf8"), "legacy lane\n")
   rmSync(lock, { recursive: true })
   const release = await acquireLock(lock)
   let second = false
-  const waiting = acquireLock(lock, { timeoutMs: 1000 }).then((unlock) => { second = true; unlock() })
-  await new Promise((resolve) => setTimeout(resolve, 20))
+  const queued = Promise.withResolvers()
+  const waiting = acquireLock(lock, { timeoutMs: 10000, log: (line) => { if (line.includes("position 2")) queued.resolve() } }).then(async (unlock) => { second = true; await unlock() })
+  await queued.promise
   assert.equal(second, false)
-  release()
+  await release()
   await waiting
   assert.equal(existsSync(lock), false)
 })
@@ -263,7 +264,7 @@ test("CLI interruption and failed fetch release the lock and retain source", asy
   assert.equal(readFileSync(join(lane, "feature.txt"), "utf8"), "retained\n")
 })
 
-test("disk-full fallback and tests run without the push lock; a concurrent landing invalidates validation", async (t) => {
+test("disk-full fallback and validation retain the FIFO lease", async (t) => {
   const { root, lane, directory, lock } = fixture(t)
   mkdirSync(join(root, ".smithers"))
   writeFileSync(join(root, ".smithers/target-index.json"), "[]\n")
@@ -271,41 +272,26 @@ test("disk-full fallback and tests run without the push lock; a concurrent landi
   jj(root, ["describe", "-m", "index source"])
   jj(root, ["bookmark", "set", "main", "-r", "@"])
   jj(root, ["git", "push", "--remote", "origin", "--bookmark", "main"])
-  createWorkspace(root, lane, "lane")
-  const second = join(directory, "second")
-  createWorkspace(root, second, "second")
+  // Independent fixture repository, without adding a jj workspace.
+  jj(directory, ["git", "clone", root, lane])
   writeFileSync(join(lane, "one.txt"), "one\n")
-  writeFileSync(join(second, "two.txt"), "two\n")
   const mini = join(directory, "mini-run"), box = join(directory, "cfbox")
   writeFileSync(mini, `#!${process.execPath}\n
-    const fs = require("node:fs"), assert = require("node:assert/strict")
-    assert.equal(fs.existsSync(process.env.SMITHERS_LAND_LOCK), false, "mini admission held push lock")
+    require("node:assert/strict").equal(require("node:fs").existsSync(process.env.SMITHERS_LAND_LOCK), true)
     console.error("FARM_HEALTH DISK_FULL"); process.exit(73)
   `, { mode: 0o755 })
   writeFileSync(box, `#!${process.execPath}\n
-    require("node:assert/strict").equal(require("node:fs").existsSync(process.env.SMITHERS_LAND_LOCK), false)
+    require("node:assert/strict").equal(require("node:fs").existsSync(process.env.SMITHERS_LAND_LOCK), true)
     console.log("SMITHERS_TARGET_INDEX " + Buffer.from('[{"label":"//:index"}]').toString("base64"))
   `, { mode: 0o755 })
   const script = join(import.meta.dirname, "workspace.mjs")
   const env = { ...process.env, SMITHERS_LAND_LOCK: lock, SMITHERS_MINI_RUN: mini, SMITHERS_CFBOX: box }
-  const ready = join(directory, "ready"), proceed = join(directory, "proceed")
-  const check = `node -e 'const fs=require("fs"), assert=require("assert/strict"); assert.equal(fs.existsSync(process.env.SMITHERS_LAND_LOCK),false); fs.writeFileSync(${JSON.stringify(ready)},"ready"); const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(proceed)}))clearInterval(timer)},20)'`
-  const first = runProcess(process.execPath, [script, "land", "--message", "first", "--test", check], { cwd: lane, env })
-  for (let i = 0; i < 500 && !existsSync(ready); i++) await delay(20)
-  if (!existsSync(ready)) { const result = await first; assert.fail(result.stderr) }
-  const other = await runProcess(process.execPath, [script, "land", "--message", "second", "--test", "true"], { cwd: second, env })
-  writeFileSync(proceed, "continue")
-  const stale = await first
-  assert.equal(other.status, 0, other.stderr)
-  assert.equal(stale.status, 1, stale.stderr)
-  assert.match(stale.stderr, /Main advanced during validation/)
-  assert.match(stale.stderr, /TARGET_INDEX host=mini status=disk_full exit=73/)
+  const check = `node -e 'require("assert/strict").equal(require("fs").existsSync(process.env.SMITHERS_LAND_LOCK),true)'`
+  const result = await runProcess(process.execPath, [script, "land", "--message", "first", "--test", check], { cwd: lane, env })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stderr, /TARGET_INDEX host=mini status=disk_full exit=73/)
   assert.equal(existsSync(lock), false)
-  assert.equal(jj(lane, ["file", "list", "-r", "main@origin", "one.txt"]), "")
-  const retried = await runProcess(process.execPath, [script, "land", "--message", "first", "--test", "true"], { cwd: lane, env })
-  assert.equal(retried.status, 0, retried.stderr)
   assert.equal(jj(lane, ["file", "show", "-r", "main@origin", "one.txt"]), "one")
-  assert.equal(jj(lane, ["file", "show", "-r", "main@origin", "two.txt"]), "two")
 })
 
 test("removal refuses work the lane moved off @: a lane bookmark or a bare head", (t) => {

@@ -1,13 +1,13 @@
 /**
- * The land queue against real jj and git: checks run concurrently, the push
- * that moves `main` runs one at a time, a change tested on an older `main`
+ * The land queue against real jj and git: validation and publication share
+ * one FIFO lease, a change tested on an older `main`
  * is retested only when the new `main` touched its packages, and a baseline
  * (main commit, label) is measured once.
  */
 import { Effect } from "effect"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -20,6 +20,9 @@ const run = <A, E>(effect: Effect.Effect<A, E, RetryServices>) => Effect.runProm
 const fixture = (t: { after: (fn: () => void) => void }) => {
   const root = mkdtempSync(join(tmpdir(), "issue-sweep-queue-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
+  const previousLock = process.env.SMITHERS_LAND_LOCK
+  process.env.SMITHERS_LAND_LOCK = join(root, "main-push.lock")
+  t.after(() => { if (previousLock === undefined) delete process.env.SMITHERS_LAND_LOCK; else process.env.SMITHERS_LAND_LOCK = previousLock })
   const config = join(root, "jj.toml")
   writeFileSync(config, "[user]\nname = \"t\"\nemail = \"t@t\"\n")
   Object.assign(process.env, {
@@ -31,44 +34,47 @@ const fixture = (t: { after: (fn: () => void) => void }) => {
   })
   const cmd = (cwd: string, command: string, ...args: Array<string>) =>
     execFileSync(command, args, { cwd, encoding: "utf8", env: process.env, stdio: ["ignore", "pipe", "pipe"] })
-  const other = join(root, "other")
-  cmd(root, "git", "init", "-q", "-b", "main", other)
+  const origin = join(root, "origin")
+  mkdirSync(origin)
+  cmd(origin, "jj", "git", "init", ".")
   for (const file of ["a/x.txt", "b/y.txt"]) {
-    mkdirSync(join(other, file, ".."), { recursive: true })
-    writeFileSync(join(other, file), "one\n")
+    mkdirSync(join(origin, file, ".."), { recursive: true })
+    writeFileSync(join(origin, file), "one\n")
   }
-  cmd(other, "git", "add", "-A")
-  cmd(other, "git", "commit", "-qm", "first")
-  const origin = join(root, "origin.git")
-  cmd(root, "git", "clone", "-q", "--bare", other, origin)
-  cmd(other, "git", "remote", "add", "origin", origin)
-  const host = join(root, "host")
-  cmd(root, "jj", "git", "clone", "--quiet", origin, host)
+  cmd(origin, "jj", "commit", "-m", "first")
+  cmd(origin, "jj", "bookmark", "set", "main", "-r", "@-")
+  const other = join(root, "other")
+  cmd(root, "jj", "git", "clone", origin, other)
 
-  /** Another lander's commit on origin's main, touching `file`. */
   const pushElsewhere = (file: string) => {
-    cmd(other, "git", "pull", "-q", "--ff-only", "origin", "main")
+    cmd(other, "jj", "git", "fetch")
+    cmd(other, "jj", "new", "main@origin")
     mkdirSync(join(other, file, ".."), { recursive: true })
     writeFileSync(join(other, file), `${file}\n`)
-    cmd(other, "git", "add", "-A")
-    cmd(other, "git", "commit", "-qm", `elsewhere ${file}`)
-    cmd(other, "git", "push", "-q", "origin", "main")
-    return cmd(other, "git", "rev-parse", "HEAD").trim()
+    cmd(other, "jj", "commit", "-m", `elsewhere ${file}`)
+    cmd(other, "jj", "bookmark", "set", "main", "-r", "@-")
+    cmd(other, "jj", "git", "push", "-b", "main")
+    return cmd(other, "jj", "log", "--no-graph", "-r", "@-", "-T", "commit_id").trim()
   }
-
-  /** An agent's change in a workspace of its own: the change is `@-`, `@` is empty. */
+  // Independent fixture repositories; never add Mac workspaces.
   const change = (name: string, file: string) => {
     const workspace = join(root, name)
-    cmd(host, "jj", "workspace", "add", "--quiet", workspace, "--name", name, "-r", "main@origin")
+    cmd(root, "jj", "git", "clone", origin, workspace)
     mkdirSync(join(workspace, file, ".."), { recursive: true })
     writeFileSync(join(workspace, file), `${name}\n`)
-    cmd(workspace, "jj", "commit", "--quiet", "-m", name)
+    cmd(workspace, "jj", "commit", "-m", name)
     return { workspace, id: cmd(workspace, "jj", "log", "--no-graph", "-r", "@-", "-T", "change_id").trim() }
   }
-
-  const originMain = () => cmd(origin, "git", "rev-parse", "main").trim()
-  const subjects = () => cmd(origin, "git", "log", "--format=%s", "main").trim().split("\n")
-  return { pushElsewhere, change, originMain, subjects, cmd, origin }
+  const revision = (rev: string) => {
+    cmd(origin, "jj", "git", "import", "--ignore-working-copy")
+    return cmd(origin, "jj", "log", "--no-graph", "-r", rev, "-T", "commit_id").trim()
+  }
+  const originMain = () => revision("main")
+  const subjects = () => {
+    cmd(origin, "jj", "git", "import", "--ignore-working-copy")
+    return cmd(origin, "jj", "log", "--no-graph", "-r", "::main ~ root()", "-T", 'description.first_line() ++ "\\n"').trim().split("\n")
+  }
+  return { pushElsewhere, change, originMain, subjects, revision }
 }
 
 const index = [{ label: "//a:test", kinds: ["test"] }, { label: "//b:test", kinds: ["test"] }]
@@ -90,44 +96,23 @@ const fakeChecks = (onTest: (workspace: string, labels: ReadonlyArray<string>) =
 
 const green: Checked = { _tag: "Green" }
 
-test("two changes check concurrently, and their pushes run one at a time", { timeout: 60_000 }, async (t) => {
+test("two changes validate and publish serially under the shared FIFO lease", { timeout: 60_000 }, async (t) => {
   const { change, subjects } = fixture(t)
-  const one = change("one", "a/one.txt")
-  const two = change("two", "b/two.txt")
-  // Each check waits until the other has started: serial checks never finish.
-  let started = 0
-  let release: () => void = () => {}
-  const both = new Promise<void>((resolve) => (release = resolve))
-  const { checks, tested } = fakeChecks(() =>
-    Effect.gen(function*() {
-      started += 1
-      if (started === 2) release()
-      const met = yield* Effect.promise(() => both).pipe(Effect.timeoutOption("10 seconds"))
-      return met._tag === "Some" ? green : { _tag: "Broken", message: "checks ran one at a time" } as Checked
-    })
-  )
-  const pushes: Array<string> = []
-  const land = makeLander({
-    checks,
-    beforePush: (id) =>
-      Effect.gen(function*() {
-        pushes.push(`start ${id}`)
-        yield* Effect.sleep("100 millis")
-        pushes.push(`end ${id}`)
-      })
-  })
-
-  const landed = await run(
-    Effect.all([land(one.workspace, one.id), land(two.workspace, two.id)], { concurrency: "unbounded" })
-  )
-
+  const one = change("one", "a/one.txt"), two = change("two", "b/two.txt")
+  const stages: Array<string> = []
+  const { checks, tested } = fakeChecks((workspace) => Effect.sync(() => {
+    assert.equal(existsSync(process.env.SMITHERS_LAND_LOCK!), true)
+    stages.push(`check ${workspace}`)
+    return green
+  }))
+  const land = makeLander({ checks, beforePush: () => Effect.sync(() => {
+    assert.equal(existsSync(process.env.SMITHERS_LAND_LOCK!), true)
+    stages.push("push")
+  }) })
+  const landed = await run(Effect.all([land(one.workspace, one.id), land(two.workspace, two.id)], { concurrency: "unbounded" }))
   assert.equal(landed.length, 2)
-  // The pushes never overlapped.
-  for (let i = 0; i < pushes.length; i += 2) {
-    assert.match(pushes[i]!, /^start /)
-    assert.equal(pushes[i + 1], pushes[i]!.replace("start", "end"))
-  }
-  // Disjoint packages: the second push rebased onto the first without testing again.
+  assert.match(stages[0]!, /^check /); assert.equal(stages[1], "push")
+  assert.match(stages[2]!, /^check /); assert.equal(stages[3], "push")
   assert.deepEqual(tested.sort(), ["//a:test", "//b:test"])
   assert.deepEqual(subjects().slice(0, 2).sort(), ["one", "two"])
 })
@@ -135,7 +120,7 @@ test("two changes check concurrently, and their pushes run one at a time", { tim
 test("a change tested on an older main lands without retesting when main moved elsewhere", {
   timeout: 60_000
 }, async (t) => {
-  const { change, pushElsewhere, cmd, origin } = fixture(t)
+  const { change, pushElsewhere, revision } = fixture(t)
   const mine = change("mine", "a/mine.txt")
   let moved = ""
   const { checks, tested } = fakeChecks(() =>
@@ -148,14 +133,28 @@ test("a change tested on an older main lands without retesting when main moved e
   const landed = await run(makeLander({ checks })(mine.workspace, mine.id))
 
   assert.deepEqual(tested, ["//a:test"])
-  assert.equal(cmd(origin, "git", "rev-parse", "main").trim(), landed)
-  assert.equal(cmd(origin, "git", "rev-parse", `${landed}^`).trim(), moved)
+  assert.equal(revision("main"), landed)
+  assert.equal(revision(`${landed}-`), moved)
+})
+
+test("an outside push after the final fetch retries on a fresh ticket with fresh validation", { timeout: 60_000 }, async (t) => {
+  const { change, pushElsewhere, revision } = fixture(t)
+  const mine = change("retry", "a/retry.txt")
+  let moved = ""
+  const { checks, tested } = fakeChecks(() => Effect.succeed(green))
+  const land = makeLander({ checks, beforePush: () => Effect.sync(() => {
+    if (moved === "") moved = pushElsewhere("b/race.txt")
+  }) })
+  const landed = await run(land(mine.workspace, mine.id))
+  assert.deepEqual(tested, ["//a:test", "//a:test"])
+  assert.equal(revision("main"), landed)
+  assert.equal(revision(`${landed}-`), moved)
 })
 
 test("a change tested on an older main is retested when main touched its packages", {
   timeout: 60_000
 }, async (t) => {
-  const { change, pushElsewhere, cmd, origin } = fixture(t)
+  const { change, pushElsewhere, revision } = fixture(t)
   const mine = change("mine", "a/mine.txt")
   let moved = ""
   const { checks, tested } = fakeChecks(() =>
@@ -168,7 +167,7 @@ test("a change tested on an older main is retested when main touched its package
   const landed = await run(makeLander({ checks })(mine.workspace, mine.id))
 
   assert.deepEqual(tested, ["//a:test", "//a:test"])
-  assert.equal(cmd(origin, "git", "rev-parse", `${landed}^`).trim(), moved)
+  assert.equal(revision(`${landed}-`), moved)
 })
 
 test("re-landing a change main already contains answers its commit without checks", {
