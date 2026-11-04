@@ -46,6 +46,7 @@ import * as Statement from "effect/sql/Statement"
 import * as Stream from "effect/Stream"
 import * as Statements from "./internal/Statements.ts"
 import * as StorageDiagnostics from "./internal/StorageDiagnostics.ts"
+import { bufferWalWrites } from "./internal/WalBuffer.ts"
 
 /**
  * An open wa-sqlite database: the API built from the module, and the
@@ -213,7 +214,7 @@ type Pool = typeof AccessHandlePoolVFS
 const openPool = (directory: string, module: unknown, Vfs: Pool) =>
   Effect.acquireRelease(
     Effect.suspend(() => {
-      const vfs = new Vfs(directory, module)
+      const vfs = bufferWalWrites(new Vfs(directory, module))
       return Effect.tryPromise({
         try: () => vfs.isReady(),
         catch: (cause) => Statements.failed(cause, "Failed to open the OPFS directory", "connect")

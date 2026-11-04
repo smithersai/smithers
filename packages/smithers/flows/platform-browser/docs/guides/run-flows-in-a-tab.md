@@ -156,3 +156,24 @@ rather than replayed after its leader ends.
 OPFS handles held by a previous worker are acquired with Effect's host resource
 retry schedule until released or cancelled. Other open failures remain errors.
 After a worker failure, a new leader announcement lets its tab send requests again.
+
+### Cold storage writes
+
+The exclusive OPFS pool coalesces adjacent WAL writes into at most 64 KiB per
+open WAL file. SQLite writes a frame's header and page separately; forwarding
+each fragment to a synchronous access handle makes startup pay a host round
+trip for every fragment. Reads, size checks, truncation, file close and sync
+drain pending bytes first. The database format, `synchronous = FULL` and every
+SQLite sync call stay intact. A failed host write fails subsequent operations
+on that file until it closes.
+
+Pool disposal drops an unsynced buffered tail. Every acknowledged `FULL`
+commit has already drained and flushed its bytes; SQLite's normal file close
+also drains before releasing the file.
+
+`test/browser/WalWrites.test.ts` counts real OPFS writes for a fixed 128-row
+transaction, checks the complete values and SQLite integrity, then kills the
+worker with uncommitted writes and reopens its files. Its operation-count gate
+does not depend on a fast machine. `test/WalBuffer.test.ts` exercises bounded
+buffers, reused byte views, file visibility and injected host failures over
+real files; the existing browser durability suite covers engine recovery.

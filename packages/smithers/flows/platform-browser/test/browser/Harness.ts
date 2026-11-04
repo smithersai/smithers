@@ -54,7 +54,8 @@ export const serve = async (
     page: "./app/page.ts",
     worker: "./app/worker.ts",
     cache: "./app/cache.ts",
-    tanstack: "./app/tanstack.ts"
+    tanstack: "./app/tanstack.ts",
+    "wal-worker": "./app/wal-worker.ts"
   })
   // The agent's worker is built the way Vite serves an app's worker: the
   // `browser` condition and no `worker` one, every module evaluated. A module
