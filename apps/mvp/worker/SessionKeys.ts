@@ -3,67 +3,70 @@ import { digestSync } from "@smthrs/crypto"
 import { Core } from "@smthrs/integrations"
 import { Effect, Option, Redacted } from "effect"
 
-// Sign-in's keys (docs/features/sign-in.md#keys), all from one secret, SESSION_SECRET: cookies are signed with
-// HMAC-SHA256 (`@smthrs/integrations`' `Core.Signature`), and GitHub's tokens and the PKCE verifier are sealed with
-// AES-256-GCM (`@smthrs/control`'s `WebCryptoCipher`) under a key derived from it. A database read alone signs nobody
-// in: Postgres holds only a token's SHA-256 and sealed values.
-
-/** The shortest SESSION_SECRET sign-in accepts. Alchemy generates 64 hexadecimal characters. */
 export const MIN_SECRET_LENGTH = 32
-
-/**
- * What a signed value is for, so a value signed for one use never verifies as another: a cookie (`session`,
- * `sign_in`, an alias's hand-off nonce `handoff`), an alias's hand-off request to `APP_DOMAIN` (`handoff_request`,
- * decision 0130) or a run credential (`run`, worker/RunCredentials.ts).
- */
+export const LEGACY_KEY = "legacy"
 export type Purpose = "session" | "sign_in" | "handoff" | "handoff_request" | "run"
-
-/** What a sealed value is and whose it is; the cipher authenticates both with the ciphertext. */
 export type SealContext = CredentialCipher.Context
-
+export interface Verified {
+  readonly value: string
+  readonly keyId: string
+}
 export interface SessionKeys {
-  /** A fresh random token: 256 bits, base64url. */
+  readonly keyIds: ReadonlyArray<string>
   readonly token: Effect.Effect<string>
-  /** `value.<signature>`, for a cookie. */
-  readonly sign: (purpose: Purpose, value: string) => Effect.Effect<string>
-  /** The value a signed cookie carries, when we signed it for `purpose`. */
-  readonly verify: (purpose: Purpose, signed: string | undefined) => Effect.Effect<Option.Option<string>>
+  readonly sign: (purpose: Purpose, value: string, keyId?: string) => Effect.Effect<string>
+  readonly verify: (purpose: Purpose, signed: string | undefined) => Effect.Effect<Option.Option<Verified>>
   readonly seal: (plaintext: Redacted.Redacted<string>, context: SealContext) => Effect.Effect<CredentialCipher.Sealed>
-  /** Fails with `PersistenceError` when the sealed value doesn't open under this key and context. */
   readonly open: CredentialCipher.Service["open"]
 }
-
-/** A token's SHA-256, as Postgres keeps it. */
 export const digest = (value: string): string => digestSync(value)
+const hexToBase64 = (hex: string) => btoa(String.fromCharCode(...hex.match(/../g)!.map(pair => parseInt(pair, 16))))
 
-/** A SHA-256 digest's 64 hexadecimal characters as the 32 bytes' base64, the key form the cipher takes. */
-const hexToBase64 = (hex: string) => btoa(String.fromCharCode(...hex.match(/../g)!.map((pair) => parseInt(pair, 16))))
+/** The legacy secret remains the seal fallback, so deploying signing rotation never changes ciphertext keys. */
+export const make = (secret: Redacted.Redacted<string>, options: {
+  readonly sealSecret?: Redacted.Redacted<string>
+  readonly secrets?: Readonly<Record<string, Redacted.Redacted<string>>>
+} = {}) => Effect.gen(function* () {
+  const secrets = options.secrets ?? { [LEGACY_KEY]: secret }
+  const keyIds = Object.keys(secrets).sort()
+  const cipher = yield* WebCryptoCipher.make({
+    key: Redacted.make(hexToBase64(digest(`smithers-seal:${Redacted.value(options.sealSecret ?? secret)}`))),
+  }).pipe(Effect.orDie)
+  const signature = (purpose: Purpose, value: string, keyId: string) =>
+    Core.Signature.computeHmacSha256Hex(`${purpose}:${value}`, Redacted.value(secrets[keyId]!))
+  return {
+    keyIds,
+    token: Core.Pkce.createCodeVerifier(32).pipe(Effect.orDie),
+    sign: (purpose, value, keyId = keyIds.includes(LEGACY_KEY) ? LEGACY_KEY : keyIds[0]!) => {
+      if (!Object.hasOwn(secrets, keyId)) return Effect.die(new Error("Session signing key is not configured"))
+      return Effect.map(signature(purpose, value, keyId), mac => `${value}.${mac}`)
+    },
+    verify: (purpose, signed) => Effect.gen(function* () {
+      const dot = signed?.lastIndexOf(".") ?? -1
+      if (signed === undefined || dot <= 0) return Option.none<Verified>()
+      const value = signed.slice(0, dot)
+      for (const keyId of keyIds) {
+        const ok = yield* Core.Signature.verifySignature({
+          payload: `${purpose}:${value}`, secret: Redacted.value(secrets[keyId]!), signature: signed.slice(dot + 1), prefix: "",
+        })
+        if (ok) return Option.some({ value, keyId })
+      }
+      return Option.none<Verified>()
+    }),
+    seal: (plaintext, context) => cipher.seal(plaintext, context).pipe(Effect.orDie),
+    open: cipher.open,
+  } satisfies SessionKeys
+})
 
-/** The keys under `secret`. Dies when the host has no WebCrypto, which every supported host provides. */
-export const make = (secret: Redacted.Redacted<string>) =>
-  Effect.gen(function* () {
-    const hmacSecret = Redacted.value(secret)
-    const cipher = yield* WebCryptoCipher.make({
-      key: Redacted.make(hexToBase64(digest(`smithers-seal:${hmacSecret}`))),
-    }).pipe(Effect.orDie)
-    const signature = (purpose: Purpose, value: string) =>
-      Core.Signature.computeHmacSha256Hex(`${purpose}:${value}`, hmacSecret)
-    return {
-      // A PKCE verifier is 32 random bytes as base64url: exactly a session or `state` token.
-      token: Core.Pkce.createCodeVerifier(32).pipe(Effect.orDie),
-      sign: (purpose, value) => Effect.map(signature(purpose, value), (mac) => `${value}.${mac}`),
-      verify: (purpose, signed) => {
-        const dot = signed?.lastIndexOf(".") ?? -1
-        if (signed === undefined || dot <= 0) return Effect.succeedNone
-        const value = signed.slice(0, dot)
-        return Core.Signature.verifySignature({
-          payload: `${purpose}:${value}`,
-          secret: hmacSecret,
-          signature: signed.slice(dot + 1),
-          prefix: "",
-        }).pipe(Effect.map((ok) => (ok ? Option.some(value) : Option.none())))
-      },
-      seal: (plaintext, context) => cipher.seal(plaintext, context).pipe(Effect.orDie),
-      open: cipher.open,
-    } satisfies SessionKeys
-  })
+/** A configuration error returns no values, so invalid secret maps never enter logs or Config error text. */
+export const decodeSecrets = (encoded: Redacted.Redacted<string>): Option.Option<Readonly<Record<string, Redacted.Redacted<string>>>> => {
+  try {
+    const parsed: unknown = JSON.parse(Redacted.value(encoded))
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return Option.none()
+    const entries = Object.entries(parsed)
+    if (entries.length === 0 || entries.some(([id, value]) => !/^[a-zA-Z0-9_-]{1,64}$/.test(id) || typeof value !== "string" || value.length < MIN_SECRET_LENGTH)) return Option.none()
+    // Two ids for the same secret make the verifying key ambiguous and defeat row-key equality.
+    if (new Set(entries.map(([, value]) => digest(value as string))).size !== entries.length) return Option.none()
+    return Option.some(Object.fromEntries(entries.map(([id, value]) => [id, Redacted.make(value as string)])))
+  } catch { return Option.none() }
+}

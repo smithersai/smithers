@@ -1,0 +1,16 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// UUIDs use the database CSPRNG. Discard their version and variant bits so all 128 tag bits are random.
+// A database default also protects inserts from Workers still running the old code during rollout.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`SET LOCAL lock_timeout = '5s'`
+  yield* sql`CREATE FUNCTION random_session_tag() RETURNS text LANGUAGE sql VOLATILE AS $body$
+    WITH entropy AS MATERIALIZED (SELECT replace(gen_random_uuid()::text, '-', '') AS a,
+      replace(gen_random_uuid()::text, '-', '') AS b)
+    SELECT substr(a, 1, 12) || substr(a, 21, 12) || substr(b, 1, 8) FROM entropy
+  $body$`
+  yield* sql`ALTER TABLE sessions ADD COLUMN session_tag text NOT NULL DEFAULT random_session_tag() UNIQUE`
+  yield* sql`ALTER TABLE host_sessions ADD COLUMN session_tag text NOT NULL DEFAULT random_session_tag() UNIQUE`
+})

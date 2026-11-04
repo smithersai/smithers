@@ -406,8 +406,11 @@ export const make = <E, R>(
           }
           if (applied.kind === "forbidden") return refused("forbidden")
           if (applied.kind === "conflict") return refused("conflict")
-          // The role changed between the read and the change: decided again on the next send.
-          if (applied.kind === "stale") return refused("forbidden")
+          // Unconfirmed authority is retried with the next credential; only a confirmed denial is terminal.
+          if (applied.kind === "stale") {
+            fields.outcome = "unavailable"
+            return refusal(503, "unavailable", 1)
+          }
           const receipt = applied.receipt
           if (Stack.isRefusal(receipt.outcome)) return refused(receipt.outcome)
           // A repeated op starts and stops the same runs again, which changes nothing, so a start an earlier answer

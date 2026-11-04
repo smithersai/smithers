@@ -1,0 +1,108 @@
+import { Effect, Metric, Option } from "effect"
+import { SqlClient } from "effect/sql"
+import type { SqlError } from "effect/sql/SqlError"
+import { digest } from "./SessionKeys.ts"
+
+export type Reason = "sign_out" | "github_refused" | "unreadable" | "expired" | "compromised"
+export const ends = Metric.counter("smithers_auth_session_ends", { incremental: true })
+const recorded = (reason: Reason, alias: boolean) => Effect.andThen(
+  Metric.update(Metric.withAttributes(ends, { reason, kind: alias ? "alias" : "home" }), 1),
+  Effect.logInfo("auth.session_end").pipe(Effect.annotateLogs({ reason, kind: alias ? "alias" : "home" })),
+)
+
+/** Every terminal writer holds the parent before any alias. End records and cleanup commit with revocation. */
+export const endSession = (id: string, reason: Reason, gen?: number) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  return yield* sql.withTransaction(Effect.gen(function* () {
+    yield* sql`SELECT id FROM sessions WHERE id = ${id} FOR UPDATE`
+    const [row] = yield* sql<{ tag: string; access: unknown; refresh: unknown; pair: string | null; changed: boolean; gen: number; at: string; reason: Reason }>`
+      SELECT session_tag AS tag, github_access AS access, github_refresh AS refresh, github_pair_digest AS pair,
+        revoked_at IS NULL AS changed, github_token_gen AS gen,
+        least(revoked_at, expires_at, started_at + interval '400 days', clock_timestamp())::text AS at,
+        CASE WHEN least(expires_at, started_at + interval '400 days') <= coalesce(revoked_at, clock_timestamp())
+          THEN 'expired' ELSE coalesce(revoked_reason, ${reason}) END AS reason
+      FROM sessions WHERE id = ${id}`
+    if (row === undefined || (gen !== undefined && row.gen !== gen)) return Option.none<string>()
+    // Legacy rows predate pair digests. Their sealed pair still gets a stable id across transaction replays.
+    if (row.access !== null || row.refresh !== null) yield* sql`INSERT INTO github_token_cleanups (id, session_id, pair_digest, sealed_access, sealed_refresh)
+      VALUES (${crypto.randomUUID()}, ${id}, ${row.pair ?? digest(`ended:${id}:${JSON.stringify(row.access)}:${JSON.stringify(row.refresh)}`)},
+        ${row.access === null ? null : JSON.stringify(row.access)}::jsonb, ${row.refresh === null ? null : JSON.stringify(row.refresh)}::jsonb)
+      ON CONFLICT (pair_digest) DO NOTHING`
+    yield* sql`UPDATE sessions SET revoked_at = ${row.at}::timestamptz, revoked_reason = ${row.reason},
+      github_access = NULL, github_access_expires_at = NULL, github_refresh = NULL, github_refresh_digest = NULL
+      WHERE id = ${id} AND (revoked_at IS DISTINCT FROM ${row.at}::timestamptz OR revoked_reason IS DISTINCT FROM ${row.reason}
+        OR github_access IS NOT NULL OR github_access_expires_at IS NOT NULL
+        OR github_refresh IS NOT NULL OR github_refresh_digest IS NOT NULL)`
+    yield* sql`INSERT INTO session_end_receipts (session_tag, ended_at, reason)
+      VALUES (${row.tag}, ${row.at}::timestamptz, ${row.reason}) ON CONFLICT DO NOTHING`
+    const aliases = yield* sql<{ id: string }>`SELECT id FROM host_sessions WHERE parent_id = ${id} ORDER BY id FOR UPDATE`
+    for (const alias of aliases) yield* endAlias(alias.id, row.reason, row.at)
+    if (row.changed) yield* recorded(row.reason, false)
+    return row.changed ? Option.some(id) : Option.none<string>()
+  }))
+}).pipe(Effect.withSpan("auth.session_end"))
+
+/** Call only after locking the parent. An alias deadline never ends its parent. */
+export const endAlias = (id: string, reason: Reason, parentEnd?: string): Effect.Effect<Option.Option<string>, SqlError, SqlClient.SqlClient> => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`SELECT id FROM host_sessions WHERE id = ${id} FOR UPDATE`
+  const [row] = yield* sql<{ tag: string; at: string; reason: Reason; changed: boolean; parent: string; parentEnded: boolean }>`
+    SELECT h.session_tag AS tag, h.revoked_at IS NULL AS changed, s.id AS parent,
+      (s.revoked_at IS NOT NULL OR least(s.expires_at, s.started_at + interval '400 days') <= clock_timestamp()) AS "parentEnded",
+      least(h.revoked_at, ${parentEnd ?? null}::timestamptz, least(h.started_at, s.started_at) + interval '400 days', clock_timestamp())::text AS at,
+      CASE WHEN least(h.started_at, s.started_at) + interval '400 days' <= least(coalesce(h.revoked_at, clock_timestamp()), coalesce(${parentEnd ?? null}::timestamptz, clock_timestamp()))
+        THEN 'expired' WHEN h.revoked_at IS NOT NULL AND (h.revoked_at <= ${parentEnd ?? null}::timestamptz OR ${parentEnd ?? null}::timestamptz IS NULL)
+        THEN coalesce((SELECT reason FROM session_end_receipts WHERE session_tag = h.session_tag), 'sign_out') ELSE ${reason} END AS reason
+    FROM host_sessions h JOIN sessions s ON s.id = h.parent_id WHERE h.id = ${id}`
+  if (row === undefined) return Option.none<string>()
+  // Independent alias endings also finalize an expired parent. The home writer passes parentEnd to avoid recursion.
+  if (parentEnd === undefined && row.parentEnded) {
+    yield* endSession(row.parent, "expired")
+    return row.changed ? Option.some(id) : Option.none<string>()
+  }
+  yield* sql`UPDATE host_sessions SET revoked_at = ${row.at}::timestamptz WHERE id = ${id}
+    AND revoked_at IS DISTINCT FROM ${row.at}::timestamptz`
+  yield* sql`INSERT INTO session_end_receipts (session_tag, ended_at, reason)
+    VALUES (${row.tag}, ${row.at}::timestamptz, ${row.reason}) ON CONFLICT DO NOTHING`
+  if (row.changed) yield* recorded(row.reason, true)
+  return row.changed ? Option.some(id) : Option.none<string>()
+})
+
+/** Erasure takes the person's lock first, preserving the newest authority before removing its session. */
+export const sweep = () => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const candidates = yield* sql<{ id: string; person: string }>`SELECT id, person_id AS person FROM sessions
+    WHERE revoked_at IS NOT NULL OR least(expires_at, started_at + interval '400 days') <= clock_timestamp() ORDER BY person_id, id`
+  for (const candidate of candidates) yield* sql.withTransaction(Effect.gen(function* () {
+    yield* sql`SELECT id FROM people WHERE id = ${candidate.person} FOR UPDATE`
+    yield* sql`SELECT id FROM sessions WHERE id = ${candidate.id} FOR UPDATE`
+    const [row] = yield* sql<{ ended: boolean }>`SELECT revoked_at IS NOT NULL OR least(expires_at, started_at + interval '400 days') <= clock_timestamp() AS ended FROM sessions WHERE id = ${candidate.id}`
+    if (row?.ended !== true) return
+    yield* endSession(candidate.id, "expired")
+    const [erase] = yield* sql<{ erase: boolean }>`SELECT revoked_at < clock_timestamp() - interval '30 days' AS erase FROM sessions WHERE id = ${candidate.id}`
+    if (erase?.erase !== true) return
+    yield* sql`INSERT INTO person_role_receipts (person_id, role, role_generation, role_checked_at, role_verified_at, created_at, session_id)
+      SELECT person_id, role, role_generation, role_checked_at, role_verified_at, created_at, id FROM sessions WHERE person_id = ${candidate.person}
+      ORDER BY role_generation DESC, role_checked_at DESC, created_at DESC, id DESC LIMIT 1
+      ON CONFLICT (person_id) DO UPDATE SET role = EXCLUDED.role, role_generation = EXCLUDED.role_generation,
+        role_checked_at = EXCLUDED.role_checked_at, role_verified_at = EXCLUDED.role_verified_at,
+        created_at = EXCLUDED.created_at, session_id = EXCLUDED.session_id
+      WHERE (EXCLUDED.role_generation, EXCLUDED.role_checked_at, EXCLUDED.created_at, EXCLUDED.session_id) >
+        (person_role_receipts.role_generation, person_role_receipts.role_checked_at, person_role_receipts.created_at, person_role_receipts.session_id)`
+    yield* sql`DELETE FROM host_sessions WHERE parent_id = ${candidate.id}`
+    yield* sql`DELETE FROM sessions WHERE id = ${candidate.id}`
+  }))
+  const aliases = yield* sql<{ id: string; parent: string }>`SELECT h.id, h.parent_id AS parent FROM host_sessions h JOIN sessions s ON s.id = h.parent_id
+    WHERE h.revoked_at IS NOT NULL OR least(h.started_at, s.started_at) + interval '400 days' <= clock_timestamp() ORDER BY h.parent_id, h.id`
+  for (const alias of aliases) yield* sql.withTransaction(Effect.gen(function* () {
+    yield* sql`SELECT id FROM sessions WHERE id = ${alias.parent} FOR UPDATE`
+    yield* sql`SELECT id FROM host_sessions WHERE id = ${alias.id} FOR UPDATE`
+    const [row] = yield* sql<{ ended: boolean }>`SELECT h.revoked_at IS NOT NULL OR least(h.started_at, s.started_at) + interval '400 days' <= clock_timestamp() AS ended
+      FROM host_sessions h JOIN sessions s ON s.id = h.parent_id WHERE h.id = ${alias.id}`
+    if (row?.ended !== true) return
+    yield* endAlias(alias.id, "expired")
+    yield* sql`DELETE FROM host_sessions WHERE id = ${alias.id} AND revoked_at < clock_timestamp() - interval '30 days'`
+  }))
+  yield* sql`DELETE FROM session_end_receipts WHERE ended_at < clock_timestamp() - interval '400 days'`
+  yield* Effect.logInfo("auth.session_retention").pipe(Effect.annotateLogs({ outcome: "completed" }))
+}).pipe(Effect.withSpan("auth.session_retention"))

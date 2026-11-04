@@ -24,6 +24,7 @@ import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Metrics from "./Metrics.ts"
 import * as Reconcile from "./Reconcile.ts"
+import { FRESH_SECONDS } from "./RepoRoles.ts"
 import {
   admit,
   items,
@@ -66,8 +67,9 @@ test.each(["triage/enable", "triage/pause"] as const)("delayed %s refuses revoke
   await sql(runtime, `UPDATE sessions SET revoked_at = now(), revoked_reason = 'sign_out' WHERE id = '${who.sessionId}'`)
   const host = await services(runtime, repository())
   const send = Write.steps(host.services).send({ writeId: id })
-  expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
-  expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
+  expect(await runtime.runPromise(Effect.result(send))).toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/github/WriteUnavailable" } })
+  expect(await runtime.runPromise(Effect.result(send))).toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/github/WriteUnavailable" } })
+  expect(await writeRow(runtime, id)).toMatchObject({ status: "pending", failure: null })
   expect(await settings()).toEqual(before)
 })
 
@@ -91,9 +93,42 @@ test.each(["triage/enable", "triage/pause"].flatMap((op) => ["deployment", "repo
     const send = Write.steps(host.services).send({ writeId: id })
     expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
     expect(await runtime.runPromise(send)).toMatchObject({ status: "refused" })
+    expect(await writeRow(runtime, id)).toMatchObject({ status: "refused", failure: "not_allowed" })
     expect(await settings()).toEqual(before)
   },
 )
+
+test.each(["triage/enable", "triage/pause"].flatMap(op =>
+  ["missing", "expired denial", "older observation"].map(state => ({ op, state }))))(
+  "$op keeps an unavailable repository observation pending: $state", async ({ op, state }) => {
+    const who = await signedIn(runtime, { login: "waiting-maintainer", token: Redacted.make("test-token") })
+    await enable()
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${REPOSITORY.id}', '${who.personId}', 'maintainer', clock_timestamp())`)
+    const [observed] = await sql(runtime, `SELECT checked_at::text AS "checkedAt" FROM github_repo_roles
+      WHERE repo_id = '${REPOSITORY.id}' AND person_id = '${who.personId}'`) as Array<{ checkedAt: string }>
+    const authority = { personId: who.personId, sessionId: who.sessionId, scope: { _tag: "Repo" as const,
+      held: { repoId: REPOSITORY.id, personId: who.personId, role: "maintainer" as const, checkedAt: observed!.checkedAt } } }
+    const payload = op === "triage/enable" ? { op: "triage/enable" as const, dailyTokens: 12345, authority }
+      : { op: "triage/pause" as const, authority }
+    const id = await admit(runtime, { actorId: who.personId, sessionId: who.sessionId, via: "person", payload })
+    const before = await settings()
+    await sql(runtime, state === "missing"
+      ? `DELETE FROM github_repo_roles WHERE person_id = '${who.personId}'`
+      : `UPDATE github_repo_roles SET role = 'member', checked_at = timestamptz '${observed!.checkedAt}'
+          - interval '${state === "expired denial" ? FRESH_SECONDS + 1 : 1} seconds' WHERE person_id = '${who.personId}'`)
+    const host = await services(runtime, repository())
+    const send = Write.steps(host.services).send({ writeId: id })
+    expect(await runtime.runPromise(Effect.result(send))).toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/github/WriteUnavailable" } })
+    expect(await runtime.runPromise(Effect.result(send))).toMatchObject({ _tag: "Failure", failure: { _tag: "@smthrs/mvp/github/WriteUnavailable" } })
+    expect(await writeRow(runtime, id)).toMatchObject({ status: "pending", failure: null })
+    expect(await settings()).toEqual(before)
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+      VALUES ('${REPOSITORY.id}', '${who.personId}', 'maintainer', clock_timestamp())
+      ON CONFLICT (repo_id, person_id) DO UPDATE SET role = 'maintainer', checked_at = clock_timestamp()`)
+    expect(await runtime.runPromise(send)).toMatchObject({ status: "done" })
+    expect(await runtime.runPromise(send)).toMatchObject({ status: "done" })
+  })
 
 const REPO = `${REPOSITORY.owner}/${REPOSITORY.name}`
 
@@ -956,7 +991,7 @@ describe("a person's triage", () => {
     expect((await h.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post({ writeId: crypto.randomUUID(), op: "issue/commitment", number: 1, commitment: "now" }))).status).toBe(403)
     // Sign-in confirms her promotion: the deployment's role is her session's confirmed receipt.
     await runtime.runPromise(Effect.flatMap(SessionStore.roleObservation, (generation) =>
-      SessionStore.setRole(person.sessionId, "maintainer", generation)))
+      SessionStore.setRole(person.sessionId, "maintainer", generation, 0)))
     const writer = await githubHarness(runtime, { actor: { ...person.actor, role: "maintainer" }, run: true, github })
     for (const accepted of [false, true]) {
       github.relabel(1, accepted ? [ACCEPTED_LABEL] : [])

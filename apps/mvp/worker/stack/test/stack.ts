@@ -8,6 +8,7 @@ import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../../../src/features/todos/contract.ts"
 import * as Actor from "../../Actor.ts"
+import { SigningKeyIds } from "../../SessionStore.ts"
 import type { testFile } from "../../test/harness.ts"
 import { signedIn } from "../../test/harness.ts"
 import * as Api from "../Api.ts"
@@ -62,6 +63,8 @@ export const runs = (): Runs => {
 }
 
 export interface StackOptions {
+  /** Configured signing-key ids for real session authority checks. */
+  readonly signingKeys?: ReadonlyArray<string>
   /** Who is signed in on every request: nobody unless set. */
   readonly actor?: Actor.Actor
   /** Sessions in place of `actor`. */
@@ -113,6 +116,7 @@ export const stackHarness = async (runtime: Runtime, options: StackOptions = {})
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
       Effect.provideService(ConfigProvider.ConfigProvider, provider),
+      Effect.provideService(SigningKeyIds, options.signingKeys ?? ["legacy"]),
     )
   const roles = options.faultyRoles ?? await runtime.runPromise(
     observed(RepoRoles.make(scratch.database, { repository: OWN_REPOSITORY, app: Option.none(), ...options.roles })),

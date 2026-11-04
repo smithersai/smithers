@@ -18,10 +18,14 @@ export const SessionState = Schema.Union([
     hostedModel: Schema.optional(Schema.Boolean),
     install: Schema.optional(Schema.String),
     expiresAt: Schema.optional(Schema.Number),
-    serverNow: Schema.optional(Schema.Number),
+    deadline: Schema.optional(Schema.Number),
     session: Schema.optional(Schema.String),
+    serverNow: Schema.optional(Schema.Number),
   }),
 ])
+
+/** The complete wire answer; device stale handling ships in rollout step 3. */
+export const SessionResponse = Schema.Union([SessionState, Schema.Struct({ credential: Schema.Literal("stale") })])
 
 /**
  * This tab's view of who is signed in, one row:

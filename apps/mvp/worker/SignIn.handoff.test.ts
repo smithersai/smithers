@@ -3,7 +3,7 @@
 // own schema of the compose Postgres, with the scripted GitHub (worker/test/github.ts) as the only stand-in; faults are
 // injected database statements, never mocks.
 import { Effect, Layer, Option, Redacted } from "effect"
-import { HttpServerRequest } from "effect/http"
+import { HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -21,11 +21,11 @@ import { configured, cookie, SECRET, setCookies, signInHarness } from "./test/si
 
 const runtime = testFile("sign_in_handoff")
 
-beforeEach(() =>
-  runtime.runPromise(
-    Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE sessions, sign_in_attempts, people, domains CASCADE`),
-  )
-)
+beforeEach(async () => {
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`TRUNCATE sessions, sign_in_attempts, people, domains CASCADE`))
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`DELETE FROM session_signing_keys`))
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`INSERT INTO session_signing_keys (key_id, state, promoted_at) VALUES ('legacy', 'issuer', now())`))
+})
 
 const sql = <A extends object>(statement: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(statement(client))))
@@ -242,14 +242,15 @@ describe("signing in at an alias", () => {
     h.advance(60 * 60 * 1000)
     // The answer names no session: neither the parent's id nor the alias's own appears anywhere in it.
     const [ids] = await sql((client) =>
-      client<{ readonly parent: string; readonly alias: string }>`
-        SELECT s.id::text AS parent, h.id::text AS alias FROM host_sessions h JOIN sessions s ON s.id = h.parent_id`)
+      client<{ readonly parent: string; readonly alias: string; readonly tag: string }>`
+        SELECT s.id::text AS parent, h.id::text AS alias, h.session_tag AS tag FROM host_sessions h JOIN sessions s ON s.id = h.parent_id`)
     expect(ids).toBeDefined()
     const serialized = JSON.stringify(answer)
     expect(serialized).not.toContain(ids!.parent)
     expect(serialized).not.toContain(ids!.alias)
     expect(answer).not.toHaveProperty("home")
-    expect(answer).not.toHaveProperty("session")
+    expect(answer).toHaveProperty("session", ids!.tag)
+    expect(ids!.tag).not.toBe(SessionKeys.digest(ids!.alias).slice(0, 32))
     // The parent's end moves, and the alias's answer follows it; home says the same end.
     await sql((client) => client`UPDATE sessions SET expires_at = expires_at - interval '2 days'`)
     expect((await h.sessionAt(ALIAS, alias) as { readonly expiresAt?: number }).expiresAt).toBe(await parentEnd())
@@ -715,15 +716,15 @@ describe("alias sessions", () => {
     expect(Option.getOrThrow(await h.actorAt(ALIAS, cookies)).expiry).toBeUndefined()
   })
 
-  test("signing in at home again, or home's session expiring, ends every alias session under it", async () => {
+  test("signing in at home again keeps its aliases; expiring the parent ends them", async () => {
     const h = await harness()
     const factory = await h.signInAt(ALIAS)
-    // Signing in again in the home browser ends its session there, and the alias's with it.
+    // The same-person callback keeps the parent row, so its aliases continue.
     const again = await h.start()
     const { code, state } = h.github.approve(again.location)
     const callback = await h.callback({ code, state }, { ...values(again.response), ...factory.home })
     expect(callback.status).toBe(303)
-    expect(await h.sessionAt(ALIAS, factory.cookies)).toMatchObject({ signedIn: false })
+    expect(await h.sessionAt(ALIAS, factory.cookies)).toMatchObject({ signedIn: true })
     const later = await h.signInAt(ALIAS, values(callback))
     await sql((client) => client`UPDATE sessions SET expires_at = now() - interval '1 second'`)
     expect(await h.sessionAt(ALIAS, later.cookies)).toMatchObject({ signedIn: false })
@@ -778,7 +779,16 @@ describe("when Postgres fails", () => {
   ])("a statement that fails as the alias redeems (%s) signs nobody in", async (statement, location) => {
     const h = await harness(withHome, await failing(statement))
     const { pressed, code } = await h.handedOff()
-    const extra: Record<string, string> = statement.startsWith("UPDATE") ? { smithers_session: await signedSession() } : {}
+    const extra: Record<string, string> = {}
+    if (statement.startsWith("UPDATE")) {
+      // The terminal update now runs only for a real held alias. A nonexistent cookie has nothing to end.
+      const [parent] = await sql(client => client<{ id: string }>`SELECT id FROM sessions`)
+      const token = "held-alias-for-failed-terminal-update"
+      await runtime.runPromise(SessionStore.createHostSession({ id: crypto.randomUUID(), tokenDigest: SessionKeys.digest(token), parentId: parent!.id, host: new URL(ALIAS).hostname }))
+      await sql(client => client`UPDATE host_sessions SET started_at = now() - interval '401 days'`)
+      const keys = await runtime.runPromise(SessionKeys.make(Redacted.make(SECRET)))
+      extra.smithers_session = await runtime.runPromise(keys.sign("session", token))
+    }
     const arrived = await h.arrive(code, { ...pressed.cookies, ...extra })
     expect(arrived.headers.get("location")).toBe(location)
     expect(h.count({ route: "arrive", reason: "database" })).toBe(1)
@@ -818,4 +828,114 @@ test("an alias ended while its home completes a healthy role recheck stays signe
   await sql((client) => client`UPDATE sessions SET role_checked_at = now() - interval '61 minutes', role_verified_at = now() - interval '61 minutes'`)
   expect(await h.actorAt(ALIAS, signed.cookies)).toEqual(Option.none())
   expect(await h.sessionAt(HOME, signed.home)).toMatchObject({ signedIn: true, role: "member" })
+})
+
+
+describe("alias in-place reauthentication", () => {
+  const NEXT = "next-alias-signing-key-".padEnd(64, "8")
+  const config = { ...withHome, SESSION_SECRETS: JSON.stringify({ legacy: SECRET, next: NEXT }), SESSION_SEAL_SECRET: SECRET }
+  test.each(["home", "alias"] as const)("a configured stale %s cookie can explicitly sign out through HTTP after rotation", async location => {
+    const h = await harness(config)
+    const first = await h.signInAt()
+    const other = await h.signInAt(OTHER, first.home)
+    const origin = location === "home" ? HOME : ALIAS
+    const held = location === "home" ? first.home : first.cookies
+    const person = personOf(await h.sessionAt(origin, held))
+    const rotation = await import("./SessionSigningKeys.ts")
+    await runtime.runPromise(rotation.stage("next", Redacted.make(NEXT)))
+    await runtime.runPromise(rotation.promote("next"))
+    let fresh: Record<string, string>
+    if (location === "home") {
+      const started = await h.start()
+      fresh = values(await h.callback(h.github.approve(started.location), { ...first.home, ...values(started.response) }))
+    } else {
+      const handed = await h.handedOff(ALIAS, first.home)
+      fresh = values(await h.arrive(handed.code, { ...first.cookies, ...handed.pressed.cookies }))
+    }
+    expect(await h.sessionAt(origin, held)).toEqual({ credential: "stale" })
+    expect(await h.sessionAt(origin, fresh)).toMatchObject({ signedIn: true, personId: person })
+    // Exercise both ChatApi's outer admission guard and sign-in's route dispatch.
+    const handler = HttpEffect.toWebHandler(h.signIn.admit(h.signIn.fetch).pipe(Effect.provide(h.services)))
+    const send = (cookies: Record<string, string>, extra: Record<string, string> = {}) => handler(new Request(`${origin}/api/auth/sign-out`, {
+      method: "POST", headers: { origin, cookie: cookie(cookies), "x-smithers-device-person": person,
+        "x-smithers-accepts": "credential-stale", ...extra },
+    }))
+    expect((await send(fresh, { origin: "http://elsewhere.test" })).status).toBe(403)
+    expect((await send(fresh, { "x-smithers-device-person": "someone-else" })).status).toBe(403)
+    expect((await send({ smithers_session: "invalid" })).status).toBe(204)
+    expect(await h.sessionAt(origin, fresh)).toMatchObject({ signedIn: true })
+    expect(h.revocations).toEqual([])
+    const response = await send(held)
+    expect(response.status).toBe(204)
+    expect(setCookies(response).smithers_session!.line).toMatch(/Max-Age=0/)
+    expect(await h.sessionAt(origin, held)).toMatchObject({ signedIn: false })
+    expect(await h.sessionAt(origin, fresh)).toMatchObject({ signedIn: false })
+    expect(await h.sessionAt(OTHER, other.cookies)).toMatchObject({ signedIn: location === "alias" })
+    if (location === "alias") expect(await h.sessionAt(HOME, first.home)).toMatchObject({ signedIn: true })
+    expect(h.revocations).toHaveLength(location === "home" ? 1 : 0)
+  })
+
+  test("day 394 reauth handoff renews home before issuing a code, then the held alias keeps its tag", async () => {
+    const h = await harness(config)
+    const first = await h.signInAt()
+    const before = await h.sessionAt(ALIAS, first.cookies)
+    await sql(client => client`UPDATE sessions SET started_at = now() - interval '394 days', expires_at = now() + interval '6 days'`)
+    await sql(client => client`UPDATE host_sessions SET started_at = now() - interval '394 days'`)
+    const pressed = await h.at(`${ALIAS}/api/auth/sign-in?reauth=1&return=/app`, { headers: { "sec-fetch-site": "same-origin" } })
+    expect(new URL(pressed.headers.get("location")!).searchParams.get("reauth")).toBe("1")
+    const home = await h.handOff(pressed.headers.get("location")!, first.home)
+    expect(new URL(home.headers.get("location")!).host).toBe("github.test")
+    const approved = h.github.approve(home.headers.get("location")!)
+    const callback = await h.callback(approved, { ...first.home, ...values(home) })
+    const handed = await h.handOff(`${HOME}${callback.headers.get("location")!}`, values(callback))
+    const arrived = await h.arrive(h.codeOf(handed), { ...first.cookies, ...values(pressed) })
+    expect(await h.sessionAt(ALIAS, values(arrived))).toMatchObject({ signedIn: true, session: (before as { session: string }).session })
+    expect(await sql(client => client`SELECT id FROM sessions`)).toHaveLength(1)
+    expect(await sql(client => client`SELECT id FROM host_sessions`)).toHaveLength(1)
+  })
+
+  test.each([false, true])("a lost alias Set-Cookie across rotation renews a configured old-key cookie; revoked=%s", async revoked => {
+    const h = await harness(config)
+    const first = await h.signInAt()
+    const before = await h.sessionAt(ALIAS, first.cookies)
+    const rotation = await import("./SessionSigningKeys.ts")
+    await runtime.runPromise(rotation.stage("next", Redacted.make(NEXT)))
+    await runtime.runPromise(rotation.promote("next"))
+    const firstHand = await h.handedOff(ALIAS, first.home)
+    await h.arrive(firstHand.code, { ...first.cookies, ...firstHand.pressed.cookies })
+    expect(await h.sessionAt(ALIAS, first.cookies)).toEqual({ credential: "stale" })
+    if (revoked) await sql(client => client`UPDATE host_sessions SET revoked_at = now()`)
+    const secondHand = await h.handedOff(ALIAS, first.home)
+    const second = await h.arrive(secondHand.code, { ...first.cookies, ...secondHand.pressed.cookies })
+    const after = await h.sessionAt(ALIAS, values(second))
+    expect(after).toMatchObject({ signedIn: true })
+    expect((after as { session: string }).session === (before as { session: string }).session).toBe(!revoked)
+    expect(await sql(client => client`SELECT id FROM host_sessions`)).toHaveLength(revoked ? 2 : 1)
+  })
+
+  test("a lost home callback cookie makes handoff reauthenticate the configured stale cookie", async () => {
+    const h = await harness(config)
+    const first = await h.signInAt()
+    const rotation = await import("./SessionSigningKeys.ts")
+    await runtime.runPromise(rotation.stage("next", Redacted.make(NEXT)))
+    await runtime.runPromise(rotation.promote("next"))
+    const started = await h.start()
+    await h.callback(h.github.approve(started.location), { ...first.home, ...values(started.response) })
+    expect(await h.sessionAt(HOME, first.home)).toEqual({ credential: "stale" })
+    const pressed = await h.press()
+    const handed = await h.handOff(pressed.location, first.home)
+    expect(handed.status).toBe(302)
+    expect(new URL(handed.headers.get("location")!).host).toBe("github.test")
+  })
+
+  test("an alias past its own deadline gets a new row and tag", async () => {
+    const h = await harness()
+    const first = await h.signInAt()
+    const before = await h.sessionAt(ALIAS, first.cookies)
+    await sql(client => client`UPDATE host_sessions SET started_at = now() - interval '401 days'`)
+    const handed = await h.handedOff(ALIAS, first.home)
+    const arrived = await h.arrive(handed.code, { ...first.cookies, ...handed.pressed.cookies })
+    expect((await h.sessionAt(ALIAS, values(arrived)) as { session: string }).session).not.toBe((before as { session: string }).session)
+    expect(await sql(client => client`SELECT id FROM host_sessions`)).toHaveLength(2)
+  })
 })

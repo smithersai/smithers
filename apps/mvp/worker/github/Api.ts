@@ -841,6 +841,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               payload: plain.op === "triage/enable" || plain.op === "triage/pause"
                 ? { ...plain, authority: WriteAuthority.protectedOf(who, held) } : plain,
               payloadHash,
+              reauthorize: plain.op === "triage/enable" || plain.op === "triage/pause",
             }, Option.isSome(held) ? RepoRoles.holds(held.value) : undefined).pipe(Effect.provide(database))
           let inserted = yield* insert(resolved.success.held)
           // The row the request read expired, or changed, before the write's transaction: GitHub decides again, once,
@@ -909,7 +910,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               })
           }
           if (inserted.kind === "existing") {
-            fields.outcome = "existing"
+            fields.outcome = inserted.reauthorized === true ? "reauthorized" : "existing"
             return HttpServerResponse.jsonUnsafe(
               { txid: null, writeId: write.writeId, status: inserted.status },
               { status: 200, headers: noStore },

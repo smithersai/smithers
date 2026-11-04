@@ -15,10 +15,15 @@ export const deliveryLag = Metric.histogram("github_delivery_lag_ms", {
   boundaries: Metric.exponentialBoundaries({ start: 50, factor: 2, count: 12 }),
 })
 
-/** Write requests at the route, by `op` and `outcome` (`started`, `existing`, or the refusal's code). */
+/** Write requests at the route, by `op` and `outcome` (`started`, `existing`, `reauthorized`, or the refusal's code). */
 export const writeRequests = Metric.counter("github_write_requests", {
   description: "Git write requests at the writes route, by operation and outcome",
   incremental: true,
+})
+
+/** Attempts whose captured authority was replaced by a fresh same-ID admission while they resolved its role. */
+export const writeAuthority = Metric.counter("github_write_authority", {
+  description: "Deferred write authority transitions, by operation and outcome", incremental: true,
 })
 
 /** Writes settled by their flow, by `op`, `outcome` (`done`, `refused`, `failed`) and `token` (`user`, `app`). */

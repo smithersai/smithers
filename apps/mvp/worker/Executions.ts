@@ -168,6 +168,7 @@ const object = <E, R>(
       // Sign-in's role checks (`auth/RecheckRole`) run here too when sign-in is configured. They write the app's own
       // tables, so they reach Postgres through the app's client, not the engine's schema.
       const signIn = yield* SignIn.configured().pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
+      const roleFreshMs = yield* SessionStore.roleFreshMs.pipe(Effect.orDie)
       const appDatabase = Database.layer(hyperdrive.connectionString)
       // `chat/Expire` settles answers their devices left streaming (docs/features/agent.md#settling).
       const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) }
@@ -258,12 +259,15 @@ const object = <E, R>(
           ExecutionHost.make(state.storage, {
             hostId: state.id.toString(),
             database,
+            signingKeyIds: Option.match(signIn, { onNone: () => ["legacy"], onSome: configured => configured.keys.keyIds }),
+            roleFreshMs,
             flows: {
               ...flows,
-              registration: flows.registration.pipe(
+              registration: Layer.unwrap(Effect.map(flowStarter, started => flows.registration.pipe(
+                Layer.provide(Layer.succeed(Flows.FlowStarter, started)),
                 Layer.provide(Layer.succeed(GitHubCreation.Settings, creationSettings)),
                 Layer.provide(Layer.succeed(Conversations.homeRepositoryNames, options.homeRepository)),
-              ),
+              ))),
             },
             driveBudgetMs,
             canStart: (intent) => TodoRuns.canStart(intent).pipe(Effect.provide(appDatabase), Effect.orDie),

@@ -65,6 +65,8 @@ export interface Actor {
    * stored with an actor.
    */
   readonly expiry?: { readonly at: number; readonly now: number }
+  /** The configured key that verified the presented cookie, carried into delayed authority checks. */
+  readonly cookieKey?: string
 }
 
 /** Member or above (decision 0007 §1): the roles that may ask Smithers (`repo:ask`) and clone. */
@@ -86,11 +88,13 @@ export const canAsk = (actor: Actor): boolean => memberOrAbove(actor.role)
  */
 export const canClone = (actor: Actor): boolean => actor.role !== null && MEMBER_OR_ABOVE.has(actor.role)
 
-/** Sessions couldn't be read, for example because Postgres is unreachable: neither signed in nor signed out. */
+/** Session authority couldn't be confirmed, including an admitted cookie becoming stale: not a permission denial. */
 export class SessionsUnavailable extends Schema.TaggedError<SessionsUnavailable>()(
   "@smthrs/mvp/auth/SessionsUnavailable",
-  {},
-) {}
+  { errorCode: Schema.optional(Schema.String) },
+) {
+  constructor(options: { readonly errorCode?: string } = {}) { super(options) }
+}
 
 /** Resolves the actor behind a request: `None` for a signed-out request. */
 export class Sessions extends Context.Service<

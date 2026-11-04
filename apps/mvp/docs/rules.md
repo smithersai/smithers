@@ -660,3 +660,15 @@ reading any body lost one under a loaded host's collection ("Body has already
 been read"); the guard makes such a read fail every run.
 
 Timed reload regressions use `src/test/reloadTiming.ts` and the Effect clock to unload at 0, 100 or 300 ms (Will, 2026-10-27 bug bash 4 brief). This injects the requested failure timing; it is not permission to sleep while waiting for readiness.
+
+
+### auth.session-end-writers
+
+`worker/SessionEndWriters.test.ts`, included by PACKAGE.ts's worker unit-test
+target, inventories lifetime-writing SQL in every Worker and migration.
+Each named statement needs an allowlist reason; new migrations, sweepers and
+raw or dynamic SQL fail until classified. Behavioral tests cover each end
+path, live rows under failed authentication, migrated live rows, migrated end
+cleanup, erasure and anonymous receipts through person deletion. The check
+cannot catch an allowed writer firing wrongly. Such a false recorded end
+still wipes the device.

@@ -354,8 +354,9 @@ test.each(["member", "admin"] as const)("a stale deployment %s receipt never aut
     expect(refusal(await resolve(made, actor, OWN))?.code).toBe("unavailable")
   }
   await sql(runtime, `UPDATE sessions SET role_verified_at = now(), revoked_at = now() WHERE id = '${session}'`)
-  expect(roleOf(await resolve(made, actor, OWN))).toBeNull()
-  expect(await Effect.runPromise(RepoRoles.workUninstalled(made, actor, OWN))).toBeNull()
+  expect(refusal(await resolve(made, actor, OWN))?.code).toBe("unavailable")
+  expect(await Effect.runPromise(Effect.result(RepoRoles.workUninstalled(made, actor, OWN))))
+    .toMatchObject({ _tag: "Failure", failure: { code: "unavailable", retryAfterSeconds: expect.any(Number) } })
 })
 
 test.each([false, true] as const)("deployment work uses session authority even when metadata says private (%s), is missing or fails", async (privateRepo) => {

@@ -1,0 +1,32 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+import { endAlias, endSession } from "./SessionEnds.ts"
+
+export type Prior = "ended" | "live" | "absent" | "failed"
+
+/** Transactions reach the primary through Hyperdrive, bypassing its query cache. The tag grants no authority. */
+export const read = (tag: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  return yield* sql.withTransaction(Effect.gen(function* () {
+    const receipt = () => sql`SELECT session_tag FROM session_end_receipts WHERE session_tag = ${tag}`
+    const recorded = (yield* receipt()).length > 0
+    // A backfilled receipt can precede token transfer. Finalize any retained ended row in this same transaction.
+    const [found] = yield* sql<{ parent: string; alias: string | null }>`
+      SELECT id AS parent, NULL::uuid AS alias FROM sessions WHERE session_tag = ${tag}
+      UNION ALL SELECT parent_id AS parent, id AS alias FROM host_sessions WHERE session_tag = ${tag}`
+    if (found === undefined) return recorded ? "ended" as const : "absent" as const
+    yield* sql`SELECT id FROM sessions WHERE id = ${found.parent} FOR UPDATE`
+    if (found.alias !== null) yield* sql`SELECT id FROM host_sessions WHERE id = ${found.alias} FOR UPDATE`
+    // Take a fresh statement snapshot and the wall clock only after both locks. Renewals cannot revive this decision.
+    const [row] = yield* sql<{ parentEnded: boolean; aliasEnded: boolean }>`SELECT
+      (s.revoked_at IS NOT NULL OR s.expires_at <= clock_timestamp() OR
+        s.started_at + interval '400 days' <= clock_timestamp()) AS "parentEnded",
+      (h.revoked_at IS NOT NULL OR least(h.started_at, s.started_at) + interval '400 days' <= clock_timestamp()) AS "aliasEnded"
+      FROM sessions s LEFT JOIN host_sessions h ON h.id = ${found.alias}::uuid AND h.parent_id = s.id
+      WHERE s.id = ${found.parent} AND (${found.alias}::uuid IS NULL OR h.id IS NOT NULL)`
+    if (row === undefined) return (yield* receipt()).length > 0 ? "ended" as const : "absent" as const
+    if (row.parentEnded) { yield* endSession(found.parent, "expired"); return "ended" as const }
+    if (found.alias !== null && row.aliasEnded) { yield* endAlias(found.alias, "expired"); return "ended" as const }
+    return recorded ? "ended" as const : "live" as const
+  }))
+})

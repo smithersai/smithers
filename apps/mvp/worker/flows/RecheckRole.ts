@@ -1,12 +1,13 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Clock, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
-import type { SqlClient } from "effect/sql"
+import { SqlClient } from "effect/sql"
 import { ROLES } from "../../src/features/auth/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { type GitHubAuth, GitHubRefused, roleOf } from "../GitHubAuth.ts"
 import { digest, type SessionKeys } from "../SessionKeys.ts"
 import * as SessionStore from "../SessionStore.ts"
+import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
 
 // `auth/RecheckRole { sessionId }` (docs/features/sign-in.md#role-checks): a session's role on the repository, checked
 // with GitHub again. Sign-in starts it when a session's role is over an hour old (mvp.md M-05). It first refreshes the
@@ -52,13 +53,15 @@ type Checked = typeof Checked.Type
  * replacement GitHub issued, encrypted for the session. `presented` is the digest of the refresh token it presented.
  */
 const Redemption = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("none") }),
-  Schema.Struct({ kind: Schema.Literals(["unusable", "refused"]), presented: Schema.NullOr(Schema.String) }),
+  Schema.Struct({ kind: Schema.Literal("none"), gen: Schema.optional(Schema.Number) }),
+  Schema.Struct({ kind: Schema.Literals(["unusable", "refused"]), gen: Schema.optional(Schema.Number), presented: Schema.NullOr(Schema.String) }),
   Schema.Struct({
     kind: Schema.Literal("redeemed"),
+    gen: Schema.optional(Schema.Number),
     presented: Schema.String,
     tokens: Schema.Struct({
       access: SessionStore.Sealed,
+      pairDigest: Schema.optional(Schema.String),
       accessExpiresAt: Schema.NullOr(Schema.Number),
       refresh: Schema.NullOr(SessionStore.Sealed),
       refreshDigest: Schema.NullOr(Schema.String),
@@ -67,8 +70,8 @@ const Redemption = Schema.Union([
 ])
 type Redemption = typeof Redemption.Type
 
-/** What storing a replacement did: stored it, found the session changed (another check, or signed out), or had none. */
-const Stored = Schema.Struct({ outcome: Schema.Literals(["stored", "changed", "none"]) })
+/** The store classification. The old changed value remains decodable in persisted pre-fence histories. */
+const Stored = Schema.Struct({ outcome: Schema.Literals(["stored", "installed_replay", "abandoned_enqueued", "none", "changed"]) })
 type Stored = typeof Stored.Type
 
 /** The check couldn't finish: GitHub was unavailable or refused the App, or Postgres failed. The step retries it. */
@@ -78,9 +81,11 @@ export class RoleCheckFailed extends Schema.TaggedError<RoleCheckFailed>()("@smt
 
 /**
  * Role check steps, by `step` (`redeem`, `store`, `check`, `keep`) and `outcome`: the step's own (`redeem`: `none`,
- * `unusable`, `refused`, `redeemed`; `store`: `stored`, `changed`, `none`; `check` and `keep`: the check's), or
+ * `unusable`, `refused`, `redeemed`; `store`: `stored`, `installed_replay`, `abandoned_enqueued`, `none`; `check` and `keep`: the check's), or
  * `failed` for one failed attempt.
  */
+export const tokenStores = Metric.counter("smithers_auth_token_store", { incremental: true })
+
 export const roleChecks = Metric.counter("smithers_auth_role_checks", {
   description: "Role check steps with GitHub, by step and outcome",
   incremental: true,
@@ -109,7 +114,7 @@ export const StoreTokens = Action.make("auth/StoreTokens", {
   payload: { ...payload, redemption: Redemption },
   success: Stored,
   error: RoleCheckFailed,
-  capabilities: ["db:write:sessions"],
+  capabilities: ["db:write:sessions", "db:write:github_token_cleanups"],
   retryPolicy: unbounded,
 })
 
@@ -118,7 +123,7 @@ export const CheckRole = Action.make("auth/CheckRole", {
   payload: { ...payload, redemption: Redemption },
   success: Checked,
   error: RoleCheckFailed,
-  capabilities: ["db:write:sessions"],
+  capabilities: ["db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts"],
   retryPolicy: bounded,
 })
 
@@ -137,7 +142,7 @@ export const KeepRole = Action.make("auth/KeepRole", {
 /** `auth/RecheckRole`: checks a session's role with GitHub again. */
 export const RecheckRole = Flow.make("auth/RecheckRole", {
   description: "Check a session's role on the repository with GitHub again, refreshing its GitHub token if needed.",
-  capabilities: ["db:read:sessions", "db:write:sessions"],
+  capabilities: ["db:read:sessions", "db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts"],
   modelInvocable: false,
   payload,
   success: Checked,
@@ -183,27 +188,30 @@ export const redeem = (sessionId: string, services: Services) =>
   Effect.gen(function* () {
     const { keys, github } = services
     const found = yield* SessionStore.held(sessionId)
-    if (Option.isNone(found) || !found.value.live || found.value.access === null) return nothing
+    if (Option.isNone(found) || !found.value.live) return nothing
     const held = found.value
+    if (held.access === null) return { kind: "none", gen: held.tokenGen } satisfies Redemption
     const expiring = held.accessExpiresAt !== null &&
       held.accessExpiresAt - (yield* Clock.currentTimeMillis) < REFRESH_MARGIN_MS
-    if (!expiring) return nothing
+    if (!expiring) return { kind: "none", gen: held.tokenGen } satisfies Redemption
     const refreshToken = held.refresh === null
       ? Option.none()
       : yield* Effect.option(keys.open(held.refresh, sealContext(sessionId, "github_refresh")))
     if (Option.isNone(refreshToken) || held.refreshDigest === null) {
-      return { kind: "unusable", presented: held.refreshDigest } satisfies Redemption
+      return { kind: "unusable", gen: held.tokenGen, presented: held.refreshDigest } satisfies Redemption
     }
     const tokens = yield* github.refresh(refreshToken.value).pipe(
       Effect.map(Option.some),
       Effect.catchIf(isRejected, () => Effect.succeedNone),
     )
-    if (Option.isNone(tokens)) return { kind: "refused", presented: held.refreshDigest } satisfies Redemption
+    if (Option.isNone(tokens)) return { kind: "refused", gen: held.tokenGen, presented: held.refreshDigest } satisfies Redemption
     const next = tokens.value
     return {
       kind: "redeemed",
+      gen: held.tokenGen,
       presented: held.refreshDigest,
       tokens: {
+        pairDigest: digest(Redacted.value(next.accessToken)),
         access: yield* keys.seal(next.accessToken, sealContext(sessionId, "github_access")),
         accessExpiresAt: next.expiresAt,
         refresh: next.refreshToken === null
@@ -216,13 +224,24 @@ export const redeem = (sessionId: string, services: Services) =>
 
 /**
  * Stores a redeemed replacement over the refresh token it replaced, only while the session is live and still holds
- * that token, against the `SqlClient` in context. Storing again finds the session changed and changes nothing.
+ * that token, against the `SqlClient` in context. Storing again recognizes its installed pair or durably enqueues an abandoned pair.
  */
-export const store = (sessionId: string, redemption: Redemption) =>
+export const store = (sessionId: string, redemption: Redemption, services?: Services) =>
   Effect.gen(function* () {
     if (redemption.kind !== "redeemed") return { outcome: "none" } satisfies Stored
-    const replaced = yield* SessionStore.replaceTokens(sessionId, redemption.presented, redemption.tokens)
-    return { outcome: replaced ? "stored" : "changed" } satisfies Stored
+    // Journals written before generation fencing decode too. Their generation is zero, before any reauthentication.
+    const pairDigest = redemption.tokens.pairDigest ?? (services === undefined ? undefined
+      : digest(Redacted.value(yield* services.keys.open(redemption.tokens.access, sealContext(sessionId, "github_access")))))
+    if (pairDigest === undefined) return yield* new RoleCheckFailed({ reason: "database" })
+    const result = yield* SessionStore.replaceTokens(sessionId, redemption.presented, { ...redemption.tokens, pairDigest }, redemption.gen ?? 0)
+    yield* Metric.update(Metric.withAttributes(tokenStores, { outcome: result.outcome }), 1)
+    yield* Effect.logInfo("auth.token_store").pipe(Effect.annotateLogs({ outcome: result.outcome }))
+    if (result.outcome === "abandoned_enqueued") {
+      const sql = yield* SqlClient.SqlClient
+      const [row] = yield* sql<{ id: string }>`SELECT id FROM github_token_cleanups WHERE pair_digest = ${pairDigest} AND finished_at IS NULL`
+      if (row !== undefined) yield* Cleanup.start(row.id)
+    }
+    return result satisfies Stored
   })
 
 /**
@@ -234,12 +253,13 @@ export const store = (sessionId: string, redemption: Redemption) =>
 export const check = (sessionId: string, redemption: Redemption, services: Services) =>
   Effect.gen(function* () {
     const { keys, github, repository } = services
-    const end = (reason: SessionStore.RevokedReason) =>
-      Effect.as(SessionStore.revoke({ id: sessionId }, reason), revoked)
     const found = yield* SessionStore.held(sessionId)
     if (Option.isNone(found)) return ended
     const held = found.value
     if (!held.live || held.access === null) return ended
+    if ((redemption.gen ?? 0) !== held.tokenGen) return kept
+    const end = (reason: SessionStore.RevokedReason) => Effect.map(SessionStore.revokeIf(sessionId, reason, held.tokenGen), result =>
+      Option.isSome(result) ? revoked : kept)
     // GitHub refused the refresh token, or there was none to present: that ends the session, unless the session changed
     // meanwhile (another check stored new tokens, say), when its own current token decides.
     if (
@@ -255,7 +275,7 @@ export const check = (sessionId: string, redemption: Redemption, services: Servi
       Effect.catchIf(isRejected, () => Effect.succeedNone),
     )
     if (Option.isNone(permission)) return yield* end("github_refused")
-    const role = yield* SessionStore.setRole(sessionId, roleOf(permission.value), generation)
+    const role = yield* SessionStore.setRole(sessionId, roleOf(permission.value), generation, held.tokenGen)
     return { outcome: "checked", role } satisfies Checked
   })
 
@@ -307,11 +327,15 @@ const recorded = <A extends { readonly outcome: string } | { readonly kind: stri
 export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, services: Services) => ({
   redeem: (sessionId: string) => recorded(sessionId, "redeem", redeem(sessionId, services), database),
   store: (sessionId: string, redemption: Redemption) =>
-    recorded(sessionId, "store", store(sessionId, redemption), database),
+    recorded(sessionId, "store", store(sessionId, redemption, services), database),
   check: (sessionId: string, redemption: Redemption) =>
     recorded(sessionId, "check", check(sessionId, redemption, services), database),
   /** Keeps the session's role after a check that failed every attempt. */
-  keep: (sessionId: string) => recorded(sessionId, "keep", Effect.as(SessionStore.keepRole(sessionId), kept), database),
+  keep: (sessionId: string) => recorded(sessionId, "keep", Effect.gen(function* () {
+    const held = yield* SessionStore.held(sessionId)
+    if (Option.isSome(held)) yield* SessionStore.keepRole(sessionId, held.value.tokenGen)
+    return kept
+  }), database),
 })
 
 /** Registers `auth/RecheckRole` with its steps, reaching Postgres through `database` and GitHub through `services`. */

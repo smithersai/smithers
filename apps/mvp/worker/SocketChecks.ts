@@ -13,7 +13,6 @@ import {
   type Admission,
   type Checked,
   configuredRoleFreshMs,
-  ended,
   LEASE_MS,
   roleFresh,
 } from "./SocketAccess.ts"
@@ -31,20 +30,23 @@ import { mayRead } from "./stack/Access.ts"
 export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, roleFreshMs: number) =>
   Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis
-    if (ended(admission, now)) return "session" as const
     // A kept lease's window starts when this check started, on this Worker's clock, and runs `LEASE_MS`, never past
     // what the database said was left of the session then (decision 0151 rule 9).
     let until = now + LEASE_MS
+    let expiresAt: number | null = null
+    let serverExpiresAt: number | undefined
     let capped = false
     let role = admission.role
     if (admission.session !== null) {
-      const live = yield* SessionStore.authority(admission.session, admission.alias)
+      const live = yield* SessionStore.authority(admission.session, admission.alias, admission.cookieKey ?? "legacy")
       if (Option.isNone(live) || live.value.personId !== admission.principal) return "session" as const
       // A role GitHub hasn't confirmed lately renews nothing; the page's reconnect through the route starts its check.
       // Both times are the database's: a Worker clock skewed from it neither stretches nor cuts the freshness.
       if (!roleFresh(live.value.roleVerifiedAt, live.value.serverNow, roleFreshMs)) return "unverified" as const
       role = live.value.role
       const left = live.value.expiresAt - live.value.serverNow
+      serverExpiresAt = live.value.expiresAt
+      expiresAt = now + left
       until = now + Math.min(LEASE_MS, left)
       capped = left <= LEASE_MS
     }
@@ -52,6 +54,8 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
       subject: { kind: "person", id: admission.principal },
       role,
       ...(admission.session === null ? {} : { session: admission.session }),
+      ...(admission.alias === null ? {} : { alias: admission.alias }),
+      ...(admission.cookieKey === undefined ? {} : { cookieKey: admission.cookieKey }),
     }
     const basis = admission.basis
     switch (basis.kind) {
@@ -66,20 +70,20 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
           ),
         )
         if (Option.isNone(resolved)) return "unverified" as const
-        return mayRead(Option.some({ ...actor, role: resolved.value })) ? ({ verdict: "keep", until, capped } as const) : "revoked" as const
+        return mayRead(Option.some({ ...actor, role: resolved.value })) ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const) : "revoked" as const
       }
       case "branch":
       case "terminal": {
         const branch = yield* branchAccess(Option.some(actor), basis.branchId)
         if (branch === undefined || !canView(branch.access)) return "revoked" as const
-        if (basis.kind === "branch") return branch.access === admission.access ? ({ verdict: "keep", until, capped } as const) : "changed" as const
+        if (basis.kind === "branch") return branch.access === admission.access ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const) : "changed" as const
         if (!canAsk(actor)) return "revoked" as const
-        return (canEdit(branch.access) ? "write" : "read") === admission.access ? ({ verdict: "keep", until, capped } as const) : "changed" as const
+        return (canEdit(branch.access) ? "write" : "read") === admission.access ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const) : "changed" as const
       }
       case "text": {
         const scoped = yield* scopeAccess(Option.some(actor), { run: basis.run })
         if (scoped === undefined || !canView(scoped.access)) return "revoked" as const
-        return scoped.access === admission.access ? ({ verdict: "keep", until, capped } as const) : "changed" as const
+        return scoped.access === admission.access ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const) : "changed" as const
       }
     }
   }).pipe(
@@ -110,6 +114,7 @@ export const checker = <E, R>(
     const allowed = yield* RepoRoles.allowed.pipe(Effect.orDie)
     const home = yield* Conversations.configuredHomeRepositoryNames.pipe(Effect.orDie)
     const roleFreshMs = yield* configuredRoleFreshMs.pipe(Effect.orDie)
+    const signingKeyIds = yield* SessionStore.configuredKeyIds.pipe(Effect.orDie)
     // `RepoRoles` reads through the client `within` opened for the renewal, not one of its own per read.
     const roles = yield* RepoRoles.make(Layer.effect(SqlClient.SqlClient, Effect.service(SqlClient.SqlClient)), {
       repository,
@@ -124,6 +129,7 @@ export const checker = <E, R>(
         verdict(roles, admission, roleFreshMs).pipe(
           Effect.provide(branchRoles),
           Effect.provideService(Conversations.homeRepositoryNames, home),
+          Effect.provideService(SessionStore.SigningKeyIds, signingKeyIds),
           Effect.catchCause(() => Effect.succeed<Checked>("unverified")),
         ),
       within: <A, R2>(renewal: Effect.Effect<A, never, R2>) =>

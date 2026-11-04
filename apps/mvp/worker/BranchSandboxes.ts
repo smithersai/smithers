@@ -68,6 +68,24 @@ import * as SocketChecks from "./SocketChecks.ts"
 // that namespace. A gate box also reaches its run's artifacts at `http://artifacts.smithers.internal`
 // (worker/branch/Artifacts.ts), which its object answers from the `CiArtifacts` bucket.
 
+/** Every terminal frame reads the current viewer, because renewal may advance its cached session end. */
+export const terminalGate = <E>(
+  raw: SocketAccess.RawSocket<E>,
+  current: () => { readonly admission: SocketAccess.Admission; readonly lease: { readonly until: number } } | undefined,
+  lapsed: () => void,
+  now: () => number = Date.now,
+): SocketAccess.RawSocket<E> => SocketAccess.gate(raw, () => {
+  const viewer = current()
+  const at = now()
+  return viewer !== undefined && at < viewer.lease.until && !SocketAccess.ended(viewer.admission, at)
+}, lapsed)
+
+/** Both terminal timers use the same single-flight, bounded authority check; cached ends never close a viewer. */
+export const terminalLoops = <R>(
+  leases: () => ReadonlyArray<{ readonly admission: SocketAccess.Admission; readonly leaseUntil: number }>,
+  renewDue: Effect.Effect<void, never, R>,
+) => SocketAccess.renewalLoop(leases, renewDue, renewDue, "terminal")
+
 /** The headers only ChatApi sets on a socket it hands the object; it strips any a browser sent (worker/branch/Terminals.ts). */
 const TERMINAL_HEADER = "x-smithers-terminal"
 const ACCESS_HEADER = "x-smithers-access"
@@ -323,8 +341,6 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           readonly fiber: Fiber.Fiber<unknown>
         }
       >()
-      /** The sockets a running renewal holds: an expiry beside it leaves their count to it. */
-      const inRenewal = new Set<WebSocket>()
       /** One renewal at a time: a gate or the loop that finds one running waits for it. */
       const flight = SocketAccess.singleFlight()
       /** Every gate's one pending renewal: frames on lapsed leases start at most one fiber for the whole object. */
@@ -749,12 +765,9 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           const clock = yield* Effect.clockWith(Effect.succeed)
           // The terminal reads and writes through the lease: input and output both stop the moment it lapses or the
           // session ends, and the object's one renewal is asked for.
-          const leased = SocketAccess.gate(
+          const leased = terminalGate(
             server,
-            () => {
-              const now = clock.currentTimeMillisUnsafe()
-              return now < lease.until && !SocketAccess.ended(admission, now)
-            },
+            () => attached.get(server),
             lapsed ??= SocketAccess.coalesced(renewDue, runFork),
           )
           const fiber = yield* Effect.forkIn(
@@ -818,15 +831,12 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             return viewer === undefined ? [] : [{ socket, viewer }]
           })
           if (due.length === 0) return
-          for (const { socket } of due) inRenewal.add(socket)
           const verdicts = yield* SocketAccess.renew<RuntimeContext | SqlClient.SqlClient, RuntimeContext>(
             "terminal",
             due.map(({ viewer }) => viewer.admission),
             checks.check,
             checks.within,
-          ).pipe(Effect.ensuring(Effect.sync(() => {
-            for (const { socket } of due) inRenewal.delete(socket)
-          })))
+          )
           const now = yield* Clock.currentTimeMillis
           const ending: Array<readonly [WebSocket, Fiber.Fiber<unknown>, SocketAccess.Closing]> = []
           due.forEach(({ socket, viewer }, index) => {
@@ -865,29 +875,9 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
        * `pumps` keeps the time. An attach never moves it: a lease that lapses first stops its socket's frames at once,
        * and the gate asks for the renewal.
        */
-      /**
-       * Closes every socket whose session has ended, with no query and never waiting on a renewal: it leaves `attached`
-       * and closes `4401`, and its pump stops on its own time.
-       */
-      const expire: Effect.Effect<void, never, RuntimeContext> = Effect.gen(function* () {
-        const open = [...attached].map(([socket, viewer]) => ({ socket, admission: viewer.admission, viewer }))
-        const ended = yield* SocketAccess.expireEnded("terminal", open, inRenewal)
-        for (const { socket, viewer } of ended) {
-          viewer.lease.until = 0
-          attached.delete(socket)
-        }
-        for (const { socket, viewer } of ended) {
-          const close = SocketAccess.CLOSES.session
-          yield* SocketAccess.safely(Effect.sync(() => socket.close(close.code, close.reason)))
-          yield* Effect.forkIn(Fiber.interrupt(viewer.fiber), pumps)
-        }
-        if (ended.length > 0) yield* Effect.logInfo("sandbox.expire").pipe(Effect.annotateLogs({ closed: ended.length }))
-      })
-      const loop = SocketAccess.renewalLoop(
+      const loop = terminalLoops(
         () => [...attached.values()].map((viewer) => ({ admission: viewer.admission, leaseUntil: viewer.lease.until })),
         renewDue,
-        expire,
-        "terminal",
       )
 
       /**

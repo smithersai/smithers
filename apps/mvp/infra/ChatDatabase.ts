@@ -8,7 +8,7 @@ import { Effect, FileSystem, type Redacted } from "effect"
 import * as Database from "../db/Database.ts"
 import * as Connection from "../ops/database/Connection.ts"
 import { COMPUTE_MAX_CU, COMPUTE_MIN_CU, CONNECTION_BUDGET } from "./Connections.ts"
-import { Compute, migrationUrl, Postgres } from "./Postgres.ts"
+import { Compute, directUrl, migrationUrl, Postgres } from "./Postgres.ts"
 
 /**
  * Applies `db/migrations` to the production database with `Database.migrate`, the migrations `pnpm db:migrate` runs
@@ -43,10 +43,11 @@ const migrationFiles = Effect.gen(function* () {
  */
 export const Databases = Effect.gen(function* () {
   if (yield* Alchemy.ALCHEMY_DEV) {
-    const { origin, sslmode } = Database.hyperdrive(yield* Database.url)
+    const databaseUrl = yield* Database.url
+    const { origin, sslmode } = Database.hyperdrive(databaseUrl)
     const dev = (name: string) =>
       Cloudflare.Hyperdrive.Connection(name, { origin, caching: { disabled: true }, dev: { ...origin, sslmode } })
-    return { chat: yield* dev("ChatDatabase"), engine: yield* dev("EngineDatabase") }
+    return { chat: yield* dev("ChatDatabase"), engine: yield* dev("EngineDatabase"), migratedDatabase: databaseUrl }
   }
   const postgres = yield* Postgres
   // The compute's size before anything connects to it (infra/Connections.ts `COMPUTE_MIN_CU`).
@@ -69,5 +70,5 @@ export const Databases = Effect.gen(function* () {
     caching: { disabled: true },
     originConnectionLimit: CONNECTION_BUDGET.engine,
   })
-  return { chat, engine }
+  return { chat, engine, migratedDatabase: Output.map(Output.all(directUrl(postgres), migrated), ([url]) => url) }
 })

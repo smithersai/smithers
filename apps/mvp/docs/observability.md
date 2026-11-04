@@ -428,8 +428,11 @@ ChatApi's sign-in routes and sessions ([sign-in.md](features/sign-in.md), `worke
 | `auth.callback` | every callback | Info `signed_in`, Warn `failed` | `outcome`, `durationMs`; `personId` and `role` (`none` for no role) when signed in; `reason` when it failed (below), and `errorCode` for `database`, `sign_out_not_started` and `error` |
 | `auth.sign_out` | every `POST /api/auth/sign-out` | Info `signed_out` and `no_session`, Warn `refused` and `failed` | `outcome`; `reason: cross_site` when refused, `local_developer` for the dev fallback, `alias` for an alias session, `not_started` when the host didn't record the sign-out flow's start and `error` for any other failure; `errorCode` when it failed (the host's code, or `conflict`, for `not_started`) |
 | `auth.session` | Postgres failed reading a session | Error | `outcome: error`, `errorCode` (`sql:<reason>`) |
+| `auth.role_unavailable` | an admitted request's cookie no longer has session authority at its role check | Warn | `reason: session_authority`; `auth.role` span records `auth.role.available: false` and `auth.role.reason: session_authority`; the write route and client send counters record retryable failure, never confirmed permission denial |
+| `write.authority_unavailable` | a delayed write's locked session or alias no longer supplies its admitted authority | Warn | `reason: session_authority`; `write.authority` span records `write.authority.live` and `write.authority.alias` booleans, with `write.authority.stage: commit` for the final deadline check; the stack request counter records `unavailable` for retryable refusal. No identity, key, cookie or content is recorded. |
+| `protected.authority` | a protected write's authority check completes without held authority | Warn | `outcome: unavailable` or `denied`; the `protected.authority` span and `smithers_protected_authority_checks` counter record `held`, `unavailable` or `denied` for each completed check. `smithers_protected_authority_commit_checks{outcome=held|unavailable}` and `protected.authority.stage=commit` record the final combined role/session deadline check after all mutations and receipt folds; expiry logs `stage=commit` and rolls back. `TriageRoleDeadline.test.ts` asserts the check/commit counters separately across real database lock waits and recovery. Unavailable triage writes stay pending under the durable retry policy; confirmed denial settles `not_allowed`. No identity, key, cookie or content is recorded. |
 | `auth.config` | SESSION_SECRET is shorter than 32 characters, so sign-in is off | Error | `errorCode: session_secret_too_short` |
-| `auth.role_check` | every role check step that ended, or a check ChatApi couldn't start | Info for each step's outcome: `redeem` (`none`, `unusable`, `refused`, `redeemed`), `store` (`stored`, `changed`, `none`), `check` (`checked`, `revoked`, `ended`) and `keep` (`kept`); Warn `failed` (one attempt) and `not_started` | `sessionId`, `step` (absent for `not_started`), `outcome`; `role` (`none` for no role) for `check` and `keep`; `errorCode` (GitHub's refusal or `sql:<reason>`) when it failed |
+| `auth.role_check` | every role check step that ended, or a check ChatApi couldn't start | Info for each step's outcome: `redeem` (`none`, `unusable`, `refused`, `redeemed`), `store` (`stored`, `installed_replay`, `abandoned_enqueued`, `none`), `check` (`checked`, `revoked`, `ended`) and `keep` (`kept`); Warn `failed` (one attempt) and `not_started` | `sessionId`, `step` (absent for `not_started`), `outcome`; `role` (`none` for no role) for `check` and `keep`; `errorCode` (GitHub's refusal or `sql:<reason>`) when it failed |
 | `auth.revoke_token` | every sign-out step that ended | Info for each step's outcome: `end` (`ended`, `over`), `revoke` (`revoked`, `unreadable`, `none`, `live`) and `forget` (`forgotten`); Warn `failed` (one attempt) | `sessionId`, `step`, `outcome`; `errorCode` (GitHub's refusal or `sql:<reason>`) when it failed |
 
 A callback's `reason`: `not_configured`, `method`, `state_mismatch` (the state isn't this browser's), `replayed` (its sign-in already finished), `expired` (over 10 minutes), `denied` (the person declined on GitHub), `invalid` (no code), `unreadable` (the sealed verifier didn't open), `sign_out_not_started` (the host didn't record the sign-out of the session this browser held, so GitHub's code was never redeemed), `<step>_<reason>` for GitHub (`exchange_rejected`, `user_unavailable`, `permission_misconfigured`, …), `database`, or `error` (a defect, by its name).
@@ -966,7 +969,6 @@ sockets at once (`enforce`).
 | `socket.lease` | log, span | the same | host, sockets, checks, a count per outcome; never a person |
 | `socket.verdict` | span | the same | none |
 | `run_content.renew`, `room.renew`, `sandbox.renew` | log (warn) | the same | `errorCode`, when a renewal failed |
-| `sandbox.expire` | log | `SandboxObject` | closed: sockets its timer closed at their session's end |
 | `socket.loop` | log (error) | `SandboxObject` | host, loop (`renewal`, `expiry`), outcome `died`, `errorCode`; a loop that died, which the next attach starts again; never the failure's text |
 
 ### Flow usage
@@ -1251,3 +1253,90 @@ then records `validate_superseded` or `validate_failed` with the same correlatio
 `device.lifecycle` is a host record, an Info log, and `smithers_device_lifecycle{outcome}`. Outcomes are `sign_out_pending` after the exclusive lock is granted and before the request, `sign_out_answered` while the successful request awaits its wipe, `sign_out_failed`, `sign_out_released`, and `reopen_held` when that lock prevents a reopen. They contain no identities, payloads or credentials. `src/wipe.test.ts` asserts lock ownership and release records; `src/boot.test.ts` checks the exported log and counter.
 
 `outbox.send` and `outbox_attempts` distinguish `held` from ordinary `retry`. Held status is read from owned persisted rows, not the last attempt in a tab. The SDK logs `outbox couldn't read held status` or `outbox couldn't publish its change` with only an error name. An unreadable status read preserves the last known state; invalidations carry no data and receivers reread storage. The package outbox tests verify held attempt counts, follower status, reload, key ordering and leadership handoff; co-edit's integration tests use the real page wipe and real text routes.
+
+### Session renewal
+
+A successful sliding renewal records `auth.session` with `outcome: renewed` and
+increments `smithers_auth_requests{route: session, outcome: renewed, reason: none}`.
+Daily throttling and the absolute cap produce no write and no renewal record.
+The record carries no token, cookie, sealed value or user content. The following
+lookup samples database time beside the effective expiry and deadline.
+
+The session response's opaque tag identifies the presented home or alias row to
+the caller. Auth diagnostics do not record that tag or add it to metric labels.
+
+### Session signing keys
+
+`smithers_auth_issue{outcome: issuer_unconfigured}` and `auth.issue` count and
+record an issuer missing from this Worker's configuration. Its transaction rolls
+back. `smithers_auth_session{outcome: credential_stale}` and `auth.session` record
+a configured-key cookie for a live row re-keyed before that cookie arrived. The
+answer contains no identity; no renewal is recorded.
+
+`smithers_auth_key_rotations` and `auth.key_rotation` carry `step` (`stage`,
+`promote`, `cease`, `retire`, `gate`) and `outcome` (`completed`, `failed`). The
+`auth.key_rotation` span uses the same step. The operator records `auth.key_tool`
+with `step` and `outcome`. Operator admission also records `mode` (`new`,
+`resumed`, `retried`), counts `smithers_auth_key_tool_requests{step,mode}`, and
+annotates the `auth.key_tool` span with that mode. These records carry no cookie, token, secret map, sealed
+value, connection string, key material, person or session tag. The deploy gate
+queries database time afresh for each publication and checks retired labels too.
+
+### Session privacy detection
+
+`smithers_auth_session{outcome: cookie_rejected}` and `auth.session` record a
+present session cookie that fails verification or live-row resolution. The
+request guard shares that lookup with route authorization. Missing cookies and
+database failures do not count. A stale cookie counts as rejected and also
+records `credential_stale`; neither record carries a credential or identity.
+
+`smithers_device_principal_refusals{outcome: anonymous}` and
+`auth.device_principal` record `@anonymous` before cookie or bearer resolution.
+The actor span attribute is `none`. No subject, run, person, cookie or bearer is
+recorded.
+
+
+The current Worker keeps its counters in the isolate and mirrors them to logs;
+it has no metrics exporter. The `cookie_rejected` alert is inert and counts as
+neither alerting nor a safety control. Device-end emission comes
+with step 3. This change deploys no exporter, rule or receiver.
+
+A socket’s cached session end triggers one authoritative renewal check, with
+no checks in the last seconds of a capped lease. `socket.lease` records that
+check and its verdict in the existing `smithers_socket_leases` counter. Kept
+admissions advance to the measured session end; pending checks admit no frames
+past the old end. No additional metric names or identity labels are introduced.
+
+
+Re-authentication records `auth.reauth` with `outcome` (`renewed_in_place` or
+`new_row`) and `reason` (`eligible`, `ineligible`, `eligible_alias`,
+`ineligible_alias`), counted by `smithers_auth_reauth` with the same fields.
+`auth.token_store` and `smithers_auth_token_store` carry only `outcome`:
+`stored`, `installed_replay` or `abandoned_enqueued`.
+
+`auth.token_cleanup` is a span and a log. Its counter,
+`smithers_auth_token_cleanup`, has `outcome`: `revoked`, `retried` for a deferred
+launch, or `failed` for a failed durable attempt. `auth.token_cleanup.failure`
+adds only `errorCode`. Tokens, sealed tokens, digests, logins and key material
+never appear in these records. The existing alarm admits a five-minute durable
+sweep, which restarts aged unfinished requests and removes finished tombstones
+older than 30 days. Metrics and relay privacy assertions cover the new names.
+
+
+Session-end confirmation records `auth.session_prior` and
+`smithers_auth_session_prior` with only `outcome`: `ended`, `live`, `absent` or
+`failed`. `auth.session_end` and `smithers_auth_session_ends` carry `reason` and
+`kind` (`home` or `alias`). `auth.session_retention` records completed sweeps.
+The existing five-minute durable sweep handles unread expiry, 30-day session
+erasure and 400-day anonymous receipt retention, preserving the newest role
+receipt before erasure. Rotation records also include the fixed steps
+`pin_legacy`, `pin_seal`, `reset_seal`, `emergency_prepare` and `compromise`, with completed or failed
+outcomes. No session tag, token, ciphertext, cookie, fingerprint, key secret,
+login or person enters these diagnostics. Relay and raw-diagnostic privacy
+checks live in `src/telemetry-privacy.test.ts`.
+
+### Pending triage reauthorization
+
+`github.write.request` and `github_write_requests` record `outcome=reauthorized` only after a fresh same-ID pending triage admission commits. The existing `op` and `repository` labels remain bounded. Failed/contended admissions retain the existing unavailable outcome. An executing attempt superseded while resolving a role records `github.write.authority` with `outcome=superseded`, the `github.write.authority` span attribute, and `github_write_authority{op,outcome}`. No key, cookie, token, identity or payload is added. `TriageReauthorization.test.ts` checks the route count, stale-attempt count, real reauthentication, bounded contention and execution ordering.
+
+Credential read-lock refusal carries only `stage=credential_lock` and `wait=deadline|cancelled` on `DeviceIdentityRefused`, alongside the existing `credential_stale` reason. The native lock request is cancelled, so the abandoned request cannot later acquire it or send. Tests assert the bounded cause, no remaining waiter, unchanged network write count and usable session reads under rejected/stalled publication. Role-window tests exercise actual production-host flows with a five-minute construction setting and empty runtime configuration, including pending-write recovery and the request service.

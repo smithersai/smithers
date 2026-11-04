@@ -446,11 +446,12 @@ export const recordRepoEvent = (event: RepoEvent, localPeople: ReadonlyArray<Loc
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     // A person's watch names their id, a UUID; any other principal has no session, so no role GitHub confirmed.
+    const liveSession = yield* SessionStore.sessionLive(sql, sql`live`)
     const watchersOf = () => sql<Inbox.Watcher & { readonly mayRead: boolean }>`
       SELECT w.principal_id AS principal, w.level,
         COALESCE(${SessionStore.latestRole(sql, sql`person.id`)} IN ('admin', 'maintainer', 'member') AND EXISTS (
           SELECT 1 FROM sessions live
-          WHERE live.person_id = person.id AND live.revoked_at IS NULL AND live.expires_at > now()
+          WHERE live.person_id = person.id AND ${liveSession}
         ), false) AS "mayRead"
       FROM watches w
       CROSS JOIN LATERAL (
@@ -796,10 +797,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
               WITH identity AS (
                 SELECT ${actor.value.session === undefined} OR EXISTS (
                   SELECT 1 FROM sessions live WHERE live.id::text = ${actor.value.session ?? ""}
-                    AND live.person_id::text = ${personId} AND live.revoked_at IS NULL AND live.expires_at > now()
+                    AND live.person_id::text = ${personId}
+                    AND ${yield* SessionStore.sessionLive(sql, sql`live`, undefined, actor.value.alias === undefined ? actor.value.cookieKey : undefined)}
                     AND (${actor.value.alias ?? null}::uuid IS NULL OR EXISTS (
                       SELECT 1 FROM host_sessions h WHERE h.id = ${actor.value.alias ?? null}::uuid
-                        AND h.parent_id = live.id AND h.revoked_at IS NULL))) AS active
+                        AND h.parent_id = live.id AND ${yield* SessionStore.sessionLive(sql, sql`live`, sql`h`, actor.value.cookieKey)}))) AS active
               ), deployment AS (
                 SELECT active, CASE WHEN ${actor.value.session === undefined} THEN ${actor.value.role}::text
                   WHEN active AND ${SessionStore.latestRoleVerifiedAt(sql, sql`(SELECT id FROM people WHERE id::text = ${personId})`)}

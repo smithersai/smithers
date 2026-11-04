@@ -21,6 +21,7 @@ import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
 import * as RepoRefresh from "./flows/RepoRefresh.ts"
+import * as ReplacedTokens from "./flows/RevokeReplacedGitHubToken.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SandboxCall from "./flows/SandboxCall.ts"
 import * as SandboxCommand from "./flows/SandboxCommand.ts"
@@ -47,6 +48,7 @@ import * as Fleet from "./runners/Fleet.ts"
 import * as RunnerAdmin from "./runners/AdminFlows.ts"
 import * as GitHubHost from "./github/Host.ts"
 import type * as Triage from "./github/Triage.ts"
+import { RoleFreshMs, SigningKeyIds } from "./SessionStore.ts"
 
 // What a remote flow execution runs on Cloudflare (docs/features/remote-flows.md): `@smthrs/platform-cloudflare`'s
 // per-execution Durable Object functions over the engine's Postgres schema. worker/Executions.ts hands it the Durable
@@ -110,11 +112,12 @@ export const remoteWithSignIn = <E, R>(
 ) => {
   const base = remote(app, channels, pool)
   return {
-    flows: [...base.flows, RecheckRole.RecheckRole, RevokeGitHubToken.RevokeGitHubToken],
+    flows: [...base.flows, RecheckRole.RecheckRole, RevokeGitHubToken.RevokeGitHubToken, ReplacedTokens.RevokeReplacedGitHubToken, ReplacedTokens.SweepReplacedGitHubTokens, ReplacedTokens.MaintainSessions],
     registration: Layer.mergeAll(
       base.registration,
       RecheckRole.registration(app.database, services),
       RevokeGitHubToken.registration(app.database, services),
+      ReplacedTokens.registration(app.database, services),
     ),
   }
 }
@@ -430,6 +433,10 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
     readonly hostId: string
     readonly database: Layer.Layer<SqlClient.SqlClient, never, RD>
     readonly flows: Flows<ROut, E, R>
+    /** Key IDs captured by the host's verifier before Alchemy serializes the runtime. */
+    readonly signingKeyIds?: ReadonlyArray<string>
+    /** Deployment role window captured before Alchemy serializes the runtime. */
+    readonly roleFreshMs?: number
     readonly router: ExecutionObject.Router<RE, RR>
     readonly afterAlarm?: Effect.Effect<void, never, RA>
     readonly settled?: (executionId: string) => Effect.Effect<void, never, RT>
@@ -437,7 +444,11 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
     readonly canStart?: ((intent: ExecutionObject.Intent) => Effect.Effect<boolean, never, RD>) | undefined
   },
 ) => {
-  const { flows, registration } = options.flows
+  const { flows } = options.flows
+  const withKeys = options.signingKeyIds === undefined ? options.flows.registration
+    : options.flows.registration.pipe(Layer.provideMerge(Layer.succeed(SigningKeyIds, options.signingKeyIds)))
+  const registration = options.roleFreshMs === undefined ? withKeys
+    : withKeys.pipe(Layer.provideMerge(Layer.succeed(RoleFreshMs, options.roleFreshMs)))
   const object = ExecutionObject.make(storage, {
     flows,
     runtime: (intent) =>

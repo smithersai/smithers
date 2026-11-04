@@ -1,5 +1,4 @@
 import { withRequestRay } from "./RequestRay.ts"
-import * as WriteAdmission from "./WriteAdmission.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
@@ -11,7 +10,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
-import type { HttpServerResponse } from "effect/http"
+import { HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import * as Electric from "../infra/Electric.ts"
@@ -425,12 +424,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           shape: { limit: (key) => shapeLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
           telemetry: { limit: (key) => telemetryLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
         }))
-        return yield* runnerAdmin.admit(WriteAdmission.afterBody(Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
+        const starter = yield* flowStarter
+        return yield* runnerAdmin.admit(signIn.admit(Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
         // Who is asking, and their role on a branch's repository for every branch check (decision 0079).
         const signedIn = Layer.mergeAll(checks, signIn.sessions.pipe(Layer.provide(checks)), BranchRoles.layer(roles))
-        const starter = yield* flowStarter
         // After the response, never before it: no request waits on a claim or a start (ctx.waitUntil).
         yield* RequestBackground.inBackground(
           launchFeedRedaction.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(database), Effect.ignore),
@@ -542,7 +541,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           Effect.provide(docsSource),
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         )
-        }), throttle))
+        }), throttle).pipe(Effect.provide(checks), Effect.provideService(Flows.FlowStarter, starter)))
       }).pipe(
         withRequestRay,
         Effect.provideService(Conversations.homeRepositoryNames, homeRepository),

@@ -24,6 +24,7 @@ import {
   TODOS_SHAPE_ROUTE,
 } from "../../src/features/todos/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import * as SessionStore from "../SessionStore.ts"
 import { eventually, testFile, uuid } from "../test/harness.ts"
 import * as Api from "./Api.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
@@ -71,6 +72,60 @@ const sql = <A extends object>(statement: string) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe<A>(statement)))
 
 describe("POST /api/repos/<owner>/<name>/stack", () => {
+  test.each(["home", "alias", "permission denial"] as const)("a queued TODO distinguishes %s authority loss from permission denial", async boundary => {
+    const person = uuid(), session = uuid(), alias = boundary === "alias" ? uuid() : undefined
+    const query = <A extends object>(f: (client: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, f))
+    await query(client => client`INSERT INTO people (id, github_id, github_login)
+      VALUES (${person}::uuid, ${Math.floor(Math.random() * 1e9)}, 'queued-person')`)
+    await query(client => client`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+      VALUES (${session}::uuid, ${session}, ${person}::uuid, 'member', clock_timestamp(), clock_timestamp(), clock_timestamp() + interval '1 day')`)
+    if (alias !== undefined) await query(client => client`INSERT INTO host_sessions (id, token_digest, parent_id, host)
+      VALUES (${alias}::uuid, ${alias}, ${session}::uuid, 'chat.test')`)
+    let presentedKey = "legacy"
+    const sessions = Layer.succeed(Sessions, Sessions.of({ resolve: Effect.sync(() => Option.some<Actor>({
+      subject: { kind: "person", id: person }, role: "member", login: "queued-person", session,
+      ...(alias === undefined ? {} : { alias }), cookieKey: presentedKey,
+    })) }))
+    const reached = Deferred.makeUnsafe<void>(), release = Deferred.makeUnsafe<void>()
+    let pause = boundary !== "permission denial"
+    if (!pause) await runtime.runPromise(SessionStore.setRole(session, null, await runtime.runPromise(SessionStore.roleObservation), 0))
+    const h = await stackHarness(runtime, { sessions, signingKeys: ["legacy", "next"], wrapRoles: roles => ({
+      ...roles,
+      resolve: (actor, repository) => roles.resolve(actor, repository).pipe(Effect.tap(() => Effect.gen(function* () {
+        if (!pause) return
+        pause = false
+        yield* Deferred.succeed(reached, undefined)
+        yield* Deferred.await(release)
+      }))),
+    }) })
+    const body = commitBody()
+    try {
+      const pending = post(h, body)
+      if (boundary === "permission denial") {
+        expect(await json(await pending)).toEqual([403, { code: "forbidden" }])
+      } else {
+        await runtime.runPromise(Deferred.await(reached).pipe(Effect.timeout("5 seconds")))
+        if (alias === undefined) await query(client => client`UPDATE sessions SET cookie_key = 'next' WHERE id = ${session}::uuid`)
+        else await query(client => client`UPDATE host_sessions SET cookie_key = 'next' WHERE id = ${alias}::uuid`)
+        await runtime.runPromise(Deferred.succeed(release, undefined))
+        const response = await pending
+        expect([response.status, response.headers.get("retry-after"), await response.json()]).toEqual([503, "1", { code: "unavailable" }])
+        expect(h.only("write.authority_unavailable").annotations.reason).toBe("session_authority")
+        expect(h.spans.some(span => span.name === "write.authority" && span.attributes.get("write.authority.live") === false)).toBe(true)
+        expect(h.count(Api.requests, { op: "commit", outcome: "unavailable" })).toBe(1)
+      }
+      expect(await query(client => client`SELECT id FROM todos WHERE id = ${body.opId}::uuid`)).toEqual([])
+      expect(await query(client => client`SELECT id FROM stack_ops WHERE id = ${body.opId}::uuid`)).toEqual([])
+      if (boundary !== "permission denial") {
+        presentedKey = "next"
+        expect((await post(h, body)).status).toBe(202)
+        expect((await post(h, body)).status).toBe(200)
+        expect(await query(client => client`SELECT id FROM todos WHERE id = ${body.opId}::uuid`)).toEqual([{ id: body.opId }])
+      }
+    } finally { await runtime.runPromise(Deferred.succeed(release, undefined)) }
+  })
+
   test("a commit is taken 202 with its transaction and number; the same op again answers 200 with no transaction", async () => {
     const h = await stackHarness(runtime, { actor: member })
     const body = commitBody({ title: "  Retry webhook delivery  ", acceptance: ["three tries"], issue: 7 })
@@ -666,7 +721,9 @@ describe("another repository's stack (decision 0079)", () => {
     // GitHub made Maya a Guest after the route read Member: the stack's transaction finds the row as it stands.
     await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/widgets', '${MAYA}', 'guest')`)
     const h = await stackHarness(runtime, { actor: maya, faultyRoles: rolesThatRead(OWN_REPOSITORY, "member") })
-    expect(await json(await post(h, commitBody(), {}, OTHER))).toEqual([403, { code: "forbidden" }])
+    // The injected resolver cannot refresh its stale observation. A real refreshed denial is terminal;
+    // this unresolved authority stays queued until a new role read can decide it.
+    expect(await json(await post(h, commitBody(), {}, OTHER))).toEqual([503, { code: "unavailable" }])
     expect(await sql(`SELECT * FROM todos`)).toEqual([])
   })
 })

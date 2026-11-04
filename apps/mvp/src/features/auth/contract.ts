@@ -30,8 +30,12 @@ export const SESSION_CHECK_HEADER = "x-smithers-session-check"
 export const sessionCheckOf = (headers: Readonly<Record<string, string | undefined>>) =>
   headers[SESSION_CHECK_HEADER] === "same_person" ? { sessionCheck: "same_person" as const } : {}
 
+export const ACCEPTS_CREDENTIAL_STALE = "credential-stale"
 /** {@link DEVICE_PERSON_HEADER}'s value for a page or worker that opened none of the device's data. */
 export const NO_DEVICE_DATA = "@none"
+
+/** A page whose verified viewer is nobody, so neither cookie nor bearer can act. */
+export const ANONYMOUS_DEVICE_PERSON = "@anonymous"
 
 /**
  * The window event the page dispatches once the person signed in adopts, in place, the visitor's data it opened
@@ -170,11 +174,17 @@ export type SessionState =
     readonly install?: string
     /** When the session ends, epoch milliseconds on the server's clock; none for a session that has no end, as in local development. */
     readonly expiresAt?: number
+    /** The absolute server deadline, epoch milliseconds; optional for older clients and local development. */
+    readonly deadline?: number
+    /** An opaque tag for the presented session row; optional for older servers and local development. */
+    readonly session?: string
     /** The server's clock when it answered, epoch milliseconds: a tab's deadline is `sentAt + (expiresAt - serverNow)`. */
     readonly serverNow?: number
-    /** The device retains this opaque tag so later rereads can diagnose its prior session. */
-    readonly session?: string
   }
+
+/** The identity-free third answer, consumed by device handling in rollout step 3. */
+export type CredentialStaleState = { readonly credential: "stale" }
+export type SessionResponse = SessionState | CredentialStaleState
 
 /** How a tab's session check ended: ChatApi said signed in or signed out, or couldn't confirm authority (`unconfirmed`) or reach ChatApi (`unreachable`). */
 export const CHECK_OUTCOMES = ["signed_in", "signed_out", "unreachable", "unconfirmed"] as const
@@ -245,6 +255,26 @@ export const AUTH_TELEMETRY = {
     "auth.refresh",
     "auth.refresh.check",
     "smithers_auth_session_refreshes",
+    "smithers_auth_session",
+    "smithers_device_principal_refusals",
+    "auth.device_principal",
+    "smithers_auth_issue",
+    "smithers_auth_key_rotations",
+    "smithers_auth_session_prior",
+    "smithers_auth_session_ends",
+    "auth.session_prior",
+    "auth.session_end",
+    "auth.session_retention",
+    "auth.reauth",
+    "auth.token_store",
+    "auth.token_cleanup",
+    "auth.token_cleanup.failure",
+    "smithers_auth_reauth",
+    "smithers_auth_token_cleanup",
+    "smithers_auth_token_store",
+    "auth.issue",
+    "auth.key_rotation",
+    "auth.session",
     "session loaded",
     "session unreachable",
     "sign in pressed",
@@ -259,5 +289,5 @@ export const AUTH_TELEMETRY = {
     "smithers_web_device_wipes",
   ],
   // `stage`, `reason` and `via` also carry the engine worker's owner check (src/device/identity.ts, FLOWS_TELEMETRY).
-  fields: ["signedIn", "status", "outcome", "stage", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome", "errorCode", "feature"],
+  fields: ["signedIn", "status", "outcome", "stage", "step", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome", "errorCode", "feature"],
 } as const

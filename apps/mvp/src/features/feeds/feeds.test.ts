@@ -295,7 +295,7 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
 
   // The data gate (decision 0110, 2026-11-03): a repository's index holds nothing of it from the change that hides it, a
   // refusal mark or a session a reached server couldn't verify, before any eviction; a document follows.
-  test("a repository's index drops its documents in the change that hides it, and shows them again", async () => {
+  test("a repository's index drops its documents in the change that hides it, and shows them again", async ({ onTestFailed }) => {
     const { tab, collector } = await open()
     expect((await collector(feedsRoute(REPO.owner, REPO.name), {
       method: "POST", body: JSON.stringify({ set: { lanes: { visibility: "public", body: [] }, "transcript/a": { visibility: "public", body: 1 } } }),
@@ -303,9 +303,23 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
     const store = await tab.runPromise(Effect.service(FeedsStore))
     const auth = await tab.runPromise(Effect.service(AuthStore))
     const repos = await tab.runPromise(Effect.service(RepoStore))
+    // Startup checks run in the background. Finish that real check before this test owns the session transitions;
+    // otherwise its late successful answer can restore visibility during the deliberately unverifiable interval.
+    await until(() => expect(auth.session.tanstack.get(SESSION)?.status).toBe("signed_in"))
     const index = await tab.runPromise(store.index("octo/hello"))
     const document = store.document("octo/hello", "transcript/a")
     const stop = document.subscribe(() => {})
+    const started = Date.now()
+    const observations: Array<{ stage: string; elapsedMs: number; status: string; unverifiable: boolean; documents: number }> = []
+    const record = (stage: string) => {
+      const row = auth.session.tanstack.get(SESSION)
+      const next = { stage, elapsedMs: Date.now() - started, status: row?.status ?? "absent",
+        unverifiable: row?.unverifiable === true, documents: document.current().length }
+      const last = observations.at(-1)
+      if (last === undefined || last.stage !== next.stage || last.status !== next.status ||
+        last.unverifiable !== next.unverifiable || last.documents !== next.documents) observations.push(next)
+    }
+    onTestFailed(() => console.error("feed.visibility", JSON.stringify({ observations })))
     try {
       // The index's query starts on its first read, as a page's `useLiveQuery` starts it.
       index.byName.tanstack.startSyncImmediate()
@@ -321,12 +335,13 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
         return (yield* index.byName.toArray).map((row) => row.name)
       }))
       expect(await namesAfter(Effect.orDie(auth.session.update(SESSION, (row) => { row.status = "unreachable"; row.unverifiable = true })))).toEqual([])
-      await until(() => expect(document.current()).toEqual([]))
+      record("index_hidden")
+      await until(() => { record("document_hide"); expect(document.current()).toEqual([]) })
       expect(await namesAfter(Effect.orDie(auth.session.update(SESSION, (row) => { row.status = "signed_in"; delete row.unverifiable })))).toEqual(["lanes"])
       expect(await namesAfter(replaceRole(repos, { id, role: null, own: false, refused: "forbidden" }))).toEqual([])
       await namesAfter(held === undefined ? Effect.orDie(repos.roles.delete(id)) : replaceRole(repos, held))
       await until(async () => expect((await tab.runPromise(index.byName.toArray)).map((row) => row.name)).toEqual(["lanes"]))
-    } finally { stop() }
+    } finally { record("cleanup"); stop() }
   })
 
   // Astra on 0c7b9f01, ruling #3: a feed shape's 403 is that shape's refusal, a tier the repository's readers may lack.

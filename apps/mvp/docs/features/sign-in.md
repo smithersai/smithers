@@ -71,20 +71,67 @@ alias (factory.example.com)                  APP_DOMAIN (example.com)           
 - **The code never reaches a server in a URL.** It travels in the fragment, which browsers send to no server and in no `Referer`, and in a same-origin POST body. Logs, spans and metrics carry the outcome, the reason and the host only.
 - **One code, one browser, one host.** Every attempt spends the code; it redeems only within 60 seconds, only at the host it was issued for, and only from the browser holding the nonce its request named.
 - **A custom domain asks first.** Its owner controls where its name points, so for one `APP_DOMAIN` shows a page with the person's login, Continue and Cancel, and mints the code only on Continue, a same-origin POST. `APP_ALIASES` hosts, which only the deployment serves, skip it.
-- **Alias sessions nest.** An alias session holds no GitHub token: it acts as its home session (the actor's session, the role check, run credentials, GitHub writes) and ends with it. Signing in again at an alias ends the session the browser held there, a pre-0130 GitHub session through its sign-out flow. Signing out at the alias ends only that alias's session (`auth.sign_out` `reason: alias`; no flow, nothing to revoke). Signing out at `APP_DOMAIN`, or anything else that ends the home session, ends every alias session under it at the next request.
+- **Alias sessions nest.** An alias session holds no GitHub token: it acts as its home session (the actor's session, the role check, run credentials, GitHub writes) and ends with it. Signing in again renews an eligible alias row in place. An ineligible alias is revoked and replaced; a pre-0130 GitHub session still ends through its sign-out flow. Signing out at the alias ends only that alias's session (`auth.sign_out` `reason: alias`; no flow, nothing to revoke). Signing out at `APP_DOMAIN`, or anything else that ends the home session, ends every alias session under it at the next request.
 - **Without `APP_DOMAIN`** (`workers.dev`, local development), every host signs in through GitHub itself, as before, and needs its own callback URL.
 
 ## Sessions and cookies
 
 | Cookie | https | plain http (local development, mvp.md M-28) | Flags | Lifetime |
 |---|---|---|---|---|
-| session | `__Host-smithers_session` | `smithers_session` | HttpOnly, SameSite=Lax, Path=/, no Domain, Secure on https | `SESSION_MAX_AGE_DAYS` (30) |
+| session | `__Host-smithers_session` | `smithers_session` | HttpOnly, SameSite=Lax, Path=/, no Domain, Secure on https | `Expires` at the row's 400-day deadline |
 | sign-in state | `__Host-smithers_sign_in` | `smithers_sign_in` | the same | 10 minutes; expired by the callback |
 | dev signed-out | `__Host-smithers_dev_signed_out` | `smithers_dev_signed_out` | the same; value `1`, unsigned | 30 days; only where the GitHub App isn't configured and a fallback is signed in (`alchemy dev`) |
 
 - A cookie is `<token>.<HMAC-SHA256>`. Postgres keeps only the token's SHA-256, so reading the database signs nobody in.
-- A session ends at its age, at sign-out, when signing in again in the same browser, or when GitHub refuses its tokens. Ended sessions keep their row with `revoked_at` and `revoked_reason`. A session GitHub refused, or whose tokens no longer open, forgets its GitHub tokens at once; a signed-out one keeps them sealed until `auth/RevokeGitHubToken` revokes them on GitHub and forgets them ([Signing out](#signing-out)).
+- A session ends at sliding expiry, its absolute deadline, sign-out, replacement, GitHub refusal or emergency revocation. An eligible same-person sign-in renews its row in place. Every end atomically revokes the row, transfers sealed tokens to cleanup, clears them from the row and records anonymous home and alias receipts ([Signing out](#signing-out)).
+- Explicit sign-out accepts a configured old-key signature after in-place rotation, even when that cookie can no longer authenticate data requests. It still checks the request's origin and device owner; home sign-out ends its aliases, while alias sign-out ends only that alias.
+- A terminal's cached session end blocks frames while one bounded authority check verifies that the session remains live. Both terminal timers share that check; confirmed expiry closes with 4401, and unavailable or timed-out verification closes with 1012.
 - `Sessions.resolve` reads the row on every request, so a revocation applies to the next request. Postgres unreachable is `SessionsUnavailable`: the model endpoint answers `503 provider_internal`, not a sign-in prompt.
+
+`GET /api/auth/session` renews a live home session at most daily, including when
+requested through an alias, to 30 days (`SESSION_MAX_AGE_DAYS`) capped at 400 days
+from `started_at`. Existing starts are backfilled from `created_at`. The shared
+`sessionLive` predicate enforces this bound for cookie resolution, role checks,
+deployment membership, alias creation and socket authority. An alias's deadline
+is 400 days after the earlier of its own and its parent's start.
+
+The signed-in answer includes optional `deadline`, effective `expiresAt` (the
+earlier of sliding expiry and the deadline), and `serverNow` from the database's
+`clock_timestamp()` in the lookup after renewal. Cookies change only at sign-in
+and sign-out. Sign-in sets `Expires` to the row's deadline; a copied or delayed
+cookie authenticates nobody past the server bound. Older cookies keep their
+original `Max-Age` until the next sign-in.
+
+The optional `session` field is the row's independent 128-bit random `session_tag`,
+encoded as 32 lowercase hexadecimal characters and unique on its table. Database
+defaults generate and backfill tags, including inserts from an older Worker.
+An alias returns its own tag. Renewal and in-place re-authentication keep it.
+The tag is never derived from a session id and never enters run credentials,
+logs, traces, metrics or URLs. The response exposes neither row id.
+
+`GET /api/auth/session` with `x-smithers-session-tag` adds `prior`, even without
+a cookie or with a failed signature: `ended`, `live`, `absent` or `failed`.
+The tag grants only this status lookup. A single transaction on the primary,
+through the uncached ChatDatabase, reads the receipt first, locks parent then
+alias, and checks raw revocation, sliding expiry and starts against
+`clock_timestamp()`. It never uses `sessionLive`. A retained expired row goes
+through `endSession` even when its receipt was backfilled. Renewal and
+re-authentication lock first and require an unrevoked, unexpired row afterward;
+confirmation therefore cannot be undone by a later renewal. An alias's own
+absolute deadline ends only that alias. Failed queries answer `failed`, never
+`absent`. Every answer is `no-store`.
+
+A signed-out answer authenticates nobody; it does not prove an end. Only a
+verified different person or `prior: ended` confirms destruction. A missing
+cookie, failed signature, `prior: live`, `absent` or `failed` keeps data sealed.
+The same verified person with a new tag adopts it when the old tag is live or
+absent; a failed lookup retains the old tag. This device behavior ships in
+step 3, guided by the reviewed session-end design.
+
+A request bound to `@anonymous` reads as nobody before either cookie or bearer
+resolution, including when another tab has signed in. It records an anonymous
+device-principal refusal. `@none` remains unbound for session discovery. The
+server adds this binding; sending it from the device belongs to step 3.
 
 ## Run credentials
 
@@ -115,7 +162,7 @@ ChatApi: Sessions.resolve ── a bearer token? ──▶ verify: signature, ex
 - **A person-only press survives a silent tab.** Dispatch starts a flow whose route refuses an act (`refusesCredential`) only through a person door; otherwise it returns `refused` with `person_only`. For a root run of one, if the tab does not answer within `DOOR_WITHIN`, the request goes in the session: dispatch already established the person's press, even if the tab is busy or reloaded while the engine resumed the run. A tab answering with another door is still refused. A silent door logs `auth.run_credential` with `outcome: door_timeout`.
 - **No credential for a person-only act.** A flow whose route is person-only gets none, nested or not: `403 person_only`. The engine hands that refusal to the step as its request's answer, and sends nothing.
 - **A run's parent** is the one the engine recorded, else the run it is named after (`requesterOf`: the agent's calls are `<answer>/…/call/…`, an answer's close `<answer>/close`) when the engine holds one; `ack/…` and `deliver/…` name no run, so theirs are roots.
-- **The token** is `SessionKeys.sign("run", base64url(claims))`: HMAC-SHA256 under `SESSION_SECRET`, a purpose no cookie shares. Claims: the person, the session it was minted under, `act`, the run, its root, the chain, the ceiling and the end, 15 minutes on (`CREDENTIAL_TTL_MS`); the engine mints the next a minute before. Without sign-in configured, local development's people sign theirs with `SESSION_SECRET` when Alchemy bound one, so a credential outlives the dev server reloading ChatApi, and with a key the Worker draws when it starts otherwise. A request a credential went with that comes back `401` makes the engine ask for every credential again, once (`auth.run_credential` `outcome: stale`).
+- **The token** is `SessionKeys.sign("run", base64url(claims))`: HMAC-SHA256 under the durable issuer, a purpose no cookie shares. Claims: the person, the session it was minted under, `act`, the run, its root, the chain, the ceiling and the end, 15 minutes on (`CREDENTIAL_TTL_MS`); the engine mints the next a minute before. Without sign-in configured, local development's people sign theirs with `SESSION_SECRET` when Alchemy bound one, so a credential outlives the dev server reloading ChatApi, and with a key the Worker draws when it starts otherwise. A request a credential went with that comes back `401` makes the engine ask for every credential again, once (`auth.run_credential` `outcome: stale`).
 - **It ends with its session.** Verifying reads the session by id, so a credential replayed after sign-out, or for a person no longer signed in, reads as nobody (`401`). A forged, tampered or expired one reads as nobody too, never as the cookie beside it.
 - **Bound to its run.** The runs report route and the answer write route take a credential only for the run its chain started from (`403 other_run`); a sandbox call names an answer only as that run.
 - **Credential renewal.** Before renewing a queued write's credential, the tab reads its real sign-in store. Signed out, renewal returns `401` locally and sends nothing.
@@ -162,8 +209,8 @@ The role is read at sign-in, and again five minutes before its hour-long receipt
 
 The flow's steps:
 
-1. `auth/RedeemRefresh`: when the 8-hour `ghu_` token expires within 5 minutes, trades the single-use `ghr_` refresh token once (`Core.OAuthToken.exchangeRefreshToken`) and seals the new pair for the session. Its result, sealed into the run's journal, holds only the encrypted pair and the presented token's digest, never a token in plaintext. It writes nothing.
-2. `auth/StoreTokens`: stores the sealed pair over the token it presented, while the session is live. It retries from the journaled result until Postgres answers, so a Postgres failure, or the host dying, after GitHub issued the pair never redeems the spent token again (the regression from Codex review 4).
+1. `auth/RedeemRefresh`: when the 8-hour `ghu_` token expires within 5 minutes, trades the single-use `ghr_` refresh token once (`Core.OAuthToken.exchangeRefreshToken`) and seals the new pair for the session. Its result, sealed into the run's journal, holds the encrypted pair, the presented refresh digest, the replacement access digest and the observed token generation, never a token in plaintext. It writes nothing.
+2. `auth/StoreTokens`: locks the session row and classifies the latest committed state: stores the sealed pair at its observed generation, recognizes an installed replay, or enqueues an abandoned pair for cleanup. It retries from the journaled result until Postgres answers, so a Postgres failure, or the host dying, after GitHub issued the pair never redeems the spent token again (the regression from Codex review 4).
 3. `auth/CheckRole`: reads the permission with the session's current token and records the role.
 
 GitHub refusing the refresh token (expired after 6 months, or used) while the session still holds it, or the access token (the App revoked), ends the session. GitHub or Postgres failing fails `auth/RedeemRefresh` or `auth/CheckRole`, which retry 5 times from 1 second, doubling. When every attempt fails, `auth/KeepRole` copies the person's newest role receipt and records the check, so a request an hour later starts a new one; it retries until Postgres answers. Role writes serialize on the person's row, so a failed refresh on an older Member session cannot override a verified demotion.
@@ -172,19 +219,39 @@ GitHub refusing the refresh token (expired after 6 months, or used) while the se
 
 ## Signing out
 
-`POST /api/auth/sign-out`, and signing in again in the same browser, sign the browser's session out through the durable flow `auth/RevokeGitHubToken { sessionId }`, on the remote flow host ([remote-flows.md](remote-flows.md)), one execution per session (`auth-revoke-<sessionId>`). The flow owns the whole sign-out: it ends the session (`revoked_reason` `sign_out`), revokes its GitHub token and forgets its tokens.
+`POST /api/auth/sign-out` starts `auth/RevokeGitHubToken { sessionId }` on the
+remote durable host, with one execution per session. Admission failure answers
+503 and keeps the session. Once admitted, both the handler and the flow use the
+same idempotent `endSession` transaction. Alias sign-out ends only that alias while its parent is live. If the parent
+has already ended, it finalizes the parent and its credentials immediately,
+with receipts dated at the actual earlier end.
+An ineligible callback ends its held home row transactionally; eligible
+re-authentication only replaces credentials and keeps the row live.
 
-- **Admitted first.** The handler starts the flow through `Flows.FlowStarter` and waits only for the start to be recorded, never for the flow. A start the host refuses is a `503` (`auth.sign_out` `failed`, reason `not_started`, with the host's code): nothing changed, the session is still live and the cookie still set, so signing out again can finish. Before this, a refused start was logged and swallowed, the sign-out answered `204`, and nothing would ever revoke the token (Codex review 4).
-- **Refused at once.** Once the start is recorded, the handler ends the session itself, so its next request is refused without waiting for the flow; the flow's own end changes nothing then. A handler that dies in between leaves the flow to end it.
-- **Recoverable.** Sign-out looks for a live session, or one that ended and still holds GitHub tokens nothing revoked yet, such as one signed out before sign-out waited for its flow. Signing out again with that cookie starts its flow; once the flow forgot the tokens, there is nothing to do (`no_session`).
-- **Signing in again** admits the sign-out of the session the browser held before it redeems GitHub's code: a start the host refuses fails the sign-in (`?sign_in=failed`, reason `sign_out_not_started`) with nothing redeemed and the session kept. Once the new session is written, the old one ends.
+The end transaction locks the parent before aliases, sets `revoked_at`, moves
+sealed tokens into `github_token_cleanups`, clears them from the session, and
+writes `session_end_receipts (session_tag PRIMARY KEY, ended_at, reason)` for the
+home and its aliases. Reasons are `sign_out`, `github_refused`, `unreadable`,
+`expired` and `compromised`. Receipts contain no person, login or token.
 
-The flow's steps:
+The existing durable cleanup sweep also finalizes unread expiries and applies
+retention: session and alias rows are erased 30 days after their end; anonymous
+receipts are erased 400 days after their end. No migration erases a session.
+Before erasure the sweeper preserves the person's newest role observation in
+`person_role_receipts`; `latestRole` and generation reads include it, so an old
+session cannot regain authority after a confirmed demotion is erased. That
+receipt cascades on person deletion; anonymous end receipts do not. Past their
+400-day bound tags answer `absent`, which never proves an end.
 
-1. `auth/EndSession` ends the session, keeping its sealed GitHub tokens; one that ended already is left as it is (`over`). Only Postgres can fail it, and its retry never gives up;
-2. `auth/RevokeToken` opens the ended session's sealed access token, and revokes it with GitHub as the App: `DELETE /applications/<client id>/token` with the client id and secret as HTTP Basic and `{ access_token }`. `204` is revoked; `404` and `422`, a token GitHub no longer has, count as revoked. Then it forgets the session's GitHub tokens.
-
-A token that no longer opens (`SESSION_SECRET` changed) is forgotten without reaching GitHub (`unreadable`). A session with no tokens is left alone (`none`), and so is a live one (`live`), which the flow never meets since it ends the session first. GitHub or Postgres failing fails the revocation, which retries 5 times from 1 second, doubling; after the last attempt `auth/ForgetTokens` forgets the tokens anyway (`forgotten`), and its own retry never gives up. A session GitHub refused needs no revocation: its tokens are already dead and forgotten.
+The existing `auth/EndSession`, `auth/RevokeToken` and `auth/ForgetTokens` action
+names remain readable in durable histories. Revocation now drains pending
+cleanup rows, even after the session is erased. Exhausted revocation attempts
+leave cleanup for the sweeper. Unreadable cleanup remains pending. `ownerOf` and
+`hostOwnerOf` identify a sign-out's person without authenticating them;
+`signingOut` finds pending cleanup, and `forgetTokens` transfers ended tokens
+instead of discarding them. The writer inventory is
+`worker/SessionEndWriters.test.ts`; it detects new writers, but cannot prove an
+allowed writer fires correctly. False ends written into rows still wipe.
 
 **The device.** Once ChatApi answers the sign-out `204`, never after a failed one, the tab forgets the session it last confirmed and wipes this device's synced data and outbox (decision 0008 §4.6) through `DeviceWipe`, the host's `wipe`. In the browser, every page takes part (`src/wipe.ts`, wired in `src/main.tsx`):
 
@@ -229,7 +296,108 @@ Records: `auth.device_identity` and `smithers_device_identity_checks` by `outcom
 
 ## Keys
 
-`SESSION_SECRET` signs cookies (`Core.Signature` from `@smthrs/integrations`) and, through a key derived from it, seals GitHub's tokens and the PKCE verifier with AES-256-GCM (`WebCryptoCipher` from `@smthrs/control`), each bound to its row and column. In a deploy and under `alchemy dev`, Alchemy generates it once and binds it to ChatApi (`infra/SignIn.ts`). Replacing it signs everyone out: their cookies no longer verify, and a role check ends a session whose tokens no longer open.
+`SESSION_SECRETS` is a JSON map of signing key ids to secrets of at least 32
+characters. The generated `SESSION_SECRET` is the compatibility fallback, under
+the id `legacy`; migrations backfill existing rows with that id. The issuer is
+read inside each session or alias insert. The same statement writes `cookie_key`
+and `started_at`, and the cookie is signed after commit with that recorded key.
+A Worker missing that key rolls the insert back. Issuance takes locks in order:
+people, then sessions or aliases. Statement, lock and idle transaction timeouts
+are 5 s, 2 s and 10 s; PostgreSQL 17 also enforces a 15 s transaction timeout.
+
+`SESSION_SEAL_SECRET` alone seals GitHub tokens, PKCE verifiers and journaled
+refresh replacements with AES-256-GCM. Unset, it falls back to `SESSION_SECRET`.
+Alchemy resolves this secret once and makes both its binding and the signing map
+depend on the publication gate. `session_seal_key` stores its domain-separated
+HMAC-SHA-256 fingerprint (`"smithers session seal check v1"`). The first publication
+pins a NULL reference from the secret this deployment holds, including when
+sessions, pending sign-ins or cleanup ciphertext exist. It logs `pin_seal`
+after commit, without the secret or fingerprint. Later mismatches refuse
+publication. Signing rotation never changes the encryption key.
+
+If the seal secret is lost, run
+`node --import=vibelang/register ops/auth/session-keys.ts reset-seal --confirm-sign-out`
+with `DATABASE_URL`. This durable operator command clears only the seal pin;
+the next publication pins its configured secret. A different seal makes old
+GitHub tokens and pending sign-ins unreadable and signs affected people out
+when their tokens are next opened. It cannot recover old cleanup ciphertext.
+The flag explicitly confirms that consequence. No cookie or old secret is required.
+
+Delayed writes retain the verifying cookie key. A recorded payload from before
+that field existed means `legacy`, so it cannot adopt a newer stamp on replay.
+An alias write retains its alias key; its parent is still checked against the
+configured key set. Explicit sessionless local authority remains separate.
+Triage settings keep their write pending when captured authority is unavailable,
+including retries before sign-in recovers. Only a confirmed permission denial
+settles `not_allowed`; recovery retries the original write ID.
+Repository denial requires a fresh locked role observation at least as recent
+as admission. Missing, expired or older observations stay retryable.
+
+Verification reports the configured key. Cookie resolution and socket leases
+require that key to equal the presented row's stamp. Internal reads, including
+membership and role checks, accept only row keys still configured. A presented cookie or socket lease further narrows that set to its
+verifying or captured key. A configured-key cookie for a live row stamped with another key authenticates
+nobody: the session endpoint returns `{ credential: "stale" }` plus `prior` when
+a tag was supplied, and other
+cookie-authenticated routes retain their empty `401` with
+`x-smithers-credential: stale` and `Cache-Control: no-store` unless the request
+sends exactly `x-smithers-accepts: credential-stale`.
+`ACCEPTS_HEADER` and `ACCEPTS_CREDENTIAL_STALE` in `src/features/auth/contract.ts`
+name that opt-in. An opted-in request gets `503` with
+`x-smithers-credential: stale`, `Retry-After: 1` and `Cache-Control: no-store`,
+without executing the route. The unchanged deployed pulls client keeps its
+pre-503 empty `401` response, with no refusal code. The client stack must
+send this opt-in only once it consumes the status and stale header as a retryable
+`credential_stale` transport outcome, hold reversibly and reread the session
+with `x-smithers-session-tag` set to its recorded tag. It must retain the queued
+write through inconclusive rereads and resume through the durable outbox after
+verified activation; it must never convert stale into `Outbox.Refused`. Only the
+session-end model's confirmed end or verified person change may authorize deletion.
+A missing row, expired or revoked row, or unconfigured signing key reads as signed
+out, which alone is inconclusive. A tag-bearing request also returns `prior`. The stale diagnostic ignores row-key equality, including an unknown new
+stamp, and returns only SQL liveness. Stale never renews the row or returns a
+person, role, expiry or tag.
+
+Signing key operations run through the durable operator flows, outside the app's
+public flow host. With an explicit `DATABASE_URL` and `SESSION_SECRETS`, run
+`node --import=vibelang/register ops/auth/session-keys.ts stage <id>`, deploy the key map to every Worker,
+then `node --import=vibelang/register ops/auth/session-keys.ts promote <id>`. Promotion commits before the
+separate cessation step records `clock_timestamp()`. Retrying the same operation
+and id resumes its active or completed durable run in `smithers_auth_ops`. After a
+terminal failure, reinvocation uses the SDK's `Flow.retryFrom` at the recorded
+failed step, with a stable next-attempt ID; earlier completed steps replay from
+history. The failed receipt remains unchanged. Each invocation admits one
+attempt, and the engine owns its retries and waits. Concurrent invocations join
+the same attempt. An emergency replacement must match the recorded intent before
+a retry can start. Seal resets use a new run id for each confirmed invocation. Key ids are never reused.
+After database time passes cessation plus 401 days, `retire <id>` labels the old
+key retired and a subsequent deployment may omit it.
+
+Each configured key needs a durable row with a fingerprint equal to
+HMAC-SHA-256(secret, `"smithers session key check v1"`). Staging writes it on
+insert. The first publication pins the sole legacy issuer's NULL fingerprint
+from this deployment's secret, including with live or ended rows, and logs
+`pin_legacy` after commit without secret material. The exact `0108` to `0116`
+upgrade needs no operator bootstrap. A wrong initial secret signs people out
+as before; it does not block publication. Later mismatches and other NULL key
+references refuse publication.
+
+For emergency drop, first stage replacement J and configure it on every Worker.
+Then run `node --import=vibelang/register ops/auth/session-keys.ts emergency-drop K J`.
+The durable command validates J, promotes it if K issues, records cessation
+only after commit, and retries its final step until database time strictly
+passes `ceased_at + 30 seconds`. It atomically ends all K-stamped home and alias
+rows and marks K compromised. It never deploys. Deploy without K afterward;
+the gate's exception requires a compromised label and zero raw live K-stamped
+home or alias rows, including aliases under re-keyed parents.
+
+Every production publication depends on a fresh Alchemy gate after migrations.
+After initializing the first pins, it rejects a missing or mismatched seal fingerprint, a configured key with no row or a NULL or mismatched signing fingerprint,
+a missing issuer, and an omitted key with NULL or recent `ceased_at`, including
+a row already labelled retired, except the fenced compromised-key case above. Only database time decides. A missing
+cessation receipt therefore blocks removal after a crash rather than permitting
+it. Short-lived proofs also select the durable issuer, so a ceased key issues no
+new state cookie, hand-off or run credential.
 
 ## Postgres
 
@@ -240,8 +408,15 @@ Migration `0005_sign_in`. None of these tables is synced to browsers.
 | `people` | `id` (uuid), `github_id` (unique), `github_login`, `created_at`, `updated_at` | a person, keyed by GitHub's numeric id; the login follows renames |
 | `sign_in_attempts` | `state_digest` (key), `verifier` (sealed), `redirect_uri`, `return_to`, `expires_at` | sign-ins in progress; expired rows are deleted when the next one starts |
 | `sign_in_handoffs` | `code_digest` (key), `session_id`, `host`, `nonce_digest`, `return_to`, `expires_at` | codes `APP_DOMAIN` handed to an alias, 60 s, deleted as read (migration `0074_host_sessions`) |
-| `host_sessions` | `id`, `token_digest` (unique), `parent_id` (the home session), `host`, `created_at`, `revoked_at` | one per alias sign-in; live while it and its home session are (migration `0074_host_sessions`) |
-| `sessions` | `id`, `token_digest` (unique), `person_id`, `role`, `role_checked_at`, `role_verified_at` (when GitHub last confirmed the role; a failed check never moves it, null until one confirms it, migration `0093_session_role_verified`; what a socket's lease trusts, [socket leases](../observability.md#socket-leases)), `github_access` and `github_refresh` (sealed), `github_access_expires_at`, `github_refresh_digest`, `created_at`, `expires_at`, `revoked_at`, `revoked_reason` (`sign_out`, `github_refused`, `unreadable`) | one per browser sign-in |
+| `host_sessions` | `id`, `token_digest` (unique), `parent_id` (the home session), `host`, `created_at`, `started_at`, `cookie_key`, `session_tag` (unique random), `revoked_at` | one per alias sign-in; live while it and its home session are (migration `0074_host_sessions`) |
+| `sessions` | `id`, `token_digest` (unique), `person_id`, `role`, `role_checked_at`, `role_verified_at` (when GitHub last confirmed the role; a failed check never moves it, null until one confirms it, migration `0093_session_role_verified`; what a socket's lease trusts, [socket leases](../observability.md#socket-leases)), `github_access` and `github_refresh` (sealed), `github_access_expires_at`, `github_refresh_digest`, `created_at`, `started_at`, `cookie_key`, `session_tag` (unique random), `expires_at`, `revoked_at`, `revoked_reason` (`sign_out`, `github_refused`, `unreadable`, `expired`, `compromised`) | one per browser sign-in |
+
+Additional private auth tables: `session_signing_keys` stores state, promotion,
+cessation and fingerprint; `session_seal_key` pins the single encryption key;
+`github_token_cleanups` owns sealed cleanup pairs;
+`session_end_receipts` holds anonymous status until its 400-day retention;
+`person_role_receipts` preserves the newest authority through session erasure.
+None is synced to browsers.
 
 ## Configuration
 
@@ -249,7 +424,9 @@ Migration `0005_sign_in`. None of these tables is synced to browsers.
 |---|---|---|
 | `GITHUB_APP_CLIENT_ID` | none | the Smithers GitHub App's client id; without it sign-in is off |
 | `GITHUB_APP_CLIENT_SECRET` | none | its client secret; without it sign-in is off |
-| `SESSION_SECRET` | generated by Alchemy | at least 32 characters; shorter turns sign-in off and logs `auth.config` |
+| `SESSION_SECRET` | generated by Alchemy | compatibility signing key `legacy` and sealing fallback |
+| `SESSION_SECRETS` | map containing `legacy` | JSON key id to secret map; duplicate values or secrets shorter than 32 characters turn sign-in off |
+| `SESSION_SEAL_SECRET` | `SESSION_SECRET` | pinned encryption secret; not rotated with signing keys |
 | `GITHUB_REPOSITORY` | `smithersai/smithers` | `owner/name`: the repository roles are read on |
 | `SESSION_MAX_AGE_DAYS` | `30` | a positive integer |
 | `ROLE_RECHECK_MINUTES` | `60` | a positive integer |
@@ -381,7 +558,7 @@ A session read waits at most one second for the role-check start acknowledgment.
 
 `POST /api/auth/handoff` is bounded to 4 KiB during body admission, matching the handler, including requests with a query string. Oversize declared or streamed bodies return 413 before authority resolution.
 
-Active cookie and bearer sessions admit the existing durable role recheck five minutes before the 60-minute authority deadline (half the window when configured shorter). Admission and expiry use the database clock. A failed read never renews the receipt; past its deadline protected reads remain retryable.
+Active cookie and bearer sessions admit the existing durable role recheck five minutes before the 60-minute authority deadline (half the window when configured shorter). Admission and expiry use the database clock. Cookie and bearer admission subtract monotonic elapsed time after role recovery, including a held role-check start, so a fresh role cannot admit a request past its sliding or absolute session deadline. Ended bearer proofs retain the `smithers_run_credentials{op="verify",outcome="ended"}` count and model-endpoint refusal, before budget reservation or provider dispatch. A failed read never renews the receipt; past its deadline protected reads remain retryable.
 
 A signed-in answer with `roleConfirmed:false` keeps identity visible and starts or continues the existing durable `auth/refresh` flow. The transient check outcome is `unconfirmed`; the displayed session stays signed in. Both startup/connectivity checks and an explicit reload admit recovery. Repeated unconfirmed answers retry under the existing durable policy until authority is confirmed or the tab is gone, without another reload or online event.
 
@@ -459,3 +636,66 @@ before runtime shutdown waits for that fiber; the data lock stays held until
 shutdown finishes, then the sealed page offers Retry. Internal session rereads
 persist stale-credential Retry-After deadlines through the same serialized path
 as ordinary responses, including confirmation after 401 and expired-gate checks.
+
+Rejected session cookies are counted by `smithers_auth_session` with
+`outcome: cookie_rejected`. A present cookie that fails signature verification
+or the live-row lookup increments it; an absent cookie and a database failure
+do not. A stale credential is also a rejection and retains its separate stale
+diagnostic. Cookies and tokens never enter these records.
+
+The `cookie_rejected` alert is inert without a metrics exporter and counts as
+neither alerting nor a safety control.
+
+Socket hosts revalidate once at a cached session end. While the check is pending,
+frames past that end are refused. A fresh live lease advances the kept admission,
+even when its database expiry is unchanged: an earlier slow lookup can have
+underestimated the remaining lifetime. An ended session closes. A capped lease makes no extra checks in
+its last seconds. Terminal frames read the current admission after renewal.
+
+
+## Re-authentication before the absolute deadline
+
+The callback verifies any configured signing key, then authenticates the GitHub
+person before locking the held session. The row qualifies only for that person,
+while unrevoked and live more than 30 seconds beyond the eligibility check under
+both its sliding expiry and absolute deadline. The update reads the durable
+issuer in the same statement that resets `started_at`, writes the new tokens
+and increments `github_token_gen`. The id, token and opaque tag stay the same.
+An ineligible callback creates a new row and revokes the held one in the same
+transaction. Failed exchange or eligibility transactions never end the held row.
+
+The replaced sealed pair is committed to `github_token_cleanups` before launching
+`auth/RevokeReplacedGitHubToken` as `cleanup:<id>`. Cleanup has no session-ending
+step and never reads or writes sessions. A failed launch leaves the durable row
+for `auth/MaintainSessions`. Before authentication work, ChatApi records its
+singleton durable intent; unavailable admission returns retryable 503 before
+the callback can commit. Each round runs the existing sweep, sleeps durably for
+five minutes, and hands off through the same host alarm pattern as `chat/Expire`.
+No subsequent request is needed, including after a failed cleanup admission.
+The sweep starts unfinished rows older than five minutes. Successful cleanup
+clears both sealed columns and sets `finished_at`, retaining the unique access
+`pair_digest`. The sweeper deletes finished tombstones after 30 days; a replay
+past retention may enqueue again, and GitHub’s 404 or 422 is success.
+
+Reauthentication preserves a newer role observation and its verification time.
+A delayed callback cannot extend the newer receipt's authorization deadline.
+
+`RecheckRole` journals the observed generation with a redemption. Every token,
+conditional-revocation and role write requires that generation. Overlapping
+stores classify after `SELECT ... FOR UPDATE` in a separate statement, so an
+installed replay never queues the currently installed token. Older journal
+entries decode as generation zero and recover their pair digest from the pinned
+seal; an already installed legacy ciphertext counts as an installed replay.
+
+At an alias, `reauth=1` is carried to the hand-off. A home session within seven
+days of its deadline goes through GitHub first. Arrival validates the nonce,
+locks the parent and held alias, and applies the same 30-second eligibility
+margin, configured-key verification, host and parent binding. An eligible alias
+keeps its row and token; an ineligible one is revoked and replaced.
+
+Tests: `worker/Reauthentication.test.ts`, `worker/SignIn.handoff.test.ts`,
+`worker/flows/RecheckRole.test.ts` and
+`worker/flows/RevokeReplacedGitHubToken.test.ts`. The browser banner, reversible
+hold, session-tag continuation and wipe behavior remain step 3.
+
+The deployment role window is captured while the host and request services are built, and travels with their runtime authority service. Losing ambient runtime configuration cannot widen it. A credential publication that cannot persist retains its privacy fence, while another context's queued write-lock acquisition ends on cancellation or after two seconds with retryable `credential_stale`. The caller's existing durable retry policy owns the next attempt; session reads and sign-out remain available.

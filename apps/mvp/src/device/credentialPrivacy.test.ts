@@ -13,6 +13,92 @@ import { makeVisibility } from "../features/repo/gate"
 import { nodeDevice } from "../test/chatApi"
 import { boundFetch, VISITOR } from "./identity"
 
+test.each(["rejected", "stalled"].flatMap(storage => ["deadline", "cancel"].map(wait => ({ storage, wait }))))(
+  "$storage credential publication cannot strand another transport's write beyond its $wait", async ({ storage, wait }) => {
+    let stale = false, broken = true, writes = 0
+    let entered!: () => void, release!: () => void
+    const attempting = new Promise<void>(resolve => { entered = resolve })
+    const blockedStorage = new Promise<void>(resolve => { release = resolve })
+    const rows = new Map<string, string>()
+    rows.set("outbox:credential:alice", JSON.stringify({ until: 0, revision: "verified", personId: "alice" }))
+    const server = createServer((request, response) => {
+      if (request.url === SESSION_ROUTE) {
+        response.writeHead(200, { "content-type": "application/json" })
+        response.end(JSON.stringify({ signedIn: true, personId: "alice", login: "alice", role: "member" }))
+      } else {
+        writes++
+        response.writeHead(stale ? 503 : 200, stale ? { "x-smithers-credential": "stale", "retry-after": "120" } : {})
+        response.end()
+      }
+    })
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    const lock = `credential-bounded-${crypto.randomUUID()}`
+    const binding = { origin, principal: () => "alice",
+      credentialStorage: {
+        get: async (key: string) => rows.get(key) ?? null,
+        set: async (key: string, value: string) => {
+          if (broken) {
+            entered()
+            if (storage === "stalled") await blockedStorage
+            else throw new Error("Storage write refused")
+          }
+          rows.set(key, value)
+        },
+      },
+      withCredential: <A,>(action: () => Promise<A>, signal?: AbortSignal) =>
+        navigator.locks.request(lock, signal === undefined ? {} : { signal }, action),
+    }
+    let successorReads = 0
+    const observer = boundFetch(fetch, binding), successor = boundFetch(fetch, { ...binding, credentialStorage: {
+      ...binding.credentialStorage, get: async (key: string) => { successorReads++; return binding.credentialStorage.get(key) },
+    } })
+    const send = (transport: typeof fetch, signal?: AbortSignal) => transport(`${origin}/api/questions`, {
+      method: "POST", body: "{}", ...(signal === undefined ? {} : { signal }),
+    })
+    let attempt: Promise<unknown> | undefined, readsBeforeWait = 0
+    try {
+      expect((await send(successor)).status).toBe(200)
+      stale = true
+      await expect(send(observer)).rejects.toMatchObject({ reason: "credential_stale" })
+      await attempting
+      const sent = writes
+      stale = false
+      const controller = new AbortController()
+      let settled = false
+      readsBeforeWait = successorReads
+      attempt = send(successor, controller.signal).then(response => ({ response }), error => ({ error }))
+        .finally(() => { settled = true })
+      await vi.waitFor(async () => expect((await navigator.locks.query()).pending?.some(row => row.name === lock)).toBe(true))
+      if (wait === "cancel") controller.abort()
+      await vi.waitFor(() => expect(settled).toBe(true), { timeout: wait === "cancel" ? 500 : 3_000, interval: 10 })
+      expect(await attempt).toMatchObject({ error: { reason: "credential_stale", stage: "credential_lock",
+        wait: wait === "cancel" ? "cancelled" : "deadline" } })
+      expect(successorReads).toBe(readsBeforeWait)
+      console.info("credential-lock-abort", { phase: "held", queued: (await navigator.locks.query()).pending?.filter(row => row.name === lock).length, lateReads: successorReads - readsBeforeWait })
+      expect(writes).toBe(sent)
+      // Reads remain usable while the publisher cannot persist; no write or cached verification bypasses it.
+      expect((await successor(`${origin}${SESSION_ROUTE}`)).status).toBe(200)
+      expect(writes).toBe(sent)
+    } finally {
+      broken = false
+      release()
+      await observer(`${origin}${SESSION_ROUTE}`).catch(() => undefined)
+      await attempt
+      try {
+        // The cancelled callback must never run, including after the publisher recovers and the queue drains.
+        await navigator.locks.request(lock, { signal: AbortSignal.timeout(1_000) }, () => undefined)
+        console.info("credential-lock-abort", { phase: "released", queued: (await navigator.locks.query()).pending?.filter(row => row.name === lock).length, lateReads: successorReads - readsBeforeWait })
+        expect(successorReads).toBe(readsBeforeWait)
+        expect((await navigator.locks.query()).pending?.filter(row => row.name === lock)).toEqual([])
+      } finally {
+        server.closeAllConnections()
+        await new Promise<void>(resolve => server.close(() => resolve()))
+      }
+    }
+  }, 10_000,
+)
+
 test.each(["ready", "rejected", "stalled storage", "stalled lock"] as const)("a stale session hides private rows through AuthClient and the data gate with %s publication", async publication => {
   let mode: "fresh" | "stale" | "offline" = "fresh"
   let releasePublication!: () => void

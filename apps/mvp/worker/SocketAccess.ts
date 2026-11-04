@@ -80,10 +80,13 @@ export type Basis = typeof Basis.Type
 export const Admission = Schema.Struct({
   /** The home sign-in session; `null` where none resolved it (local development's developer). */
   session: Schema.NullOr(Schema.String),
+  cookieKey: Schema.optional(Schema.String),
   /** The alias session it came through at an alias host, under `session` (decision 0130); `null` at home. */
   alias: Schema.NullOr(Schema.String),
   /** When the session ends, in epoch milliseconds; `null` with no session. */
   expiresAt: Schema.NullOr(Schema.Number),
+  /** The database expiry stamp, compared only with another database stamp to distinguish extension from lookup latency. */
+  serverExpiresAt: Schema.optional(Schema.Number),
   /** When the route admitted it, epoch milliseconds. */
   admittedAt: Schema.Number,
   principal: Schema.String,
@@ -138,21 +141,25 @@ export const admit = (actor: Actor, basis: Basis, access: Admission["access"]) =
   Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis
     let expiresAt: number | null = null
+    let serverExpiresAt: number | undefined
     if (actor.session !== undefined) {
-      const found = yield* SessionStore.authority(actor.session, actor.alias ?? null)
+      const found = yield* SessionStore.authority(actor.session, actor.alias ?? null, actor.cookieKey ?? "legacy")
       if (Option.isNone(found) || found.value.personId !== actor.subject.id) return { _tag: "ended" } as Admitted
       // Both times are the database's, so a Worker clock skewed from it decides nothing (decision 0151 rule 9).
       if (!roleFresh(found.value.roleVerifiedAt, found.value.serverNow, yield* roleFreshMs)) return { _tag: "stale" } as Admitted
       // The end on this Worker's clock: the lookup started at `now`, and the database said how long was left then
       // (decision 0151 rule 9), so a Worker clock skewed from the database's never lengthens the lease.
+      serverExpiresAt = found.value.expiresAt
       expiresAt = now + (found.value.expiresAt - found.value.serverNow)
     }
     return {
       _tag: "admitted",
       admission: {
         session: actor.session ?? null,
+        ...(actor.cookieKey === undefined ? {} : { cookieKey: actor.cookieKey }),
         alias: actor.alias ?? null,
         expiresAt,
+        ...(serverExpiresAt === undefined ? {} : { serverExpiresAt }),
         admittedAt: now,
         principal: actor.subject.id,
         role: actor.role,
@@ -192,8 +199,11 @@ export type Verdict = "keep" | "session" | "revoked" | "changed" | "unverified"
 export type Checked = Verdict | {
   readonly verdict: "keep"
   readonly until: number
-  /** Whether the session's end set `until`, not `LEASE_MS`: no renewal can move it, only the end can come. */
+  /** Whether the session's end set `until`, not `LEASE_MS`: the host checks again at that end. */
   readonly capped: boolean
+  /** The authoritative session end mapped from the check's start onto this Worker's clock. */
+  readonly expiresAt?: number | null
+  readonly serverExpiresAt?: number
 }
 
 /**
@@ -228,6 +238,7 @@ const authorityOf = (admission: Admission): string =>
   JSON.stringify([
     admission.session,
     admission.alias,
+    admission.cookieKey,
     admission.principal,
     admission.session === null ? admission.role : null,
     admission.basis,
@@ -237,7 +248,7 @@ const authorityOf = (admission: Admission): string =>
 /**
  * Renews the leases of `entries`' admissions: one check per authority, `CHECK_CONCURRENCY` at a time, each within
  * `CHECK_TIMEOUT_MS`, and all of it, opening the client in `within` included, within `RENEW_DEADLINE_MS`. An admission
- * past its session's end is `session` with no query; a check that fails, or doesn't answer in time, is `unverified`.
+ * at its cached end gets one authoritative check; frames stay refused until it answers. A failed or slow check is `unverified`.
  * Answers a verdict per entry, in order, and counts each (`leases`).
  */
 export const renew = <RC, R>(
@@ -247,9 +258,8 @@ export const renew = <RC, R>(
   within: <A>(effect: Effect.Effect<A, never, RC | R>) => Effect.Effect<A, unknown, R>,
 ) =>
   Effect.gen(function* () {
-    const now = yield* Clock.currentTimeMillis
     const asked = new Map<string, Admission>()
-    for (const admission of admissions) if (!ended(admission, now)) asked.set(authorityOf(admission), admission)
+    for (const admission of admissions) asked.set(authorityOf(admission), admission)
     const checked = yield* within(Effect.forEach(
       [...asked],
       ([key, admission]) =>
@@ -263,14 +273,18 @@ export const renew = <RC, R>(
       Effect.catchCause(() => Effect.succeed([])),
     )
     const verdicts = new Map<string, Checked>(checked)
-    // A check that answered after the session's end renews nothing: the end is checked again now.
+    // Only the authoritative result may advance a cached end. An elapsed result grants no lease.
     const after = yield* Clock.currentTimeMillis
     const answers = admissions.map((admission): Renewed => {
-      if (ended(admission, after)) return { verdict: "session", admission }
       const answer = verdicts.get(authorityOf(admission)) ?? "unverified"
-      if (typeof answer === "string") return { verdict: answer, admission }
-      const until = Math.min(answer.until, admission.expiresAt ?? Infinity)
-      return { verdict: "keep", until, admission: answer.capped ? { ...admission, expiresAt: until } : admission }
+      if (typeof answer === "string") return {
+        verdict: answer === "keep" && ended(admission, after) ? "session" : answer, admission,
+      }
+      if (answer.until <= after) return { verdict: answer.capped ? "session" : "unverified", admission }
+      const expiresAt = answer.capped ? answer.until
+        : answer.expiresAt !== undefined ? answer.expiresAt
+        : admission.expiresAt === null ? null : Math.max(admission.expiresAt, answer.until)
+      return { verdict: "keep", until: answer.until, admission: { ...admission, expiresAt, ...(answer.serverExpiresAt === undefined ? {} : { serverExpiresAt: answer.serverExpiresAt }) } }
     })
     const counts: Record<Verdict, number> = { keep: 0, session: 0, revoked: 0, changed: 0, unverified: 0 }
     for (const { verdict: outcome } of answers) {
@@ -287,7 +301,7 @@ export const renew = <RC, R>(
 export const countLegacy = (host: string, count: number) =>
   count === 0 ? Effect.void : Metric.update(Metric.withAttributes(leases, { host, outcome: "legacy" }), count)
 
-/** Whether a lease stops at the session's end, not `LEASE_MS` on: no renewal can move it, only the end can come. */
+/** Whether a lease stops at the session's end, not `LEASE_MS` on: the host checks again at that end. */
 const capped = (admission: Admission, leaseUntil: number): boolean =>
   admission.expiresAt !== null && leaseUntil >= admission.expiresAt
 
@@ -297,7 +311,7 @@ const actAt = (admission: Admission, leaseUntil: number): number =>
 
 /**
  * Whether a host renews a lease now: one lapsing within `RENEW_WINDOW_MS`, so the sockets of one host renew together;
- * one the session's end caps only once that end has come, when renewing ends it with no query.
+ * one the cached session end caps only once that end has come, when one authoritative check decides.
  */
 export const due = (admission: Admission, leaseUntil: number, now: number): boolean =>
   capped(admission, leaseUntil) ? leaseUntil <= now : leaseUntil <= now + RENEW_WINDOW_MS
@@ -347,9 +361,9 @@ export const coalesced = <R>(
 
 /**
  * The renewal loop of a host that never hibernates while a socket is open: it sleeps until `nextRenewal` of `leases()`,
- * runs `renewDue`, and ends when no lease is left. Beside it, and never waiting on it, an expiry timer sleeps until the
- * earliest session's end and runs `expire`, which closes sockets past their end with no query, so a renewal stalled on
- * Postgres never holds a close. Both run only while the host holds a lease (`ensure`); a new lease acted on, or a session
+ * runs `renewDue`, and ends when no lease is left. Beside it, an expiry timer sleeps until the earliest cached session
+ * end and runs `expire`. The terminal supplies its same bounded, single-flight authority check to both: frames remain
+ * blocked while it verifies an extension or confirms an end. Both run only while the host holds a lease (`ensure`); a new lease acted on, or a session
  * ending, before a running child's wake wakes it sooner. It never cancels a renewal that runs, and a later lease never
  * moves a wake.
  */
@@ -447,23 +461,6 @@ export const renewalLoop = <R, RE>(
     })
   return { ensure }
 }
-
-/**
- * The sockets of `open` whose session has ended at `now`, for a host to close `4401` with no query. Counts each such
- * close as a `session` lease outcome exactly once: one a running renewal holds (`renewing`) is that renewal's to count.
- */
-export const expireEnded = <S, T extends { readonly socket: S; readonly admission: Admission }>(
-  host: string,
-  open: ReadonlyArray<T>,
-  renewing: ReadonlySet<S>,
-) =>
-  Effect.gen(function* () {
-    const now = yield* Clock.currentTimeMillis
-    const found = open.filter((each) => ended(each.admission, now))
-    const counted = found.filter((each) => !renewing.has(each.socket)).length
-    if (counted > 0) yield* Metric.update(Metric.withAttributes(leases, { host, outcome: "session" }), counted)
-    return found
-  })
 
 /** Whether `principal` already holds `MAX_SOCKETS_PER_PERSON` of these admissions. */
 export const crowded = (admissions: ReadonlyArray<Admission | undefined>, principal: string): boolean =>

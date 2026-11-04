@@ -1,0 +1,35 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// Keep old Workers compatible. Only the durable sweeper erases session rows.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`SET LOCAL lock_timeout = '5s'`
+  yield* sql`ALTER TABLE sessions DROP CONSTRAINT sessions_revoked_reason_check`
+  yield* sql`ALTER TABLE sessions ADD CONSTRAINT sessions_revoked_reason_check CHECK
+    (revoked_reason IN ('sign_out', 'github_refused', 'unreadable', 'expired', 'compromised'))`
+  yield* sql`CREATE TABLE session_end_receipts (
+    session_tag text PRIMARY KEY, ended_at timestamptz NOT NULL, reason text NOT NULL
+      CHECK (reason IN ('sign_out', 'github_refused', 'unreadable', 'expired', 'compromised'))
+  )`
+  yield* sql`CREATE INDEX session_end_receipts_retention ON session_end_receipts (ended_at)`
+  yield* sql`CREATE TABLE person_role_receipts (
+    person_id uuid PRIMARY KEY REFERENCES people(id) ON DELETE CASCADE,
+    role text CHECK (role IN ('admin', 'maintainer', 'member', 'guest')),
+    role_generation bigint NOT NULL, role_checked_at timestamptz NOT NULL,
+    role_verified_at timestamptz, created_at timestamptz NOT NULL, session_id uuid NOT NULL
+  )`
+  yield* sql`INSERT INTO session_end_receipts (session_tag, ended_at, reason)
+    SELECT session_tag, least(revoked_at, expires_at, started_at + interval '400 days'),
+      CASE WHEN least(expires_at, started_at + interval '400 days') <= coalesce(revoked_at, clock_timestamp())
+        THEN 'expired' ELSE coalesce(revoked_reason, 'sign_out') END
+    FROM sessions WHERE revoked_at IS NOT NULL OR least(expires_at, started_at + interval '400 days') <= clock_timestamp()`
+  yield* sql`INSERT INTO session_end_receipts (session_tag, ended_at, reason)
+    SELECT h.session_tag, least(h.revoked_at, s.revoked_at, s.expires_at, least(h.started_at, s.started_at) + interval '400 days'),
+      CASE WHEN least(s.expires_at, least(h.started_at, s.started_at) + interval '400 days') <= least(coalesce(h.revoked_at, clock_timestamp()), coalesce(s.revoked_at, clock_timestamp()))
+        THEN 'expired' ELSE CASE WHEN h.revoked_at IS NOT NULL AND (s.revoked_at IS NULL OR h.revoked_at <= s.revoked_at)
+          THEN 'sign_out' ELSE coalesce(s.revoked_reason, 'sign_out') END END
+    FROM host_sessions h JOIN sessions s ON s.id = h.parent_id WHERE h.revoked_at IS NOT NULL OR s.revoked_at IS NOT NULL
+      OR least(s.expires_at, least(h.started_at, s.started_at) + interval '400 days') <= clock_timestamp()
+    ON CONFLICT DO NOTHING`
+})

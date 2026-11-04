@@ -1,5 +1,5 @@
 // Feed authorization through the real ChatApi handler, Postgres, Electric and RepoRoles.
-import { Effect, Layer, Option, Stream } from "effect"
+import { Deferred, Effect, Layer, Option, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { beforeEach, expect, test, vi } from "vitest"
@@ -7,13 +7,17 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { NOTIFICATIONS_SHAPE_ROUTE } from "../src/features/attention/contract.ts"
 import { Sessions, SessionsUnavailable, type Actor } from "./Actor.ts"
 import { BranchRoles } from "./branch/Access.ts"
+import * as FeedLocks from "./FeedLocks.ts"
 import * as Notifications from "./Notifications.ts"
+import * as SessionKeys from "./SessionKeys.ts"
+import * as SessionSigningKeys from "./SessionSigningKeys.ts"
 import * as SessionStore from "./SessionStore.ts"
 import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { app } from "./github/test/harness.ts"
 import { accountIdOf, appKey, INSTALLATION_ID, scriptedGitHub } from "./github/test/scriptedGitHub.ts"
 import { branchRoles as localRoles, harness, testFile } from "./test/harness.ts"
+import { configured, cookie, SECRET, signInHarness } from "./test/signIn.ts"
 
 const runtime = testFile("notification_access")
 const sql = (query: string, ...params: ReadonlyArray<unknown>) => runtime.runPromise(
@@ -26,6 +30,8 @@ beforeEach(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, client =
   for (const table of ["notifications", "notification_repository_access", "watches", "github_repo_roles", "github_repositories", "people"]) {
     yield* client`DELETE FROM ${client(table)}`
   }
+  yield* client`DELETE FROM session_signing_keys`
+  yield* client`INSERT INTO session_signing_keys (key_id, state, promoted_at) VALUES ('legacy', 'issuer', now())`
 })))))
 const proxy = async (actor: Actor, branchRoles: Layer.Layer<BranchRoles>, beforeUpstream?: () => Promise<void>) => {
   const { name } = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
@@ -450,7 +456,7 @@ test.each([
       await remember("admin")
     } else if (source === "deployment-record") {
       const record = (role: "admin" | "member" | null) => runtime.runPromise(Effect.gen(function* () {
-        return yield* SessionStore.setRole(session, role, yield* SessionStore.roleObservation)
+        return yield* SessionStore.setRole(session, role, yield* SessionStore.roleObservation, 0)
       }))
       // No projection or notification changed: the emit snapshot can use the restored authority directly.
       await record(loss === "denial" ? null : "member")
@@ -486,7 +492,7 @@ test.each([
 
 
 // Round 7: payload authority is decided after buffering, not by pairing an old actor with a new fence.
-const emitFixture = async (sessionBacked = false) => {
+const emitFixture = async (sessionBacked = false, sessionToken?: string) => {
   const id = crypto.randomUUID()
   const repoId = "github/acme/emission"
   const session = crypto.randomUUID()
@@ -500,7 +506,7 @@ const emitFixture = async (sessionBacked = false) => {
       ($1, 'followed', 'run', 'done', false, $2, 'followed payload', '/app', gen_random_uuid()),
       ($1, 'mine', 'run', 'done', true, NULL, 'own payload', '/app', gen_random_uuid())`, id, repoId)
   if (sessionBacked) await runtime.runPromise(Effect.gen(function* () {
-    yield* SessionStore.createSession({ id: session, tokenDigest: crypto.randomUUID(), personId: id,
+    yield* SessionStore.createSession({ id: session, tokenDigest: sessionToken === undefined ? crypto.randomUUID() : SessionKeys.digest(sessionToken), personId: id,
       role: "admin", roleGeneration: yield* SessionStore.roleObservation,
       access: { ciphertext: "unused", nonce: "unused" }, accessExpiresAt: null,
       refresh: null, refreshDigest: null, maxAgeSeconds: 3600 })
@@ -524,7 +530,7 @@ test("emit snapshot excludes non-mine rows when deployment denial lands between 
   const sessions = Layer.succeed(Sessions, Sessions.of({ resolve: Effect.gen(function* () {
     // The actor was resolved from the old receipt. Renewal commits before the feed captures its sequences.
     yield* Effect.gen(function* () {
-      yield* SessionStore.setRole(f.session, null, yield* SessionStore.roleObservation)
+      yield* SessionStore.setRole(f.session, null, yield* SessionStore.roleObservation, 0)
     }).pipe(Effect.provide(f.scratch.database), Effect.mapError(() => new SessionsUnavailable()))
     return Option.some(f.actor)
   }) }))
@@ -621,7 +627,7 @@ test.each(["refresh", "sign-in", "sign-out"] as const)("emit snapshot observes %
   try {
     await runtime.runPromise(Effect.gen(function* () {
       if (receipt === "sign-out") yield* SessionStore.revoke({ id: f.session }, "sign_out")
-      else if (receipt === "refresh") yield* SessionStore.setRole(f.session, null, yield* SessionStore.roleObservation)
+      else if (receipt === "refresh") yield* SessionStore.setRole(f.session, null, yield* SessionStore.roleObservation, 0)
       else yield* SessionStore.createSession({ id: crypto.randomUUID(), tokenDigest: crypto.randomUUID(), personId: f.id,
         role: null, roleGeneration: yield* SessionStore.roleObservation,
         access: { ciphertext: "unused", nonce: "unused" }, accessExpiresAt: null,
@@ -633,6 +639,173 @@ test.each(["refresh", "sign-in", "sign-out"] as const)("emit snapshot observes %
   expect(response.headers.get("electric-offset")).not.toBeNull()
   expect((await values(response)).map(row => row.subject)).toEqual(receipt === "sign-out" ? [] : ["mine"])
   expect(h.line("notifications.access.emit").at(-1)?.annotations).toMatchObject({ cursorStable: true, subjects: receipt === "sign-out" ? 0 : 1 })
+})
+
+test.each(["home deadline", "alias deadline", "home key", "alias key"] as const)("emit snapshot withholds all rows after the buffered session loses its %s", async (boundary) => {
+  const f = await emitFixture(true)
+  const alias = boundary.startsWith("alias") ? crypto.randomUUID() : undefined
+  if (alias !== undefined) {
+    expect(await runtime.runPromise(SessionStore.createHostSession({ id: alias, tokenDigest: crypto.randomUUID(),
+      parentId: f.session, host: "alias.example.test" }))).toBe(true)
+  }
+  const actor = { ...f.actor, ...(alias === undefined ? {} : { alias }) }
+  let entered!: () => void
+  let release!: () => void
+  const atHold = new Promise<void>(resolve => { entered = resolve })
+  const released = new Promise<void>(resolve => { release = resolve })
+  const h = await harness(runtime, () => Stream.empty, { actor, branchRoles: BranchRoles.layer(f.roles),
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      url.searchParams.set("table", `${f.scratch.name}.notifications`)
+      const response = await fetch(url, init)
+      const body = await response.arrayBuffer()
+      entered(); await released
+      return new Response(body, { status: response.status, headers: response.headers })
+    } })
+  const pending = h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  await atHold
+  try {
+    const table = alias === undefined ? "sessions" : "host_sessions"
+    if (boundary.endsWith("deadline")) {
+      await sql(`UPDATE ${table} SET started_at = clock_timestamp() - interval '401 days' WHERE id = $1`, alias ?? f.session)
+    } else {
+      await sql(`UPDATE ${table} SET cookie_key = 'removed-emission-test-key' WHERE id = $1`, alias ?? f.session)
+    }
+  } finally { release() }
+  const response = await pending
+  expect(response.status).toBe(200)
+  expect(response.headers.get("electric-offset")).not.toBeNull()
+  expect(await values(response)).toEqual([])
+  expect(h.line("notifications.access.emit").at(-1)?.annotations).toMatchObject({ subjects: 0, cursorStable: true })
+})
+
+test.each(["home deadline", "alias deadline", "home expiry", "alias expiry"] as const)("emit snapshot withholds rows when its %s passes while waiting for the feed lock", async (boundary) => {
+  const f = await emitFixture(true)
+  const alias = boundary.startsWith("alias") ? crypto.randomUUID() : undefined
+  if (alias !== undefined) {
+    expect(await runtime.runPromise(SessionStore.createHostSession({ id: alias, tokenDigest: crypto.randomUUID(),
+      parentId: f.session, host: "alias.example.test" }))).toBe(true)
+  }
+  let buffered!: () => void
+  let releaseBody!: () => void
+  const atBody = new Promise<void>(resolve => { buffered = resolve })
+  const bodyReleased = new Promise<void>(resolve => { releaseBody = resolve })
+  const h = await harness(runtime, () => Stream.empty, {
+    actor: { ...f.actor, ...(alias === undefined ? {} : { alias }) }, branchRoles: BranchRoles.layer(f.roles),
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      url.searchParams.set("table", `${f.scratch.name}.notifications`)
+      const response = await fetch(url, init)
+      const body = await response.arrayBuffer()
+      buffered(); await bodyReleased
+      return new Response(body, { status: response.status, headers: response.headers })
+    } })
+  const pending = h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  await atBody
+  const locked = Deferred.makeUnsafe<number>()
+  const releaseLock = Deferred.makeUnsafe<void>()
+  const blocker = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, client => client.withTransaction(Effect.gen(function* () {
+    yield* FeedLocks.lock(client, [{ repoId: f.repoId, personId: f.id }])
+    const [row] = yield* client<{ pid: number }>`SELECT pg_backend_pid() AS pid`
+    yield* Deferred.succeed(locked, row!.pid)
+    yield* Deferred.await(releaseLock)
+  }))))
+  const blockerPid = await runtime.runPromise(Deferred.await(locked))
+  releaseBody()
+  try {
+    let waiterPid = 0
+    await vi.waitFor(async () => {
+      const waiting = await sql(`SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))`, blockerPid) as Array<{ pid: number }>
+      expect(waiting).toHaveLength(1)
+      waiterPid = waiting[0]!.pid
+    }, { timeout: 5_000 })
+    // The real validation transaction is waiting. Put its deadline in the future,
+    // then let database time cross it before releasing the same feed lock.
+    const expiry = boundary.endsWith("expiry")
+    const table = expiry || alias === undefined ? "sessions" : "host_sessions"
+    const column = expiry ? "expires_at" : "started_at"
+    const deadline = expiry ? column : `${column} + interval '400 days'`
+    const [row] = await sql(`UPDATE ${table} SET ${column} = clock_timestamp() + interval '100 milliseconds'
+      ${expiry ? "" : "- interval '400 days'"} WHERE id = $1 RETURNING (${deadline})::text AS deadline`,
+      expiry ? f.session : alias ?? f.session) as Array<{ deadline: string }>
+    await sql(`SELECT pg_sleep(greatest(0, extract(epoch FROM $1::timestamptz - clock_timestamp())) + 0.01)`, row!.deadline)
+    expect(await sql(`SELECT xact_start < $2::timestamptz AS "startedBefore", clock_timestamp() >= $2::timestamptz AS ended
+      FROM pg_stat_activity WHERE pid = $1`, waiterPid, row!.deadline)).toEqual([{ startedBefore: true, ended: true }])
+  } finally {
+    await runtime.runPromise(Deferred.succeed(releaseLock, undefined))
+    await blocker
+  }
+  const response = await pending
+  expect(response.status).toBe(200)
+  expect(response.headers.get("electric-offset")).not.toBeNull()
+  expect(await values(response)).toEqual([])
+  expect(h.line("notifications.access.emit").at(-1)?.annotations).toMatchObject({ subjects: 0, cursorStable: true })
+})
+
+test.each(["home", "alias", "alias parent"] as const)("emit snapshot binds the presented cookie key when its %s reauthenticates after buffering", async (boundary) => {
+  const homeToken = crypto.randomUUID()
+  const f = await emitFixture(true, homeToken)
+  const alias = boundary === "home" ? undefined : crypto.randomUUID()
+  const token = alias === undefined ? homeToken : crypto.randomUUID()
+  if (alias !== undefined) {
+    expect(await runtime.runPromise(SessionStore.createHostSession({ id: alias, tokenDigest: SessionKeys.digest(token),
+      parentId: f.session, host: "chat.test" }))).toBe(true)
+  }
+  const next = Redacted.make("notification-emission-next-test-key".padEnd(64, "n"))
+  const keys = await runtime.runPromise(SessionKeys.make(Redacted.make(SECRET), {
+    secrets: { legacy: Redacted.make(SECRET), next }, sealSecret: Redacted.make(SECRET),
+  }))
+  const config = { ...configured, SESSION_SECRETS: JSON.stringify({ legacy: SECRET, next: Redacted.value(next) }),
+    SESSION_SEAL_SECRET: SECRET, APP_DOMAIN: alias === undefined ? "chat.test" : "smithers.test",
+    APP_ALIASES: alias === undefined ? "" : "chat.test=/" }
+  const signedIn = await signInHarness(runtime, { config })
+  let hold = false
+  let buffered!: () => void
+  let release!: () => void
+  const atBody = new Promise<void>(resolve => { buffered = resolve })
+  const released = new Promise<void>(resolve => { release = resolve })
+  const h = await harness(runtime, () => Stream.empty, { config, sessions: signedIn.sessions, branchRoles: BranchRoles.layer(f.roles),
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      url.searchParams.set("table", `${f.scratch.name}.notifications`)
+      const response = await fetch(url, init)
+      const body = await response.arrayBuffer()
+      if (hold) { buffered(); await released }
+      return new Response(body, { status: response.status, headers: response.headers })
+    } })
+  const headers = { cookie: cookie({ smithers_session: await runtime.runPromise(keys.sign("session", token, "legacy")) }) }
+  expect(await values(await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`, { headers }))).toHaveLength(3)
+  hold = true
+  const pending = h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`, { headers })
+  await atBody
+  try {
+    await runtime.runPromise(SessionSigningKeys.stage("next", next))
+    await runtime.runPromise(SessionSigningKeys.promote("next"))
+    if (boundary === "alias") {
+      const renewed = await runtime.runPromise(SessionStore.reauthenticateHost({ id: crypto.randomUUID(),
+        tokenDigest: SessionKeys.digest(token), parentId: f.session, host: "chat.test" },
+        { digest: SessionKeys.digest(token), key: "legacy" }, ["legacy", "next"]).pipe(
+          Effect.provideService(SessionStore.SigningKeyIds, ["legacy", "next"])))
+      expect(Option.getOrThrow(renewed)).toMatchObject({ id: alias, renewed: true, key: "next" })
+    } else {
+      await runtime.runPromise(SessionStore.issuance(Effect.gen(function* () {
+        yield* SessionStore.reauthenticate({ id: f.session, tokenDigest: SessionKeys.digest(homeToken), personId: f.id,
+          role: "admin", roleGeneration: yield* SessionStore.roleObservation,
+          access: { ciphertext: "unused", nonce: "unused" }, accessExpiresAt: null,
+          refresh: null, refreshDigest: null, maxAgeSeconds: 3600 }, ["legacy", "next"])
+      })))
+    }
+  } finally { hold = false; release() }
+  const response = await pending
+  expect(response.status).toBe(200)
+  expect(response.headers.get("electric-offset")).not.toBeNull()
+  // Parent rotation alone leaves an alias's own configured cookie valid.
+  const subjects = boundary === "alias parent" ? 3 : 0
+  expect(await values(response)).toHaveLength(subjects)
+  expect(h.line("notifications.access.emit").at(-1)?.annotations).toMatchObject({ subjects, cursorStable: true })
+  const current = boundary === "alias parent" ? "legacy" : "next"
+  const freshHeaders = { cookie: cookie({ smithers_session: await runtime.runPromise(keys.sign("session", token, current)) }) }
+  expect(await values(await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`, { headers: freshHeaders }))).toHaveLength(3)
 })
 
 test.each(["deployment", "public-copy", "independent"] as const)("emit snapshot applies current %s authority to repository-scoped mine rows", async (basis) => {
@@ -663,7 +836,7 @@ test.each(["deployment", "public-copy", "independent"] as const)("emit snapshot 
   await atHold
   try {
     await runtime.runPromise(Effect.gen(function* () {
-      yield* SessionStore.setRole(f.session, null, yield* SessionStore.roleObservation)
+      yield* SessionStore.setRole(f.session, null, yield* SessionStore.roleObservation, 0)
     }))
   } finally { release() }
   const response = await pending
@@ -714,7 +887,7 @@ test("deployment filtering advances the cursor and publishes a retained insert a
   const pending = h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?${original}&live=true`)
   await atHold
   const record = (role: "admin" | null) => runtime.runPromise(Effect.gen(function* () {
-    yield* SessionStore.setRole(f.session, role, yield* SessionStore.roleObservation)
+    yield* SessionStore.setRole(f.session, role, yield* SessionStore.roleObservation, 0)
   }))
   try { await record(null) } finally { hold = false; release() }
   const withheld = await pending
@@ -803,7 +976,7 @@ test("deployment demotion without restoration removes buffered fleet rows from t
   await atHold
   try {
     await runtime.runPromise(Effect.gen(function* () {
-      yield* SessionStore.setRole(f.session, "member", yield* SessionStore.roleObservation)
+      yield* SessionStore.setRole(f.session, "member", yield* SessionStore.roleObservation, 0)
     }))
   } finally { release() }
   const response = await pending
@@ -816,7 +989,7 @@ test.each(["excluded", "app-none"] as const)("installed public-copy grants stay 
   const f = await emitFixture(true)
   const actor = { ...f.actor, role: "member" as const }
   await runtime.runPromise(Effect.gen(function* () {
-    yield* SessionStore.setRole(f.session, "member", yield* SessionStore.roleObservation)
+    yield* SessionStore.setRole(f.session, "member", yield* SessionStore.roleObservation, 0)
   }))
   await sql(`DELETE FROM notifications WHERE recipient = $1 AND kind = 'fleet'`, f.id)
   await sql(`UPDATE github_repositories SET private = false, visibility_verified_at = clock_timestamp() WHERE repo_id = $1`, f.repoId)
@@ -861,7 +1034,7 @@ test.each([
     VALUES ($1, $2, $3, $4, 'incident', '/app')`, alertId, kind, f.repoId, kind === "failed" ? attemptId : agentKey)
   await sql(`UPDATE notifications SET subject = $2 WHERE recipient = $1 AND subject = 'fleet'`, f.id, `fleet:${alertId}`)
   await runtime.runPromise(Effect.gen(function* () {
-    yield* SessionStore.setRole(f.session, role, yield* SessionStore.roleObservation)
+    yield* SessionStore.setRole(f.session, role, yield* SessionStore.roleObservation, 0)
   }))
   const roles = await runtime.runPromise(RepoRoles.make(f.scratch.database, {
     repository: repositoryOf("acme/emission"), app: Option.some(app({ privateKey: await appKey() })), http: f.github.http,

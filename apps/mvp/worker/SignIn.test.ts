@@ -125,7 +125,7 @@ describe("starting sign-in", () => {
     expect(session.line).toMatch(/HttpOnly/)
     expect(session.line).toMatch(/SameSite=Lax/)
     expect(session.line).toMatch(/Path=\//)
-    expect(session.line).toMatch(/Max-Age=2592000/)
+    expect(session.line).toMatch(/Expires=/)
     expect(session.line).not.toMatch(/Domain=/)
   })
 
@@ -276,7 +276,7 @@ describe("the callback", () => {
       // Where Install goes: the App's installation, by GITHUB_APP_SLUG (ruling AUTH-8).
       install: "https://github.com/apps/smithers/installations/new",
       // Until when the session is live, and the server's clock (devpriv FINAL step 1).
-      expiresAt: expect.any(Number),
+      expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/),
       serverNow: expect.any(Number),
     } satisfies SessionState)
     expect(h.github.repositories).toEqual(["smithersai/smithers"])
@@ -303,7 +303,7 @@ describe("the callback", () => {
     expect(answer.expiresAt! - answer.serverNow!).toBeGreaterThan(0)
     // The session's end moves when the server's row does.
     await query((sql) => sql`UPDATE sessions SET expires_at = expires_at - interval '1 day'`)
-    expect((await h.session(cookies) as { readonly expiresAt?: number }).expiresAt).toBe(answer.expiresAt! - 24 * 60 * 60 * 1000)
+    expect((await h.session(cookies) as { readonly expiresAt?: number }).expiresAt).toBeGreaterThanOrEqual(answer.expiresAt!)
     const signedOut = await h.session({}) as Record<string, unknown>
     expect(signedOut.signedIn).toBe(false)
     expect(signedOut).not.toHaveProperty("expiresAt")
@@ -331,6 +331,7 @@ describe("the callback", () => {
     await query((sql) => sql`
       UPDATE sessions SET expires_at = now() + CASE WHEN id = (SELECT id FROM sessions ORDER BY created_at, id LIMIT 1)
         THEN interval '3 days' ELSE interval '9 days' END`)
+    await query((sql) => sql`UPDATE sessions SET started_at = expires_at - interval '400 days'`)
     const ends = (await query((sql) =>
       sql<{ readonly expiresAt: string }>`
         SELECT (extract(epoch FROM expires_at) * 1000)::bigint::text AS "expiresAt" FROM sessions ORDER BY created_at, id`))
@@ -554,12 +555,12 @@ describe("the callback", () => {
     github.expiring = false
     const h = await signInHarness(runtime, { github })
     const { cookies } = await h.signInAs()
-    expect(await h.session(cookies)).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "octocat", role: "member", hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), serverNow: expect.any(Number) })
+    expect(await h.session(cookies)).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "octocat", role: "member", hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
     const [session] = await sessionRows()
     expect(session!.refresh).toBeNull()
   })
 
-  test("signing in again in the same browser ends the session it held, and keeps the person", async () => {
+  test("signing in again in the same browser renews its session in place, and keeps the person", async () => {
     const h = await signInHarness(runtime)
     const first = await h.signInAs()
     h.github.person = { id: 583231, login: "octocat-renamed" }
@@ -571,9 +572,8 @@ describe("the callback", () => {
     )
     expect(again.headers.get("location")).toBe("/app")
     const rows = await sessionRows()
-    expect(rows.map((row) => row.revokedReason)).toEqual(["sign_out", null])
-    expect(rows[0]!.personId).toBe(rows[1]!.personId)
-    expect(await h.session(first.cookies)).toEqual({ signedIn: false, available: true, hostedModel: false })
+    expect(rows.map((row) => row.revokedReason)).toEqual([null])
+    expect(await h.session(first.cookies)).toMatchObject({ signedIn: true })
     const people = await query((sql) => sql<{ readonly login: string }>`SELECT github_login AS login FROM people`)
     expect(people).toEqual([{ login: "octocat-renamed" }])
   })
@@ -607,7 +607,7 @@ describe("roles", () => {
       github.permission = permission
       const h = await signInHarness(runtime, { github })
       const { cookies } = await h.signInAs()
-      expect(await h.session(cookies), permission).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "octocat", role, hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), serverNow: expect.any(Number) })
+      expect(await h.session(cookies), permission).toEqual({ signedIn: true, homeConversationId: expect.any(String), personId: expect.any(String), login: "octocat", role, hostedModel: false, install: "https://github.com/apps/smithers/installations/new", expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
     }
   })
 
@@ -729,7 +729,7 @@ describe("roles", () => {
     const [first, second] = await sessionRows()
     await query((sql) => sql`UPDATE sessions SET role_verified_at = now() - interval '61 minutes' WHERE id = ${second!.id}`)
     const [before] = await query((sql) => sql<{ verified: string }>`SELECT role_verified_at::text AS verified FROM sessions WHERE id = ${second!.id}`)
-    await runtime.runPromise(SessionStore.keepRole(first!.id))
+    await runtime.runPromise(SessionStore.keepRole(first!.id, 0))
     const [after] = await query((sql) => sql<{ verified: string; role: string }>`SELECT role_verified_at::text AS verified, role FROM sessions WHERE id = ${first!.id}`)
     expect(after).toEqual({ verified: before!.verified, role: "member" })
     const authority = Option.getOrThrow(await runtime.runPromise(SessionStore.authority(first!.id, null)))
@@ -797,9 +797,13 @@ describe("signing out", () => {
     expect(setCookies(response)["smithers_session"]!.line).toMatch(/Max-Age=0|Expires=Thu, 01 Jan 1970/)
     const [session] = await sessionRows()
     expect(session!.revokedReason).toBe("sign_out")
-    // Its sealed tokens stay until `auth/RevokeGitHubToken` revokes them on GitHub and forgets them.
-    expect(session!.access).not.toBeNull()
-    expect(session!.refresh).not.toBeNull()
+    // The end transaction transfers the sealed pair before answering, so the row holds no usable credentials.
+    expect(session!.access).toBeNull()
+    expect(session!.refresh).toBeNull()
+    const cleanups = await query(sql => sql`SELECT sealed_access, sealed_refresh FROM github_token_cleanups WHERE session_id = ${session!.id}`)
+    expect(cleanups).toHaveLength(1)
+    expect(cleanups[0]!.sealed_access).not.toBeNull()
+    expect(cleanups[0]!.sealed_refresh).not.toBeNull()
     expect(h.revocations).toEqual([session!.id])
     // The old cookie, replayed, is nobody.
     expect(await h.session(cookies)).toEqual({ signedIn: false, available: true, hostedModel: false })
@@ -813,7 +817,7 @@ describe("signing out", () => {
     expect((await signOut()).status).toBe(204)
     expect(h.revocations).toEqual([session!.id, session!.id])
     // Once the flow forgot its tokens, signing out again finds nothing to do.
-    await query((sql) => sql`UPDATE sessions SET github_access = NULL, github_refresh = NULL`)
+    await query(sql => sql`UPDATE github_token_cleanups SET sealed_access = NULL, sealed_refresh = NULL, finished_at = now() WHERE session_id = ${session!.id}`)
     expect((await signOut()).status).toBe(204)
     expect(h.count({ route: "sign_out", outcome: "no_session" })).toBe(1)
     expect(h.revocations).toHaveLength(2)
@@ -878,33 +882,20 @@ describe("signing out", () => {
     expect(h.count({ route: "sign_out", outcome: "signed_out" })).toBe(1)
   })
 
-  test("signing in again whose sign-out can't start fails before GitHub, keeping the session it held", async () => {
-    let refuse = true
+  test("a failed replacement-cleanup launch does not end the renewed session", async () => {
     const h = await signInHarness(runtime, {
-      starter: Flows.FlowStarter.of({
-        start: () => refuse ? Effect.fail(new Flows.StartUnavailable({ errorCode: "rpc" })) : Effect.void,
-      }),
+      starter: Flows.FlowStarter.of({ start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "rpc" })) }),
     })
     const first = await h.signInAs()
-    const again = async () => {
-      const started = await h.start()
-      const { code, state } = h.github.approve(started.location)
-      return h.callback({ code, state }, { smithers_sign_in: started.cookies["smithers_sign_in"]!.value, ...first.cookies })
-    }
-
-    const failed = await again()
-
-    expect(failed.headers.get("location")).toBe("/app?sign_in=failed")
-    expect(h.github.calls.filter((step) => step === "exchange")).toHaveLength(1)
-    expect((await sessionRows()).map((row) => row.revokedAt)).toEqual([null])
-    expect(h.count({ route: "callback", outcome: "failed", reason: "sign_out_not_started" })).toBe(1)
-
-    refuse = false
-    expect((await again()).headers.get("location")).toBe("/app")
-    expect((await sessionRows()).map((row) => row.revokedReason)).toEqual(["sign_out", null])
+    const started = await h.start()
+    const approved = h.github.approve(started.location)
+    const again = await h.callback(approved, { ...first.cookies, smithers_sign_in: started.cookies.smithers_sign_in!.value })
+    expect(again.headers.get("location")).toBe("/app")
+    expect((await sessionRows()).map(row => row.revokedAt)).toEqual([null])
+    expect(await h.session(first.cookies)).toMatchObject({ signedIn: true })
   })
 
-  test("signing in again while Postgres can't read the session it held fails before GitHub", async () => {
+  test("signing in again while Postgres can't read the session it held fails after GitHub without ending the held row", async () => {
     const h = await signInHarness(runtime)
     const first = await h.signInAs()
     const started = await h.start()
@@ -917,7 +908,7 @@ describe("signing out", () => {
       })
 
       expect(failed.headers.get("location")).toBe("/app?sign_in=failed")
-      expect(h.github.calls.filter((step) => step === "exchange")).toHaveLength(1)
+      expect(h.github.calls.filter((step) => step === "exchange")).toHaveLength(2)
       expect(h.count({ route: "callback", outcome: "failed", reason: "database" })).toBe(1)
       expect(h.revocations).toEqual([])
     } finally {

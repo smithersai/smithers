@@ -17,3 +17,10 @@ test("a signed-in answer reads with its session's end and the server's now, or w
   expect(decode(signedIn)).toEqual(signedIn)
   expect(() => decode({ ...signedIn, expiresAt: "tomorrow" })).toThrow()
 })
+
+test("the optional absolute deadline decodes without requiring it from older servers", () => {
+  const signedIn = { signedIn: true, login: "octocat", role: "member" }
+  expect(decode(signedIn)).toEqual(signedIn)
+  expect(decode({ ...signedIn, deadline: 1_800_000_000_000 })).toEqual({ ...signedIn, deadline: 1_800_000_000_000 })
+  expect(() => decode({ ...signedIn, deadline: "tomorrow" })).toThrow()
+})

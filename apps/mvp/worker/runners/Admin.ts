@@ -192,9 +192,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
         ? { _tag: "Local" as const }
         : {
           _tag: "Session" as const,
-          personId: actorId,
-          sessionId: actor.value.session,
-          ...(actor.value.alias === undefined ? {} : { alias: actor.value.alias }),
+          ...WriteAuthority.sessionOf(actor.value)!,
         }
       const expected = yield* Expected
       const fence: Fence.Fence = {

@@ -973,7 +973,14 @@ describe("the shapes", () => {
     { name: "defect", start: Effect.die(new Error(SENTINEL)), errorCode: "unknown" },
   ])("a starter $name is counted and logged without failing the read or leaking error text", async ({ start, errorCode }) => {
     const h = await githubHarness(runtime, { starter: FlowStarter.of({ start: () => start }) })
-    expect((await shape(h, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+    const read = await shape(h, ITEMS_SHAPE_ROUTE)
+    if (read.status === 409) {
+      // An earlier fixture's TRUNCATE can invalidate the snapshot. This is Electric's successful restart protocol,
+      // independent of the failed starter; keep one physical request so its admission log and count stay exact.
+      expect(read.rows).toEqual(expect.arrayContaining([expect.objectContaining({ headers: expect.objectContaining({ control: "must-refetch" }) })]))
+    } else {
+      expect(read.status).toBe(200)
+    }
     expect(h.line("github.reconcile.start").map((line) => ({ level: line.level, ...line.annotations }))).toMatchObject([
       { level: "WARN", repoId: REPOSITORY.id, outcome: "not_started", errorCode },
     ])

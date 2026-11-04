@@ -1,4 +1,5 @@
 import * as WriteAuthority from "../WriteAuthority.ts"
+import * as ProtectedAuthority from "../ProtectedAuthority.ts"
 import { fold as foldWriteNotice } from "./WriteFeed.ts"
 import { COMMITMENTS, commitmentOf } from "../../src/features/issues/lifecycle.ts"
 import { GitHub } from "@smthrs/integrations"
@@ -17,7 +18,7 @@ import {
 import { isRepository, repoId as repoIdOf } from "../../src/features/repo/contract.ts"
 import { UPDATE_METHODS } from "../../src/features/branch/contract.ts"
 import { MERGE_METHODS, type MergeFlow } from "../../src/features/pulls/contract.ts"
-import { Sealed } from "../SessionStore.ts"
+import { Sealed, sessionLive } from "../SessionStore.ts"
 import * as Metrics from "./Metrics.ts"
 
 // The git loop's rows in Postgres (docs/features/issues.md#postgres, migration 0016_github_issues). GitHub is the truth:
@@ -386,7 +387,7 @@ const decodePayload = Schema.decodeUnknownSync(WritePayload)
  */
 export type Inserted =
   | { readonly kind: "inserted"; readonly txid: number }
-  | { readonly kind: "existing"; readonly status: WriteStatus; readonly payloadHash: string }
+  | { readonly kind: "existing"; readonly status: WriteStatus; readonly payloadHash: string; readonly reauthorized?: boolean }
   | { readonly kind: "stale" }
   /** The write id is another repository's or another person's write: a resend names the same of both. */
   | { readonly kind: "taken" }
@@ -411,26 +412,51 @@ export const insertWrite = <E = never, R = never>(write: {
   readonly via: WriteVia
   readonly payload: WritePayload
   readonly payloadHash: string
+  /** The authenticated writes route explicitly renews a pending triage write's authority on resubmission. */
+  readonly reauthorize?: boolean
 }, holds: Effect.Effect<boolean, E, R> = Effect.succeed(true) as Effect.Effect<boolean, E, R>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const existing = Effect.map(
-      sql<{ readonly status: WriteStatus; readonly payloadHash: string; readonly repoId: string; readonly actorId: string }>`
-        SELECT status, payload_hash AS "payloadHash", repo_id AS "repoId", actor_id AS "actorId"
-        FROM github_writes WHERE id = ${write.id}::uuid`,
-      ([found]): Inserted | undefined =>
-        found === undefined
-          ? undefined
-          : found.repoId !== write.repoId || found.actorId !== write.actorId
-          ? { kind: "taken" }
-          : { kind: "existing", status: found.status, payloadHash: found.payloadHash },
-    )
-    return yield* sql.withTransaction(Effect.gen(function* () {
-      const found = yield* existing
-      if (found !== undefined) {
-        if (found.kind === "existing") yield* foldWriteNotice(write.id)
-        return found
+    const triage = write.payload.op === "triage/enable" || write.payload.op === "triage/pause" ? write.payload : undefined
+    const plain = triage?.op === "triage/enable" ? { op: triage.op, dailyTokens: triage.dailyTokens }
+      : triage === undefined ? null : { op: triage.op }
+    const existing = Effect.gen(function* () {
+      const [found] = yield* sql<{ readonly status: WriteStatus; readonly payloadHash: string; readonly repoId: string;
+        readonly actorId: string; readonly via: WriteVia; readonly samePayload: boolean; readonly sameAdmission: boolean }>`
+        SELECT status, payload_hash AS "payloadHash", repo_id AS "repoId", actor_id AS "actorId", via,
+          payload - 'authority' = ${JSON.stringify(plain)}::jsonb AS "samePayload",
+          payload = ${JSON.stringify(write.payload)}::jsonb AS "sameAdmission"
+        FROM github_writes WHERE id = ${write.id}::uuid ${write.reauthorize === true && triage !== undefined ? sql`FOR UPDATE` : sql``}`
+      if (found === undefined) return undefined
+      if (found.repoId !== write.repoId || found.actorId !== write.actorId) return { kind: "taken" } as const
+      const answer = { kind: "existing" as const, status: found.status, payloadHash: found.payloadHash }
+      if (write.reauthorize !== true || found.status !== "pending" || found.payloadHash !== write.payloadHash || triage === undefined) return answer
+      if (!found.samePayload || found.via !== "person" || write.via !== "person") return { kind: "taken" } as const
+      if (found.sameAdmission) return answer
+      const authority = triage.authority
+      // Sessionless resends cannot erase captured authority. Only this freshly authenticated owner may replace it.
+      if (authority == null) return yield* new WriteAuthority.Expired()
+      if (authority.personId !== write.actorId || authority.sessionId !== write.sessionId ||
+        (authority.scope?._tag === "Repo" && authority.scope.held.repoId !== write.repoId)) return { kind: "taken" } as const
+      if (!(yield* holds)) return { kind: "stale" } as const
+      const access = yield* ProtectedAuthority.check(authority, ["admin", "maintainer"])
+      if (access === "unavailable") return yield* new WriteAuthority.Expired()
+      if (access === "denied") return { kind: "stale" } as const
+      yield* sql`UPDATE github_writes SET payload = ${JSON.stringify(write.payload)}::jsonb, session_id = ${write.sessionId}::uuid
+        WHERE id = ${write.id}::uuid`
+      return { ...answer, reauthorized: true }
+    })
+    const finishExisting = (found: Inserted) => Effect.gen(function* () {
+      if (found.kind === "existing") {
+        yield* foldWriteNotice(write.id)
+        if (found.reauthorized === true && triage?.authority != null) yield* ProtectedAuthority.requireAtCommit(triage.authority)
       }
+      return found
+    })
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      if (write.reauthorize === true && triage !== undefined) yield* WriteAuthority.bound
+      const found = yield* existing
+      if (found !== undefined) return yield* finishExisting(found)
       if (!(yield* holds)) return { kind: "stale" } satisfies Inserted
       const [inserted] = yield* sql<{ readonly txid: string }>`
         INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash, branch_id)
@@ -442,7 +468,7 @@ export const insertWrite = <E = never, R = never>(write: {
         yield* foldWriteNotice(write.id)
         return { kind: "inserted", txid: Number(inserted.txid) } satisfies Inserted
       }
-      return (yield* existing)!
+      return yield* finishExisting((yield* existing)!)
     }))
   })
 
@@ -468,7 +494,7 @@ export interface Write {
 }
 
 /** Write `id`, or `None`. */
-export const writeOf = (id: string) =>
+export const writeOf = (id: string, lock = false) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{
@@ -491,7 +517,7 @@ export const writeOf = (id: string) =>
         p.github_id::text AS "accountId", w.session_id::text AS "sessionId", w.via, w.op, w.payload, w.status, w.attempts, w.item_number AS "itemNumber",
         w.github_id::text AS "githubId", (extract(epoch FROM w.created_at) * 1000)::bigint::text AS "createdAt"
       FROM github_writes w LEFT JOIN people p ON p.id::text = w.actor_id
-      WHERE w.id = ${id}::uuid`
+      WHERE w.id = ${id}::uuid ${lock ? sql`FOR UPDATE OF w` : sql``}`
     return Option.map(Option.fromNullishOr(row), (found): Write => ({
       ...found,
       accountId: found.accountId === null ? null : Number(found.accountId),
@@ -529,7 +555,12 @@ export type Settlement =
  * Settles write `id` while it is still pending, and, for a write GitHub took, upserts what GitHub answered in the same
  * transaction (`project`). Returns whether this settled it.
  */
-export const settleWrite = <E = never, R = never>(id: string, settlement: Settlement, project: Effect.Effect<unknown, E, R> = Effect.void) =>
+export const settleWrite = <E = never, R = never, E2 = never, R2 = never>(
+  id: string,
+  settlement: Settlement,
+  project: Effect.Effect<unknown, E, R> = Effect.void,
+  beforeCommit: Effect.Effect<unknown, E2, R2> = Effect.void,
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
@@ -543,7 +574,10 @@ export const settleWrite = <E = never, R = never>(id: string, settlement: Settle
           WHERE id = ${id}::uuid AND status = 'pending' RETURNING id`
       const settled = rows.length > 0
       yield* settled && settlement.status === "done" ? project : Effect.void
-      if (settled) yield* foldWriteNotice(id)
+      if (settled) {
+        yield* foldWriteNotice(id)
+        yield* beforeCommit
+      }
       return settled
     }))
   })
@@ -667,10 +701,10 @@ export const sessionToken = (id: string) =>
       readonly accessExpiresAt: string | null
       readonly roleCheckedAt: string
     }>`
-      SELECT revoked_at IS NULL AND expires_at > now() AS live, github_access AS access,
+      SELECT ${yield* sessionLive(sql, sql`s`)} AS live, github_access AS access,
         (extract(epoch FROM github_access_expires_at) * 1000)::bigint::text AS "accessExpiresAt",
         (extract(epoch FROM role_checked_at) * 1000)::bigint::text AS "roleCheckedAt"
-      FROM sessions WHERE id = ${id}::uuid`
+      FROM sessions s WHERE id = ${id}::uuid`
     return Option.map(Option.fromNullishOr(row), (found): SessionToken => ({
       live: found.live,
       access: found.access === null ? null : decodeSealed(found.access),

@@ -28,6 +28,10 @@ import { Summarize, SummaryFailed } from "../src/features/timeline/flow.ts"
 import { registration as summaries, SummaryLedger, SummarySeat } from "../src/features/timeline/steps.ts"
 import { build, runFlow } from "./test/flowHost.ts"
 import { delta, eventually, harness, recorded, stop, testFile, usage } from "./test/harness.ts"
+import { cookie, signInHarness } from "./test/signIn.ts"
+import * as SignIn from "./SignIn.ts"
+import { credentialRoute } from "../src/flows/contract.ts"
+import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract.ts"
 
 const runtime = testFile("model_endpoint")
 
@@ -233,6 +237,71 @@ const keyConfig = (origin: string, key = "row-key") => ({
 })
 
 describe("sign-in", () => {
+  test.each([
+    ["sliding", "completed"], ["absolute", "completed"],
+    ["sliding", "timed out"], ["absolute", "timed out"],
+  ] as const)("a bearer crossing its %s session deadline during a %s role-check start cannot spend", async (deadline, start) => {
+    const database = await scratchDatabase()
+    const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, f))
+    await query(sql => sql`TRUNCATE sessions, sign_in_attempts, people CASCADE`)
+    const remaining = Effect.flatMap(SqlClient.SqlClient, sql => sql<{ ms: number }>`
+      SELECT (extract(epoch FROM least(expires_at, started_at + interval '400 days') - clock_timestamp()) * 1000)::float8 AS ms
+      FROM sessions`)
+    let starts = 0
+    let liveAtStart = false
+    let expiredWhileHeld = false
+    const auth = await signInHarness(runtime, { roleChecks: SignIn.RoleChecks.of({
+      start: () => Effect.gen(function* () {
+        starts++
+        liveAtStart = (yield* remaining)[0]!.ms > 0
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`SELECT pg_sleep(0.65)`
+        expiredWhileHeld = (yield* remaining)[0]!.ms <= 0
+        if (start === "timed out") yield* Effect.never
+      }).pipe(Effect.provide(database), Effect.orDie),
+    }) })
+    const signed = await auth.signInAs()
+    expect(signed.response.status).toBe(303)
+    const [person] = await query(sql => sql<{ id: string }>`SELECT person_id AS id FROM sessions`)
+    const upstream = await provider({ text: "live bearer answer" })
+    const h = await harness(runtime, answering, { sessions: auth.sessions, config: keyConfig(upstream.origin) })
+    await setModel(admin, { role: "agent", model: rowModel(upstream.origin) })
+    const minted = await h.fetch(credentialRoute("deadline-bearer"), {
+      method: "POST", body: JSON.stringify({ flow: "watch/set" }),
+      headers: { cookie: cookie(signed.cookies), [DEVICE_PERSON_HEADER]: person!.id },
+    })
+    expect(minted.status).toBe(200)
+    const { token } = await minted.json() as { token: string }
+    const request = () => h.fetch("/api/model/agent", {
+      method: "POST", body: body(ask("hello")), headers: { authorization: `Bearer ${token}` },
+    })
+    const control = await request()
+    expect(control.status).toBe(200)
+    expect(await control.text()).toContain("live bearer answer")
+    expect(upstream.seen).toHaveLength(1)
+    const spend = await committedToday()
+    const usageBefore = await usageRows()
+    expect(usageBefore).toHaveLength(1)
+    expect(starts).toBe(0)
+    // Keep the verified role fresh but its next check due. Only the session's real database deadline crosses.
+    await query(sql => sql`UPDATE sessions SET role_checked_at = clock_timestamp() - interval '61 minutes',
+      role_verified_at = clock_timestamp(),
+      expires_at = clock_timestamp() + ${deadline === "sliding" ? "0.5 seconds" : "30 days"}::interval,
+      started_at = clock_timestamp() - ${deadline === "absolute" ? "400 days" : "0 days"}::interval
+        + interval '0.5 seconds'`)
+    const response = await request()
+    await response.text()
+    expect({ starts, liveAtStart, expiredWhileHeld }).toEqual({ starts: 1, liveAtStart: true, expiredWhileHeld: true })
+    expect(response.status).toBe(401)
+    expect(upstream.seen).toHaveLength(1)
+    expect(await usageRows()).toEqual(usageBefore)
+    expect(await committedToday()).toBe(spend)
+    expect(h.snapshot()).toContainEqual(expect.objectContaining({ id: "smithers_run_credentials",
+      attributes: expect.objectContaining({ op: "verify", outcome: "ended" }) }))
+    expect(h.line("model.proxy.serve").at(-1)!.annotations).toMatchObject({ outcome: "refused", status: 401 })
+  })
+
   test("a signed-out call is refused with 401 and never reaches a model", async () => {
     const h = await harness(runtime, answering)
 

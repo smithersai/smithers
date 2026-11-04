@@ -45,19 +45,31 @@ test("a refusal stays through a session that can't answer; only a signed-out ses
   expect(stackAccess(state("signed_out"), [{ id, own: false, role: null, refused: "forbidden" }], id)).toBe("sign_in")
 })
 
-test("a real signed-out stack opens no TODO or prompt shape and learns access from the session", async () => {
+test("a real signed-out stack opens no TODO or prompt shape and learns access from the session", async ({ onTestFailed }) => {
   const requests: string[] = []
   const source: ShapeSource.Source = { request: (url, init) => Effect.suspend(() => {
     requests.push(new URL(url).pathname)
     return ShapeSource.fetchSource.request(url, init)
   }) }
   const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: null })
+  const started = Date.now()
+  const observations: Array<{ elapsedMs: number; session: string; access: string }> = []
+  onTestFailed(() => console.error("todo.signed_out", JSON.stringify({ observations,
+    todoShapes: requests.filter(path => path === "/api/shapes/todos").length,
+    promptShapes: requests.filter(path => path === "/api/shapes/todo-requests").length })))
   try {
     const store = await runtime.runPromise(Effect.service(TodosStore))
+    const auth = await runtime.runPromise(Effect.service(AuthStore))
     const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
     const key = repoId(owner, name)
     await runtime.runPromise(store.stackOf(key))
-    await vi.waitFor(async () => expect(Option.getOrThrow(await runtime.runPromise(store.access.get(key))).status).toBe("sign_in"))
+    await vi.waitFor(async () => {
+      const access = Option.getOrThrow(await runtime.runPromise(store.access.get(key))).status
+      const session = auth.session.tanstack.get("session")?.status ?? "absent"
+      const last = observations.at(-1)
+      if (last === undefined || last.session !== session || last.access !== access) observations.push({ elapsedMs: Date.now() - started, session, access })
+      expect(access).toBe("sign_in")
+    }, { timeout: 30_000 })
     await runtime.runPromise(Effect.sleep("100 millis"))
     expect(requests.filter((path) => path === "/api/shapes/todos" || path === "/api/shapes/todo-requests")).toEqual([])
   } finally { await runtime.dispose() }

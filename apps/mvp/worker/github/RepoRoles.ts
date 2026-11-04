@@ -181,23 +181,29 @@ const decodeRole = Schema.decodeUnknownSync(Schema.NullOr(Schema.Literals(ROLES)
  * clock once the lock is granted (`clock_timestamp()`): Postgres computes a locking `SELECT`'s columns before it waits
  * for the row, so one statement would judge a row released unchanged after it expired by the clock before the wait.
  */
-export const holds = (held: Held, permitted?: ReadonlyArray<Role>) =>
+export const checkHeld = (held: Held, permitted?: ReadonlyArray<Role>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string }>`
       SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles
       WHERE repo_id = ${held.repoId} AND person_id = ${held.personId}
       FOR SHARE`
-    if (row === undefined) return false
+    if (row === undefined) return "unavailable" as const
     const role = decodeRole(row.role)
-    if (permitted === undefined ? role !== held.role : role === null || !permitted.includes(role)) return false
+    const allowed = permitted === undefined ? role === held.role : role !== null && permitted.includes(role)
+    if (permitted === undefined && !allowed) return "denied" as const
     const [now] = yield* sql<{ readonly fresh: boolean; readonly same: boolean }>`
       SELECT ${row.checkedAt}::timestamptz > clock_timestamp() - make_interval(secs => ${held.freshSeconds ?? FRESH_SECONDS}) AS fresh,
         ${held.checkedAt === undefined ? sql`true` : sql`${row.checkedAt}::timestamptz >= ${held.checkedAt}::timestamptz`} AS same`
     // A deferred operation needs a fresh observation, not permanent refusal because its queued read aged out.
     if (permitted !== undefined && !now!.fresh) return yield* new RoleRefused({ code: "unavailable", retryAfterSeconds: 1 })
-    return now!.fresh && now!.same
+    if (!now!.fresh || !now!.same) return "unavailable" as const
+    return allowed ? "held" as const : "denied" as const
   })
+
+/** Boolean admission for callers that already treat any lost observation as retryable. */
+export const holds = (held: Held, permitted?: ReadonlyArray<Role>) =>
+  Effect.map(checkHeld(held, permitted), outcome => outcome === "held")
 
 /** What `make` needs: the deployment's own repository, the App when it is configured, and how far it may act. */
 export interface Options {

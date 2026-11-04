@@ -41,6 +41,7 @@
  */
 import * as Alchemy from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
+import * as Output from "alchemy/Output"
 import * as Neon from "alchemy/Neon"
 import type { State } from "alchemy/State"
 import { Effect, Layer, Option } from "effect"
@@ -53,6 +54,7 @@ import { DatabaseUrl as ElectricDatabaseUrl } from "./infra/ElectricRuntime.ts"
 import { directUrl, Postgres } from "./infra/Postgres.ts"
 import * as Secrets from "./infra/Secrets.ts"
 import * as SignIn from "./infra/SignIn.ts"
+import { SessionSigningKeyGate } from "./infra/SessionSigningKeyGate.ts"
 import ChatApi from "./worker/ChatApi.ts"
 import DevChatApi from "./worker/DevChatApi.ts"
 
@@ -81,10 +83,22 @@ export default Alchemy.Stack(
     const domain = (yield* Alchemy.ALCHEMY_DEV) ? Option.none<AppHost>() : yield* AppDomain.pipe(Effect.orDie)
     // Declared before ChatApi, so ChatApi's `ChatDatabase` and `EngineDatabase` are these: Neon's in production,
     // compose's in dev.
-    yield* Databases
+    const databases = yield* Databases
     const endpoint = yield* electric
     // Sign-in's secret, in production and under `alchemy dev` alike (docs/features/sign-in.md#configuration).
     const sessionSecret = SignIn.Secret.of({ value: (yield* SignIn.SessionSecret).text })
+    const configuredSessionSecrets = yield* SignIn.configuredSecrets(sessionSecret.value)
+    const configuredSealSecret = yield* SignIn.configuredSealSecret(sessionSecret.value)
+    // A fresh action identity prevents Alchemy from reusing a gate receipt from an earlier publication.
+    const gated = (yield* Alchemy.ALCHEMY_DEV) ? Output.all(configuredSessionSecrets, configuredSealSecret) : Output.map(Output.all(
+      configuredSessionSecrets,
+      configuredSealSecret,
+      yield* SessionSigningKeyGate({
+        database: databases.migratedDatabase, secrets: configuredSessionSecrets, sealSecret: configuredSealSecret,
+        publication: yield* Effect.sync(() => crypto.randomUUID()),
+      }),
+    ), ([secrets, seal]) => [secrets, seal] as const)
+    const signingSecrets = SignIn.SigningSecrets.of({ value: Output.map(gated, ([secrets]) => secrets), seal: Output.map(gated, ([, seal]) => seal) })
     // Repository secrets' key, in production and under `alchemy dev` alike (docs/features/secrets.md#keys).
     const secretsKey = Secrets.Secret.of({ value: (yield* Secrets.SecretsKey).text })
     // Under `alchemy dev`, a local developer is signed in until the GitHub App is configured (worker/DevChatApi.ts).
@@ -92,7 +106,7 @@ export default Alchemy.Stack(
       ? ChatApi.pipe(Effect.provideService(Electric.Endpoint, endpoint))
       : (yield* Alchemy.ALCHEMY_DEV)
       ? DevChatApi
-      : ChatApi).pipe(Effect.provideService(SignIn.Secret, sessionSecret), Effect.provideService(Secrets.Secret, secretsKey))
+      : ChatApi).pipe(Effect.provideService(SignIn.Secret, sessionSecret), Effect.provideService(SignIn.SigningSecrets, signingSecrets), Effect.provideService(Secrets.Secret, secretsKey))
     const site = yield* Cloudflare.Website.Vite("smithers-mvp", {
       main: "worker/index.ts",
       compatibility: { date: "2026-10-01", flags: ["enable_request_signal"] },

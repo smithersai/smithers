@@ -1,3 +1,4 @@
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 // Every reader of a repository's issues answers one access matrix the same way (devpriv FINAL §1.1, step 0): the
 // repository shapes (summaries, an issue's item and its comments, the issue page's `?number=` shapes) and the issue
 // list route `GET /api/repos/<owner>/<name>/issues`. Each cell is a real request through the routes' handler, over the
@@ -5,7 +6,7 @@
 // today's answers, ordering included (the deployment's checks, then a request's own validation, then who reads), so
 // the extraction of `repositoryReadable` changes none of them. The list route's one documented difference: a runner
 // registered on the repository reads its issues with its token.
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -151,45 +152,68 @@ const rolesFor = (viewer: Viewer, calls: { roles: number }): RepoRoles.RepoRoles
     }),
 })
 
-const seed = async (cell: Cell) => {
-  const repo = cell.repo
-  await sql(
-    runtime,
-    `INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at, source_updated_at, fetched_at)
-    VALUES ('${repo.id}#7', '${repo.id}', 7, 'issue', 7, 'Seven', 'Body', 'open', now(), now(), now(), now())`,
-  )
-  await sql(
-    runtime,
-    `INSERT INTO comments (id, repo_id, item_id, github_id, body, created_at, updated_at, source_updated_at, fetched_at)
-    VALUES ('${repo.id}/comment/70', '${repo.id}', '${repo.id}#7', 70, 'Seventy', now(), now(), now(), now())`,
-  )
-  await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${repo.id}', 1, ${cell.visibility === "private"})`)
-  // A TODO under issue 7, with its title, SHAs and people; its readable leaf follows at commit (decision 0153).
-  await sql(runtime, `INSERT INTO stacks (repo_id) VALUES ('${repo.id}')`)
-  await sql(
-    runtime,
-    `INSERT INTO todos (id, repo_id, number, title, state, position, created_by, created_login, issue_number, pr_number, head_sha)
-    VALUES ('00000000-0000-4000-8000-0000000000a1', '${repo.id}', 3, 'Secret TODO title', 'in_review', 1, 'person-maya', 'maya', 7, 9, '${"b".repeat(40)}')`,
-  )
-  if (cell.appAbsent === true) {
-    await sql(runtime, `INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('${repo.id}', now() + interval '1 hour')`)
-  }
-  if (cell.runnerOn !== undefined) {
-    await sql(
-      runtime,
-      `INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by, repo_authorized_at)
-      VALUES ('${cell.runnerOn.id}', 'readers-runner', 1, '${digestSync(RUNNER_TOKEN)}', 'test', now())`,
-    )
-    // A runner reads only while it is current as a claim requires (decision 0148): registered through the
-    // repository's Admin role, with the App's installation on its repository recorded, where the App is there.
-    if (cell.appAbsent !== true) {
-      await sql(
-        runtime,
-        `INSERT INTO github_repositories (repo_id, github_id, installation_id) VALUES ('${cell.runnerOn.id}', 2, 42)
-        ON CONFLICT (repo_id) DO UPDATE SET installation_id = 42`,
+const seed = async (cell: Cell, source?: ShapeSource.Source) => {
+  const txid = await runtime.runPromise(Effect.gen(function* () {
+    const client = yield* SqlClient.SqlClient
+    return yield* client.withTransaction(Effect.gen(function* () {
+      const repo = cell.repo
+      yield* client.unsafe(
+        `INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at, source_updated_at, fetched_at)
+        VALUES ('${repo.id}#7', '${repo.id}', 7, 'issue', 7, 'Seven', 'Body', 'open', now(), now(), now(), now())`,
+      )
+      yield* client.unsafe(
+        `INSERT INTO comments (id, repo_id, item_id, github_id, body, created_at, updated_at, source_updated_at, fetched_at)
+        VALUES ('${repo.id}/comment/70', '${repo.id}', '${repo.id}#7', 70, 'Seventy', now(), now(), now(), now())`,
+      )
+      yield* client.unsafe(`INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${repo.id}', 1, ${cell.visibility === "private"})`)
+      // A TODO under issue 7, with its title, SHAs and people; its readable leaf follows at commit (decision 0153).
+      yield* client.unsafe(`INSERT INTO stacks (repo_id) VALUES ('${repo.id}')`)
+      yield* client.unsafe(
+        `INSERT INTO todos (id, repo_id, number, title, state, position, created_by, created_login, issue_number, pr_number, head_sha)
+        VALUES ('00000000-0000-4000-8000-0000000000a1', '${repo.id}', 3, 'Secret TODO title', 'in_review', 1, 'person-maya', 'maya', 7, 9, '${"b".repeat(40)}')`,
+      )
+      if (cell.appAbsent === true) {
+        yield* client.unsafe(`INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('${repo.id}', now() + interval '1 hour')`)
+      }
+      if (cell.runnerOn !== undefined) {
+        yield* client.unsafe(
+          `INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by, repo_authorized_at)
+          VALUES ('${cell.runnerOn.id}', 'readers-runner', 1, '${digestSync(RUNNER_TOKEN)}', 'test', now())`,
+        )
+        // A runner reads only while it is current as a claim requires (decision 0148): registered through the
+        // repository's Admin role, with the App's installation on its repository recorded, where the App is there.
+        if (cell.appAbsent !== true) {
+          yield* client.unsafe(
+            `INSERT INTO github_repositories (repo_id, github_id, installation_id) VALUES ('${cell.runnerOn.id}', 2, 42)
+            ON CONFLICT (repo_id) DO UPDATE SET installation_id = 42`,
+          )
+        }
+      }
+      const [receipt] = yield* client<{ readonly txid: string }>`SELECT pg_current_xact_id()::xid::text AS txid`
+      return Number(receipt!.txid)
+    }))
+  }))
+  // A committed seed is not yet a delivered shape. These collections follow the real Electric protocol and wait
+  // for this transaction, including snapshot receipts after TRUNCATE, rather than accepting a stale/empty 200.
+  const deliverySource = source ?? await runtime.runPromise(Effect.service(ShapeSource.ShapeSource))
+  await runtime.runPromise(Effect.gen(function* () {
+    const { name } = yield* TestDatabase.Scratch
+    const url = `${yield* TestDatabase.electricUrl}/v1/shape`
+    for (const table of ["items", "comments", "todo_leaves"]) {
+      const rows = yield* ElectricCollection.make({
+        id: `reader-seed-${table}-${txid}`,
+        schema: Schema.Struct({ repo_id: Schema.String }),
+        getKey: row => row.repo_id,
+        shape: { url, params: { table: `${name}.${table}` } },
+      })
+      yield* rows.preload.pipe(Effect.andThen(rows.awaitTxId(txid, "15 seconds")), Effect.timeout("20 seconds"),
+        Effect.tapError(() => Effect.logWarning("reader.seed.delivery").pipe(Effect.annotateLogs({ table, stage: "transaction" }))),
       )
     }
-  }
+  }).pipe(
+    Effect.scoped,
+    Effect.provideService(ShapeSource.ShapeSource, deliverySource),
+  ))
 }
 
 /** `base`, counting each request's resolution of who asks. */
@@ -242,21 +266,31 @@ const answerOf = async (response: Response) => {
 
 /**
  * One shape read as a device's Electric client makes it: the route's answer, the same request again when it answers
- * `409 must-refetch`.
+ * `409 must-refetch`, dropping an expired handle when Electric has not supplied a replacement yet.
  */
-const readShape = async (h: Pick<Awaited<ReturnType<typeof harnessFor>>, "fetch">, path: string, headers: Record<string, string>) => {
+const readShape = async (h: { readonly fetch: (path: string, init: { readonly headers: Record<string, string> }) => Promise<Response> }, path: string, headers: Record<string, string>, refetched: () => void = () => {}) => {
   let next = path
+  const deadline = Date.now() + 15_000
   for (let attempt = 0;; attempt++) {
     const response = await h.fetch(next, { headers })
     const handle = response.headers.get("electric-handle")
-    // Electric's client (`@electric-sql/client`): a 409 names the shape's new handle; ask again from its start.
-    if (response.status !== 409 || handle === null || attempt === 3) return response
+    // Electric's client resets every 409 from the start; a replacement handle is optional. Bound the fixture by
+    // elapsed time, so multiple pending TRUNCATEs do not turn a protocol restart into an authorization failure.
+    if (response.status !== 409 || Date.now() >= deadline) {
+      if (response.status === 409) console.error("reader.shape.refetch", {
+        route: new URL(next, "http://localhost").pathname, attempts: attempt + 1,
+        hasHandle: handle !== null, exhausted: true,
+      })
+      return response
+    }
     await response.text()
     const url = new URL(next, "http://localhost")
     url.searchParams.set("offset", "-1")
-    url.searchParams.set("handle", handle)
+    if (handle === null) url.searchParams.delete("handle")
+    else url.searchParams.set("handle", handle)
     url.searchParams.delete("live")
     next = `${url.pathname}${url.search}`
+    refetched()
   }
 }
 
@@ -302,8 +336,8 @@ const shapeReaders = (cell: Cell): ReadonlyArray<Reader> => {
  * The repository readers outside the issues: its actions shape (its runs), a comparison of two commits, and the role
  * route's `readable`. A comparison the gate lets through asks GitHub for it.
  */
-const otherReaders = async (h: Awaited<ReturnType<typeof harnessFor>>, cell: Cell, headers: Record<string, string>) => {
-  const actions = (await answerOf(await h.fetch(`${ACTIONS_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=-1`, { headers }))).answer
+const otherReaders = async (h: Awaited<ReturnType<typeof harnessFor>>, cell: Cell, headers: Record<string, string>, refetched: () => void) => {
+  const actions = (await answerOf(await readShape(h, `${ACTIONS_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=-1`, headers, refetched))).answer
   const compared = (await answerOf(await h.fetch(compareRoute(cell.repo.owner, cell.repo.name, "a".repeat(40), "b".repeat(40)), { headers }))).answer
   const asked = h.github.calls.some((call) => call.path.includes("/compare/"))
   return {
@@ -320,6 +354,28 @@ const values = (body: string) =>
 
 /** A refusal at the deployment or the request's own validation: nothing about the viewer is read. */
 const beforeViewer = (answer: string) => ["404 not_found", "404 app_not_installed", "400 invalid"].includes(answer)
+
+test("reader fixtures wait for Electric's seed transaction before returning", async () => {
+  const cell = MATRIX.find(each => each.name === "other private, guest")!
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let reached!: () => void
+  const reading = new Promise<void>(resolve => { reached = resolve })
+  const base = await runtime.runPromise(Effect.service(ShapeSource.ShapeSource))
+  const source: ShapeSource.Source = { request: (url, init) => Effect.gen(function* () {
+    reached()
+    yield* Effect.promise(() => held)
+    return yield* base.request(url, init)
+  }) }
+  const pending = seed(cell, source)
+  try {
+    expect(await Promise.race([reading.then(() => "reading"), pending.then(() => "settled")])).toBe("reading")
+  } finally { release(); await pending }
+  const h = await harnessFor(cell)
+  const response = await readShape(h, `${ITEM_SUMMARIES_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=-1`, {})
+  expect(response.status).toBe(200)
+  expect(values(await response.text()).map(row => row.title)).toEqual(["Seven"])
+}, 60_000)
 
 // Main's landing of 6d9e7853, 2026-11-02: "other public, signed out" read `409` for the work links. The truncate of the
 // last cell's rows was still replicating, so Electric answered the fresh request `409 must-refetch`, which a device's
@@ -351,6 +407,37 @@ test("a shape read after a truncate follows Electric's 409 must-refetch, as a de
   expect(answered.answer).toBe("200")
 })
 
+test.each([true, false])("a shape read recovers after repeated must-refetch with replacement handle: %s", async hasHandle => {
+  const cell = MATRIX.find((each) => each.name === "other public, signed out")!
+  await seed(cell)
+  const h = await harnessFor(cell)
+  const path = `${WORK_LINKS_SHAPE_ROUTE}?${repoParam(cell.repo)}&offset=-1`
+  const opened = await h.fetch(path)
+  expect(opened.status).toBe(200)
+  await opened.text()
+  const handle = opened.headers.get("electric-handle")!
+  let refused = 0
+  // Faulty Effect source: repeated snapshot invalidations. Successful reads use the real handler and Electric.
+  const source: ShapeSource.Source = { request: (url, init) => Effect.suspend(() => refused < 5
+    ? Effect.sync(() => {
+      refused++
+      return new Response(JSON.stringify([{ headers: { control: "must-refetch" } }]), {
+        status: 409, headers: { "content-type": "application/json", ...(hasHandle ? { "electric-handle": handle } : {}) },
+      })
+    })
+    : Effect.tryPromise({ try: () => h.fetch(url, init), catch: () => new ShapeSource.RequestFailed({}) })) }
+  const reader = { fetch: (url: string, init?: RequestInit) => Effect.runPromise(
+    Effect.flatMap(ShapeSource.ShapeSource, current => current.request(url, init ?? {})).pipe(
+      Effect.provideService(ShapeSource.ShapeSource, source),
+    ),
+  ) }
+  let refetches = 0
+  const answered = await answerOf(await readShape(reader, path, {}, () => refetches++))
+  expect(answered.answer).toBe("200")
+  expect(refused).toBe(5)
+  expect(refetches).toBe(5)
+}, 60_000)
+
 describe("one access matrix for every reader of a repository's issues", () => {
   test.each(MATRIX)("$name", async (cell) => {
     await seed(cell)
@@ -360,8 +447,10 @@ describe("one access matrix for every reader of a repository's issues", () => {
     const answers: Record<string, string> = {}
     const bodies: Record<string, string> = {}
     const receipts: Record<string, string | null> = {}
+    let refetches = 0
+    const refetched = () => { refetches++ }
     for (const { reader, path } of readers) {
-      const answered = await answerOf(await readShape(h, path, headers))
+      const answered = await answerOf(await readShape(h, path, headers, refetched))
       answers[reader] = answered.answer
       bodies[reader] = answered.body
       receipts[reader] = answered.receipt
@@ -378,7 +467,7 @@ describe("one access matrix for every reader of a repository's issues", () => {
     // read by its public check. Each is one more request through the viewer stage when it reaches it.
     // (An invalid request names an item number; these readers take none, so they sit those cells out.)
     if (cell.invalid !== true) {
-      const others = await otherReaders(h, cell, headers)
+      const others = await otherReaders(h, cell, headers, refetched)
       expect(others).toEqual({
         actions: cell.shapes,
         // A comparison the gate lets through asks GitHub for it, whatever GitHub then answers; a refused one never does.
@@ -393,7 +482,7 @@ describe("one access matrix for every reader of a repository's issues", () => {
     // they pass, who asks is resolved once per request, and a person's role read once per request.
     // The other readers below (actions, compare, readable) each reach the viewer stage when the shapes do.
     const reached = readers.filter(() => !beforeViewer(cell.shapes)).length + (beforeViewer(cell.list) ? 0 : 1) +
-      (beforeViewer(cell.shapes) || cell.invalid === true ? 0 : 3)
+      (beforeViewer(cell.shapes) || cell.invalid === true ? 0 : 3) + refetches
     const personal = cell.viewer.kind !== "signed_out" && cell.viewer.kind !== "sessions_down"
     // A request carrying a runner's token is read by its credential, which reads as nobody: no role is read for it.
     const asPerson = personal && cell.runnerOn === undefined

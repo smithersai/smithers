@@ -58,7 +58,7 @@ export class WriteUnavailable extends Schema.TaggedError<WriteUnavailable>()("@s
 /** 1 s doubling to a minute, for at most an hour: GitHub's rate limits and short outages pass within it. */
 export const WRITE_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 60 * 60_000 })
 
-/** Settling a failed write: while Postgres is unreachable, never giving up. */
+/** Final settlement waits for Postgres; protected local triage writes also wait for their authority to recover. */
 export const GIVE_UP_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 })
 
 /** How far before a write's admission an issue search looks: GitHub's `since` is by update time, at a second's grain. */
@@ -97,7 +97,7 @@ export const Send = Action.make("github/Write/send", {
   retryPolicy: WRITE_RETRY,
 })
 
-/** The step after the last failed attempt: settles the write `failed` `unavailable`. */
+/** After the send window: fail external GitHub writes, but retain and retry protected local triage writes. */
 export const GiveUp = Action.make("github/Write/give-up", {
   payload: WriteRequest,
   success: Written,
@@ -165,11 +165,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
     token: "user" | "app" | "none",
     settlement: Store.Settlement,
     project?: Effect.Effect<unknown, unknown, unknown>,
+    beforeCommit: ReturnType<typeof ProtectedAuthority.requireAtCommit> = Effect.succeed(undefined),
   ) =>
     Effect.gen(function* () {
       // `tokenKind`, never `token`: the flow host's redaction hides the value of a field named `token`.
       const fields = { writeId: write.id, op: write.op, via: write.via, tokenKind: token }
-      const settledNow = yield* Store.settleWrite(write.id, settlement, project as Effect.Effect<unknown> | undefined)
+      const settledNow = yield* Store.settleWrite(write.id, settlement, project as Effect.Effect<unknown> | undefined, beforeCommit)
       if (settledNow) {
         yield* Metric.update(Metric.withAttributes(Metrics.writes, { op: write.op, outcome: settlement.status, token }), 1)
         yield* Metric.update(Metric.withAttributes(Metrics.writeMs, { op: write.op }), (yield* Clock.currentTimeMillis) - write.createdAt)
@@ -203,36 +204,51 @@ export const steps = <E, R>(services: Services<E, R>) => {
       // Enabling and pausing triage change the repository's settings and nothing on GitHub: no token.
       if (payload.op === "triage/enable" || payload.op === "triage/pause") {
         let authority = payload.authority
+        let unavailable = false
         const permitted = ["admin", "maintainer"] as const
         if (authority?.scope?._tag === "Repo" && services.roles !== undefined) {
           const held = authority.scope.held
           if (held.personId !== authority.personId || held.role === null || !permitted.some((role) => role === held.role)) {
-            return yield* settled(write, "none", { status: "refused", failure: "not_allowed" })
+            unavailable = true
+          } else {
+            // Resolve from a fresh row or ask GitHub, with no write transaction/row locks held during the network read.
+            const current = yield* services.roles.resolve({ subject: { kind: "person", id: authority.personId },
+              role: held.role, session: authority.sessionId, ...(authority.alias === undefined ? {} : { alias: authority.alias }) },
+              repositoryOf(held.repoId.replace(/^github\//, ""))).pipe(Effect.result)
+            if (current._tag === "Failure") {
+              // An installation/configuration refusal supplies no locked, fresh role observation.
+              if (CANT_ACT.has(current.failure.code)) unavailable = true
+              else return yield* current.failure
+            } else {
+              // Keep negative observations too: a denial can expire or be replaced while the write lock waits.
+              authority = { ...authority, scope: Option.isSome(current.success.held)
+                ? { _tag: "Repo", held: current.success.held.value } : { _tag: "Deployment" } }
+            }
           }
-          // Resolve from a fresh row or ask GitHub, with no write transaction/row locks held during the network read.
-          const current = yield* services.roles.resolve({ subject: { kind: "person", id: authority.personId },
-            role: held.role, session: authority.sessionId, ...(authority.alias === undefined ? {} : { alias: authority.alias }) },
-            repositoryOf(held.repoId.replace(/^github\//, ""))).pipe(Effect.result)
-          if (current._tag === "Failure") {
-            if (CANT_ACT.has(current.failure.code)) return yield* settled(write, "none", { status: "refused", failure: "not_allowed" })
-            return yield* current.failure
-          }
-          if (current.success.role === null || !permitted.some((role) => role === current.success.role)) {
-            return yield* settled(write, "none", { status: "refused", failure: "not_allowed" })
-          }
-          authority = { ...authority, scope: Option.isSome(current.success.held)
-            ? { _tag: "Repo", held: current.success.held.value } : { _tag: "Deployment" } }
         }
         const sql = yield* SqlClient.SqlClient
         return yield* sql.withTransaction(Effect.gen(function* () {
           yield* WriteAuthority.bound
-          if (!(yield* ProtectedAuthority.holds(authority, permitted))) {
-            return yield* settled(write, "none", { status: "refused", failure: "sign_in_required" })
+          const locked = yield* Store.writeOf(write.id, true)
+          if (Option.isNone(locked)) return { status: "missing", itemNumber: null } satisfies Written
+          if (locked.value.status !== "pending") return answerOf(locked.value.status, locked.value.itemNumber)
+          // A fresh same-ID request can reauthorize while this attempt reads its repository role. Never settle
+          // that new admission using the old snapshot, including an old permission denial.
+          if (JSON.stringify(locked.value.payload) !== JSON.stringify(payload)) {
+            yield* Metric.update(Metric.withAttributes(Metrics.writeAuthority, { op: write.op, outcome: "superseded" }), 1)
+            yield* Effect.annotateCurrentSpan({ "github.write.authority": "superseded" })
+            yield* Effect.logInfo("github.write.authority").pipe(Effect.annotateLogs({ outcome: "superseded" }))
+            return yield* new WriteUnavailable({})
           }
+          if (unavailable) return yield* new WriteUnavailable({})
+          const access = yield* ProtectedAuthority.check(authority, permitted)
+          if (access === "unavailable") return yield* new WriteUnavailable({})
+          if (access === "denied") return yield* settled(write, "none", { status: "refused", failure: "not_allowed" },
+            undefined, ProtectedAuthority.requireAtCommit(authority))
           return yield* settled(write, "none", { status: "done", itemNumber: null, githubId: null },
             payload.op === "triage/enable"
               ? TriageStore.enable(write.repoId, { actorId: write.actorId, login: write.login, dailyTokens: payload.dailyTokens })
-              : TriageStore.pause(write.repoId, "person"))
+              : TriageStore.pause(write.repoId, "person"), ProtectedAuthority.requireAtCommit(authority))
         }))
       }
       // Run triage again is admitted for `triage/Run`, which settles it; this flow never runs one.
@@ -419,6 +435,9 @@ export const steps = <E, R>(services: Services<E, R>) => {
       if (Option.isNone(found)) return { status: "missing", itemNumber: null } satisfies Written
       // A write another run settled answers what it settled, never `failed`.
       if (found.value.status !== "pending") return answerOf(found.value.status, found.value.itemNumber)
+      // These local writes have no uncertain external side effect. The existing unbounded final-step policy
+      // retains unavailable authority, then executes the same guarded transaction after explicit reauthorization.
+      if (found.value.payload.op === "triage/enable" || found.value.payload.op === "triage/pause") return yield* send({ writeId })
       return yield* settled(found.value, tokenKindOf(found.value), { status: "failed", failure: "unavailable" })
     }).pipe(
       Effect.provide(services.database),

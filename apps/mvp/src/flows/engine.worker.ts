@@ -87,7 +87,7 @@ self.fetch = boundFetch(unbound, {
   principal: () => receipt?.owner ?? NO_DEVICE_DATA,
   sessionTag: () => receipt?.sessionTag,
   credentialStorage,
-  withCredential: (action) => navigator.locks.request("smithers-credential-state", action),
+  withCredential: (action, signal) => navigator.locks.request("smithers-credential-state", signal === undefined ? {} : { signal }, action),
 })
 
 const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Model.Model) =>

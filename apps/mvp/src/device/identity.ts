@@ -26,7 +26,14 @@ export const VISITOR = "@visitor"
 export const IDENTITY_MESSAGE = "smithers/device-identity"
 
 /** The activation was refused, or a request waits for the device to check its owner again. */
-export class DeviceIdentityRefused extends Data.TaggedError("DeviceIdentityRefused")<{ readonly reason: string }> {}
+export class DeviceIdentityRefused extends Data.TaggedError("DeviceIdentityRefused")<{
+  readonly reason: string
+  readonly stage?: "credential_lock"
+  readonly wait?: "deadline" | "cancelled"
+}> {}
+
+/** A queued write returns to its durable retry policy instead of waiting on another context indefinitely. */
+export const CREDENTIAL_LOCK_WAIT_MS = 2_000
 
 /** Owner checks, by `outcome`, and `via` for a verified one. */
 export const checks = Metric.counter("smithers_device_identity_checks", { incremental: true })
@@ -299,8 +306,8 @@ export interface Binding {
     readonly get: (key: string) => Promise<string | null>
     readonly set: (key: string, value: string) => Promise<void>
   }
-  /** Serializes stale-response publication across pages and workers. */
-  readonly withCredential?: <A>(action: () => Promise<A>) => Promise<A>
+  /** Serializes publication across contexts; a supplied signal cancels a queued lock acquisition. */
+  readonly withCredential?: <A>(action: () => Promise<A>, signal?: AbortSignal) => Promise<A>
   /** The shared page lifecycle protects sign-out before the server request and through its wipe. */
   readonly signOut?: ((send: () => Promise<Response>) => Promise<Response>) | undefined
   /** The person whose data this context opened: an owner, `VISITOR`, or `NO_DEVICE_DATA`. */
@@ -381,7 +388,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     get: async (_key: string) => credential,
     set: async (_key: string, value: string) => { credential = value },
   }
-  const withCredential = binding.withCredential ?? (<A>(action: () => Promise<A>) => action())
+  const withCredential: NonNullable<Binding["withCredential"]> = binding.withCredential ?? (<A>(action: () => Promise<A>) => action())
   // Sign-outs this page sent that ChatApi hasn't answered, and whether ChatApi took one: its wipe comes next, and a
   // reopen now would stop the sign-out before it marks the wipe (decision 0023).
   let signingOut = 0
@@ -421,6 +428,16 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     headers.set(ACCEPTS_HEADER, "credential-stale")
     const signOut = url.pathname === SIGN_OUT_ROUTE && request.method === "POST"
     const credentialKey = `outbox:credential:${encodeURIComponent(bound)}`
+    const readCredential = async () => {
+      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(CREDENTIAL_LOCK_WAIT_MS)])
+      try {
+        return await withCredential(() => credentialStorage.get(credentialKey), signal)
+      } catch (error) {
+        if (signal.aborted) throw new DeviceIdentityRefused({ reason: "credential_stale", stage: "credential_lock",
+          wait: request.signal.aborted ? "cancelled" : "deadline" })
+        throw error
+      }
+    }
     const publishCredential = (): Promise<void> => {
       const existing = publications.get(credentialKey)
       if (existing !== undefined) return existing.attempt()
@@ -522,8 +539,8 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
         void publication.catch(() => undefined)
       }
     }
-    // A successor has no local pending map. Its reads must queue behind another context's publication too.
-    const held = writing ? await withCredential(() => credentialStorage.get(credentialKey)) : null
+    // A successor respects an unpublished refusal, but a failed publisher cannot strand its request or lock waiter.
+    const held = writing ? await readCredential() : null
     if (held !== null && held !== verifiedCredential) {
       const gate = JSON.parse(held) as { until: number; personId?: string }
       const expected = bound === NO_DEVICE_DATA ? gate.personId ?? transientPerson : bound
@@ -535,7 +552,7 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
         if (signingOut === 0 && !signedOut) await reopen()
         throw new DeviceIdentityRefused({ reason: "signed_out" })
       }
-      if (session?.signedIn !== true || (expected !== undefined && session.personId !== expected) || principal() !== bound || await withCredential(() => credentialStorage.get(credentialKey)) !== held) {
+      if (session?.signedIn !== true || (expected !== undefined && session.personId !== expected) || principal() !== bound || await readCredential() !== held) {
         throw new DeviceIdentityRefused({ reason: "credential_stale" })
       }
       verifiedCredential = held

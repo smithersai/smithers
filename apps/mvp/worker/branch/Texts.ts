@@ -25,6 +25,7 @@ import * as Conversations from "./Conversations.ts"
 import { Rooms } from "./Rooms.ts"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
 import * as SocketAccess from "../SocketAccess.ts"
+import * as WriteAuthority from "../WriteAuthority.ts"
 
 // Co-editing's routes (decision 0013 §4, docs/features/coedit.md): every input two people see at once is a text they
 // edit together (`@smthrs/sync`'s `SharedText`), with each other's cursors.
@@ -172,18 +173,19 @@ const textPath = (path: string) => {
 }
 
 /** Inserts one update, once: the transaction it went in, or `null` when it, or the text's seed, was there already. */
-const insert = (scope: string, textId: string, write: typeof Write.Type, personId: string) =>
+const insert = (scope: string, textId: string, write: typeof Write.Type, actor: Actor) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    const authority = WriteAuthority.sessionOf(actor)
     return yield* sql.withTransaction(Effect.gen(function* () {
-      const stored = yield* sql`
+      const stored = yield* sql<{ txid: string }>`
         INSERT INTO text_updates (id, scope, text_id, data, seed, person_id)
-        VALUES (${write.id.toLowerCase()}, ${scope}, ${textId}, ${write.update}, ${write.seed === true}, ${personId})
+        VALUES (${write.id.toLowerCase()}, ${scope}, ${textId}, ${write.update}, ${write.seed === true}, ${actor.subject.id})
         ON CONFLICT DO NOTHING
-        RETURNING id`
-      if (stored.length === 0) return null
-      const [row] = yield* sql<{ readonly txid: string }>`SELECT pg_current_xact_id()::xid::text AS txid`
-      return Number(row!.txid)
+        RETURNING pg_current_xact_id()::xid::text AS txid`
+      // Check after any unique-index wait. Coedit accepts the small read-to-commit race without session locks.
+      if (!(yield* WriteAuthority.live(authority))) return yield* new WriteAuthority.Expired({})
+      return stored.length === 0 ? null : Number(stored[0]!.txid)
     }))
   })
 
@@ -252,7 +254,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           fields.seed = decoded.value.seed === true
           const valid = yield* SharedText.validate(bytes.success, { seed: decoded.value.seed === true }).pipe(Effect.result)
           if (Result.isFailure(valid)) return refuse(fields, 400, "invalid")
-          const txid = yield* insert(scoped.key, textId.toLowerCase(), decoded.value, actor.value.subject.id).pipe(
+          const txid = yield* insert(scoped.key, textId.toLowerCase(), decoded.value, actor.value).pipe(
             Effect.provide(database),
           )
           fields.outcome = txid === null ? "existing" : "stored"

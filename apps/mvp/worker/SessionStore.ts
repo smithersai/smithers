@@ -1,6 +1,9 @@
-import { Config, Effect, Option, Schema } from "effect"
+import { Config, Context, Effect, Metric, Option, Redacted, Schema } from "effect"
 import { SqlClient, type Statement } from "effect/sql"
 import { SessionsUnavailable, type Actor, type Role } from "./Actor.ts"
+import * as SessionKeys from "./SessionKeys.ts"
+import * as Ends from "./SessionEnds.ts"
+export const sweepEnds = Ends.sweep
 
 // Sign-in's rows in Postgres (docs/features/sign-in.md#postgres): people, sign-ins in progress and sessions. Postgres'
 // clock decides every expiry. Each function is one statement, or one transaction, against the `SqlClient` in context.
@@ -21,9 +24,77 @@ export const roleFreshMs = Config.schema(Schema.Int.check(Schema.isGreaterThan(0
   Config.map((minutes) => minutes * 60_000),
 )
 
+/** The host captures roleFreshMs while building; runtime checks never reread ambient configuration. */
+export const RoleFreshMs = Context.Reference<number>("@smthrs/mvp/auth/RoleFreshMs", {
+  defaultValue: () => ROLE_RECHECK_MINUTES * 60_000,
+})
+
 /** A confirmation is usable only within its freshness window, on the database's clock. */
 export const roleFresh = (verifiedAt: number | null, now: number, freshMs: number): boolean =>
   verifiedAt !== null && verifiedAt <= now && now - verifiedAt < freshMs
+
+/** The host's already-validated key ids travel with its verifier; standalone stores fall back to Config. */
+export class SigningKeyIds extends Context.Service<SigningKeyIds, ReadonlyArray<string>>()(
+  "@smthrs/mvp/auth/SigningKeyIds",
+) {}
+
+/** The absolute cookie bound, including the alias's own start when present. */
+export const sessionDeadline = (sql: SqlClient.SqlClient, s: Statement.Fragment, h?: Statement.Fragment) =>
+  h === undefined ? sql`(${s}.started_at + interval '400 days')`
+    : sql`(least(${h}.started_at, ${s}.started_at) + interval '400 days')`
+
+/** Capture at host construction; runtime authority checks receive only key IDs. */
+export const configuredKeyIds = Effect.gen(function* () {
+  const encoded = yield* Config.option(Config.Redacted("SESSION_SECRETS"))
+  return Option.isNone(encoded) ? ["legacy"]
+    : Option.match(SessionKeys.decodeSecrets(encoded.value), { onNone: () => [], onSome: keys => Object.keys(keys) })
+})
+
+/** The one liveness predicate used by every authority reader (decision 0151). */
+export const sessionLive = (sql: SqlClient.SqlClient, s: Statement.Fragment, h?: Statement.Fragment, verifiedKey?: string | null) => Effect.gen(function* () {
+  const supplied = yield* Effect.serviceOption(SigningKeyIds)
+  const configured = Option.isSome(supplied) ? supplied.value : yield* configuredKeyIds
+  // Internal authority has no cookie to present, but a removed key cannot keep any row live.
+  const accepted = verifiedKey === undefined ? configured : configured.filter(key => key === verifiedKey)
+  // Only the one-bit stale diagnostic passes null. It must not treat an unknown new stamp as a revoked row.
+  const keyMatches = verifiedKey === null ? sql`true`
+    : accepted.length === 0 ? sql`false` : sql`${h ?? s}.cookie_key IN ${sql.in(accepted)}`
+  // Authority can wait on a lock inside a transaction. Its start time cannot extend a deadline.
+  return sql`(
+    ${s}.revoked_at IS NULL AND ${s}.expires_at > clock_timestamp() AND ${sessionDeadline(sql, s, h)} > clock_timestamp()
+    ${h === undefined ? sql`` : sql`AND ${h}.revoked_at IS NULL`}
+    AND ${keyMatches})`
+})
+
+/** An issuer absent from this Worker's key map cannot leave an unsigned row behind. */
+export class IssuerUnconfigured extends Schema.TaggedError<IssuerUnconfigured>()("SessionIssuerUnconfigured", {}) {}
+export const issues = Metric.counter("smithers_auth_issue", { incremental: true })
+
+const configuredIssuer = (key: string | undefined, configuredKeys: ReadonlyArray<string>) =>
+  key !== undefined && configuredKeys.includes(key) ? Effect.void : Effect.gen(function* () {
+    yield* Metric.update(Metric.withAttributes(issues, { outcome: "issuer_unconfigured" }), 1)
+    yield* Effect.logWarning("auth.issue").pipe(Effect.annotateLogs({ outcome: "issuer_unconfigured" }))
+    return yield* new IssuerUnconfigured()
+  })
+
+/** Server-enforced bounds cover the whole issuance transaction, including waits while acquiring its first lock. */
+export const issuance = <A, E, R>(body: Effect.Effect<A, E, R>) => Effect.flatMap(SqlClient.SqlClient, sql =>
+  sql.withTransaction(Effect.gen(function* () {
+    yield* sql`SET LOCAL statement_timeout = '5s'`
+    yield* sql`SET LOCAL lock_timeout = '2s'`
+    yield* sql`SET LOCAL idle_in_transaction_session_timeout = '10s'`
+    const [version] = yield* sql<{ version: number }>`SELECT current_setting('server_version_num')::int AS version`
+    if (version!.version >= 170000) yield* sql`SET LOCAL transaction_timeout = '15s'`
+    return yield* body
+  })))
+
+/** Short-lived proofs use the durable issuer too, so a ceased key stops issuing every purpose. */
+export const signingIssuer = (configuredKeys: ReadonlyArray<string>) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const [row] = yield* sql<{ key: string }>`SELECT key_id AS key FROM session_signing_keys WHERE state = 'issuer'`
+  yield* configuredIssuer(row?.key, configuredKeys)
+  return row!.key
+})
 
 /** The person's newest authority receipt, including a verified demotion from a session later signed out. */
 /**
@@ -31,18 +102,26 @@ export const roleFresh = (verifiedAt: number | null, now: number, freshMs: numbe
  * (`role_generation`) wins, and a check that couldn't reach GitHub only copies it (`keepRole`).
  */
 export const latestRole = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
-  SELECT authority.role FROM sessions authority WHERE authority.person_id = ${person}
-  ORDER BY authority.role_generation DESC, authority.role_checked_at DESC, authority.created_at DESC, authority.id DESC LIMIT 1
+  SELECT authority.role FROM (
+    SELECT role, role_generation, role_checked_at, created_at, id FROM sessions WHERE person_id = ${person}
+    UNION ALL SELECT role, role_generation, role_checked_at, created_at, session_id AS id FROM person_role_receipts WHERE person_id = ${person}
+  ) authority ORDER BY authority.role_generation DESC, authority.role_checked_at DESC, authority.created_at DESC, authority.id DESC LIMIT 1
 )`
 
 /** The verification time of the same receipt latestRole selects, never another generation's later timestamp. */
 export const latestRoleVerifiedAt = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
-  SELECT authority.role_verified_at FROM sessions authority WHERE authority.person_id = ${person}
+  SELECT authority.role_verified_at FROM (
+    SELECT role_verified_at, role_generation, role_checked_at, created_at, id FROM sessions WHERE person_id = ${person}
+    UNION ALL SELECT role_verified_at, role_generation, role_checked_at, created_at, session_id AS id FROM person_role_receipts WHERE person_id = ${person}
+  ) authority
   ORDER BY authority.role_generation DESC, authority.role_checked_at DESC, authority.created_at DESC, authority.id DESC LIMIT 1
 )`
 
 const latestGeneration = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
-  SELECT max(authority.role_generation) FROM sessions authority WHERE authority.person_id = ${person}
+  SELECT max(authority.role_generation) FROM (
+    SELECT role_generation FROM sessions WHERE person_id = ${person}
+    UNION ALL SELECT role_generation FROM person_role_receipts WHERE person_id = ${person}
+  ) authority
 )`
 
 /** Issue before contacting GitHub. Sequence order survives delayed replies, clock changes and transaction rollbacks. */
@@ -117,21 +196,24 @@ export const createSession = (session: {
   readonly refresh: Sealed | null
   readonly refreshDigest: string | null
   readonly maxAgeSeconds: number
-}) =>
+  readonly pairDigest?: string
+}, configuredKeys: ReadonlyArray<string> = ["legacy"]) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    return yield* sql.withTransaction(Effect.gen(function* () {
+    return yield* issuance(Effect.gen(function* () {
       yield* sql`SELECT id FROM people WHERE id = ${session.personId} FOR UPDATE`
-      yield* sql`
+      const [issued] = yield* sql<{ key: string }>`
       INSERT INTO sessions (id, token_digest, person_id, role, role_generation, role_checked_at, role_verified_at, github_access, github_access_expires_at,
-        github_refresh, github_refresh_digest, expires_at)
-      VALUES (${session.id}, ${session.tokenDigest}, ${session.personId}, ${session.role}, ${session.roleGeneration}::bigint, clock_timestamp(), clock_timestamp(),
+        github_refresh, github_refresh_digest, expires_at, cookie_key, started_at, github_pair_digest)
+      SELECT ${session.id}, ${session.tokenDigest}, ${session.personId}, ${session.role}, ${session.roleGeneration}::bigint, clock_timestamp(), clock_timestamp(),
         ${json(session.access)}::jsonb,
         ${session.accessExpiresAt === null ? null : new Date(session.accessExpiresAt).toISOString()}::timestamptz,
         ${json(session.refresh)}::jsonb, ${session.refreshDigest},
-        now() + make_interval(secs => ${session.maxAgeSeconds}))`
-      const [row] = yield* sql<{ role: Role | null }>`
-        SELECT ${latestRole(sql, sql`${session.personId}::uuid`)} AS role`
+        now() + make_interval(secs => ${session.maxAgeSeconds}), k.key_id, now(), ${session.pairDigest ?? null}
+      FROM session_signing_keys k WHERE k.state = 'issuer'
+      RETURNING cookie_key AS key`
+      yield* configuredIssuer(issued?.key, configuredKeys)
+      const [row] = yield* sql<{ role: Role | null }>`SELECT ${latestRole(sql, sql`${session.personId}::uuid`)} AS role`
       return row!.role
     }))
   })
@@ -150,11 +232,13 @@ export interface Live {
   /** When GitHub last confirmed the home session's role (epoch ms); `null` never: a failed check never moves it. */
   readonly roleVerifiedAt: number | null
   readonly home?: string
+  readonly cookieKey: string
+  readonly sessionTag: string
   /**
-   * When the session ends, epoch milliseconds: the home session's `expires_at`. An alias session has no end of its own
-   * (`host_sessions` has none), so its parent's.
+   * The earliest known end, epoch milliseconds: sliding expiry capped by the home and alias absolute deadlines.
    */
   readonly expiresAt: number
+  readonly deadline: number
   /**
    * The database's `clock_timestamp()` when this lookup read `expiresAt`, epoch milliseconds: the one clock a tab
    * counts `expiresAt` down against (decision 0151 rule 9), never the Worker's.
@@ -163,28 +247,31 @@ export interface Live {
 }
 
 /** The live session `which` picks: not signed out, not revoked and not past its end. */
-const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
+const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment, verifiedKey?: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<
-      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt" | "serverNow"> & {
+      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt" | "serverNow" | "deadline"> & {
         readonly roleCheckedAt: string
         readonly roleVerifiedAt: string | null
         readonly expiresAt: string
+        readonly deadline: string
         readonly serverNow: string
       }
     >`
-      SELECT s.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
+      SELECT s.id, s.session_tag AS "sessionTag", s.cookie_key AS "cookieKey", s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
         (extract(epoch FROM ${latestRoleVerifiedAt(sql, sql`s.person_id`)}) * 1000)::bigint::text AS "roleVerifiedAt",
-        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM least(s.expires_at, ${sessionDeadline(sql, sql`s`)})) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM ${sessionDeadline(sql, sql`s`)}) * 1000)::bigint::text AS deadline,
         (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
       FROM sessions s JOIN people p ON p.id = s.person_id
-      WHERE ${which(sql)} AND s.revoked_at IS NULL AND s.expires_at > now()`
+      WHERE ${which(sql)} AND ${yield* sessionLive(sql, sql`s`, undefined, verifiedKey)}`
     return Option.map(Option.fromNullishOr(row), (found): Live => ({
       ...found,
       roleCheckedAt: Number(found.roleCheckedAt),
       expiresAt: Number(found.expiresAt),
+      deadline: Number(found.deadline),
       serverNow: Number(found.serverNow),
       roleVerifiedAt: found.roleVerifiedAt === null ? null : Number(found.roleVerifiedAt),
     }))
@@ -206,7 +293,7 @@ export interface Authority {
  * person, their newest role receipt, when GitHub last confirmed a role of theirs (a failed check never counts) and when
  * the session ends. One statement.
  */
-export const authority = (id: string, alias: string | null) =>
+export const authority = (id: string, alias: string | null, verifiedKey?: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{
@@ -218,12 +305,11 @@ export const authority = (id: string, alias: string | null) =>
     }>`
       SELECT s.person_id AS "personId", ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM ${latestRoleVerifiedAt(sql, sql`s.person_id`)}) * 1000)::bigint::text AS "roleVerifiedAt",
-        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM least(s.expires_at, ${sessionDeadline(sql, sql`s`, sql`h`)})) * 1000)::bigint::text AS "expiresAt",
         (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
-      FROM sessions s
-      WHERE s.id = ${id} AND s.revoked_at IS NULL AND s.expires_at > now()
-        AND (${alias}::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM host_sessions h WHERE h.id = ${alias}::uuid AND h.parent_id = s.id AND h.revoked_at IS NULL))`
+      FROM sessions s LEFT JOIN host_sessions h ON h.id = ${alias}::uuid AND h.parent_id = s.id
+      WHERE s.id = ${id} AND ${yield* sessionLive(sql, sql`s`, undefined, alias === null ? verifiedKey : undefined)}
+        AND (${alias}::uuid IS NULL OR (h.id IS NOT NULL AND ${yield* sessionLive(sql, sql`s`, sql`h`, verifiedKey)}))`
     return Option.map(Option.fromNullishOr(row), (found): Authority => ({
       personId: found.personId,
       role: found.role,
@@ -239,9 +325,16 @@ export const authority = (id: string, alias: string | null) =>
  */
 export const freshRole = (actor: Actor, freshMs?: number) => Effect.gen(function* () {
   if (actor.session === undefined) return actor.role
-  const window = freshMs ?? (yield* roleFreshMs)
-  const found = yield* authority(actor.session, actor.alias ?? null)
-  if (Option.isNone(found) || found.value.personId !== actor.subject.id) return null
+  const window = freshMs ?? (yield* RoleFreshMs)
+  const found = yield* authority(actor.session, actor.alias ?? null, actor.cookieKey)
+  if (Option.isNone(found)) {
+    // A previously admitted cookie can lose authority during reauthentication. It says nothing about the
+    // person's current permission: a permanent denial here would discard an otherwise valid queued write.
+    yield* Effect.annotateCurrentSpan({ "auth.role.available": false, "auth.role.reason": "session_authority" })
+    yield* Effect.logWarning("auth.role_unavailable").pipe(Effect.annotateLogs({ reason: "session_authority" }))
+    return yield* new SessionsUnavailable({ errorCode: "session_authority" })
+  }
+  if (found.value.personId !== actor.subject.id) return null
   const fresh = roleFresh(found.value.roleVerifiedAt, found.value.serverNow, window)
   yield* Effect.annotateCurrentSpan({ "auth.role.fresh": fresh })
   if (!fresh) {
@@ -252,7 +345,7 @@ export const freshRole = (actor: Actor, freshMs?: number) => Effect.gen(function
 }).pipe(Effect.withSpan("auth.role"))
 
 /** The live session whose token has `tokenDigest`: not signed out, not revoked and not past its end. */
-export const findLive = (tokenDigest: string) => findLiveBy((sql) => sql`s.token_digest = ${tokenDigest}`)
+export const findLive = (tokenDigest: string, verifiedKey?: string) => findLiveBy((sql) => sql`s.token_digest = ${tokenDigest}`, verifiedKey)
 
 /**
  * Whether person `personId` is a Member or above of the deployment's own repository (`GITHUB_REPOSITORY`), as sign-in
@@ -266,7 +359,7 @@ export const deploymentMember = (personId: string) =>
     const [row] = yield* sql<{ readonly member: boolean | null }>`
       SELECT ${latestRole(sql, sql`p.id`)} IN ('member', 'maintainer', 'admin') AS member FROM people p
       WHERE p.id::text = ${personId} AND EXISTS (
-        SELECT 1 FROM sessions live WHERE live.person_id = p.id AND live.revoked_at IS NULL AND live.expires_at > now()
+        SELECT 1 FROM sessions live WHERE live.person_id = p.id AND ${yield* sessionLive(sql, sql`live`)}
       )`
     return row?.member === true
   })
@@ -279,37 +372,54 @@ export const ownerOf = (tokenDigest: string) => Effect.gen(function* () {
 })
 
 /** The live session `id`, as a run credential minted under it names it: none once it ended. */
-export const findLiveById = (id: string) => findLiveBy((sql) => sql`s.id = ${id}`)
+export const findLiveById = (id: string, verifiedKey?: string) => findLiveBy((sql) => sql`s.id = ${id}`, verifiedKey)
 
 /** The live alias session at `host` whose token has `tokenDigest`: not signed out, and its home session live. */
-export const findHostLive = (tokenDigest: string, host: string) =>
+export const findHostLive = (tokenDigest: string, host: string, verifiedKey?: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<
-      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt" | "serverNow"> & {
+      Omit<Live, "roleCheckedAt" | "roleVerifiedAt" | "expiresAt" | "serverNow" | "deadline"> & {
         readonly roleCheckedAt: string
         readonly roleVerifiedAt: string | null
         readonly home: string
         readonly expiresAt: string
+        readonly deadline: string
         readonly serverNow: string
       }
     >`
-      SELECT h.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
+      SELECT h.id, h.session_tag AS "sessionTag", h.cookie_key AS "cookieKey", s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt",
         (extract(epoch FROM ${latestRoleVerifiedAt(sql, sql`s.person_id`)}) * 1000)::bigint::text AS "roleVerifiedAt", s.id AS home,
-        (extract(epoch FROM s.expires_at) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM least(s.expires_at, ${sessionDeadline(sql, sql`s`, sql`h`)})) * 1000)::bigint::text AS "expiresAt",
+        (extract(epoch FROM ${sessionDeadline(sql, sql`s`, sql`h`)}) * 1000)::bigint::text AS deadline,
         (extract(epoch FROM clock_timestamp()) * 1000)::bigint::text AS "serverNow"
       FROM host_sessions h JOIN sessions s ON s.id = h.parent_id JOIN people p ON p.id = s.person_id
-      WHERE h.token_digest = ${tokenDigest} AND h.host = ${host} AND h.revoked_at IS NULL
-        AND s.revoked_at IS NULL AND s.expires_at > now()`
+      WHERE h.token_digest = ${tokenDigest} AND h.host = ${host}
+        AND ${yield* sessionLive(sql, sql`s`)} AND ${yield* sessionLive(sql, sql`s`, sql`h`, verifiedKey)}`
     return Option.map(Option.fromNullishOr(row), (found): Live => ({
       ...found,
       roleCheckedAt: Number(found.roleCheckedAt),
       roleVerifiedAt: found.roleVerifiedAt === null ? null : Number(found.roleVerifiedAt),
       expiresAt: Number(found.expiresAt),
+      deadline: Number(found.deadline),
       serverNow: Number(found.serverNow),
     }))
   })
+
+/** Stale reveals only that a verified cookie names a live row with a different stamp, never an actor. */
+export const credentialStale = (tokenDigest: string, host: string | null, verifiedKey: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const [row] = yield* sql<{ stale: boolean }>`SELECT EXISTS (
+    SELECT 1 FROM sessions s WHERE s.token_digest = ${tokenDigest} AND s.cookie_key <> ${verifiedKey}
+      AND ${yield* sessionLive(sql, sql`s`, undefined, null)}
+    UNION ALL
+    SELECT 1 FROM host_sessions h JOIN sessions s ON s.id = h.parent_id
+      WHERE h.token_digest = ${tokenDigest} AND h.host = ${host} AND h.cookie_key <> ${verifiedKey}
+        AND ${yield* sessionLive(sql, sql`s`, sql`h`, null)}
+  ) AS stale`
+  return row!.stale
+})
 
 /**
  * Records a code `APP_DOMAIN` hands to `host` for session `sessionId`, valid `ttlSeconds`, after deleting every one past
@@ -361,27 +471,34 @@ export const createHostSession = (session: {
   readonly tokenDigest: string
   readonly parentId: string
   readonly host: string
-}) =>
+}, configuredKeys: ReadonlyArray<string> = ["legacy"]) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql`
-      INSERT INTO host_sessions (id, token_digest, parent_id, host)
-      SELECT ${session.id}, ${session.tokenDigest}, s.id, ${session.host} FROM sessions s
-      WHERE s.id = ${session.parentId} AND s.revoked_at IS NULL AND s.expires_at > now()
-      RETURNING id`
+    return yield* issuance(Effect.gen(function* () {
+    yield* sql`SELECT id FROM people WHERE id = (SELECT person_id FROM sessions WHERE id = ${session.parentId}) FOR UPDATE`
+    yield* sql`SELECT id FROM sessions WHERE id = ${session.parentId} FOR UPDATE`
+    const rows = yield* sql<{ key: string }>`
+      INSERT INTO host_sessions (id, token_digest, parent_id, host, cookie_key, started_at)
+      SELECT ${session.id}, ${session.tokenDigest}, s.id, ${session.host}, k.key_id, now() FROM sessions s CROSS JOIN session_signing_keys k
+      WHERE k.state = 'issuer' AND s.id = ${session.parentId} AND s.revoked_at IS NULL
+        AND least(s.expires_at, s.started_at + interval '400 days') > clock_timestamp() AND ${yield* sessionLive(sql, sql`s`)}
+      RETURNING cookie_key AS key`
+    if (rows.length > 0) yield* configuredIssuer(rows[0]!.key, configuredKeys)
     return rows.length > 0
+    }))
   })
 
 /** Ends the alias session at `host` whose token has `tokenDigest`; returns its id when it ended now. */
-export const revokeHost = (tokenDigest: string, host: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly id: string }>`
-      UPDATE host_sessions SET revoked_at = now()
-      WHERE token_digest = ${tokenDigest} AND host = ${host} AND revoked_at IS NULL
-      RETURNING id::text AS id`
-    return Option.map(Option.fromNullishOr(row), (found) => found.id)
-  })
+export const revokeHost = (tokenDigest: string, host: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  return yield* sql.withTransaction(Effect.gen(function* () {
+    const [row] = yield* sql<{ id: string; parent: string }>`SELECT id, parent_id AS parent FROM host_sessions
+      WHERE token_digest = ${tokenDigest} AND host = ${host}`
+    if (row === undefined) return Option.none<string>()
+    yield* sql`SELECT id FROM sessions WHERE id = ${row.parent} FOR UPDATE`
+    return yield* Ends.endAlias(row.id, "sign_out")
+  }))
+})
 
 /** The person of the alias session at `host` whose token has `tokenDigest`, ended or not. */
 export const hostOwnerOf = (tokenDigest: string, host: string) =>
@@ -393,26 +510,8 @@ export const hostOwnerOf = (tokenDigest: string, host: string) =>
     return Option.map(Option.fromNullishOr(row), (found) => found.personId)
   })
 
-/**
- * Ends the session with this id for `reason`. Returns its id when it ended now, `None` when it had ended already. A
- * session GitHub refused, or whose tokens no longer open, forgets its GitHub tokens at once; a signed-out one keeps them
- * sealed until `auth/RevokeGitHubToken` revokes them on GitHub and calls `forgetTokens`.
- */
-export const revoke = (session: { readonly id: string }, reason: RevokedReason) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* (reason === "sign_out"
-      ? sql<{ readonly id: string }>`
-        UPDATE sessions SET revoked_at = now(), revoked_reason = ${reason}
-        WHERE id = ${session.id} AND revoked_at IS NULL
-        RETURNING id`
-      : sql<{ readonly id: string }>`
-        UPDATE sessions SET revoked_at = now(), revoked_reason = ${reason}, github_access = NULL,
-          github_access_expires_at = NULL, github_refresh = NULL, github_refresh_digest = NULL
-        WHERE id = ${session.id} AND revoked_at IS NULL
-        RETURNING id`)
-    return Option.map(Option.fromNullishOr(rows[0]), (row) => row.id)
-  })
+/** Ends the row, transfers its credentials and records its aliases in one transaction. */
+export const revoke = (session: { readonly id: string }, reason: RevokedReason) => Ends.endSession(session.id, reason)
 
 /**
  * The session whose token has `tokenDigest`, when signing it out has work left: it is live, or it ended and still holds
@@ -424,19 +523,21 @@ export const signingOut = (tokenDigest: string) =>
     const [row] = yield* sql<{ readonly id: string }>`
       SELECT id FROM sessions
       WHERE token_digest = ${tokenDigest}
-        AND ((revoked_at IS NULL AND expires_at > now()) OR github_access IS NOT NULL)`
+        AND (revoked_at IS NULL OR github_access IS NOT NULL OR EXISTS (
+          SELECT 1 FROM github_token_cleanups c WHERE c.session_id = sessions.id AND c.finished_at IS NULL))`
     return Option.map(Option.fromNullishOr(row), (found) => found.id)
   })
 
 /** Forgets session `id`'s GitHub tokens, once it has ended: a live session keeps them. */
-export const forgetTokens = (id: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    yield* sql`
-      UPDATE sessions SET github_access = NULL, github_access_expires_at = NULL, github_refresh = NULL,
-        github_refresh_digest = NULL
-      WHERE id = ${id} AND (revoked_at IS NOT NULL OR expires_at <= now())`
-  })
+export const forgetTokens = (id: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.withTransaction(Effect.gen(function* () {
+    yield* sql`SELECT id FROM sessions WHERE id = ${id} FOR UPDATE`
+    const [row] = yield* sql<{ ended: boolean }>`SELECT revoked_at IS NOT NULL OR
+      least(expires_at, started_at + interval '400 days') <= clock_timestamp() AS ended FROM sessions WHERE id = ${id}`
+    if (row?.ended) yield* Ends.endSession(id, "expired")
+  }))
+})
 
 /** What a role check reads of a session: whether it is live, and its sealed GitHub tokens. */
 export interface Held {
@@ -445,10 +546,12 @@ export interface Held {
   readonly accessExpiresAt: number | null
   readonly refresh: Sealed | null
   readonly refreshDigest: string | null
+  readonly tokenGen: number
+  readonly pairDigest: string | null
 }
 
 /** Session `id`'s GitHub tokens, or `None` when there is no such session. */
-export const held = (id: string) =>
+export const held = (id: string, verifiedKey?: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{
@@ -457,23 +560,28 @@ export const held = (id: string) =>
       readonly accessExpiresAt: string | null
       readonly refresh: unknown
       readonly refreshDigest: string | null
+      readonly tokenGen: number
+      readonly pairDigest: string | null
     }>`
-      SELECT revoked_at IS NULL AND expires_at > now() AS live, github_access AS access,
+      SELECT ${yield* sessionLive(sql, sql`s`, undefined, verifiedKey)} AS live, github_access AS access,
         (extract(epoch FROM github_access_expires_at) * 1000)::bigint::text AS "accessExpiresAt",
-        github_refresh AS refresh, github_refresh_digest AS "refreshDigest"
-      FROM sessions WHERE id = ${id}`
+        github_refresh AS refresh, github_refresh_digest AS "refreshDigest",
+        github_token_gen AS "tokenGen", github_pair_digest AS "pairDigest"
+      FROM sessions s WHERE id = ${id}`
     return Option.map(Option.fromNullishOr(row), (found): Held => ({
       live: found.live,
       access: sealedOrNull(found.access),
       accessExpiresAt: millis(found.accessExpiresAt),
       refresh: sealedOrNull(found.refresh),
       refreshDigest: found.refreshDigest,
+      tokenGen: found.tokenGen,
+      pairDigest: found.pairDigest,
     }))
   })
 
 /**
  * Replaces session `id`'s GitHub tokens, only while it still holds the refresh token whose digest is `presented`.
- * Returns false when another refresh replaced it first, or the session ended.
+ * Classifies the latest locked row as an install, an installed replay or an abandoned pair.
  */
 export const replaceTokens = (
   id: string,
@@ -483,32 +591,41 @@ export const replaceTokens = (
     readonly accessExpiresAt: number | null
     readonly refresh: Sealed | null
     readonly refreshDigest: string | null
+    readonly pairDigest: string
   },
-) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql`
-      UPDATE sessions SET github_access = ${json(next.access)}::jsonb,
-        github_access_expires_at = ${
-      next.accessExpiresAt === null ? null : new Date(next.accessExpiresAt).toISOString()
-    }::timestamptz,
-        github_refresh = ${json(next.refresh)}::jsonb, github_refresh_digest = ${next.refreshDigest}
-      WHERE id = ${id} AND revoked_at IS NULL AND github_refresh_digest = ${presented}
-      RETURNING id`
-    return rows.length > 0
-  })
+  gen: number,
+) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  return yield* sql.withTransaction(Effect.gen(function* () {
+    // A second statement after the lock sees the latest committed row, including a concurrent store or callback.
+    yield* sql`SELECT id FROM sessions WHERE id = ${id} FOR UPDATE`
+    const [held] = yield* sql<{ revoked: boolean; refresh: string | null; pair: string | null; gen: number; same: boolean }>`
+      SELECT revoked_at IS NOT NULL AS revoked, github_refresh_digest AS refresh, github_pair_digest AS pair,
+        github_token_gen AS gen, github_access = ${json(next.access)}::jsonb AS same FROM sessions WHERE id = ${id}`
+    if (held !== undefined && !held.revoked && held.refresh === presented && held.gen === gen) {
+      yield* sql`UPDATE sessions SET github_access = ${json(next.access)}::jsonb,
+        github_access_expires_at = ${next.accessExpiresAt === null ? null : new Date(next.accessExpiresAt).toISOString()}::timestamptz,
+        github_refresh = ${json(next.refresh)}::jsonb, github_refresh_digest = ${next.refreshDigest},
+        github_pair_digest = ${next.pairDigest}
+        WHERE id = ${id} AND github_token_gen = ${gen}`
+      return { outcome: "stored" as const }
+    }
+    if (held?.pair === next.pairDigest || (held?.pair === null && held.same)) return { outcome: "installed_replay" as const }
+    yield* enqueueCleanup({ sessionId: id, pairDigest: next.pairDigest, access: next.access, refresh: next.refresh })
+    return { outcome: "abandoned_enqueued" as const }
+  }))
+})
 
 /** Publishes a pre-read observation without replacing a newer receipt; returns the person's effective role. */
-export const setRole = (id: string, role: Role | null, generation: string) =>
+export const setRole = (id: string, role: Role | null, generation: string, gen: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* lockRole(sql, id)
       yield* sql`UPDATE sessions SET role = ${role}, role_generation = ${generation}::bigint, role_checked_at = clock_timestamp(),
         role_verified_at = clock_timestamp()
-        WHERE id = ${id} AND role_generation <= ${generation}::bigint`
-      const [row] = yield* sql<{ role: Role | null }>`
-        SELECT ${latestRole(sql, sql`(SELECT person_id FROM sessions WHERE id = ${id})`)} AS role`
+        WHERE id = ${id} AND role_generation <= ${generation}::bigint AND github_token_gen = ${gen}`
+      const [row] = yield* sql<{ role: Role | null }>`SELECT ${latestRole(sql, sql`(SELECT person_id FROM sessions WHERE id = ${id})`)} AS role`
       return row!.role
     }))
   })
@@ -517,7 +634,7 @@ export const setRole = (id: string, role: Role | null, generation: string) =>
  * A failed refresh schedules the next check while copying the person's newest role receipt. It cannot promote an
  * older session over a confirmed demotion, even if the session that learned it was later signed out.
  */
-export const keepRole = (id: string) =>
+export const keepRole = (id: string, gen: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     yield* sql.withTransaction(Effect.gen(function* () {
@@ -525,6 +642,116 @@ export const keepRole = (id: string) =>
       yield* sql`UPDATE sessions s SET role = ${latestRole(sql, sql`s.person_id`)},
         role_generation = ${latestGeneration(sql, sql`s.person_id`)},
         role_verified_at = ${latestRoleVerifiedAt(sql, sql`s.person_id`)}, role_checked_at = clock_timestamp()
-        WHERE id = ${id} AND revoked_at IS NULL`
+        WHERE id = ${id} AND revoked_at IS NULL AND github_token_gen = ${gen}`
     }))
   })
+
+/** Renew only session discovery, after validating the presented row, and read its clock in the following lookup. */
+export const renew = (tokenDigest: string, host: string | null, maxAgeSeconds: number, verifiedKey?: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      const [found] = yield* sql<{ id: string; alias: string | null }>`SELECT id, NULL::uuid AS alias FROM sessions WHERE token_digest = ${tokenDigest}
+        UNION ALL SELECT parent_id AS id, id AS alias FROM host_sessions WHERE token_digest = ${tokenDigest} AND host = ${host}`
+      if (found === undefined) return false
+      yield* sql`SELECT id FROM sessions WHERE id = ${found.id} FOR UPDATE`
+      if (found.alias !== null) yield* sql`SELECT id FROM host_sessions WHERE id = ${found.alias} FOR UPDATE`
+    const rows = yield* sql`UPDATE sessions s SET expires_at = least(now() + make_interval(secs => ${maxAgeSeconds}), ${sessionDeadline(sql, sql`s`)})
+      WHERE s.id IN (
+        SELECT id FROM sessions WHERE token_digest = ${tokenDigest}
+        UNION SELECT parent_id FROM host_sessions WHERE token_digest = ${tokenDigest} AND host = ${host}
+      ) AND s.revoked_at IS NULL AND s.expires_at > clock_timestamp()
+        AND ${sessionDeadline(sql, sql`s`)} > clock_timestamp()
+        AND ${yield* sessionLive(sql, sql`s`)} AND s.expires_at < ${sessionDeadline(sql, sql`s`)}
+        AND s.expires_at < now() + make_interval(secs => ${maxAgeSeconds}) - interval '1 day'
+        AND ((s.token_digest = ${tokenDigest} AND ${yield* sessionLive(sql, sql`s`, undefined, verifiedKey)}) OR (${host}::text IS NOT NULL AND EXISTS (
+          SELECT 1 FROM host_sessions h WHERE h.parent_id = s.id AND h.token_digest = ${tokenDigest}
+            AND h.host = ${host} AND h.revoked_at IS NULL AND ${sessionDeadline(sql, sql`s`, sql`h`)} > clock_timestamp() AND ${yield* sessionLive(sql, sql`s`, sql`h`, verifiedKey)})))
+      RETURNING s.id`
+    return rows.length > 0
+    }))
+  })
+
+
+/** Locks the presented row before evaluating eligibility on the database clock after any lock wait. */
+export const reauthCandidate = (tokenDigest: string, personId: string, verifiedKey: string, configuredKeys: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    if (!configuredKeys.includes(verifiedKey)) return Option.none<{ id: string; eligible: boolean }>()
+    yield* sql`SELECT id FROM sessions WHERE token_digest = ${tokenDigest} FOR UPDATE`
+    const [row] = yield* sql<{ id: string; eligible: boolean }>`SELECT s.id,
+      (s.person_id = ${personId}::uuid AND ${yield* sessionLive(sql, sql`s`, undefined, null)}
+        AND s.expires_at > clock_timestamp() + interval '30 seconds'
+        AND ${sessionDeadline(sql, sql`s`)} > clock_timestamp() + interval '30 seconds') AS eligible
+      FROM sessions s WHERE token_digest = ${tokenDigest}`
+    return Option.fromNullishOr(row)
+  })
+
+/** Re-stamps the locked eligible row and its tokens in the statement that reads the durable issuer. */
+export const reauthenticate = (session: Parameters<typeof createSession>[0], configuredKeys: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`SELECT id FROM sessions WHERE id = ${session.id} FOR UPDATE`
+    const [row] = yield* sql<{ key: string }>`UPDATE sessions s SET started_at = now(),
+      expires_at = now() + make_interval(secs => ${session.maxAgeSeconds}), cookie_key = k.key_id,
+      role = CASE WHEN s.role_generation <= ${session.roleGeneration}::bigint THEN ${session.role} ELSE s.role END,
+      role_generation = greatest(s.role_generation, ${session.roleGeneration}::bigint),
+      role_checked_at = clock_timestamp(),
+      role_verified_at = CASE WHEN s.role_generation <= ${session.roleGeneration}::bigint THEN clock_timestamp() ELSE s.role_verified_at END,
+      github_access = ${json(session.access)}::jsonb,
+      github_access_expires_at = ${session.accessExpiresAt === null ? null : new Date(session.accessExpiresAt).toISOString()}::timestamptz,
+      github_refresh = ${json(session.refresh)}::jsonb, github_refresh_digest = ${session.refreshDigest},
+      github_pair_digest = ${session.pairDigest ?? null}, github_token_gen = s.github_token_gen + 1
+      FROM session_signing_keys k WHERE k.state = 'issuer' AND s.id = ${session.id} AND s.revoked_at IS NULL
+        AND least(s.expires_at, s.started_at + interval '400 days') > clock_timestamp()
+      RETURNING s.cookie_key AS key`
+    yield* configuredIssuer(row?.key, configuredKeys)
+    const [effective] = yield* sql<{ role: Role | null }>`SELECT ${latestRole(sql, sql`${session.personId}::uuid`)} AS role`
+    return effective!.role
+  })
+
+/** Enqueues one sealed token pair, retaining a finished receipt against later store replays. */
+export const enqueueCleanup = (pair: { readonly sessionId: string; readonly pairDigest: string; readonly access: Sealed; readonly refresh: Sealed | null }) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ id: string }>`INSERT INTO github_token_cleanups (id, session_id, pair_digest, sealed_access, sealed_refresh)
+      VALUES (${crypto.randomUUID()}, ${pair.sessionId}, ${pair.pairDigest}, ${json(pair.access)}::jsonb, ${json(pair.refresh)}::jsonb)
+      ON CONFLICT (pair_digest) DO NOTHING RETURNING id`
+    return Option.map(Option.fromNullishOr(row), row => row.id)
+  })
+
+/** Ends only the generation a role check observed, so an old refusal cannot end a reauthenticated session. */
+export const revokeIf = (id: string, reason: RevokedReason, gen: number) => Ends.endSession(id, reason, gen)
+
+/** Renews an eligible held alias, or replaces it, while its parent cannot end concurrently. */
+export const reauthenticateHost = (session: Parameters<typeof createHostSession>[0], previous: { readonly digest: string; readonly key: string } | null,
+  configuredKeys: ReadonlyArray<string>) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  return yield* issuance(Effect.gen(function* () {
+    yield* sql`SELECT id FROM people WHERE id = (SELECT person_id FROM sessions WHERE id = ${session.parentId}) FOR UPDATE`
+    yield* sql`SELECT id FROM sessions WHERE id = ${session.parentId} OR id = (
+      SELECT parent_id FROM host_sessions WHERE token_digest = ${previous?.digest ?? null} AND host = ${session.host}
+    ) ORDER BY id FOR UPDATE`
+    if (previous !== null) yield* sql`SELECT id FROM host_sessions WHERE token_digest = ${previous.digest} AND host = ${session.host} FOR UPDATE`
+    const [parent] = yield* sql<{ live: boolean }>`SELECT (${yield* sessionLive(sql, sql`s`)} AND s.expires_at > clock_timestamp()
+      AND ${sessionDeadline(sql, sql`s`)} > clock_timestamp()) AS live FROM sessions s WHERE id = ${session.parentId}`
+    if (parent?.live !== true) return Option.none<{ id: string; renewed: boolean; key: string; deadline: number }>()
+    const [held] = previous === null || !configuredKeys.includes(previous.key) ? [] : yield* sql<{ id: string; eligible: boolean }>`
+      SELECT h.id, (h.parent_id = ${session.parentId}::uuid AND ${yield* sessionLive(sql, sql`s`, sql`h`, null)}
+        AND s.expires_at > clock_timestamp() + interval '30 seconds'
+        AND ${sessionDeadline(sql, sql`s`, sql`h`)} > clock_timestamp() + interval '30 seconds') AS eligible
+      FROM host_sessions h JOIN sessions s ON s.id = h.parent_id WHERE h.token_digest = ${previous.digest} AND h.host = ${session.host}`
+    const renewed = held?.eligible === true
+    if (!renewed && previous !== null) yield* revokeHost(previous.digest, session.host)
+    const id = renewed ? held!.id : session.id
+    const [issued] = renewed ? yield* sql<{ key: string }>`UPDATE host_sessions h SET started_at = now(), cookie_key = k.key_id
+      FROM session_signing_keys k WHERE h.id = ${id} AND h.revoked_at IS NULL AND k.state = 'issuer' RETURNING h.cookie_key AS key`
+      : yield* sql<{ key: string }>`INSERT INTO host_sessions (id, token_digest, parent_id, host, cookie_key, started_at)
+        SELECT ${id}, ${session.tokenDigest}, ${session.parentId}, ${session.host}, k.key_id, now()
+        FROM session_signing_keys k WHERE k.state = 'issuer' RETURNING cookie_key AS key`
+    yield* configuredIssuer(issued?.key, configuredKeys)
+    const [end] = yield* sql<{ deadline: string }>`SELECT (extract(epoch FROM ${sessionDeadline(sql, sql`s`, sql`h`)})*1000)::bigint::text AS deadline
+      FROM host_sessions h JOIN sessions s ON s.id = h.parent_id WHERE h.id = ${id}`
+    return Option.some({ id, renewed, key: issued!.key, deadline: Number(end!.deadline) })
+  }))
+})
