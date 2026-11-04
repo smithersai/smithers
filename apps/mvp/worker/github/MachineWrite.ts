@@ -423,9 +423,14 @@ export const steps = <E, R>(services: Services<E, R>) => {
     cause: string | null = failure,
     githubStatus: number | null = null,
   ) =>
-    Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly writeId: string; readonly op: string; readonly number: number | null; readonly agent: string; readonly lane: string }>`
       UPDATE machine_writes SET status = ${status}, failure = ${failure}, cause = ${cause}, github_status = ${githubStatus}, item_number = COALESCE(${number}, item_number), settled_at = now()
-      WHERE id = ${id}::uuid AND status = 'pending'`)
+      WHERE id = ${id}::uuid AND status = 'pending'
+      RETURNING id::text AS "writeId", op, item_number AS number, agent, lane`.pipe(
+      Effect.tap((rows) => status === "done" && rows[0] !== undefined
+        ? Effect.logInfo("github.machine_write.done").pipe(Effect.annotateLogs(rows[0]))
+        : Effect.void),
+    ))
 
   /** A settled refusal names the check, with no GitHub message, payload or credentials. */
   const refuse = (

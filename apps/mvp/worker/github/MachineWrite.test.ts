@@ -367,6 +367,37 @@ describe("what a machine writes renders as written", () => {
 })
 
 describe("github/MachineDispatch", () => {
+  test.each(["issue/create", "issue/relate"] as const)("logs a done %s once with ids only", async (op) => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const d = await dispatcher(github)
+    const fields = { title: "Private completion title", body: "Private completion body", labels: ["private-label"] }
+    github.labels.set(fields.labels[0]!, { name: fields.labels[0]!, color: "ededed", description: "" })
+    const finish = async (write: { writeId: string }) => {
+      await admitAs(write)
+      for (let i = 0; i < 5 && (await row(write.writeId)).status === "pending"; i++) await d.next()
+      expect(await row(write.writeId)).toMatchObject({ status: "done" })
+    }
+    if (op === "issue/relate") {
+      await finish(create(fields))
+      await finish(create(fields))
+      d.logs.length = 0
+    }
+    const write = op === "issue/create"
+      ? create(fields)
+      : { writeId: crypto.randomUUID(), op, number: 2, parent: { repo: "acme/widgets", number: 1 } }
+    await finish(write)
+    const number = op === "issue/create" ? 1 : 2
+    expect(await row(write.writeId)).toMatchObject({ status: "done", number })
+    await d.next()
+    const logs = d.logs.filter((log) => log.message === "github.machine_write.done")
+    expect(logs.map((log) => ({ level: log.level, ...log.annotations }))).toEqual([
+      { level: "INFO", writeId: write.writeId, op, number, agent: "fixer", lane: "lane-1" },
+    ])
+    const recorded = JSON.stringify(d.logs)
+    for (const value of [fields.title, fields.body, fields.labels[0], TOKEN]) expect(recorded).not.toContain(value)
+  })
+
   test.each([
     { name: "missing", existing: false, race: false, lost: false },
     { name: "existing", existing: true, race: false, lost: false },
