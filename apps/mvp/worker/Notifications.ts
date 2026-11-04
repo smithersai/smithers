@@ -48,9 +48,9 @@ export const shapes = Metric.counter("smithers_notification_shape_requests", {
   incremental: true,
 })
 
-/** Repository checks made for a feed read, by authorization outcome, never by private repository name. */
+/** Repository checks made for a feed read, by authorization outcome and decision reuse, never by private repository name. */
 export const repositoryChecks = Metric.counter("smithers_notification_repository_checks", {
-  description: "Repository access checks for a feed read, by outcome",
+  description: "Repository access checks for a feed read, by outcome and reuse",
   incremental: true,
 })
 
@@ -652,10 +652,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const params: Record<string, string> = { "1": Option.isSome(actor) ? actor.value.subject.id : NOBODY }
         const base = member ? "recipient = $1" : "recipient = $1 AND mine = true"
         const repositories = Option.isNone(actor) ? [] : yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
-          sql<{ readonly repoId: string; readonly installed: boolean; readonly denialSequence: string }>`
+          sql<{ readonly repoId: string; readonly installed: boolean; readonly denialSequence: string;
+            readonly readable: boolean | null; readonly reused: boolean }>`
             SELECT candidates."repoId", EXISTS (SELECT 1 FROM github_repositories g
               WHERE g.repo_id = candidates."repoId" AND g.installation_id IS NOT NULL) AS installed,
-              coalesce(a.denial_sequence, 0)::text AS "denialSequence"
+              coalesce(a.denial_sequence, 0)::text AS "denialSequence", a.readable,
+              coalesce(a.checked_at BETWEEN clock_timestamp() - make_interval(secs => ${TTL_MS / 1000})
+                AND clock_timestamp(), false) AS reused
             FROM (SELECT repo_id AS "repoId" FROM notifications
             WHERE recipient = ${actor.value.subject.id} AND repo_id IS NOT NULL AND (${member} OR mine = true)
             UNION SELECT substring(subject FROM 6) AS "repoId" FROM watches
@@ -667,37 +670,44 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             ORDER BY candidates."repoId"`
         ).pipe(Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable))
         const denialSequences = new Map(repositories.map(({ repoId, denialSequence }) => [repoId, denialSequence]))
+        const reused = repositories.filter(row => row.reused)
+        const unresolved = repositories.filter(row => !row.reused)
+        yield* Effect.forEach(reused, row => Metric.update(Metric.withAttributes(repositoryChecks, {
+          outcome: row.readable === true ? "allowed" : "denied", reused: "true",
+        }), 1))
         // The observation orders concurrent projections; an older read cannot undo a newer outage or denial.
         const [observation] = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql<{ readonly at: string }>`SELECT clock_timestamp()::text AS at`).pipe(
           Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable))
         // Reuse branch policy, but project access into rows rather than changing Electric's definition.
-        const checked = yield* Effect.forEach(repositories, ({ repoId, installed }) => workRoleOn(Option.getOrThrow(actor), repoId, installed).pipe(
-          Effect.tap((role) => Metric.update(Metric.withAttributes(repositoryChecks, { outcome: memberOrAbove(role) ? "allowed" : "denied" }), 1)),
+        // At two seconds per resolver, 36 cold candidates take three batches instead of nine.
+        const resolved = yield* Effect.forEach(unresolved, ({ repoId, installed }) => workRoleOn(Option.getOrThrow(actor), repoId, installed).pipe(
+          Effect.tap((role) => Metric.update(Metric.withAttributes(repositoryChecks, { outcome: memberOrAbove(role) ? "allowed" : "denied", reused: "false" }), 1)),
           Effect.map((role) => ({ repoId, role, permitted: memberOrAbove(role) })),
           Effect.catch((refused) => Effect.gen(function* () {
             unavailableRepositories++
             retryAfterSeconds = Math.max(retryAfterSeconds, refused.retryAfterSeconds ?? ShapeAccess.RETRY_AFTER_SECONDS)
-            yield* Metric.update(Metric.withAttributes(repositoryChecks, { outcome: "unavailable" }), 1)
+            yield* Metric.update(Metric.withAttributes(repositoryChecks, { outcome: "unavailable", reused: "false" }), 1)
             return { repoId, role: null, permitted: false }
           })),
-        ), { concurrency: 4 })
+        ), { concurrency: 16 })
+        const checked = [...resolved, ...reused.map(row => ({ repoId: row.repoId, permitted: row.readable === true }))]
         const permitted = checked.filter(result => result.permitted).map(result => result.repoId)
-        if (Option.isSome(actor) && repositories.length > 0) {
+        if (Option.isSome(actor) && resolved.length > 0) {
           const personId = actor.value.subject.id
           const allowed = new Set(permitted)
           yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
-            yield* FeedLocks.lock(sql, repositories.map(({ repoId }) => ({ repoId, personId })))
+            yield* FeedLocks.lock(sql, resolved.map(({ repoId }) => ({ repoId, personId })))
             // A resolver may itself record denial. Adopt its fence only for withheld repositories; a permitted
             // result must retain the sequence it started with, even if another tab already restored access.
-            const withheld = repositories.filter(({ repoId }) => !allowed.has(repoId)).map(({ repoId }) => repoId)
+            const withheld = resolved.filter(({ repoId }) => !allowed.has(repoId)).map(({ repoId }) => repoId)
             if (withheld.length > 0) {
               const denials = yield* sql<{ readonly repoId: string; readonly denialSequence: string }>`
                 SELECT repo_id AS "repoId", denial_sequence::text AS "denialSequence"
                 FROM notification_repository_access WHERE recipient = ${personId} AND repo_id = ANY(${withheld}::text[])`
               for (const row of denials) denialSequences.set(row.repoId, row.denialSequence)
             }
-            for (const { repoId } of checked) {
+            for (const { repoId } of resolved) {
               const updated = yield* sql<{ readonly denialSequence: string }>`
                 INSERT INTO notification_repository_access (recipient, repo_id, readable, checked_at, denial_sequence)
                 VALUES (${personId}, ${repoId}, ${allowed.has(repoId)}, ${observation!.at}::timestamptz,
@@ -816,7 +826,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           )
         }
         yield* Effect.logInfo("notifications.access").pipe(Effect.annotateLogs({
-          repositories: repositories.length, permitted: permitted.length,
+          repositories: repositories.length, reused: reused.length, permitted: permitted.length,
           unavailable: unavailableRepositories, retryAfterSeconds,
           durationMs: (yield* Clock.currentTimeMillis) - startedAt,
         }))

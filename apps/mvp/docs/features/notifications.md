@@ -232,3 +232,23 @@ Repository authorization uses `notification_repository_access` and the server-on
 After buffering Electric, one SQL snapshot reads the current session, newest deployment-role receipt, each repository's access and the permitted subjects. Only those subjects' inserts and updates may leave the proxy, even from historical cached logs. A pruned fleet subject cannot return through a still-readable repository. The deployment repository and public-copy grants require current deployment membership even for scoped own-run rows; independently granted repositories use their own current permission receipts. The resolver exposes its App/allowlist/local grant routes; current installation state selects the route in the snapshot. An installed public copy excluded from the App's allowlist therefore uses public-copy authority without requiring an independent receipt. Public visibility and permission freshness are checked in that same snapshot. Fleet rows also satisfy the shared incident audience: role or TODO committer where that kind permits it. Under feed locks, the statement prunes fleet rows outside a confirmed current audience, excluding those subjects before emitting; unknown authority never prunes. This preserves ordinary feed progress after a stable demotion, while the real deletes follow the already-buffered offset. Deletes carry only primary keys. A null deployment role permits only the person's own acts; a revoked or expired session permits none. Explicit sessionless local development uses its injected role. The snapshot adds no provider call. If a filtered value's subject is still stored and projected, the proxy withholds its cursor with 503 so restoration or renewal can replay it. A pruned subject or withdrawn projection can be skipped safely; key-only deletes and recovery inserts already provide their transitions. `notifications.access.emit` records subject/repository counts and cursor stability without user content or credentials.
 
 Projection transitions and pruning keep `denial_sequence` (migration 0104) to prevent an old poll from acknowledging a cursor that skips a delete. Recovery inserts and newly permitted repositories are authorized directly from the current snapshot. An obsolete allowed projection cannot reopen access over a denial. Actual reductions and receipt-side pruning advance the fence; repeated identical withholding or denial without deletion does not. Pure deployment-role changes need no fence because the snapshot reads the current receipt. A changed cursor fence returns private no-store 503 without Electric headers; a safe poll preserves its cursor and unrelated rows. Concurrent-tab and held-response tests exercise these cases against real Postgres and Electric.
+
+
+The first access snapshot reuses `notification_repository_access` decisions checked
+within `Visibility.TTL_MS` (60 seconds), using `clock_timestamp()` in Postgres.
+Reused readable and withheld decisions cause no resolver call or access-row write;
+a writer's newer denial remains authoritative. Missing, expired or future-dated
+receipts are resolved at concurrency 16. With 36 independent two-second reads,
+this bounds resolver work to three batches rather than nine at concurrency 4,
+while keeping each request well below GitHub's concurrent-read limit. The emit
+snapshot still checks current permission/visibility/session authority and the
+original denial sequences, including reused rows; reuse grants no new authority.
+Only repositories resolved as unavailable during this request contribute
+`Retry-After`; a reused withheld decision adds none.
+
+`notifications.access` logs `repositories`, `reused`, `permitted`, `unavailable`,
+`retryAfterSeconds` and `durationMs`. The
+`smithers_notification_repository_checks` counter attributes are `outcome`
+(`allowed`, `denied`, `unavailable`) and `reused` (`true`, `false`). Reused withheld
+receipts count as denied because the receipt records readability, not a provider
+failure classification. No repository names or recipient IDs enter the metric.

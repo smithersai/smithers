@@ -676,6 +676,8 @@ The personal feed: a run's state routed to its people, GitHub's `main` and relea
 | `notifications.request` | span | ChatApi | `smithers.route`, `http.response.status_code` |
 | `smithers_notification_requests` | counter | ChatApi | `route` (`watch`, `ack`), `status` |
 | `smithers_notification_shape_requests` | counter | ChatApi | `status`, `live` |
+| `notifications.access` | log, span | ChatApi | `repositories`, `reused`, `permitted`, `unavailable`, `retryAfterSeconds`, `durationMs` |
+| `smithers_notification_repository_checks` | counter | ChatApi | `outcome` (`allowed`, `denied`, `unavailable`), `reused` (`true`, `false`) |
 | `notifications.watch`, `notifications.ack` | log, span | engine worker | `subject`, `act`, `version`, `outcome` (`sent`, `refused`, `unsent`), `status` |
 | `smithers_notification_watches`, `smithers_notification_acks` | counter | engine worker | `outcome`; `act`, `outcome` |
 | `notifications.shown` | log | tab | `subject`, `version`, `state`, `kind` |

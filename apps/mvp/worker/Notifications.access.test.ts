@@ -12,11 +12,14 @@ import { repositoryOf } from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { app } from "./github/test/harness.ts"
 import { accountIdOf, appKey, INSTALLATION_ID, scriptedGitHub } from "./github/test/scriptedGitHub.ts"
-import { harness, testFile } from "./test/harness.ts"
+import { branchRoles as localRoles, harness, testFile } from "./test/harness.ts"
 
 const runtime = testFile("notification_access")
 const sql = (query: string, ...params: ReadonlyArray<unknown>) => runtime.runPromise(
   Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(query, params as Array<never>)))
+// Advance the real access receipt past its SQL-clock window when a scenario explicitly needs a new resolution.
+const expireAccess = (repoId: string) => sql(`UPDATE notification_repository_access
+  SET checked_at = clock_timestamp() - interval '61 seconds' WHERE repo_id = $1`, repoId)
 // Keep Electric handles alive; every scenario has its own recipient and follows its real snapshot receipts.
 beforeEach(() => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, client => client.withTransaction(Effect.gen(function* () {
   for (const table of ["notifications", "notification_repository_access", "watches", "github_repo_roles", "github_repositories", "people"]) {
@@ -107,6 +110,7 @@ test("feed access checks are per repository and a fresh role avoids another GitH
   ])
   // An unreadable repository is withheld; the rest of the feed remains usable.
   await sql(`UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes' WHERE repo_id = $1`, repoId)
+  await expireAccess(repoId)
   github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
   const degraded = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
   expect(degraded.status).toBe(200)
@@ -139,6 +143,7 @@ test("a denied watched repository recovers delivery after pruning without visiti
   expect(await runtime.runPromise(Notifications.recordRepoEvent(event))).toBe(0)
   github.roles.set("reader", "write")
   await new Promise((resolve) => setTimeout(resolve, 350))
+  await expireAccess(repoId)
   // Only the feed is reopened; the permission cache is written by its real resolver, not the test.
   const refreshed = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
   expect(refreshed.status).toBe(200)
@@ -190,6 +195,7 @@ test("mixed repository availability preserves unrelated notices and public copie
   expect(warm.status).toBe(200)
   expect((await values(warm)).map((row) => row.subject).sort()).toEqual(["private-good", "public-a", "public-b", "unscoped"])
   expect(providers.map((github) => github.calls.length)).toEqual(coldRequests)
+  expect(warm.headers.get("retry-after")).toBeNull()
   expect(coldRequests.slice(0, 2)).toEqual([0, 0])
   console.info("mixed-feed-cost", { repositories: 4, rows: 5, coldGitHubRequests: coldRequests,
     warmGitHubRequests: providers.map((github, index) => github.calls.length - coldRequests[index]!), unavailable: 1 })
@@ -216,6 +222,7 @@ test("an existing feed cursor survives repository outage and recovery without re
   expect((await values(opened)).map((row) => row.subject).sort()).toEqual(["home", "scoped"])
   const cursor = new URLSearchParams({ handle: opened.headers.get("electric-handle")!, offset: opened.headers.get("electric-offset")! })
   await sql(`UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes' WHERE repo_id = $1`, repoId)
+  await expireAccess(repoId)
   github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "7" } })
   const outage = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?${cursor}`)
   expect(outage.status).toBe(200)
@@ -229,6 +236,7 @@ test("an existing feed cursor survives repository outage and recovery without re
   expect((await values(down)).map((row) => row.subject)).toEqual(["home"])
   // Let the real shared failure receipt expire, then recover on the original cursor.
   await sql(`UPDATE github_repo_roles SET read_until = now() - interval '1 second' WHERE repo_id = $1`, repoId)
+  await expireAccess(repoId)
   const recovered = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?${cursor}`)
   expect(recovered.status).toBe(200)
   expect(recovered.headers.get("electric-handle")).toBe(opened.headers.get("electric-handle"))
@@ -265,6 +273,7 @@ test.each([true, false])("concurrent tab recovery preserves cursors when recover
   expect((await values(snapshot)).map((row) => row.subject)).toContain("scoped")
   if (recovery) {
     await sql(`UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes' WHERE repo_id = $1`, repoId)
+    await expireAccess(repoId)
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "7" } })
     snapshot = await a.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
     expect(await values(snapshot)).toEqual([])
@@ -276,6 +285,7 @@ test.each([true, false])("concurrent tab recovery preserves cursors when recover
   try {
     if (recovery) {
       await sql(`UPDATE github_repo_roles SET read_until = now() - interval '1 second' WHERE repo_id = $1`, repoId)
+      await expireAccess(repoId)
       // B sees the real Electric recovery insert before A's old poll returns.
       await vi.waitFor(async () => {
         const recovered = await b.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?${cursor}`)
@@ -337,6 +347,7 @@ test.each(["response", "authorization", "restored"] as const)("recorded denial f
     return new Response(body, { status: response.status, headers: response.headers })
   } })
   expect((await values(await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`))).map((row) => row.subject)).toEqual(["scoped"])
+  if (stage === "authorization") await expireAccess(repoId)
   hold = true
   const pending = h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
   await atHold
@@ -351,6 +362,7 @@ test.each(["response", "authorization", "restored"] as const)("recorded denial f
     expect(await sql(`SELECT subject FROM notifications WHERE recipient = $1`, id)).toEqual([])
     if (stage === "restored") {
       await remember("member")
+      await expireAccess(repoId)
       const b = await proxy(actor, real)
       expect((await b.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
     }
@@ -422,6 +434,7 @@ test.each([
   expect((await values(await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`))).map(row => row.subject)).toEqual(["held-fleet"])
   const fence = () => sql(`SELECT denial_sequence::text AS sequence FROM notification_repository_access WHERE recipient = $1 AND repo_id = $2`, id, repoId)
   const [before] = await fence() as Array<{ sequence: string }>
+  if (stage === "authorization") await expireAccess(repoId)
   hold = true
   const pending = h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
   await atHold
@@ -442,9 +455,11 @@ test.each([
       await record(loss === "denial" ? null : "member")
       await record("admin")
     } else {
+      await expireAccess(repoId)
       const reduced = await proxy({ ...actor, role: loss === "denial" ? null : "member" }, real)
       expect((await reduced.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
     }
+    if (source === "deployment") await expireAccess(repoId)
     const restored = await proxy(actor, real)
     expect((await restored.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
   } finally { hold = false; release() }
@@ -897,4 +912,260 @@ test("the emit snapshot uses the configured local grant after an installation di
   expect(response.status).toBe(200)
   expect((await values(response)).map(row => row.subject).sort()).toEqual(["followed", "mine"])
   expect(await sql(`SELECT subject FROM notifications WHERE recipient = $1 AND kind = 'fleet'`, f.id)).toEqual([])
+})
+
+
+// Real local-development policy; injected BranchRoles adds only counters, latency and refusal faults.
+const decisionFixture = async (count = 1, delayMs = 0) => {
+  const id = crypto.randomUUID()
+  const actor: Actor = { subject: { kind: "person", id }, role: "member", login: "reader" }
+  await sql(`INSERT INTO people (id, github_id, github_login) VALUES ($1, $2, 'reader')`, id, accountIdOf("reader"))
+  const repos = Array.from({ length: count }, (_, n) => `github/acme/ttl-${n}`)
+  for (const repoId of repos) {
+    await sql(`INSERT INTO notifications (recipient, subject, kind, state, mine, run_id, repo_id, title, href)
+      VALUES ($1, $2, 'run', 'done', true, gen_random_uuid(), $2, 'fixture notice', '/app')`, id, repoId)
+  }
+  const { database } = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  const calls: Array<string> = []
+  const unavailable = new Set<string>()
+  let active = 0
+  let peak = 0
+  const roles = Layer.effect(BranchRoles, Effect.gen(function* () {
+    const real = yield* BranchRoles
+    return BranchRoles.of({ ...real, workUninstalled: (reader, repoId) => Effect.gen(function* () {
+      calls.push(repoId)
+      active++
+      peak = Math.max(peak, active)
+      yield* Effect.sleep(delayMs)
+      active--
+      if (unavailable.has(repoId)) return yield* new RepoRoles.RoleRefused({ code: "unavailable", retryAfterSeconds: 10 })
+      return yield* real.workUninstalled!(reader, repoId)
+    }) })
+  }).pipe(Effect.provide(localRoles(database))))
+  const remember = (repoId: string, readable: boolean, ageSeconds = 0) => sql(`
+    INSERT INTO notification_repository_access (recipient, repo_id, readable, checked_at, denial_sequence)
+    VALUES ($1, $2, $3, clock_timestamp() - make_interval(secs => $4), 7)
+    ON CONFLICT (recipient, repo_id) DO UPDATE SET readable = EXCLUDED.readable,
+      checked_at = EXCLUDED.checked_at, denial_sequence = notification_repository_access.denial_sequence + 1`, id, repoId, readable, ageSeconds)
+  const receipts = () => sql(`SELECT repo_id, readable, checked_at::text, denial_sequence::text, xmin::text
+    FROM notification_repository_access WHERE recipient = $1 ORDER BY repo_id`, id)
+  return { id, actor, repos, roles, calls, unavailable, remember, receipts, peak: () => peak }
+}
+
+test.each([true, false])("a recent recorded decision readable=%s is reused without resolving or writing", async readable => {
+  const f = await decisionFixture()
+  await f.remember(f.repos[0]!, readable)
+  const before = await f.receipts()
+  const { h } = await proxy(f.actor, f.roles)
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(200)
+  expect((await values(response)).map(row => row.subject)).toEqual(readable ? f.repos : [])
+  expect(f.calls).toEqual([])
+  expect(await f.receipts()).toEqual(before)
+  expect(response.headers.get("retry-after")).toBeNull()
+  expect(h.line("notifications.access")[0]?.annotations).toMatchObject({ repositories: 1, reused: 1, permitted: readable ? 1 : 0, unavailable: 0 })
+  expect(h.count(Notifications.repositoryChecks, { outcome: readable ? "allowed" : "denied", reused: "true" })).toBe(1)
+})
+
+test.each([60, 61])("a decision aged %s seconds is re-resolved using the SQL clock", async age => {
+  const f = await decisionFixture()
+  await f.remember(f.repos[0]!, false, age)
+  const before = await f.receipts()
+  const { h } = await proxy(f.actor, f.roles)
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(200)
+  expect((await values(response)).map(row => row.subject)).toEqual(f.repos)
+  expect(f.calls).toEqual(f.repos)
+  expect(await f.receipts()).not.toEqual(before)
+  expect(h.line("notifications.access")[0]?.annotations).toMatchObject({ reused: 0, permitted: 1 })
+  expect(h.count(Notifications.repositoryChecks, { outcome: "allowed", reused: "false" })).toBe(1)
+})
+
+test("an unavailable decision is reused without Retry-After and mixed reads resolve only missing or stale decisions", async () => {
+  const f = await decisionFixture(4)
+  f.unavailable.add(f.repos[0]!)
+  const { h } = await proxy(f.actor, f.roles)
+  const cold = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(cold.status).toBe(200)
+  expect(cold.headers.get("retry-after")).toBe("10")
+  expect((await values(cold)).map(row => row.subject).sort()).toEqual(f.repos.slice(1))
+  const before = await f.receipts()
+  f.calls.length = 0
+  const warm = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(warm.status).toBe(200)
+  expect(warm.headers.get("retry-after")).toBeNull()
+  expect((await values(warm)).map(row => row.subject).sort()).toEqual(f.repos.slice(1))
+  expect(f.calls).toEqual([])
+  expect(await f.receipts()).toEqual(before)
+  await sql(`UPDATE notification_repository_access SET checked_at = clock_timestamp() - interval '61 seconds'
+    WHERE recipient = $1 AND repo_id = $2`, f.id, f.repos[2])
+  await sql(`DELETE FROM notification_repository_access WHERE recipient = $1 AND repo_id = $2`, f.id, f.repos[3])
+  const reused = (await f.receipts()).slice(0, 2)
+  const mixed = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(mixed.status).toBe(200)
+  expect(mixed.headers.get("retry-after")).toBeNull()
+  expect((await values(mixed)).map(row => row.subject).sort()).toEqual(f.repos.slice(1))
+  expect(f.calls.sort()).toEqual(f.repos.slice(2))
+  expect((await f.receipts()).slice(0, 2)).toEqual(reused)
+  expect(h.line("notifications.access").map(line => line.annotations)).toEqual([
+    expect.objectContaining({ reused: 0, permitted: 3, unavailable: 1, retryAfterSeconds: 10 }),
+    expect.objectContaining({ reused: 4, permitted: 3, unavailable: 0, retryAfterSeconds: 0 }),
+    expect.objectContaining({ reused: 2, permitted: 3, unavailable: 0, retryAfterSeconds: 0 }),
+  ])
+  expect(h.count(Notifications.repositoryChecks, { outcome: "unavailable", reused: "false" })).toBe(1)
+})
+
+test.each([true, false])("a reused readable=%s decision retains its original denial fence through denial and restoration", async readable => {
+  const f = await decisionFixture()
+  await f.remember(f.repos[0]!, readable)
+  const { h } = await proxy(f.actor, f.roles, async () => {
+    await f.remember(f.repos[0]!, false)
+    await f.remember(f.repos[0]!, true)
+  })
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(503)
+  expect(response.headers.get("electric-offset")).toBeNull()
+  expect(response.headers.get("electric-handle")).toBeNull()
+  expect(await response.text()).not.toContain("fixture notice")
+  expect(f.calls).toEqual([])
+  expect(h.line("notifications.shape").at(-1)?.annotations).toMatchObject({ upstream: "access", outcome: "superseded" })
+})
+
+test("36 cold repositories resolve in bounded parallel batches and a warm read makes no resolver calls", async () => {
+  const f = await decisionFixture(36, 2000)
+  const { h } = await proxy(f.actor, f.roles)
+  const start = performance.now()
+  const cold = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(cold.status).toBe(200)
+  expect(await values(cold)).toHaveLength(36)
+  const coldMs = Math.round(performance.now() - start)
+  expect(f.calls).toHaveLength(36)
+  const peak = f.peak()
+  f.calls.length = 0
+  const warmStart = performance.now()
+  const warm = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(warm.status).toBe(200)
+  expect(await values(warm)).toHaveLength(36)
+  const warmMs = Math.round(performance.now() - warmStart)
+  console.info("notification-gate-36", { coldMs, warmMs, peak, coldResolverCalls: 36, warmResolverCalls: f.calls.length,
+    access: h.line("notifications.access").map(line => line.annotations) })
+  expect(peak).toBe(16)
+  expect(f.calls).toEqual([])
+}, 60_000)
+
+
+test("a fresh denial from the real role writer is reused and withholds without refreshing its receipt", async () => {
+  const f = await emitFixture()
+  let calls = 0
+  const real = BranchRoles.layer(f.roles)
+  const roles = Layer.effect(BranchRoles, Effect.gen(function* () {
+    const service = yield* BranchRoles
+    return BranchRoles.of({ ...service, roleOn: (reader, repoId) => service.roleOn(reader, repoId).pipe(
+      Effect.tap(() => Effect.sync(() => { calls++ }))) })
+  }).pipe(Effect.provide(real)))
+  const { h } = await proxy(f.actor, roles)
+  const opened = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(opened.status).toBe(200)
+  await values(opened)
+  expect(calls).toBe(1)
+  await f.remember(null)
+  const receipt = () => sql(`SELECT readable, denial_sequence::text, checked_at::text, xmin::text
+    FROM notification_repository_access WHERE recipient = $1 AND repo_id = $2`, f.id, f.repoId)
+  const denied = await receipt()
+  expect(denied).toEqual([expect.objectContaining({ readable: false, denial_sequence: "1" })])
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(200)
+  expect((await values(response)).map(row => row.subject)).toEqual(["mine"])
+  expect(calls).toBe(1)
+  expect(await receipt()).toEqual(denied)
+  expect(response.headers.get("retry-after")).toBeNull()
+})
+
+test("resolving a missing repository cannot adopt a newer fence for a reused denial", async () => {
+  const f = await decisionFixture(2)
+  await f.remember(f.repos[0]!, false)
+  // Mutate while the missing repository resolves, before the request writes its resolved projections.
+  const roles = Layer.effect(BranchRoles, Effect.gen(function* () {
+    const service = yield* BranchRoles
+    return BranchRoles.of({ ...service, workUninstalled: (reader, repoId) => service.workUninstalled!(reader, repoId).pipe(
+      Effect.tap(() => Effect.promise(async () => {
+        await f.remember(f.repos[0]!, false)
+        await f.remember(f.repos[0]!, true)
+      }))) })
+  }).pipe(Effect.provide(f.roles)))
+  const { h } = await proxy(f.actor, roles)
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(503)
+  expect(response.headers.get("electric-offset")).toBeNull()
+  expect(response.headers.get("electric-handle")).toBeNull()
+  expect(await response.text()).not.toContain("fixture notice")
+  expect(f.calls).toEqual([f.repos[1]])
+  expect(h.line("notifications.access")[0]?.annotations).toMatchObject({ reused: 1, permitted: 1 })
+  expect(h.line("notifications.shape").at(-1)?.annotations).toMatchObject({ upstream: "access", outcome: "superseded" })
+})
+
+
+test("a future-dated denial is not reused and its newer receipt cannot be overwritten", async () => {
+  const f = await decisionFixture()
+  await f.remember(f.repos[0]!, false, -60)
+  const before = await f.receipts()
+  const { h } = await proxy(f.actor, f.roles)
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(200)
+  expect(await values(response)).toEqual([])
+  expect(f.calls).toEqual(f.repos)
+  expect(await f.receipts()).toEqual(before)
+  expect(h.line("notifications.access")[0]?.annotations).toMatchObject({ reused: 0 })
+})
+
+// Fault the injected database layer at each real access stage, without replacing SQL or Electric.
+test.each([1, 2, 3, 4])("database unavailability at access stage %s withholds payload and cursor", async stage => {
+  const f = await decisionFixture()
+  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  let armed = false
+  let acquisitions = 0
+  const database = Layer.unwrap(Effect.suspend(() => armed && ++acquisitions === stage
+    ? Effect.fail(new Error("injected database unavailable")) : Effect.succeed(scratch.database)))
+  const upstream: Array<URL> = []
+  const h = await harness(runtime, () => Stream.empty, { actor: f.actor, branchRoles: f.roles, database,
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      upstream.push(new URL(url))
+      url.searchParams.set("table", `${scratch.name}.notifications`)
+      return fetch(url, init)
+    } })
+  armed = true
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(503)
+  expect(response.headers.get("retry-after")).toBe(stage === 4 ? "1" : "5")
+  expect(response.headers.get("electric-offset")).toBeNull()
+  expect(response.headers.get("electric-handle")).toBeNull()
+  expect(response.headers.get("cache-control")).toContain("no-store")
+  expect(await response.text()).not.toContain("fixture notice")
+  expect(acquisitions).toBe(stage)
+  expect(upstream).toHaveLength(stage === 4 ? 1 : 0)
+  expect(f.calls).toEqual(stage < 3 ? [] : f.repos)
+  expect(await f.receipts()).toHaveLength(stage === 4 ? 1 : 0)
+})
+
+test("a newly unavailable resolver without a retry hint uses the fallback only for that request", async () => {
+  const f = await decisionFixture()
+  let calls = 0
+  const roles = Layer.effect(BranchRoles, Effect.gen(function* () {
+    const service = yield* BranchRoles
+    return BranchRoles.of({ ...service, workUninstalled: () => Effect.suspend(() => {
+      calls++
+      return Effect.fail(new RepoRoles.RoleRefused({ code: "unavailable" }))
+    }) })
+  }).pipe(Effect.provide(f.roles)))
+  const { h } = await proxy(f.actor, roles)
+  const cold = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(cold.status).toBe(200)
+  expect(await values(cold)).toEqual([])
+  expect(cold.headers.get("retry-after")).toBe("5")
+  const warm = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(warm.status).toBe(200)
+  expect(await values(warm)).toEqual([])
+  expect(warm.headers.get("retry-after")).toBeNull()
+  expect(calls).toBe(1)
 })
