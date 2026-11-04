@@ -7,6 +7,7 @@ import { DEV_URL } from "../dev/https"
 import { DEVICE_PERSON_HEADER, type Role, ROLES } from "../src/features/auth/contract"
 import { sessionDirOf } from "./settings"
 import { personSettings } from "./people"
+import { shipAcceptance, shipFeaturesOf } from "./ship"
 
 // What the e2e tests run against, and what each test needs from it (docs/rules.md, test.e2e-declared-needs). One suite
 // runs locally against `alchemy dev` and against a deployment (docs/rulings.md TEST-4). A test that needs something a
@@ -589,6 +590,15 @@ const thisRun: Run = {
 /** Whether this run meets `name`. */
 export const meets = (name: NeedName, run: Run = thisRun) => NEEDS[name].met(run)
 
+/** Missing needs remain developer skips; a ship-required spec must fail instead of leaving out its feature. */
+export const unmetNeed = (name: NeedName, file: string, run: Run = thisRun): boolean => {
+  const unmet = !meets(name, run)
+  if (unmet && shipAcceptance(run.env) && shipFeaturesOf(file).length > 0) {
+    throw new Error(`Ship acceptance requires ${name}: ${NEEDS[name].reason}`)
+  }
+  return unmet
+}
+
 const inTest = () => {
   try {
     base.info()
@@ -606,11 +616,14 @@ export const requires = (...names: ReadonlyArray<NeedName>) => {
   for (const name of names) {
     if (inTest()) {
       record(name)
-      base.skip(!meets(name), describeNeed(name))
+      base.skip(unmetNeed(name, base.info().file), describeNeed(name))
     } else {
-      // A modifier's condition may be read once per worker, so a hook records the need for each test of the scope.
-      base.beforeEach(() => record(name))
-      base.skip(({ browserName }) => !meets(name, { ...thisRun, browserName: () => browserName }), describeNeed(name))
+      // Worker-scoped modifiers have no TestInfo. Acceptance checks the file in the per-test hook instead.
+      base.beforeEach(() => {
+        record(name)
+        base.skip(unmetNeed(name, base.info().file), describeNeed(name))
+      })
+      base.skip(({ browserName }) => !shipAcceptance(thisRun.env) && !meets(name, { ...thisRun, browserName: () => browserName }), describeNeed(name))
     }
   }
 }

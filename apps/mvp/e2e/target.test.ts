@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -30,7 +30,9 @@ import {
   sessionFiles,
   targetOf,
   UndeclaredNeed,
+  unmetNeed,
 } from "./target"
+import { assertShipPrerequisites, assertShipSelection, shipAcceptance, SHIP_FEATURES, shipFeaturesOf, SHIP_TARGETS, shipInventory, shipTestIdentity, shipListingDiagnostics } from "./ship"
 
 const local: Run = {
   target: "local",
@@ -38,6 +40,158 @@ const local: Run = {
   env: { CODE_STORAGE_ORG: "o", CODE_STORAGE_KEY: "k", E2E_DOT_ENV: join(tmpdir(), "e2e-no-such-dot-env") },
 }
 const deployedAs = (role: ReturnType<Run["role"]>, env: Run["env"] = {}): Run => ({ target: "deployment", role: () => role, env })
+
+describe("ship acceptance", () => {
+  it("reports listing failures with credential and header values redacted", () => {
+    const env = { E2E_PERSONAL_MODEL_KEY: "private-key", AUTH_TOKEN: "private-token", UNUSED_SECRET: undefined, EMPTY_PASSWORD: "", NORMAL: "public-value" }
+    const diagnostic = shipListingDiagnostics("load failed private-key\nauthorization: Bearer private-token", JSON.stringify({ errors: [{ message: "fixture failed private-key" }, {}] }), env)
+    expect(diagnostic).toContain("load failed [redacted]")
+    expect(diagnostic).toContain("authorization: [redacted]")
+    expect(diagnostic).toContain("fixture failed [redacted]")
+    expect(diagnostic).not.toContain("private-key")
+    expect(diagnostic).not.toContain("private-token")
+    expect(shipListingDiagnostics("stderr", "not-json private-key", env)).toBe("stderr")
+    expect(shipListingDiagnostics("", "{}", {})).toBe("")
+  })
+  it("rejects filters declared in Playwright configuration as well as command-line selectors", () => {
+    const project = { grep: /.*/, grepInvert: null, repeatEach: 1 }
+    const config = { grep: /.*/, grepInvert: null, shard: null, projects: [project] }
+    expect(() => assertShipSelection(config)).not.toThrow()
+    expect(() => assertShipSelection({ ...config, grep: [/selected/] })).toThrow("unfiltered")
+    expect(() => assertShipSelection({ ...config, grep: [/.*/] })).not.toThrow()
+    expect(() => assertShipSelection({ ...config, grepInvert: /some/ })).toThrow("unfiltered")
+    expect(() => assertShipSelection({ ...config, shard: { current: 1, total: 2 } })).toThrow("unfiltered")
+    for (const changed of [{ grep: /some/ }, { grepInvert: /some/ }, { repeatEach: 2 }]) {
+      expect(() => assertShipSelection({ ...config, projects: [{ ...project, ...changed }] })).toThrow("unfiltered")
+    }
+  })
+  it("requires an explicit opt-in and refuses misspellings without echoing their values", () => {
+    for (const value of [undefined, "", "0"]) expect(shipAcceptance({ E2E_SHIP_ACCEPTANCE: value })).toBe(false)
+    expect(shipAcceptance({ E2E_SHIP_ACCEPTANCE: "1" })).toBe(true)
+    for (const value of ["true", "01", "private-value"]) {
+      expect(() => shipAcceptance({ E2E_SHIP_ACCEPTANCE: value })).toThrow("E2E_SHIP_ACCEPTANCE must be 1")
+      try { shipAcceptance({ E2E_SHIP_ACCEPTANCE: value }) } catch (error) {
+        expect(String(error)).not.toContain(value)
+      }
+    }
+    expect(() => assertShipPrerequisites({})).not.toThrow()
+    expect(() => assertShipPrerequisites({}, ["--grep", "some test"])).not.toThrow()
+    for (const args of [["agent.spec.ts"], ["--project=deployment"], ["--grep", "theme by button"], ["--list"], ["--shard=1/2"]]) {
+      expect(() => assertShipPrerequisites({ E2E_SHIP_ACCEPTANCE: "1" }, args)).toThrow("Ship acceptance runs the full suite")
+    }
+  })
+
+  it("maps every required feature to existing specs and both production browser projects in one manifest", async () => {
+    const specs = new Set(await readdir(new URL(".", import.meta.url)))
+    expect(SHIP_TARGETS).toEqual(["deployment", "webkit"])
+    expect(new Set(SHIP_FEATURES.map((feature) => feature.id)).size).toBe(SHIP_FEATURES.length)
+    for (const feature of SHIP_FEATURES) {
+      expect(feature.id).toMatch(/^SCOPE-[67]\//)
+      expect(feature.specs.length).toBeGreaterThan(0)
+      for (const spec of feature.specs) expect(specs.has(spec), `${feature.id}: ${spec}`).toBe(true)
+    }
+    expect(shipFeaturesOf("/repo/e2e/agent.spec.ts").map((feature) => feature.id)).toContain("SCOPE-6/1")
+    expect(shipFeaturesOf("C:\\repo\\e2e\\flows.spec.ts").map((feature) => feature.id)).toContain("SCOPE-7/flows")
+    expect(shipFeaturesOf("not-a-ship-spec.spec.ts")).toEqual([])
+  })
+
+  it("fails up front with missing credential/fixture names, once each, without exposing supplied values", () => {
+    const env = { E2E_SHIP_ACCEPTANCE: "1", OPENAI_API_KEY: "private-value" }
+    expect(() => assertShipPrerequisites(env)).toThrow("E2E_PERSONAL_MODEL_KEY")
+    try { assertShipPrerequisites(env) } catch (error) {
+      const message = String(error)
+      expect(message).toContain("E2E_RUNNER_MIRROR")
+      expect(message).toContain("E2E_ISSUES_REPOSITORY")
+      expect(message).toContain("SCOPE-6/")
+      expect(message.match(/E2E_PERSONAL_MODEL_KEY/g)).toHaveLength(1)
+      expect(message).not.toContain(env.OPENAI_API_KEY)
+    }
+  })
+
+  it("validates all declared fixture names and the real runner mirror before accepting prerequisites", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ship-prerequisites-"))
+    try {
+      mkdirSync(join(dir, ".jj"))
+      const sessionFile = join(dir, "fixture-session.json")
+      writeFileSync(sessionFile, "{}", { mode: 0o600 })
+      const env: Record<string, string | undefined> = { E2E_SHIP_ACCEPTANCE: "1" }
+      for (const feature of SHIP_FEATURES) for (const prerequisite of feature.prerequisites) {
+        if (prerequisite.kind === "signIn") { env.E2E_GITHUB_PROFILE = dir; continue }
+        if (prerequisite.kind === "privateFile") { env[prerequisite.name] = sessionFile; continue }
+        if (prerequisite.kind === "enabled") { env[prerequisite.name] = "true"; continue }
+        env[prerequisite.name] = prerequisite.kind === "mirror" ? dir : prerequisite.kind === "value" ? "private-value" : "test-account/scratch"
+      }
+      expect(() => assertShipPrerequisites(env)).not.toThrow()
+      expect(() => assertShipPrerequisites({ ...env, E2E_RUNNER_MIRROR: "" })).toThrow("E2E_RUNNER_MIRROR")
+      expect(() => assertShipPrerequisites({ ...env, E2E_RUNNER_MIRROR: join(dir, "missing") })).toThrow("E2E_RUNNER_MIRROR")
+      mkdirSync(join(dir, "not-a-mirror"))
+      writeFileSync(join(dir, "not-a-mirror", ".jj"), "")
+      expect(() => assertShipPrerequisites({ ...env, E2E_RUNNER_MIRROR: join(dir, "not-a-mirror") })).toThrow("E2E_RUNNER_MIRROR")
+      for (const value of ["", " ", "invalid", "a/b/c", "smithersai/smithers", "SMITHERSAI/repo"]) {
+        expect(() => assertShipPrerequisites({ ...env, E2E_STACK_REPOSITORY: value })).toThrow("E2E_STACK_REPOSITORY")
+      }
+      expect(() => assertShipPrerequisites({ ...env, E2E_ABSENT_REPOSITORY: "not-a-repo" })).toThrow("E2E_ABSENT_REPOSITORY")
+      expect(() => assertShipPrerequisites({ ...env, E2E_PERSONAL_MODEL_KEY: "  " })).toThrow("E2E_PERSONAL_MODEL_KEY")
+      for (const value of [undefined, "", "false", "1", " true "]) {
+        expect(() => assertShipPrerequisites({ ...env, E2E_SECRETS_EGRESS: value })).toThrow("E2E_SECRETS_EGRESS")
+      }
+      for (const path of ["relative.json", join(dir, "missing-session.json"), dir]) {
+        expect(() => assertShipPrerequisites({ ...env, E2E_TEAMMATE_SESSION: path })).toThrow("E2E_TEAMMATE_SESSION")
+      }
+      const publicFile = join(dir, "public-session.json")
+      writeFileSync(publicFile, "{}", { mode: 0o644 })
+      chmodSync(publicFile, 0o644)
+      expect(() => assertShipPrerequisites({ ...env, E2E_GUEST_SESSION: publicFile })).toThrow("E2E_GUEST_SESSION")
+      expect(() => assertShipPrerequisites({ ...env, E2E_SYNCED_REPOSITORY: "smithersai/smithers" })).not.toThrow()
+      const withoutProfile = { ...env, E2E_GITHUB_PROFILE: join(dir, "missing-profile") }
+      writeFileSync(join(dir, "not-a-profile"), "")
+      expect(() => assertShipPrerequisites({ ...env, E2E_GITHUB_PROFILE: join(dir, "not-a-profile") })).toThrow("E2E_GITHUB_PROFILE or stored session.json")
+      expect(() => assertShipPrerequisites(withoutProfile)).toThrow("E2E_GITHUB_PROFILE or stored session.json")
+      const session = { ...withoutProfile, E2E_PROD_URL: "https://ship-harness.invalid", E2E_SESSION_DIR: dir }
+      expect(() => assertShipPrerequisites(session)).toThrow("E2E_GITHUB_PROFILE or stored session.json")
+      mkdirSync(join(dir, "ship-harness.invalid"))
+      writeFileSync(join(dir, "ship-harness.invalid", "session.json"), "{}")
+      expect(() => assertShipPrerequisites(session)).not.toThrow()
+      expect(() => assertShipPrerequisites({ ...session, E2E_FRESH_SIGN_IN: "1" })).toThrow("E2E_GITHUB_PROFILE or stored session.json")
+      expect(() => assertShipPrerequisites({ ...session, E2E_PROD_URL: undefined, BASE_URL: "https://ship-harness.invalid" })).not.toThrow()
+      expect(() => assertShipPrerequisites({ ...session, E2E_GITHUB_PROFILE: undefined })).not.toThrow()
+      expect(() => assertShipPrerequisites({ ...env, E2E_FRESH_SIGN_IN: "1" })).not.toThrow()
+      rmSync(join(dir, "ship-harness.invalid", "session.json"))
+      mkdirSync(join(dir, "ship-harness.invalid", "session.json"))
+      expect(() => assertShipPrerequisites(session)).toThrow("E2E_GITHUB_PROFILE or stored session.json")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("collects the complete required test inventory and distinguishes journeys within the same spec", () => {
+    expect(shipInventory({ suites: [] })).toEqual([])
+    expect(shipInventory({ suites: [{}] })).toEqual([])
+    const inventory = shipInventory({ suites: [{ suites: [{ specs: [
+      { file: "agent.spec.ts", title: "agent answers", line: 10, column: 3, tests: SHIP_TARGETS.map((projectName) => ({ projectName })) },
+      { file: "agent.spec.ts", title: "agent resumes", line: 20, column: 3, tests: [{ projectName: "deployment" }] },
+      { file: "not-required.spec.ts", title: "other", line: 1, column: 1, tests: [{ projectName: "deployment" }] },
+    ] }] }] })
+    expect(inventory).toHaveLength(3)
+    expect(new Set(inventory.map(shipTestIdentity)).size).toBe(3)
+    expect(shipTestIdentity({ file: "/e/agent.spec.ts", title: "suite › agent answers", name: "agent answers", project: "deployment", line: 10, column: 3 })).toBe(shipTestIdentity(inventory[0]!))
+    expect(shipTestIdentity({ file: "agent.spec.ts", title: "ask" })).toBe('["agent.spec.ts","ask","",0,0]')
+  })
+
+  it("preserves developer/platform skips but fails a required ship spec on a missing need", () => {
+    const spec = "/repo/e2e/agent.spec.ts"
+    expect(unmetNeed("liveModel", spec, deployedAs("member"))).toBe(true)
+    expect(unmetNeed("liveModel", spec, deployedAs("member", { E2E_SHIP_ACCEPTANCE: "0" }))).toBe(true)
+    const acceptance = deployedAs("member", { E2E_SHIP_ACCEPTANCE: "1" })
+    for (const need of ["liveModel", "personalModel", "devPeople"] as const) {
+      expect(() => unmetNeed(need, spec, acceptance)).toThrow(`Ship acceptance requires ${need}:`)
+    }
+    expect(unmetNeed("liveModel", "/repo/e2e/non-required.spec.ts", acceptance)).toBe(true)
+    expect(unmetNeed("member", spec, acceptance)).toBe(false)
+    expect(unmetNeed("personalModel", spec, { ...acceptance, env: { ...acceptance.env, E2E_PERSONAL_MODEL_KEY: "test-only" } })).toBe(false)
+    expect(unmetNeed("devPeople", spec, local)).toBe(false)
+  })
+})
 
 describe("the target", () => {
   it("requires an explicitly named repository for synced item coverage", () => {

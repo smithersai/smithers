@@ -375,7 +375,7 @@ A dependency an agent cannot debug from its records is not used: errors must sur
 A feature works only when a real e2e test passes against it, and is broken when one fails. When something is broken and no test fails, write the failing e2e test first.
 
 - **Will:** "If something is broken by definition it being broken is having an e2e test failing. If something is working by definition it means there should be an e2e passing" (12:11). "Ok so not having a failing e2e test is absolutely unacceptable." (12:10).
-- **Enforced:** process only. It defines what a status claim means; a file cannot show it.
+- **Enforced:** `E2E_SHIP_ACCEPTANCE=1 pnpm e2e:prod` checks the SCOPE-6/SCOPE-7 feature/spec manifest in `e2e/ship.ts`, refuses missing credentials/fixtures before sign-in, and requires executed success on both browser targets. `e2e/summary.ts` rejects skips, expected failures, partial results and missing receipts for required specs. `e2e/target.test.ts`, `e2e/summary.test.ts` and `e2e/ship-harness.test.ts` cover the policy and real Playwright reporting. Status claims outside this gate remain a process rule.
 
 ### test.e2e-local-and-live
 

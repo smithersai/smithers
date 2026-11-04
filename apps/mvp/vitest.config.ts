@@ -237,6 +237,7 @@ export default defineConfig({
         "e2e/frames.ts",
         // The e2e run against a deployment: its summary, spend guard and stored session (docs/infrastructure.md#against-a-deployment).
         "e2e/summary.ts",
+        "e2e/ship.ts",
         "e2e/spend.ts",
         "e2e/deployment/session.ts",
         "e2e/settings.ts",

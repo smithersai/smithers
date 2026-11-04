@@ -16,10 +16,11 @@
 // The run's settings, the E2E_* variables naming its scratch repositories, mirror and keys, come from `e2e.env` beside
 // the stored session (e2e/settings.ts), private to its owner; a variable the environment sets wins.
 import { spawnSync } from "node:child_process"
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { settingsFileOf, withSettings } from "./settings.ts"
+import { assertShipPrerequisites, shipAcceptance, shipInventory, shipListingDiagnostics } from "./ship.ts"
 
 const url = process.env.E2E_PROD_URL ?? ""
 if (!/^https:\/\//.test(url)) {
@@ -31,11 +32,36 @@ const settingsFile = settingsFileOf(url)
 let settings
 try {
   settings = withSettings(process.env, settingsFile)
+  assertShipPrerequisites(settings.env, process.argv.slice(2))
 } catch (error) {
   console.error(error.message)
   process.exit(2)
 }
 if (settings.set.length > 0) console.error(`Settings from ${settingsFile}: ${settings.set.join(", ")}`)
+
+const env = { ...settings.env, E2E_TARGET: "deployment", BASE_URL: url }
+if (shipAcceptance(env)) {
+  const listing = spawnSync("pnpm", ["exec", "playwright", "test", "--list", "--reporter=json"], {
+    env: { ...env, E2E_SHIP_ACCEPTANCE: "0", E2E_SHIP_COLLECT: "1" }, encoding: "utf8", maxBuffer: 32 * 1024 * 1024,
+  })
+  if (listing.status !== 0) {
+    console.error(`Ship acceptance could not collect the full test inventory (exit ${listing.status ?? "unknown"}); no tests started`)
+    const diagnostic = shipListingDiagnostics(listing.stderr ?? "", listing.stdout ?? "", env)
+    if (diagnostic !== "") console.error(diagnostic)
+    process.exit(2)
+  }
+  try {
+    const inventory = shipInventory(JSON.parse(listing.stdout))
+    if (inventory.length === 0) throw new Error("empty inventory")
+    const dir = mkdtempSync(join(tmpdir(), "smithers-ship-"))
+    process.on("exit", () => rmSync(dir, { recursive: true, force: true }))
+    env.E2E_SHIP_INVENTORY = join(dir, "inventory.json")
+    writeFileSync(env.E2E_SHIP_INVENTORY, JSON.stringify(inventory), { mode: 0o600 })
+  } catch {
+    console.error("Ship acceptance could not retain the full test inventory; no tests started")
+    process.exit(2)
+  }
+}
 
 const lock = settings.env.E2E_PROD_LOCK ?? join(settings.env.E2E_SESSION_DIR ?? join(homedir(), ".smithers-e2e"), new URL(url).host, "run.lock")
 const ownerOf = () => {
@@ -86,7 +112,6 @@ const release = () => {
 process.on("exit", release)
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => process.exit(130))
 
-const env = { ...settings.env, E2E_TARGET: "deployment", BASE_URL: url }
 const tests = spawnSync("pnpm", ["exec", "playwright", "test", ...process.argv.slice(2)], { stdio: "inherit", env })
 // The recordings use neither the test account nor the deployment: the next run may start while they are made.
 release()

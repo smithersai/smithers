@@ -371,6 +371,42 @@ Add a spec here only for a failure that shipped, and keep the list to a few minu
 E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…]
 ```
 
+**Ship acceptance.** Opt in explicitly when deciding whether to ship:
+
+```sh
+E2E_SHIP_ACCEPTANCE=1 E2E_PROD_URL=<the production URL> pnpm e2e:prod
+```
+
+`e2e/ship.ts` is the single required-feature manifest: each SCOPE-6/SCOPE-7 feature maps to specs,
+prerequisites and the required Chromium (`deployment`) and WebKit (`webkit`) targets. Before the account lock,
+sign-in or any network work, the runner refuses missing credentials and missing or invalid fixture names/paths,
+including `E2E_PERSONAL_MODEL_KEY`, naming the variables without their values. The runner mirror must contain
+`.jj`; scratch repositories cannot be under `smithersai`. Settings still come from the private file below.
+Sign-in must have a stored `session.json` or its GitHub browser profile (`E2E_GITHUB_PROFILE`, default below).
+`E2E_FRESH_SIGN_IN=1` requires the profile even when a stored session exists. Setup still checks that the real
+session is valid and belongs to the test account.
+Sharing also requires `E2E_TEAMMATE_LOGIN`/`E2E_TEAMMATE_SESSION` and `E2E_GUEST_LOGIN`/`E2E_GUEST_SESSION`;
+session paths must be absolute, existing private files (mode 600). Their live identities and models are verified by
+the sharing journeys, not inferred from filenames.
+The secrets receipt uses `secrets-egress.spec.ts`, with `E2E_SECRETS_EGRESS=true`, an authorized scratch
+`E2E_SECRETS_REPOSITORY` and `E2E_SECRETS_BRANCH`. This selects the proof; it never enables server egress or widens
+repository access. Its independent local Docker inspection remains a developer spec.
+
+The acceptance summary requires an actual passed result for every listed spec on **both** targets and rejects
+every skipped, broken, flaky, partial or unsuccessful journey in a required spec, even if another test in it passes.
+Acceptance runs the full suite: `pnpm e2e:prod` refuses spec filters and Playwright options in this mode, including
+`--project`, `--grep`, `--shard` and `--list`. It first collects an unfiltered test inventory, with focused tests
+forbidden, then requires every collected journey to succeed: one passing test cannot cover an omitted test in
+the same spec. Direct acceptance runs without that inventory fail. `summary.json` includes the
+per-feature/spec/target execution receipts; a reporter or artifact-storage error explicitly fails the run. A declared
+platform need in a required spec is a ship blocker until it has real deployment evidence; this gate does not
+claim that a local scripted journey proves the deployed feature. This also exposes existing deployment gaps,
+such as two-person sharing or secrets egress, rather than waiving them. Ordinary runs (unset or
+`E2E_SHIP_ACCEPTANCE=0`) keep their existing declared skips. Other flag values fail rather than disabling the gate.
+
+When no personal model key is supplied in a developer run, the setup's personal-model test reports **skipped**,
+with the declared `personalModelKey` reason. It cannot report a successful zero-work setup.
+
 **Settings.** The run's `E2E_*` variables, such as its scratch repositories, runner mirror and keys, can live in `e2e.env` beside the stored session (`~/.smithers-e2e/<host>/e2e.env`), outside every checkout, so each workspace reads the same ones and none is committed (`e2e/settings.ts`). It is dotenv: one `NAME=value` per line, `#` comments. A variable the environment sets wins over the file. The run prints the names it took from the file, never their values, and refuses a file others can read: `chmod 600` it. For smithers.sh:
 
 ```sh

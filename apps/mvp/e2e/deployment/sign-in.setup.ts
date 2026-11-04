@@ -14,6 +14,7 @@ import {
   scratchRepositoriesOf,
   sessionFiles,
   target,
+  describeNeed,
 } from "../target"
 import { redactError, redactRequestErrors } from "../redact"
 import { cleanScratch } from "../stackWrites"
@@ -141,10 +142,7 @@ setup("sign in as the test account", async () => {
 })
 
 setup("personal model: save and Test when E2E_PERSONAL_MODEL_KEY is supplied", async () => {
-  if (!process.env.E2E_PERSONAL_MODEL_KEY) {
-    setup.info().annotations.push({ type: "personal model", description: "not configured: E2E_PERSONAL_MODEL_KEY is unset; model-dependent specs will skip" })
-    return
-  }
+  setup.skip(!process.env.E2E_PERSONAL_MODEL_KEY, describeNeed("personalModelKey"))
   const request = await api(files.session)
   try {
     await restorePersonalModel(request)
