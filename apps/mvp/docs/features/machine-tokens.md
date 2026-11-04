@@ -30,6 +30,64 @@ agent ─ GET /api/repos/<o>/<n>/writes/<id> ◀─ { status, failure, cause, gi
 - **Backlog.** At most 20 pending writes per token, on every way into pending, else `429` with `retry-after: 30`.
 - **Its own tables and flow.** `machine_tokens` is not `runners`, so no runner route can read one by leaving a filter out. `machine_writes` is not `github_writes`, and `github/MachineDispatch` is not `github/Write`: a person's write, its plan and any run in flight are untouched.
 
+## Read tokens
+
+An operator can give an agent short-lived GitHub installation access for repository metadata and issues, without a
+personal login or the App's private key. From `apps/mvp`:
+
+```sh
+~/vault-ws-deployer/bin/mvp-prod-env node ops/github/read-token.ts \
+  --owner <owner> --repo <name> --repo <another-name> --out <private-directory>/github-read
+```
+
+The command reads `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` in the operator's environment. It uses the owner's
+installation and requests exactly `{ metadata: "read", issues: "read" }`. Repeat `--repo` to narrow access; omit it
+for all repositories available to that installation. GitHub sets the expiry, normally one hour. No key is passed to
+the agent, and neither a key nor a token goes on argv or into output.
+
+`--out` is a new mode-600 file containing only the token. Its parent must already exist and must not be group- or
+world-writable. The command also creates `<out>.json`, a mode-600, non-secret scope receipt. Neither file is overwritten.
+One audit JSON line reports `owner`, `installation`, `repos` (null for installation-wide), `permissions` and `expires_at`.
+Give the agent both files and set `SMITHERS_GITHUB_READ_TOKEN_FILE` to the raw token file's path.
+
+Revoke without loading the App's credentials:
+
+```sh
+node ops/github/read-token.ts --revoke <private-directory>/github-read
+```
+
+This sends `DELETE /installation/token` with the token read from its private file, prints `{ "status": 204 }` on success,
+and exits nonzero on refusal. Revoking does not delete the local files.
+
+Direct GitHub GET consumers can import `githubRead` from `ops/issues/githubRead.mjs`:
+
+```js
+const reads = githubRead()
+const response = await reads.get("https://api.github.com/repos/acme/widgets/issues?state=all")
+const summary = reads.summary()
+```
+
+`get` returns a Response and accepts only HTTPS `api.github.com` URLs or paths. It uses `authorization: token …` only
+for the receipt's owner and, when narrowed, listed repositories. Other owners and non-repository paths are anonymous;
+without the environment variable all reads are anonymous. Redirects are returned without following them. A token's
+401 triggers one anonymous fallback, marks `summary.tokenExpired` true, and keeps later reads anonymous. The summary
+counts authenticated and anonymous requests without holding credentials. Missing, invalid or unsafe configured files
+fail with fixed diagnostic messages. A scope receipt describes issuance; it never grants access GitHub did not grant.
+Issuing failures report `github_read_token.failed` with the stage and, when available, an HTTP status; response bodies
+and exception details are never printed.
+
+`track.mjs` reads the public Smithers issue shape through `/api/shapes/items`; it has no direct GitHub issue reads to
+rewire. Other operator scripts can adopt the exported helper. Both commands use the Worker's shared
+`GitHub.GitHubClient.USER_AGENT` from `@smthrs/integrations`. AppAuth supplies signing and minting; these commands are
+the operator credential boundary, alongside the existing machine-token issuer, rather than an app plugin or a job.
+The helper registers the shipped `vibelang/register` loader before loading the checkout's SDK sources, so the documented
+plain `node` invocation needs no extra loader flag.
+
+`ops/github/read-token.test.ts` checks signed JWTs, exact permissions and repository narrowing, private files,
+redacted failures, unsafe directories and revoke. `ops/issues/githubRead.test.ts` checks owner and repository scope,
+anonymous reads, redirect refusal, private-file enforcement and the single 401 downgrade, with the requested injected
+fetch boundary.
+
 ## Routes
 
 | Route | Answers |
