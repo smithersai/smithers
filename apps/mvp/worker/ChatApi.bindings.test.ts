@@ -63,6 +63,8 @@ const SETTINGS: Readonly<Record<string, string>> = {
   REPO_FLOWS: "true",
   TODO_RUNS: "true",
   GATE_IMAGE: `registry.cloudflare.com/account/smithers-gate@sha256:${"a".repeat(64)}`,
+  SANDBOX_SECRETS: "true",
+  EGRESS_ALLOW_HOSTS: "receiver.example",
   SANDBOX_COMMAND_MAX_SECONDS: "600",
   SANDBOX_SESSION_TIMEOUT_SECONDS: "60",
   GITHUB_WEBHOOK_SECRET: "webhook-secret",

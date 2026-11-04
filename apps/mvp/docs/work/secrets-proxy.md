@@ -1,11 +1,19 @@
 ---
 title: Secrets through an egress proxy (feature 6)
-status: done
+status: in-progress
 area: infra
-owner: Codex secrets rebase
-updated: 2026-10-22
+owner: Codex GPT-6 Astra (e2e-secrets)
+updated: 2026-11-04
 links: [../decisions/0005-sandboxes-secrets-and-the-forge.md, ../../../../AGENTS.md, sandboxes.md, design-questions.md, branch-terminal.md, connect-agents-sandboxes-forge.md, decisions-for-will.md, ../features/secrets.md, docs-truth-pass.md]
 ---
+
+## Production proof — 2026-11-04
+
+Auditing the production gate and building a real controlled-receiver proof. Keep the local container inspection.
+Production is not proven: repository-secret egress defaults off, and writes remain fenced to the deployment's own
+repository. No deployment or permission widening is part of this lane. Private configuration and execution receipts
+stay in the lane's private status file. Library catalog entries: `@smthrs/secrets` for egress and `@smthrs/platform-cloudflare`
+for the real branch machine; the tests exercise their existing public HTTP and terminal boundaries.
 
 ## Rebase validation — 2026-10-22
 
